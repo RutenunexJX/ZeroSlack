@@ -32,6 +32,7 @@
 #include <QPixmap>
 #include <QPen>
 #include <QBrush>
+#include <QRegExp>
 
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 {
@@ -453,24 +454,36 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                 highlightHoveredSymbol(incPath, incStart, incEnd);
                 viewport()->setCursor(createJumpableCursor());
             } else {
-                QString word = getWordAtPosition(mousePos);
-                if (!word.isEmpty()) {
-                    QTextCursor cursor = cursorForPosition(mousePos);
-                    QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                    hoveredWord = word;
-                    hoveredWordStartPos = wordCursor.selectionStart();
-                    hoveredWordEndPos = wordCursor.selectionEnd();
-                    highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+                // 检查是否在 import 语句中的 package 名称上
+                QString pkgName;
+                int pkgStart = -1;
+                int pkgEnd = -1;
+                if (getPackageNameFromImport(mousePos, pkgName, pkgStart, pkgEnd)) {
+                    hoveredWord = pkgName;
+                    hoveredWordStartPos = pkgStart;
+                    hoveredWordEndPos = pkgEnd;
+                    highlightHoveredSymbol(pkgName, pkgStart, pkgEnd);
+                    viewport()->setCursor(createJumpableCursor());
+                } else {
+                    QString word = getWordAtPosition(mousePos);
+                    if (!word.isEmpty()) {
+                        QTextCursor cursor = cursorForPosition(mousePos);
+                        QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
+                        hoveredWord = word;
+                        hoveredWordStartPos = wordCursor.selectionStart();
+                        hoveredWordEndPos = wordCursor.selectionEnd();
+                        highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
 
-                    if (canJumpToDefinition(word)) {
-                        viewport()->setCursor(createJumpableCursor());
+                        if (canJumpToDefinition(word)) {
+                            viewport()->setCursor(createJumpableCursor());
+                        } else {
+                            viewport()->setCursor(createNonJumpableCursor());
+                        }
                     } else {
+                        // 没有符号，显示红叉表示无法跳转
+                        hoveredWord.clear();
                         viewport()->setCursor(createNonJumpableCursor());
                     }
-                } else {
-                    // 没有符号，显示红叉表示无法跳转
-                    hoveredWord.clear();
-                    viewport()->setCursor(createNonJumpableCursor());
                 }
             }
         }
@@ -1122,13 +1135,23 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
     // 检查是否是 Ctrl+左键点击
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
-        // 1) 优先判断是否点击在 `include` 或 `#include` 的文件名上
+        // 1) 优先判断是否点击在 `include` 的文件名上
         if (tryJumpToIncludeAtPosition(event->pos())) {
             event->accept();
             return;
         }
 
-        // 2) 否则走原有的符号跳转逻辑
+        // 2) 检查是否点击在 import 语句中的 package 名称上
+        QString pkgName;
+        int pkgStart = -1;
+        int pkgEnd = -1;
+        if (getPackageNameFromImport(event->pos(), pkgName, pkgStart, pkgEnd)) {
+            jumpToDefinition(pkgName);
+            event->accept();
+            return;
+        }
+
+        // 3) 否则走原有的符号跳转逻辑
         QString wordUnderCursor = getWordAtPosition(event->pos());
         if (!wordUnderCursor.isEmpty()) {
             jumpToDefinition(wordUnderCursor);
@@ -1164,23 +1187,35 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
                 highlightHoveredSymbol(incPath, incStart, incEnd);
                 viewport()->setCursor(createJumpableCursor());
             } else {
-                QString word = getWordAtPosition(event->pos());
-                if (!word.isEmpty()) {
-                    QTextCursor cursor = cursorForPosition(event->pos());
-                    QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                    hoveredWord = word;
-                    hoveredWordStartPos = wordCursor.selectionStart();
-                    hoveredWordEndPos = wordCursor.selectionEnd();
-                    highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+                // 检查是否在 import 语句中的 package 名称上
+                QString pkgName;
+                int pkgStart = -1;
+                int pkgEnd = -1;
+                if (getPackageNameFromImport(event->pos(), pkgName, pkgStart, pkgEnd)) {
+                    hoveredWord = pkgName;
+                    hoveredWordStartPos = pkgStart;
+                    hoveredWordEndPos = pkgEnd;
+                    highlightHoveredSymbol(pkgName, pkgStart, pkgEnd);
+                    viewport()->setCursor(createJumpableCursor());
+                } else {
+                    QString word = getWordAtPosition(event->pos());
+                    if (!word.isEmpty()) {
+                        QTextCursor cursor = cursorForPosition(event->pos());
+                        QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
+                        hoveredWord = word;
+                        hoveredWordStartPos = wordCursor.selectionStart();
+                        hoveredWordEndPos = wordCursor.selectionEnd();
+                        highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
 
-                    if (canJumpToDefinition(word)) {
-                        viewport()->setCursor(createJumpableCursor());
+                        if (canJumpToDefinition(word)) {
+                            viewport()->setCursor(createJumpableCursor());
+                        } else {
+                            viewport()->setCursor(createNonJumpableCursor());
+                        }
                     } else {
+                        hoveredWord.clear();
                         viewport()->setCursor(createNonJumpableCursor());
                     }
-                } else {
-                    hoveredWord.clear();
-                    viewport()->setCursor(createNonJumpableCursor());
                 }
             }
         } else {
@@ -1207,25 +1242,43 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
             }
             viewport()->setCursor(createJumpableCursor());
         } else {
-            QString word = getWordAtPosition(event->pos());
-            if (word != hoveredWord) {
-                clearHoveredSymbolHighlight();
-                if (!word.isEmpty()) {
-                    QTextCursor cursor = cursorForPosition(event->pos());
-                    QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                    hoveredWord = word;
-                    hoveredWordStartPos = wordCursor.selectionStart();
-                    hoveredWordEndPos = wordCursor.selectionEnd();
-                    highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
-                } else {
-                    hoveredWord.clear();
-                }
-            }
+            // 检查是否在 import 语句中的 package 名称上
+            QString pkgName;
+            int pkgStart = -1;
+            int pkgEnd = -1;
+            bool onImport = getPackageNameFromImport(event->pos(), pkgName, pkgStart, pkgEnd);
 
-            if (!hoveredWord.isEmpty() && canJumpToDefinition(hoveredWord)) {
+            if (onImport) {
+                // 鼠标在 import 语句的 package 名称上
+                if (hoveredWord != pkgName || hoveredWordStartPos != pkgStart || hoveredWordEndPos != pkgEnd) {
+                    clearHoveredSymbolHighlight();
+                    hoveredWord = pkgName;
+                    hoveredWordStartPos = pkgStart;
+                    hoveredWordEndPos = pkgEnd;
+                    highlightHoveredSymbol(pkgName, pkgStart, pkgEnd);
+                }
                 viewport()->setCursor(createJumpableCursor());
             } else {
-                viewport()->setCursor(createNonJumpableCursor());
+                QString word = getWordAtPosition(event->pos());
+                if (word != hoveredWord) {
+                    clearHoveredSymbolHighlight();
+                    if (!word.isEmpty()) {
+                        QTextCursor cursor = cursorForPosition(event->pos());
+                        QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
+                        hoveredWord = word;
+                        hoveredWordStartPos = wordCursor.selectionStart();
+                        hoveredWordEndPos = wordCursor.selectionEnd();
+                        highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+                    } else {
+                        hoveredWord.clear();
+                    }
+                }
+
+                if (!hoveredWord.isEmpty() && canJumpToDefinition(hoveredWord)) {
+                    viewport()->setCursor(createJumpableCursor());
+                } else {
+                    viewport()->setCursor(createNonJumpableCursor());
+                }
             }
         }
     }
@@ -1289,6 +1342,47 @@ QTextCursor MyCodeEditor::getWordCursorAtPosition(int position)
     return cursor;
 }
 
+bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& packageName, int& startPos, int& endPos)
+{
+    QTextCursor cursor = cursorForPosition(position);
+    QTextBlock block = cursor.block();
+    QString lineText = block.text();
+    if (lineText.isEmpty()) {
+        return false;
+    }
+
+    int posInLine = cursor.position() - block.position();
+
+    // 查找 import 关键字
+    int importPos = lineText.indexOf("import");
+    if (importPos == -1) {
+        return false;
+    }
+
+    // 找到 import 之后的 package 名称（格式：import package_name::* 或 import package_name::symbol）
+    // 使用正则表达式匹配：import\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*::
+    QRegExp importPattern("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::");
+    int matchPos = importPattern.indexIn(lineText);
+    if (matchPos == -1) {
+        return false;
+    }
+
+    QString matchedPackageName = importPattern.cap(1);
+    int packageStartInLine = importPattern.pos(1);
+    int packageEndInLine = packageStartInLine + matchedPackageName.length();
+
+    // 检查鼠标位置是否在 package 名称范围内
+    if (posInLine < packageStartInLine || posInLine >= packageEndInLine) {
+        return false;
+    }
+
+    packageName = matchedPackageName;
+    startPos = block.position() + packageStartInLine;
+    endPos = block.position() + packageEndInLine;
+
+    return true;
+}
+
 
 void MyCodeEditor::jumpToDefinition(const QString& symbolName)
 {
@@ -1313,7 +1407,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
     sym_list::SymbolInfo bestMatch;
     bool foundDefinition = false;
 
-    // 优先级：当前文件中的定义 > 其他文件中的模块定义 > 其他定义
+    // 优先级：当前文件中的定义 > 其他文件中的模块/package定义 > 其他定义
     QString currentFile = getFileName();
 
     for (const sym_list::SymbolInfo& symbol : symbols) {
@@ -1323,8 +1417,10 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
                 bestMatch = symbol;
                 foundDefinition = true;
                 break;
-            } else if (!foundDefinition || symbol.symbolType == sym_list::sym_module) {
-                // 其他文件中的定义，模块定义优先
+            } else if (!foundDefinition || 
+                       symbol.symbolType == sym_list::sym_module || 
+                       symbol.symbolType == sym_list::sym_package) {
+                // 其他文件中的定义，模块/package定义优先
                 bestMatch = symbol;
                 foundDefinition = true;
             }
@@ -1377,6 +1473,7 @@ bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const 
     // 所有这些类型都被认为是定义
     switch (symbol.symbolType) {
         case sym_list::sym_module:
+        case sym_list::sym_package:
         case sym_list::sym_task:
         case sym_list::sym_function:
         case sym_list::sym_reg:

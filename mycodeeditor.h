@@ -125,6 +125,7 @@ private:
     QString getWordAtPosition(const QPoint& position);
     QString getWordAtTextPosition(int position);
     QTextCursor getWordCursorAtPosition(int position);
+    bool getPackageNameFromImport(const QPoint& position, QString& packageName, int& startPos, int& endPos);
     void jumpToDefinition(const QString& symbolName);
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
     void clearHoveredSymbolHighlight();
