@@ -26,6 +26,10 @@
 #include <QAbstractItemView>
 #include <QCompleter>
 #include <QToolTip>
+#include <QCursor>
+#include <QPixmap>
+#include <QPen>
+#include <QBrush>
 
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 {
@@ -75,6 +79,9 @@ void MyCodeEditor::initConnection()
 void MyCodeEditor::initFont()
 {
     this->setFont(QFont("Consolas",14));
+    // 设置 Tab 宽度为 4 个字符
+    int tabWidth = fontMetrics().horizontalAdvance(' ') * 4;
+    setTabStopDistance(tabWidth);
 }
 
 void MyCodeEditor::initHighlighter()
@@ -427,9 +434,8 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Control && !ctrlPressed) {
         ctrlPressed = true;
-        setCursor(Qt::PointingHandCursor);
 
-        // 如果鼠标在编辑器内，高亮鼠标下的符号
+        // Ctrl 刚按下时：根据鼠标下符号是否可跳转，设置绿勾/红叉光标
         QPoint mousePos = mapFromGlobal(QCursor::pos());
         if (rect().contains(mousePos)) {
             QString word = getWordAtPosition(mousePos);
@@ -440,6 +446,15 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                 hoveredWordStartPos = wordCursor.selectionStart();
                 hoveredWordEndPos = wordCursor.selectionEnd();
                 highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+
+                if (canJumpToDefinition(word)) {
+                    viewport()->setCursor(createJumpableCursor());
+                } else {
+                    viewport()->setCursor(createNonJumpableCursor());
+                }
+            } else {
+                // 没有符号，显示红叉表示无法跳转
+                viewport()->setCursor(createNonJumpableCursor());
             }
         }
     }
@@ -1059,7 +1074,8 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Control && ctrlPressed) {
         ctrlPressed = false;
-        setCursor(Qt::IBeamCursor);
+        // 松开 Ctrl：恢复为普通 I 型光标
+        viewport()->setCursor(Qt::IBeamCursor);
         clearHoveredSymbolHighlight();
         hoveredWord.clear();
     }
@@ -1110,11 +1126,9 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
         ctrlPressed = isCtrlPressed;
 
         if (ctrlPressed) {
-            // 切换到指针光标
-            setCursor(Qt::PointingHandCursor);
-
-            // 高亮鼠标下的符号
+            // Ctrl 刚按下：根据当前鼠标位置更新高亮和光标
             QString word = getWordAtPosition(event->pos());
+            clearHoveredSymbolHighlight();
             if (!word.isEmpty()) {
                 QTextCursor cursor = cursorForPosition(event->pos());
                 QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
@@ -1122,15 +1136,24 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
                 hoveredWordStartPos = wordCursor.selectionStart();
                 hoveredWordEndPos = wordCursor.selectionEnd();
                 highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+
+                if (canJumpToDefinition(word)) {
+                    viewport()->setCursor(createJumpableCursor());
+                } else {
+                    viewport()->setCursor(createNonJumpableCursor());
+                }
+            } else {
+                hoveredWord.clear();
+                viewport()->setCursor(createNonJumpableCursor());
             }
         } else {
-            // 恢复普通光标
-            setCursor(Qt::IBeamCursor);
+            // 刚从按下 Ctrl 切换为未按：恢复普通 I 型光标并清除高亮
+            viewport()->setCursor(Qt::IBeamCursor);
             clearHoveredSymbolHighlight();
             hoveredWord.clear();
         }
     } else if (ctrlPressed) {
-        // Ctrl 键持续按下时，更新高亮
+        // Ctrl 持续按下时，随鼠标移动更新高亮和光标
         QString word = getWordAtPosition(event->pos());
         if (word != hoveredWord) {
             clearHoveredSymbolHighlight();
@@ -1145,6 +1168,12 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
                 hoveredWord.clear();
             }
         }
+
+        if (!hoveredWord.isEmpty() && canJumpToDefinition(hoveredWord)) {
+            viewport()->setCursor(createJumpableCursor());
+        } else {
+            viewport()->setCursor(createNonJumpableCursor());
+        }
     }
 
     QPlainTextEdit::mouseMoveEvent(event);
@@ -1152,9 +1181,9 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 
 void MyCodeEditor::leaveEvent(QEvent *event)
 {
-    // 鼠标离开编辑器时清除高亮
+    // 鼠标离开编辑器时清除高亮并恢复普通光标
     ctrlPressed = false;
-    setCursor(Qt::IBeamCursor);
+    viewport()->setCursor(Qt::IBeamCursor);
     clearHoveredSymbolHighlight();
     hoveredWord.clear();
 
@@ -1411,4 +1440,87 @@ QString MyCodeEditor::getSymbolTypeString(sym_list::sym_type_e symbolType)
     case sym_list::sym_function: return "function";
     default:                     return QString("unknown_%1").arg(static_cast<int>(symbolType));
     }
+}
+
+bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
+{
+    if (symbolName.isEmpty()) {
+        return false;
+    }
+
+    // 获取符号列表实例
+    sym_list* symbolList = sym_list::getInstance();
+    if (!symbolList) {
+        return false;
+    }
+
+    // 查找符号定义
+    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
+
+    if (symbols.isEmpty()) {
+        return false;
+    }
+
+    // 检查是否有可跳转的定义
+    QString currentFile = getFileName();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (isSymbolDefinition(symbol, symbolName)) {
+            return true;
+        }
+    }
+
+    // 如果没有找到明确的定义，但找到了符号，也可以跳转
+    return !symbols.isEmpty();
+}
+
+QCursor MyCodeEditor::createJumpableCursor()
+{
+    // 创建绿色对勾图标 - 使用更大的尺寸以便更清晰
+    QPixmap pixmap(24, 24);
+    pixmap.fill(Qt::transparent);
+    
+    QPainter painter(&pixmap);
+    if (!painter.isActive()) {
+        // 如果绘制器未激活，返回默认光标
+        return QCursor(Qt::PointingHandCursor);
+    }
+    
+    painter.setRenderHint(QPainter::Antialiasing);
+    
+    // 绘制绿色对勾 - 使用更粗的线条和更亮的绿色
+    QPen pen(QColor(0, 255, 0), 4); // 亮绿色，4像素宽
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    
+    // 绘制对勾形状（两条线段组成V形对勾）
+    // 第一段：从左上到中间
+    painter.drawLine(7, 12, 11, 16);
+    // 第二段：从中间到右下
+    painter.drawLine(11, 16, 18, 6);
+    
+    painter.end();
+    
+    return QCursor(pixmap, 12, 12); // 热点在中心
+}
+
+QCursor MyCodeEditor::createNonJumpableCursor()
+{
+    // 创建红色叉图标
+    QPixmap pixmap(20, 20);
+    pixmap.fill(Qt::transparent);
+    
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    
+    // 绘制红色叉
+    QPen pen(QColor(255, 0, 0), 3); // 红色，3像素宽
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    
+    // 绘制X形状（两条对角线）
+    painter.drawLine(5, 5, 15, 15);
+    painter.drawLine(15, 5, 5, 15);
+    
+    return QCursor(pixmap, 10, 10); // 热点在中心
 }
