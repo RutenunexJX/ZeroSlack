@@ -229,6 +229,7 @@ private:
 
     void analyzeInterfaces(const QString &text);
     void analyzeDataTypes(const QString &text);
+    void analyzePackages(const QString &text);
     void analyzePreprocessorDirectives(const QString &text);
     void analyzeAlwaysAndAssign(const QString &text);
     void analyzeParameters(const QString &text);

@@ -723,6 +723,9 @@ void sym_list::getAdditionalSymbols(const QString &text)
     // 分析interface声明
     analyzeInterfaces(text);
 
+    // 分析package声明
+    analyzePackages(text);
+
     // 分析struct/enum/typedef声明
     analyzeDataTypes(text);
 
@@ -737,6 +740,32 @@ void sym_list::getAdditionalSymbols(const QString &text)
 
     // 分析约束相关
     analyzeConstraints(text);
+}
+
+void sym_list::analyzePackages(const QString &text)
+{
+    // package 声明: package package_name;
+    QRegExp packagePattern("\\bpackage\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    QList<RegexMatch> packageMatches = findMatchesOutsideComments(text, packagePattern);
+
+    for (const RegexMatch &match : qAsConst(packageMatches)) {
+        if (packagePattern.indexIn(text, match.position) != -1) {
+            SymbolInfo symbol;
+            symbol.fileName = currentFileName;
+            symbol.symbolName = packagePattern.cap(1);
+            symbol.symbolType = sym_package;
+            symbol.position = match.position;
+            symbol.length = match.length;
+
+            // 计算包名在行中的精确位置
+            int capPos = packagePattern.pos(1);
+            calculateLineColumn(text, capPos, symbol.startLine, symbol.startColumn);
+            symbol.endLine = symbol.startLine;
+            symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
+
+            addSymbol(symbol);
+        }
+    }
 }
 
 void sym_list::getTasksAndFunctions(const QString &text)
