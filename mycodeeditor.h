@@ -129,6 +129,9 @@ private:
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
     void clearHoveredSymbolHighlight();
     bool isSymbolDefinition(const sym_list::SymbolInfo& symbol, const QString& searchWord);
+    bool canJumpToDefinition(const QString& symbolName);
+    QCursor createJumpableCursor();
+    QCursor createNonJumpableCursor();
 
     // 增强功能
     void showSymbolTooltip(const QString& symbolName, const QPoint& position);
