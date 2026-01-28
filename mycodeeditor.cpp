@@ -16,6 +16,8 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QTextStream>
+#include <QFileInfo>
+#include <QDir>
 
 #include <QKeyEvent>
 #include <QTextCursor>
@@ -438,23 +440,38 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         // Ctrl 刚按下时：根据鼠标下符号是否可跳转，设置绿勾/红叉光标
         QPoint mousePos = mapFromGlobal(QCursor::pos());
         if (rect().contains(mousePos)) {
-            QString word = getWordAtPosition(mousePos);
-            if (!word.isEmpty()) {
-                QTextCursor cursor = cursorForPosition(mousePos);
-                QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                hoveredWord = word;
-                hoveredWordStartPos = wordCursor.selectionStart();
-                hoveredWordEndPos = wordCursor.selectionEnd();
-                highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+            clearHoveredSymbolHighlight();
 
-                if (canJumpToDefinition(word)) {
-                    viewport()->setCursor(createJumpableCursor());
+            // 优先检测是否在 `include "xxx"` 的路径字符串上
+            int incStart = -1;
+            int incEnd = -1;
+            QString incPath;
+            if (getIncludeInfoAtPosition(mousePos, incStart, incEnd, incPath)) {
+                hoveredWord = incPath;
+                hoveredWordStartPos = incStart;
+                hoveredWordEndPos = incEnd;
+                highlightHoveredSymbol(incPath, incStart, incEnd);
+                viewport()->setCursor(createJumpableCursor());
+            } else {
+                QString word = getWordAtPosition(mousePos);
+                if (!word.isEmpty()) {
+                    QTextCursor cursor = cursorForPosition(mousePos);
+                    QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
+                    hoveredWord = word;
+                    hoveredWordStartPos = wordCursor.selectionStart();
+                    hoveredWordEndPos = wordCursor.selectionEnd();
+                    highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+
+                    if (canJumpToDefinition(word)) {
+                        viewport()->setCursor(createJumpableCursor());
+                    } else {
+                        viewport()->setCursor(createNonJumpableCursor());
+                    }
                 } else {
+                    // 没有符号，显示红叉表示无法跳转
+                    hoveredWord.clear();
                     viewport()->setCursor(createNonJumpableCursor());
                 }
-            } else {
-                // 没有符号，显示红叉表示无法跳转
-                viewport()->setCursor(createNonJumpableCursor());
             }
         }
     }
@@ -1105,6 +1122,13 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
     // 检查是否是 Ctrl+左键点击
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
+        // 1) 优先判断是否点击在 `include` 或 `#include` 的文件名上
+        if (tryJumpToIncludeAtPosition(event->pos())) {
+            event->accept();
+            return;
+        }
+
+        // 2) 否则走原有的符号跳转逻辑
         QString wordUnderCursor = getWordAtPosition(event->pos());
         if (!wordUnderCursor.isEmpty()) {
             jumpToDefinition(wordUnderCursor);
@@ -1127,24 +1151,37 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 
         if (ctrlPressed) {
             // Ctrl 刚按下：根据当前鼠标位置更新高亮和光标
-            QString word = getWordAtPosition(event->pos());
             clearHoveredSymbolHighlight();
-            if (!word.isEmpty()) {
-                QTextCursor cursor = cursorForPosition(event->pos());
-                QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                hoveredWord = word;
-                hoveredWordStartPos = wordCursor.selectionStart();
-                hoveredWordEndPos = wordCursor.selectionEnd();
-                highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
 
-                if (canJumpToDefinition(word)) {
-                    viewport()->setCursor(createJumpableCursor());
+            int incStart = -1;
+            int incEnd = -1;
+            QString incPath;
+            if (getIncludeInfoAtPosition(event->pos(), incStart, incEnd, incPath)) {
+                // 在 `include "..."` 的路径上
+                hoveredWord = incPath;
+                hoveredWordStartPos = incStart;
+                hoveredWordEndPos = incEnd;
+                highlightHoveredSymbol(incPath, incStart, incEnd);
+                viewport()->setCursor(createJumpableCursor());
+            } else {
+                QString word = getWordAtPosition(event->pos());
+                if (!word.isEmpty()) {
+                    QTextCursor cursor = cursorForPosition(event->pos());
+                    QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
+                    hoveredWord = word;
+                    hoveredWordStartPos = wordCursor.selectionStart();
+                    hoveredWordEndPos = wordCursor.selectionEnd();
+                    highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+
+                    if (canJumpToDefinition(word)) {
+                        viewport()->setCursor(createJumpableCursor());
+                    } else {
+                        viewport()->setCursor(createNonJumpableCursor());
+                    }
                 } else {
+                    hoveredWord.clear();
                     viewport()->setCursor(createNonJumpableCursor());
                 }
-            } else {
-                hoveredWord.clear();
-                viewport()->setCursor(createNonJumpableCursor());
             }
         } else {
             // 刚从按下 Ctrl 切换为未按：恢复普通 I 型光标并清除高亮
@@ -1154,25 +1191,42 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
         }
     } else if (ctrlPressed) {
         // Ctrl 持续按下时，随鼠标移动更新高亮和光标
-        QString word = getWordAtPosition(event->pos());
-        if (word != hoveredWord) {
-            clearHoveredSymbolHighlight();
-            if (!word.isEmpty()) {
-                QTextCursor cursor = cursorForPosition(event->pos());
-                QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                hoveredWord = word;
-                hoveredWordStartPos = wordCursor.selectionStart();
-                hoveredWordEndPos = wordCursor.selectionEnd();
-                highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
-            } else {
-                hoveredWord.clear();
-            }
-        }
+        int incStart = -1;
+        int incEnd = -1;
+        QString incPath;
+        bool onInclude = getIncludeInfoAtPosition(event->pos(), incStart, incEnd, incPath);
 
-        if (!hoveredWord.isEmpty() && canJumpToDefinition(hoveredWord)) {
+        if (onInclude) {
+            // 鼠标在 include 路径上
+            if (hoveredWord != incPath || hoveredWordStartPos != incStart || hoveredWordEndPos != incEnd) {
+                clearHoveredSymbolHighlight();
+                hoveredWord = incPath;
+                hoveredWordStartPos = incStart;
+                hoveredWordEndPos = incEnd;
+                highlightHoveredSymbol(incPath, incStart, incEnd);
+            }
             viewport()->setCursor(createJumpableCursor());
         } else {
-            viewport()->setCursor(createNonJumpableCursor());
+            QString word = getWordAtPosition(event->pos());
+            if (word != hoveredWord) {
+                clearHoveredSymbolHighlight();
+                if (!word.isEmpty()) {
+                    QTextCursor cursor = cursorForPosition(event->pos());
+                    QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
+                    hoveredWord = word;
+                    hoveredWordStartPos = wordCursor.selectionStart();
+                    hoveredWordEndPos = wordCursor.selectionEnd();
+                    highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
+                } else {
+                    hoveredWord.clear();
+                }
+            }
+
+            if (!hoveredWord.isEmpty() && canJumpToDefinition(hoveredWord)) {
+                viewport()->setCursor(createJumpableCursor());
+            } else {
+                viewport()->setCursor(createNonJumpableCursor());
+            }
         }
     }
 
@@ -1523,4 +1577,117 @@ QCursor MyCodeEditor::createNonJumpableCursor()
     painter.drawLine(15, 5, 5, 15);
     
     return QCursor(pixmap, 10, 10); // 热点在中心
+}
+
+bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPos, int &endPos, QString &includePath)
+{
+    QTextCursor cursor = cursorForPosition(position);
+    QTextBlock block = cursor.block();
+    QString lineText = block.text();
+    if (lineText.isEmpty()) {
+        return false;
+    }
+
+    int posInLine = cursor.position() - block.position();
+
+    // 严格遵守 SystemVerilog 标准语法：只支持 `` `include "file" `` 形式
+    int keywordPos = lineText.indexOf("`include");
+    if (keywordPos == -1) {
+        return false;
+    }
+
+    // 找到 include 之后的第一个双引号
+    int firstQuote = lineText.indexOf('"', keywordPos);
+    if (firstQuote == -1) {
+        return false;
+    }
+    int secondQuote = lineText.indexOf('"', firstQuote + 1);
+    if (secondQuote == -1) {
+        return false;
+    }
+
+    // 判断鼠标是否落在引号之间
+    if (posInLine <= firstQuote || posInLine >= secondQuote) {
+        return false;
+    }
+
+    includePath = lineText.mid(firstQuote + 1, secondQuote - firstQuote - 1).trimmed();
+    if (includePath.isEmpty()) {
+        return false;
+    }
+
+    // 计算文档中的绝对位置（不包含引号，只选中内容本身）
+    startPos = block.position() + firstQuote + 1;
+    endPos = block.position() + secondQuote;
+
+    return true;
+}
+
+bool MyCodeEditor::tryJumpToIncludeAtPosition(const QPoint& position)
+{
+    int startPos = -1;
+    int endPos = -1;
+    QString includePath;
+    if (!getIncludeInfoAtPosition(position, startPos, endPos, includePath)) {
+        return false;
+    }
+
+    return openIncludeFile(includePath);
+}
+
+bool MyCodeEditor::openIncludeFile(const QString& includePath)
+{
+    if (includePath.isEmpty()) {
+        return false;
+    }
+
+    QString targetPath;
+
+    // 1) 先按当前文件所在目录的相对路径解析
+    QString currentFile = getFileName();
+    if (!currentFile.isEmpty()) {
+        QFileInfo currentInfo(currentFile);
+        QString candidate = currentInfo.dir().absoluteFilePath(includePath);
+        if (QFileInfo::exists(candidate)) {
+            targetPath = candidate;
+        }
+    }
+
+    // 2) 如果还没找到，并且打开了 workspace，则在 workspace 里搜索
+    if (targetPath.isEmpty()) {
+        MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
+        if (mainWindow && mainWindow->workspaceManager && mainWindow->workspaceManager->isWorkspaceOpen()) {
+            QString workspaceRoot = mainWindow->workspaceManager->getWorkspacePath();
+            // 先尝试直接拼接
+            QString candidate = QDir(workspaceRoot).absoluteFilePath(includePath);
+            if (QFileInfo::exists(candidate)) {
+                targetPath = candidate;
+            } else {
+                // 再在 workspace 所有文件中按文件名匹配一次
+                const QStringList allFiles = mainWindow->workspaceManager->getAllFiles();
+                QFileInfo incInfo(includePath);
+                QString incFileName = incInfo.fileName();
+                for (const QString& f : allFiles) {
+                    if (QFileInfo(f).fileName() == incFileName) {
+                        targetPath = f;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (targetPath.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("Include not found"),
+                             tr("Can not locate include file:\n%1").arg(includePath));
+        return false;
+    }
+
+    MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
+    if (!mainWindow || !mainWindow->tabManager) {
+        return false;
+    }
+
+    return mainWindow->tabManager->openFileInTab(targetPath);
 }
