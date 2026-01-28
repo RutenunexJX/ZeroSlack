@@ -5,6 +5,7 @@
 
 #include <QDebug>
 #include <QRegExp>
+#include <QFile>
 #include <algorithm>
 #include <memory>
 
@@ -48,6 +49,16 @@ void sym_list::addSymbol(const SymbolInfo& symbol)
         newSymbol.symbolId = allocateSymbolId();
     }
 
+    // 🔧 FIX: 确保模块作用域正确设置（但不要覆盖struct变量的moduleScope）
+    // 对于struct变量，moduleScope存储的是struct类型名，不应该被覆盖
+    if (newSymbol.moduleScope.isEmpty() &&
+        (newSymbol.symbolType == sym_reg ||
+         newSymbol.symbolType == sym_wire ||
+         newSymbol.symbolType == sym_logic)) {
+        newSymbol.moduleScope = getCurrentModuleScope(newSymbol.fileName, newSymbol.startLine);
+    }
+    // 对于struct变量和struct成员，moduleScope已经存储了类型名，不要覆盖
+
     symbolDatabase.append(newSymbol);
     int newIndex = symbolDatabase.size() - 1;
 
@@ -66,22 +77,8 @@ void sym_list::addSymbol(const SymbolInfo& symbol)
     // Mark cache as dirty
     indexesDirty = true;
 
-
-
-    // 🔧 FIX: 确保模块作用域正确设置
-    SymbolInfo fixedSymbol = symbol;
-    if (fixedSymbol.moduleScope.isEmpty() &&
-        (fixedSymbol.symbolType == sym_reg ||
-         fixedSymbol.symbolType == sym_wire ||
-         fixedSymbol.symbolType == sym_logic)) {
-        fixedSymbol.moduleScope = getCurrentModuleScope(fixedSymbol.fileName, fixedSymbol.startLine);
-    }
-
-    symbolDatabase.append(fixedSymbol);
-
     // 失效相关缓存
     CompletionManager::getInstance()->invalidateCommandModeCache();
-
 }
 
 sym_list::SymbolInfo sym_list::getSymbolById(int symbolId) const
@@ -200,10 +197,16 @@ void sym_list::analyzeModuleContainment(const QString& fileName)
                 );
 
                 // 🚀 更新符号的模块作用域信息 - 这是关键！
+                // 但是不要覆盖struct变量和struct成员的moduleScope（它们存储的是类型名）
                 int symbolIndex = symbolIdToIndex[symbol.symbolId];
                 if (symbolIndex < symbolDatabase.size()) {
-                    symbolDatabase[symbolIndex].moduleScope = module.symbolName;
-                    symbolDatabase[symbolIndex].scopeLevel = 1;
+                    // 对于struct变量和struct成员，moduleScope已经存储了类型名，不要覆盖
+                    if (symbol.symbolType != sym_packed_struct_var &&
+                        symbol.symbolType != sym_unpacked_struct_var &&
+                        symbol.symbolType != sym_struct_member) {
+                        symbolDatabase[symbolIndex].moduleScope = module.symbolName;
+                        symbolDatabase[symbolIndex].scopeLevel = 1;
+                    }
                 }
             }
         }
@@ -696,22 +699,29 @@ void sym_list::getVariableDeclarations(const QString &text)
     }
 
     // Extract logic declarations
+    // 先找到所有struct的范围，排除struct内部的logic
+    QList<StructRange> structRanges = findStructRanges(text);
+    
     QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> logicMatches = findMatchesOutsideComments(text, logicPattern);
 
     for (const RegexMatch &match : qAsConst(logicMatches)) {
         if (logicPattern.indexIn(text, match.position) != -1) {
-            SymbolInfo symbol;
-            symbol.fileName = currentFileName;
-            symbol.symbolName = logicPattern.cap(1);
-            symbol.symbolType = sym_logic;
-            symbol.position = match.position;
-            symbol.length = match.length;
-            calculateLineColumn(text, logicPattern.pos(1), symbol.startLine, symbol.startColumn);
-            symbol.endLine = symbol.startLine;
-            symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
-            addSymbol(symbol);
-            symbolsFound++;
+            // 检查logic是否在struct范围内
+            int logicPos = logicPattern.pos(1); // logic变量名的位置
+            if (!isPositionInStructRange(logicPos, structRanges)) {
+                SymbolInfo symbol;
+                symbol.fileName = currentFileName;
+                symbol.symbolName = logicPattern.cap(1);
+                symbol.symbolType = sym_logic;
+                symbol.position = match.position;
+                symbol.length = match.length;
+                calculateLineColumn(text, logicPattern.pos(1), symbol.startLine, symbol.startColumn);
+                symbol.endLine = symbol.startLine;
+                symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
+                addSymbol(symbol);
+                symbolsFound++;
+            }
         }
     }
 
@@ -969,7 +979,7 @@ void sym_list::analyzeSpecificLines(const QString& fileName, const QString& cont
 
         // 分析各种符号类型
         analyzeModulesInLine(lineText, lineStartPos, lineNum);
-        analyzeVariablesInLine(lineText, lineStartPos, lineNum);
+        analyzeVariablesInLine(lineText, lineStartPos, lineNum, content);
         analyzeTasksFunctionsInLine(lineText, lineStartPos, lineNum);
 
         int symbolsAfterLine = symbolDatabase.size();
@@ -1076,7 +1086,7 @@ void sym_list::analyzeModulesInLine(const QString& lineText, int lineStartPos, i
     }
 }
 
-void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum)
+void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum, const QString& fullText)
 {
     // reg 变量
     QRegExp regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
@@ -1086,9 +1096,58 @@ void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos,
     QRegExp wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     analyzeVariablePattern(lineText, lineStartPos, lineNum, wirePattern, sym_wire);
 
-    // logic 变量
-    QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    analyzeVariablePattern(lineText, lineStartPos, lineNum, logicPattern, sym_logic);
+    // logic 变量 - 需要排除struct内部的logic
+    QString textToUse = fullText;
+    if (textToUse.isEmpty()) {
+        // 尝试从缓存获取
+        if (previousFileContents.contains(currentFileName)) {
+            textToUse = previousFileContents[currentFileName];
+        } else {
+            // 尝试从文件读取
+            QFile file(currentFileName);
+            if (file.open(QIODevice::ReadOnly | QFile::Text)) {
+                textToUse = file.readAll();
+                file.close();
+            }
+        }
+    }
+    
+    if (!textToUse.isEmpty()) {
+        QList<StructRange> structRanges = findStructRanges(textToUse);
+        QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+        QRegExp regExp(logicPattern);
+        int pos = 0;
+
+        while ((pos = regExp.indexIn(lineText, pos)) != -1) {
+            int absolutePos = lineStartPos + pos;
+            int logicNamePos = lineStartPos + regExp.pos(1);
+
+            if (!isMatchInComment(absolutePos, regExp.matchedLength())) {
+                // 检查logic是否在struct范围内
+                if (!isPositionInStructRange(logicNamePos, structRanges)) {
+                    SymbolInfo symbol;
+                    symbol.fileName = currentFileName;
+                    symbol.symbolName = regExp.cap(1);
+                    symbol.symbolType = sym_logic;
+                    symbol.startLine = lineNum;
+                    symbol.startColumn = regExp.pos(1);
+                    symbol.endLine = lineNum;
+                    symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
+                    symbol.position = absolutePos;
+                    symbol.length = regExp.matchedLength();
+
+                    symbol.moduleScope = getCurrentModuleScope(symbol.fileName, symbol.startLine);
+                    addSymbol(symbol);
+                }
+            }
+
+            pos += regExp.matchedLength();
+        }
+    } else {
+        // 如果无法获取完整文件内容，使用原来的方法（可能不够准确）
+        QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+        analyzeVariablePattern(lineText, lineStartPos, lineNum, logicPattern, sym_logic);
+    }
 }
 
 // 新增：获取指定位置的模块作用域
@@ -1300,22 +1359,29 @@ void sym_list::analyzeDataTypes(const QString &text)
     }
 
     // Unpacked struct: typedef struct { ... } structName;
-    QRegExp unpackedStructPattern("typedef\\s+struct\\s*\\{[^}]*\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
+    // 使用更完整的正则表达式，匹配多行struct定义
+    QRegExp unpackedStructPattern("\\btypedef\\s+struct\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> unpackedStructMatches = findMatchesOutsideComments(text, unpackedStructPattern);
 
     for (const RegexMatch &match : qAsConst(unpackedStructMatches)) {
         if (unpackedStructPattern.indexIn(text, match.position) != -1) {
+            QString structMembers = unpackedStructPattern.cap(1);
+            QString structName = unpackedStructPattern.cap(2);
+            
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = unpackedStructPattern.cap(1);
+            symbol.symbolName = structName;
             symbol.symbolType = sym_unpacked_struct;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, unpackedStructPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, unpackedStructPattern.pos(2), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
-            symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
+            symbol.endColumn = symbol.startColumn + structName.length();
             addSymbol(symbol);
             symbolsFound++;
+            
+            // 解析结构体成员
+            analyzeStructMembers(structMembers, structName, match.position, text);
         }
     }
 
@@ -1358,6 +1424,9 @@ void sym_list::analyzeDataTypes(const QString &text)
             symbolsFound++;
         }
     }
+    
+    // 分析结构体变量声明（需要在struct类型识别之后）
+    analyzeStructVariables(text);
 }
 
 // 🚀 预处理器指令分析
@@ -1799,6 +1868,9 @@ void sym_list::analyzeStructVariables(const QString &text)
         }
     }
 
+    // 用于去重：记录已经添加的struct变量（文件名+变量名+类型名）
+    QSet<QString> addedStructVars;
+    
     // 查找结构体变量声明
     for (const QString &structType : structTypes) {
         QString pattern = QString("\\b%1\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*[;,]").arg(structType);
@@ -1808,6 +1880,13 @@ void sym_list::analyzeStructVariables(const QString &text)
         for (const RegexMatch &match : qAsConst(structVarMatches)) {
             if (structVarPattern.indexIn(text, match.position) != -1) {
                 QString varName = structVarPattern.cap(1);
+                
+                // 检查是否已经添加过（去重）
+                QString uniqueKey = QString("%1:%2:%3").arg(currentFileName).arg(varName).arg(structType);
+                if (addedStructVars.contains(uniqueKey)) {
+                    continue; // 跳过重复的
+                }
+                addedStructVars.insert(uniqueKey);
 
                 SymbolInfo varSymbol;
                 varSymbol.fileName = currentFileName;
@@ -1831,4 +1910,121 @@ void sym_list::analyzeStructVariables(const QString &text)
             }
         }
     }
+}
+
+// 辅助函数：找到匹配的闭括号
+static int findMatchingBrace(const QString &text, int openBracePos)
+{
+    if (openBracePos < 0 || openBracePos >= text.length() || text[openBracePos] != '{') {
+        return -1;
+    }
+    
+    int depth = 1;
+    int pos = openBracePos + 1;
+    
+    while (pos < text.length() && depth > 0) {
+        QChar ch = text[pos];
+        if (ch == '{') {
+            depth++;
+        } else if (ch == '}') {
+            depth--;
+            if (depth == 0) {
+                return pos;
+            }
+        } else if (ch == '"') {
+            // 跳过字符串
+            pos++;
+            while (pos < text.length() && text[pos] != '"') {
+                if (text[pos] == '\\' && pos + 1 < text.length()) {
+                    pos += 2; // 跳过转义字符
+                } else {
+                    pos++;
+                }
+            }
+        } else if (ch == '/' && pos + 1 < text.length()) {
+            // 跳过注释
+            if (text[pos + 1] == '/') {
+                // 单行注释，跳到行尾
+                while (pos < text.length() && text[pos] != '\n') {
+                    pos++;
+                }
+            } else if (text[pos + 1] == '*') {
+                // 多行注释
+                pos += 2;
+                while (pos + 1 < text.length()) {
+                    if (text[pos] == '*' && text[pos + 1] == '/') {
+                        pos += 2;
+                        break;
+                    }
+                    pos++;
+                }
+            }
+        }
+        pos++;
+    }
+    
+    return -1; // 未找到匹配的闭括号
+}
+
+// 查找所有struct的范围（包括packed和unpacked）
+QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
+{
+    QList<StructRange> ranges;
+    
+    // 1. 查找packed struct: typedef struct packed { ... } structName;
+    QRegExp packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{");
+    int pos = 0;
+    while ((pos = packedStructPattern.indexIn(text, pos)) != -1) {
+        // 检查是否在注释中
+        if (!isMatchInComment(pos, packedStructPattern.matchedLength())) {
+            // 找到'{'的位置
+            int braceStart = text.indexOf('{', pos + packedStructPattern.matchedLength() - 1);
+            if (braceStart != -1) {
+                // 找到匹配的'}'
+                int braceEnd = findMatchingBrace(text, braceStart);
+                if (braceEnd != -1) {
+                    StructRange range;
+                    range.startPos = braceStart;
+                    range.endPos = braceEnd;
+                    ranges.append(range);
+                }
+            }
+        }
+        pos += packedStructPattern.matchedLength();
+    }
+    
+    // 2. 查找unpacked struct: typedef struct { ... } structName;
+    QRegExp unpackedStructPattern("\\btypedef\\s+struct\\s*\\{");
+    pos = 0;
+    while ((pos = unpackedStructPattern.indexIn(text, pos)) != -1) {
+        // 检查是否在注释中
+        if (!isMatchInComment(pos, unpackedStructPattern.matchedLength())) {
+            // 找到'{'的位置
+            int braceStart = text.indexOf('{', pos + unpackedStructPattern.matchedLength() - 1);
+            if (braceStart != -1) {
+                // 找到匹配的'}'
+                int braceEnd = findMatchingBrace(text, braceStart);
+                if (braceEnd != -1) {
+                    StructRange range;
+                    range.startPos = braceStart;
+                    range.endPos = braceEnd;
+                    ranges.append(range);
+                }
+            }
+        }
+        pos += unpackedStructPattern.matchedLength();
+    }
+    
+    return ranges;
+}
+
+// 检查位置是否在struct范围内
+bool sym_list::isPositionInStructRange(int position, const QList<StructRange> &structRanges)
+{
+    for (const StructRange &range : structRanges) {
+        if (position >= range.startPos && position <= range.endPos) {
+            return true;
+        }
+    }
+    return false;
 }

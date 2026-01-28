@@ -315,6 +315,22 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         defaultValue = "function";
         typeDescription = "functions";
         break;
+    case sym_list::sym_packed_struct_var:
+        defaultValue = "struct";
+        typeDescription = "packed struct variables";
+        break;
+    case sym_list::sym_unpacked_struct_var:
+        defaultValue = "struct";
+        typeDescription = "unpacked struct variables";
+        break;
+    case sym_list::sym_packed_struct:
+        defaultValue = "struct";
+        typeDescription = "packed struct types";
+        break;
+    case sym_list::sym_unpacked_struct:
+        defaultValue = "struct";
+        typeDescription = "unpacked struct types";
+        break;
     default:
         defaultValue = "symbol";
         typeDescription = "symbols";
@@ -364,18 +380,61 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         matchCount++;
     }
 */
+    // 用于去重：记录已经添加的completion项（对于struct变量，使用变量名+类型名作为key）
+    QSet<QString> addedItems;
+    
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (symbol.symbolName == defaultValue) {
             continue;
         }
 
         CompletionItem item;
-        item.text = symbol.symbolName;
         item.type = SymbolCompletion;
         item.symbolType = symbolType;
         item.description = typeDescription.split(' ')[0];
-        item.defaultValue = symbol.symbolName;
-        // 为传入的符号计算匹配分数
+        
+        // 根据符号类型格式化显示文本
+        if (symbolType == sym_list::sym_packed_struct_var || 
+            symbolType == sym_list::sym_unpacked_struct_var) {
+            // struct变量：显示为 "xx(xx_struct)" 格式
+            QString structTypeName = symbol.moduleScope; // moduleScope存储了struct类型名
+            if (!structTypeName.isEmpty()) {
+                item.text = QString("%1(%2)").arg(symbol.symbolName).arg(structTypeName);
+            } else {
+                item.text = symbol.symbolName;
+            }
+            item.defaultValue = symbol.symbolName; // 默认值仍然是变量名
+            
+            // 去重：使用变量名+类型名作为唯一标识
+            QString uniqueKey = QString("%1:%2").arg(symbol.symbolName).arg(structTypeName);
+            if (addedItems.contains(uniqueKey)) {
+                continue; // 跳过重复的
+            }
+            addedItems.insert(uniqueKey);
+        } else if (symbolType == sym_list::sym_packed_struct || 
+                   symbolType == sym_list::sym_unpacked_struct) {
+            // struct类型：直接显示类型名
+            item.text = symbol.symbolName;
+            item.defaultValue = symbol.symbolName;
+            
+            // 去重：使用类型名作为唯一标识
+            if (addedItems.contains(symbol.symbolName)) {
+                continue;
+            }
+            addedItems.insert(symbol.symbolName);
+        } else {
+            // 其他类型：正常显示
+            item.text = symbol.symbolName;
+            item.defaultValue = symbol.symbolName;
+            
+            // 去重：使用符号名作为唯一标识
+            if (addedItems.contains(symbol.symbolName)) {
+                continue;
+            }
+            addedItems.insert(symbol.symbolName);
+        }
+        
+        // 为传入的符号计算匹配分数（使用原始符号名进行匹配）
         item.score = manager->calculateMatchScore(symbol.symbolName, prefix);
 
         completions.append(item);

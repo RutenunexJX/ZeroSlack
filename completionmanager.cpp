@@ -1935,11 +1935,15 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
         sym_list::sym_interface,
         sym_list::sym_package,
         sym_list::sym_typedef,
-        sym_list::sym_def_define
+        sym_list::sym_def_define,
+        sym_list::sym_packed_struct,
+        sym_list::sym_unpacked_struct
     };
 
-    // 🔧 FIX: 检查是否为全局符号类型
-    if (!globalSymbolTypes.contains(symbolType)) {
+    // 🔧 FIX: 检查是否为全局符号类型（struct类型也是全局的）
+    if (!globalSymbolTypes.contains(symbolType) && 
+        symbolType != sym_list::sym_packed_struct && 
+        symbolType != sym_list::sym_unpacked_struct) {
         return results;
     }
 
@@ -2062,13 +2066,47 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     // 🚀 直接搜索并返回 SymbolInfo，避免字符串转换
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
+    // 找到模块符号以获取模块的行范围（用于struct变量的判断）
+    sym_list::SymbolInfo moduleSymbol;
+    bool foundModule = false;
+    for (const sym_list::SymbolInfo& sym : allSymbols) {
+        if (sym.symbolType == sym_list::sym_module && sym.symbolName == moduleName) {
+            moduleSymbol = sym;
+            foundModule = true;
+            break;
+        }
+    }
+
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         // 过滤条件
-        if (symbol.moduleScope == moduleName &&
-            isSymbolTypeMatchCommand(symbol.symbolType, symbolType)) {
+        bool isCorrectType = isSymbolTypeMatchCommand(symbol.symbolType, symbolType);
+        bool isCorrectModule = false;
+        
+        // 对于struct类型，它们是全局的，在模块内查询时应该返回空
+        if (symbolType == sym_list::sym_packed_struct || 
+            symbolType == sym_list::sym_unpacked_struct) {
+            continue; // struct类型应该在全局查询，不在模块内查询
+        }
+        // 对于struct变量，它们的moduleScope存储的是struct类型名，需要通过行号判断
+        else if (symbolType == sym_list::sym_packed_struct_var || 
+                 symbolType == sym_list::sym_unpacked_struct_var) {
+            if (foundModule && symbol.fileName == moduleSymbol.fileName) {
+                // 检查符号是否在模块的行范围内
+                int moduleEndLine = symbolList->findEndModuleLine(moduleSymbol.fileName, moduleSymbol);
+                if (moduleEndLine != -1 && 
+                    symbol.startLine > moduleSymbol.startLine && 
+                    symbol.startLine < moduleEndLine) {
+                    isCorrectModule = true;
+                }
+            }
+        } else {
+            // 对于其他类型，使用moduleScope判断
+            isCorrectModule = (symbol.moduleScope == moduleName);
+        }
 
-            if (prefix.isEmpty() ||
-                symbol.symbolName.startsWith(prefix, Qt::CaseInsensitive)) {
+        if (isCorrectModule && isCorrectType) {
+            // 使用模糊匹配功能（支持前缀匹配、包含匹配和缩写匹配）
+            if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
                 results.append(symbol);
             }
         }
@@ -2089,6 +2127,66 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
                         symbol.symbolName.startsWith(prefix, Qt::CaseInsensitive)) {
                         results.append(symbol);
                     }
+                }
+            }
+        }
+    }
+
+    return results;
+}
+
+QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_list::sym_type_e symbolType,
+                                                                           const QString& prefix)
+{
+    QList<sym_list::SymbolInfo> results;
+    sym_list* symbolList = sym_list::getInstance();
+    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+
+    // 支持struct类型和struct变量
+    QList<sym_list::sym_type_e> globalSymbolTypes = {
+        sym_list::sym_module,
+        sym_list::sym_task,
+        sym_list::sym_function,
+        sym_list::sym_interface,
+        sym_list::sym_package,
+        sym_list::sym_typedef,
+        sym_list::sym_def_define,
+        sym_list::sym_packed_struct,
+        sym_list::sym_unpacked_struct,
+        sym_list::sym_packed_struct_var,
+        sym_list::sym_unpacked_struct_var
+    };
+
+    // 检查是否为支持的符号类型
+    if (!globalSymbolTypes.contains(symbolType)) {
+        return results;
+    }
+
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        if (symbol.symbolType == symbolType) {
+            bool isGlobalSymbol = false;
+
+            if (symbolType == sym_list::sym_module ||
+                symbolType == sym_list::sym_interface ||
+                symbolType == sym_list::sym_package ||
+                symbolType == sym_list::sym_packed_struct ||
+                symbolType == sym_list::sym_unpacked_struct) {
+                // 这些类型本身就是全局的
+                isGlobalSymbol = true;
+            } else if (symbolType == sym_list::sym_packed_struct_var ||
+                       symbolType == sym_list::sym_unpacked_struct_var) {
+                // struct变量：返回所有struct变量（不管在哪个模块内）
+                // 因为用户在模块外输入时，应该能看到所有模块的struct变量
+                isGlobalSymbol = true;
+            } else {
+                // 其他类型需要检查是否在模块外部声明
+                isGlobalSymbol = symbol.moduleScope.isEmpty();
+            }
+
+            if (isGlobalSymbol) {
+                // 使用模糊匹配功能
+                if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
+                    results.append(symbol);
                 }
             }
         }
