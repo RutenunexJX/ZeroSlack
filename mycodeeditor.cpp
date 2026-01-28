@@ -696,24 +696,39 @@ void MyCodeEditor::onAutoCompleteTimer()
         QString fileName = getFileName();
         QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
 
-        QStringList symbolNames;
-        if (!currentModule.isEmpty()) {
-            symbolNames = manager->getModuleInternalVariablesByType(currentModule, currentCommandType, commandInput);
-        } else {
-            symbolNames = manager->getGlobalSymbolsByType(currentCommandType, commandInput);
-        }
-
-        // 转换为 SymbolInfo 列表
+        // 对于struct相关的命令，直接获取SymbolInfo列表以保留类型信息
         QList<sym_list::SymbolInfo> filteredSymbols;
-        sym_list* symbolList = sym_list::getInstance();
+        bool useSymbolInfoDirectly = (currentCommandType == sym_list::sym_packed_struct_var ||
+                                      currentCommandType == sym_list::sym_unpacked_struct_var ||
+                                      currentCommandType == sym_list::sym_packed_struct ||
+                                      currentCommandType == sym_list::sym_unpacked_struct);
+        
+        if (useSymbolInfoDirectly) {
+            if (!currentModule.isEmpty()) {
+                filteredSymbols = manager->getModuleInternalSymbolsByType(currentModule, currentCommandType, commandInput);
+            } else {
+                filteredSymbols = manager->getGlobalSymbolsByType_Info(currentCommandType, commandInput);
+            }
+        } else {
+            // 对于其他类型，使用原来的方法
+            QStringList symbolNames;
+            if (!currentModule.isEmpty()) {
+                symbolNames = manager->getModuleInternalVariablesByType(currentModule, currentCommandType, commandInput);
+            } else {
+                symbolNames = manager->getGlobalSymbolsByType(currentCommandType, commandInput);
+            }
 
-        for (const QString &symbolName : symbolNames) {
-            QList<sym_list::SymbolInfo> matchingSymbols = symbolList->findSymbolsByName(symbolName);
-            for (const sym_list::SymbolInfo &symbol : matchingSymbols) {
-                if (symbol.symbolType == currentCommandType &&
-                    (currentModule.isEmpty() || symbol.moduleScope == currentModule)) {
-                    filteredSymbols.append(symbol);
-                    break;
+            // 转换为 SymbolInfo 列表
+            sym_list* symbolList = sym_list::getInstance();
+
+            for (const QString &symbolName : symbolNames) {
+                QList<sym_list::SymbolInfo> matchingSymbols = symbolList->findSymbolsByName(symbolName);
+                for (const sym_list::SymbolInfo &symbol : matchingSymbols) {
+                    if (symbol.symbolType == currentCommandType &&
+                        (currentModule.isEmpty() || symbol.moduleScope == currentModule)) {
+                        filteredSymbols.append(symbol);
+                        break;
+                    }
                 }
             }
         }
@@ -939,7 +954,6 @@ void MyCodeEditor::initCustomCommands()
     customCommands.append(functionCommand);
 
     customCommands << CustomCommand{"i ", sym_list::sym_interface, "interfaces", "interface"};
-    customCommands << CustomCommand{"s ", sym_list::sym_packed_struct, "struct types", "struct"};
     customCommands << CustomCommand{"e ", sym_list::sym_enum, "enum types", "enum"};
     customCommands << CustomCommand{"d ", sym_list::sym_def_define, "define macros", "`define"};
     customCommands << CustomCommand{"p ", sym_list::sym_parameter, "parameters", "parameter"};
@@ -949,10 +963,13 @@ void MyCodeEditor::initCustomCommands()
 
     customCommands << CustomCommand{"ev ", sym_list::sym_enum_value, "enum values", "enum_value"};
     customCommands << CustomCommand{"en ", sym_list::sym_enum_var, "enum variables", "enum_var"};
-    customCommands << CustomCommand{"su ", sym_list::sym_unpacked_struct, "unpacked struct types", "struct"};
-    customCommands << CustomCommand{"sv ", sym_list::sym_packed_struct_var, "packed struct variables", "struct_var"};
-    customCommands << CustomCommand{"sw ", sym_list::sym_unpacked_struct_var, "unpacked struct variables", "struct_var"};
     customCommands << CustomCommand{"sm ", sym_list::sym_struct_member, "struct members", "member"};
+    
+    // 新增：结构体智能匹配命令
+    customCommands << CustomCommand{"s ", sym_list::sym_unpacked_struct_var, "unpacked struct variables", "struct"};
+    customCommands << CustomCommand{"sp ", sym_list::sym_packed_struct_var, "packed struct variables", "struct"};
+    customCommands << CustomCommand{"ns ", sym_list::sym_unpacked_struct, "unpacked struct types", "struct"};
+    customCommands << CustomCommand{"nsp ", sym_list::sym_packed_struct, "packed struct types", "struct"};
 
 }
 

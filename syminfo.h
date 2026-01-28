@@ -154,6 +154,9 @@ public:
 
     void setCodeEditorIncremental(MyCodeEditor* codeEditor);
     bool needsAnalysis(const QString& fileName, const QString& content);
+    
+    // 查找模块的结束行号
+    int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
 
 private:
     // Central symbol storage
@@ -209,7 +212,7 @@ private:
 
     // Line-level analysis helper methods
     void analyzeModulesInLine(const QString& lineText, int lineStartPos, int lineNum);
-    void analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum);
+    void analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum, const QString& fullText = QString());
     void analyzeTasksFunctionsInLine(const QString& lineText, int lineStartPos, int lineNum);
     void analyzeVariablePattern(const QString& lineText, int lineStartPos, int lineNum,
                                 const QRegExp& pattern, sym_type_e symbolType);
@@ -236,10 +239,21 @@ private:
     void analyzeConstraints(const QString &text);
     void getAdditionalSymbols(const QString &text);
     QString getCurrentModuleScope(const QString &fileName, int lineNumber);
-    int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
     void analyzeStructVariables(const QString &text);
     void analyzeStructMembers(const QString &membersText, const QString &structName, int basePosition, const QString &fullText);
     void analyzeEnumsAndStructs(const QString &text);
+    
+    // 辅助结构：存储struct的范围
+    struct StructRange {
+        int startPos;  // struct开始位置（'{'的位置）
+        int endPos;    // struct结束位置（'}'的位置）
+    };
+    
+    // 查找所有struct的范围（包括packed和unpacked）
+    QList<StructRange> findStructRanges(const QString &text);
+    
+    // 检查位置是否在struct范围内
+    bool isPositionInStructRange(int position, const QList<StructRange> &structRanges);
 };
 
 // 🚀 NEW: 符号关系工具函数
