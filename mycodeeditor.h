@@ -133,6 +133,11 @@ private:
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();
 
+    // include 跳转相关
+    bool getIncludeInfoAtPosition(const QPoint& position, int &startPos, int &endPos, QString &includePath);
+    bool tryJumpToIncludeAtPosition(const QPoint& position);
+    bool openIncludeFile(const QString& includePath);
+
     // 增强功能
     void showSymbolTooltip(const QString& symbolName, const QPoint& position);
     QString getSymbolTypeString(sym_list::sym_type_e symbolType);
