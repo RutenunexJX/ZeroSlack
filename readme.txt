@@ -203,31 +203,145 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 
 ==========================================================================
-未来计划 (Plan / TODO)
+性能优化方案 (Performance Optimization Plan)
 ==========================================================================
 
-（以下是对代码中现有 Plan 的整理与扩展）
+【合理性分析】
 
-已完成：
-1. 使用 `QCompleter + 自定义 QAbstractItemModel` 重写补全框架（`CompletionModel`）
-2. 使用智能指针管理 `MainWindow` 中的各类 Manager，减少手动 `delete`
-3. 引入增量符号分析，只重新分析有改动的文本片段/文件
-4. 分离职责：
-   - 输入/模式处理：`ModeManager`
-   - 文本编辑：`MyCodeEditor`
-   - 符号解析：`SymbolAnalyzer` + `sym_list`
-   - 补全逻辑：`CompletionManager`
-   - 导航：`NavigationManager` + `NavigationWidget`
-   - 关系分析：`SymbolRelationshipEngine` + `SmartRelationshipBuilder`
+本方案从异步与并发、扫描与数据流、索引与缓存、UI 与内存四个维度提出优化，
+与当前代码结构一一对应，具备可实施性：
 
-计划中 / 待完成：
-1. UI/交互层面进一步解耦 `QTabWidget`：
-   - 逐步向 `QTabBar + QStackedWidget` 结构迁移，提高灵活性
-2. 完善配置系统：
-   - 将命令前缀、快捷键和模式行为放入可编辑配置（文件或 UI）
-3. 补全文档与示例工程：
-   - 提供典型 SystemVerilog 工程样例，展示导航与关系分析效果
+1. 异步与并发
+   - 代码中 `SmartRelationshipBuilder::analyzeFile` 在 MainWindow 的文件变化/
+     工作区分析回调中同步调用，大文件或批量文件时易阻塞主线程。迁移至
+     QtConcurrent::run 或独立分析线程，并用 QFutureWatcher 回传结果，可显著
+     改善界面响应。
+   - `MyCodeEditor::onTextChanged` 已对接 SymbolAnalyzer 的 scheduleIncrementalAnalysis，
+     但未对关系分析做去抖或取消：连续输入时若触发关系分析，仍可能堆积任务。
+     在 onTextChanged 中增加对关系分析任务的延迟/取消逻辑是合理的。
 
+2. 扫描与数据流
+   - SymbolAnalyzer 与 sym_list 对同一文本存在多遍扫描（module/assign/变量/任务等），
+     且 sym_list 中大量使用 QRegExp。在一次遍历中合并符号提取与基础关系（如
+     CONTAINS）可减少重复匹配与内存访问。
+   - SmartRelationshipBuilder 与 syminfo 中广泛使用已弃用的 QRegExp；Qt5/6 推荐
+     QRegularExpression，其 JIT 与优化匹配对长文本更友好，迁移具有明确收益。
+   - WorkspaceManager::scanDirectory 使用 QDirIterator 逐文件收集路径，得到的是
+     QStringList，并非“一次性将数百个文件内容全部加载进内存”；若优化目标是大
+     目录下的“后续分析阶段”一次性加载过多文件内容，则应在 SymbolAnalyzer::
+     analyzeWorkspace 或调用方做流式/分批加载与解析，避免同时打开大量编辑器
+     或一次性读入全部文件内容。
+
+3. 索引与缓存
+   - sym_list 已维护 symbolNameIndex（QHash<QString, QList<int>>），findSymbolsByName
+     已是 O(1) 索引+小列表遍历。可进一步在 sym_list 中提供 findSymbolIdByName，
+     直接返回首个 symbolId，避免调用方（CompletionManager、SmartRelationshipBuilder）
+     反复构建 QList<SymbolInfo> 仅为了取 ID，降低分配与拷贝。
+   - SymbolRelationshipEngine 已有 queryCache（QHash）与 cacheValid；当前在每次
+     addRelationship/removeRelationship/removeAllRelationships 等写操作时调用
+     invalidateCache()，导致 queryCache.clear()。方案中“仅在文件真正保存
+     (fileSaved) 时失效相关缓存”需细化：若仍保持“任意关系变更即失效”，则
+     可改为按 (symbolId, file) 或按文件粒度失效，避免全局清空，减少重复计算。
+   - analyzeFileIncremental（SmartRelationshipBuilder）当前实现仍调用 analyzeFile
+     全量重算；SymbolAnalyzer/sym_list 侧已有按行增量（setCodeEditorIncremental、
+     detectChangedLines）。关系侧可改为仅对变更行或受影响模块做关系更新，而非
+     整文件 analyzeFile。
+
+4. UI 与内存
+   - CompletionModel 使用 QList<CompletionItem> 且无分页；候选过多时（如 >500）
+     会一次性填充模型并展示，易造成弹窗卡顿。对候选数量做上限或分页加载、
+     延迟渲染，可提升补全弹窗响应。
+   - NavigationWidget 通过 updateFileHierarchy/updateModuleHierarchy/updateSymbolHierarchy
+     全量刷新三棵树（populateFileTree/populateModuleTree/populateSymbolTree）。
+     仅当当前文件或当前符号相关数据变化时做局部更新（如只刷新当前文件节点、
+     或只更新受影响的模块/符号节点），可减少大工程下的 UI 卡顿。
+
+【详细实施方案】
+
+一、异步化与并发 (Concurrency)
+
+  [x] 迁移至后台线程分析（已实现）
+      - SmartRelationshipBuilder 新增 computeRelationships(fileName, content, fileSymbols)，
+        在后台线程中仅计算关系并返回 QVector<RelationshipToAdd>，不写引擎。
+      - MainWindow 使用 QtConcurrent::run + QFutureWatcher 提交单文件/批量关系分析任务，
+        在 finished() 中于主线程将结果写回 SymbolRelationshipEngine 并更新状态栏与进度对话框。
+      - 单文件（新标签、保存、fileChanged）与工作区批量分析均改为异步，支持取消未完成任务。
+      - sym_list 的 findSymbolsByName / findSymbolsByFileName / getSymbolById 已加读锁，供后台安全读取。
+
+  [ ] 任务去抖 (Debouncing)
+      - 在 MyCodeEditor::onTextChanged 中，除现有 SymbolAnalyzer 的
+        scheduleIncrementalAnalysis 定时器外，增加对“关系分析”的延迟触发
+        或取消逻辑。
+      - 若存在“单文件关系分析”的定时器，在连续输入时重置该定时器，并在
+        新分析启动时取消上一次未完成的关系分析任务（若有 QFuture 则
+        cancel/waitForFinished 或置取消标志）。
+
+二、扫描算法与数据流优化 (Efficiency)
+
+  [ ] 合并符号与关系扫描
+      - 修改 SymbolAnalyzer/sym_list 流程：在一次文本遍历中，当正则匹配到
+        module/endmodule 或 assign 等关键结构时，同步提取符号信息并建立
+        基础关系（如 CONTAINS），写入 SymbolRelationshipEngine，减少对同一
+        文本的多遍扫描与重复匹配。
+      - 需与现有 setCodeEditor/setCodeEditorIncremental 的增量逻辑协调，保证
+        行级/文件级增量更新仍正确。
+
+  [ ] 正则表达式预编译与迁移
+      - 在 SmartRelationshipBuilder 中，将 AnalysisPatterns 内的 QRegExp 全部
+        替换为 QRegularExpression，并保持编译期或类初始化时构造一次、重复使用。
+      - 在 sym_list、MyCodeEditor、CompletionManager、MyHighlighter 等仍使用
+        QRegExp 的解析/匹配路径上，逐步改为 QRegularExpression；注意
+        QRegularExpression 的捕获组索引与 API 与 QRegExp 略有差异，需逐处
+        验证行为。
+
+  [ ] 工作区与批量分析的流式/分批读取
+      - 在 WorkspaceManager 或调用方（如 SymbolAnalyzer::analyzeWorkspace）：
+        不对整个目录一次性“加载所有文件内容到内存”，改为按批次（如每批
+        50～100 个文件）读取并分析，分析完一批再处理下一批，或使用队列+
+        工作线程流式消费，以控制内存峰值与主线程占用。
+
+三、索引与缓存 (Indexing/Caching)
+
+  [ ] 符号 ID 快速查找
+      - sym_list 已具备 symbolNameIndex；在 sym_list 中新增 findSymbolIdByName(
+        const QString& symbolName)，利用 symbolNameIndex 直接返回首个匹配
+        的 symbolId（若存在），否则返回 -1。
+      - CompletionManager::findSymbolIdByName 与 SmartRelationshipBuilder::
+        findSymbolIdByName 改为在内部调用 sym_list::findSymbolIdByName（或
+        等价地使用 sym_list 的索引），避免先取 QList<SymbolInfo> 再取
+        first().symbolId，减少临时列表分配。
+
+  [ ] 关系引擎查询缓存策略
+      - 当前 SymbolRelationshipEngine 在每次 add/removeRelationship 等写操作
+        时调用 invalidateCache() 并 queryCache.clear()。
+      - 改为按“影响范围”失效：例如仅当某 symbolId 或某文件对应的关系被
+        修改时，清除与该 symbolId（或该文件相关 symbolId）相关的
+        queryCache 条目，而不是全局 clear；或在明确“文件保存”时再失效
+        与该文件相关的缓存条目，具体策略可与 fileSaved 事件绑定。
+
+  [ ] 增量分析优化
+      - SmartRelationshipBuilder::analyzeFileIncremental 当前委托给 analyzeFile，
+        未真正按变更行增量。改进为：根据 changedLines 或 SymbolAnalyzer/sym_list
+        提供的变更信息，只对受影响模块/块重新执行关系提取与更新，并调用
+        SymbolRelationshipEngine 的增量更新接口（若有）或先移除该文件旧关系
+        再仅写入受影响部分，避免全文件重扫。
+
+四、UI 渲染与内存 (UI/UX Performance)
+
+  [ ] 补全列表延迟渲染与数量限制
+      - 在 CompletionModel 或填充补全列表的上层逻辑中：当候选数量超过阈值
+        （如 500）时，采用分页加载或只取前 N 条用于显示，并可选地提供
+        “显示更多”或滚动加载；或限制单次展示的最大条数，其余仅按需加载。
+      - 避免单次 setCompletions(…) 传入过大的 QList，防止补全弹窗首次打开
+        时卡顿。
+
+  [ ] 导航树局部更新
+      - 在 NavigationManager/NavigationWidget 中，区分“当前活跃文件/当前
+        符号”与“全局树数据”。仅当当前文件或与当前符号相关的节点发生
+        变化时，刷新对应子树（如只调用 populateModuleTree 中与当前文件相关
+        的部分，或只更新 symbolTree 中受影响的类型/节点），而不是每次
+        数据变更都全量调用 updateFileHierarchy/updateModuleHierarchy/
+        updateSymbolHierarchy 并重绘整棵树。
 
 ==========================================================================
 备注 (Notes)

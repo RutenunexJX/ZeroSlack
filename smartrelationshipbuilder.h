@@ -9,6 +9,16 @@
 #include <QList>
 #include "symbolrelationshipengine.h"
 #include "syminfo.h"
+#include <QVector>
+
+// 用于异步分析：在后台计算关系，在主线程应用
+struct RelationshipToAdd {
+    int fromId;
+    int toId;
+    SymbolRelationshipEngine::RelationType type;
+    QString context;
+    int confidence;
+};
 
 class SmartRelationshipBuilder : public QObject
 {
@@ -20,8 +30,12 @@ public:
                                     QObject *parent = nullptr);
     ~SmartRelationshipBuilder();
 
-    // 🚀 主要分析接口
+    // 🚀 主要分析接口（主线程同步，可能阻塞）
     void analyzeFile(const QString& fileName, const QString& content);
+
+    // 🚀 异步友好：在后台线程中调用，仅计算不写引擎；主线程用 applyRelationshipResults 写回
+    QVector<RelationshipToAdd> computeRelationships(const QString& fileName, const QString& content,
+                                                    const QList<sym_list::SymbolInfo>& fileSymbols);
     void analyzeFileIncremental(const QString& fileName, const QString& content,
                                const QList<int>& changedLines);
 
@@ -81,11 +95,15 @@ private:
         int currentModuleId = -1;
         QHash<QString, int> localSymbolIds;  // 当前文件的符号名到ID映射
         QList<sym_list::SymbolInfo> fileSymbols;
+        QHash<int, sym_list::sym_type_e> symbolIdToType;  // 用于 computeRelationships 中不访问 DB
     };
 
     // 🚀 初始化方法
     void initializePatterns();
     void setupAnalysisContext(const QString& fileName, AnalysisContext& context);
+    void setupAnalysisContextFromSymbols(const QString& fileName,
+                                         const QList<sym_list::SymbolInfo>& fileSymbols,
+                                         AnalysisContext& context);
 
     // 🚀 核心分析方法
     void analyzeModuleInstantiations(const QString& content, AnalysisContext& context);
@@ -102,7 +120,8 @@ private:
     bool isInCommentOrString(int position, const QString& content);
     int calculateConfidence(const QString& pattern, const QString& match);
 
-    // 🚀 关系建立方法
+    // 🚀 关系建立方法（当 collectResults 非空时只收集不写引擎）
+    QVector<RelationshipToAdd>* collectResults = nullptr;
     void addRelationshipWithContext(int fromId, int toId,
                                   SymbolRelationshipEngine::RelationType type,
                                   const QString& context, int confidence = 100);

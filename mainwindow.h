@@ -15,9 +15,10 @@ class SymbolAnalyzer;
 class NavigationManager;
 class NavigationWidget;
 
-// 🚀 NEW: Forward declarations for relationship system
+// 🚀 NEW: Relationship system (needed for RelationshipToAdd and SmartRelationshipBuilder)
 class SymbolRelationshipEngine;
-class SmartRelationshipBuilder;
+#include "smartrelationshipbuilder.h"
+#include <QFutureWatcher>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -88,6 +89,13 @@ private:
         bool isActive = false;
     } relationshipAnalysisTracker;
 
+    // 🚀 异步关系分析：单文件与批量
+    QFutureWatcher<QVector<RelationshipToAdd>>* relationshipSingleFileWatcher = nullptr;
+    QString pendingRelationshipFileName;
+    void onSingleFileRelationshipFinished();
+
+    QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>* relationshipBatchWatcher = nullptr;
+    void onBatchRelationshipFinished();
 
     RelationshipProgressDialog* progressDialog = nullptr;
     void setupProgressDialog();

@@ -2,7 +2,6 @@
 #include <QHeaderView>
 #include <QFileInfo>
 #include <QDir>
-//#include <QDebug>
 
 NavigationWidget::NavigationWidget(QWidget *parent)
     : QWidget(parent)

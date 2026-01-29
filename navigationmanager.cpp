@@ -4,7 +4,6 @@
 #include "workspacemanager.h"
 #include "symbolanalyzer.h"
 #include "completionmanager.h"
-//#include <QDebug>
 
 NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)

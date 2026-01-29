@@ -2,7 +2,6 @@
 #include <QTabWidget>
 #include <QTabBar>
 #include <QKeyEvent>
-//#include <QDebug>
 #include <QFont>
 #include "mycodeeditor.h"
 #include "mainwindow.h"

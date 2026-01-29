@@ -4,7 +4,6 @@
 
 #include <QDateTime>
 #include <algorithm>
-//#include <QDebug>
 
 // 单例实例
 std::unique_ptr<CompletionManager> CompletionManager::instance = nullptr;

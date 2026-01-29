@@ -7,6 +7,7 @@
 #include <QSet>
 #include <memory>
 #include <QDateTime>
+#include <QReadWriteLock>
 
 class MainWindow;
 class MyCodeEditor;
@@ -160,6 +161,7 @@ public:
     void refreshStructTypedefEnumForFile(const QString &fileName, const QString &content);
 
 private:
+    mutable QReadWriteLock symbolDbLock;  // 供后台线程只读访问 findSymbolsByName/getSymbolById 等
     // Central symbol storage
     QList<SymbolInfo> symbolDatabase;
 

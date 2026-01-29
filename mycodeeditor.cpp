@@ -11,7 +11,6 @@
 #include "navigationmanager.h"
 
 #include <QPainter>
-//#include <QDebug>
 #include <QScrollBar>
 #include <QFileDialog>
 #include <QMessageBox>

@@ -1,5 +1,4 @@
 #include "smartrelationshipbuilder.h"
-//#include <QDebug>
 #include <QRegExp>
 #include <QApplication>
 
@@ -92,18 +91,87 @@ void SmartRelationshipBuilder::analyzeFile(const QString& fileName, const QStrin
     }
 }
 
+// 🚀 仅计算关系并返回，不写引擎（供后台线程调用；主线程用结果调用 engine->addRelationship）
+QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(const QString& fileName, const QString& content,
+                                                                          const QList<sym_list::SymbolInfo>& fileSymbols)
+{
+    QVector<RelationshipToAdd> result;
+    if (checkCancellation(fileName))
+        return result;
+    if (!symbolDatabase)
+        return result;
+
+    try {
+        AnalysisContext context;
+        setupAnalysisContextFromSymbols(fileName, fileSymbols, context);
+
+        collectResults = &result;
+
+        analyzeModuleInstantiations(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        analyzeVariableAssignments(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        analyzeVariableReferences(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        analyzeTaskFunctionCalls(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        if (enableAdvancedAnalysis) {
+            analyzeAlwaysBlocks(content, context);
+            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+            analyzeInterfaceRelationships(content, context);
+            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+            analyzeClockResetRelationships(content, context);
+            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+        }
+
+        collectResults = nullptr;
+    } catch (...) {
+        collectResults = nullptr;
+    }
+    return result;
+}
+
 // 🚀 设置分析上下文
 void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName, AnalysisContext& context)
 {
     context.currentFileName = fileName;
     context.fileSymbols = symbolDatabase->findSymbolsByFileName(fileName);
     context.localSymbolIds.clear();
+    context.symbolIdToType.clear();
 
     // 🚀 构建本地符号映射
     for (const sym_list::SymbolInfo& symbol : qAsConst(context.fileSymbols)) {
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
+        context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
 
         // 🚀 找到当前文件的主模块
+        if (symbol.symbolType == sym_list::sym_module && context.currentModuleId == -1) {
+            context.currentModuleName = symbol.symbolName;
+            context.currentModuleId = symbol.symbolId;
+        }
+    }
+}
+
+// 🚀 从已有符号列表设置上下文（用于后台线程 computeRelationships，不访问 DB）
+void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(const QString& fileName,
+                                                              const QList<sym_list::SymbolInfo>& fileSymbols,
+                                                              AnalysisContext& context)
+{
+    context.currentFileName = fileName;
+    context.fileSymbols = fileSymbols;
+    context.localSymbolIds.clear();
+    context.symbolIdToType.clear();
+
+    for (const sym_list::SymbolInfo& symbol : qAsConst(fileSymbols)) {
+        context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
+        context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
+
         if (symbol.symbolType == sym_list::sym_module && context.currentModuleId == -1) {
             context.currentModuleName = symbol.symbolName;
             context.currentModuleId = symbol.symbolId;
@@ -256,9 +324,12 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
             // 🚀 验证这确实是一个task或function
             int taskId = findSymbolIdByName(taskName, context);
             if (taskId != -1) {
-                sym_list::SymbolInfo taskSymbol = symbolDatabase->getSymbolById(taskId);
-                if (taskSymbol.symbolType == sym_list::sym_task ||
-                    taskSymbol.symbolType == sym_list::sym_function) {
+                sym_list::sym_type_e taskType = sym_list::sym_user;
+                if (context.symbolIdToType.contains(taskId))
+                    taskType = context.symbolIdToType[taskId];
+                else
+                    taskType = symbolDatabase->getSymbolById(taskId).symbolType;
+                if (taskType == sym_list::sym_task || taskType == sym_list::sym_function) {
 
                     if (context.currentModuleId != -1) {
                         addRelationshipWithContext(
@@ -414,9 +485,14 @@ void SmartRelationshipBuilder::addRelationshipWithContext(int fromId, int toId,
                                                         SymbolRelationshipEngine::RelationType type,
                                                         const QString& context, int confidence)
 {
-    if (confidence >= confidenceThreshold && relationshipEngine) {
-        relationshipEngine->addRelationship(fromId, toId, type, context, confidence);
+    if (confidence < confidenceThreshold)
+        return;
+    if (collectResults) {
+        collectResults->append({fromId, toId, type, context, confidence});
+        return;
     }
+    if (relationshipEngine)
+        relationshipEngine->addRelationship(fromId, toId, type, context, confidence);
 }
 
 // 🚀 高级分析方法的基础实现

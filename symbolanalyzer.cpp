@@ -3,7 +3,6 @@
 #include "workspacemanager.h"
 #include "mycodeeditor.h"
 #include "completionmanager.h"
-//#include <QDebug>
 #include <QFile>
 #include <QTextStream>
 #include <QFileInfo>

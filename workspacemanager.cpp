@@ -3,7 +3,6 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
-//#include <QDebug>
 
 WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
