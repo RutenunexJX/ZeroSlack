@@ -1413,52 +1413,53 @@ void sym_list::analyzeDataTypes(const QString &text)
     int symbolsFound = 0;
 
     // Packed struct: typedef struct packed { ... } structName;
+    // 只根据“类型名”位置判断是否在注释内，避免花括号内 // 或 /* */ 导致整段被过滤
     QRegExp packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
-    QList<RegexMatch> packedStructMatches = findMatchesOutsideComments(text, packedStructPattern);
-
-    for (const RegexMatch &match : qAsConst(packedStructMatches)) {
-        if (packedStructPattern.indexIn(text, match.position) != -1) {
-            // cap(1)=花括号内成员内容, cap(2)=结构体类型名(如 rst_s)
+    int packedPos = 0;
+    while ((packedPos = packedStructPattern.indexIn(text, packedPos)) != -1) {
+        int typeNamePos = packedStructPattern.pos(2);
+        int typeNameLen = packedStructPattern.cap(2).length();
+        if (!isMatchInComment(typeNamePos, typeNameLen)) {
             QString structTypeName = packedStructPattern.cap(2);
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
             symbol.symbolName = structTypeName;
             symbol.symbolType = sym_packed_struct;
-            symbol.position = match.position;
-            symbol.length = match.length;
-            calculateLineColumn(text, packedStructPattern.pos(2), symbol.startLine, symbol.startColumn);
+            symbol.position = packedPos;
+            symbol.length = packedStructPattern.matchedLength();
+            calculateLineColumn(text, typeNamePos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + structTypeName.length();
             addSymbol(symbol);
             symbolsFound++;
         }
+        packedPos += packedStructPattern.matchedLength();
     }
 
     // Unpacked struct: typedef struct { ... } structName;
-    // 使用更完整的正则表达式，匹配多行struct定义
+    // 只根据“类型名”位置判断是否在注释内，避免成员后 // 或 /* */ 导致识别不到
     QRegExp unpackedStructPattern("\\btypedef\\s+struct\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
-    QList<RegexMatch> unpackedStructMatches = findMatchesOutsideComments(text, unpackedStructPattern);
-
-    for (const RegexMatch &match : qAsConst(unpackedStructMatches)) {
-        if (unpackedStructPattern.indexIn(text, match.position) != -1) {
+    int unpackedPos = 0;
+    while ((unpackedPos = unpackedStructPattern.indexIn(text, unpackedPos)) != -1) {
+        int typeNamePos = unpackedStructPattern.pos(2);
+        int typeNameLen = unpackedStructPattern.cap(2).length();
+        if (!isMatchInComment(typeNamePos, typeNameLen)) {
             QString structMembers = unpackedStructPattern.cap(1);
             QString structName = unpackedStructPattern.cap(2);
-            
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
             symbol.symbolName = structName;
             symbol.symbolType = sym_unpacked_struct;
-            symbol.position = match.position;
-            symbol.length = match.length;
-            calculateLineColumn(text, unpackedStructPattern.pos(2), symbol.startLine, symbol.startColumn);
+            symbol.position = unpackedPos;
+            symbol.length = unpackedStructPattern.matchedLength();
+            calculateLineColumn(text, typeNamePos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + structName.length();
             addSymbol(symbol);
             symbolsFound++;
-            
-            // 解析结构体成员
-            analyzeStructMembers(structMembers, structName, match.position, text);
+            analyzeStructMembers(structMembers, structName, unpackedPos, text);
         }
+        unpackedPos += unpackedStructPattern.matchedLength();
     }
 
     // Enum: typedef enum { ... } enumName;
