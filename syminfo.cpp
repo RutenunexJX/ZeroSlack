@@ -6,6 +6,8 @@
 #include <QRegExp>
 #include <QFile>
 #include <QReadLocker>
+#include <QElapsedTimer>
+#include <QDebug>
 #include <algorithm>
 #include <memory>
 
@@ -150,6 +152,111 @@ void sym_list::buildSymbolRelationships(const QString& fileName)
 
     // 🚀 3. 通知关系引擎重建该文件的关系
     relationshipEngine->buildFileRelationships(fileName);
+}
+
+// 单遍合并：从 startPos 起找下一个结构匹配（不在注释内），返回最早的一个
+sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString& text, int startPos,
+                                                                  const QList<StructRange>& structRanges)
+{
+    StructuralMatchResult best;
+    best.position = -1;
+
+    static const QRegExp modulePattern("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegExp endmodulePattern("\\bendmodule\\b");
+    static const QRegExp regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegExp wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegExp taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegExp functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
+
+    auto tryPattern = [&](const QRegExp& pattern, int type, int capGroup) -> void {
+        int pos = pattern.indexIn(text, startPos);
+        if (pos < 0) return;
+        if (best.position >= 0 && pos > best.position) return;
+        if (isMatchInComment(pos, pattern.matchedLength())) return;
+        if (type == 4) {  // logic：排除 struct 内部
+            int capPos = (capGroup > 0 && pattern.captureCount() >= capGroup) ? pattern.pos(capGroup) : pos;
+            if (capPos >= 0 && isPositionInStructRange(capPos, structRanges)) return;
+        }
+        best.position = pos;
+        best.length = pattern.matchedLength();
+        best.matchType = type;
+        best.capturedName = (pattern.captureCount() >= capGroup && capGroup > 0) ? pattern.cap(capGroup) : QString();
+        best.capturePos = (capGroup > 0 && pattern.captureCount() >= capGroup) ? pattern.pos(capGroup) : pos;
+    };
+
+    tryPattern(modulePattern, 0, 1);
+    tryPattern(endmodulePattern, 1, 0);
+    tryPattern(regPattern, 2, 1);
+    tryPattern(wirePattern, 3, 1);
+    tryPattern(logicPattern, 4, 1);
+    tryPattern(taskPattern, 5, 1);
+    tryPattern(functionPattern, 6, 1);
+
+    return best;
+}
+
+void sym_list::extractSymbolsAndContainsOnePass(const QString& text)
+{
+    QList<StructRange> structRanges = findStructRanges(text);
+    QList<int> moduleStack;  // 当前模块栈（symbolId）
+
+    int pos = 0;
+    while (pos < text.length()) {
+        StructuralMatchResult m = findNextStructuralMatch(text, pos, structRanges);
+        if (m.position < 0) break;
+
+        pos = m.position + m.length;
+
+        if (m.matchType == 0) {
+            // module
+            SymbolInfo moduleSymbol;
+            moduleSymbol.fileName = currentFileName;
+            moduleSymbol.symbolName = m.capturedName;
+            moduleSymbol.symbolType = sym_module;
+            moduleSymbol.position = m.position;
+            moduleSymbol.length = m.length;
+            calculateLineColumn(text, m.capturePos >= 0 ? m.capturePos : m.position,
+                               moduleSymbol.startLine, moduleSymbol.startColumn);
+            moduleSymbol.endLine = moduleSymbol.startLine;
+            moduleSymbol.endColumn = moduleSymbol.startColumn + moduleSymbol.symbolName.length();
+            addSymbol(moduleSymbol);
+            int moduleId = symbolDatabase.last().symbolId;
+            moduleStack.append(moduleId);
+        } else if (m.matchType == 1) {
+            // endmodule
+            if (!moduleStack.isEmpty())
+                moduleStack.removeLast();
+        } else if (m.matchType >= 2 && m.matchType <= 6) {
+            // reg / wire / logic / task / function
+            sym_type_e symType = sym_reg;
+            if (m.matchType == 3) symType = sym_wire;
+            else if (m.matchType == 4) symType = sym_logic;
+            else if (m.matchType == 5) symType = sym_task;
+            else if (m.matchType == 6) symType = sym_function;
+
+            SymbolInfo symbol;
+            symbol.fileName = currentFileName;
+            symbol.symbolName = m.capturedName;
+            symbol.symbolType = symType;
+            symbol.position = m.position;
+            symbol.length = m.length;
+            calculateLineColumn(text, m.capturePos >= 0 ? m.capturePos : m.position,
+                                symbol.startLine, symbol.startColumn);
+            symbol.endLine = symbol.startLine;
+            symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
+            if (!moduleStack.isEmpty() && relationshipEngine) {
+                symbol.moduleScope = getSymbolById(moduleStack.last()).symbolName;
+                symbol.scopeLevel = 1;
+            }
+            addSymbol(symbol);
+            if (relationshipEngine && !moduleStack.isEmpty()) {
+                int newId = symbolDatabase.last().symbolId;
+                relationshipEngine->addRelationship(moduleStack.last(), newId,
+                                                    SymbolRelationshipEngine::CONTAINS);
+            }
+        }
+    }
 }
 
 QList<sym_list::SymbolInfo> sym_list::findSymbolsByType(sym_type_e symbolType)
@@ -636,22 +743,78 @@ void sym_list::setCodeEditor(MyCodeEditor* codeEditor)
     }
 
     currentFileName = codeEditor->getFileName();
+    const QString text = codeEditor->document()->toPlainText();
+
+    // 仅当“符号相关”内容变化时才分析；仅改注释/空格/空行不触发
+    if (fileStates.contains(currentFileName)) {
+        QString newSymbolHash = calculateSymbolRelevantHash(text);
+        if (!fileStates[currentFileName].symbolRelevantHash.isEmpty()
+            && newSymbolHash == fileStates[currentFileName].symbolRelevantHash) {
+            return;
+        }
+    }
 
     // Clear existing symbols for this file before analysis
     clearSymbolsForFile(currentFileName);
+    const int textChars = text.length();
+    const int textLines = text.count('\n') + (text.isEmpty() ? 0 : 1);
 
-    const QString text = codeEditor->document()->toPlainText();
+    QElapsedTimer totalTimer;
+    totalTimer.start();
+
+    qint64 tComment = 0, tOnePass = 0, tAdditional = 0, tBuildRels = 0;
 
     // Build comment regions first
-    buildCommentRegions(text);
+    {
+        QElapsedTimer t;
+        t.start();
+        buildCommentRegions(text);
+        tComment = t.nsecsElapsed();
+    }
 
-    // Extract all symbol types
-    getModuleName(text);
-    getVariableDeclarations(text);
-    getTasksAndFunctions(text);
+    // 单遍合并：提取 module/reg/wire/logic/task/function 并同步建立 CONTAINS
+    {
+        QElapsedTimer t;
+        t.start();
+        extractSymbolsAndContainsOnePass(text);
+        tOnePass = t.nsecsElapsed();
+    }
 
-    // 🚀 NEW: 构建符号关系
-    buildSymbolRelationships(currentFileName);
+    // 其余符号类型（interface、package、struct/enum/typedef、parameter 等）
+    {
+        QElapsedTimer t;
+        t.start();
+        getAdditionalSymbols(text);
+        tAdditional = t.nsecsElapsed();
+    }
+
+    // 构建符号关系（CONTAINS 已部分建立；此处补充 getAdditionalSymbols 的 CONTAINS 及 moduleScope）
+    {
+        QElapsedTimer t;
+        t.start();
+        buildSymbolRelationships(currentFileName);
+        tBuildRels = t.nsecsElapsed();
+    }
+
+    qint64 totalNs = totalTimer.nsecsElapsed();
+    int symbolsInFile = findSymbolsByFileName(currentFileName).size();
+
+    qDebug().noquote() << "[Perf] setCodeEditor"
+        << "file=" << currentFileName
+        << "chars=" << textChars << "lines=" << textLines
+        << "| commentRegions=" << (tComment / 1000) << "us"
+        << "onePass=" << (tOnePass / 1000) << "us"
+        << "additional=" << (tAdditional / 1000) << "us"
+        << "buildRels=" << (tBuildRels / 1000) << "us"
+        << "| total=" << (totalNs / 1000) << "us"
+        << "symbols=" << symbolsInFile;
+
+    FileState& stateAfter = fileStates[currentFileName];
+    stateAfter.symbolRelevantHash = calculateSymbolRelevantHash(text);
+    stateAfter.contentHash = calculateContentHash(text);
+    stateAfter.needsFullAnalysis = false;
+    stateAfter.lastModified = QDateTime::currentDateTime();
+    previousFileContents[currentFileName] = text;
 
     // UPDATED: Force refresh all caches to ensure normal mode completion works
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
@@ -857,29 +1020,64 @@ void sym_list::setCodeEditorIncremental(MyCodeEditor* codeEditor)
 
     if (isFirstTime) {
         clearSymbolsForFile(currentFileName);
-        buildCommentRegions(content);
-        getModuleName(content);
-        getVariableDeclarations(content);
-        getTasksAndFunctions(content);
-
-        // 🚀 NEW: 构建符号关系
-        buildSymbolRelationships(currentFileName);
-
+        QElapsedTimer totalTimer;
+        totalTimer.start();
+        qint64 tComment = 0, tOnePass = 0, tAdditional = 0, tBuildRels = 0;
+        {
+            QElapsedTimer t; t.start();
+            buildCommentRegions(content);
+            tComment = t.nsecsElapsed();
+        }
+        {
+            QElapsedTimer t; t.start();
+            extractSymbolsAndContainsOnePass(content);
+            tOnePass = t.nsecsElapsed();
+        }
+        {
+            QElapsedTimer t; t.start();
+            getAdditionalSymbols(content);
+            tAdditional = t.nsecsElapsed();
+        }
+        {
+            QElapsedTimer t; t.start();
+            buildSymbolRelationships(currentFileName);
+            tBuildRels = t.nsecsElapsed();
+        }
+        qint64 totalNs = totalTimer.nsecsElapsed();
+        int symbolsInFile = findSymbolsByFileName(currentFileName).size();
+        qDebug().noquote() << "[Perf] setCodeEditorIncremental(first)"
+            << "file=" << currentFileName
+            << "chars=" << content.length() << "lines=" << (content.count('\n') + (content.isEmpty() ? 0 : 1))
+            << "| commentRegions=" << (tComment / 1000) << "us"
+            << "onePass=" << (tOnePass / 1000) << "us"
+            << "additional=" << (tAdditional / 1000) << "us"
+            << "buildRels=" << (tBuildRels / 1000) << "us"
+            << "| total=" << (totalNs / 1000) << "us"
+            << "symbols=" << symbolsInFile;
         state.needsFullAnalysis = false;
-
-        // FIXED: 第一次分析后立即缓存内容
         previousFileContents[currentFileName] = content;
     } else {
         QList<int> changedLines = detectChangedLines(currentFileName, content);
         if (!changedLines.isEmpty()) {
+            QElapsedTimer incTimer;
+            incTimer.start();
             analyzeSpecificLines(currentFileName, content, changedLines);
-
-            // 🚀 NEW: 增量更新关系
+            qint64 tLines = incTimer.nsecsElapsed();
+            QElapsedTimer relTimer;
+            relTimer.start();
             buildSymbolRelationships(currentFileName);
+            qint64 tRels = relTimer.nsecsElapsed();
+            qDebug().noquote() << "[Perf] setCodeEditorIncremental(delta)"
+                << "file=" << currentFileName
+                << "changedLines=" << changedLines.size()
+                << "| analyzeLines=" << (tLines / 1000) << "us"
+                << "buildRels=" << (tRels / 1000) << "us"
+                << "total=" << ((tLines + tRels) / 1000) << "us";
         }
     }
 
     state.contentHash = calculateContentHash(content);
+    state.symbolRelevantHash = calculateSymbolRelevantHash(content);
     state.lastModified = QDateTime::currentDateTime();
 
     QList<SymbolInfo> fileSymbols = findSymbolsByFileName(currentFileName);
@@ -892,12 +1090,45 @@ QString sym_list::calculateContentHash(const QString& content)
     return QString::number(qHash(content));
 }
 
+// 规范化内容用于“是否影响符号”比较：去掉块注释、整行//注释、空白行，压缩空白后哈希
+// 这样仅改注释、空格、空行时不会触发分析
+QString sym_list::calculateSymbolRelevantHash(const QString& content)
+{
+    QString work = content;
+    // 去掉 /* ... */ 块（简单实现：不处理字符串内的 /* */）
+    int i = 0;
+    while (i < work.length()) {
+        int start = work.indexOf("/*", i);
+        if (start < 0) break;
+        int end = work.indexOf("*/", start + 2);
+        if (end < 0) end = work.length();
+        work.replace(start, end - start + 2, " ");
+        i = start + 1;
+    }
+    QStringList lines = work.split('\n');
+    QStringList kept;
+    for (const QString& line : qAsConst(lines)) {
+        QString t = line.trimmed();
+        if (t.isEmpty() || t.startsWith("//")) continue;
+        kept.append(QString(t).replace(QRegExp("\\s+"), " "));
+    }
+    QString joined = kept.join(" ").trimmed();
+    return QString::number(qHash(joined));
+}
+
 bool sym_list::needsAnalysis(const QString& fileName, const QString& content)
 {
     if (!fileStates.contains(fileName)) return true;
 
-    QString newHash = calculateContentHash(content);
-    return newHash != fileStates[fileName].contentHash;
+    QString newSymbolHash = calculateSymbolRelevantHash(content);
+    const QString& stored = fileStates[fileName].symbolRelevantHash;
+    if (stored.isEmpty()) return true;
+    return newSymbolHash != stored;
+}
+
+bool sym_list::contentAffectsSymbols(const QString& fileName, const QString& content)
+{
+    return needsAnalysis(fileName, content);
 }
 
 void sym_list::updateLineBasedSymbols(const SymbolInfo& symbol)

@@ -85,9 +85,13 @@ void MainWindow::setupManagerConnections()
 
     connect(tabManager.get(), &TabManager::fileSaved,
             this, [this](const QString& fileName) {
+                MyCodeEditor* editor = tabManager->getCurrentEditor();
+                QString content = (editor && editor->getFileName() == fileName)
+                    ? editor->toPlainText() : QString();
+                if (!content.isEmpty() && !sym_list::getInstance()->contentAffectsSymbols(fileName, content))
+                    return;
                 symbolAnalyzer->analyzeOpenTabs(tabManager.get());
 
-                MyCodeEditor* editor = tabManager->getCurrentEditor();
                 if (editor && editor->getFileName() == fileName)
                     requestSingleFileRelationshipAnalysis(fileName, editor->toPlainText());
             });
