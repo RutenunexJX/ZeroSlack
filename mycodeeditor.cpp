@@ -704,6 +704,9 @@ void MyCodeEditor::onAutoCompleteTimer()
                                       currentCommandType == sym_list::sym_unpacked_struct);
         
         if (useSymbolInfoDirectly) {
+            // 弹出补全前用当前编辑器内容刷新 struct/typedef/enum，避免未保存或缓存导致 r_elec_level/r_elec_out 等被漏掉
+            sym_list* symbolList = sym_list::getInstance();
+            symbolList->refreshStructTypedefEnumForFile(fileName, document()->toPlainText());
             if (!currentModule.isEmpty()) {
                 filteredSymbols = manager->getModuleInternalSymbolsByType(currentModule, currentCommandType, commandInput);
             } else {

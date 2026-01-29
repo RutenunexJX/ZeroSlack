@@ -58,41 +58,32 @@ void MainWindow::setupManagerConnections()
     // TabManager connections
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this](MyCodeEditor* editor) {
-                if (!workspaceManager->isWorkspaceOpen()) {
-                    symbolAnalyzer->analyzeOpenTabs(tabManager.get());
+                symbolAnalyzer->analyzeOpenTabs(tabManager.get());
 
-                    // 🚀 NEW: 触发关系分析
-                    if (relationshipBuilder && editor && !editor->getFileName().isEmpty()) {
-                        QString content = editor->toPlainText();
-                        relationshipBuilder->analyzeFile(editor->getFileName(), content);
-                    }
+                if (relationshipBuilder && editor && !editor->getFileName().isEmpty()) {
+                    QString content = editor->toPlainText();
+                    relationshipBuilder->analyzeFile(editor->getFileName(), content);
                 }
             });
 
     connect(tabManager.get(), &TabManager::tabClosed,
             this, [this](const QString& fileName) {
-                if (!workspaceManager->isWorkspaceOpen()) {
-                    symbolAnalyzer->analyzeOpenTabs(tabManager.get());
+                symbolAnalyzer->analyzeOpenTabs(tabManager.get());
 
-                    // 🚀 NEW: 清除文件关系
-                    if (relationshipEngine) {
-                        relationshipEngine->invalidateFileRelationships(fileName);
-                    }
+                if (relationshipEngine) {
+                    relationshipEngine->invalidateFileRelationships(fileName);
                 }
             });
 
     connect(tabManager.get(), &TabManager::fileSaved,
             this, [this](const QString& fileName) {
-                if (!workspaceManager->isWorkspaceOpen()) {
-                    symbolAnalyzer->analyzeOpenTabs(tabManager.get());
+                symbolAnalyzer->analyzeOpenTabs(tabManager.get());
 
-                    // 🚀 NEW: 重新分析保存的文件
-                    if (relationshipBuilder) {
-                        MyCodeEditor* editor = tabManager->getCurrentEditor();
-                        if (editor && editor->getFileName() == fileName) {
-                            QString content = editor->toPlainText();
-                            relationshipBuilder->analyzeFile(fileName, content);
-                        }
+                if (relationshipBuilder) {
+                    MyCodeEditor* editor = tabManager->getCurrentEditor();
+                    if (editor && editor->getFileName() == fileName) {
+                        QString content = editor->toPlainText();
+                        relationshipBuilder->analyzeFile(fileName, content);
                     }
                 }
             });
@@ -101,11 +92,7 @@ void MainWindow::setupManagerConnections()
     connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened,
             this, [this](const QString& workspacePath) {
                 Q_UNUSED(workspacePath)
-                qDebug() << "=== Workspace opened ===";
-                qDebug() << "Path:" << workspacePath;
-
                 QStringList svFiles = workspaceManager->getSystemVerilogFiles();
-                qDebug() << "SV files found:" << svFiles.size();
 
                 // 显示进度对话框
                 showAnalysisProgress(svFiles);
@@ -138,8 +125,6 @@ void MainWindow::setupManagerConnections()
 
                 // 200ms后开始关系分析
                 QTimer::singleShot(200, this, [this, svFiles]() {
-                    qDebug() << "Starting relationship analysis for" << svFiles.size() << "files";
-
                     // 更新到关系分析阶段
                     if (progressDialog) {
                         progressDialog->statusLabel->setText("阶段 2/2: 关系分析进行中...");
@@ -163,8 +148,6 @@ void MainWindow::setupManagerConnections()
                         relationshipAnalysisTracker.totalFiles = svFiles.size();
                         relationshipAnalysisTracker.processedFiles = 0;
                         relationshipAnalysisTracker.isActive = true;
-
-                        qDebug() << "Starting batch relationship analysis tracking";
 
                         // 批量分析所有SystemVerilog文件的关系
                         for (const QString& filePath : svFiles) {
@@ -199,7 +182,6 @@ void MainWindow::setupManagerConnections()
             this, [this](const QStringList& svFiles) {
                 // 🔧 FIX: 只做符号分析，关系分析在workspaceOpened中处理
                 symbolAnalyzer->analyzeWorkspace(workspaceManager.get());
-                qDebug() << "Files scanned, symbol analysis triggered for" << svFiles.size() << "files";
             });
 
     // ModeManager connections
@@ -221,15 +203,12 @@ void MainWindow::setupManagerConnections()
 
     connect(symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
             this, [this](const QString& fileName, int symbolCount) {
+                Q_UNUSED(fileName)
                 Q_UNUSED(symbolCount)
-                qDebug() << "Symbol analysis completed for" << fileName << "(" << symbolCount << "symbols)";
             });
 
     connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchAnalysisCompleted,
             this, [this](int filesAnalyzed, int totalSymbols) {
-                qDebug() << "=== Symbol Batch Analysis Completed ===";
-                qDebug() << "Files analyzed:" << filesAnalyzed << "Symbols found:" << totalSymbols;
-
                 // 🔧 FIX: 只更新状态栏，不触发进度对话框完成
                 if (statusBar()) {
                     statusBar()->showMessage(
@@ -253,12 +232,7 @@ void MainWindow::setupManagerConnections()
     // 🚀 连接SmartRelationshipBuilder信号（基于实际存在的信号）
     connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCompleted,
             this, [this](const QString& fileName, int relationshipsFound) {
-                qDebug() << QString("=== Relationship Analysis Completed ===");
-                qDebug() << "File:" << QFileInfo(fileName).fileName();
-                qDebug() << "Relationships:" << relationshipsFound;
-
                 if (progressDialog) {
-                    qDebug() << "Progress dialog visible:" << progressDialog->isVisible();
                     progressDialog->updateProgress(fileName, relationshipsFound);
 
                     // 【新增】在进度对话框中显示当前处理的文件信息
@@ -267,17 +241,11 @@ void MainWindow::setupManagerConnections()
                         progressDialog->logProgress(
                             QString("✅ %1: 发现 %2 个关系").arg(shortName).arg(relationshipsFound));
                     }
-                } else {
-                    qDebug() << "WARNING: Progress dialog is null!";
                 }
 
                 // 手动跟踪批量分析进度
                 if (relationshipAnalysisTracker.isActive) {
                     relationshipAnalysisTracker.processedFiles++;
-
-                    qDebug() << QString("Relationship analysis progress: %1/%2")
-                                .arg(relationshipAnalysisTracker.processedFiles)
-                                .arg(relationshipAnalysisTracker.totalFiles);
 
                     // 【新增】更新进度对话框的状态显示
                     if (progressDialog) {
@@ -289,7 +257,6 @@ void MainWindow::setupManagerConnections()
 
                     // 检查是否所有文件都分析完成
                     if (relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
-                        qDebug() << "All relationship analysis completed, finishing dialog";
                         relationshipAnalysisTracker.isActive = false;
 
                         if (progressDialog) {
@@ -330,8 +297,8 @@ void MainWindow::setupManagerConnections()
     // 🚀 连接分析错误信号
     connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisError,
             this, [this](const QString& fileName, const QString& error) {
-                qDebug() << QString("Relationship analysis error [%1]: %2").arg(fileName, error);
-
+                Q_UNUSED(fileName)
+                Q_UNUSED(error)
                 if (progressDialog && progressDialog->isVisible()) {
                     progressDialog->showError(fileName, error);
                 }
@@ -341,7 +308,6 @@ void MainWindow::setupManagerConnections()
                     relationshipAnalysisTracker.processedFiles++;
 
                     if (relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
-                        qDebug() << "All files processed (with some errors), finishing dialog";
                         relationshipAnalysisTracker.isActive = false;
 
                         QTimer::singleShot(200, this, [this]() {
@@ -356,7 +322,6 @@ void MainWindow::setupManagerConnections()
     // 🚀 连接取消信号
     connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCancelled,
             this, [this]() {
-                qDebug() << "Relationship analysis cancelled";
                 relationshipAnalysisTracker.isActive = false;
 
                 if (progressDialog) {
@@ -375,8 +340,6 @@ void MainWindow::setupManagerConnections()
 
         connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipsCleared,
                 this, &MainWindow::onRelationshipsCleared);
-
-        qDebug() << "Relationship engine signals connected";
     }
 }
 
@@ -626,10 +589,8 @@ void MainWindow::onRelationshipsCleared()
 
 void MainWindow::onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound)
 {
-    // 🚀 关系分析完成后的处理
-    qDebug() << QString("Relationship analysis completed for %1: %2 relationships found")
-                .arg(fileName).arg(relationshipsFound);
-
+    Q_UNUSED(fileName)
+    Q_UNUSED(relationshipsFound)
     // 🚀 刷新相关缓存
     CompletionManager::getInstance()->refreshRelationshipData();
 
@@ -654,20 +615,14 @@ void MainWindow::onRelationshipAnalysisError(const QString& fileName, const QStr
 
 void MainWindow::showAnalysisProgress(const QStringList& files)
 {
-    qDebug() << "=== showAnalysisProgress ===";
-    qDebug() << "Files count:" << files.size();
-    qDebug() << "Existing progressDialog:" << (progressDialog != nullptr);
-
+    Q_UNUSED(files)
     // 如果已有对话框，先清理
     if (progressDialog) {
-        qDebug() << "Existing dialog - cleaning up";
         progressDialog->disconnect();
         progressDialog->deleteLater();
         progressDialog = nullptr;
     }
 
-    // 创建新的进度对话框
-    qDebug() << "Creating new progress dialog";
     progressDialog = new RelationshipProgressDialog(this);
 
     // 配置对话框
@@ -678,8 +633,6 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
     // 连接信号
     connect(progressDialog, &RelationshipProgressDialog::cancelled,
             this, [this]() {
-                qDebug() << "Progress dialog cancelled by user";
-
                 if (relationshipBuilder) {
                     relationshipBuilder->cancelAnalysis();
                 }
@@ -693,20 +646,12 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
 
     connect(progressDialog, &RelationshipProgressDialog::finished,
             this, [this]() {
-                qDebug() << "Progress dialog finished signal received";
                 if (statusBar()) {
                     statusBar()->showMessage("符号关系分析完成", 3000);
                 }
             });
 
-    qDebug() << "Progress dialog created and configured";
-
-    // 启动分析
-    qDebug() << "Starting analysis for" << files.size() << "files";
     progressDialog->startAnalysis(files.size());
-
-    // ============ 关键修复：立即设置初始内容 ============
-    qDebug() << "Setting initial UI content immediately";
 
     // 立即更新UI内容，不使用定时器
     progressDialog->statusLabel->setText("正在初始化分析环境...");
@@ -722,10 +667,6 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
     progressDialog->update();
     progressDialog->repaint();
     QApplication::processEvents();
-
-    qDebug() << "Initial UI content set directly";
-
-    qDebug() << "=== showAnalysisProgress complete ===";
 }
 
 void MainWindow::hideAnalysisProgress()
@@ -752,31 +693,6 @@ void MainWindow::setupDebugButton()
 // 调试槽函数实现
 void MainWindow::onDebugPrintSymbolIds()
 {
-    qDebug() << "=== 调试: 打印所有Symbol IDs ===";
-
-    sym_list* symbolList = sym_list::getInstance();
-    if (!symbolList) {
-        qDebug() << "错误: sym_list实例为空";
-        return;
-    }
-
-    // 获取所有符号
-    const auto& allSymbols = symbolList->getAllSymbols();
-
-    qDebug() << "符号总数:" << allSymbols.size();
-
-    // 打印每个符号的ID和基本信息
-    for (int i = 0; i < allSymbols.size(); ++i) {
-        const auto& symbol = allSymbols[i];
-        qDebug() << QString("[%1] ID:%2, 名称:%3, 类型:%4, 文件:%5")
-                    .arg(i)
-                    .arg(symbol.symbolId)
-                    .arg(symbol.symbolName)
-                    .arg(symbol.symbolType)
-                    .arg(QFileInfo(symbol.fileName).baseName());
-    }
-
-    qDebug() << "=== 调试完成 ===";
 }
 
 void MainWindow::onDebug0(){

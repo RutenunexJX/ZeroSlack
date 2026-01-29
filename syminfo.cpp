@@ -750,6 +750,25 @@ void sym_list::getAdditionalSymbols(const QString &text)
 
     // 分析约束相关
     analyzeConstraints(text);
+
+    // [DEBUG] Ctrl+S 保存后打印当前文件的 struct 表，便于调试
+    QList<SymbolInfo> all = getAllSymbols();
+    QList<SymbolInfo> structTypes;
+    QList<SymbolInfo> structVars;
+    for (const SymbolInfo &s : all) {
+        if (s.fileName != currentFileName) continue;
+        if (s.symbolType == sym_packed_struct || s.symbolType == sym_unpacked_struct)
+            structTypes.append(s);
+        if (s.symbolType == sym_packed_struct_var || s.symbolType == sym_unpacked_struct_var)
+            structVars.append(s);
+    }
+    qDebug() << "[struct表]" << currentFileName;
+    qDebug() << "  struct类型:" << structTypes.size();
+    for (const SymbolInfo &s : structTypes)
+        qDebug() << "    " << (s.symbolType == sym_packed_struct ? "packed" : "unpacked") << s.symbolName;
+    qDebug() << "  struct变量:" << structVars.size();
+    for (const SymbolInfo &s : structVars)
+        qDebug() << "    " << s.symbolName << "(" << s.moduleScope << ")" << (s.symbolType == sym_packed_struct_var ? "packed" : "unpacked");
 }
 
 void sym_list::analyzePackages(const QString &text)
@@ -990,6 +1009,11 @@ void sym_list::analyzeSpecificLines(const QString& fileName, const QString& cont
         } else {
         }
     }
+
+    // 增量更新后，用完整内容重新收集 struct/typedef/enum 及对应变量，避免只识别到部分结构体
+    clearStructTypedefEnumSymbolsForFile(fileName);
+    currentFileName = fileName;
+    analyzeDataTypes(content);
 }
 
 void sym_list::analyzeTasksFunctionsInLine(const QString& lineText, int lineStartPos, int lineNum)
@@ -1057,6 +1081,53 @@ void sym_list::clearSymbolsForLines(const QString& fileName, const QList<int>& l
     if (!indicesToRemove.isEmpty()) {
         rebuildAllIndexes();
     }
+}
+
+void sym_list::clearStructTypedefEnumSymbolsForFile(const QString &fileName)
+{
+    if (!fileNameIndex.contains(fileName)) return;
+
+    static const QList<sym_type_e> typesToClear = {
+        sym_packed_struct, sym_unpacked_struct,
+        sym_packed_struct_var, sym_unpacked_struct_var, sym_struct_member,
+        sym_typedef, sym_enum, sym_enum_var, sym_enum_value
+    };
+    QSet<sym_type_e> typeSet;
+    for (sym_type_e t : typesToClear) typeSet.insert(t);
+
+    QList<int> indicesToRemove;
+    const QList<int> &fileIndices = fileNameIndex[fileName];
+    for (int index : fileIndices) {
+        if (index < symbolDatabase.size() && typeSet.contains(symbolDatabase[index].symbolType)) {
+            indicesToRemove.append(index);
+        }
+    }
+    if (indicesToRemove.isEmpty()) return;
+
+    for (int index : indicesToRemove) {
+        if (index < symbolDatabase.size()) {
+            int symbolId = symbolDatabase[index].symbolId;
+            symbolIdToIndex.remove(symbolId);
+        }
+    }
+    std::sort(indicesToRemove.begin(), indicesToRemove.end(), std::greater<int>());
+    for (int index : indicesToRemove) {
+        if (index < symbolDatabase.size()) {
+            removeFromIndexes(index);
+            symbolDatabase.removeAt(index);
+        }
+    }
+    rebuildAllIndexes();
+    CompletionManager::getInstance()->invalidateSymbolCaches();
+}
+
+void sym_list::refreshStructTypedefEnumForFile(const QString &fileName, const QString &content)
+{
+    previousFileContents[fileName] = content;
+    buildCommentRegions(content);
+    clearStructTypedefEnumSymbolsForFile(fileName);
+    currentFileName = fileName;
+    analyzeDataTypes(content);
 }
 
 void sym_list::analyzeModulesInLine(const QString& lineText, int lineStartPos, int lineNum)
@@ -1220,13 +1291,16 @@ int sym_list::findEndModuleLine(const QString &fileName, const SymbolInfo &modul
 
     for (int i = moduleSymbol.startLine; i < lines.size(); ++i) {
         const QString &line = lines[i];
-        if (line.contains(QRegExp("\\bmodule\\b")) && !isMatchInComment(content.indexOf(line), line.length())) {
+        int lineStartPos = 0;
+        for (int j = 0; j < i; ++j) {
+            lineStartPos += lines[j].length() + 1;
+        }
+        if (line.contains(QRegExp("\\bmodule\\b")) && !isMatchInComment(lineStartPos, line.length())) {
             moduleDepth++;
         }
-        if (line.contains(QRegExp("\\bendmodule\\b")) && !isMatchInComment(content.indexOf(line), line.length())) {
+        if (line.contains(QRegExp("\\bendmodule\\b")) && !isMatchInComment(lineStartPos, line.length())) {
             moduleDepth--;
             if (moduleDepth == 0) {
-                qDebug()<<"endmodule line"<<i;
                 return i;
             }
         }
@@ -1344,15 +1418,17 @@ void sym_list::analyzeDataTypes(const QString &text)
 
     for (const RegexMatch &match : qAsConst(packedStructMatches)) {
         if (packedStructPattern.indexIn(text, match.position) != -1) {
+            // cap(1)=花括号内成员内容, cap(2)=结构体类型名(如 rst_s)
+            QString structTypeName = packedStructPattern.cap(2);
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = packedStructPattern.cap(1);
+            symbol.symbolName = structTypeName;
             symbol.symbolType = sym_packed_struct;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, packedStructPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, packedStructPattern.pos(2), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
-            symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
+            symbol.endColumn = symbol.startColumn + structTypeName.length();
             addSymbol(symbol);
             symbolsFound++;
         }
@@ -1820,8 +1896,6 @@ void sym_list::analyzeEnumsAndStructs(const QString &text)
 
     // 3. 结构体变量声明分析
     analyzeStructVariables(text);
-
-    qDebug() << QString("Found %1 enum/struct symbols").arg(symbolsFound);
 }
 
 // 新增：分析结构体成员的辅助方法

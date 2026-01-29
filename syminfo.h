@@ -157,6 +157,7 @@ public:
     
     // 查找模块的结束行号
     int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
+    void refreshStructTypedefEnumForFile(const QString &fileName, const QString &content);
 
 private:
     // Central symbol storage
@@ -242,7 +243,8 @@ private:
     void analyzeStructVariables(const QString &text);
     void analyzeStructMembers(const QString &membersText, const QString &structName, int basePosition, const QString &fullText);
     void analyzeEnumsAndStructs(const QString &text);
-    
+    void clearStructTypedefEnumSymbolsForFile(const QString &fileName);
+
     // 辅助结构：存储struct的范围
     struct StructRange {
         int startPos;  // struct开始位置（'{'的位置）

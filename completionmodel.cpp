@@ -435,16 +435,19 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         }
         
         // 为传入的符号计算匹配分数（使用原始符号名进行匹配）
-        item.score = manager->calculateMatchScore(symbol.symbolName, prefix);
+        // 空 prefix 时给统一正分，避免全部为 0 导致排序/截断时漏掉部分项
+        item.score = prefix.isEmpty()
+            ? 100
+            : manager->calculateMatchScore(symbol.symbolName, prefix);
 
         completions.append(item);
     }
 
     sortCompletionsByScore();
 
-    // 限制结果数量（保持不变）
-    if (completions.size() > 16) {
-        completions = completions.mid(0, 16);
+    // 限制结果数量，提高上限以显示更多结构体/变量
+    if (completions.size() > 32) {
+        completions = completions.mid(0, 32);
     }
 
     endResetModel();

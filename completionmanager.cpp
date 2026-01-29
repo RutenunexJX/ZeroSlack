@@ -2087,17 +2087,13 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
             symbolType == sym_list::sym_unpacked_struct) {
             continue; // struct类型应该在全局查询，不在模块内查询
         }
-        // 对于struct变量，它们的moduleScope存储的是struct类型名，需要通过行号判断
+        // 对于struct变量，它们的moduleScope存储的是struct类型名，仅按“同文件且在模块起始行之后”纳入，
+        // 不依赖 moduleEndLine，避免 endmodule 定位或缓存不一致导致 r_elec_level/r_elec_out 等被漏掉
         else if (symbolType == sym_list::sym_packed_struct_var || 
                  symbolType == sym_list::sym_unpacked_struct_var) {
-            if (foundModule && symbol.fileName == moduleSymbol.fileName) {
-                // 检查符号是否在模块的行范围内
-                int moduleEndLine = symbolList->findEndModuleLine(moduleSymbol.fileName, moduleSymbol);
-                if (moduleEndLine != -1 && 
-                    symbol.startLine > moduleSymbol.startLine && 
-                    symbol.startLine < moduleEndLine) {
-                    isCorrectModule = true;
-                }
+            if (foundModule && symbol.fileName == moduleSymbol.fileName &&
+                symbol.startLine > moduleSymbol.startLine) {
+                isCorrectModule = true;
             }
         } else {
             // 对于其他类型，使用moduleScope判断
