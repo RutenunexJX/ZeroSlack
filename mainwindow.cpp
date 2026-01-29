@@ -17,6 +17,7 @@
 #include <QTextBlock>
 #include <QTextStream>
 #include <QFileInfo>
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -56,14 +57,20 @@ MainWindow::~MainWindow()
 void MainWindow::setupManagerConnections()
 {
     // TabManager connections
+    // 优化：打开文件时只分析新打开的文件，且延后到下一事件循环，避免卡顿
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this](MyCodeEditor* editor) {
-                symbolAnalyzer->analyzeOpenTabs(tabManager.get());
-
-                if (relationshipBuilder && editor && !editor->getFileName().isEmpty()) {
-                    QString content = editor->toPlainText();
-                    relationshipBuilder->analyzeFile(editor->getFileName(), content);
-                }
+                if (!editor) return;
+                QString fileName = editor->getFileName();
+                QString content = editor->toPlainText();
+                // 延后执行，先让标签页显示出来，再在后台做符号/关系分析
+                QTimer::singleShot(0, this, [this, editor, fileName, content]() {
+                    if (!editor) return;
+                    // 只分析新打开的这一个文件，不再重分析所有已打开标签
+                    symbolAnalyzer->analyzeEditor(editor, true);
+                    if (relationshipBuilder && !fileName.isEmpty())
+                        relationshipBuilder->analyzeFile(fileName, content);
+                });
             });
 
     connect(tabManager.get(), &TabManager::tabClosed,
