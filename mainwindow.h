@@ -46,6 +46,9 @@ public:
     std::unique_ptr<SymbolRelationshipEngine> relationshipEngine;
     std::unique_ptr<SmartRelationshipBuilder> relationshipBuilder;
 
+    /** 请求对指定文件内容执行单文件关系分析（可被编辑器去抖后调用，内部会取消未完成任务） */
+    void requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
+
 protected:
     void closeEvent(QCloseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;

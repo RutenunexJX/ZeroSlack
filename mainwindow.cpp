@@ -69,17 +69,8 @@ void MainWindow::setupManagerConnections()
                     if (!editor) return;
                     // 只分析新打开的这一个文件，不再重分析所有已打开标签
                     symbolAnalyzer->analyzeEditor(editor, true);
-                    if (relationshipBuilder && !fileName.isEmpty()) {
-                        if (relationshipSingleFileWatcher && relationshipSingleFileWatcher->isRunning())
-                            relationshipSingleFileWatcher->cancel();
-                        pendingRelationshipFileName = fileName;
-                        QFuture<QVector<RelationshipToAdd>> future = QtConcurrent::run([this, fileName, content]() {
-                            sym_list* db = sym_list::getInstance();
-                            QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(fileName);
-                            return relationshipBuilder->computeRelationships(fileName, content, fs);
-                        });
-                        relationshipSingleFileWatcher->setFuture(future);
-                    }
+                    if (!fileName.isEmpty())
+                        requestSingleFileRelationshipAnalysis(fileName, content);
                 });
             });
 
@@ -96,21 +87,9 @@ void MainWindow::setupManagerConnections()
             this, [this](const QString& fileName) {
                 symbolAnalyzer->analyzeOpenTabs(tabManager.get());
 
-                if (relationshipBuilder) {
-                    MyCodeEditor* editor = tabManager->getCurrentEditor();
-                    if (editor && editor->getFileName() == fileName) {
-                        QString content = editor->toPlainText();
-                        if (relationshipSingleFileWatcher && relationshipSingleFileWatcher->isRunning())
-                            relationshipSingleFileWatcher->cancel();
-                        pendingRelationshipFileName = fileName;
-                        QFuture<QVector<RelationshipToAdd>> future = QtConcurrent::run([this, fileName, content]() {
-                            sym_list* db = sym_list::getInstance();
-                            QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(fileName);
-                            return relationshipBuilder->computeRelationships(fileName, content, fs);
-                        });
-                        relationshipSingleFileWatcher->setFuture(future);
-                    }
-                }
+                MyCodeEditor* editor = tabManager->getCurrentEditor();
+                if (editor && editor->getFileName() == fileName)
+                    requestSingleFileRelationshipAnalysis(fileName, editor->toPlainText());
             });
 
     // WorkspaceManager connections
@@ -202,27 +181,17 @@ void MainWindow::setupManagerConnections()
                 symbolAnalyzer->analyzeFile(filePath);
 
                 // 🚀 NEW: 重新分析变化的文件（异步，不阻塞主线程）
-                if (relationshipBuilder) {
-                    QFile file(filePath);
-                    if (file.open(QIODevice::ReadOnly | QFile::Text)) {
-                        QTextStream in(&file);
-                        QString content = in.readAll();
-                        file.close();
-                        if (relationshipSingleFileWatcher && relationshipSingleFileWatcher->isRunning())
-                            relationshipSingleFileWatcher->cancel();
-                        pendingRelationshipFileName = filePath;
-                        QFuture<QVector<RelationshipToAdd>> future = QtConcurrent::run([this, filePath, content]() {
-                            sym_list* db = sym_list::getInstance();
-                            QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(filePath);
-                            return relationshipBuilder->computeRelationships(filePath, content, fs);
-                        });
-                        relationshipSingleFileWatcher->setFuture(future);
-                    }
+                QFile file(filePath);
+                if (file.open(QIODevice::ReadOnly | QFile::Text)) {
+                    QString content = QTextStream(&file).readAll();
+                    file.close();
+                    requestSingleFileRelationshipAnalysis(filePath, content);
                 }
             });
 
     connect(workspaceManager.get(), &WorkspaceManager::filesScanned,
             this, [this](const QStringList& svFiles) {
+                Q_UNUSED(svFiles)
                 // 🔧 FIX: 只做符号分析，关系分析在workspaceOpened中处理
                 symbolAnalyzer->analyzeWorkspace(workspaceManager.get());
             });
@@ -639,11 +608,8 @@ void MainWindow::onRelationshipsCleared()
 
 void MainWindow::onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound)
 {
-    Q_UNUSED(fileName)
-    Q_UNUSED(relationshipsFound)
     // 🚀 刷新相关缓存
     CompletionManager::getInstance()->refreshRelationshipData();
-
     // 🚀 更新状态栏信息
     if (statusBar()) {
         statusBar()->showMessage(
@@ -662,6 +628,27 @@ void MainWindow::onRelationshipAnalysisError(const QString& fileName, const QStr
     }
 }
 
+void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content)
+{
+    if (fileName.isEmpty() || !relationshipBuilder || !relationshipEngine)
+        return;
+    if (!relationshipSingleFileWatcher)
+        return;
+    // 避免快速连续 setFuture 导致崩溃：先等待当前任务结束再提交新任务（fileSaved + fileChanged + 去抖定时器可能同时触发）
+    if (relationshipSingleFileWatcher->isRunning()) {
+        QFuture<QVector<RelationshipToAdd>> oldFuture = relationshipSingleFileWatcher->future();
+        relationshipSingleFileWatcher->cancel();
+        oldFuture.waitForFinished();
+    }
+    pendingRelationshipFileName = fileName;
+    QFuture<QVector<RelationshipToAdd>> future = QtConcurrent::run([this, fileName, content]() {
+        sym_list* db = sym_list::getInstance();
+        QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(fileName);
+        return relationshipBuilder->computeRelationships(fileName, content, fs);
+    });
+    relationshipSingleFileWatcher->setFuture(future);
+}
+
 void MainWindow::onSingleFileRelationshipFinished()
 {
     if (!relationshipSingleFileWatcher || !relationshipEngine || !relationshipBuilder)
@@ -673,8 +660,11 @@ void MainWindow::onSingleFileRelationshipFinished()
     QString fileName = pendingRelationshipFileName;
     pendingRelationshipFileName.clear();
     QVector<RelationshipToAdd> results = relationshipSingleFileWatcher->result();
-    for (const RelationshipToAdd& r : results)
+    for (const RelationshipToAdd& r : results) {
+        if (r.fromId < 0 || r.toId < 0)
+            continue;
         relationshipEngine->addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
+    }
     onRelationshipAnalysisCompleted(fileName, results.size());
 }
 

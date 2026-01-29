@@ -269,6 +269,15 @@ void MyCodeEditor::initAutoComplete()
     autoCompleteTimer->setSingleShot(true);
     autoCompleteTimer->setInterval(0);
 
+    relationshipAnalysisDebounceTimer = new QTimer(this);
+    relationshipAnalysisDebounceTimer->setSingleShot(true);
+    relationshipAnalysisDebounceTimer->setInterval(RelationshipAnalysisDebounceMs);
+    connect(relationshipAnalysisDebounceTimer, &QTimer::timeout, this, [this]() {
+        MainWindow *mw = qobject_cast<MainWindow*>(window());
+        if (mw && mw->relationshipBuilder && !getFileName().isEmpty())
+            mw->requestSingleFileRelationshipAnalysis(getFileName(), toPlainText());
+    });
+
     // Connect signals
     connect(autoCompleteTimer, &QTimer::timeout, this, &MyCodeEditor::onAutoCompleteTimer);
     connect(completer, QOverload<const QModelIndex &>::of(&QCompleter::activated),
@@ -312,6 +321,12 @@ void MyCodeEditor::onTextChanged()
             // Normal changes: analyze after 3 seconds
             mainWindow->symbolAnalyzer->scheduleIncrementalAnalysis(this, 3000);
         }
+    }
+
+    // 关系分析去抖：连续输入时重置定时器；定时器到时再触发单文件关系分析，requestSingleFileRelationshipAnalysis 内部会取消未完成任务
+    if (mainWindow && mainWindow->relationshipBuilder && !getFileName().isEmpty()) {
+        relationshipAnalysisDebounceTimer->stop();
+        relationshipAnalysisDebounceTimer->start();
     }
 
     // Autocompletion logic

@@ -1633,9 +1633,8 @@ int CompletionManager::findSymbolIdByName(const QString& symbolName)
 
 void CompletionManager::updateRelationshipCaches()
 {
-    if (relationshipCacheValid || !relationshipEngine) {
+    if (relationshipCacheValid || !relationshipEngine)
         return;
-    }
 
     // 🚀 构建符号到模块的映射缓存
     sym_list* symbolList = sym_list::getInstance();
