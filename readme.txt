@@ -268,13 +268,27 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
       - 单文件（新标签、保存、fileChanged）与工作区批量分析均改为异步，支持取消未完成任务。
       - sym_list 的 findSymbolsByName / findSymbolsByFileName / getSymbolById 已加读锁，供后台安全读取。
 
-  [ ] 任务去抖 (Debouncing)
+  [x] 任务去抖 (Debouncing)
       - 在 MyCodeEditor::onTextChanged 中，除现有 SymbolAnalyzer 的
         scheduleIncrementalAnalysis 定时器外，增加对“关系分析”的延迟触发
         或取消逻辑。
       - 若存在“单文件关系分析”的定时器，在连续输入时重置该定时器，并在
         新分析启动时取消上一次未完成的关系分析任务（若有 QFuture 则
         cancel/waitForFinished 或置取消标志）。
+      - 已实现：MyCodeEditor 使用 relationshipAnalysisDebounceTimer（2 秒），
+        连续输入时重置；定时到时调用 MainWindow::requestSingleFileRelationshipAnalysis，
+        其内部会 cancel 未完成的 QFuture 再提交新任务；tabCreated/fileSaved/fileChanged
+        均改为调用该接口，统一取消逻辑。
+
+  [x] 单文件关系分析稳定性
+      - main.cpp 中在创建 MainWindow 前调用
+        qRegisterMetaType<SymbolRelationshipEngine::RelationType>(...)，使
+        relationshipAdded 信号在跨线程/队列传递时可用，避免
+        "Cannot queue arguments of type 'RelationType'" 导致崩溃。
+      - requestSingleFileRelationshipAnalysis 串行化：当 fileSaved、fileChanged、
+        去抖定时器同时触发时，先 cancel 当前 future 并 waitForFinished() 再
+        setFuture(newFuture)，避免快速连续 setFuture 导致崩溃；addRelationship
+        时跳过 fromId/toId < 0 的无效条目。
 
 二、扫描算法与数据流优化 (Efficiency)
 

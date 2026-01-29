@@ -80,6 +80,10 @@ private:
     QString currentWord;
     int wordStartPos;
 
+    // 关系分析去抖：连续输入时重置定时器，停止输入一段时间后再触发单文件关系分析
+    QTimer *relationshipAnalysisDebounceTimer;
+    static const int RelationshipAnalysisDebounceMs = 2000;
+
     QString textUnderCursor() const;
 
     // Custom command system
