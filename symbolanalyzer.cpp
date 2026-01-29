@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QElapsedTimer>
 #include <QDebug>
+#include <QRegularExpression>
 
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     : QObject(parent)
@@ -378,7 +379,7 @@ bool SymbolAnalyzer::hasSignificantChanges(const QString& oldContent, const QStr
         if (oldLine != newLine) {
             // Check if either line contains significant keywords
             for (const QString& keyword : significantKeywords) {
-                QRegExp keywordRegex("\\b" + keyword + "\\b");
+                QRegularExpression keywordRegex("\\b" + QRegularExpression::escape(keyword) + "\\b");
                 if (oldLine.contains(keywordRegex) || newLine.contains(keywordRegex)) {
                     return true;
                 }

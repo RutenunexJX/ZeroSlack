@@ -8,6 +8,7 @@
 #include <memory>
 #include <QDateTime>
 #include <QReadWriteLock>
+#include <QRegularExpression>
 
 class MainWindow;
 class MyCodeEditor;
@@ -150,7 +151,7 @@ public:
     bool isPositionInComment(int position);
     bool isPositionInMultiLineComment(int pos);
     QList<CommentRegion> getCommentRegions() const;
-    QList<RegexMatch> findMatchesOutsideComments(const QString &text, const QRegExp &pattern);
+    QList<RegexMatch> findMatchesOutsideComments(const QString &text, const QRegularExpression &pattern);
     void findVariableDeclarations();
 
     void setCodeEditorIncremental(MyCodeEditor* codeEditor);
@@ -226,9 +227,9 @@ private:
     void analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum, const QString& fullText = QString());
     void analyzeTasksFunctionsInLine(const QString& lineText, int lineStartPos, int lineNum);
     void analyzeVariablePattern(const QString& lineText, int lineStartPos, int lineNum,
-                                const QRegExp& pattern, sym_type_e symbolType);
+                                const QRegularExpression& pattern, sym_type_e symbolType);
     void analyzeTaskFunctionPattern(const QString& lineText, int lineStartPos, int lineNum,
-                                    const QRegExp& pattern, sym_type_e symbolType);
+                                    const QRegularExpression& pattern, sym_type_e symbolType);
 
     void rebuildAllIndexes();
     void addToIndexes(int symbolIndex);

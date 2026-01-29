@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QSyntaxHighlighter>
+#include <QRegularExpression>
 
 class MyHighlighter: public QSyntaxHighlighter
 {
@@ -16,7 +17,7 @@ private:
     int mFontSize = 14;
 
     struct HighLightRule{
-        QRegExp pattern;
+        QRegularExpression pattern;
         QTextCharFormat format;
     };
 

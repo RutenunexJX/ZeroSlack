@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QHash>
 #include <QList>
 #include "symbolrelationshipengine.h"
@@ -76,15 +76,15 @@ private:
     std::atomic<bool> cancelled{false};  // 线程安全的取消标志
     bool checkCancellation(const QString& currentFile = "");
 
-    // 🚀 缓存的正则表达式
+    // 🚀 缓存的正则表达式（QRegularExpression 预编译，Qt5/6 推荐）
     struct AnalysisPatterns {
-        QRegExp moduleInstantiation;     // module实例化模式
-        QRegExp variableAssignment;      // 变量赋值模式
-        QRegExp variableReference;       // 变量引用模式
-        QRegExp taskCall;               // task调用模式
-        QRegExp functionCall;           // function调用模式
-        QRegExp alwaysBlock;            // always块模式
-        QRegExp generateBlock;          // generate块模式
+        QRegularExpression moduleInstantiation;     // module实例化模式
+        QRegularExpression variableAssignment;      // 变量赋值模式
+        QRegularExpression variableReference;       // 变量引用模式
+        QRegularExpression taskCall;               // task调用模式
+        QRegularExpression functionCall;           // function调用模式
+        QRegularExpression alwaysBlock;            // always块模式
+        QRegularExpression generateBlock;          // generate块模式
     };
     AnalysisPatterns patterns;
 

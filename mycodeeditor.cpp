@@ -31,7 +31,7 @@
 #include <QPixmap>
 #include <QPen>
 #include <QBrush>
-#include <QRegExp>
+#include <QRegularExpression>
 
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 {
@@ -308,7 +308,7 @@ void MyCodeEditor::onTextChanged()
 
         bool hasSignificantKeyword = false;
         for (const QString &keyword : significantKeywords) {
-            if (currentLineText.contains(QRegExp("\\b" + keyword + "\\b"))) {
+            if (currentLineText.contains(QRegularExpression("\\b" + QRegularExpression::escape(keyword) + "\\b"))) {
                 hasSignificantKeyword = true;
                 break;
             }
@@ -1438,16 +1438,14 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
         return false;
     }
 
-    // 找到 import 之后的 package 名称（格式：import package_name::* 或 import package_name::symbol）
-    // 使用正则表达式匹配：import\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*::
-    QRegExp importPattern("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::");
-    int matchPos = importPattern.indexIn(lineText);
-    if (matchPos == -1) {
+    static const QRegularExpression importPattern("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::");
+    QRegularExpressionMatch m = importPattern.match(lineText);
+    if (!m.hasMatch()) {
         return false;
     }
 
-    QString matchedPackageName = importPattern.cap(1);
-    int packageStartInLine = importPattern.pos(1);
+    QString matchedPackageName = m.captured(1);
+    int packageStartInLine = m.capturedStart(1);
     int packageEndInLine = packageStartInLine + matchedPackageName.length();
 
     // 检查鼠标位置是否在 package 名称范围内

@@ -3,7 +3,7 @@
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
 
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QFile>
 #include <QReadLocker>
 #include <QElapsedTimer>
@@ -161,28 +161,29 @@ sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString&
     StructuralMatchResult best;
     best.position = -1;
 
-    static const QRegExp modulePattern("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegExp endmodulePattern("\\bendmodule\\b");
-    static const QRegExp regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegExp wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegExp taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegExp functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression modulePattern("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression endmodulePattern("\\bendmodule\\b");
+    static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
 
-    auto tryPattern = [&](const QRegExp& pattern, int type, int capGroup) -> void {
-        int pos = pattern.indexIn(text, startPos);
-        if (pos < 0) return;
+    auto tryPattern = [&](const QRegularExpression& pattern, int type, int capGroup) -> void {
+        QRegularExpressionMatch m = pattern.match(text, startPos);
+        if (!m.hasMatch()) return;
+        int pos = m.capturedStart(0);
         if (best.position >= 0 && pos > best.position) return;
-        if (isMatchInComment(pos, pattern.matchedLength())) return;
+        if (isMatchInComment(pos, m.capturedLength(0))) return;
         if (type == 4) {  // logic：排除 struct 内部
-            int capPos = (capGroup > 0 && pattern.captureCount() >= capGroup) ? pattern.pos(capGroup) : pos;
+            int capPos = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.capturedStart(capGroup) : pos;
             if (capPos >= 0 && isPositionInStructRange(capPos, structRanges)) return;
         }
         best.position = pos;
-        best.length = pattern.matchedLength();
+        best.length = m.capturedLength(0);
         best.matchType = type;
-        best.capturedName = (pattern.captureCount() >= capGroup && capGroup > 0) ? pattern.cap(capGroup) : QString();
-        best.capturePos = (capGroup > 0 && pattern.captureCount() >= capGroup) ? pattern.pos(capGroup) : pos;
+        best.capturedName = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.captured(capGroup) : QString();
+        best.capturePos = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.capturedStart(capGroup) : pos;
     };
 
     tryPattern(modulePattern, 0, 1);
@@ -558,13 +559,13 @@ bool sym_list::isPositionInComment(int position)
 
 void sym_list::getModuleName(const QString &text)
 {
-    QRegExp moduleName("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression moduleName("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> matches = findMatchesOutsideComments(text, moduleName);
 
     for (const RegexMatch &match : qAsConst(matches)) {
-        // Reuse the regex to get capture group
-        if (moduleName.indexIn(text, match.position) != -1) {
-            const QString moduleNameCaptured = moduleName.cap(1);
+        QRegularExpressionMatch m = moduleName.match(text, match.position);
+        if (m.hasMatch()) {
+            const QString moduleNameCaptured = m.captured(1);
 
             // Create symbol info and add to database
             SymbolInfo moduleSymbol;
@@ -574,7 +575,7 @@ void sym_list::getModuleName(const QString &text)
             moduleSymbol.position = match.position;
             moduleSymbol.length = match.length;
 
-            int captureGroupPos = moduleName.pos(1);
+            int captureGroupPos = m.capturedStart(1);
             calculateLineColumn(text, captureGroupPos, moduleSymbol.startLine, moduleSymbol.startColumn);
 
             moduleSymbol.endLine = moduleSymbol.startLine;
@@ -624,22 +625,26 @@ void sym_list::findSingleLineComments(const QString &text)
 
 void sym_list::findMultiLineComments(const QString &text)
 {
-    static const QRegExp multiLineStart("\\/\\*");
-    static const QRegExp multiLineEnd("\\*\\/");
+    static const QRegularExpression multiLineStart("/\\*");
+    static const QRegularExpression multiLineEnd("\\*/");
 
     int pos = 0;
-    while ((pos = multiLineStart.indexIn(text, pos)) != -1) {
-        int endPos = multiLineEnd.indexIn(text, pos + 2);
+    QRegularExpressionMatch startMatch = multiLineStart.match(text, pos);
+    while (startMatch.hasMatch()) {
+        pos = startMatch.capturedStart(0);
+        QRegularExpressionMatch endMatch = multiLineEnd.match(text, pos + 2);
+        int endPos = endMatch.hasMatch() ? endMatch.capturedStart(0) : -1;
 
         CommentRegion region;
         region.startPos = pos;
-        region.endPos = (endPos != -1) ? endPos + 2 : text.length();
+        region.endPos = (endPos >= 0) ? endPos + 2 : text.length();
 
         calculateLineColumn(text, region.startPos, region.startLine, region.startColumn);
         calculateLineColumn(text, region.endPos, region.endLine, region.endColumn);
 
         commentRegions.append(region);
         pos = region.endPos;
+        startMatch = multiLineStart.match(text, pos);
     }
 }
 
@@ -708,29 +713,26 @@ QList<sym_list::CommentRegion> sym_list::getCommentRegions() const
     return commentRegions;
 }
 
-QList<sym_list::RegexMatch> sym_list::findMatchesOutsideComments(const QString &text, const QRegExp &pattern)
+QList<sym_list::RegexMatch> sym_list::findMatchesOutsideComments(const QString &text, const QRegularExpression &pattern)
 {
     QList<RegexMatch> validMatches;
     validMatches.reserve(50); // Reasonable estimate
 
-    QRegExp regExp(pattern);
-    int pos = 0;
-
-    while ((pos = regExp.indexIn(text, pos)) != -1) {
-        const int matchStart = pos;
-        const int matchLength = regExp.matchedLength();
+    QRegularExpressionMatchIterator it = pattern.globalMatch(text);
+    while (it.hasNext()) {
+        QRegularExpressionMatch m = it.next();
+        const int matchStart = m.capturedStart(0);
+        const int matchLength = m.capturedLength(0);
 
         if (!isMatchInComment(matchStart, matchLength)) {
             RegexMatch match;
             match.position = matchStart;
             match.length = matchLength;
-            match.captured = regExp.cap(0);
+            match.captured = m.captured(0);
 
             calculateLineColumn(text, matchStart, match.lineNumber, match.columnNumber);
             validMatches.append(match);
         }
-
-        pos += matchLength;
     }
 
     return validMatches;
@@ -824,19 +826,19 @@ void sym_list::getVariableDeclarations(const QString &text)
 {
     int symbolsFound = 0;
 
-    // Extract reg declarations
-    QRegExp regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> regMatches = findMatchesOutsideComments(text, regPattern);
 
     for (const RegexMatch &match : qAsConst(regMatches)) {
-        if (regPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = regPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = regPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_reg;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, regPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -844,19 +846,19 @@ void sym_list::getVariableDeclarations(const QString &text)
         }
     }
 
-    // Extract wire declarations
-    QRegExp wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> wireMatches = findMatchesOutsideComments(text, wirePattern);
 
     for (const RegexMatch &match : qAsConst(wireMatches)) {
-        if (wirePattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = wirePattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = wirePattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_wire;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, wirePattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -864,25 +866,23 @@ void sym_list::getVariableDeclarations(const QString &text)
         }
     }
 
-    // Extract logic declarations
-    // 先找到所有struct的范围，排除struct内部的logic
+    // Extract logic declarations - 先找到所有struct的范围，排除struct内部的logic
     QList<StructRange> structRanges = findStructRanges(text);
-    
-    QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> logicMatches = findMatchesOutsideComments(text, logicPattern);
 
     for (const RegexMatch &match : qAsConst(logicMatches)) {
-        if (logicPattern.indexIn(text, match.position) != -1) {
-            // 检查logic是否在struct范围内
-            int logicPos = logicPattern.pos(1); // logic变量名的位置
+        QRegularExpressionMatch m = logicPattern.match(text, match.position);
+        if (m.hasMatch()) {
+            int logicPos = m.capturedStart(1);
             if (!isPositionInStructRange(logicPos, structRanges)) {
                 SymbolInfo symbol;
                 symbol.fileName = currentFileName;
-                symbol.symbolName = logicPattern.cap(1);
+                symbol.symbolName = m.captured(1);
                 symbol.symbolType = sym_logic;
                 symbol.position = match.position;
                 symbol.length = match.length;
-                calculateLineColumn(text, logicPattern.pos(1), symbol.startLine, symbol.startColumn);
+                calculateLineColumn(text, logicPos, symbol.startLine, symbol.startColumn);
                 symbol.endLine = symbol.startLine;
                 symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
                 addSymbol(symbol);
@@ -932,21 +932,20 @@ void sym_list::getAdditionalSymbols(const QString &text)
 
 void sym_list::analyzePackages(const QString &text)
 {
-    // package 声明: package package_name;
-    QRegExp packagePattern("\\bpackage\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression packagePattern("\\bpackage\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> packageMatches = findMatchesOutsideComments(text, packagePattern);
 
     for (const RegexMatch &match : qAsConst(packageMatches)) {
-        if (packagePattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = packagePattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = packagePattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_package;
             symbol.position = match.position;
             symbol.length = match.length;
 
-            // 计算包名在行中的精确位置
-            int capPos = packagePattern.pos(1);
+            int capPos = m.capturedStart(1);
             calculateLineColumn(text, capPos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
@@ -960,19 +959,19 @@ void sym_list::getTasksAndFunctions(const QString &text)
 {
     int symbolsFound = 0;
 
-    // Extract task declarations
-    QRegExp taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> taskMatches = findMatchesOutsideComments(text, taskPattern);
 
     for (const RegexMatch &match : qAsConst(taskMatches)) {
-        if (taskPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = taskPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = taskPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_task;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, taskPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -980,19 +979,19 @@ void sym_list::getTasksAndFunctions(const QString &text)
         }
     }
 
-    // Extract function declarations
-    QRegExp functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> functionMatches = findMatchesOutsideComments(text, functionPattern);
 
     for (const RegexMatch &match : qAsConst(functionMatches)) {
-        if (functionPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = functionPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = functionPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_function;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, functionPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1110,7 +1109,7 @@ QString sym_list::calculateSymbolRelevantHash(const QString& content)
     for (const QString& line : qAsConst(lines)) {
         QString t = line.trimmed();
         if (t.isEmpty() || t.startsWith("//")) continue;
-        kept.append(QString(t).replace(QRegExp("\\s+"), " "));
+        kept.append(QString(t).replace(QRegularExpression("\\s+"), " "));
     }
     QString joined = kept.join(" ").trimmed();
     return QString::number(qHash(joined));
@@ -1165,7 +1164,7 @@ QList<int> sym_list::detectChangedLines(const QString& fileName, const QString& 
             // 检查声明关键字，标记相邻行
             static QStringList declarationKeywords = {"module", "reg", "wire", "logic", "task", "function"};
             for (const QString &keyword : declarationKeywords) {
-                if (newLine.contains(QRegExp("\\b" + keyword + "\\b"))) {
+                if (newLine.contains(QRegularExpression("\\b" + QRegularExpression::escape(keyword) + "\\b"))) {
                     if (i > 0 && !changedLines.contains(i - 1)) {
                         changedLines.append(i - 1);
                     }
@@ -1245,15 +1244,13 @@ void sym_list::analyzeSpecificLines(const QString& fileName, const QString& cont
 
 void sym_list::analyzeTasksFunctionsInLine(const QString& lineText, int lineStartPos, int lineNum)
 {
-    // 分析 task 声明
-    QRegExp taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     int tasksBefore = symbolDatabase.size();
     analyzeTaskFunctionPattern(lineText, lineStartPos, lineNum, taskPattern, sym_task);
     int tasksAfter = symbolDatabase.size();
     int tasksFound = tasksAfter - tasksBefore;
 
-    // 分析 function 声明
-    QRegExp functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
     int functionsBefore = symbolDatabase.size();
     analyzeTaskFunctionPattern(lineText, lineStartPos, lineNum, functionPattern, sym_function);
     int functionsAfter = symbolDatabase.size();
@@ -1359,49 +1356,44 @@ void sym_list::refreshStructTypedefEnumForFile(const QString &fileName, const QS
 
 void sym_list::analyzeModulesInLine(const QString& lineText, int lineStartPos, int lineNum)
 {
-    QRegExp modulePattern("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression modulePattern("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    QRegularExpressionMatchIterator it = modulePattern.globalMatch(lineText);
 
-    int pos = 0;
-    while ((pos = modulePattern.indexIn(lineText, pos)) != -1) {
+    while (it.hasNext()) {
+        QRegularExpressionMatch m = it.next();
+        int pos = m.capturedStart(0);
         int absolutePos = lineStartPos + pos;
 
-        if (!isMatchInComment(absolutePos, modulePattern.matchedLength())) {
+        if (!isMatchInComment(absolutePos, m.capturedLength(0))) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = modulePattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_module;
             symbol.startLine = lineNum;
             symbol.startColumn = pos;
             symbol.endLine = lineNum;
             symbol.endColumn = pos + symbol.symbolName.length();
             symbol.position = absolutePos;
-            symbol.length = modulePattern.matchedLength();
+            symbol.length = m.capturedLength(0);
 
             addSymbol(symbol);
         }
-
-        pos += modulePattern.matchedLength();
     }
 }
 
 void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum, const QString& fullText)
 {
-    // reg 变量
-    QRegExp regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     analyzeVariablePattern(lineText, lineStartPos, lineNum, regPattern, sym_reg);
 
-    // wire 变量
-    QRegExp wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     analyzeVariablePattern(lineText, lineStartPos, lineNum, wirePattern, sym_wire);
 
-    // logic 变量 - 需要排除struct内部的logic
     QString textToUse = fullText;
     if (textToUse.isEmpty()) {
-        // 尝试从缓存获取
         if (previousFileContents.contains(currentFileName)) {
             textToUse = previousFileContents[currentFileName];
         } else {
-            // 尝试从文件读取
             QFile file(currentFileName);
             if (file.open(QIODevice::ReadOnly | QFile::Text)) {
                 textToUse = file.readAll();
@@ -1409,41 +1401,37 @@ void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos,
             }
         }
     }
-    
+
+    static const QRegularExpression logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     if (!textToUse.isEmpty()) {
         QList<StructRange> structRanges = findStructRanges(textToUse);
-        QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-        QRegExp regExp(logicPattern);
-        int pos = 0;
+        QRegularExpressionMatchIterator it = logicPattern.globalMatch(lineText);
 
-        while ((pos = regExp.indexIn(lineText, pos)) != -1) {
+        while (it.hasNext()) {
+            QRegularExpressionMatch m = it.next();
+            int pos = m.capturedStart(0);
             int absolutePos = lineStartPos + pos;
-            int logicNamePos = lineStartPos + regExp.pos(1);
+            int logicNamePos = lineStartPos + m.capturedStart(1);
 
-            if (!isMatchInComment(absolutePos, regExp.matchedLength())) {
-                // 检查logic是否在struct范围内
+            if (!isMatchInComment(absolutePos, m.capturedLength(0))) {
                 if (!isPositionInStructRange(logicNamePos, structRanges)) {
                     SymbolInfo symbol;
                     symbol.fileName = currentFileName;
-                    symbol.symbolName = regExp.cap(1);
+                    symbol.symbolName = m.captured(1);
                     symbol.symbolType = sym_logic;
                     symbol.startLine = lineNum;
-                    symbol.startColumn = regExp.pos(1);
+                    symbol.startColumn = m.capturedStart(1);
                     symbol.endLine = lineNum;
                     symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
                     symbol.position = absolutePos;
-                    symbol.length = regExp.matchedLength();
+                    symbol.length = m.capturedLength(0);
 
                     symbol.moduleScope = getCurrentModuleScope(symbol.fileName, symbol.startLine);
                     addSymbol(symbol);
                 }
             }
-
-            pos += regExp.matchedLength();
         }
     } else {
-        // 如果无法获取完整文件内容，使用原来的方法（可能不够准确）
-        QRegExp logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
         analyzeVariablePattern(lineText, lineStartPos, lineNum, logicPattern, sym_logic);
     }
 }
@@ -1465,31 +1453,29 @@ QString sym_list::getCurrentModuleScope(const QString& fileName, int lineNumber)
 }
 
 void sym_list::analyzeVariablePattern(const QString& lineText, int lineStartPos, int lineNum,
-                                     const QRegExp& pattern, sym_type_e symbolType)
+                                     const QRegularExpression& pattern, sym_type_e symbolType)
 {
-    QRegExp regExp(pattern);
-    int pos = 0;
-
-    while ((pos = regExp.indexIn(lineText, pos)) != -1) {
+    QRegularExpressionMatchIterator it = pattern.globalMatch(lineText);
+    while (it.hasNext()) {
+        QRegularExpressionMatch m = it.next();
+        int pos = m.capturedStart(0);
         int absolutePos = lineStartPos + pos;
 
-        if (!isMatchInComment(absolutePos, regExp.matchedLength())) {
+        if (!isMatchInComment(absolutePos, m.capturedLength(0))) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = regExp.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = symbolType;
             symbol.startLine = lineNum;
-            symbol.startColumn = regExp.pos(1) - lineStartPos + lineStartPos;
+            symbol.startColumn = (m.lastCapturedIndex() >= 1) ? (m.capturedStart(1) - lineStartPos + lineStartPos) : pos;
             symbol.endLine = lineNum;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             symbol.position = absolutePos;
-            symbol.length = regExp.matchedLength();
+            symbol.length = m.capturedLength(0);
 
             symbol.moduleScope = getCurrentModuleScope(symbol.fileName, symbol.startLine);
             addSymbol(symbol);
         }
-
-        pos += regExp.matchedLength();
     }
 }
 
@@ -1522,10 +1508,12 @@ int sym_list::findEndModuleLine(const QString &fileName, const SymbolInfo &modul
         for (int j = 0; j < i; ++j) {
             lineStartPos += lines[j].length() + 1;
         }
-        if (line.contains(QRegExp("\\bmodule\\b")) && !isMatchInComment(lineStartPos, line.length())) {
+        static const QRegularExpression moduleWord("\\bmodule\\b");
+        static const QRegularExpression endmoduleWord("\\bendmodule\\b");
+        if (line.contains(moduleWord) && !isMatchInComment(lineStartPos, line.length())) {
             moduleDepth++;
         }
-        if (line.contains(QRegExp("\\bendmodule\\b")) && !isMatchInComment(lineStartPos, line.length())) {
+        if (line.contains(endmoduleWord) && !isMatchInComment(lineStartPos, line.length())) {
             moduleDepth--;
             if (moduleDepth == 0) {
                 return i;
@@ -1537,23 +1525,22 @@ int sym_list::findEndModuleLine(const QString &fileName, const SymbolInfo &modul
 }
 
 void sym_list::analyzeTaskFunctionPattern(const QString& lineText, int lineStartPos, int lineNum,
-                                         const QRegExp& pattern, sym_type_e symbolType)
+                                         const QRegularExpression& pattern, sym_type_e symbolType)
 {
-    QRegExp regExp(pattern);
-    int pos = 0;
-
-    while ((pos = regExp.indexIn(lineText, pos)) != -1) {
+    QRegularExpressionMatchIterator it = pattern.globalMatch(lineText);
+    while (it.hasNext()) {
+        QRegularExpressionMatch m = it.next();
+        int pos = m.capturedStart(0);
         int absolutePos = lineStartPos + pos;
 
-        if (!isMatchInComment(absolutePos, regExp.matchedLength())) {
+        if (!isMatchInComment(absolutePos, m.capturedLength(0))) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = regExp.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = symbolType;
             symbol.startLine = lineNum;
 
-            // 计算捕获组在行中的位置
-            int capturePos = regExp.pos(1);
+            int capturePos = (m.lastCapturedIndex() >= 1) ? m.capturedStart(1) : pos;
             symbol.startColumn = capturePos;
             symbol.endLine = lineNum;
             symbol.endColumn = capturePos + symbol.symbolName.length();
@@ -1562,8 +1549,6 @@ void sym_list::analyzeTaskFunctionPattern(const QString& lineText, int lineStart
 
             addSymbol(symbol);
         }
-
-        pos += regExp.matchedLength();
     }
 }
 
@@ -1593,19 +1578,19 @@ void sym_list::analyzeInterfaces(const QString &text)
 {
     int symbolsFound = 0;
 
-    // Interface 声明: interface interfaceName;
-    QRegExp interfacePattern("\\binterface\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*[;(]");
+    static const QRegularExpression interfacePattern("\\binterface\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*[;(]");
     QList<RegexMatch> interfaceMatches = findMatchesOutsideComments(text, interfacePattern);
 
     for (const RegexMatch &match : qAsConst(interfaceMatches)) {
-        if (interfacePattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = interfacePattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = interfacePattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_interface;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, interfacePattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1613,19 +1598,19 @@ void sym_list::analyzeInterfaces(const QString &text)
         }
     }
 
-    // Modport 声明: modport portName(input sig1, output sig2);
-    QRegExp modportPattern("\\bmodport\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
+    static const QRegularExpression modportPattern("\\bmodport\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
     QList<RegexMatch> modportMatches = findMatchesOutsideComments(text, modportPattern);
 
     for (const RegexMatch &match : qAsConst(modportMatches)) {
-        if (modportPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = modportPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = modportPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_interface_modport;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, modportPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1639,22 +1624,21 @@ void sym_list::analyzeDataTypes(const QString &text)
 {
     int symbolsFound = 0;
 
-    // Packed struct: typedef struct packed { ... } structName;
-    // 只根据“类型名”位置判断是否在注释内，避免花括号内 // 或 /* */ 导致整段被过滤
-    QRegExp packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
-    int packedPos = 0;
-    while ((packedPos = packedStructPattern.indexIn(text, packedPos)) != -1) {
-        int typeNamePos = packedStructPattern.pos(2);
-        int typeNameLen = packedStructPattern.cap(2).length();
-        if (!isMatchInComment(typeNamePos, typeNameLen)) {
-            QString structMembers = packedStructPattern.cap(1);
-            QString structTypeName = packedStructPattern.cap(2);
+    static const QRegularExpression packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
+    QRegularExpressionMatchIterator packedIt = packedStructPattern.globalMatch(text);
+    while (packedIt.hasNext()) {
+        QRegularExpressionMatch m = packedIt.next();
+        int packedPos = m.capturedStart(0);
+        int typeNamePos = m.capturedStart(2);
+        QString structTypeName = m.captured(2);
+        if (!isMatchInComment(typeNamePos, structTypeName.length())) {
+            QString structMembers = m.captured(1);
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
             symbol.symbolName = structTypeName;
             symbol.symbolType = sym_packed_struct;
             symbol.position = packedPos;
-            symbol.length = packedStructPattern.matchedLength();
+            symbol.length = m.capturedLength(0);
             calculateLineColumn(text, typeNamePos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + structTypeName.length();
@@ -1662,25 +1646,23 @@ void sym_list::analyzeDataTypes(const QString &text)
             symbolsFound++;
             analyzeStructMembers(structMembers, structTypeName, packedPos, text);
         }
-        packedPos += packedStructPattern.matchedLength();
     }
 
-    // Unpacked struct: typedef struct { ... } structName;
-    // 只根据“类型名”位置判断是否在注释内，避免成员后 // 或 /* */ 导致识别不到
-    QRegExp unpackedStructPattern("\\btypedef\\s+struct\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
-    int unpackedPos = 0;
-    while ((unpackedPos = unpackedStructPattern.indexIn(text, unpackedPos)) != -1) {
-        int typeNamePos = unpackedStructPattern.pos(2);
-        int typeNameLen = unpackedStructPattern.cap(2).length();
-        if (!isMatchInComment(typeNamePos, typeNameLen)) {
-            QString structMembers = unpackedStructPattern.cap(1);
-            QString structName = unpackedStructPattern.cap(2);
+    static const QRegularExpression unpackedStructPattern("\\btypedef\\s+struct\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
+    QRegularExpressionMatchIterator unpackedIt = unpackedStructPattern.globalMatch(text);
+    while (unpackedIt.hasNext()) {
+        QRegularExpressionMatch m = unpackedIt.next();
+        int unpackedPos = m.capturedStart(0);
+        int typeNamePos = m.capturedStart(2);
+        QString structName = m.captured(2);
+        if (!isMatchInComment(typeNamePos, structName.length())) {
+            QString structMembers = m.captured(1);
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
             symbol.symbolName = structName;
             symbol.symbolType = sym_unpacked_struct;
             symbol.position = unpackedPos;
-            symbol.length = unpackedStructPattern.matchedLength();
+            symbol.length = m.capturedLength(0);
             calculateLineColumn(text, typeNamePos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + structName.length();
@@ -1688,22 +1670,21 @@ void sym_list::analyzeDataTypes(const QString &text)
             symbolsFound++;
             analyzeStructMembers(structMembers, structName, unpackedPos, text);
         }
-        unpackedPos += unpackedStructPattern.matchedLength();
     }
 
-    // Enum: typedef enum { ... } enumName;
-    QRegExp enumPattern("typedef\\s+enum\\s*(?:\\{[^}]*\\})?\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression enumPattern("typedef\\s+enum\\s*(?:\\{[^}]*\\})?\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> enumMatches = findMatchesOutsideComments(text, enumPattern);
 
     for (const RegexMatch &match : qAsConst(enumMatches)) {
-        if (enumPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = enumPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = enumPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_enum;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, enumPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1711,19 +1692,19 @@ void sym_list::analyzeDataTypes(const QString &text)
         }
     }
 
-    // Typedef: typedef existingType newTypeName;
-    QRegExp typedefPattern("\\btypedef\\s+(?:(?:struct|enum|union)\\s+)?[a-zA-Z_][a-zA-Z0-9_\\[\\]:]*\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*;");
+    static const QRegularExpression typedefPattern("\\btypedef\\s+(?:(?:struct|enum|union)\\s+)?[a-zA-Z_][a-zA-Z0-9_\\[\\]:]*\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*;");
     QList<RegexMatch> typedefMatches = findMatchesOutsideComments(text, typedefPattern);
 
     for (const RegexMatch &match : qAsConst(typedefMatches)) {
-        if (typedefPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = typedefPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = typedefPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_typedef;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, typedefPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1740,19 +1721,19 @@ void sym_list::analyzePreprocessorDirectives(const QString &text)
 {
     int symbolsFound = 0;
 
-    // `define 宏定义: `define MACRO_NAME value
-    QRegExp definePattern("`define\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression definePattern("`define\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> defineMatches = findMatchesOutsideComments(text, definePattern);
 
     for (const RegexMatch &match : qAsConst(defineMatches)) {
-        if (definePattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = definePattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = definePattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_def_define;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, definePattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1760,19 +1741,19 @@ void sym_list::analyzePreprocessorDirectives(const QString &text)
         }
     }
 
-    // `ifdef 条件编译
-    QRegExp ifdefPattern("`ifdef\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression ifdefPattern("`ifdef\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> ifdefMatches = findMatchesOutsideComments(text, ifdefPattern);
 
     for (const RegexMatch &match : qAsConst(ifdefMatches)) {
-        if (ifdefPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = ifdefPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = ifdefPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_def_ifdef;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, ifdefPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1780,19 +1761,19 @@ void sym_list::analyzePreprocessorDirectives(const QString &text)
         }
     }
 
-    // `ifndef 条件编译
-    QRegExp ifndefPattern("`ifndef\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression ifndefPattern("`ifndef\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> ifndefMatches = findMatchesOutsideComments(text, ifndefPattern);
 
     for (const RegexMatch &match : qAsConst(ifndefMatches)) {
-        if (ifndefPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = ifndefPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = ifndefPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_def_ifndef;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, ifndefPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1806,8 +1787,7 @@ void sym_list::analyzeAlwaysAndAssign(const QString &text)
 {
     int symbolsFound = 0;
 
-    // always_ff 块
-    QRegExp alwaysFFPattern("\\balways_ff\\s*@\\s*\\([^)]*\\)");
+    static const QRegularExpression alwaysFFPattern("\\balways_ff\\s*@\\s*\\([^)]*\\)");
     QList<RegexMatch> alwaysFFMatches = findMatchesOutsideComments(text, alwaysFFPattern);
 
     for (const RegexMatch &match : qAsConst(alwaysFFMatches)) {
@@ -1824,8 +1804,7 @@ void sym_list::analyzeAlwaysAndAssign(const QString &text)
         symbolsFound++;
     }
 
-    // always_comb 块
-    QRegExp alwaysCombPattern("\\balways_comb\\b");
+    static const QRegularExpression alwaysCombPattern("\\balways_comb\\b");
     QList<RegexMatch> alwaysCombMatches = findMatchesOutsideComments(text, alwaysCombPattern);
 
     for (const RegexMatch &match : qAsConst(alwaysCombMatches)) {
@@ -1842,8 +1821,7 @@ void sym_list::analyzeAlwaysAndAssign(const QString &text)
         symbolsFound++;
     }
 
-    // always 块 (通用)
-    QRegExp alwaysPattern("\\balways\\s*@\\s*\\([^)]*\\)");
+    static const QRegularExpression alwaysPattern("\\balways\\s*@\\s*\\([^)]*\\)");
     QList<RegexMatch> alwaysMatches = findMatchesOutsideComments(text, alwaysPattern);
 
     for (const RegexMatch &match : qAsConst(alwaysMatches)) {
@@ -1860,19 +1838,19 @@ void sym_list::analyzeAlwaysAndAssign(const QString &text)
         symbolsFound++;
     }
 
-    // assign 语句
-    QRegExp assignPattern("\\bassign\\s+([a-zA-Z_][a-zA-Z0-9_\\[\\]]*)\\s*=");
+    static const QRegularExpression assignPattern("\\bassign\\s+([a-zA-Z_][a-zA-Z0-9_\\[\\]]*)\\s*=");
     QList<RegexMatch> assignMatches = findMatchesOutsideComments(text, assignPattern);
 
     for (const RegexMatch &match : qAsConst(assignMatches)) {
-        if (assignPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = assignPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = assignPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_assign;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, assignPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1886,19 +1864,19 @@ void sym_list::analyzeParameters(const QString &text)
 {
     int symbolsFound = 0;
 
-    // parameter 声明
-    QRegExp parameterPattern("\\bparameter\\s+(?:[a-zA-Z_][a-zA-Z0-9_]*\\s*=\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression parameterPattern("\\bparameter\\s+(?:[a-zA-Z_][a-zA-Z0-9_]*\\s*=\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> parameterMatches = findMatchesOutsideComments(text, parameterPattern);
 
     for (const RegexMatch &match : qAsConst(parameterMatches)) {
-        if (parameterPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = parameterPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = parameterPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_parameter;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, parameterPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1906,19 +1884,19 @@ void sym_list::analyzeParameters(const QString &text)
         }
     }
 
-    // localparam 声明
-    QRegExp localparamPattern("\\blocalparam\\s+(?:[a-zA-Z_][a-zA-Z0-9_]*\\s*=\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression localparamPattern("\\blocalparam\\s+(?:[a-zA-Z_][a-zA-Z0-9_]*\\s*=\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> localparamMatches = findMatchesOutsideComments(text, localparamPattern);
 
     for (const RegexMatch &match : qAsConst(localparamMatches)) {
-        if (localparamPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = localparamPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = localparamPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_localparam;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, localparamPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1932,19 +1910,19 @@ void sym_list::analyzeConstraints(const QString &text)
 {
     int symbolsFound = 0;
 
-    // Xilinx 约束: (* KEEP = "TRUE" *) 等
-    QRegExp xilinxConstraintPattern("\\(\\*\\s*([A-Z_]+)\\s*=");
+    static const QRegularExpression xilinxConstraintPattern("\\(\\*\\s*([A-Z_]+)\\s*=");
     QList<RegexMatch> constraintMatches = findMatchesOutsideComments(text, xilinxConstraintPattern);
 
     for (const RegexMatch &match : qAsConst(constraintMatches)) {
-        if (xilinxConstraintPattern.indexIn(text, match.position) != -1) {
+        QRegularExpressionMatch m = xilinxConstraintPattern.match(text, match.position);
+        if (m.hasMatch()) {
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
-            symbol.symbolName = xilinxConstraintPattern.cap(1);
+            symbol.symbolName = m.captured(1);
             symbol.symbolType = sym_xilinx_constraint;
             symbol.position = match.position;
             symbol.length = match.length;
-            calculateLineColumn(text, xilinxConstraintPattern.pos(1), symbol.startLine, symbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(1), symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
             addSymbol(symbol);
@@ -1959,14 +1937,14 @@ void sym_list::analyzeEnumsAndStructs(const QString &text)
 
     // ===== 枚举类型分析 =====
 
-    // 1. 基本枚举: enum { VALUE1, VALUE2 } var_name;
-    QRegExp basicEnumPattern("\\benum\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_,\\s]*)");
+    static const QRegularExpression basicEnumPattern("\\benum\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_,\\s]*)");
     QList<RegexMatch> basicEnumMatches = findMatchesOutsideComments(text, basicEnumPattern);
 
     for (const RegexMatch &match : qAsConst(basicEnumMatches)) {
-        if (basicEnumPattern.indexIn(text, match.position) != -1) {
-            QString enumValues = basicEnumPattern.cap(1);
-            QString variables = basicEnumPattern.cap(2);
+        QRegularExpressionMatch m = basicEnumPattern.match(text, match.position);
+        if (m.hasMatch()) {
+            QString enumValues = m.captured(1);
+            QString variables = m.captured(2);
 
             // 解析枚举值
             QStringList valueList = enumValues.split(',', QString::SkipEmptyParts);
@@ -2014,14 +1992,14 @@ void sym_list::analyzeEnumsAndStructs(const QString &text)
         }
     }
 
-    // 2. Typedef枚举: typedef enum { VALUE1, VALUE2 } enum_name_t;
-    QRegExp typedefEnumPattern("\\btypedef\\s+enum\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression typedefEnumPattern("\\btypedef\\s+enum\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
     QList<RegexMatch> typedefEnumMatches = findMatchesOutsideComments(text, typedefEnumPattern);
 
     for (const RegexMatch &match : qAsConst(typedefEnumMatches)) {
-        if (typedefEnumPattern.indexIn(text, match.position) != -1) {
-            QString enumValues = typedefEnumPattern.cap(1);
-            QString typeName = typedefEnumPattern.cap(2);
+        QRegularExpressionMatch m = typedefEnumPattern.match(text, match.position);
+        if (m.hasMatch()) {
+            QString enumValues = m.captured(1);
+            QString typeName = m.captured(2);
 
             // 添加枚举类型定义
             SymbolInfo enumTypeSymbol;
@@ -2030,7 +2008,7 @@ void sym_list::analyzeEnumsAndStructs(const QString &text)
             enumTypeSymbol.symbolType = sym_enum;
             enumTypeSymbol.position = match.position;
             enumTypeSymbol.length = match.length;
-            calculateLineColumn(text, typedefEnumPattern.pos(2), enumTypeSymbol.startLine, enumTypeSymbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(2), enumTypeSymbol.startLine, enumTypeSymbol.startColumn);
             enumTypeSymbol.endLine = enumTypeSymbol.startLine;
             enumTypeSymbol.endColumn = enumTypeSymbol.startColumn + typeName.length();
             addSymbol(enumTypeSymbol);
@@ -2064,62 +2042,56 @@ void sym_list::analyzeEnumsAndStructs(const QString &text)
         }
     }
 
-    // 3. 枚举变量声明: enum_name_t variable_name;
-    QRegExp enumVarPattern("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*[;,]");
-    // 这个需要结合类型信息来判断是否为枚举变量，在后续处理中完善
+    // 3. 枚举变量声明: enum_name_t variable_name; 需结合类型信息判断，后续完善
 
     // ===== 结构体分析 =====
 
-    // 1. Packed struct: typedef struct packed { members } struct_name_t;
-    QRegExp packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
-    QList<RegexMatch> packedStructMatches = findMatchesOutsideComments(text, packedStructPattern);
+    static const QRegularExpression packedStructPatternEnums("\\btypedef\\s+struct\\s+packed\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
+    QList<RegexMatch> packedStructMatches = findMatchesOutsideComments(text, packedStructPatternEnums);
 
     for (const RegexMatch &match : qAsConst(packedStructMatches)) {
-        if (packedStructPattern.indexIn(text, match.position) != -1) {
-            QString structMembers = packedStructPattern.cap(1);
-            QString structName = packedStructPattern.cap(2);
+        QRegularExpressionMatch m = packedStructPatternEnums.match(text, match.position);
+        if (m.hasMatch()) {
+            QString structMembers = m.captured(1);
+            QString structName = m.captured(2);
 
-            // 添加结构体类型定义
             SymbolInfo structTypeSymbol;
             structTypeSymbol.fileName = currentFileName;
             structTypeSymbol.symbolName = structName;
             structTypeSymbol.symbolType = sym_packed_struct;
             structTypeSymbol.position = match.position;
             structTypeSymbol.length = match.length;
-            calculateLineColumn(text, packedStructPattern.pos(2), structTypeSymbol.startLine, structTypeSymbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(2), structTypeSymbol.startLine, structTypeSymbol.startColumn);
             structTypeSymbol.endLine = structTypeSymbol.startLine;
             structTypeSymbol.endColumn = structTypeSymbol.startColumn + structName.length();
             addSymbol(structTypeSymbol);
             symbolsFound++;
 
-            // 解析结构体成员
             analyzeStructMembers(structMembers, structName, match.position, text);
         }
     }
 
-    // 2. Unpacked struct: typedef struct { members } struct_name_t;
-    QRegExp unpackedStructPattern("\\btypedef\\s+struct\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
-    QList<RegexMatch> unpackedStructMatches = findMatchesOutsideComments(text, unpackedStructPattern);
+    static const QRegularExpression unpackedStructPatternEnums("\\btypedef\\s+struct\\s*\\{([^}]+)\\}\\s*([a-zA-Z_][a-zA-Z0-9_]*)");
+    QList<RegexMatch> unpackedStructMatches = findMatchesOutsideComments(text, unpackedStructPatternEnums);
 
     for (const RegexMatch &match : qAsConst(unpackedStructMatches)) {
-        if (unpackedStructPattern.indexIn(text, match.position) != -1) {
-            QString structMembers = unpackedStructPattern.cap(1);
-            QString structName = unpackedStructPattern.cap(2);
+        QRegularExpressionMatch m = unpackedStructPatternEnums.match(text, match.position);
+        if (m.hasMatch()) {
+            QString structMembers = m.captured(1);
+            QString structName = m.captured(2);
 
-            // 添加结构体类型定义
             SymbolInfo structTypeSymbol;
             structTypeSymbol.fileName = currentFileName;
             structTypeSymbol.symbolName = structName;
             structTypeSymbol.symbolType = sym_unpacked_struct;
             structTypeSymbol.position = match.position;
             structTypeSymbol.length = match.length;
-            calculateLineColumn(text, unpackedStructPattern.pos(2), structTypeSymbol.startLine, structTypeSymbol.startColumn);
+            calculateLineColumn(text, m.capturedStart(2), structTypeSymbol.startLine, structTypeSymbol.startColumn);
             structTypeSymbol.endLine = structTypeSymbol.startLine;
             structTypeSymbol.endColumn = structTypeSymbol.startColumn + structName.length();
             addSymbol(structTypeSymbol);
             symbolsFound++;
 
-            // 解析结构体成员
             analyzeStructMembers(structMembers, structName, match.position, text);
         }
     }
@@ -2139,12 +2111,12 @@ void sym_list::analyzeStructMembers(const QString &membersText, const QString &s
         QString cleanLine = line.trimmed();
         if (cleanLine.isEmpty()) continue;
 
-        // 基本成员模式: type member_name [array_size]
-        QRegExp memberPattern("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*\\[[^\\]]*\\])?");
+        static const QRegularExpression memberPattern("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*\\[[^\\]]*\\])?");
+        QRegularExpressionMatch memberMatch = memberPattern.match(cleanLine);
 
-        if (memberPattern.indexIn(cleanLine) != -1) {
-            QString memberType = memberPattern.cap(1);
-            QString memberName = memberPattern.cap(2);
+        if (memberMatch.hasMatch()) {
+            QString memberType = memberMatch.captured(1);
+            QString memberName = memberMatch.captured(2);
 
             SymbolInfo memberSymbol;
             memberSymbol.fileName = currentFileName;
@@ -2175,27 +2147,25 @@ void sym_list::analyzeStructVariables(const QString &text)
     // 用于去重：记录已经添加的struct变量（文件名+变量名+类型名）
     QSet<QString> addedStructVars;
     
-    // 查找结构体变量声明
     for (const QString &structType : structTypes) {
-        QString pattern = QString("\\b%1\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*[;,]").arg(structType);
-        QRegExp structVarPattern(pattern);
+        QString pattern = QString("\\b%1\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*[;,]").arg(QRegularExpression::escape(structType));
+        QRegularExpression structVarPattern(pattern);
         QList<RegexMatch> structVarMatches = findMatchesOutsideComments(text, structVarPattern);
 
         for (const RegexMatch &match : qAsConst(structVarMatches)) {
-            if (structVarPattern.indexIn(text, match.position) != -1) {
-                QString varName = structVarPattern.cap(1);
-                
-                // 检查是否已经添加过（去重）
+            QRegularExpressionMatch m = structVarPattern.match(text, match.position);
+            if (m.hasMatch()) {
+                QString varName = m.captured(1);
+
                 QString uniqueKey = QString("%1:%2:%3").arg(currentFileName).arg(varName).arg(structType);
                 if (addedStructVars.contains(uniqueKey)) {
-                    continue; // 跳过重复的
+                    continue;
                 }
                 addedStructVars.insert(uniqueKey);
 
                 SymbolInfo varSymbol;
                 varSymbol.fileName = currentFileName;
                 varSymbol.symbolName = varName;
-                // 根据结构体类型确定变量类型
                 bool isPacked = false;
                 for (const SymbolInfo &symbol : getAllSymbols()) {
                     if (symbol.symbolName == structType) {
@@ -2206,8 +2176,8 @@ void sym_list::analyzeStructVariables(const QString &text)
                 varSymbol.symbolType = isPacked ? sym_packed_struct_var : sym_unpacked_struct_var;
                 varSymbol.position = match.position;
                 varSymbol.length = match.length;
-                varSymbol.moduleScope = structType;  // 存储结构体类型名称
-                calculateLineColumn(text, structVarPattern.pos(1), varSymbol.startLine, varSymbol.startColumn);
+                varSymbol.moduleScope = structType;
+                calculateLineColumn(text, m.capturedStart(1), varSymbol.startLine, varSymbol.startColumn);
                 varSymbol.endLine = varSymbol.startLine;
                 varSymbol.endColumn = varSymbol.startColumn + varName.length();
                 addSymbol(varSymbol);
@@ -2274,17 +2244,16 @@ static int findMatchingBrace(const QString &text, int openBracePos)
 QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
 {
     QList<StructRange> ranges;
-    
-    // 1. 查找packed struct: typedef struct packed { ... } structName;
-    QRegExp packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{");
-    int pos = 0;
-    while ((pos = packedStructPattern.indexIn(text, pos)) != -1) {
-        // 检查是否在注释中
-        if (!isMatchInComment(pos, packedStructPattern.matchedLength())) {
-            // 找到'{'的位置
-            int braceStart = text.indexOf('{', pos + packedStructPattern.matchedLength() - 1);
+
+    static const QRegularExpression packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{");
+    QRegularExpressionMatchIterator packedIt = packedStructPattern.globalMatch(text);
+    while (packedIt.hasNext()) {
+        QRegularExpressionMatch m = packedIt.next();
+        int pos = m.capturedStart(0);
+        int len = m.capturedLength(0);
+        if (!isMatchInComment(pos, len)) {
+            int braceStart = text.indexOf('{', pos + len - 1);
             if (braceStart != -1) {
-                // 找到匹配的'}'
                 int braceEnd = findMatchingBrace(text, braceStart);
                 if (braceEnd != -1) {
                     StructRange range;
@@ -2294,19 +2263,17 @@ QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
                 }
             }
         }
-        pos += packedStructPattern.matchedLength();
     }
-    
-    // 2. 查找unpacked struct: typedef struct { ... } structName;
-    QRegExp unpackedStructPattern("\\btypedef\\s+struct\\s*\\{");
-    pos = 0;
-    while ((pos = unpackedStructPattern.indexIn(text, pos)) != -1) {
-        // 检查是否在注释中
-        if (!isMatchInComment(pos, unpackedStructPattern.matchedLength())) {
-            // 找到'{'的位置
-            int braceStart = text.indexOf('{', pos + unpackedStructPattern.matchedLength() - 1);
+
+    static const QRegularExpression unpackedStructPattern("\\btypedef\\s+struct\\s*\\{");
+    QRegularExpressionMatchIterator unpackedIt = unpackedStructPattern.globalMatch(text);
+    while (unpackedIt.hasNext()) {
+        QRegularExpressionMatch m = unpackedIt.next();
+        int pos = m.capturedStart(0);
+        int len = m.capturedLength(0);
+        if (!isMatchInComment(pos, len)) {
+            int braceStart = text.indexOf('{', pos + len - 1);
             if (braceStart != -1) {
-                // 找到匹配的'}'
                 int braceEnd = findMatchingBrace(text, braceStart);
                 if (braceEnd != -1) {
                     StructRange range;
@@ -2316,9 +2283,8 @@ QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
                 }
             }
         }
-        pos += unpackedStructPattern.matchedLength();
     }
-    
+
     return ranges;
 }
 
