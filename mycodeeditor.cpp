@@ -964,6 +964,8 @@ void MyCodeEditor::initCustomCommands()
     customCommands << CustomCommand{"i ", sym_list::sym_interface, "interfaces", "interface"};
     customCommands << CustomCommand{"e ", sym_list::sym_enum, "enum types", "enum"};
     customCommands << CustomCommand{"d ", sym_list::sym_def_define, "define macros", "`define"};
+    // lp 在前，避免 "lp " 被识别成 "p "
+    customCommands << CustomCommand{"lp ", sym_list::sym_localparam, "local parameters", "localparam"};
     customCommands << CustomCommand{"p ", sym_list::sym_parameter, "parameters", "parameter"};
     customCommands << CustomCommand{"a ", sym_list::sym_always, "always blocks", "always"};
     customCommands << CustomCommand{"c ", sym_list::sym_assign, "continuous assigns", "assign"};

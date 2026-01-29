@@ -177,6 +177,12 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 case sym_list::sym_function:
                     item.description = "function";
                     break;
+                case sym_list::sym_parameter:
+                    item.description = "parameter";
+                    break;
+                case sym_list::sym_localparam:
+                    item.description = "localparam";
+                    break;
                 default:
                     item.description = "symbol";
                     break;
@@ -212,6 +218,12 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                     break;
                 case sym_list::sym_function:
                     item.description = "function";
+                    break;
+                case sym_list::sym_parameter:
+                    item.description = "parameter";
+                    break;
+                case sym_list::sym_localparam:
+                    item.description = "localparam";
                     break;
                 default:
                     item.description = "symbol";
@@ -330,6 +342,14 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     case sym_list::sym_unpacked_struct:
         defaultValue = "struct";
         typeDescription = "unpacked struct types";
+        break;
+    case sym_list::sym_parameter:
+        defaultValue = "parameter";
+        typeDescription = "parameter declarations";
+        break;
+    case sym_list::sym_localparam:
+        defaultValue = "localparam";
+        typeDescription = "localparam declarations";
         break;
     default:
         defaultValue = "symbol";
