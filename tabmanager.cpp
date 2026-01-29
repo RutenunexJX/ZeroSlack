@@ -3,7 +3,6 @@
 #include <QMessageBox>
 #include <QFileInfo>
 #include <QTextStream>
-//#include <QDebug>
 
 TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
     : QObject(parent), tabWidget(tabWidget)

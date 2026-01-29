@@ -1,6 +1,5 @@
 #include "symbolrelationshipengine.h"
 #include "syminfo.h"
-//#include <QDebug>
 #include <algorithm>
 
 SymbolRelationshipEngine::SymbolRelationshipEngine(QObject *parent)

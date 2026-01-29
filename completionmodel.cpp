@@ -3,7 +3,6 @@
 #include <QFont>
 #include <QColor>
 #include <algorithm>
-//#include <QDebug>
 
 static const int CompletionItemMetaTypeId = qRegisterMetaType<CompletionModel::CompletionItem>("CompletionModel::CompletionItem");
 

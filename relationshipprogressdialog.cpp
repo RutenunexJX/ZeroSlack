@@ -1,7 +1,6 @@
 #include "relationshipprogressdialog.h"
 #include <QApplication>
 #include <QFileInfo>
-//#include <QDebug>
 #include <QTime>
 
 RelationshipProgressDialog::RelationshipProgressDialog(QWidget *parent)

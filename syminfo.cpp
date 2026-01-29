@@ -3,9 +3,9 @@
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
 
-#include <QDebug>
 #include <QRegExp>
 #include <QFile>
+#include <QReadLocker>
 #include <algorithm>
 #include <memory>
 
@@ -83,6 +83,7 @@ void sym_list::addSymbol(const SymbolInfo& symbol)
 
 sym_list::SymbolInfo sym_list::getSymbolById(int symbolId) const
 {
+    QReadLocker lock(&symbolDbLock);
     if (symbolIdToIndex.contains(symbolId)) {
         int index = symbolIdToIndex[symbolId];
         if (index < symbolDatabase.size()) {
@@ -215,6 +216,7 @@ void sym_list::analyzeModuleContainment(const QString& fileName)
 
 QList<sym_list::SymbolInfo> sym_list::findSymbolsByName(const QString& symbolName)
 {
+    QReadLocker lock(&symbolDbLock);
     QList<SymbolInfo> result;
 
     if (symbolNameIndex.contains(symbolName)) {
@@ -259,6 +261,7 @@ int sym_list::getSymbolCountByType(sym_type_e symbolType)
 
 QList<sym_list::SymbolInfo> sym_list::findSymbolsByFileName(const QString& fileName)
 {
+    QReadLocker lock(&symbolDbLock);
     QList<SymbolInfo> result;
 
     if (fileNameIndex.contains(fileName)) {
@@ -762,13 +765,6 @@ void sym_list::getAdditionalSymbols(const QString &text)
         if (s.symbolType == sym_packed_struct_var || s.symbolType == sym_unpacked_struct_var)
             structVars.append(s);
     }
-    qDebug() << "[struct表]" << currentFileName;
-    qDebug() << "  struct类型:" << structTypes.size();
-    for (const SymbolInfo &s : structTypes)
-        qDebug() << "    " << (s.symbolType == sym_packed_struct ? "packed" : "unpacked") << s.symbolName;
-    qDebug() << "  struct变量:" << structVars.size();
-    for (const SymbolInfo &s : structVars)
-        qDebug() << "    " << s.symbolName << "(" << s.moduleScope << ")" << (s.symbolType == sym_packed_struct_var ? "packed" : "unpacked");
 }
 
 void sym_list::analyzePackages(const QString &text)
