@@ -707,7 +707,12 @@ void MyCodeEditor::onAutoCompleteTimer()
             // 弹出补全前用当前编辑器内容刷新 struct/typedef/enum，避免未保存或缓存导致 r_elec_level/r_elec_out 等被漏掉
             sym_list* symbolList = sym_list::getInstance();
             symbolList->refreshStructTypedefEnumForFile(fileName, document()->toPlainText());
-            if (!currentModule.isEmpty()) {
+            // struct 类型(ns/nsp)是全局的，始终用全局查询；struct 变量(s/sp)按当前模块或全局
+            bool isStructType = (currentCommandType == sym_list::sym_packed_struct ||
+                                currentCommandType == sym_list::sym_unpacked_struct);
+            if (isStructType) {
+                filteredSymbols = manager->getGlobalSymbolsByType_Info(currentCommandType, commandInput);
+            } else if (!currentModule.isEmpty()) {
                 filteredSymbols = manager->getModuleInternalSymbolsByType(currentModule, currentCommandType, commandInput);
             } else {
                 filteredSymbols = manager->getGlobalSymbolsByType_Info(currentCommandType, commandInput);
@@ -968,11 +973,11 @@ void MyCodeEditor::initCustomCommands()
     customCommands << CustomCommand{"en ", sym_list::sym_enum_var, "enum variables", "enum_var"};
     customCommands << CustomCommand{"sm ", sym_list::sym_struct_member, "struct members", "member"};
     
-    // 新增：结构体智能匹配命令
-    customCommands << CustomCommand{"s ", sym_list::sym_unpacked_struct_var, "unpacked struct variables", "struct"};
-    customCommands << CustomCommand{"sp ", sym_list::sym_packed_struct_var, "packed struct variables", "struct"};
-    customCommands << CustomCommand{"ns ", sym_list::sym_unpacked_struct, "unpacked struct types", "struct"};
+    // 结构体：较长前缀放前面，避免 "nsp " 被识别成 "sp "、"ns " 被识别成 "s "
     customCommands << CustomCommand{"nsp ", sym_list::sym_packed_struct, "packed struct types", "struct"};
+    customCommands << CustomCommand{"ns ", sym_list::sym_unpacked_struct, "unpacked struct types", "struct"};
+    customCommands << CustomCommand{"sp ", sym_list::sym_packed_struct_var, "packed struct variables", "struct"};
+    customCommands << CustomCommand{"s ", sym_list::sym_unpacked_struct_var, "unpacked struct variables", "struct"};
 
 }
 
@@ -1007,19 +1012,14 @@ QString MyCodeEditor::extractCommandInput()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
-    // 找到命令前缀位置
-    int prefixPos = -1;
-    for (const CustomCommand &command : qAsConst(customCommands)) {
-        int pos = lineUpToCursor.lastIndexOf(command.prefix);
-        if (pos >= 0 && pos > prefixPos) {
-            prefixPos = pos;
-        }
-    }
+    // 使用当前命令前缀位置，保证 ns/nsp 与 s/sp 一致
+    int prefixPos = currentCommandPrefix.isEmpty()
+        ? -1
+        : lineUpToCursor.lastIndexOf(currentCommandPrefix);
 
     if (prefixPos >= 0) {
         int startPos = prefixPos + currentCommandPrefix.length();
         QString result = lineUpToCursor.mid(startPos);
-        // 不要trim，保留原始输入包括空格
         return result;
     }
 
