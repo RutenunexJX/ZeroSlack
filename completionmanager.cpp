@@ -3,6 +3,7 @@
 #include "smartrelationshipbuilder.h"
 
 #include <QDateTime>
+#include <QRegularExpression>
 #include <algorithm>
 
 // 单例实例
@@ -856,10 +857,10 @@ QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QStrin
 
 QString CompletionManager::extractStructTypeFromContext(const QString &context)
 {
-    // 查找形如 "variable_name." 的模式
-    QRegExp dotPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\.$");
-    if (dotPattern.indexIn(context) != -1) {
-        QString varName = dotPattern.cap(1);
+    static const QRegularExpression dotPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\.$");
+    QRegularExpressionMatch m = dotPattern.match(context);
+    if (m.hasMatch()) {
+        QString varName = m.captured(1);
 
         // 查找该变量的类型
         sym_list* symList = sym_list::getInstance();
@@ -1086,16 +1087,16 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
 // 从上下文中提取结构体变量名
 QString CompletionManager::extractStructVariableFromContext(const QString& context)
 {
-    // 查找形如 "variable_name." 的模式
-    QRegExp dotPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\.$");
-    if (dotPattern.indexIn(context) != -1) {
-        return dotPattern.cap(1);
+    static const QRegularExpression dotPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\.$");
+    QRegularExpressionMatch m = dotPattern.match(context);
+    if (m.hasMatch()) {
+        return m.captured(1);
     }
 
-    // 查找形如 "variable_name->" 的模式 (如果支持指针操作)
-    QRegExp arrowPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*->$");
-    if (arrowPattern.indexIn(context) != -1) {
-        return arrowPattern.cap(1);
+    static const QRegularExpression arrowPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*->$");
+    m = arrowPattern.match(context);
+    if (m.hasMatch()) {
+        return m.captured(1);
     }
 
     return "";
@@ -1104,22 +1105,22 @@ QString CompletionManager::extractStructVariableFromContext(const QString& conte
 // 从上下文中提取枚举变量名
 QString CompletionManager::extractEnumVariableFromContext(const QString& context)
 {
-    // 查找赋值语句中的变量名
-    QRegExp assignPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*=");
-    if (assignPattern.indexIn(context) != -1) {
-        return assignPattern.cap(1);
+    static const QRegularExpression assignPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*=");
+    QRegularExpressionMatch m = assignPattern.match(context);
+    if (m.hasMatch()) {
+        return m.captured(1);
     }
 
-    // 查找case语句中的变量名
-    QRegExp casePattern("case\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)");
-    if (casePattern.indexIn(context) != -1) {
-        return casePattern.cap(1);
+    static const QRegularExpression casePattern("case\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)");
+    m = casePattern.match(context);
+    if (m.hasMatch()) {
+        return m.captured(1);
     }
 
-    // 查找if语句中的变量名
-    QRegExp ifPattern("if\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*==");
-    if (ifPattern.indexIn(context) != -1) {
-        return ifPattern.cap(1);
+    static const QRegularExpression ifPattern("if\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*==");
+    m = ifPattern.match(context);
+    if (m.hasMatch()) {
+        return m.captured(1);
     }
 
     return "";
@@ -1128,10 +1129,10 @@ QString CompletionManager::extractEnumVariableFromContext(const QString& context
 // 从上下文中提取模块类型名
 QString CompletionManager::extractModuleTypeFromContext(const QString& context)
 {
-    // 查找模块实例化模式
-    QRegExp instPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(");
-    if (instPattern.indexIn(context) != -1) {
-        return instPattern.cap(1);
+    static const QRegularExpression instPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(");
+    QRegularExpressionMatch m = instPattern.match(context);
+    if (m.hasMatch()) {
+        return m.captured(1);
     }
 
     return "";
@@ -1173,11 +1174,11 @@ bool CompletionManager::tryParseStructMemberContext(const QString &line,
                                                     QString &outVarName,
                                                     QString &outMemberPrefix)
 {
-    // 匹配行末的 "结构体变量.成员前缀" 或 "结构体变量."（成员前缀可为空，末尾可有空格）
-    QRegExp re("([a-zA-Z_][a-zA-Z0-9_]*)\\.([a-zA-Z0-9_]*)\\s*$");
-    if (re.indexIn(line) != -1) {
-        outVarName = re.cap(1);
-        outMemberPrefix = re.cap(2);
+    static const QRegularExpression re("([a-zA-Z_][a-zA-Z0-9_]*)\\.([a-zA-Z0-9_]*)\\s*$");
+    QRegularExpressionMatch m = re.match(line);
+    if (m.hasMatch()) {
+        outVarName = m.captured(1);
+        outMemberPrefix = m.captured(2);
         return true;
     }
     return false;
@@ -1683,7 +1684,7 @@ int CompletionManager::calculateContextScore(const QString& symbol, const QStrin
         return 50;
     }
 
-    if (context == "reset" && symbol.contains(QRegExp("rst|reset", Qt::CaseInsensitive))) {
+    if (context == "reset" && symbol.contains(QRegularExpression("rst|reset", QRegularExpression::CaseInsensitiveOption))) {
         return 50;
     }
 
@@ -1900,30 +1901,31 @@ int CompletionManager::findEndModulePosition(
     int moduleDepth = 0;
     bool foundModule = false;
 
-    QRegExp moduleStartPattern("\\bmodule\\s+");
-    QRegExp moduleEndPattern("\\bendmodule\\b");
+    static const QRegularExpression moduleStartPattern("\\bmodule\\s+");
+    static const QRegularExpression moduleEndPattern("\\bendmodule\\b");
 
     int pos = searchStart;
     while (pos < fileContent.length()) {
-        int nextModuleStart = moduleStartPattern.indexIn(fileContent, pos);
-        int nextModuleEnd = moduleEndPattern.indexIn(fileContent, pos);
+        QRegularExpressionMatch startMatch = moduleStartPattern.match(fileContent, pos);
+        QRegularExpressionMatch endMatch = moduleEndPattern.match(fileContent, pos);
+        int nextModuleStart = startMatch.hasMatch() ? startMatch.capturedStart(0) : -1;
+        int nextModuleEnd = endMatch.hasMatch() ? endMatch.capturedStart(0) : -1;
 
         if (nextModuleStart != -1 &&
             (nextModuleEnd == -1 || nextModuleStart < nextModuleEnd)) {
-            // 处理嵌套模块
             if (foundModule || nextModuleStart == moduleSymbol.position) {
                 moduleDepth++;
                 foundModule = true;
             }
-            pos = nextModuleStart + moduleStartPattern.matchedLength();
+            pos = nextModuleStart + startMatch.capturedLength(0);
         } else if (nextModuleEnd != -1) {
             if (foundModule) {
                 moduleDepth--;
                 if (moduleDepth == 0) {
-                    return nextModuleEnd + moduleEndPattern.matchedLength();
+                    return nextModuleEnd + endMatch.capturedLength(0);
                 }
             }
-            pos = nextModuleEnd + moduleEndPattern.matchedLength();
+            pos = nextModuleEnd + endMatch.capturedLength(0);
         } else {
             break;
         }

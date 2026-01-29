@@ -304,13 +304,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
         → extractSymbolsAndContainsOnePass → getAdditionalSymbols → buildSymbolRelationships；
         行级增量仍使用原有 analyzeSpecificLines 等逻辑。
 
-  [ ] 正则表达式预编译与迁移
-      - 在 SmartRelationshipBuilder 中，将 AnalysisPatterns 内的 QRegExp 全部
-        替换为 QRegularExpression，并保持编译期或类初始化时构造一次、重复使用。
-      - 在 sym_list、MyCodeEditor、CompletionManager、MyHighlighter 等仍使用
-        QRegExp 的解析/匹配路径上，逐步改为 QRegularExpression；注意
-        QRegularExpression 的捕获组索引与 API 与 QRegExp 略有差异，需逐处
-        验证行为。
+  [x] 正则表达式预编译与迁移（已实现）
+      - SmartRelationshipBuilder：AnalysisPatterns 内 QRegExp 已全部替换为
+        QRegularExpression，类初始化时构造一次、重复使用。
+      - sym_list、MyCodeEditor、CompletionManager、MyHighlighter、SymbolAnalyzer
+        中解析/匹配路径已改为 QRegularExpression；捕获组与 API 已逐处适配。
 
   [ ] 工作区与批量分析的流式/分批读取
       - 在 WorkspaceManager 或调用方（如 SymbolAnalyzer::analyzeWorkspace）：

@@ -1,5 +1,5 @@
 #include "smartrelationshipbuilder.h"
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QApplication>
 
 SmartRelationshipBuilder::SmartRelationshipBuilder(SymbolRelationshipEngine* engine,
@@ -14,29 +14,29 @@ SmartRelationshipBuilder::~SmartRelationshipBuilder()
 {
 }
 
-// 🚀 初始化分析模式
+// 🚀 初始化分析模式（QRegularExpression 预编译，一次构造重复使用）
 void SmartRelationshipBuilder::initializePatterns()
 {
     // 🚀 模块实例化模式: module_name instance_name (
-    patterns.moduleInstantiation = QRegExp("([a-zA-Z_][a-zA-Z0-9_]*)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
+    patterns.moduleInstantiation = QRegularExpression("([a-zA-Z_][a-zA-Z0-9_]*)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
 
     // 🚀 变量赋值模式: variable = expression
-    patterns.variableAssignment = QRegExp("([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*([^;]+);");
+    patterns.variableAssignment = QRegularExpression("([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*([^;]+);");
 
     // 🚀 变量引用模式: 在表达式中的变量名
-    patterns.variableReference = QRegExp("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b");
+    patterns.variableReference = QRegularExpression("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b");
 
     // 🚀 task调用模式: task_name(args) 或 task_name;
-    patterns.taskCall = QRegExp("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(.*\\)\\s*;|([a-zA-Z_][a-zA-Z0-9_]*)\\s*;");
+    patterns.taskCall = QRegularExpression("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(.*\\)\\s*;|([a-zA-Z_][a-zA-Z0-9_]*)\\s*;");
 
     // 🚀 function调用模式: function_name(args)
-    patterns.functionCall = QRegExp("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(.*\\)");
+    patterns.functionCall = QRegularExpression("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(.*\\)");
 
     // 🚀 always块模式
-    patterns.alwaysBlock = QRegExp("always\\s*(@.*)?\\s*begin");
+    patterns.alwaysBlock = QRegularExpression("always\\s*(@.*)?\\s*begin");
 
     // 🚀 generate块模式
-    patterns.generateBlock = QRegExp("generate\\s*begin");
+    patterns.generateBlock = QRegularExpression("generate\\s*begin");
 }
 
 // 🚀 主要分析接口实现
@@ -190,10 +190,11 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
         if (line.isEmpty() || line.startsWith("//")) continue;
 
         // 🚀 查找模块实例化
-        int pos = 0;
-        while ((pos = patterns.moduleInstantiation.indexIn(line, pos)) != -1) {
-            QString moduleTypeName = patterns.moduleInstantiation.cap(1);
-            QString instanceName = patterns.moduleInstantiation.cap(2);
+        QRegularExpressionMatchIterator it = patterns.moduleInstantiation.globalMatch(line);
+        while (it.hasNext()) {
+            QRegularExpressionMatch match = it.next();
+            QString moduleTypeName = match.captured(1);
+            QString instanceName = match.captured(2);
 
             // 🚀 查找被实例化的模块
             int moduleTypeId = findSymbolIdByName(moduleTypeName, context);
@@ -207,8 +208,6 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
                     90
                 );
             }
-
-            pos += patterns.moduleInstantiation.matchedLength();
         }
     }
 }
@@ -224,10 +223,11 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
         if (line.isEmpty() || line.startsWith("//")) continue;
 
         // 🚀 查找赋值语句
-        int pos = 0;
-        while ((pos = patterns.variableAssignment.indexIn(line, pos)) != -1) {
-            QString leftVar = patterns.variableAssignment.cap(1);
-            QString rightExpr = patterns.variableAssignment.cap(2);
+        QRegularExpressionMatchIterator assignIt = patterns.variableAssignment.globalMatch(line);
+        while (assignIt.hasNext()) {
+            QRegularExpressionMatch match = assignIt.next();
+            QString leftVar = match.captured(1);
+            QString rightExpr = match.captured(2);
 
             int leftVarId = findSymbolIdByName(leftVar, context);
             if (leftVarId != -1) {
@@ -257,8 +257,6 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
                     }
                 }
             }
-
-            pos += patterns.variableAssignment.matchedLength();
         }
     }
 }
@@ -273,17 +271,18 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
         const QString& line = lines[lineNum].trimmed();
 
         // 🚀 跳过声明行和注释
-        if (line.isEmpty() || line.startsWith("//") ||
-            line.contains(QRegExp("\\b(reg|wire|logic|input|output)\\b"))) {
+        static const QRegularExpression declPattern("\\b(reg|wire|logic|input|output)\\b");
+        if (line.isEmpty() || line.startsWith("//") || line.contains(declPattern)) {
             continue;
         }
 
         // 🚀 在条件语句、case语句等中查找变量引用
-        if (line.contains(QRegExp("\\b(if|case|while)\\s*\\("))) {
-            // 提取条件表达式中的变量
-            QRegExp conditionRegex("\\b(if|case|while)\\s*\\(([^)]+)\\)");
-            if (conditionRegex.indexIn(line) != -1) {
-                QString condition = conditionRegex.cap(2);
+        static const QRegularExpression condCheckPattern("\\b(if|case|while)\\s*\\(");
+        if (line.contains(condCheckPattern)) {
+            static const QRegularExpression conditionRegex("\\b(if|case|while)\\s*\\(([^)]+)\\)");
+            QRegularExpressionMatch match = conditionRegex.match(line);
+            if (match.hasMatch()) {
+                QString condition = match.captured(2);
                 QStringList referencedVars = extractVariablesFromExpression(condition);
 
                 for (const QString& varName : qAsConst(referencedVars)) {
@@ -314,11 +313,12 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
         if (line.isEmpty() || line.startsWith("//")) continue;
 
         // 🚀 查找task调用
-        int pos = 0;
-        while ((pos = patterns.taskCall.indexIn(line, pos)) != -1) {
-            QString taskName = patterns.taskCall.cap(1);
+        QRegularExpressionMatchIterator taskIt = patterns.taskCall.globalMatch(line);
+        while (taskIt.hasNext()) {
+            QRegularExpressionMatch match = taskIt.next();
+            QString taskName = match.captured(1);
             if (taskName.isEmpty()) {
-                taskName = patterns.taskCall.cap(2);
+                taskName = match.captured(2);
             }
 
             // 🚀 验证这确实是一个task或function
@@ -342,8 +342,6 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
                     }
                 }
             }
-
-            pos += patterns.taskCall.matchedLength();
         }
     }
 }
@@ -353,14 +351,15 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
 {
     QStringList lines = content.split('\n');
 
+    static const QRegularExpression sensitivityRegex("always\\s*@\\s*\\(([^)]+)\\)");
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
         const QString& line = lines[lineNum];
 
-        if (patterns.alwaysBlock.indexIn(line) != -1) {
+        if (patterns.alwaysBlock.match(line).hasMatch()) {
             // 🚀 分析敏感信号列表
-            QRegExp sensitivityRegex("always\\s*@\\s*\\(([^)]+)\\)");
-            if (sensitivityRegex.indexIn(line) != -1) {
-                QString sensitivityList = sensitivityRegex.cap(1);
+            QRegularExpressionMatch sensMatch = sensitivityRegex.match(line);
+            if (sensMatch.hasMatch()) {
+                QString sensitivityList = sensMatch.captured(1);
                 QStringList signalNames = extractVariablesFromExpression(sensitivityList); // 重命名避免与Qt宏冲突
 
                 for (const QString& signalName : qAsConst(signalNames)) { // 重命名避免与Qt宏冲突
@@ -389,12 +388,13 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
         const QString& line = lines[lineNum].toLower();
 
         // 🚀 查找时钟信号
-        if (line.contains(QRegExp("\\b(clk|clock)\\b")) &&
-            line.contains(QRegExp("\\b(posedge|negedge)\\b"))) {
-
-            QRegExp clockRegex("(posedge|negedge)\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
-            if (clockRegex.indexIn(line) != -1) {
-                QString clockName = clockRegex.cap(2);
+        static const QRegularExpression clkPattern("\\b(clk|clock)\\b");
+        static const QRegularExpression edgePattern("\\b(posedge|negedge)\\b");
+        static const QRegularExpression clockRegex("(posedge|negedge)\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
+        if (line.contains(clkPattern) && line.contains(edgePattern)) {
+            QRegularExpressionMatch match = clockRegex.match(line);
+            if (match.hasMatch()) {
+                QString clockName = match.captured(2);
                 int clockId = findSymbolIdByName(clockName, context);
 
                 if (clockId != -1 && context.currentModuleId != -1) {
@@ -410,11 +410,12 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
         }
 
         // 🚀 查找复位信号
-        if (line.contains(QRegExp("\\b(rst|reset|rstn)\\b"))) {
-            QRegExp resetRegex("\\b(rst|reset|rstn|rst_n)\\b");
-            int pos = 0;
-            while ((pos = resetRegex.indexIn(line, pos)) != -1) {
-                QString resetName = resetRegex.cap(1);
+        static const QRegularExpression resetRegex("\\b(rst|reset|rstn|rst_n)\\b");
+        if (line.contains(resetRegex)) {
+            QRegularExpressionMatchIterator resetIt = resetRegex.globalMatch(line);
+            while (resetIt.hasNext()) {
+                QRegularExpressionMatch match = resetIt.next();
+                QString resetName = match.captured(1);
                 int resetId = findSymbolIdByName(resetName, context);
 
                 if (resetId != -1 && context.currentModuleId != -1) {
@@ -426,8 +427,6 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
                         90
                     );
                 }
-
-                pos += resetRegex.matchedLength();
             }
         }
     }
@@ -440,26 +439,24 @@ QStringList SmartRelationshipBuilder::extractVariablesFromExpression(const QStri
     QStringList variables;
     QSet<QString> uniqueVars; // 避免重复
 
-    // 🚀 使用正则表达式提取标识符
-    QRegExp identifierRegex("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b");
-    int pos = 0;
+    // 🚀 使用正则表达式提取标识符（QRegularExpression）
+    static const QRegularExpression identifierRegex("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b");
+    QRegularExpressionMatchIterator it = identifierRegex.globalMatch(expression);
 
-    while ((pos = identifierRegex.indexIn(expression, pos)) != -1) {
-        QString identifier = identifierRegex.cap(1);
+    static const QSet<QString> svKeywords = {
+        "and", "or", "not", "begin", "end", "if", "else", "case", "default",
+        "posedge", "negedge", "assign", "always", "initial", "reg", "wire",
+        "logic", "input", "output", "inout", "module", "endmodule"
+    };
 
-        // 🚀 过滤掉SystemVerilog关键字
-        static QSet<QString> svKeywords = {
-            "and", "or", "not", "begin", "end", "if", "else", "case", "default",
-            "posedge", "negedge", "assign", "always", "initial", "reg", "wire",
-            "logic", "input", "output", "inout", "module", "endmodule"
-        };
+    while (it.hasNext()) {
+        QRegularExpressionMatch match = it.next();
+        QString identifier = match.captured(1);
 
         if (!svKeywords.contains(identifier.toLower()) && !uniqueVars.contains(identifier)) {
             uniqueVars.insert(identifier);
             variables.append(identifier);
         }
-
-        pos += identifierRegex.matchedLength();
     }
 
     return variables;
