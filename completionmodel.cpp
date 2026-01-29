@@ -183,6 +183,9 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 case sym_list::sym_localparam:
                     item.description = "localparam";
                     break;
+                case sym_list::sym_struct_member:
+                    item.description = "member";
+                    break;
                 default:
                     item.description = "symbol";
                     break;
@@ -224,6 +227,9 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                     break;
                 case sym_list::sym_localparam:
                     item.description = "localparam";
+                    break;
+                case sym_list::sym_struct_member:
+                    item.description = "member";
                     break;
                 default:
                     item.description = "symbol";
