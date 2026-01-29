@@ -292,13 +292,17 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 二、扫描算法与数据流优化 (Efficiency)
 
-  [ ] 合并符号与关系扫描
-      - 修改 SymbolAnalyzer/sym_list 流程：在一次文本遍历中，当正则匹配到
-        module/endmodule 或 assign 等关键结构时，同步提取符号信息并建立
-        基础关系（如 CONTAINS），写入 SymbolRelationshipEngine，减少对同一
-        文本的多遍扫描与重复匹配。
-      - 需与现有 setCodeEditor/setCodeEditorIncremental 的增量逻辑协调，保证
-        行级/文件级增量更新仍正确。
+  [x] 合并符号与关系扫描（已实现）
+      - sym_list 新增 extractSymbolsAndContainsOnePass(text)：在一次按位置
+        顺序的遍历中，同时匹配 module/endmodule/reg/wire/logic/task/function，
+        提取符号并立即建立 CONTAINS 关系（维护当前模块栈，遇 module 入栈、
+        endmodule 出栈，非模块符号添加时若栈非空则 addRelationship(CONTAINS)）。
+      - 使用 findNextStructuralMatch(text, startPos, structRanges) 从 startPos
+        起找下一个“结构”匹配（多正则取最早且不在注释/struct 内），减少对同一
+        文本的多遍扫描；logic 仍排除 struct 内部。
+      - setCodeEditor / setCodeEditorIncremental（首次）改为：buildCommentRegions
+        → extractSymbolsAndContainsOnePass → getAdditionalSymbols → buildSymbolRelationships；
+        行级增量仍使用原有 analyzeSpecificLines 等逻辑。
 
   [ ] 正则表达式预编译与迁移
       - 在 SmartRelationshipBuilder 中，将 AnalysisPatterns 内的 QRegExp 全部
@@ -356,6 +360,52 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
         的部分，或只更新 symbolTree 中受影响的类型/节点），而不是每次
         数据变更都全量调用 updateFileHierarchy/updateModuleHierarchy/
         updateSymbolHierarchy 并重绘整棵树。
+
+==========================================================================
+性能信息打印 (Performance Logging)
+==========================================================================
+
+为方便对比优化前后性能，在以下路径使用 QElapsedTimer + qDebug 输出耗时与规模：
+
+【sym_list】
+- setCodeEditor：输出 file / chars / lines、commentRegions / onePass / additional /
+  buildRels 各阶段微秒、总微秒、本文件符号数。标签：[Perf] setCodeEditor
+- setCodeEditorIncremental(first)：首次全量分析，格式同上。标签：[Perf] setCodeEditorIncremental(first)
+- setCodeEditorIncremental(delta)：行级增量，输出 file / changedLines、analyzeLines /
+  buildRels / total 微秒。标签：[Perf] setCodeEditorIncremental(delta)
+
+【SymbolAnalyzer】
+- analyzeOpenTabs：输出 files / totalMs / symbols。标签：[Perf] analyzeOpenTabs
+- analyzeWorkspace：输出 path / files / totalMs / symbols / avgMsPerFile。标签：[Perf] analyzeWorkspace
+- analyzeFile：输出 file / ms / symbols。标签：[Perf] analyzeFile
+- analyzeEditor：输出 incremental|full、file / ms / symbols。标签：[Perf] analyzeEditor
+
+运行程序时在控制台（或 Qt Creator 的“应用程序输出”）中搜索 “[Perf]” 即可查看上述日志，
+便于对比单文件/工作区分析及各阶段耗时是否随优化而改善。
+
+【性能结论（参考 debug.md 类日志）】
+- 合格。commentRegions / onePass / additional 已较快；主要耗时在 buildRels（关系构建）。
+- 工作区首次分析约 10–12s / 28 文件、约 800 符号属可接受；单文件大文件（如 8 万字符）单次 1.5–2.2s 属预期。
+- 后续可优化：关系引擎按文件/增量失效缓存、补全列表分页等，可进一步降低 buildRels 与 UI 卡顿。
+
+==========================================================================
+仅当内容影响符号时才分析 (Skip Analysis on Comment/Whitespace-Only Changes)
+==========================================================================
+
+当文本变更“明显不涉及符号”时（仅注释、空格、空行等），不再触发符号/关系分析，避免无意义重算。
+
+【实现】
+- sym_list 维护“符号相关”规范化哈希：calculateSymbolRelevantHash(content)。
+  规范化方式：去掉 /* */ 块注释、整行 // 注释、空白行，再将空白压缩为单空格后做哈希。
+- needsAnalysis(fileName, content)：用 symbolRelevantHash 比较，仅当“符号相关”内容变化才返回 true。
+- setCodeEditor：若当前文件的 symbolRelevantHash 与已存一致，直接 return，不清符号、不分析。
+- setCodeEditorIncremental：沿用 needsAnalysis，未变则整函数提前返回；分析结束后更新
+  fileStates[fileName].symbolRelevantHash。
+
+【效果】
+- 不输入任何内容只保存、或只输入/删除几个空格后保存，不会触发分析。
+- 仅改注释（整行 // 或 /* */ 块）、仅改空行或空白，也不会触发分析。
+- 只有真正影响符号的修改（如增删改 module/reg/wire/task/function 等）才会触发分析。
 
 ==========================================================================
 备注 (Notes)

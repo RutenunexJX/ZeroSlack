@@ -155,6 +155,12 @@ public:
 
     void setCodeEditorIncremental(MyCodeEditor* codeEditor);
     bool needsAnalysis(const QString& fileName, const QString& content);
+
+    // 供外部（如 MainWindow）判断：当前内容是否“影响符号”，若否（仅注释/空格等）可不触发分析
+    bool contentAffectsSymbols(const QString& fileName, const QString& content);
+
+    // 单遍合并：在一次遍历中提取 module/reg/wire/logic/task/function 并同步建立 CONTAINS 关系
+    void extractSymbolsAndContainsOnePass(const QString& text);
     
     // 查找模块的结束行号
     int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
@@ -196,6 +202,7 @@ private:
     // File state tracking
     struct FileState {
         QString contentHash;
+        QString symbolRelevantHash;  // 仅与符号相关的规范化内容哈希，用于跳过“仅注释/空格”等变更
         QDateTime lastModified;
         bool needsFullAnalysis = true;
     };
@@ -205,6 +212,7 @@ private:
     QHash<QString, QHash<int, QList<SymbolInfo>>> lineBasedSymbols; // fileName -> line -> symbols
 
     QString calculateContentHash(const QString& content);
+    QString calculateSymbolRelevantHash(const QString& content);
     QList<int> detectChangedLines(const QString& fileName, const QString& newContent);
     void clearSymbolsForLines(const QString& fileName, const QList<int>& lines);
     void analyzeSpecificLines(const QString& fileName, const QString& content, const QList<int>& lines);
@@ -258,6 +266,18 @@ private:
     
     // 检查位置是否在struct范围内
     bool isPositionInStructRange(int position, const QList<StructRange> &structRanges);
+
+    // 单遍合并：从 startPos 起找下一个“结构”匹配（module/endmodule/reg/wire/logic/task/function）
+    // 返回 position >= 0 表示找到，position < 0 表示无更多匹配
+    struct StructuralMatchResult {
+        int position = -1;
+        int length = 0;
+        int capturePos = -1;
+        QString capturedName;
+        int matchType = -1;  // 0=module, 1=endmodule, 2=reg, 3=wire, 4=logic, 5=task, 6=function
+    };
+    StructuralMatchResult findNextStructuralMatch(const QString& text, int startPos,
+                                                   const QList<StructRange>& structRanges);
 };
 
 // 🚀 NEW: 符号关系工具函数
