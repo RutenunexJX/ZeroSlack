@@ -1420,6 +1420,7 @@ void sym_list::analyzeDataTypes(const QString &text)
         int typeNamePos = packedStructPattern.pos(2);
         int typeNameLen = packedStructPattern.cap(2).length();
         if (!isMatchInComment(typeNamePos, typeNameLen)) {
+            QString structMembers = packedStructPattern.cap(1);
             QString structTypeName = packedStructPattern.cap(2);
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
@@ -1432,6 +1433,7 @@ void sym_list::analyzeDataTypes(const QString &text)
             symbol.endColumn = symbol.startColumn + structTypeName.length();
             addSymbol(symbol);
             symbolsFound++;
+            analyzeStructMembers(structMembers, structTypeName, packedPos, text);
         }
         packedPos += packedStructPattern.matchedLength();
     }

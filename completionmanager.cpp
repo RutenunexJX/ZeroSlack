@@ -1170,6 +1170,20 @@ QString CompletionManager::getStructTypeForVariable(const QString& varName,
     return "";
 }
 
+bool CompletionManager::tryParseStructMemberContext(const QString &line,
+                                                    QString &outVarName,
+                                                    QString &outMemberPrefix)
+{
+    // 匹配行末的 "结构体变量.成员前缀" 或 "结构体变量."（成员前缀可为空，末尾可有空格）
+    QRegExp re("([a-zA-Z_][a-zA-Z0-9_]*)\\.([a-zA-Z0-9_]*)\\s*$");
+    if (re.indexIn(line) != -1) {
+        outVarName = re.cap(1);
+        outMemberPrefix = re.cap(2);
+        return true;
+    }
+    return false;
+}
+
 // 获取变量的枚举类型
 QString CompletionManager::getEnumTypeForVariable(const QString& varName,
                                                  const QString& currentModule)

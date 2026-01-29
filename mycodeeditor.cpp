@@ -336,6 +336,22 @@ void MyCodeEditor::onTextChanged()
     } else {
         shouldContinueAutoComplete = (charAtCursor.isLetterOrNumber() ||
                                     charAtCursor == '_');
+        // 结构体变量后输入 . 则开始识别成员
+        if (charAtCursor == '.') {
+            shouldContinueAutoComplete = true;
+        }
+        // 输入一半后输入空格：如 test_var.a1 后输入空格，在成员里模糊搜索并识别
+        if (charAtCursor == ' ') {
+            QString lineBeforeSpace = lineUpToCursor.left(qMax(0, positionInLine - 1)).trimmed();
+            QString varName, memberPrefix;
+            CompletionManager* mgr = CompletionManager::getInstance();
+            if (mgr->tryParseStructMemberContext(lineBeforeSpace, varName, memberPrefix)) {
+                QString mod = mgr->getCurrentModule(getFileName(), cursor.position() - 1);
+                if (!mgr->getStructTypeForVariable(varName, mod).isEmpty()) {
+                    shouldContinueAutoComplete = true;
+                }
+            }
+        }
     }
 
     if (shouldContinueAutoComplete) {
@@ -756,6 +772,33 @@ void MyCodeEditor::onAutoCompleteTimer()
     if (isInAlternateMode) {
         processAlternateModeInput(lineUpToCursor);
         return;
+    }
+
+    // 结构体变量.成员 上下文：输入 . 或 空格 后显示成员补全（含模糊匹配，如 a1 匹配 abc123）
+    QString lineForParse = lineUpToCursor.trimmed();
+    QString varName, memberPrefix;
+    CompletionManager* manager = CompletionManager::getInstance();
+    if (manager->tryParseStructMemberContext(lineForParse, varName, memberPrefix)) {
+        QString currentModule = manager->getCurrentModule(getFileName(), cursor.position());
+        QString structTypeName = manager->getStructTypeForVariable(varName, currentModule);
+        if (!structTypeName.isEmpty()) {
+            QStringList memberNames = manager->getStructMemberCompletions(memberPrefix, structTypeName);
+            QList<sym_list::SymbolInfo> symbolInfoList;
+            sym_list* symbolList = sym_list::getInstance();
+            for (const QString& name : memberNames) {
+                QList<sym_list::SymbolInfo> syms = symbolList->findSymbolsByName(name);
+                for (const sym_list::SymbolInfo& s : syms) {
+                    if (s.symbolType == sym_list::sym_struct_member && s.moduleScope == structTypeName) {
+                        symbolInfoList.append(s);
+                        break;
+                    }
+                }
+            }
+            completionModel->updateCompletions(memberNames, symbolInfoList, memberPrefix, CompletionModel::SymbolCompletion);
+            wordStartPos = currentBlock.position() + lineUpToCursor.lastIndexOf('.') + 1;
+            showAutoComplete();
+            return;
+        }
     }
 
     QString prefix = getWordUnderCursor();

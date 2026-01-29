@@ -103,6 +103,10 @@ public:
     int findEndModulePosition(const QString &fileContent, const sym_list::SymbolInfo &moduleSymbol);
     void invalidateCommandModeCache();
 
+    // 结构体成员补全（供编辑器在 "变量." / "变量.成员 空格" 时调用）
+    QString getStructTypeForVariable(const QString &varName, const QString &currentModule);
+    QStringList getStructMemberCompletions(const QString &prefix, const QString &structTypeName);
+    bool tryParseStructMemberContext(const QString &line, QString &outVarName, QString &outMemberPrefix);
 
 private:
     CompletionManager();
@@ -209,11 +213,9 @@ private:
     int getNextModulePosition(const QList<struct sym_list::SymbolInfo>& modules,
                               const struct sym_list::SymbolInfo& currentModule);
     QStringList getEnumValueCompletions(const QString &prefix, const QString &enumTypeName);
-    QStringList getStructMemberCompletions(const QString &prefix, const QString &structTypeName);
     QString extractStructTypeFromContext(const QString &context);
     QStringList getModulePortCompletions(const QString &prefix, const QString &moduleTypeName);
     QString getEnumTypeForVariable(const QString &varName, const QString &currentModule);
-    QString getStructTypeForVariable(const QString &varName, const QString &currentModule);
     QString extractModuleTypeFromContext(const QString &context);
     QString extractEnumVariableFromContext(const QString &context);
     QString extractStructVariableFromContext(const QString &context);
