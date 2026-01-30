@@ -1622,14 +1622,7 @@ QString CompletionManager::findModuleAtPosition(
 
 int CompletionManager::findSymbolIdByName(const QString& symbolName)
 {
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
-
-    if (!symbols.isEmpty()) {
-        return symbols.first().symbolId;
-    }
-
-    return -1;
+    return sym_list::getInstance()->findSymbolIdByName(symbolName);
 }
 
 void CompletionManager::updateRelationshipCaches()

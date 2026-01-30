@@ -183,15 +183,27 @@ void MainWindow::setupManagerConnections()
             });
     connect(workspaceManager.get(), &WorkspaceManager::fileChanged,
             this, [this](const QString& filePath) {
-                symbolAnalyzer->analyzeFile(filePath);
-
-                // 🚀 NEW: 重新分析变化的文件（异步，不阻塞主线程）
-                QFile file(filePath);
-                if (file.open(QIODevice::ReadOnly | QFile::Text)) {
-                    QString content = QTextStream(&file).readAll();
-                    file.close();
-                    requestSingleFileRelationshipAnalysis(filePath, content);
+                // 防抖：保存时 QFileSystemWatcher 常会触发两次，只对最后一次做一次分析
+                if (fileChangeDebounceTimers.contains(filePath)) {
+                    QTimer* oldTimer = fileChangeDebounceTimers.take(filePath);
+                    oldTimer->stop();
+                    oldTimer->deleteLater();
                 }
+                QTimer* timer = new QTimer(this);
+                timer->setSingleShot(true);
+                connect(timer, &QTimer::timeout, this, [this, timer, filePath]() {
+                    fileChangeDebounceTimers.remove(filePath);
+                    timer->deleteLater();
+                    symbolAnalyzer->analyzeFile(filePath);
+                    QFile file(filePath);
+                    if (file.open(QIODevice::ReadOnly | QFile::Text)) {
+                        QString content = QTextStream(&file).readAll();
+                        file.close();
+                        requestSingleFileRelationshipAnalysis(filePath, content);
+                    }
+                });
+                fileChangeDebounceTimers[filePath] = timer;
+                timer->start(kFileChangeDebounceMs);
             });
 
     connect(workspaceManager.get(), &WorkspaceManager::filesScanned,

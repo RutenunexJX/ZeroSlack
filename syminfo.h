@@ -132,6 +132,8 @@ public:
     void addSymbol(const SymbolInfo& symbol);
     QList<SymbolInfo> findSymbolsByFileName(const QString& fileName);
     QList<SymbolInfo> findSymbolsByName(const QString& symbolName);
+    /** 利用 symbolNameIndex 直接返回首个匹配的 symbolId，无则返回 -1，避免临时 QList<SymbolInfo> 分配 */
+    int findSymbolIdByName(const QString& symbolName) const;
     QList<SymbolInfo> findSymbolsByType(sym_type_e symbolType);
     QList<SymbolInfo> getAllSymbols();
     void clearSymbolsForFile(const QString& fileName);

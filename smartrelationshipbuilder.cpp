@@ -469,11 +469,10 @@ int SmartRelationshipBuilder::findSymbolIdByName(const QString& symbolName, cons
         return context.localSymbolIds[symbolName];
     }
 
-    // 🚀 如果没找到，在全局符号数据库中查找
-    QList<sym_list::SymbolInfo> symbols = symbolDatabase->findSymbolsByName(symbolName);
-    if (!symbols.isEmpty()) {
-        return symbols.first().symbolId;
-    }
+    // 🚀 如果没找到，在全局符号数据库中通过索引直接查 symbolId，避免临时 QList 分配
+    int id = symbolDatabase->findSymbolIdByName(symbolName);
+    if (id >= 0)
+        return id;
 
     return -1; // 未找到
 }

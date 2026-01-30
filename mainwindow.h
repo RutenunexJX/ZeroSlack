@@ -19,6 +19,7 @@ class NavigationWidget;
 class SymbolRelationshipEngine;
 #include "smartrelationshipbuilder.h"
 #include <QFutureWatcher>
+#include <QMap>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -107,6 +108,10 @@ private:
 
     /** 阶段1（符号分析）取消标志，由进度对话框取消按钮设置 */
     bool symbolAnalysisCancelled = false;
+
+    /** fileChanged 防抖：保存时 QFileSystemWatcher 常会触发两次，短时间内的重复只分析一次 */
+    QMap<QString, QTimer*> fileChangeDebounceTimers;
+    static const int kFileChangeDebounceMs = 350;
 
     void setupNavigationPane();
     void connectNavigationSignals();

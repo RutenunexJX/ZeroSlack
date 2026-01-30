@@ -341,6 +341,18 @@ QList<sym_list::SymbolInfo> sym_list::findSymbolsByName(const QString& symbolNam
     return result;
 }
 
+int sym_list::findSymbolIdByName(const QString& symbolName) const
+{
+    QReadLocker lock(&symbolDbLock);
+    if (symbolNameIndex.contains(symbolName)) {
+        const QList<int>& indices = symbolNameIndex[symbolName];
+        if (!indices.isEmpty() && indices.first() < symbolDatabase.size()) {
+            return symbolDatabase[indices.first()].symbolId;
+        }
+    }
+    return -1;
+}
+
 // NEW: 🚀 超高性能的符号名称列表获取
 QStringList sym_list::getSymbolNamesByType(sym_type_e symbolType)
 {
