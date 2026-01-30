@@ -28,6 +28,8 @@ public:
     /** 阶段 A：在后台线程执行工作区符号分析，不阻塞 UI；进度通过 batchProgress 等信号回传。 */
     void startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
     void analyzeFile(const QString& filePath);
+    /** 阶段 B：基于内容的解析，不创建 QWidget；直接对 QString 做正则解析，供工作区/单文件分析使用 */
+    void analyzeFileContent(const QString& fileName, const QString& content);
     void analyzeEditor(MyCodeEditor* editor, bool incremental = false);
 
     // Analysis control
@@ -62,8 +64,7 @@ private:
     // 阶段 A：后台工作区分析（不创建 QWidget，不调用 processEvents）
     QFutureWatcher<QPair<int, int>>* workspaceAnalysisWatcher = nullptr;
 
-    // Helper methods
-    std::unique_ptr<MyCodeEditor> createBackgroundEditor(const QString& filePath);
+    // Helper methods（阶段 B：已废弃 createBackgroundEditor，改用 analyzeFileContent + 文件内容）
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
     void cleanupTimer(MyCodeEditor* editor);
     bool hasSignificantChanges(const QString& oldContent, const QString& newContent) const;

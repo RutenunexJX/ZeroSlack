@@ -110,13 +110,15 @@ void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::f
 
         for (int j = i; j < batchEnd; ++j) {
             const QString& filePath = svFiles.at(j);
-            auto tempEditor = createBackgroundEditor(filePath);
-            if (!tempEditor) {
+            QFile file(filePath);
+            if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
                 continue;
             }
+            QString content = QTextStream(&file).readAll();
+            file.close();
 
             int symbolsBefore = symbolList->getAllSymbols().size();
-            symbolList->setCodeEditorIncremental(tempEditor.get());
+            symbolList->setContentIncremental(filePath, content);
             int symbolsAfter = symbolList->getAllSymbols().size();
 
             totalSymbolsFound += (symbolsAfter - symbolsBefore);
@@ -205,16 +207,17 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
 
     emit analysisStarted(filePath);
 
-    auto tempEditor = createBackgroundEditor(filePath);
-    if (!tempEditor) {
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
+        emit analysisCompleted(filePath, 0);
         return;
     }
+    QString content = QTextStream(&file).readAll();
+    file.close();
 
     sym_list* symbolList = sym_list::getInstance();
     int symbolsBefore = symbolList->getAllSymbols().size();
-
-    symbolList->setCodeEditorIncremental(tempEditor.get());
-
+    symbolList->setContentIncremental(filePath, content);
     int symbolsFound = symbolList->getAllSymbols().size() - symbolsBefore;
     emit analysisCompleted(filePath, symbolsFound);
 }
@@ -359,25 +362,10 @@ void SymbolAnalyzer::onSignificantAnalysisTimer()
     }
 }
 
-std::unique_ptr<MyCodeEditor> SymbolAnalyzer::createBackgroundEditor(const QString& filePath)
+void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& content)
 {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
-        return nullptr;
-    }
-
-    // Create editor with smart pointer
-    auto tempEditor = std::unique_ptr<MyCodeEditor>(new MyCodeEditor());
-    tempEditor->setVisible(false);
-
-    // Load content efficiently
-    QTextStream in(&file);
-    tempEditor->setPlainText(in.readAll());
-    tempEditor->setFileName(filePath);
-
-    file.close();
-
-    return tempEditor;
+    if (fileName.isEmpty() || !isSystemVerilogFile(fileName)) return;
+    sym_list::getInstance()->setContentIncremental(fileName, content);
 }
 
 QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) const
