@@ -310,8 +310,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
       - sym_list、MyCodeEditor、CompletionManager、MyHighlighter、SymbolAnalyzer
         中解析/匹配路径已改为 QRegularExpression；捕获组与 API 已逐处适配。
 
-  [ ] 工作区与批量分析的流式/分批读取
-      - 在 WorkspaceManager 或调用方（如 SymbolAnalyzer::analyzeWorkspace）：
+  [x] 工作区与批量分析的流式/分批读取（已实现）
+      - SymbolAnalyzer::analyzeWorkspace 按批处理（每批 50 个文件）：
         不对整个目录一次性“加载所有文件内容到内存”，改为按批次（如每批
         50～100 个文件）读取并分析，分析完一批再处理下一批，或使用队列+
         工作线程流式消费，以控制内存峰值与主线程占用。

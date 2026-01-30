@@ -105,6 +105,9 @@ private:
     void showAnalysisProgress(const QStringList& files);
     void hideAnalysisProgress();
 
+    /** 阶段1（符号分析）取消标志，由进度对话框取消按钮设置 */
+    bool symbolAnalysisCancelled = false;
+
     void setupNavigationPane();
     void connectNavigationSignals();
     void navigateToFileAndLine(const QString& filePath, int lineNumber = -1);
