@@ -3,6 +3,9 @@
 #include "smartrelationshipbuilder.h"
 
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <algorithm>
 
@@ -2071,7 +2074,7 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     // 🚀 直接搜索并返回 SymbolInfo，避免字符串转换
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 找到模块符号以获取模块的行范围（用于struct变量的判断）
+    // 找到模块符号以获取模块的行范围（用于严格边界检查）
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
     for (const sym_list::SymbolInfo& sym : allSymbols) {
@@ -2082,22 +2085,43 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
         }
     }
 
+    // 确定当前模块的结束行（下一模块起始行作为独占上界），防止多模块同文件时符号泄漏
+    int moduleEndLineExclusive = INT_MAX;
+    if (foundModule) {
+        QList<sym_list::SymbolInfo> fileModules;
+        for (const sym_list::SymbolInfo& sym : allSymbols) {
+            if (sym.symbolType == sym_list::sym_module && sym.fileName == moduleSymbol.fileName) {
+                fileModules.append(sym);
+            }
+        }
+        std::sort(fileModules.begin(), fileModules.end(),
+                  [](const sym_list::SymbolInfo& a, const sym_list::SymbolInfo& b) {
+                      return a.startLine < b.startLine;
+                  });
+        for (int i = 0; i < fileModules.size(); ++i) {
+            if (fileModules[i].symbolId == moduleSymbol.symbolId && i + 1 < fileModules.size()) {
+                moduleEndLineExclusive = fileModules[i + 1].startLine;
+                break;
+            }
+        }
+    }
+
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         // 过滤条件
         bool isCorrectType = isSymbolTypeMatchCommand(symbol.symbolType, symbolType);
         bool isCorrectModule = false;
-        
+
         // 对于struct类型，它们是全局的，在模块内查询时应该返回空
-        if (symbolType == sym_list::sym_packed_struct || 
+        if (symbolType == sym_list::sym_packed_struct ||
             symbolType == sym_list::sym_unpacked_struct) {
             continue; // struct类型应该在全局查询，不在模块内查询
         }
-        // 对于struct变量，它们的moduleScope存储的是struct类型名，仅按“同文件且在模块起始行之后”纳入，
-        // 不依赖 moduleEndLine，避免 endmodule 定位或缓存不一致导致 r_elec_level/r_elec_out 等被漏掉
-        else if (symbolType == sym_list::sym_packed_struct_var || 
+        // 对于struct变量：同文件且严格在 [moduleStartLine, moduleEndLine) 之间，防止跨模块泄漏
+        else if (symbolType == sym_list::sym_packed_struct_var ||
                  symbolType == sym_list::sym_unpacked_struct_var) {
             if (foundModule && symbol.fileName == moduleSymbol.fileName &&
-                symbol.startLine > moduleSymbol.startLine) {
+                symbol.startLine > moduleSymbol.startLine &&
+                symbol.startLine < moduleEndLineExclusive) {
                 isCorrectModule = true;
             }
         } else {
@@ -2133,6 +2157,138 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
         }
     }
 
+    return results;
+}
+
+QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
+    const QString& moduleName,
+    const QString& fileName,
+    sym_list::sym_type_e symbolType,
+    const QString& prefix)
+{
+    QList<sym_list::SymbolInfo> results;
+    if (moduleName.isEmpty() || fileName.isEmpty()) {
+        return results;
+    }
+
+    sym_list* symbolList = sym_list::getInstance();
+    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+
+    // 1) 模块内部符号（已含严格边界）
+    results = getModuleInternalSymbolsByType(moduleName, symbolType, prefix);
+
+    // 获取当前模块符号及行范围，用于只解析模块体内的 include/import
+    sym_list::SymbolInfo moduleSymbol;
+    int moduleStartLine = 0;
+    int moduleEndLineExclusive = INT_MAX;
+    for (const sym_list::SymbolInfo& sym : allSymbols) {
+        if (sym.symbolType == sym_list::sym_module && sym.symbolName == moduleName && sym.fileName == fileName) {
+            moduleSymbol = sym;
+            moduleStartLine = sym.startLine;
+            break;
+        }
+    }
+    for (const sym_list::SymbolInfo& sym : allSymbols) {
+        if (sym.symbolType != sym_list::sym_module || sym.fileName != fileName) continue;
+        if (sym.symbolId == moduleSymbol.symbolId) continue;
+        if (sym.startLine > moduleStartLine) {
+            moduleEndLineExclusive = sym.startLine;
+            break;
+        }
+    }
+
+    QFile file(fileName);
+    QString fileContent;
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return results;
+    }
+    fileContent = QString::fromUtf8(file.readAll());
+    file.close();
+
+    QSet<int> seenIds;
+    for (const sym_list::SymbolInfo& s : results) {
+        seenIds.insert(s.symbolId);
+    }
+
+    QString baseDir = QFileInfo(fileName).absolutePath();
+
+    // 2) 模块体内 `include "..." 所在行
+    static const QRegularExpression includeRegex("`include\\s+\"([^\"]+)\"");
+    int lineNum = 1;
+    int lineStart = 0;
+    while (lineStart < fileContent.length()) {
+        int lineEnd = fileContent.indexOf('\n', lineStart);
+        if (lineEnd < 0) lineEnd = fileContent.length();
+        if (lineNum >= moduleStartLine && lineNum < moduleEndLineExclusive) {
+            QString line = fileContent.mid(lineStart, lineEnd - lineStart);
+            QRegularExpressionMatch m = includeRegex.match(line);
+            if (m.hasMatch()) {
+                QString incPath = m.captured(1).trimmed();
+                QString absPath = QDir(baseDir).absoluteFilePath(incPath);
+                QList<sym_list::SymbolInfo> incSymbols = symbolList->findSymbolsByFileName(absPath);
+                for (const sym_list::SymbolInfo& s : incSymbols) {
+                    if (!isSymbolTypeMatchCommand(s.symbolType, symbolType)) continue;
+                    if (!prefix.isEmpty() && !matchesAbbreviation(s.symbolName, prefix)) continue;
+                    if (seenIds.contains(s.symbolId)) continue;
+                    seenIds.insert(s.symbolId);
+                    results.append(s);
+                }
+            }
+        }
+        lineNum++;
+        lineStart = (lineEnd < fileContent.length()) ? lineEnd + 1 : fileContent.length();
+    }
+
+    // 3) 模块体内 import pkg::*; 与 import pkg::sym;
+    static const QRegularExpression importStarRegex("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*\\*\\s*;");
+    static const QRegularExpression importSymRegex("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*;");
+    lineNum = 1;
+    lineStart = 0;
+    QSet<QString> packagesStar;
+    QHash<QString, QSet<QString>> packagesSyms;
+    while (lineStart < fileContent.length()) {
+        int lineEnd = fileContent.indexOf('\n', lineStart);
+        if (lineEnd < 0) lineEnd = fileContent.length();
+        if (lineNum >= moduleStartLine && lineNum < moduleEndLineExclusive) {
+            QString line = fileContent.mid(lineStart, lineEnd - lineStart);
+            QRegularExpressionMatch mStar = importStarRegex.match(line);
+            if (mStar.hasMatch()) {
+                packagesStar.insert(mStar.captured(1).trimmed());
+            } else {
+                QRegularExpressionMatch mSym = importSymRegex.match(line);
+                if (mSym.hasMatch()) {
+                    QString pkg = mSym.captured(1).trimmed();
+                    QString symName = mSym.captured(2).trimmed();
+                    packagesSyms[pkg].insert(symName);
+                }
+            }
+        }
+        lineNum++;
+        lineStart = (lineEnd < fileContent.length()) ? lineEnd + 1 : fileContent.length();
+    }
+    for (const sym_list::SymbolInfo& s : allSymbols) {
+        if (!isSymbolTypeMatchCommand(s.symbolType, symbolType)) continue;
+        if (!prefix.isEmpty() && !matchesAbbreviation(s.symbolName, prefix)) continue;
+        bool addFromPackage = false;
+        if (packagesStar.contains(s.moduleScope)) {
+            addFromPackage = true;
+        } else {
+            auto it = packagesSyms.find(s.moduleScope);
+            if (it != packagesSyms.end() && it->contains(s.symbolName)) {
+                addFromPackage = true;
+            }
+        }
+        if (addFromPackage && !seenIds.contains(s.symbolId)) {
+            seenIds.insert(s.symbolId);
+            results.append(s);
+        }
+    }
+
+    std::sort(results.begin(), results.end(), [](const sym_list::SymbolInfo& a, const sym_list::SymbolInfo& b) {
+        if (a.symbolName != b.symbolName) return a.symbolName.compare(b.symbolName, Qt::CaseInsensitive) < 0;
+        if (a.startLine != b.startLine) return a.startLine < b.startLine;
+        return a.fileName < b.fileName;
+    });
     return results;
 }
 
@@ -2176,9 +2332,9 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
                 isGlobalSymbol = true;
             } else if (symbolType == sym_list::sym_packed_struct_var ||
                        symbolType == sym_list::sym_unpacked_struct_var) {
-                // struct变量：返回所有struct变量（不管在哪个模块内）
-                // 因为用户在模块外输入时，应该能看到所有模块的struct变量
-                isGlobalSymbol = true;
+                // struct变量：仅当 moduleScope 为空时才视为全局（真正在 package/$unit 等全局作用域定义）
+                // 避免模块内定义的 struct 变量泄漏到全局补全
+                isGlobalSymbol = symbol.moduleScope.isEmpty();
             } else {
                 // 其他类型需要检查是否在模块外部声明
                 isGlobalSymbol = symbol.moduleScope.isEmpty();

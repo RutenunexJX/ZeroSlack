@@ -103,6 +103,12 @@ public:
                                                               sym_list::sym_type_e symbolType,
                                                               const QString& prefix = "");
 
+    /** 获取模块上下文中某类型符号（模块内 + include 文件 + import 的 package），用于 struct 等命令的严格作用域补全 */
+    QList<sym_list::SymbolInfo> getModuleContextSymbolsByType(const QString& moduleName,
+                                                              const QString& fileName,
+                                                              sym_list::sym_type_e symbolType,
+                                                              const QString& prefix = "");
+
     QList<sym_list::SymbolInfo> getGlobalSymbolsByType_Info(sym_list::sym_type_e symbolType,
                                                             const QString& prefix = "");
     int findEndModulePosition(const QString &fileContent, const sym_list::SymbolInfo &moduleSymbol);
