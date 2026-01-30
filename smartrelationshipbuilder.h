@@ -10,6 +10,7 @@
 #include "symbolrelationshipengine.h"
 #include "syminfo.h"
 #include <QVector>
+#include <QSet>
 
 // 用于异步分析：在后台计算关系，在主线程应用
 struct RelationshipToAdd {
@@ -105,18 +106,20 @@ private:
                                          const QList<sym_list::SymbolInfo>& fileSymbols,
                                          AnalysisContext& context);
 
-    // 🚀 核心分析方法
-    void analyzeModuleInstantiations(const QString& content, AnalysisContext& context);
-    void analyzeVariableAssignments(const QString& content, AnalysisContext& context);
-    void analyzeVariableReferences(const QString& content, AnalysisContext& context);
-    void analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context);
-    void analyzeAlwaysBlocks(const QString& content, AnalysisContext& context);
-    void analyzeGenerateBlocks(const QString& content, AnalysisContext& context);
+    // 🚀 核心分析方法（lineMin/lineMax >= 0 时仅处理该行范围，否则全文件）
+    void analyzeModuleInstantiations(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
+    void analyzeVariableAssignments(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
+    void analyzeVariableReferences(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
+    void analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
+    void analyzeAlwaysBlocks(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
+    void analyzeGenerateBlocks(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
 
     // 🚀 辅助分析方法
     QStringList extractVariablesFromExpression(const QString& expression);
     int findSymbolIdByName(const QString& symbolName, const AnalysisContext& context);
     QString findContainingModule(int lineNumber, const AnalysisContext& context);
+    int getContainingModuleId(int lineNumber, const AnalysisContext& context);
+    QSet<int> getAffectedSymbolIds(const QString& content, const QList<int>& changedLines, AnalysisContext& context);
     bool isInCommentOrString(int position, const QString& content);
     int calculateConfidence(const QString& pattern, const QString& match);
 
@@ -127,10 +130,10 @@ private:
                                   const QString& context, int confidence = 100);
 
     // 🚀 特殊分析：SystemVerilog高级特性
-    void analyzeInterfaceRelationships(const QString& content, AnalysisContext& context);
+    void analyzeInterfaceRelationships(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeParameterRelationships(const QString& content, AnalysisContext& context);
     void analyzeConstraintRelationships(const QString& content, AnalysisContext& context);
-    void analyzeClockResetRelationships(const QString& content, AnalysisContext& context);
+    void analyzeClockResetRelationships(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
 };
 
 #endif // SMARTRELATIONSHIPBUILDER_H

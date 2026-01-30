@@ -338,12 +338,14 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
         (fromId, type)/(toId, type)，removeAllRelationships 仅失效该符号及
         其邻居相关条目；clearAllRelationships 仍全局 invalidateCache()。
 
-  [ ] 增量分析优化
-      - SmartRelationshipBuilder::analyzeFileIncremental 当前委托给 analyzeFile，
-        未真正按变更行增量。改进为：根据 changedLines 或 SymbolAnalyzer/sym_list
-        提供的变更信息，只对受影响模块/块重新执行关系提取与更新，并调用
-        SymbolRelationshipEngine 的增量更新接口（若有）或先移除该文件旧关系
-        再仅写入受影响部分，避免全文件重扫。
+  [x] 增量分析优化（已实现）
+      - SmartRelationshipBuilder::analyzeFileIncremental 已按变更行增量实现：
+        根据 changedLines 计算受影响符号（变更行范围内的符号 + 包含变更行的模块），
+        对受影响符号调用 removeAllRelationships，再仅对 [minLine, maxLine] 行范围
+        重新执行各关系分析（analyzeModuleInstantiations / analyzeVariableAssignments 等
+        已支持可选 lineMin/lineMax 参数）。若变更行数超过文件行数约 30% 则退化为全量
+        analyzeFile。调用方传入 changedLines 时即可使用增量路径（如与 sym_list::
+        setCodeEditorIncremental 的 detectChangedLines 结果配合）。
 
 四、UI 渲染与内存 (UI/UX Performance)
 

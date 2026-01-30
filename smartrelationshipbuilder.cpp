@@ -1,6 +1,7 @@
 #include "smartrelationshipbuilder.h"
 #include <QRegularExpression>
 #include <QApplication>
+#include <algorithm>
 
 SmartRelationshipBuilder::SmartRelationshipBuilder(SymbolRelationshipEngine* engine,
                                                  sym_list* symbolDatabase,
@@ -179,12 +180,14 @@ void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(const QString& fi
     }
 }
 
-// 🚀 分析模块实例化关系
-void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& content, AnalysisContext& context)
+// 🚀 分析模块实例化关系（lineMin/lineMax >= 0 时仅处理该行范围）
+void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     QStringList lines = content.split('\n');
 
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
+        if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
+            continue;
         const QString& line = lines[lineNum].trimmed();
 
         if (line.isEmpty() || line.startsWith("//")) continue;
@@ -212,12 +215,14 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
     }
 }
 
-// 🚀 分析变量赋值关系
-void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content, AnalysisContext& context)
+// 🚀 分析变量赋值关系（lineMin/lineMax >= 0 时仅处理该行范围）
+void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     QStringList lines = content.split('\n');
 
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
+        if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
+            continue;
         const QString& line = lines[lineNum].trimmed();
 
         if (line.isEmpty() || line.startsWith("//")) continue;
@@ -261,13 +266,14 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
     }
 }
 
-// 🚀 分析变量引用关系
-void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content, AnalysisContext& context)
+// 🚀 分析变量引用关系（lineMin/lineMax >= 0 时仅处理该行范围）
+void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
-    // 🚀 这是一个更复杂的分析，需要识别各种上下文中的变量引用
     QStringList lines = content.split('\n');
 
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
+        if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
+            continue;
         const QString& line = lines[lineNum].trimmed();
 
         // 🚀 跳过声明行和注释
@@ -302,12 +308,14 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
     }
 }
 
-// 🚀 分析task和function调用关系
-void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context)
+// 🚀 分析task和function调用关系（lineMin/lineMax >= 0 时仅处理该行范围）
+void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     QStringList lines = content.split('\n');
 
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
+        if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
+            continue;
         const QString& line = lines[lineNum].trimmed();
 
         if (line.isEmpty() || line.startsWith("//")) continue;
@@ -346,13 +354,15 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
     }
 }
 
-// 🚀 分析always块关系
-void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, AnalysisContext& context)
+// 🚀 分析always块关系（lineMin/lineMax >= 0 时仅处理该行范围）
+void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     QStringList lines = content.split('\n');
 
     static const QRegularExpression sensitivityRegex("always\\s*@\\s*\\(([^)]+)\\)");
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
+        if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
+            continue;
         const QString& line = lines[lineNum];
 
         if (patterns.alwaysBlock.match(line).hasMatch()) {
@@ -379,12 +389,14 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
     }
 }
 
-// 🚀 分析时钟和复位关系
-void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& content, AnalysisContext& context)
+// 🚀 分析时钟和复位关系（lineMin/lineMax >= 0 时仅处理该行范围）
+void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     QStringList lines = content.split('\n');
 
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
+        if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
+            continue;
         const QString& line = lines[lineNum].toLower();
 
         // 🚀 查找时钟信号
@@ -491,13 +503,66 @@ void SmartRelationshipBuilder::addRelationshipWithContext(int fromId, int toId,
         relationshipEngine->addRelationship(fromId, toId, type, context, confidence);
 }
 
+// 🚀 返回包含指定行的最内层模块的 symbolId，不存在则 -1
+int SmartRelationshipBuilder::getContainingModuleId(int lineNumber, const AnalysisContext& context)
+{
+    int foundId = -1;
+    int foundStart = -1;
+    for (const sym_list::SymbolInfo& s : context.fileSymbols) {
+        if (s.symbolType == sym_list::sym_module
+            && s.startLine <= lineNumber
+            && s.endLine >= lineNumber
+            && (foundId < 0 || s.startLine > foundStart)) {
+            foundId = s.symbolId;
+            foundStart = s.startLine;
+        }
+    }
+    return foundId;
+}
+
+QString SmartRelationshipBuilder::findContainingModule(int lineNumber, const AnalysisContext& context)
+{
+    int id = getContainingModuleId(lineNumber, context);
+    if (id < 0) return QString();
+    for (const sym_list::SymbolInfo& s : context.fileSymbols) {
+        if (s.symbolId == id) return s.symbolName;
+    }
+    return QString();
+}
+
+// 🚀 根据变更行计算受影响的符号 ID 集合（需在 setupAnalysisContext 之后调用）
+QSet<int> SmartRelationshipBuilder::getAffectedSymbolIds(const QString& content, const QList<int>& changedLines, AnalysisContext& context)
+{
+    QSet<int> affectedIds;
+    if (changedLines.isEmpty()) return affectedIds;
+
+    QStringList lines = content.split('\n');
+    int numLines = lines.size();
+    int minChanged = *std::min_element(changedLines.begin(), changedLines.end());
+    int maxChanged = *std::max_element(changedLines.begin(), changedLines.end());
+    int minLine = qMax(0, minChanged - 2);
+    int maxLine = qMin(numLines - 1, maxChanged + 2);
+
+    for (const sym_list::SymbolInfo& s : context.fileSymbols) {
+        if (s.startLine >= minLine && s.startLine <= maxLine)
+            affectedIds.insert(s.symbolId);
+    }
+    for (int lineNum : changedLines) {
+        int mid = getContainingModuleId(lineNum, context);
+        if (mid >= 0)
+            affectedIds.insert(mid);
+    }
+    return affectedIds;
+}
+
 // 🚀 高级分析方法的基础实现
-void SmartRelationshipBuilder::analyzeInterfaceRelationships(const QString& content, AnalysisContext& context)
+void SmartRelationshipBuilder::analyzeInterfaceRelationships(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     // 🚀 TODO: 实现interface关系分析
-    // 这需要更复杂的SystemVerilog语法解析
     Q_UNUSED(content)
     Q_UNUSED(context)
+    Q_UNUSED(lineMin)
+    Q_UNUSED(lineMax)
 }
 
 void SmartRelationshipBuilder::analyzeParameterRelationships(const QString& content, AnalysisContext& context)
@@ -514,7 +579,7 @@ void SmartRelationshipBuilder::analyzeConstraintRelationships(const QString& con
     Q_UNUSED(context)
 }
 
-// 🚀 增量分析实现
+// 🚀 增量分析实现：仅移除受影响符号的关系并仅对变更行范围重新分析
 void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, const QString& content,
                                                      const QList<int>& changedLines)
 {
@@ -522,9 +587,65 @@ void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, c
         return;
     }
 
-    // 🚀 对于增量分析，我们重新分析整个文件
-    // 更复杂的实现可以只分析变化的行及其影响范围
-    analyzeFile(fileName, content);
+    if (!relationshipEngine || !symbolDatabase) {
+        emit analysisError(fileName, "Missing relationship engine or symbol database");
+        return;
+    }
+
+    AnalysisContext context;
+    setupAnalysisContext(fileName, context);
+
+    QStringList lines = content.split('\n');
+    int numLines = lines.size();
+    if (numLines == 0) return;
+
+    int minChanged = *std::min_element(changedLines.begin(), changedLines.end());
+    int maxChanged = *std::max_element(changedLines.begin(), changedLines.end());
+    int rangeLines = maxChanged - minChanged + 1;
+    // 若变更行数超过文件行数约 30%，退化为全量分析，避免增量逻辑复杂且收益小
+    if (rangeLines > numLines * 3 / 10) {
+        analyzeFile(fileName, content);
+        return;
+    }
+
+    int minLine = qMax(0, minChanged - 2);
+    int maxLine = qMin(numLines - 1, maxChanged + 2);
+
+    QSet<int> affectedIds = getAffectedSymbolIds(content, changedLines, context);
+    for (int symbolId : affectedIds) {
+        relationshipEngine->removeAllRelationships(symbolId);
+    }
+
+    try {
+        analyzeModuleInstantiations(content, context, minLine, maxLine);
+        if (checkCancellation(fileName)) return;
+
+        analyzeVariableAssignments(content, context, minLine, maxLine);
+        if (checkCancellation(fileName)) return;
+
+        analyzeVariableReferences(content, context, minLine, maxLine);
+        if (checkCancellation(fileName)) return;
+
+        analyzeTaskFunctionCalls(content, context, minLine, maxLine);
+        if (checkCancellation(fileName)) return;
+
+        if (enableAdvancedAnalysis) {
+            analyzeAlwaysBlocks(content, context, minLine, maxLine);
+            if (checkCancellation(fileName)) return;
+
+            analyzeInterfaceRelationships(content, context, minLine, maxLine);
+            if (checkCancellation(fileName)) return;
+
+            analyzeClockResetRelationships(content, context, minLine, maxLine);
+        }
+
+        int relationshipsFound = relationshipEngine->getRelationshipCount();
+        emit analysisCompleted(fileName, relationshipsFound);
+    } catch (const std::exception& e) {
+        if (!checkCancellation()) {
+            emit analysisError(fileName, QString("Incremental analysis failed: %1").arg(e.what()));
+        }
+    }
 }
 
 // 🚀 特定关系类型分析的公共接口
