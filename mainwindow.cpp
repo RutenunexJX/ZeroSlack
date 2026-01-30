@@ -402,6 +402,17 @@ void MainWindow::connectNavigationSignals()
     connect(navigationManager.get(), &NavigationManager::symbolNavigationRequested,
             this, &MainWindow::onSymbolNavigationRequested);
 
+    // Ctrl+Click 跳转到定义（跨文件）：编辑器发出 definitionJumpRequested 后由主窗口打开文件并跳转
+    connect(tabManager.get(), &TabManager::tabCreated,
+            this, [this](MyCodeEditor* editor) {
+                if (editor) {
+                    connect(editor, &MyCodeEditor::definitionJumpRequested,
+                            this, [this](const QString&, const QString& file, int line) {
+                                navigateToFileAndLine(file, line);
+                            });
+                }
+            });
+
     // 连接标签页变化到导航管理器
     connect(tabManager.get(), &TabManager::activeTabChanged,
             this, [this](MyCodeEditor* editor) {

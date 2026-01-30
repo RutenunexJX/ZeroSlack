@@ -1456,82 +1456,82 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
 }
 
 
+// 定义类型优先级（用于跨文件跳转时同名符号排序，数值越小优先级越高）
+static int definitionTypePriority(sym_list::sym_type_e t)
+{
+    switch (t) {
+    case sym_list::sym_module:   return 0;
+    case sym_list::sym_interface: return 1;
+    case sym_list::sym_package:  return 2;
+    case sym_list::sym_task:
+    case sym_list::sym_function: return 4;
+    default:                     return 10;
+    }
+}
+
 void MyCodeEditor::jumpToDefinition(const QString& symbolName)
 {
     if (symbolName.isEmpty()) {
         return;
     }
 
-    // 获取符号列表实例
     sym_list* symbolList = sym_list::getInstance();
     if (!symbolList) {
         return;
     }
 
-    // 查找符号定义
-    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
+    const QString currentFile = getFileName();
 
-    if (symbols.isEmpty()) {
+    // ---------- Step 1: 本地搜索（仅当前文件）----------
+    QList<sym_list::SymbolInfo> localSymbols = symbolList->findSymbolsByFileName(currentFile);
+    sym_list::SymbolInfo localBest;
+    bool foundLocal = false;
+    int localBestPriority = 999;
+    for (const sym_list::SymbolInfo& symbol : qAsConst(localSymbols)) {
+        if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
+            continue;
+        }
+        int p = definitionTypePriority(symbol.symbolType);
+        if (p < localBestPriority) {
+            localBest = symbol;
+            localBestPriority = p;
+            foundLocal = true;
+        }
+    }
+    if (foundLocal) {
+        // 当前文件内跳转
+        QTextCursor cursor = textCursor();
+        cursor.movePosition(QTextCursor::Start);
+        cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, localBest.startLine);
+        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, localBest.startColumn);
+        setTextCursor(cursor);
+        centerCursor();
         return;
     }
 
-    // 查找最佳匹配的定义
-    sym_list::SymbolInfo bestMatch;
-    bool foundDefinition = false;
-
-    // 优先级：当前文件中的定义 > 其他文件中的模块/package定义 > 其他定义
-    QString currentFile = getFileName();
-
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (isSymbolDefinition(symbol, symbolName)) {
-            if (symbol.fileName == currentFile) {
-                // 当前文件中的定义，优先级最高
-                bestMatch = symbol;
-                foundDefinition = true;
-                break;
-            } else if (!foundDefinition || 
-                       symbol.symbolType == sym_list::sym_module || 
-                       symbol.symbolType == sym_list::sym_package) {
-                // 其他文件中的定义，模块/package定义优先
-                bestMatch = symbol;
-                foundDefinition = true;
-            }
+    // ---------- Step 2: 全局搜索（跨文件，排除当前文件）----------
+    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    sym_list::SymbolInfo globalBest;
+    bool foundGlobal = false;
+    int globalBestPriority = 999;
+    for (const sym_list::SymbolInfo& symbol : qAsConst(allSymbols)) {
+        if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
+            continue;
+        }
+        if (symbol.fileName == currentFile) {
+            continue; // Step 1 已覆盖，忽略当前文件
+        }
+        int p = definitionTypePriority(symbol.symbolType);
+        if (p < globalBestPriority) {
+            globalBest = symbol;
+            globalBestPriority = p;
+            foundGlobal = true;
         }
     }
 
-    if (!foundDefinition && !symbols.isEmpty()) {
-        // 如果没有找到明确的定义，使用第一个符号
-        bestMatch = symbols.first();
-        foundDefinition = true;
-    }
-
-    if (foundDefinition) {
-        // 通过主窗口进行导航
-        MainWindow* mainWindow = nullptr;
-        QWidget* parent = this->parentWidget();
-        while (parent && !mainWindow) {
-            mainWindow = qobject_cast<MainWindow*>(parent);
-            parent = parent->parentWidget();
-        }
-
-        if (mainWindow && mainWindow->navigationManager) {
-            // 使用现有的符号导航系统
-            mainWindow->navigationManager->navigateToSymbol(bestMatch);
-
-            // 发出信号通知定义跳转
-            emit definitionJumpRequested(bestMatch.symbolName, bestMatch.fileName, bestMatch.startLine + 1);
-        } else {
-
-            // 如果是当前文件，直接跳转到行
-            if (bestMatch.fileName == currentFile) {
-                QTextCursor cursor = textCursor();
-                cursor.movePosition(QTextCursor::Start);
-                cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, bestMatch.startLine);
-                cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, bestMatch.startColumn);
-                setTextCursor(cursor);
-                centerCursor();
-            }
-        }
+    // ---------- Step 3: 跨文件时通过信号由 MainWindow 打开文件并跳转 ----------
+    if (foundGlobal) {
+        emit definitionJumpRequested(globalBest.symbolName, globalBest.fileName, globalBest.startLine + 1);
     }
 }
 
@@ -1542,9 +1542,10 @@ bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const 
         return false;
     }
 
-    // 所有这些类型都被认为是定义
+    // 所有这些类型都被认为是定义（含跨文件跳转的 module/interface/package/task/function）
     switch (symbol.symbolType) {
         case sym_list::sym_module:
+        case sym_list::sym_interface:
         case sym_list::sym_package:
         case sym_list::sym_task:
         case sym_list::sym_function:
