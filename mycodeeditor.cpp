@@ -1495,7 +1495,13 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
     int cursorLine = textCursor().blockNumber();
     QString currentModuleName = symbolList->getCurrentModuleScope(currentFile, cursorLine);
 
-    // ---------- Step 1: 本地搜索（仅当前文件），优先当前模块内的符号（如端口 clk 而非其他模块的 logic clk）----------
+    // 作用域限定：在模块内时只考虑当前模块的符号，避免跨模块跳转（如两个模块都有 clk_main 时只跳本模块）
+    auto inScope = [&currentModuleName](const sym_list::SymbolInfo& s) {
+        if (currentModuleName.isEmpty()) return true;
+        return s.moduleScope == currentModuleName;
+    };
+
+    // ---------- Step 1: 本地搜索（仅当前文件），在模块内时仅当前模块符号 ----------
     QList<sym_list::SymbolInfo> localSymbols = symbolList->findSymbolsByFileName(currentFile);
     sym_list::SymbolInfo localBest;
     bool foundLocal = false;
@@ -1504,6 +1510,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
         if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
             continue;
         }
+        if (!inScope(symbol)) continue;  // 不在当前作用域则跳过
         int p = definitionTypePriority(symbol.symbolType);
         if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
             p -= 100;  // 同模块符号优先（端口/变量等）
@@ -1525,7 +1532,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
         return;
     }
 
-    // ---------- Step 2: 全局搜索（跨文件，排除当前文件）----------
+    // ---------- Step 2: 全局搜索（跨文件，排除当前文件）；在模块内时仅考虑当前模块符号 ----------
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
     sym_list::SymbolInfo globalBest;
     bool foundGlobal = false;
@@ -1537,6 +1544,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
         if (symbol.fileName == currentFile) {
             continue; // Step 1 已覆盖，忽略当前文件
         }
+        if (!inScope(symbol)) continue;  // 不在当前作用域则跳过（避免跳到其他模块的同名端口）
         int p = definitionTypePriority(symbol.symbolType);
         if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
             p -= 100;
@@ -1697,28 +1705,36 @@ bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
         return false;
     }
 
-    // 获取符号列表实例
     sym_list* symbolList = sym_list::getInstance();
     if (!symbolList) {
         return false;
     }
 
-    // 查找符号定义
-    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
+    QString currentFile = getFileName();
+    int cursorLine = textCursor().blockNumber();
+    QString currentModuleName = symbolList->getCurrentModuleScope(currentFile, cursorLine);
 
+    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
     if (symbols.isEmpty()) {
         return false;
     }
 
-    // 检查是否有可跳转的定义
-    QString currentFile = getFileName();
+    // 在模块内时：仅当当前模块中存在该符号的定义才允许跳转（作用域限定）
+    if (!currentModuleName.isEmpty()) {
+        for (const sym_list::SymbolInfo& symbol : symbols) {
+            if (symbol.moduleScope == currentModuleName && isSymbolDefinition(symbol, symbolName)) {
+                return true;
+            }
+        }
+        return false;  // 当前模块无此符号，不显示可跳转
+    }
+
+    // 不在模块内：任意可跳转定义即可
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (isSymbolDefinition(symbol, symbolName)) {
             return true;
         }
     }
-
-    // 如果没有找到明确的定义，但找到了符号，也可以跳转
     return !symbols.isEmpty();
 }
 
