@@ -1,7 +1,6 @@
 #include "symbolanalyzer.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
-#include "mycodeeditor.h"
 #include "completionmanager.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
@@ -30,20 +29,6 @@ SymbolAnalyzer::~SymbolAnalyzer()
         workspaceAnalysisWatcher->deleteLater();
         workspaceAnalysisWatcher = nullptr;
     }
-
-    // Clean up any remaining timers
-    for (auto it = incrementalTimers.begin(); it != incrementalTimers.end(); ++it) {
-        if (it.value()) {
-            it.value()->deleteLater();
-        }
-    }
-
-    for (auto it = significantTimers.begin(); it != significantTimers.end(); ++it) {
-        if (it.value()) {
-            it.value()->deleteLater();
-        }
-    }
-
 }
 
 void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
@@ -56,33 +41,21 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
     QStringList openFileNames = tabManager->getAllOpenFileNames();
     QStringList svFiles = tabManager->getOpenSystemVerilogFiles();
 
-    // Clear existing symbols for these files
     for (const QString& fileName : qAsConst(openFileNames)) {
         symbolList->clearSymbolsForFile(fileName);
     }
 
-    int analyzedCount = 0;
     for (const QString& fileName : qAsConst(svFiles)) {
-        // Find the editor for this file
-        for (int i = 0; i < 20; ++i) { // Reasonable tab limit
-            MyCodeEditor* editor = tabManager->getEditorAt(i);
-            if (!editor) break;
-
-            if (editor->getFileName() == fileName) {
-                symbolList->setCodeEditor(editor);
-                analyzedCount++;
-                break;
-            }
-        }
+        QString content = tabManager->getPlainTextFromOpenFile(fileName);
+        if (!content.isNull())
+            analyzeFileContent(fileName, content);
     }
 
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
     int symbolsFromOpenFiles = 0;
-
+    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
     for (const sym_list::SymbolInfo& symbol : qAsConst(allSymbols)) {
-        if (openFileNames.contains(symbol.fileName)) {
+        if (openFileNames.contains(symbol.fileName))
             symbolsFromOpenFiles++;
-        }
     }
 
     emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
@@ -222,97 +195,6 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
     emit analysisCompleted(filePath, symbolsFound);
 }
 
-void SymbolAnalyzer::analyzeEditor(MyCodeEditor* editor, bool incremental)
-{
-    if (!editor) return;
-
-    QString fileName = editor->getFileName();
-    if (fileName.isEmpty()) {
-        return;
-    }
-
-    emit analysisStarted(fileName);
-
-    sym_list* symbolList = sym_list::getInstance();
-    int symbolsBefore = symbolList->getAllSymbols().size();
-
-    if (incremental) {
-        symbolList->setCodeEditorIncremental(editor);
-    } else {
-        symbolList->setCodeEditor(editor);
-    }
-
-    int symbolsFound = symbolList->getAllSymbols().size() - symbolsBefore;
-    emit analysisCompleted(fileName, symbolsFound);
-}
-
-void SymbolAnalyzer::scheduleIncrementalAnalysis(MyCodeEditor* editor, int delay)
-{
-    if (!editor) return;
-
-    // Cancel existing timer for this editor
-    cancelScheduledAnalysis(editor);
-
-    // Create new timer
-    QTimer* timer = new QTimer(this);
-    timer->setSingleShot(true);
-    timer->setInterval(delay);
-
-    connect(timer, &QTimer::timeout, this, [this, editor]() {
-        if (editor) { // Check if editor still exists
-            analyzeEditor(editor, true); // Incremental analysis
-        }
-        cleanupTimer(editor);
-    });
-
-    incrementalTimers[editor] = timer;
-    timer->start();
-}
-
-void SymbolAnalyzer::scheduleSignificantAnalysis(MyCodeEditor* editor, int delay)
-{
-    if (!editor) return;
-
-    // Cancel existing significant timer for this editor
-    if (significantTimers.contains(editor)) {
-        significantTimers[editor]->stop();
-        significantTimers[editor]->deleteLater();
-        significantTimers.remove(editor);
-    }
-
-    // Create new timer
-    QTimer* timer = new QTimer(this);
-    timer->setSingleShot(true);
-    timer->setInterval(delay);
-
-    connect(timer, &QTimer::timeout, this, [this, editor]() {
-        if (editor) { // Check if editor still exists
-            analyzeEditor(editor, false); // Full analysis
-        }
-        cleanupTimer(editor);
-    });
-
-    significantTimers[editor] = timer;
-    timer->start();
-}
-
-void SymbolAnalyzer::cancelScheduledAnalysis(MyCodeEditor* editor)
-{
-    // Cancel incremental timer
-    if (incrementalTimers.contains(editor)) {
-        incrementalTimers[editor]->stop();
-        incrementalTimers[editor]->deleteLater();
-        incrementalTimers.remove(editor);
-    }
-
-    // Cancel significant timer
-    if (significantTimers.contains(editor)) {
-        significantTimers[editor]->stop();
-        significantTimers[editor]->deleteLater();
-        significantTimers.remove(editor);
-    }
-}
-
 bool SymbolAnalyzer::isAnalysisNeeded(const QString& fileName, const QString& content) const
 {
     if (!lastAnalyzedContent.contains(fileName)) return true;
@@ -324,42 +206,6 @@ void SymbolAnalyzer::invalidateCache()
 {
     lastAnalyzedContent.clear();
     CompletionManager::getInstance()->invalidateAllCaches();
-}
-
-void SymbolAnalyzer::onIncrementalAnalysisTimer()
-{
-    QTimer* timer = qobject_cast<QTimer*>(sender());
-    if (!timer) return;
-
-    // Find which editor this timer belongs to
-    for (auto it = incrementalTimers.begin(); it != incrementalTimers.end(); ++it) {
-        if (it.value() == timer) {
-            MyCodeEditor* editor = it.key();
-            if (editor) {
-                analyzeEditor(editor, true);
-            }
-            cleanupTimer(editor);
-            break;
-        }
-    }
-}
-
-void SymbolAnalyzer::onSignificantAnalysisTimer()
-{
-    QTimer* timer = qobject_cast<QTimer*>(sender());
-    if (!timer) return;
-
-    // Find which editor this timer belongs to
-    for (auto it = significantTimers.begin(); it != significantTimers.end(); ++it) {
-        if (it.value() == timer) {
-            MyCodeEditor* editor = it.key();
-            if (editor) {
-                analyzeEditor(editor, false);
-            }
-            cleanupTimer(editor);
-            break;
-        }
-    }
 }
 
 void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& content)
@@ -379,21 +225,6 @@ QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) c
         }
     }
     return svFiles;
-}
-
-void SymbolAnalyzer::cleanupTimer(MyCodeEditor* editor)
-{
-    // Clean up incremental timer
-    if (incrementalTimers.contains(editor)) {
-        incrementalTimers[editor]->deleteLater();
-        incrementalTimers.remove(editor);
-    }
-
-    // Clean up significant timer
-    if (significantTimers.contains(editor)) {
-        significantTimers[editor]->deleteLater();
-        significantTimers.remove(editor);
-    }
 }
 
 bool SymbolAnalyzer::hasSignificantChanges(const QString& oldContent, const QString& newContent) const

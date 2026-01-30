@@ -2,14 +2,12 @@
 #define SYMBOLANALYZER_H
 
 #include <QObject>
-#include <QTimer>
 #include <QStringList>
 #include <QFutureWatcher>
 #include <QPair>
 #include <functional>
 #include "syminfo.h"
 
-class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 
@@ -30,12 +28,6 @@ public:
     void analyzeFile(const QString& filePath);
     /** 阶段 B：基于内容的解析，不创建 QWidget；直接对 QString 做正则解析，供工作区/单文件分析使用 */
     void analyzeFileContent(const QString& fileName, const QString& content);
-    void analyzeEditor(MyCodeEditor* editor, bool incremental = false);
-
-    // Analysis control
-    void scheduleIncrementalAnalysis(MyCodeEditor* editor, int delay = 1000);
-    void scheduleSignificantAnalysis(MyCodeEditor* editor, int delay = 2000);
-    void cancelScheduledAnalysis(MyCodeEditor* editor);
 
     // Utility
     bool isAnalysisNeeded(const QString& fileName, const QString& content) const;
@@ -51,15 +43,9 @@ signals:
     void batchProgress(int filesDone, int totalFiles, const QString& currentFileName);
 
 private slots:
-    void onIncrementalAnalysisTimer();
-    void onSignificantAnalysisTimer();
     void onWorkspaceAnalysisFinished();
 
 private:
-    // Timers for delayed analysis
-    QHash<MyCodeEditor*, QTimer*> incrementalTimers;
-    QHash<MyCodeEditor*, QTimer*> significantTimers;
-
     // Analysis state tracking
     QHash<QString, QString> lastAnalyzedContent;
 
@@ -68,7 +54,6 @@ private:
 
     // Helper methods（阶段 B：已废弃 createBackgroundEditor，改用 analyzeFileContent + 文件内容）
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
-    void cleanupTimer(MyCodeEditor* editor);
     bool isSystemVerilogFile(const QString &fileName) const;
 };
 

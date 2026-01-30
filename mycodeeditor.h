@@ -43,7 +43,6 @@ private slots:
     void updateLineNumberWidget(QRect rect, int dy);
     void updateLineNumberWidgetWidth();
     void updateSaveState();
-    void disLineNumber();
     void onTextChanged();
     void onAutoCompleteTimer();
     void onCompletionActivated(const QModelIndex &index);

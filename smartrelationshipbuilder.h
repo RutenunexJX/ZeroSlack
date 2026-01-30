@@ -129,8 +129,7 @@ private:
                                   SymbolRelationshipEngine::RelationType type,
                                   const QString& context, int confidence = 100);
 
-    // 🚀 特殊分析：SystemVerilog高级特性
-    void analyzeInterfaceRelationships(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
+    // 🚀 特殊分析：SystemVerilog高级特性（interface 分析待统一扩展接口实现）
     void analyzeParameterRelationships(const QString& content, AnalysisContext& context);
     void analyzeConstraintRelationships(const QString& content, AnalysisContext& context);
     void analyzeClockResetRelationships(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);

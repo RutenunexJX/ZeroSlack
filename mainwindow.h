@@ -51,6 +51,9 @@ public:
 
     /** 请求对指定文件内容执行单文件关系分析（可被编辑器去抖后调用，内部会取消未完成任务） */
     void requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
+    /** 延后对已打开文件做符号分析（按 fileName 去抖，替代 SymbolAnalyzer 的 scheduleIncrementalAnalysis） */
+    void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
+    void cancelScheduledOpenFileAnalysis(const QString& fileName);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -77,9 +80,6 @@ private slots:
     void onRelationshipsCleared();
     void onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound);
     void onRelationshipAnalysisError(const QString& fileName, const QString& error);
-
-    void onDebugPrintSymbolIds();
-
 
     void onDebug0();
 private:
@@ -116,6 +116,9 @@ private:
     /** fileChanged 防抖：保存时 QFileSystemWatcher 常会触发两次，短时间内的重复只分析一次 */
     QMap<QString, QTimer*> fileChangeDebounceTimers;
     static const int kFileChangeDebounceMs = 350;
+
+    /** 已打开标签的延后符号分析（按 fileName 去抖，超时后从 TabManager 取内容调用 analyzeFileContent） */
+    QMap<QString, QTimer*> openFileAnalysisTimers;
 
     /** 推迟 relationshipAdded 后的导航刷新，避免主线程在符号分析持写锁时读 sym_list 阻塞 */
     QTimer* relationshipRefreshDeferTimer = nullptr;

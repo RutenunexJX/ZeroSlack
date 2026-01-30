@@ -11,15 +11,12 @@
 #include <QRegularExpression>
 
 class MainWindow;
-class MyCodeEditor;
 class SymbolRelationshipEngine;
 
 class sym_list{
 public:
     sym_list();
     ~sym_list();
-
-    void setCodeEditor(MyCodeEditor* codeEditor);
 
     // UPDATED: Smart pointer singleton pattern
     static sym_list* getInstance();
@@ -156,8 +153,7 @@ public:
     QList<RegexMatch> findMatchesOutsideComments(const QString &text, const QRegularExpression &pattern);
     void findVariableDeclarations();
 
-    void setCodeEditorIncremental(MyCodeEditor* codeEditor);
-    /** 基于内容的增量分析，供后台线程使用，不依赖 QWidget；与 setCodeEditorIncremental 逻辑一致 */
+    /** 基于内容的增量分析，供后台线程使用，不依赖 QWidget */
     void setContentIncremental(const QString& fileName, const QString& content);
     bool needsAnalysis(const QString& fileName, const QString& content);
 

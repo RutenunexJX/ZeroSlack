@@ -241,53 +241,11 @@ QList<int> SymbolRelationshipEngine::getModuleInstances(int moduleId) const
 */
 QList<int> SymbolRelationshipEngine::getModuleInstances(int moduleId) const
 {
-
-    // 验证输入参数
-    if (moduleId <= 0) {
+    if (moduleId <= 0)
         return QList<int>();
-    }
-
-    // 检查模块是否存在于关系图中
-    if (!relationshipGraph.contains(moduleId)) {
+    if (!relationshipGraph.contains(moduleId))
         return QList<int>();
-    }
-
-
-    // 获取相关符号（调用现有的getRelatedSymbols方法）
-    QList<int> result = getRelatedSymbols(moduleId, INSTANTIATES, false); // 输入关系：谁实例化了这个模块
-
-
-    // 详细输出每个实例的信息
-    if (!result.isEmpty()) {
-        for (int i = 0; i < result.size(); ++i) {
-            int instanceId = result[i];
-
-            // 如果有符号管理器，尝试获取符号名称
-            if (sym_list::getInstance()) {
-                auto symbolInfo = sym_list::getInstance()->getSymbolById(instanceId);
-            }
-        }
-    } else {
-
-        // 额外调试：检查该模块的所有关系类型
-        if (relationshipGraph.contains(moduleId)) {
-            const RelationshipNode& node = relationshipGraph[moduleId];
-
-            int instantiatesCount = 0;
-            int otherTypesCount = 0;
-
-            for (const RelationshipEdge& edge : node.incomingEdges) {
-                if (edge.type == INSTANTIATES) {
-                    instantiatesCount++;
-                } else {
-                    otherTypesCount++;
-                }
-            }
-
-        }
-    }
-
-    return result;
+    return getRelatedSymbols(moduleId, INSTANTIATES, false);
 }
 
 
@@ -544,13 +502,6 @@ QString SymbolRelationshipEngine::relationshipTypeToString(RelationType type) co
     default: return "Unknown";
     }
 }
-
-QString relationshipTypeToString(SymbolRelationshipEngine::RelationType type)
-{
-    SymbolRelationshipEngine engine;
-    return engine.relationshipTypeToString(type);
-}
-
 
 void SymbolRelationshipEngine::findPathRecursive(int currentId, int targetId, int currentDepth, int maxDepth,
                                                 QSet<int>& visited, QList<int>& currentPath,

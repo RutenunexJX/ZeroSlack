@@ -1,5 +1,4 @@
 #include "syminfo.h"
-#include "mycodeeditor.h"
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
 
@@ -834,43 +833,6 @@ QList<sym_list::RegexMatch> sym_list::findMatchesOutsideComments(const QString &
     return validMatches;
 }
 
-void sym_list::setCodeEditor(MyCodeEditor* codeEditor)
-{
-    if (!codeEditor) {
-        return;
-    }
-
-    currentFileName = codeEditor->getFileName();
-    const QString text = codeEditor->document()->toPlainText();
-
-    // 仅当“符号相关”内容变化时才分析；仅改注释/空格/空行不触发
-    if (fileStates.contains(currentFileName)) {
-        QString newSymbolHash = calculateSymbolRelevantHash(text);
-        if (!fileStates[currentFileName].symbolRelevantHash.isEmpty()
-            && newSymbolHash == fileStates[currentFileName].symbolRelevantHash) {
-            return;
-        }
-    }
-
-    // Clear existing symbols for this file before analysis
-    clearSymbolsForFile(currentFileName);
-
-    buildCommentRegions(text);
-    extractSymbolsAndContainsOnePass(text);
-    getAdditionalSymbols(text);
-    buildSymbolRelationships(currentFileName);
-
-    FileState& stateAfter = fileStates[currentFileName];
-    stateAfter.symbolRelevantHash = calculateSymbolRelevantHash(text);
-    stateAfter.contentHash = calculateContentHash(text);
-    stateAfter.needsFullAnalysis = false;
-    stateAfter.lastModified = QDateTime::currentDateTime();
-    previousFileContents[currentFileName] = text;
-
-    // UPDATED: Force refresh all caches to ensure normal mode completion works
-    CompletionManager::getInstance()->forceRefreshSymbolCaches();
-}
-
 void sym_list::getVariableDeclarations(const QString &text)
 {
     int symbolsFound = 0;
@@ -1048,16 +1010,6 @@ void sym_list::getTasksAndFunctions(const QString &text)
         }
     }
 
-}
-
-void sym_list::setCodeEditorIncremental(MyCodeEditor* codeEditor)
-{
-    if (!codeEditor) return;
-
-    currentFileName = codeEditor->getFileName();
-    QString content = codeEditor->document()->toPlainText();
-    setContentIncremental(currentFileName, content);
-    CompletionManager::getInstance()->invalidateSymbolCaches();
 }
 
 void sym_list::setContentIncremental(const QString& fileName, const QString& content)

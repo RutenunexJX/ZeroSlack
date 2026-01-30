@@ -66,10 +66,9 @@ void MainWindow::setupManagerConnections()
                 QString fileName = editor->getFileName();
                 QString content = editor->toPlainText();
                 // 延后执行，先让标签页显示出来，再在后台做符号/关系分析
-                QTimer::singleShot(0, this, [this, editor, fileName, content]() {
-                    if (!editor) return;
+                QTimer::singleShot(0, this, [this, fileName, content]() {
                     // 只分析新打开的这一个文件，不再重分析所有已打开标签
-                    symbolAnalyzer->analyzeEditor(editor, true);
+                    symbolAnalyzer->analyzeFileContent(fileName, content);
                     if (!fileName.isEmpty())
                         requestSingleFileRelationshipAnalysis(fileName, content);
                 });
@@ -680,6 +679,38 @@ void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, 
     relationshipSingleFileWatcher->setFuture(future);
 }
 
+void MainWindow::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
+{
+    if (fileName.isEmpty() || !symbolAnalyzer || !tabManager)
+        return;
+    cancelScheduledOpenFileAnalysis(fileName);
+    QTimer* timer = new QTimer(this);
+    timer->setSingleShot(true);
+    timer->setInterval(delayMs);
+    connect(timer, &QTimer::timeout, this, [this, fileName, timer]() {
+        QString content = tabManager->getPlainTextFromOpenFile(fileName);
+        if (!content.isNull())
+            symbolAnalyzer->analyzeFileContent(fileName, content);
+        if (openFileAnalysisTimers.value(fileName) == timer)
+            openFileAnalysisTimers.remove(fileName);
+        timer->deleteLater();
+    });
+    openFileAnalysisTimers[fileName] = timer;
+    timer->start();
+}
+
+void MainWindow::cancelScheduledOpenFileAnalysis(const QString& fileName)
+{
+    auto it = openFileAnalysisTimers.find(fileName);
+    if (it != openFileAnalysisTimers.end()) {
+        if (it.value()) {
+            it.value()->stop();
+            it.value()->deleteLater();
+        }
+        openFileAnalysisTimers.erase(it);
+    }
+}
+
 void MainWindow::onSingleFileRelationshipFinished()
 {
     if (!relationshipSingleFileWatcher || !relationshipEngine || !relationshipBuilder)
@@ -811,16 +842,7 @@ void MainWindow::setupDebugButton()
     // 添加到工具栏或菜单栏
     ui->toolBar->addWidget(debugButton);
 
-    // 连接信号槽
-    connect(debugButton, &QPushButton::clicked, this,
-    //        &MainWindow::onDebugPrintSymbolIds);
-            &MainWindow::onDebug0);
-
-}
-
-// 调试槽函数实现
-void MainWindow::onDebugPrintSymbolIds()
-{
+    connect(debugButton, &QPushButton::clicked, this, &MainWindow::onDebug0);
 }
 
 void MainWindow::onDebug0(){

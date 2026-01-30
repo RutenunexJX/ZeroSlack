@@ -74,9 +74,6 @@ void SmartRelationshipBuilder::analyzeFile(const QString& fileName, const QStrin
             analyzeAlwaysBlocks(content, context);
             if (checkCancellation(fileName)) return;
 
-            analyzeInterfaceRelationships(content, context);
-            if (checkCancellation(fileName)) return;
-
             analyzeClockResetRelationships(content, context);
             if (checkCancellation(fileName)) return;
         }
@@ -122,9 +119,6 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(const 
 
         if (enableAdvancedAnalysis) {
             analyzeAlwaysBlocks(content, context);
-            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
-
-            analyzeInterfaceRelationships(content, context);
             if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
 
             analyzeClockResetRelationships(content, context);
@@ -555,16 +549,6 @@ QSet<int> SmartRelationshipBuilder::getAffectedSymbolIds(const QString& content,
     return affectedIds;
 }
 
-// 🚀 高级分析方法的基础实现
-void SmartRelationshipBuilder::analyzeInterfaceRelationships(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
-{
-    // 🚀 TODO: 实现interface关系分析
-    Q_UNUSED(content)
-    Q_UNUSED(context)
-    Q_UNUSED(lineMin)
-    Q_UNUSED(lineMax)
-}
-
 void SmartRelationshipBuilder::analyzeParameterRelationships(const QString& content, AnalysisContext& context)
 {
     // 🚀 TODO: 实现parameter关系分析
@@ -631,9 +615,6 @@ void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, c
 
         if (enableAdvancedAnalysis) {
             analyzeAlwaysBlocks(content, context, minLine, maxLine);
-            if (checkCancellation(fileName)) return;
-
-            analyzeInterfaceRelationships(content, context, minLine, maxLine);
             if (checkCancellation(fileName)) return;
 
             analyzeClockResetRelationships(content, context, minLine, maxLine);
