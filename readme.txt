@@ -318,14 +318,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 三、索引与缓存 (Indexing/Caching)
 
-  [ ] 符号 ID 快速查找
-      - sym_list 已具备 symbolNameIndex；在 sym_list 中新增 findSymbolIdByName(
-        const QString& symbolName)，利用 symbolNameIndex 直接返回首个匹配
-        的 symbolId（若存在），否则返回 -1。
+  [x] 符号 ID 快速查找（已实现）
+      - sym_list 新增 findSymbolIdByName(const QString& symbolName) const，
+        利用 symbolNameIndex 直接返回首个匹配的 symbolId（若存在），否则
+        返回 -1；内部持读锁，与 findSymbolsByName 一致。
       - CompletionManager::findSymbolIdByName 与 SmartRelationshipBuilder::
-        findSymbolIdByName 改为在内部调用 sym_list::findSymbolIdByName（或
-        等价地使用 sym_list 的索引），避免先取 QList<SymbolInfo> 再取
-        first().symbolId，减少临时列表分配。
+        findSymbolIdByName 已改为调用 sym_list::findSymbolIdByName，避免
+        先取 QList<SymbolInfo> 再取 first().symbolId，减少临时列表分配。
 
   [ ] 关系引擎查询缓存策略
       - 当前 SymbolRelationshipEngine 在每次 add/removeRelationship 等写操作
