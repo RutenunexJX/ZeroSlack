@@ -3,11 +3,12 @@
 #include "workspacemanager.h"
 #include "mycodeeditor.h"
 #include "completionmanager.h"
+#include <QtConcurrent/QtConcurrent>
 #include <QFile>
 #include <QTextStream>
 #include <QFileInfo>
-#include <QElapsedTimer>
-#include <QDebug>
+#include <QFileInfo>
+#include <QThread>
 #include <QRegularExpression>
 #include <QApplication>
 #include <QEventLoop>
@@ -15,10 +16,21 @@
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     : QObject(parent)
 {
+    workspaceAnalysisWatcher = new QFutureWatcher<QPair<int, int>>(this);
+    connect(workspaceAnalysisWatcher, &QFutureWatcher<QPair<int, int>>::finished,
+            this, &SymbolAnalyzer::onWorkspaceAnalysisFinished);
 }
 
 SymbolAnalyzer::~SymbolAnalyzer()
 {
+    if (workspaceAnalysisWatcher && workspaceAnalysisWatcher->isRunning()) {
+        workspaceAnalysisWatcher->cancel();
+    }
+    if (workspaceAnalysisWatcher) {
+        workspaceAnalysisWatcher->deleteLater();
+        workspaceAnalysisWatcher = nullptr;
+    }
+
     // Clean up any remaining timers
     for (auto it = incrementalTimers.begin(); it != incrementalTimers.end(); ++it) {
         if (it.value()) {
@@ -39,9 +51,6 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
     if (!tabManager) return;
 
     emit analysisStarted("open_tabs");
-
-    QElapsedTimer totalTimer;
-    totalTimer.start();
 
     sym_list* symbolList = sym_list::getInstance();
     QStringList openFileNames = tabManager->getAllOpenFileNames();
@@ -67,8 +76,6 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
         }
     }
 
-    qint64 totalMs = totalTimer.elapsed();
-    // Get final symbol count
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
     int symbolsFromOpenFiles = 0;
 
@@ -77,11 +84,6 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
             symbolsFromOpenFiles++;
         }
     }
-
-    qDebug().noquote() << "[Perf] analyzeOpenTabs"
-        << "files=" << analyzedCount
-        << "totalMs=" << totalMs
-        << "symbols=" << symbolsFromOpenFiles;
 
     emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
 }
@@ -95,9 +97,6 @@ void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::f
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) return;
 
     emit analysisStarted(workspaceManager->getWorkspacePath());
-
-    QElapsedTimer totalTimer;
-    totalTimer.start();
 
     QStringList svFiles = workspaceManager->getSystemVerilogFiles();
     const int totalFiles = svFiles.size();
@@ -135,18 +134,69 @@ void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::f
         }
     }
 
-    qint64 totalMs = totalTimer.elapsed();
-    qDebug().noquote() << "[Perf] analyzeWorkspace"
-        << "path=" << workspaceManager->getWorkspacePath()
-        << "files=" << filesAnalyzed << "/" << svFiles.size()
-        << "totalMs=" << totalMs
-        << "symbols=" << totalSymbolsFound
-        << "avgMsPerFile=" << (filesAnalyzed > 0 ? (totalMs / filesAnalyzed) : 0);
-
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
 
     emit batchAnalysisCompleted(svFiles.size(), totalSymbolsFound);
     emit analysisCompleted(workspaceManager->getWorkspacePath(), totalSymbolsFound);
+}
+
+void SymbolAnalyzer::startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled)
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) return;
+    if (workspaceAnalysisWatcher && workspaceAnalysisWatcher->isRunning()) {
+        workspaceAnalysisWatcher->cancel();
+    }
+
+    QStringList svFiles = workspaceManager->getSystemVerilogFiles();
+    QString workspacePath = workspaceManager->getWorkspacePath();
+    const int totalFiles = svFiles.size();
+
+    emit analysisStarted(workspacePath);
+
+    QFuture<QPair<int, int>> future = QtConcurrent::run([this, svFiles, totalFiles, isCancelled]() {
+        sym_list* symbolList = sym_list::getInstance();
+        int totalSymbolsFound = 0;
+        int filesAnalyzed = 0;
+
+        for (int j = 0; j < totalFiles; ++j) {
+            if (isCancelled && isCancelled())
+                break;
+            const QString& filePath = svFiles.at(j);
+            QFile file(filePath);
+            if (!file.open(QIODevice::ReadOnly | QFile::Text))
+                continue;
+            QString content = QTextStream(&file).readAll();
+            file.close();
+
+            int symbolsBefore = symbolList->getAllSymbols().size();
+            symbolList->setContentIncremental(filePath, content);
+            int symbolsAfter = symbolList->getAllSymbols().size();
+            totalSymbolsFound += (symbolsAfter - symbolsBefore);
+            filesAnalyzed++;
+            emit batchProgress(filesAnalyzed, totalFiles, filePath);
+        }
+        return qMakePair(filesAnalyzed, totalSymbolsFound);
+    });
+
+    workspaceAnalysisWatcher->setProperty("workspacePath", workspacePath);
+    workspaceAnalysisWatcher->setFuture(future);
+}
+
+void SymbolAnalyzer::onWorkspaceAnalysisFinished()
+{
+    if (!workspaceAnalysisWatcher) return;
+    if (workspaceAnalysisWatcher->isCanceled())
+        return;
+
+    QPair<int, int> result = workspaceAnalysisWatcher->result();
+    int filesAnalyzed = result.first;
+    int totalSymbolsFound = result.second;
+    QString workspacePath = workspaceAnalysisWatcher->property("workspacePath").toString();
+
+    CompletionManager::getInstance()->forceRefreshSymbolCaches();
+
+    emit batchAnalysisCompleted(filesAnalyzed, totalSymbolsFound);
+    emit analysisCompleted(workspacePath, totalSymbolsFound);
 }
 
 void SymbolAnalyzer::analyzeFile(const QString& filePath)
@@ -154,9 +204,6 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
     if (!isSystemVerilogFile(filePath)) return;
 
     emit analysisStarted(filePath);
-
-    QElapsedTimer timer;
-    timer.start();
 
     auto tempEditor = createBackgroundEditor(filePath);
     if (!tempEditor) {
@@ -168,15 +215,7 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
 
     symbolList->setCodeEditorIncremental(tempEditor.get());
 
-    int symbolsAfter = symbolList->getAllSymbols().size();
-    int symbolsFound = symbolsAfter - symbolsBefore;
-    qint64 ms = timer.elapsed();
-
-    qDebug().noquote() << "[Perf] analyzeFile"
-        << "file=" << filePath
-        << "ms=" << ms
-        << "symbols=" << symbolsFound;
-
+    int symbolsFound = symbolList->getAllSymbols().size() - symbolsBefore;
     emit analysisCompleted(filePath, symbolsFound);
 }
 
@@ -191,9 +230,6 @@ void SymbolAnalyzer::analyzeEditor(MyCodeEditor* editor, bool incremental)
 
     emit analysisStarted(fileName);
 
-    QElapsedTimer timer;
-    timer.start();
-
     sym_list* symbolList = sym_list::getInstance();
     int symbolsBefore = symbolList->getAllSymbols().size();
 
@@ -203,16 +239,7 @@ void SymbolAnalyzer::analyzeEditor(MyCodeEditor* editor, bool incremental)
         symbolList->setCodeEditor(editor);
     }
 
-    int symbolsAfter = symbolList->getAllSymbols().size();
-    int symbolsFound = symbolsAfter - symbolsBefore;
-    qint64 ms = timer.elapsed();
-
-    qDebug().noquote() << "[Perf] analyzeEditor"
-        << (incremental ? "incremental" : "full")
-        << "file=" << fileName
-        << "ms=" << ms
-        << "symbols=" << symbolsFound;
-
+    int symbolsFound = symbolList->getAllSymbols().size() - symbolsBefore;
     emit analysisCompleted(fileName, symbolsFound);
 }
 

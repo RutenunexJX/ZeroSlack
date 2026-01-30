@@ -212,6 +212,13 @@ void RelationshipProgressDialog::startAnalysis(int totalFiles)
 }
 
 
+void RelationshipProgressDialog::setSymbolAnalysisProgress(int filesDone, int totalFiles)
+{
+    if (statsLabel && totalFiles > 0) {
+        statsLabel->setText(QString("阶段1: 已分析 %1/%2 个文件 (符号)").arg(filesDone).arg(totalFiles));
+    }
+}
+
 void RelationshipProgressDialog::updateProgress(const QString& fileName, int relationshipsFound)
 {
     static int updateCount = 0;

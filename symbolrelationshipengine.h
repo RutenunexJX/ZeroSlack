@@ -30,6 +30,7 @@ public:
         GENERATES,       // generate语句关系
         CONSTRAINS       // 约束关系
     };
+    Q_ENUM(RelationType)
 
     explicit SymbolRelationshipEngine(QObject *parent = nullptr);
     ~SymbolRelationshipEngine();
@@ -75,6 +76,10 @@ signals:
     void relationshipAdded(int fromSymbolId, int toSymbolId, RelationType type);
     void relationshipRemoved(int fromSymbolId, int toSymbolId, RelationType type);
     void relationshipsCleared();
+
+private slots:
+    /** 供非主线程调用 addRelationship 时在主线程发射 relationshipAdded，避免排队传递 RelationType */
+    void emitRelationshipAddedQueued(int fromSymbolId, int toSymbolId, int typeAsInt);
 
 private:
     // 🚀 核心数据结构：邻接表表示的关系图
@@ -128,5 +133,8 @@ private:
 
 // 🚀 全局关系类型工具函数
 SymbolRelationshipEngine::RelationType stringToRelationshipType(const QString& typeStr);
+
+// 供跨线程/队列信号槽传递 RelationType 使用（配合 main 中 qRegisterMetaType）
+Q_DECLARE_METATYPE(SymbolRelationshipEngine::RelationType)
 
 #endif // SYMBOLRELATIONSHIPENGINE_H

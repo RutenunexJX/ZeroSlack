@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QTimer>
 #include <QStringList>
+#include <QFutureWatcher>
+#include <QPair>
 #include <functional>
 #include "syminfo.h"
 
@@ -23,6 +25,8 @@ public:
     void analyzeOpenTabs(TabManager* tabManager);
     /** 工作区批量符号分析；按批读取并分析以控制内存与 UI 响应。isCancelled 可选，返回 true 时中止。 */
     void analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
+    /** 阶段 A：在后台线程执行工作区符号分析，不阻塞 UI；进度通过 batchProgress 等信号回传。 */
+    void startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
     void analyzeFile(const QString& filePath);
     void analyzeEditor(MyCodeEditor* editor, bool incremental = false);
 
@@ -45,6 +49,7 @@ signals:
 private slots:
     void onIncrementalAnalysisTimer();
     void onSignificantAnalysisTimer();
+    void onWorkspaceAnalysisFinished();
 
 private:
     // Timers for delayed analysis
@@ -53,6 +58,9 @@ private:
 
     // Analysis state tracking
     QHash<QString, QString> lastAnalyzedContent;
+
+    // 阶段 A：后台工作区分析（不创建 QWidget，不调用 processEvents）
+    QFutureWatcher<QPair<int, int>>* workspaceAnalysisWatcher = nullptr;
 
     // Helper methods
     std::unique_ptr<MyCodeEditor> createBackgroundEditor(const QString& filePath);

@@ -1,5 +1,9 @@
 #include "symbolrelationshipengine.h"
 #include "syminfo.h"
+#include <QCoreApplication>
+#include <QThread>
+#include <QDebug>
+#include <QMetaObject>
 #include <algorithm>
 
 SymbolRelationshipEngine::SymbolRelationshipEngine(QObject *parent)
@@ -40,7 +44,18 @@ void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
     // 仅失效涉及 fromId/toId 的缓存条目
     invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
 
-    emit relationshipAdded(fromSymbolId, toSymbolId, type);
+    // 若在非主线程（如符号分析后台线程），通过 invokeMethod 在主线程发射信号，避免排队传递 RelationType
+    if (QThread::currentThread() != QCoreApplication::instance()->thread()) {
+        QMetaObject::invokeMethod(this, "emitRelationshipAddedQueued", Qt::QueuedConnection,
+                                  Q_ARG(int, fromSymbolId), Q_ARG(int, toSymbolId), Q_ARG(int, static_cast<int>(type)));
+    } else {
+        emit relationshipAdded(fromSymbolId, toSymbolId, type);
+    }
+}
+
+void SymbolRelationshipEngine::emitRelationshipAddedQueued(int fromSymbolId, int toSymbolId, int typeAsInt)
+{
+    emit relationshipAdded(fromSymbolId, toSymbolId, static_cast<RelationType>(typeAsInt));
 }
 
 void SymbolRelationshipEngine::removeRelationship(int fromSymbolId, int toSymbolId, RelationType type)
