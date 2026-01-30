@@ -5,6 +5,7 @@
 #include <QList>
 #include <QHash>
 #include <QSet>
+#include <QVector>
 #include <memory>
 #include <QDateTime>
 #include <QReadWriteLock>
@@ -81,6 +82,15 @@ public:
         sym_module,
         sym_module_parameter,
         sym_inst,
+        sym_inst_pin,             // 实例化处的 .pin(sig) 引脚，用于 REFERENCES 到模块端口
+
+        // 模块端口类型（ANSI 风格，用于“跳转到定义”等）
+        sym_port_input,
+        sym_port_output,
+        sym_port_inout,
+        sym_port_ref,
+        sym_port_interface,
+        sym_port_interface_modport,
 
         sym_package
     };
@@ -107,6 +117,9 @@ public:
         // 🚀 NEW: 可选的快速访问字段(由关系引擎同步维护)
         QString moduleScope;       // 所属模块名称(用于快速过滤和显示)
         int scopeLevel = 0;        // 作用域层级(0=全局, 1=模块内, 2=块内等)
+
+        // 端口/用户类型显示：如 my_struct_t、logic[7:0] 等
+        QString dataType;
     };
 
     struct RegexMatch {
@@ -148,6 +161,9 @@ public:
 
     /** 作用域树：按文件维护，供补全按行查找作用域与词法遮蔽 */
     ScopeManager* getScopeManager() const;
+
+    /** 获取指定文件、行号所在的模块名（供跳转定义时优先同模块符号） */
+    QString getCurrentModuleScope(const QString& fileName, int lineNumber);
 
     QList<CommentRegion> commentRegions;
 
@@ -255,7 +271,6 @@ private:
     void analyzeParameters(const QString &text);
     void analyzeConstraints(const QString &text);
     void getAdditionalSymbols(const QString &text);
-    QString getCurrentModuleScope(const QString &fileName, int lineNumber);
     void analyzeStructVariables(const QString &text);
     void analyzeStructMembers(const QString &membersText, const QString &structName, int basePosition, const QString &fullText);
     void analyzeEnumsAndStructs(const QString &text);
@@ -271,6 +286,15 @@ private:
     QList<StructRange> findStructRanges(const QString &text);
     void extractSymbolsAndContainsOnePassImpl(const QString& text, const QList<StructRange>& structRanges,
                                                int maxSearchWindow = 0);
+
+    /** 解析 module 头部端口列表（ANSI 风格），忽略 #(params)，仅解析 (ports)；会 addSymbol 并建立 CONTAINS */
+    void parseModulePorts(const QString& text, int moduleKeywordPos, const QString& moduleName, int moduleId,
+                          const QVector<int>& lineStarts);
+    /** 解析实例化 .pin(sig) 并建立实例 pin 到模块端口的 REFERENCES */
+    void parseInstanceConnections(const QString& text, int instStartPos, const QString& moduleTypeName,
+                                  int instanceSymbolId, const QVector<int>& lineStarts);
+    /** 扫描全文识别 module 实例化并解析 .pin 连接 */
+    void analyzeModuleInstantiations(const QString& text);
 
     // 检查位置是否在struct范围内
     bool isPositionInStructRange(int position, const QList<StructRange> &structRanges);
