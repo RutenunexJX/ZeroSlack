@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QTimer>
 #include <QStringList>
+#include <functional>
 #include "syminfo.h"
 
 class MyCodeEditor;
@@ -20,7 +21,8 @@ public:
 
     // Analysis modes
     void analyzeOpenTabs(TabManager* tabManager);
-    void analyzeWorkspace(WorkspaceManager* workspaceManager);
+    /** 工作区批量符号分析；按批读取并分析以控制内存与 UI 响应。isCancelled 可选，返回 true 时中止。 */
+    void analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
     void analyzeFile(const QString& filePath);
     void analyzeEditor(MyCodeEditor* editor, bool incremental = false);
 
@@ -37,6 +39,8 @@ signals:
     void analysisStarted(const QString& fileName);
     void analysisCompleted(const QString& fileName, int symbolsFound);
     void batchAnalysisCompleted(int filesAnalyzed, int totalSymbols);
+    /** 分批进度：filesDone 已处理数，totalFiles 总数，currentFileName 当前文件（用于阶段1 进度条） */
+    void batchProgress(int filesDone, int totalFiles, const QString& currentFileName);
 
 private slots:
     void onIncrementalAnalysisTimer();

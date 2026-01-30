@@ -125,10 +125,11 @@ void MainWindow::setupManagerConnections()
                     }
                 });
 
-                // 50ms后开始符号分析
+                // 50ms后开始符号分析（分批处理，支持取消）
                 QTimer::singleShot(50, this, [this]() {
-                    // 执行符号分析
-                    symbolAnalyzer->analyzeWorkspace(workspaceManager.get());
+                    symbolAnalysisCancelled = false;
+                    symbolAnalyzer->analyzeWorkspace(workspaceManager.get(),
+                        [this]() { return symbolAnalysisCancelled; });
                 });
 
                 // 200ms后开始关系分析
@@ -196,8 +197,9 @@ void MainWindow::setupManagerConnections()
     connect(workspaceManager.get(), &WorkspaceManager::filesScanned,
             this, [this](const QStringList& svFiles) {
                 Q_UNUSED(svFiles)
-                // 🔧 FIX: 只做符号分析，关系分析在workspaceOpened中处理
-                symbolAnalyzer->analyzeWorkspace(workspaceManager.get());
+                symbolAnalysisCancelled = false;
+                symbolAnalyzer->analyzeWorkspace(workspaceManager.get(),
+                    [this]() { return symbolAnalysisCancelled; });
             });
 
     // ModeManager connections
@@ -223,9 +225,21 @@ void MainWindow::setupManagerConnections()
                 Q_UNUSED(symbolCount)
             });
 
+    connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchProgress,
+            this, [this](int filesDone, int totalFiles, const QString& currentFileName) {
+                if (progressDialog && totalFiles > 0) {
+                    progressDialog->progressBar->setValue(filesDone);
+                    progressDialog->progressBar->setMaximum(totalFiles);
+                    QString shortName = QFileInfo(currentFileName).fileName();
+                    if (shortName.length() > 45)
+                        shortName = "..." + shortName.right(42);
+                    progressDialog->currentFileLabel->setText(
+                        QString("符号分析: %1 / %2 — %3").arg(filesDone).arg(totalFiles).arg(shortName));
+                }
+            });
+
     connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchAnalysisCompleted,
             this, [this](int filesAnalyzed, int totalSymbols) {
-                // 🔧 FIX: 只更新状态栏，不触发进度对话框完成
                 if (statusBar()) {
                     statusBar()->showMessage(
                         QString("符号分析完成: %1个文件, %2个符号 - 关系分析进行中...")
@@ -730,6 +744,7 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
     // 连接信号
     connect(progressDialog, &RelationshipProgressDialog::cancelled,
             this, [this]() {
+                symbolAnalysisCancelled = true;
                 if (relationshipBuilder) {
                     relationshipBuilder->cancelAnalysis();
                 }
@@ -737,7 +752,7 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
                 relationshipAnalysisTracker.isActive = false;
 
                 if (statusBar()) {
-                    statusBar()->showMessage("关系分析已取消", 3000);
+                    statusBar()->showMessage("分析已取消", 3000);
                 }
             });
 
