@@ -96,18 +96,16 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 分析模式：
 - 打开标签分析：`analyzeOpenTabs`
-  - 对当前所有打开的编辑器进行分析
-  - 使用 `setCodeEditor` 将每个编辑器的内容送入符号解析器
+  - 对当前所有打开的 SV 文件，通过 `TabManager::getPlainTextFromOpenFile` 取内容后调用 `analyzeFileContent`，不依赖编辑器对象
 - 工作区分析：`analyzeWorkspace` / `startAnalyzeWorkspaceAsync`
   - 通过 `WorkspaceManager` 拿到整个目录树中的 `.sv/.v/.vh/.svh/.vp/.svp` 文件
-  - 使用 QFile+QTextStream 读入内容，每个文件送入 `setContentIncremental`（阶段 B 轻量化，不创建 MyCodeEditor）
+  - 使用 QFile+QTextStream 读入内容，每个文件送入 `sym_list::setContentIncremental`（阶段 B 轻量化，不创建 MyCodeEditor）
 - 单文件分析：`analyzeFile`
   - 供文件变化回调 (`fileChanged`) 调用
 
 增量分析：
-- `scheduleIncrementalAnalysis` / `scheduleSignificantAnalysis`
-  - 根据是否包含关键字（如 `module` / `task` / `function` 等）决定延时
-  - 避免每次按键都触发全量分析，减轻性能压力
+- `MainWindow::scheduleOpenFileAnalysis(fileName, delayMs)` 按 fileName 去抖，超时后从 TabManager 取内容调用 `analyzeFileContent`
+  - 根据是否包含关键字（如 `module` / `task` / `function` 等）决定延时（1s/3s），避免每次按键都触发全量分析
 
 
 ==========================================================================
@@ -255,6 +253,35 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     并在 Qt 6.4+ 下调用 QRegularExpression::optimize()。
   - keywords.txt 改为静态缓存单例（loadKeywordsOnce + getKeywordPattern），
     避免每次实例化 MyHighlighter 都读文件；多线程下用 QMutex 保护。
+
+【冗余清理与架构对齐 (Redundancy Cleanup & Architecture Alignment)】— 已完成
+
+以下清理项已落实，代码库与“异步/数据驱动”架构对齐，当前无已知遗漏冗余。
+
+已完成的清理：
+  - SymbolAnalyzer：已删除 analyzeEditor、analyzeOpenTabs 内 getEditorAt 循环；
+    解析统一走 analyzeFileContent(fileName, content)，sym_list 仅使用 setContentIncremental。
+  - sym_list：已移除无调用者的 setCodeEditor / setCodeEditorIncremental，解析入口仅保留
+    setContentIncremental(fileName, content)。
+  - CompletionManager：getModuleInternalVariables / getGlobalSymbolCompletions 等已统一
+    使用 matchesAbbreviation；结果截断统一在 CompletionModel 出口（MaxCompletionItems），
+    已删除各子方法内重复的 MaxCompletionListSize 截断及该常量。
+  - SymbolRelationshipEngine：已删除类外冗余 relationshipTypeToString，已精简
+    getModuleInstances 内空调试分支。
+  - MainWindow / MyCodeEditor：已删除 onDebugPrintSymbolIds、disLineNumber 空函数；
+    延后符号分析已迁移至 MainWindow::scheduleOpenFileAnalysis，SymbolAnalyzer 不再持有
+    基于 MyCodeEditor 的定时器。
+  - SmartRelationshipBuilder：已移除空占位 analyzeInterfaceRelationships 及其调用；
+    interface 分析待后续统一扩展接口实现。
+  - mycodeeditor.cpp：已去除重复 #include（如 QScrollBar）。
+
+架构一致性（后续修改时请保持）：
+  - 信号安全：SymbolRelationshipEngine::addRelationship 须保持 Qt::QueuedConnection，
+    禁止在后台线程直接触发 UI 刷新。
+  - 写锁保护：sym_list 的增量解析仍受 QMutex / QReadWriteLock 保护，防止多线程崩溃。
+  - 正则优化：解析用正则已迁移至静态缓存单例，避免在循环内重复实例化 QRegularExpression。
+
+若发现新的冗余，可参考本节原则处理并更新本段说明。
 
 ==========================================================================
 备注 (Notes)

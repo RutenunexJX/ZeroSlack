@@ -20,7 +20,6 @@
 
 #include <QKeyEvent>
 #include <QTextCursor>
-#include <QScrollBar>
 #include <QApplication>
 #include <QRect>
 
@@ -125,10 +124,6 @@ void MyCodeEditor::updateLineNumberWidgetWidth()
 void MyCodeEditor::updateSaveState()
 {
     isSaved = false;
-}
-
-void MyCodeEditor::disLineNumber()
-{
 }
 
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
@@ -315,11 +310,11 @@ void MyCodeEditor::onTextChanged()
         }
 
         if (hasSignificantKeyword) {
-            // Important keywords: analyze after 1 second
-            mainWindow->symbolAnalyzer->scheduleIncrementalAnalysis(this, 1000);
+            if (!getFileName().isEmpty())
+                mainWindow->scheduleOpenFileAnalysis(getFileName(), 1000);
         } else {
-            // Normal changes: analyze after 3 seconds
-            mainWindow->symbolAnalyzer->scheduleIncrementalAnalysis(this, 3000);
+            if (!getFileName().isEmpty())
+                mainWindow->scheduleOpenFileAnalysis(getFileName(), 3000);
         }
     }
 
