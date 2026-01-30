@@ -80,7 +80,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 会根据光标所在模块、在注释内与否等条件筛选候选
 - 命令模式下会对整行命令区域进行高亮（深色背景 + 白字）
 
-【基于作用域树的补全】
+【基于作用域树的补全】（当前作用域逻辑存在已知问题，待修复）
 - CompletionManager::getCompletions(prefix, cursorFile, cursorLine)
   - 通过 ScopeManager::findScopeAt(cursorFile, cursorLine) 得到光标所在作用域；
   - 从该作用域起沿 parent 链向上，收集各层 symbols 中与 prefix 匹配的名称（内层已出现的不重复）；
@@ -297,7 +297,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - highlightBlock 采用两遍策略：Pass1 仅高亮关键字与数字；Pass2 从左到右按“最早出现”的
     `"` / `//` / `/*` 确定字符串与注释并覆盖，解决字符串/注释内误高亮及 `//` 与 `/*` 优先级问题。
 
-[x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
+[~] 阶段 E — 作用域树 (Scope Tree) 符号管理（已实现，作用域问题待解决）
   - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
     （findScopeAt、resolveSymbol）；按文件维护作用域树，O(1) 层内查找与正确词法遮蔽。
   - sym_list：在 extractSymbolsAndContainsOnePassImpl 中栈式解析，构建作用域树；扩展
@@ -305,6 +305,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     同步 clearFile 作用域树；getScopeManager() 惰性创建并返回 ScopeManager。
   - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
     findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
+  - **已知问题**：作用域解析/查找仍存在未解决的 bug，补全与跳转的“按作用域”行为可能不正确，待后续修复。
 
 【冗余清理与架构对齐 (Redundancy Cleanup & Architecture Alignment)】— 已完成
 
@@ -337,6 +338,15 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 正则优化：解析用正则已迁移至静态缓存单例，避免在循环内重复实例化 QRegularExpression。
 
 若发现新的冗余，可参考本节原则处理并更新本段说明。
+
+==========================================================================
+已知问题 (Known Issues)
+==========================================================================
+
+- **作用域问题**：作用域树 (Scope Tree) 的解析、findScopeAt / 按作用域补全 / 词法遮蔽等
+  功能已实现框架，但当前仍存在未解决的 bug，导致“按光标所在作用域”的补全或跳转行为
+  可能不正确。后续将优先修复作用域相关逻辑。
+
 
 ==========================================================================
 备注 (Notes)
