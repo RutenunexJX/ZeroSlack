@@ -33,6 +33,8 @@ public:
 
     void showAutoComplete();
     void hideAutoComplete();
+    /** 主动刷新并发射 debugScopeInfo（用于切标签时更新状态栏） */
+    void refreshDebugScopeInfo();
 
     void clearAlternateModeBuffer();
     void processAlternateModeInput(const QString &input);
@@ -40,6 +42,8 @@ public:
 
 private slots:
     void highlighCurrentLine();
+    void onCursorPositionChangedForDebug();
+    void updateAndEmitDebugScopeInfo();
     void updateLineNumberWidget(QRect rect, int dy);
     void updateLineNumberWidgetWidth();
     void updateSaveState();
@@ -153,6 +157,8 @@ private:
 signals:
     // 可以添加一个信号来通知定义跳转事件
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
+    /** Debug：光标所在模块及该模块内 logic/struct var/struct type 数量 */
+    void debugScopeInfo(const QString& currentModule, int logicCount, int structVarCount, int structTypeCount);
 };
 
 class LineNumberWidget : public QWidget

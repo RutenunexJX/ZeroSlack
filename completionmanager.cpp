@@ -1629,23 +1629,16 @@ QString CompletionManager::findModuleAtPosition(
     }
 
     for (const auto& module : modules) {
-        if (cursorPosition >= module.position) {
-            // 🔧 FIX: 查找对应的 endmodule 位置
-            int moduleEndPosition = findEndModulePosition(fileContent, module);
-
-            if (moduleEndPosition == -1) {
-                // 使用下一个模块开始位置作为边界
-                moduleEndPosition = getNextModulePosition(modules, module);
-            }
-
-            // 🔧 FIX: 检查光标是否在模块范围内
-            if (cursorPosition < moduleEndPosition) {
-                return module.symbolName;
-            }
-        }
+        if (cursorPosition < module.position) continue;
+        // 必须存在配对 endmodule 才视为有效模块，不再用“下一模块起始”作为边界
+        int moduleEndPosition = findEndModulePosition(fileContent, module);
+        if (moduleEndPosition < 0) continue;
+        if (!sym_list::isValidModuleName(module.symbolName)) continue;
+        if (cursorPosition < moduleEndPosition)
+            return module.symbolName;
     }
 
-    return QString(); // 不在任何模块内
+    return QString(); // 不在任何有效模块内
 }
 
 int CompletionManager::findSymbolIdByName(const QString& symbolName)

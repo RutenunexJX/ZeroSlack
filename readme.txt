@@ -110,6 +110,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
+  - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
+    1) 存在 `module` 声明；
+    2) 存在与之配对的 `endmodule`（按深度匹配，支持嵌套 module）；
+    3) 模块名为合法 SV 标识符：非空且符合 `[a-zA-Z_][a-zA-Z0-9_]*`（sym_list::isValidModuleName）。
+    若缺少配对 endmodule 或模块名不合法，该段代码不会被判为“在模块内”。
   - `reg` / `wire` / `logic` 变量
   - `task` / `function`
   - `interface` / `struct` / `enum` / `parameter` 等扩展类型
@@ -356,6 +361,17 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 ==========================================================================
 已知问题 (Known Issues)
 ==========================================================================
+
+- **Module 识别 (Module Recognition)**：当前 module 识别仍存在已知问题与局限。有效模块
+  的判定已统一为“必须有 module + 配对 endmodule + 合法模块名”（见上文“有效模块判定”），
+  但以下情况可能仍会出错或未覆盖：
+  - 宏展开、条件编译（`ifdef/endif`）内的 module/endmodule 边界可能未正确解析；
+  - 跨文件的 module（例如 module 在 include 文件中）边界依赖当前文件的文本范围；
+  - 注释/字符串内出现的 `module`/`endmodule` 已尽量排除，极端嵌套或格式异常时可能误判；
+  - 其他与具体工程代码风格相关的边界情况。
+  若出现“光标在模块内但状态栏显示无模块”、补全作用域错误或跳转目标不准，可优先检查
+  该文件是否满足“成对 module/endmodule + 合法模块名”，并排查上述场景。后续会持续改进
+  module 识别的鲁棒性。
 
 - **作用域树 (Scope Tree)**：getCompletions(prefix, cursorFile, cursorLine) 基于 findScopeAt
   的按作用域补全与词法遮蔽已实现框架；struct 相关命令（s/sp/ns/nsp）的严格作用域（模块外

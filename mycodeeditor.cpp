@@ -66,6 +66,7 @@ void MyCodeEditor::initConnection()
 {
     //cursor
     connect(this,SIGNAL(cursorPositionChanged()),this,SLOT(highlighCurrentLine()));
+    connect(this,SIGNAL(cursorPositionChanged()),this,SLOT(onCursorPositionChangedForDebug()));
 
     //textChanged
     connect(this,SIGNAL(textChanged()),this,SLOT(updateSaveState()));
@@ -106,6 +107,37 @@ void MyCodeEditor::highlighCurrentLine()
     extraSelection.append(selection);
 
     setExtraSelections(extraSelection);
+}
+
+void MyCodeEditor::onCursorPositionChangedForDebug()
+{
+    updateAndEmitDebugScopeInfo();
+}
+
+void MyCodeEditor::updateAndEmitDebugScopeInfo()
+{
+    QString fileName = getFileName();
+    if (fileName.isEmpty()) return;
+    int cursorPosition = textCursor().position();
+    CompletionManager* manager = CompletionManager::getInstance();
+    QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
+
+    int logicCount = 0;
+    int structVarCount = 0;
+    int structTypeCount = 0;
+    if (!currentModule.isEmpty()) {
+        logicCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_logic, "").size();
+        structVarCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct_var, "").size()
+                         + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct_var, "").size();
+        structTypeCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct, "").size()
+                          + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct, "").size();
+    }
+    emit debugScopeInfo(currentModule, logicCount, structVarCount, structTypeCount);
+}
+
+void MyCodeEditor::refreshDebugScopeInfo()
+{
+    updateAndEmitDebugScopeInfo();
 }
 
 void MyCodeEditor::updateLineNumberWidget(QRect rect, int dy)
