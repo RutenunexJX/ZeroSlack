@@ -729,19 +729,17 @@ void MyCodeEditor::onAutoCompleteTimer()
                                       currentCommandType == sym_list::sym_unpacked_struct);
         
         if (useSymbolInfoDirectly) {
-            // 弹出补全前用当前编辑器内容刷新 struct/typedef/enum，避免未保存或缓存导致 r_elec_level/r_elec_out 等被漏掉
+            // struct 相关命令(s/sp/ns/nsp)：严格作用域——仅在模块内补全，模块外不弹出
+            if (currentModule.isEmpty()) {
+                if (completer->popup()->isVisible()) {
+                    completer->popup()->hide();
+                }
+                return;
+            }
             sym_list* symbolList = sym_list::getInstance();
             symbolList->refreshStructTypedefEnumForFile(fileName, document()->toPlainText());
-            // struct 类型(ns/nsp)是全局的，始终用全局查询；struct 变量(s/sp)按当前模块或全局
-            bool isStructType = (currentCommandType == sym_list::sym_packed_struct ||
-                                currentCommandType == sym_list::sym_unpacked_struct);
-            if (isStructType) {
-                filteredSymbols = manager->getGlobalSymbolsByType_Info(currentCommandType, commandInput);
-            } else if (!currentModule.isEmpty()) {
-                filteredSymbols = manager->getModuleInternalSymbolsByType(currentModule, currentCommandType, commandInput);
-            } else {
-                filteredSymbols = manager->getGlobalSymbolsByType_Info(currentCommandType, commandInput);
-            }
+            // 在模块内：聚合模块内 + include 文件 + import 的 package
+            filteredSymbols = manager->getModuleContextSymbolsByType(currentModule, fileName, currentCommandType, commandInput);
         } else {
             // 对于其他类型，使用原来的方法
             QStringList symbolNames;

@@ -44,7 +44,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - `m `：module
     - `t `：task
     - `f `：function
-    - 以及扩展的：`i ` (interface), `s ` (struct type), `e ` (enum type), `p ` (parameter) 等
+    - 以及扩展的：`i ` (interface), `e ` (enum type), `p ` (parameter) 等；
+    - struct 相关（严格作用域，仅在模块内补全）：`s ` (unpacked struct 变量), `sp ` (packed struct 变量), `ns ` (unpacked struct 类型), `nsp ` (packed struct 类型)
 - Alternate Mode（替代模式 / 命令行模式）
   - 仅接受命令，不编辑正文
   - 支持命令：`save` / `save_as` / `open` / `new` / `copy` / `paste` / `cut` /
@@ -80,12 +81,25 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 会根据光标所在模块、在注释内与否等条件筛选候选
 - 命令模式下会对整行命令区域进行高亮（深色背景 + 白字）
 
-【基于作用域树的补全】（当前作用域逻辑存在已知问题，待修复）
+【基于作用域树的补全】
 - CompletionManager::getCompletions(prefix, cursorFile, cursorLine)
   - 通过 ScopeManager::findScopeAt(cursorFile, cursorLine) 得到光标所在作用域；
   - 从该作用域起沿 parent 链向上，收集各层 symbols 中与 prefix 匹配的名称（内层已出现的不重复）；
   - 自然实现“局部变量 → task/function 内符号 → 模块内符号 → 全局”的补全顺序与词法遮蔽。
 - cursorLine 与 SymbolInfo::startLine 一致，为 0-based 行号；若编辑器使用 1-based 需先减 1。
+
+【Struct 相关命令的严格作用域（s / sp / ns / nsp）】
+- 命令：`s `（unpacked struct 变量）、`sp `（packed struct 变量）、`ns `（unpacked struct 类型）、`nsp `（packed struct 类型）。
+- 模块外（光标不在任何 module…endmodule 内）：
+  - 补全列表为空，不弹出补全弹窗，避免全局命名空间污染。
+- 模块内：
+  - 通过 CompletionManager::getModuleContextSymbolsByType 聚合三类符号：
+    1) 模块内部：严格在 [当前模块起始行, 下一模块起始行) 内的符号，防止多模块同文件时符号泄漏；
+    2) Include：模块体内 `` `include "filename" `` 所引用文件中的符号；
+    3) Import：模块体内 `import pkg::*;` / `import pkg::sym;` 所引用 package 中的符号。
+  - 合并后按类型与前缀过滤、去重、排序。
+- 全局符号（getGlobalSymbolsByType_Info）：
+  - struct 变量仅当 symbol.moduleScope 为空时才视为全局（真正在 package/$unit 等定义），避免模块内 struct 变量泄漏到全局补全。
 
 
 ==========================================================================
@@ -305,7 +319,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     同步 clearFile 作用域树；getScopeManager() 惰性创建并返回 ScopeManager。
   - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
     findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
-  - **已知问题**：作用域解析/查找仍存在未解决的 bug，补全与跳转的“按作用域”行为可能不正确，待后续修复。
+  - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。
 
 【冗余清理与架构对齐 (Redundancy Cleanup & Architecture Alignment)】— 已完成
 
@@ -343,9 +357,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 已知问题 (Known Issues)
 ==========================================================================
 
-- **作用域问题**：作用域树 (Scope Tree) 的解析、findScopeAt / 按作用域补全 / 词法遮蔽等
-  功能已实现框架，但当前仍存在未解决的 bug，导致“按光标所在作用域”的补全或跳转行为
-  可能不正确。后续将优先修复作用域相关逻辑。
+- **作用域树 (Scope Tree)**：getCompletions(prefix, cursorFile, cursorLine) 基于 findScopeAt
+  的按作用域补全与词法遮蔽已实现框架；struct 相关命令（s/sp/ns/nsp）的严格作用域（模块外
+  不补全、模块内聚合 internal+include+import、全局仅 moduleScope 为空）已修复。若发现其他
+  按作用域补全或跳转行为异常，可优先排查作用域解析与 getCurrentModule 边界。
 
 
 ==========================================================================
