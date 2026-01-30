@@ -326,13 +326,17 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
         findSymbolIdByName 已改为调用 sym_list::findSymbolIdByName，避免
         先取 QList<SymbolInfo> 再取 first().symbolId，减少临时列表分配。
 
-  [ ] 关系引擎查询缓存策略
+  [x] 关系引擎查询缓存策略（已实现）
       - 当前 SymbolRelationshipEngine 在每次 add/removeRelationship 等写操作
         时调用 invalidateCache() 并 queryCache.clear()。
       - 改为按“影响范围”失效：例如仅当某 symbolId 或某文件对应的关系被
         修改时，清除与该 symbolId（或该文件相关 symbolId）相关的
         queryCache 条目，而不是全局 clear；或在明确“文件保存”时再失效
         与该文件相关的缓存条目，具体策略可与 fileSaved 事件绑定。
+      - 已实现：新增 invalidateCacheForRelationship(fromId, toId, type) 与
+        invalidateCacheForSymbol(symbolId)；add/removeRelationship 仅失效
+        (fromId, type)/(toId, type)，removeAllRelationships 仅失效该符号及
+        其邻居相关条目；clearAllRelationships 仍全局 invalidateCache()。
 
   [ ] 增量分析优化
       - SmartRelationshipBuilder::analyzeFileIncremental 当前委托给 analyzeFile，
