@@ -110,8 +110,10 @@ private:
     mutable QHash<QPair<int, RelationType>, QList<int>> queryCache;
     mutable bool cacheValid = true;
 
-    // 🚀 辅助方法
+    // 🚀 辅助方法：按影响范围失效缓存，避免全局 clear
     void invalidateCache();
+    void invalidateCacheForRelationship(int fromId, int toId, RelationType type);
+    void invalidateCacheForSymbol(int symbolId);
     void addToTypeIndex(int fromId, int toId, RelationType type);
     void removeFromTypeIndex(int fromId, int toId, RelationType type);
 

@@ -37,8 +37,8 @@ void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
     // 更新类型索引
     addToTypeIndex(fromSymbolId, toSymbolId, type);
 
-    // 失效缓存
-    invalidateCache();
+    // 仅失效涉及 fromId/toId 的缓存条目
+    invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
 
     emit relationshipAdded(fromSymbolId, toSymbolId, type);
 }
@@ -72,8 +72,8 @@ void SymbolRelationshipEngine::removeRelationship(int fromSymbolId, int toSymbol
     // 更新类型索引
     removeFromTypeIndex(fromSymbolId, toSymbolId, type);
 
-    // 失效缓存
-    invalidateCache();
+    // 仅失效涉及 fromId/toId 的缓存条目
+    invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
 
     emit relationshipRemoved(fromSymbolId, toSymbolId, type);
 }
@@ -83,6 +83,9 @@ void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
     if (!relationshipGraph.contains(symbolId)) return;
 
     const RelationshipNode& node = relationshipGraph[symbolId];
+
+    // 仅失效与该符号及其邻居相关的缓存条目
+    invalidateCacheForSymbol(symbolId);
 
     // 移除所有输出关系
     for (const RelationshipEdge& edge : node.outgoingEdges) {
@@ -114,11 +117,8 @@ void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
         removeFromTypeIndex(edge.targetId, symbolId, edge.type);
     }
 
-    // 移除节点
+    // 移除节点（缓存已在函数开头按 symbol 粒度失效）
     relationshipGraph.remove(symbolId);
-
-    // 失效缓存
-    invalidateCache();
 }
 
 void SymbolRelationshipEngine::clearAllRelationships()
@@ -450,6 +450,36 @@ void SymbolRelationshipEngine::invalidateCache()
 {
     queryCache.clear();
     cacheValid = true;
+}
+
+void SymbolRelationshipEngine::invalidateCacheForRelationship(int fromId, int toId, RelationType type)
+{
+    queryCache.remove(qMakePair(fromId, type));
+    queryCache.remove(qMakePair(toId, type));
+}
+
+void SymbolRelationshipEngine::invalidateCacheForSymbol(int symbolId)
+{
+    if (!relationshipGraph.contains(symbolId)) return;
+
+    const RelationshipNode& node = relationshipGraph[symbolId];
+
+    // 失效以该符号为 key 的缓存：遍历 queryCache 移除 first == symbolId 的条目
+    QMutableHashIterator<QPair<int, RelationType>, QList<int>> it(queryCache);
+    while (it.hasNext()) {
+        it.next();
+        if (it.key().first == symbolId) {
+            it.remove();
+        }
+    }
+
+    // 失效“邻居”的缓存：与该符号有边的另一端，其 (id, type) 查询结果可能包含 symbolId
+    for (const RelationshipEdge& edge : node.outgoingEdges) {
+        queryCache.remove(qMakePair(edge.targetId, edge.type));
+    }
+    for (const RelationshipEdge& edge : node.incomingEdges) {
+        queryCache.remove(qMakePair(edge.targetId, edge.type));
+    }
 }
 
 void SymbolRelationshipEngine::addToTypeIndex(int fromId, int toId, RelationType type)
