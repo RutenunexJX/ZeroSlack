@@ -23,6 +23,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 新建 / 打开 / 保存 / 另存为
   - 未保存文件关闭时会弹出确认
 - SystemVerilog 语法高亮 (`MyHighlighter`)
+  - 两遍策略：先高亮关键字与数字，再从左到右用“最早出现”的 `"` / `//` / `/*` 确定字符串与注释并覆盖，避免字符串/注释内的关键字被高亮、字符串内的 `//` 被误判为注释；字符串内支持转义引号 `\"`；块注释跨行状态正确保持。
 - 行号栏 (`LineNumberWidget`)
   - 显示行号
   - 点击行号可将光标跳转到对应行
@@ -165,15 +166,15 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 【定义跳转（Ctrl+Click）】
 - 在 `MyCodeEditor` 中：
   - 按住 Ctrl 并将鼠标移动到标识符上时：
-    - 光标变成手型
+    - 光标变成手型（仅当当前作用域内存在该符号定义时）
     - 标识符高亮为蓝色下划线
     - 可选地弹出 Tooltip 展示定义位置等信息
   - Ctrl+左键可跳转到符号定义
-    - 优先跳当前文件中的定义；若存在多个同名定义（如端口 clk 与其它模块的 logic clk），
-      优先跳转到**当前模块内**的定义（通过 sym_list::getCurrentModuleScope 获取光标所在模块，
-      对 symbol.moduleScope == currentModuleName 的符号提高优先级）
-    - 端口（input/output/inout/ref、interface/modport）视为可跳转定义，且类型优先级高于 reg/wire/logic
-    - 再考虑其他文件中的模块定义
+    - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
+      只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
+    - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
+    - 优先跳当前文件中的定义；端口（input/output/inout/ref、interface/modport）视为可跳转定义，类型优先级高于 reg/wire/logic。
+    - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
   - 跳转过程会复用 `NavigationManager` 的符号导航接口
 
 
@@ -288,11 +289,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 在 SymbolRelationshipEngine 中引入 beginUpdate() 与 endUpdate()，在
     endUpdate 之前不调用 invalidateCache()，批量提交后按需失效缓存。
 
-[x] 阶段 D — 语法高亮性能优化 (MyHighlighter)（已完成）
+[x] 阶段 D — 语法高亮性能与正确性 (MyHighlighter)（已完成）
   - 将多个关键字的多个正则合并为一个大的正则（如 \b(module|endmodule|reg|...)\b），
     并在 Qt 6.4+ 下调用 QRegularExpression::optimize()。
   - keywords.txt 改为静态缓存单例（loadKeywordsOnce + getKeywordPattern），
     避免每次实例化 MyHighlighter 都读文件；多线程下用 QMutex 保护。
+  - highlightBlock 采用两遍策略：Pass1 仅高亮关键字与数字；Pass2 从左到右按“最早出现”的
+    `"` / `//` / `/*` 确定字符串与注释并覆盖，解决字符串/注释内误高亮及 `//` 与 `/*` 优先级问题。
 
 [x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
   - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager

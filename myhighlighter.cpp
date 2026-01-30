@@ -168,18 +168,113 @@ void MyHighlighter::addKeywordsFormat()
         highlightRules.append(rule);
 }
 
-// Every line is a block
+// Two-Pass Strategy: Pass1 = Keywords & Numbers; Pass2 = Strings & Comments (masking layer)
+// Priority: left-to-right "earliest of \"", \"//\", \"/*\"" so that e.g. "//" in string is not comment.
+static const QRegularExpression s_numberPattern(R"(\b\d+|\d+\.\d+\b)");
+
 void MyHighlighter::highlightBlock(const QString &text)
 {
-    for (const HighLightRule &rule : highlightRules) {
-        QRegularExpressionMatchIterator it = rule.pattern.globalMatch(text);
+    QTextCharFormat keywordFormat;
+    keywordFormat.setFont(QFont(mFontFamily, mFontSize));
+    keywordFormat.setForeground(Qt::darkMagenta);
+
+    QTextCharFormat numberFormat;
+    numberFormat.setFont(QFont(mFontFamily, mFontSize));
+    numberFormat.setForeground(QColor(250, 80, 50));
+
+    QTextCharFormat stringFormat;
+    stringFormat.setFont(QFont(mFontFamily, mFontSize));
+    stringFormat.setForeground(QColor(0, 180, 180));
+
+    QTextCharFormat lineCommentFormat;
+    lineCommentFormat.setFont(QFont(mFontFamily, mFontSize));
+    lineCommentFormat.setForeground(Qt::darkGreen);
+
+    QTextCharFormat blockCommentFormat;
+    blockCommentFormat.setFont(QFont(mFontFamily, mFontSize));
+    blockCommentFormat.setForeground(Qt::darkGreen);
+
+    // ----- Pass 1: Base layer (Keywords & Numbers only) -----
+    QRegularExpression keywordPattern = getKeywordPattern();
+    if (!keywordPattern.pattern().isEmpty()) {
+        QRegularExpressionMatchIterator it = keywordPattern.globalMatch(text);
         while (it.hasNext()) {
             QRegularExpressionMatch m = it.next();
-            int index = m.capturedStart(0);
-            int length = m.capturedLength(0);
-            setFormat(index, length, rule.format);
+            setFormat(m.capturedStart(0), m.capturedLength(0), keywordFormat);
+        }
+    }
+    {
+        QRegularExpressionMatchIterator it = s_numberPattern.globalMatch(text);
+        while (it.hasNext()) {
+            QRegularExpressionMatch m = it.next();
+            setFormat(m.capturedStart(0), m.capturedLength(0), numberFormat);
         }
     }
 
-    addMultiLineCommentFormat(text);
+    // ----- Pass 2: Masking layer (Strings & Comments, earliest-match) -----
+    int pos = 0;
+    const int len = text.length();
+
+    // If we're inside a block comment from previous line, consume until */
+    if (previousBlockState() == 1) {
+        int endBlock = text.indexOf(QLatin1String("*/"), pos);
+        if (endBlock >= 0) {
+            setFormat(0, endBlock + 2, blockCommentFormat);
+            pos = endBlock + 2;
+            setCurrentBlockState(0);
+        } else {
+            setFormat(0, len, blockCommentFormat);
+            setCurrentBlockState(1);
+            return;
+        }
+    }
+
+    while (pos < len) {
+        int idxQuote = text.indexOf(QLatin1Char('"'), pos);
+        int idxLineComment = text.indexOf(QLatin1String("//"), pos);
+        int idxBlockComment = text.indexOf(QLatin1String("/*"), pos);
+
+        if (idxQuote == -1) idxQuote = len + 1;
+        if (idxLineComment == -1) idxLineComment = len + 1;
+        if (idxBlockComment == -1) idxBlockComment = len + 1;
+
+        int minIdx = qMin(idxQuote, qMin(idxLineComment, idxBlockComment));
+        if (minIdx > len) break;
+
+        if (minIdx == idxQuote) {
+            // String: from " to next unescaped " or EOL
+            int start = idxQuote;
+            int end = start + 1;
+            while (end < len) {
+                if (text[end] == QLatin1Char('\\') && end + 1 < len) {
+                    end += 2;
+                    continue;
+                }
+                if (text[end] == QLatin1Char('"')) {
+                    end++;
+                    break;
+                }
+                end++;
+            }
+            setFormat(start, end - start, stringFormat);
+            pos = end;
+        } else if (minIdx == idxLineComment) {
+            setFormat(idxLineComment, len - idxLineComment, lineCommentFormat);
+            pos = len;
+            break;
+        } else {
+            // Block comment: from /* to */ or EOL
+            int endBlock = text.indexOf(QLatin1String("*/"), idxBlockComment + 2);
+            if (endBlock >= 0) {
+                setFormat(idxBlockComment, endBlock - idxBlockComment + 2, blockCommentFormat);
+                pos = endBlock + 2;
+                setCurrentBlockState(0);
+            } else {
+                setFormat(idxBlockComment, len - idxBlockComment, blockCommentFormat);
+                setCurrentBlockState(1);
+                pos = len;
+                break;
+            }
+        }
+    }
 }
