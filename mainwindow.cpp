@@ -658,6 +658,13 @@ void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, 
         return;
     if (!relationshipSingleFileWatcher)
         return;
+    // 阶段 C：仅当结构/定义有显著变更时才触发关系重构，跳过仅注释/空白变更
+    if (symbolAnalyzer) {
+        QString lastContent = lastRelationshipAnalysisContent.value(fileName);
+        if (!lastContent.isNull() && !symbolAnalyzer->hasSignificantChanges(lastContent, content))
+            return;
+    }
+    lastRelationshipAnalysisContent.insert(fileName, content);
     // 避免快速连续 setFuture 导致崩溃：先等待当前任务结束再提交新任务（fileSaved + fileChanged + 去抖定时器可能同时触发）
     if (relationshipSingleFileWatcher->isRunning()) {
         QFuture<QVector<RelationshipToAdd>> oldFuture = relationshipSingleFileWatcher->future();
@@ -684,11 +691,13 @@ void MainWindow::onSingleFileRelationshipFinished()
     QString fileName = pendingRelationshipFileName;
     pendingRelationshipFileName.clear();
     QVector<RelationshipToAdd> results = relationshipSingleFileWatcher->result();
+    relationshipEngine->beginUpdate();
     for (const RelationshipToAdd& r : results) {
         if (r.fromId < 0 || r.toId < 0)
             continue;
         relationshipEngine->addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
     }
+    relationshipEngine->endUpdate();
     onRelationshipAnalysisCompleted(fileName, results.size());
 }
 
@@ -699,6 +708,7 @@ void MainWindow::onBatchRelationshipFinished()
     if (relationshipBatchWatcher->isCanceled())
         return;
     QVector<QPair<QString, QVector<RelationshipToAdd>>> allResults = relationshipBatchWatcher->result();
+    relationshipEngine->beginUpdate();
     for (const auto& pair : allResults) {
         const QString& fileName = pair.first;
         for (const RelationshipToAdd& r : pair.second)
@@ -708,6 +718,7 @@ void MainWindow::onBatchRelationshipFinished()
         if (relationshipAnalysisTracker.isActive)
             relationshipAnalysisTracker.processedFiles++;
     }
+    relationshipEngine->endUpdate();
     if (relationshipAnalysisTracker.isActive && relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
         relationshipAnalysisTracker.isActive = false;
         if (progressDialog) {

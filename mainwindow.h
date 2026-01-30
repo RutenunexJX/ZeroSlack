@@ -20,6 +20,7 @@ class NavigationWidget;
 class SymbolRelationshipEngine;
 #include "smartrelationshipbuilder.h"
 #include <QFutureWatcher>
+#include <QHash>
 #include <QMap>
 
 QT_BEGIN_NAMESPACE
@@ -97,6 +98,8 @@ private:
     // 🚀 异步关系分析：单文件与批量
     QFutureWatcher<QVector<RelationshipToAdd>>* relationshipSingleFileWatcher = nullptr;
     QString pendingRelationshipFileName;
+    /** 阶段 C：上次对该文件做关系分析时的内容，用于 hasSignificantChanges 去抖 */
+    QHash<QString, QString> lastRelationshipAnalysisContent;
     void onSingleFileRelationshipFinished();
 
     QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>* relationshipBatchWatcher = nullptr;

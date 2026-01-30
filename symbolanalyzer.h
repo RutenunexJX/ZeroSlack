@@ -39,6 +39,8 @@ public:
 
     // Utility
     bool isAnalysisNeeded(const QString& fileName, const QString& content) const;
+    /** 阶段 C：判断新旧内容是否在结构/定义上有显著变更（含 module/task/function 等关键字），供关系分析去抖 */
+    bool hasSignificantChanges(const QString& oldContent, const QString& newContent) const;
     void invalidateCache();
 
 signals:
@@ -67,7 +69,6 @@ private:
     // Helper methods（阶段 B：已废弃 createBackgroundEditor，改用 analyzeFileContent + 文件内容）
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
     void cleanupTimer(MyCodeEditor* editor);
-    bool hasSignificantChanges(const QString& oldContent, const QString& newContent) const;
     bool isSystemVerilogFile(const QString &fileName) const;
 };
 

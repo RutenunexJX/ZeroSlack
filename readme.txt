@@ -245,7 +245,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - sym_list::getInstance() 使用静态 QMutex 保证多线程下单例创建安全；
     getAllSymbols() 使用 QReadLocker，持写锁时通过 s_holdingWriteLock 避免死锁。
 
-[] 阶段 C — 语义级去抖与增量策略 (SmartRelationshipBuilder / SymbolRelationshipEngine)
+[x] 阶段 C — 语义级去抖与增量策略 (SmartRelationshipBuilder / SymbolRelationshipEngine)（已完成）
   - 利用已有 hasSignificantChanges：仅当结构/定义变更时才触发关系重构。
   - 在 SymbolRelationshipEngine 中引入 beginUpdate() 与 endUpdate()，在
     endUpdate 之前不调用 invalidateCache()，批量提交后按需失效缓存。

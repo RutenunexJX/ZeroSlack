@@ -41,8 +41,9 @@ void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
     // 更新类型索引
     addToTypeIndex(fromSymbolId, toSymbolId, type);
 
-    // 仅失效涉及 fromId/toId 的缓存条目
-    invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
+    // 阶段 C：批量提交期间不逐条失效缓存，避免 O(N^2)
+    if (updateDepth == 0)
+        invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
 
     // 若在非主线程（如符号分析后台线程），通过 invokeMethod 在主线程发射信号，避免排队传递 RelationType
     if (QThread::currentThread() != QCoreApplication::instance()->thread()) {
@@ -87,8 +88,8 @@ void SymbolRelationshipEngine::removeRelationship(int fromSymbolId, int toSymbol
     // 更新类型索引
     removeFromTypeIndex(fromSymbolId, toSymbolId, type);
 
-    // 仅失效涉及 fromId/toId 的缓存条目
-    invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
+    if (updateDepth == 0)
+        invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
 
     emit relationshipRemoved(fromSymbolId, toSymbolId, type);
 }
@@ -99,8 +100,8 @@ void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
 
     const RelationshipNode& node = relationshipGraph[symbolId];
 
-    // 仅失效与该符号及其邻居相关的缓存条目
-    invalidateCacheForSymbol(symbolId);
+    if (updateDepth == 0)
+        invalidateCacheForSymbol(symbolId);
 
     // 移除所有输出关系
     for (const RelationshipEdge& edge : node.outgoingEdges) {
@@ -358,8 +359,23 @@ QList<int> SymbolRelationshipEngine::getSymbolHierarchy(int rootSymbolId) const
 
 // 🚀 批量操作API实现
 
+void SymbolRelationshipEngine::beginUpdate()
+{
+    ++updateDepth;
+}
+
+void SymbolRelationshipEngine::endUpdate()
+{
+    if (updateDepth > 0) {
+        --updateDepth;
+        if (updateDepth == 0)
+            invalidateCache();
+    }
+}
+
 void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
 {
+    beginUpdate();
     // 先清除该文件的现有关系
     invalidateFileRelationships(fileName);
 
@@ -388,6 +404,7 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
 
     // 🚀 TODO: 分析变量引用关系，task调用关系等
     // 这需要更复杂的代码解析，可以后续实现
+    endUpdate();
 }
 
 void SymbolRelationshipEngine::invalidateFileRelationships(const QString& fileName)

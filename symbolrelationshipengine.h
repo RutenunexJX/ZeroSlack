@@ -60,6 +60,8 @@ public:
     QList<int> getSymbolHierarchy(int rootSymbolId) const;
 
     // 🚀 批量操作API
+    void beginUpdate();   // 批量提交开始：在 endUpdate 之前不调用 invalidateCache，避免 O(N^2)
+    void endUpdate();     // 批量提交结束：按需失效缓存一次
     void buildFileRelationships(const QString& fileName);
     void invalidateFileRelationships(const QString& fileName);
     void rebuildAllRelationships();
@@ -114,6 +116,7 @@ private:
     // 🚀 缓存：避免重复计算
     mutable QHash<QPair<int, RelationType>, QList<int>> queryCache;
     mutable bool cacheValid = true;
+    int updateDepth = 0;  // 阶段 C：批量提交深度，>0 时不执行 per-item 的 invalidateCache*
 
     // 🚀 辅助方法：按影响范围失效缓存，避免全局 clear
     void invalidateCache();
