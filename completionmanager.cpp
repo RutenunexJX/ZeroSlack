@@ -1573,6 +1573,30 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
 
     return currentModuleName;
 }
+
+QStringList CompletionManager::getCompletions(const QString& prefix, const QString& cursorFile, int cursorLine)
+{
+    QStringList result;
+    if (cursorFile.isEmpty()) return result;
+
+    ScopeManager* scopeMgr = sym_list::getInstance()->getScopeManager();
+    ScopeNode* scope = scopeMgr->findScopeAt(cursorFile, cursorLine);
+    QSet<QString> seen;
+    while (scope) {
+        for (auto it = scope->symbols.constBegin(); it != scope->symbols.constEnd(); ++it) {
+            const QString& name = it.key();
+            if (seen.contains(name)) continue;
+            if (prefix.isEmpty() || matchesAbbreviation(name, prefix)) {
+                seen.insert(name);
+                result.append(name);
+            }
+        }
+        scope = scope->parent;
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
 QStringList CompletionManager::getSymbolNamesFromIds(const QList<int>& symbolIds)
 {
     QStringList names;

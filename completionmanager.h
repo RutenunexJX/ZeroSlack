@@ -10,6 +10,7 @@
 #include <QSet>
 #include <memory>
 #include "syminfo.h"
+#include "scope_tree.h"
 
 class SymbolRelationshipEngine; // 🚀 NEW: 前向声明
 class SmartRelationshipBuilder;  // 🚀 NEW: 前向声明
@@ -80,6 +81,10 @@ public:
     void refreshRelationshipData();
 
     QString getCurrentModule(const QString& fileName, int cursorPosition);
+
+    /** 基于作用域树的补全：从光标所在作用域沿 parent 链收集符号（支持词法遮蔽） */
+    QStringList getCompletions(const QString& prefix, const QString& cursorFile, int cursorLine);
+
     QStringList getModuleInternalVariables(const QString& moduleName, const QString& prefix);
     QStringList getGlobalSymbolCompletions(const QString& prefix);
 

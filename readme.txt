@@ -79,12 +79,19 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 会根据光标所在模块、在注释内与否等条件筛选候选
 - 命令模式下会对整行命令区域进行高亮（深色背景 + 白字）
 
+【基于作用域树的补全】
+- CompletionManager::getCompletions(prefix, cursorFile, cursorLine)
+  - 通过 ScopeManager::findScopeAt(cursorFile, cursorLine) 得到光标所在作用域；
+  - 从该作用域起沿 parent 链向上，收集各层 symbols 中与 prefix 匹配的名称（内层已出现的不重复）；
+  - 自然实现“局部变量 → task/function 内符号 → 模块内符号 → 全局”的补全顺序与词法遮蔽。
+- cursorLine 与 SymbolInfo::startLine 一致，为 0-based 行号；若编辑器使用 1-based 需先减 1。
+
 
 ==========================================================================
 符号分析系统 (Symbol Analysis System)
 ==========================================================================
 
-核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager`
+核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
 
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
@@ -93,6 +100,25 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - `interface` / `struct` / `enum` / `parameter` 等扩展类型
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
+
+【作用域树 (Scope Tree) — scope_tree.h】
+符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
+
+- 数据结构
+  - ScopeNode：作用域类型（Global / Module / Task / Function / Block）、行范围（startLine, endLine）、
+    parent/children 指针、本层符号 QHash<QString, SymbolInfo>（O(1) 查找）。
+  - ScopeManager：按文件维护根节点；由 sym_list 在解析时构建并持有（getScopeManager()）。
+- 解析方式（栈式）
+  - 在 sym_list::extractSymbolsAndContainsOnePassImpl 中维护 QStack<ScopeNode*>：
+    - 遇到 module / task / function / begin 时创建对应 ScopeNode 并 push；
+    - 遇到 reg / wire / logic 时写入当前 scopeStack.top()->symbols 并照常 addSymbol；
+    - 遇到 endmodule / endtask / endfunction / end 时设置 endLine 并 pop。
+  - 正则匹配已扩展：除原有 module/endmodule/reg/wire/logic/task/function 外，增加
+    endtask、endfunction、begin、end 的匹配，用于正确闭合作用域。
+- 接口
+  - findScopeAt(fileName, line)：返回该行所在的最深层作用域。
+  - resolveSymbol(name, startScope)：沿 parent 链向上查找符号，实现词法遮蔽（内层同名遮蔽外层）。
+  - 在 clearSymbolsForFile 时会同步清除该文件的作用域树。
 
 分析模式：
 - 打开标签分析：`analyzeOpenTabs`
@@ -254,6 +280,15 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - keywords.txt 改为静态缓存单例（loadKeywordsOnce + getKeywordPattern），
     避免每次实例化 MyHighlighter 都读文件；多线程下用 QMutex 保护。
 
+[x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
+  - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
+    （findScopeAt、resolveSymbol）；按文件维护作用域树，O(1) 层内查找与正确词法遮蔽。
+  - sym_list：在 extractSymbolsAndContainsOnePassImpl 中栈式解析，构建作用域树；扩展
+    findNextStructuralMatch 支持 endtask/endfunction/begin/end；clearSymbolsForFile 时
+    同步 clearFile 作用域树；getScopeManager() 惰性创建并返回 ScopeManager。
+  - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
+    findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
+
 【冗余清理与架构对齐 (Redundancy Cleanup & Architecture Alignment)】— 已完成
 
 以下清理项已落实，代码库与“异步/数据驱动”架构对齐，当前无已知遗漏冗余。
@@ -266,6 +301,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - CompletionManager：getModuleInternalVariables / getGlobalSymbolCompletions 等已统一
     使用 matchesAbbreviation；结果截断统一在 CompletionModel 出口（MaxCompletionItems），
     已删除各子方法内重复的 MaxCompletionListSize 截断及该常量。
+  - 符号作用域：除原有扁平 symbolDatabase + moduleScope 外，增加 ScopeManager 作用域树，
+    补全可选用 getCompletions(prefix, cursorFile, cursorLine) 实现按行作用域与遮蔽。
   - SymbolRelationshipEngine：已删除类外冗余 relationshipTypeToString，已精简
     getModuleInstances 内空调试分支。
   - MainWindow / MyCodeEditor：已删除 onDebugPrintSymbolIds、disLineNumber 空函数；

@@ -1,4 +1,5 @@
 #include "syminfo.h"
+#include "scope_tree.h"
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
 
@@ -32,6 +33,15 @@ sym_list::sym_list()
 
 sym_list::~sym_list()
 {
+    delete m_scopeManager;
+    m_scopeManager = nullptr;
+}
+
+ScopeManager* sym_list::getScopeManager() const
+{
+    if (!m_scopeManager)
+        m_scopeManager = new ScopeManager();
+    return m_scopeManager;
 }
 
 // UPDATED: Smart pointer singleton implementation，多线程安全（阶段 B）
@@ -181,6 +191,10 @@ sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString&
     // 方括号内用 {0,500} 限定长度，避免 [^\\]]* 在长文本上灾难性回溯导致卡死
     static const QRegularExpression modulePattern("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     static const QRegularExpression endmodulePattern("\\bendmodule\\b");
+    static const QRegularExpression endtaskPattern("\\bendtask\\b");
+    static const QRegularExpression endfunctionPattern("\\bendfunction\\b");
+    static const QRegularExpression beginPattern("\\bbegin\\b");
+    static const QRegularExpression endOnlyPattern("\\bend\\b");
     static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]{0,500}\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]{0,500}\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     static const QRegularExpression logicPattern("\\blogic\\s+(?:\\[[^\\]]{0,500}\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
@@ -207,6 +221,10 @@ sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString&
 
     tryPattern(modulePattern, 0, 1);
     tryPattern(endmodulePattern, 1, 0);
+    tryPattern(endtaskPattern, 7, 0);
+    tryPattern(endfunctionPattern, 8, 0);
+    tryPattern(beginPattern, 9, 0);
+    tryPattern(endOnlyPattern, 10, 0);
     tryPattern(regPattern, 2, 1);
     tryPattern(wirePattern, 3, 1);
     tryPattern(logicPattern, 4, 1);
@@ -238,6 +256,15 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const Q
 {
     QList<int> moduleStack;       // 当前模块栈（symbolId，用于 addRelationship）
     QList<QString> moduleNameStack; // 当前模块名栈，避免在持写锁时调用 getSymbolById 导致死锁
+
+    // 作用域树：按文件维护，栈式解析构建
+    ScopeManager* scopeMgr = getScopeManager();
+    scopeMgr->clearFile(currentFileName);
+    ScopeNode* fileRoot = new ScopeNode(ScopeType::Global, 0);
+    fileRoot->endLine = 0;  // 0 表示无上界
+    scopeMgr->setFileRoot(currentFileName, fileRoot);
+    QStack<ScopeNode*> scopeStack;
+    scopeStack.push(fileRoot);
 
     // 预计算行首偏移，避免每次 calculateLineColumn 从 0 扫到 position 导致 O(n*pos) 卡死
     QVector<int> lineStarts;
@@ -292,11 +319,60 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const Q
             int moduleId = symbolDatabase.last().symbolId;
             moduleStack.append(moduleId);
             moduleNameStack.append(m.capturedName);
+            ScopeNode* modNode = new ScopeNode(ScopeType::Module, moduleSymbol.startLine);
+            modNode->parent = scopeStack.top();
+            scopeStack.top()->children.append(modNode);
+            modNode->symbols[moduleSymbol.symbolName] = symbolDatabase.last();
+            scopeStack.push(modNode);
         } else if (m.matchType == 1) {
             // endmodule
+            int matchLine = 0, dummyCol = 0;
+            posToLineColumn(m.position, matchLine, dummyCol);
+            while (!scopeStack.isEmpty() && scopeStack.top()->type != ScopeType::Module)
+                scopeStack.pop();
+            if (!scopeStack.isEmpty()) {
+                scopeStack.top()->endLine = matchLine;
+                scopeStack.pop();
+            }
             if (!moduleStack.isEmpty()) {
                 moduleStack.removeLast();
                 moduleNameStack.removeLast();
+            }
+        } else if (m.matchType == 7) {
+            // endtask
+            int matchLine = 0, dummyCol = 0;
+            posToLineColumn(m.position, matchLine, dummyCol);
+            while (!scopeStack.isEmpty() && scopeStack.top()->type != ScopeType::Task)
+                scopeStack.pop();
+            if (!scopeStack.isEmpty()) {
+                scopeStack.top()->endLine = matchLine;
+                scopeStack.pop();
+            }
+        } else if (m.matchType == 8) {
+            // endfunction
+            int matchLine = 0, dummyCol = 0;
+            posToLineColumn(m.position, matchLine, dummyCol);
+            while (!scopeStack.isEmpty() && scopeStack.top()->type != ScopeType::Function)
+                scopeStack.pop();
+            if (!scopeStack.isEmpty()) {
+                scopeStack.top()->endLine = matchLine;
+                scopeStack.pop();
+            }
+        } else if (m.matchType == 9) {
+            // begin -> Block 作用域
+            int sl = 0, sc = 0;
+            posToLineColumn(m.position, sl, sc);
+            ScopeNode* blockNode = new ScopeNode(ScopeType::Block, sl);
+            blockNode->parent = scopeStack.top();
+            scopeStack.top()->children.append(blockNode);
+            scopeStack.push(blockNode);
+        } else if (m.matchType == 10) {
+            // end -> 弹出最内层作用域（通常为 Block）
+            int matchLine = 0, dummyCol = 0;
+            posToLineColumn(m.position, matchLine, dummyCol);
+            if (!scopeStack.isEmpty()) {
+                scopeStack.top()->endLine = matchLine;
+                scopeStack.pop();
             }
         } else if (m.matchType >= 2 && m.matchType <= 6) {
             // reg / wire / logic / task / function
@@ -320,10 +396,22 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const Q
                 symbol.scopeLevel = 1;
             }
             addSymbol(symbol);
+            SymbolInfo& added = symbolDatabase.last();
+            if (!scopeStack.isEmpty())
+                scopeStack.top()->symbols[added.symbolName] = added;
             if (relationshipEngine && !moduleStack.isEmpty()) {
-                int newId = symbolDatabase.last().symbolId;
+                int newId = added.symbolId;
                 relationshipEngine->addRelationship(moduleStack.last(), newId,
                                                     SymbolRelationshipEngine::CONTAINS);
+            }
+            // task/function 打开新作用域
+            if (m.matchType == 5 || m.matchType == 6) {
+                ScopeType st = (m.matchType == 5) ? ScopeType::Task : ScopeType::Function;
+                ScopeNode* subNode = new ScopeNode(st, symbol.startLine);
+                subNode->parent = scopeStack.top();
+                scopeStack.top()->children.append(subNode);
+                subNode->symbols[symbol.symbolName] = added;
+                scopeStack.push(subNode);
             }
         }
     }
@@ -489,6 +577,8 @@ QList<sym_list::SymbolInfo> sym_list::getAllSymbols()
 void sym_list::clearSymbolsForFile(const QString& fileName)
 {
     int beforeCount = symbolDatabase.size();
+
+    getScopeManager()->clearFile(fileName);
 
     // 🚀 NEW: 通知关系引擎失效该文件的关系
     if (relationshipEngine) {

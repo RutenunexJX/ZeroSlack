@@ -11,6 +11,7 @@
 #include <QRegularExpression>
 
 class MainWindow;
+class ScopeManager;
 class SymbolRelationshipEngine;
 
 class sym_list{
@@ -145,6 +146,9 @@ public:
     SymbolRelationshipEngine* getRelationshipEngine() const;
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
 
+    /** 作用域树：按文件维护，供补全按行查找作用域与词法遮蔽 */
+    ScopeManager* getScopeManager() const;
+
     QList<CommentRegion> commentRegions;
 
     bool isPositionInComment(int position);
@@ -185,6 +189,7 @@ private:
     int allocateSymbolId();
 
     SymbolRelationshipEngine* relationshipEngine = nullptr;
+    mutable ScopeManager* m_scopeManager = nullptr;
 
     static std::unique_ptr<sym_list> instance;
 
@@ -277,7 +282,7 @@ private:
         int length = 0;
         int capturePos = -1;
         QString capturedName;
-        int matchType = -1;  // 0=module, 1=endmodule, 2=reg, 3=wire, 4=logic, 5=task, 6=function
+        int matchType = -1;  // 0=module, 1=endmodule, 2=reg, 3=wire, 4=logic, 5=task, 6=function, 7=endtask, 8=endfunction, 9=begin, 10=end
     };
     StructuralMatchResult findNextStructuralMatch(const QString& text, int startPos,
                                                    const QList<StructRange>& structRanges,
