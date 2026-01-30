@@ -63,6 +63,8 @@ void MainWindow::setupManagerConnections()
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this](MyCodeEditor* editor) {
                 if (!editor) return;
+                connect(editor, &MyCodeEditor::debugScopeInfo, this, &MainWindow::onDebugScopeInfo);
+                if (tabManager->getCurrentEditor() == editor) editor->refreshDebugScopeInfo();
                 QString fileName = editor->getFileName();
                 QString content = editor->toPlainText();
                 // 延后执行，先让标签页显示出来，再在后台做符号/关系分析
@@ -72,6 +74,11 @@ void MainWindow::setupManagerConnections()
                     if (!fileName.isEmpty())
                         requestSingleFileRelationshipAnalysis(fileName, content);
                 });
+            });
+
+    connect(tabManager.get(), &TabManager::activeTabChanged,
+            this, [this](MyCodeEditor* editor) {
+                if (editor) editor->refreshDebugScopeInfo();
             });
 
     connect(tabManager.get(), &TabManager::tabClosed,
@@ -858,4 +865,13 @@ void MainWindow::setupDebugButton()
 
 void MainWindow::onDebug0(){
     relationshipEngine->getModuleInstances(1);
+}
+
+void MainWindow::onDebugScopeInfo(const QString& currentModule, int logicCount, int structVarCount, int structTypeCount)
+{
+    if (sender() != tabManager->getCurrentEditor()) return;
+    QString moduleDisplay = currentModule.isEmpty() ? QStringLiteral("(无模块)") : currentModule;
+    QString msg = QStringLiteral("模块: %1 | logic: %2 | struct 变量: %3 | struct 类型: %4")
+                      .arg(moduleDisplay).arg(logicCount).arg(structVarCount).arg(structTypeCount);
+    if (statusBar()) statusBar()->showMessage(msg, 0);
 }

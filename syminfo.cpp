@@ -1881,20 +1881,26 @@ void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos,
     addVariableIfNotPortOrStruct(logicPattern, sym_logic);
 }
 
+// 判断是否为合法模块名：非空且符合 SV 标识符规范
+bool sym_list::isValidModuleName(const QString& name) {
+    if (name.isEmpty()) return false;
+    static const QRegularExpression svIdentifier(QStringLiteral("^[a-zA-Z_][a-zA-Z0-9_]*$"));
+    return svIdentifier.match(name).hasMatch();
+}
+
 // 新增：获取指定位置的模块作用域（公开接口，供跳转定义时优先同模块符号）
+// 仅当存在配对 endmodule 且模块名合法时才认为在有效模块内
 QString sym_list::getCurrentModuleScope(const QString& fileName, int lineNumber) {
-    // 查找包含该行的模块
     QList<SymbolInfo> modules = findSymbolsByType(sym_module);
     for (const SymbolInfo& moduleSymbol : modules) {
-        if (moduleSymbol.fileName == fileName) {
-            // 查找模块的结束位置
-            int moduleEndLine = findEndModuleLine(fileName, moduleSymbol);
-            if (lineNumber > moduleSymbol.startLine && lineNumber < moduleEndLine) {
-                return moduleSymbol.symbolName;
-            }
-        }
+        if (moduleSymbol.fileName != fileName) continue;
+        if (!isValidModuleName(moduleSymbol.symbolName)) continue;
+        int moduleEndLine = findEndModuleLine(fileName, moduleSymbol);
+        if (moduleEndLine < 0) continue; // 无配对 endmodule，不视为有效模块
+        if (lineNumber > moduleSymbol.startLine && lineNumber < moduleEndLine)
+            return moduleSymbol.symbolName;
     }
-    return QString(); // 不在任何模块内
+    return QString();
 }
 
 void sym_list::analyzeVariablePattern(const QString& lineText, int lineStartPos, int lineNum,
