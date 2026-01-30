@@ -10,6 +10,7 @@
 #include <QThread>
 #include <QCoreApplication>
 #include <QWriteLocker>
+#include <QMutex>
 #include <algorithm>
 #include <memory>
 #include <QVector>
@@ -34,9 +35,11 @@ sym_list::~sym_list()
 {
 }
 
-// UPDATED: Smart pointer singleton implementation
+// UPDATED: Smart pointer singleton implementation，多线程安全（阶段 B）
 sym_list* sym_list::getInstance()
 {
+    static QMutex instanceMutex;
+    QMutexLocker lock(&instanceMutex);
     if (!instance) {
         instance = std::unique_ptr<sym_list>(new sym_list());
     }
@@ -477,6 +480,10 @@ QList<sym_list::SymbolInfo> sym_list::findSymbolsByFileName(const QString& fileN
 
 QList<sym_list::SymbolInfo> sym_list::getAllSymbols()
 {
+    if (s_holdingWriteLock) {
+        return symbolDatabase;
+    }
+    QReadLocker lock(&symbolDbLock);
     return symbolDatabase;
 }
 

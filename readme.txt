@@ -98,9 +98,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 打开标签分析：`analyzeOpenTabs`
   - 对当前所有打开的编辑器进行分析
   - 使用 `setCodeEditor` 将每个编辑器的内容送入符号解析器
-- 工作区分析：`analyzeWorkspace`
+- 工作区分析：`analyzeWorkspace` / `startAnalyzeWorkspaceAsync`
   - 通过 `WorkspaceManager` 拿到整个目录树中的 `.sv/.v/.vh/.svh/.vp/.svp` 文件
-  - 使用隐藏的后台 `MyCodeEditor` 加载并解析，每个文件单独送入 `setCodeEditorIncremental`
+  - 使用 QFile+QTextStream 读入内容，每个文件送入 `setContentIncremental`（阶段 B 轻量化，不创建 MyCodeEditor）
 - 单文件分析：`analyzeFile`
   - 供文件变化回调 (`fileChanged`) 调用
 
@@ -237,11 +237,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 禁止在后台线程调用 QApplication::processEvents() 或创建任何 QWidget。
   - 通过 batchProgress 等信号异步回传进度，仅在主线程更新 progressDialog。
 
-[] 阶段 B — 解析器轻量化 (SymbolAnalyzer)
-  - 废弃 createBackgroundEditor；新增 analyzeFileContent(content)，直接对
-    QString 或轻量级 QTextDocument 进行正则解析。
-  - 确保 sym_list::getInstance() 在多线程下访问安全，或在后台线程维护独立
-    临时符号表，分析完成后再合并至主表。
+[x] 阶段 B — 解析器轻量化 (SymbolAnalyzer)（已完成）
+  - 废弃 createBackgroundEditor；新增 analyzeFileContent(fileName, content)，
+    直接对 QString 调用 sym_list::setContentIncremental 进行正则解析。
+  - analyzeWorkspace / analyzeFile 改为 QFile+QTextStream 读内容后调用
+    setContentIncremental，不再创建 MyCodeEditor。
+  - sym_list::getInstance() 使用静态 QMutex 保证多线程下单例创建安全；
+    getAllSymbols() 使用 QReadLocker，持写锁时通过 s_holdingWriteLock 避免死锁。
 
 [] 阶段 C — 语义级去抖与增量策略 (SmartRelationshipBuilder / SymbolRelationshipEngine)
   - 利用已有 hasSignificantChanges：仅当结构/定义变更时才触发关系重构。
