@@ -36,6 +36,9 @@ public:
     void updateModuleHierarchy(const QHash<QString, QStringList>& modulesByFile);
     void updateSymbolHierarchy(const QHash<sym_list::sym_type_e, QStringList>& symbolsByType);
 
+    /// 仅更新指定文件的模块子树（局部更新，避免全量重绘）
+    void updateModuleHierarchyForFile(const QString& fileName, const QStringList& modules);
+
     // 高亮和选择
     void highlightFile(const QString& filePath);
     void highlightSymbol(const QString& symbolName);

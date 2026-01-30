@@ -240,10 +240,13 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
         }
     }
 
-    // Sort by score and limit results
+    // Sort by score, cap total to avoid UI stutter, then limit visible
     sortCompletionsByScore();
+    if (completions.size() > MaxCompletionItems) {
+        completions = completions.mid(0, MaxCompletionItems);
+    }
     if (completions.size() > 15) {
-        completions = completions.mid(0, 15);  // Use mid() instead of resize()
+        completions = completions.mid(0, 15);  // Normal mode: top 15 by score
     }
 
     endResetModel();
@@ -287,6 +290,9 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
     }
 
     sortCompletionsByScore();
+    if (completions.size() > MaxCompletionItems) {
+        completions = completions.mid(0, MaxCompletionItems);
+    }
     endResetModel();
 }
 
@@ -469,8 +475,10 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     }
 
     sortCompletionsByScore();
-
-    // 限制结果数量，提高上限以显示更多结构体/变量
+    if (completions.size() > MaxCompletionItems) {
+        completions = completions.mid(0, MaxCompletionItems);
+    }
+    // 命令模式：最多展示 32 条，兼顾性能与可用性
     if (completions.size() > 32) {
         completions = completions.mid(0, 32);
     }

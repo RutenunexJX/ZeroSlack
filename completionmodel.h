@@ -53,6 +53,9 @@ public:
 private:
     QList<CompletionItem> completions;
 
+    /// 单次展示最大条数，避免候选过多导致弹窗卡顿（性能优化）
+    static const int MaxCompletionItems = 500;
+
     void sortCompletionsByScore();
     int calculateScore(const QString &text, const QString &prefix) const;
     QString getTypeDescription(sym_list::sym_type_e symbolType);

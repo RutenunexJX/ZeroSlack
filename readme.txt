@@ -349,20 +349,28 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 四、UI 渲染与内存 (UI/UX Performance)
 
-  [ ] 补全列表延迟渲染与数量限制
-      - 在 CompletionModel 或填充补全列表的上层逻辑中：当候选数量超过阈值
-        （如 500）时，采用分页加载或只取前 N 条用于显示，并可选地提供
-        “显示更多”或滚动加载；或限制单次展示的最大条数，其余仅按需加载。
-      - 避免单次 setCompletions(…) 传入过大的 QList，防止补全弹窗首次打开
-        时卡顿。
+  [x] 补全列表延迟渲染与数量限制（已实现）
+      - CompletionModel 新增 MaxCompletionItems（500）：updateCompletions /
+        updateSymbolCompletions / updateCommandCompletions 在排序后若超过 500
+        条则截断为前 500 条，再按原有逻辑限制可见条数（正常模式 15、命令模式 32）。
+      - CompletionManager 新增 MaxCompletionListSize（500）：getModuleInternalVariables /
+        getGlobalSymbolCompletions / getModuleInternalVariablesByType /
+        getGlobalSymbolsByType / getGlobalSymbolsByType_Info /
+        getModuleInternalSymbolsByType / getStructMemberCompletions /
+        getEnumValueCompletions 等返回列表的 API 在去重排序后截断为最多 500 条。
+      - 避免单次传入过大的候选列表，防止补全弹窗首次打开时卡顿。
 
-  [ ] 导航树局部更新
-      - 在 NavigationManager/NavigationWidget 中，区分“当前活跃文件/当前
-        符号”与“全局树数据”。仅当当前文件或与当前符号相关的节点发生
-        变化时，刷新对应子树（如只调用 populateModuleTree 中与当前文件相关
-        的部分，或只更新 symbolTree 中受影响的类型/节点），而不是每次
-        数据变更都全量调用 updateFileHierarchy/updateModuleHierarchy/
-        updateSymbolHierarchy 并重绘整棵树。
+  [x] 导航树局部更新（已实现）
+      - NavigationWidget：新增 updateModuleHierarchyForFile(fileName, modules)，仅更新指定
+        文件对应的模块子树（查找/创建文件节点、替换其子节点），模块树文件节点用 UserRole
+        存完整路径便于查找；全量 populateModuleTree 时同样写入 UserRole。
+      - NavigationManager：新增 updateModuleHierarchyDataForFile(fileName)，仅从 sym_list
+        拉取该文件的模块列表并写回 moduleHierarchyCache[fileName]。
+      - onSymbolAnalysisCompleted(fileName)：文件视图不刷新；模块视图只调用
+        updateModuleHierarchyDataForFile + updateModuleHierarchyForFile 刷新该文件子树；符号
+        视图仅当 currentFileName == fileName 时刷新（符号树按当前文件展示）。
+      - fileChanged(filePath)：同上，仅刷新该文件对应的模块子树或当前文件的符号视图。
+      - 工作区/批量分析完成、切换视图、搜索过滤仍使用全量 refreshCurrentView。
 
 ==========================================================================
 性能信息打印 (Performance Logging)
