@@ -15,6 +15,9 @@
 #include <memory>
 #include <QVector>
 
+// 前向声明：在 parseModulePorts / parseInstanceConnections / analyzeModuleInstantiations 之前使用
+static int findMatchingParen(const QString &text, int openParenPos);
+
 std::unique_ptr<sym_list> sym_list::instance = nullptr;
 
 // 供 setContentIncremental 持写锁时避免 findSymbolsByFileName 内再次加读锁导致死锁
@@ -103,6 +106,18 @@ void sym_list::addSymbol(const SymbolInfo& symbol)
 
 sym_list::SymbolInfo sym_list::getSymbolById(int symbolId) const
 {
+    if (s_holdingWriteLock) {
+        // 调用方已持写锁，不再加读锁，避免同一线程死锁
+        if (symbolIdToIndex.contains(symbolId)) {
+            int index = symbolIdToIndex[symbolId];
+            if (index < symbolDatabase.size()) {
+                return symbolDatabase[index];
+            }
+        }
+        SymbolInfo emptySymbol;
+        emptySymbol.symbolId = -1;
+        return emptySymbol;
+    }
     QReadLocker lock(&symbolDbLock);
     if (symbolIdToIndex.contains(symbolId)) {
         int index = symbolIdToIndex[symbolId];
@@ -319,6 +334,7 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const Q
             int moduleId = symbolDatabase.last().symbolId;
             moduleStack.append(moduleId);
             moduleNameStack.append(m.capturedName);
+            parseModulePorts(text, m.position, m.capturedName, moduleId, lineStarts);
             ScopeNode* modNode = new ScopeNode(ScopeType::Module, moduleSymbol.startLine);
             modNode->parent = scopeStack.top();
             scopeStack.top()->children.append(modNode);
@@ -417,6 +433,341 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const Q
     }
 }
 
+// 从 position 起跳过空白与注释，返回下一个非空白位置
+static int skipWhitespaceAndComments(const QString& text, int pos)
+{
+    const int n = text.length();
+    while (pos < n) {
+        if (text[pos].isSpace()) { pos++; continue; }
+        if (pos + 1 < n && text[pos] == '/' && text[pos + 1] == '/') {
+            while (pos < n && text[pos] != '\n') pos++;
+            continue;
+        }
+        if (pos + 1 < n && text[pos] == '/' && text[pos + 1] == '*') {
+            pos += 2;
+            while (pos + 1 < n && !(text[pos] == '*' && text[pos + 1] == '/')) pos++;
+            if (pos + 1 < n) pos += 2;
+            continue;
+        }
+        break;
+    }
+    return pos;
+}
+
+void sym_list::parseModulePorts(const QString& text, int moduleKeywordPos, const QString& moduleName, int moduleId,
+                                  const QVector<int>& lineStarts)
+{
+    auto posToLineColumn = [&lineStarts](int position, int &line, int &column) {
+        auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(), position);
+        int lineIdx = qBound(0, (int)(it - lineStarts.begin()) - 1, lineStarts.size() - 1);
+        line = lineIdx;
+        column = position - lineStarts[lineIdx];
+    };
+
+    int p = moduleKeywordPos;
+    const int n = text.length();
+    if (p + 6 >= n || text.mid(p, 6) != QLatin1String("module")) return;
+    p = skipWhitespaceAndComments(text, p + 6);
+    // 跳过模块名（标识符）
+    while (p < n && (text[p].isLetterOrNumber() || text[p] == '_')) p++;
+    p = skipWhitespaceAndComments(text, p);
+    // 可选 #( ... )
+    if (p < n && text[p] == '#') {
+        p++;
+        p = skipWhitespaceAndComments(text, p);
+        if (p < n && text[p] == '(') {
+            int close = findMatchingParen(text, p);
+            if (close < 0) return;
+            p = skipWhitespaceAndComments(text, close + 1);
+        }
+    }
+    if (p >= n || text[p] != '(') return;
+    int portListStart = p + 1;
+    int portListEnd = findMatchingParen(text, p);
+    if (portListEnd < 0) return;
+    QString portListStr;
+    for (int i = portListStart; i < portListEnd; i++) {
+        QChar c = text[i];
+        if (c == '/' && i + 1 < portListEnd) {
+            if (text[i + 1] == '/') {
+                while (i < portListEnd && text[i] != '\n') { portListStr += ' '; i++; }
+                i--;
+                continue;
+            }
+            if (text[i + 1] == '*') {
+                portListStr += "  ";
+                i += 2;
+                while (i + 1 < portListEnd && !(text[i] == '*' && text[i + 1] == '/')) { portListStr += ' '; i++; }
+                if (i + 1 < portListEnd) i += 2;
+                continue;
+            }
+        }
+        portListStr += c;
+    }
+
+    // 按顶层逗号分割（尊重括号/方括号深度）
+    QList<QString> segments;
+    int depth = 0, start = 0;
+    for (int i = 0; i <= portListStr.length(); i++) {
+        QChar c = (i < portListStr.length()) ? portListStr[i] : QChar(',');
+        if (c == '(' || c == '[' || c == '{') depth++;
+        else if (c == ')' || c == ']' || c == '}') depth--;
+        else if ((c == ',' || i == portListStr.length()) && depth == 0) {
+            segments.append(portListStr.mid(start, i - start).trimmed());
+            start = i + 1;
+        }
+    }
+
+    sym_type_e lastPortType = sym_port_input;
+    QString lastDataType;
+    const QRegularExpression idRx("^[a-zA-Z_][a-zA-Z0-9_]*$");
+    const QRegularExpression idDotRx("^[a-zA-Z_][a-zA-Z0-9_]*\\.[a-zA-Z_][a-zA-Z0-9_]*$");
+
+    for (const QString& seg : qAsConst(segments)) {
+        if (seg.isEmpty()) continue;
+        QStringList tokens;
+        for (int i = 0; i < seg.length(); ) {
+            i = skipWhitespaceAndComments(seg, i);
+            if (i >= seg.length()) break;
+            if (seg[i] == '[') {
+                int j = i + 1, d = 1;
+                while (j < seg.length() && d > 0) {
+                    if (seg[j] == '[') d++; else if (seg[j] == ']') d--;
+                    j++;
+                }
+                tokens.append(seg.mid(i, j - i));
+                i = j;
+                continue;
+            }
+            if (seg[i].isLetterOrNumber() || seg[i] == '_' || seg[i] == '.') {
+                int j = i;
+                while (j < seg.length() && (seg[j].isLetterOrNumber() || seg[j] == '_' || seg[j] == '.')) j++;
+                tokens.append(seg.mid(i, j - i));
+                i = j;
+                continue;
+            }
+            i++;
+        }
+        if (tokens.isEmpty()) continue;
+
+        sym_type_e portType = lastPortType;
+        QString dataType = lastDataType;
+        QStringList names;
+        int tokenIdx = 0;
+
+        if (tokenIdx < tokens.size()) {
+            const QString& t = tokens[tokenIdx];
+            if (t == QLatin1String("input"))  { portType = sym_port_input;  tokenIdx++; }
+            else if (t == QLatin1String("output")) { portType = sym_port_output; tokenIdx++; }
+            else if (t == QLatin1String("inout"))  { portType = sym_port_inout;  tokenIdx++; }
+            else if (t == QLatin1String("ref"))    { portType = sym_port_ref;    tokenIdx++; }
+        }
+        if (tokenIdx < tokens.size() && tokens[tokenIdx] == QLatin1String("virtual")) {
+            portType = sym_port_interface;
+            tokenIdx++;
+            if (tokenIdx < tokens.size()) { dataType = tokens[tokenIdx]; tokenIdx++; }
+        } else if (tokenIdx < tokens.size() && idDotRx.match(tokens[tokenIdx]).hasMatch()) {
+            portType = sym_port_interface_modport;
+            dataType = tokens[tokenIdx];
+            tokenIdx++;
+        } else {
+            // 类型部分：保留至少一个 token 作为端口名（继承时可能只剩一个标识符）
+            while (tokenIdx < tokens.size() - 1) {
+                const QString& t = tokens[tokenIdx];
+                if (t == QLatin1String("logic") || t == QLatin1String("reg") || t == QLatin1String("wire") ||
+                    t.startsWith(QLatin1Char('[')) || idRx.match(t).hasMatch()) {
+                    if (!dataType.isEmpty()) dataType += QLatin1Char(' ');
+                    dataType += t;
+                    tokenIdx++;
+                } else
+                    break;
+            }
+        }
+        while (tokenIdx < tokens.size() && idRx.match(tokens[tokenIdx]).hasMatch()) {
+            names.append(tokens[tokenIdx]);
+            tokenIdx++;
+        }
+        if (names.isEmpty()) continue;
+        lastPortType = portType;
+        lastDataType = dataType;
+
+        int nameSearchStart = 0;
+        for (const QString& portName : qAsConst(names)) {
+            SymbolInfo portSymbol;
+            portSymbol.fileName = currentFileName;
+            portSymbol.symbolName = portName;
+            portSymbol.symbolType = portType;
+            portSymbol.moduleScope = moduleName;
+            portSymbol.scopeLevel = 1;
+            portSymbol.dataType = dataType;
+            int namePos = portListStr.indexOf(portName, nameSearchStart);
+            if (namePos >= 0) {
+                int absPos = portListStart + namePos;
+                portSymbol.position = absPos;
+                portSymbol.length = portName.length();
+                posToLineColumn(absPos, portSymbol.startLine, portSymbol.startColumn);
+                nameSearchStart = namePos + portName.length();
+            } else {
+                portSymbol.position = portListStart;
+                portSymbol.length = portName.length();
+                posToLineColumn(portListStart, portSymbol.startLine, portSymbol.startColumn);
+            }
+            portSymbol.endLine = portSymbol.startLine;
+            portSymbol.endColumn = portSymbol.startColumn + portName.length();
+            addSymbol(portSymbol);
+            int portId = symbolDatabase.last().symbolId;
+            if (relationshipEngine)
+                relationshipEngine->addRelationship(moduleId, portId, SymbolRelationshipEngine::CONTAINS);
+        }
+    }
+}
+
+void sym_list::parseInstanceConnections(const QString& text, int instStartPos, const QString& moduleTypeName,
+                                        int instanceSymbolId, const QVector<int>& lineStarts)
+{
+    Q_UNUSED(instanceSymbolId); // 预留：可建立 instance CONTAINS pin 关系
+    if (!relationshipEngine) return;
+    int moduleTypeId = findSymbolIdByName(moduleTypeName);
+    if (moduleTypeId < 0) return;
+    QList<int> moduleChildren = relationshipEngine->getModuleChildren(moduleTypeId);
+    QHash<QString, int> portNameToId;
+    for (int childId : qAsConst(moduleChildren)) {
+        SymbolInfo child = getSymbolById(childId);
+        if (child.symbolId < 0) continue;
+        switch (child.symbolType) {
+        case sym_port_input:
+        case sym_port_output:
+        case sym_port_inout:
+        case sym_port_ref:
+        case sym_port_interface:
+        case sym_port_interface_modport:
+            portNameToId[child.symbolName] = childId;
+            break;
+        default:
+            break;
+        }
+    }
+
+    auto posToLineColumn = [&lineStarts](int position, int &line, int &column) {
+        auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(), position);
+        int lineIdx = qBound(0, (int)(it - lineStarts.begin()) - 1, lineStarts.size() - 1);
+        line = lineIdx;
+        column = position - lineStarts[lineIdx];
+    };
+
+    int p = instStartPos;
+    const int n = text.length();
+    p = skipWhitespaceAndComments(text, p);
+    if (p >= n || text[p] != '(') return;
+    int listStart = p + 1;
+    int listEnd = findMatchingParen(text, p);
+    if (listEnd < 0) return;
+
+    static const QRegularExpression dotPinRx("\\.\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
+    int searchPos = listStart;
+    while (searchPos < listEnd) {
+        QRegularExpressionMatch match = dotPinRx.match(text, searchPos);
+        if (!match.hasMatch()) break;
+        int dotPos = match.capturedStart(0);
+        if (dotPos >= listEnd) break;
+        QString pinName = match.captured(1);
+        int openParen = match.capturedStart(0) + match.capturedLength(0) - 1;
+        int closeParen = findMatchingParen(text, openParen);
+        if (closeParen < 0) { searchPos = openParen + 1; continue; }
+        if (isMatchInComment(dotPos, match.capturedLength(0))) { searchPos = closeParen + 1; continue; }
+        int portId = portNameToId.value(pinName, -1);
+        if (portId >= 0) {
+            SymbolInfo pinSymbol;
+            pinSymbol.fileName = currentFileName;
+            pinSymbol.symbolName = pinName;
+            pinSymbol.symbolType = sym_inst_pin;
+            pinSymbol.position = dotPos;
+            pinSymbol.length = match.capturedLength(0) - 1;
+            posToLineColumn(dotPos, pinSymbol.startLine, pinSymbol.startColumn);
+            pinSymbol.endLine = pinSymbol.startLine;
+            pinSymbol.endColumn = pinSymbol.startColumn + pinName.length();
+            addSymbol(pinSymbol);
+            int pinId = symbolDatabase.last().symbolId;
+            relationshipEngine->addRelationship(pinId, portId, SymbolRelationshipEngine::REFERENCES);
+        }
+        searchPos = closeParen + 1;
+    }
+}
+
+void sym_list::analyzeModuleInstantiations(const QString& text)
+{
+    if (text.isEmpty()) return;
+    QVector<int> lineStarts;
+    lineStarts.append(0);
+    for (int p = 0; p < text.length(); ) {
+        int idx = text.indexOf('\n', p);
+        if (idx < 0) break;
+        p = idx + 1;
+        lineStarts.append(p);
+    }
+    auto posToLineColumn = [&lineStarts](int position, int &line, int &column) {
+        auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(), position);
+        int lineIdx = qBound(0, (int)(it - lineStarts.begin()) - 1, lineStarts.size() - 1);
+        line = lineIdx;
+        column = position - lineStarts[lineIdx];
+    };
+
+    // 匹配 "ModuleType inst_name" 且后续为可选 #(...) 再 (
+    static const QRegularExpression instPattern("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*");
+    int searchPos = 0;
+    const int n = text.length();
+    while (searchPos < n) {
+        QRegularExpressionMatch m = instPattern.match(text, searchPos);
+        if (!m.hasMatch()) break;
+        int typeStart = m.capturedStart(0);
+        int nameEnd = m.capturedStart(2) + m.capturedLength(2);
+        QString moduleTypeName = m.captured(1);
+        QString instanceName = m.captured(2);
+        static const QSet<QString> skipTypes = {
+            QLatin1String("module"), QLatin1String("endmodule"), QLatin1String("task"), QLatin1String("function"),
+            QLatin1String("if"), QLatin1String("for"), QLatin1String("while"), QLatin1String("case"),
+            QLatin1String("input"), QLatin1String("output"), QLatin1String("inout"), QLatin1String("ref"),
+            QLatin1String("wire"), QLatin1String("reg"), QLatin1String("logic"), QLatin1String("var"),
+            QLatin1String("parameter"), QLatin1String("localparam"), QLatin1String("const"),
+            QLatin1String("typedef"), QLatin1String("enum"), QLatin1String("struct"), QLatin1String("interface")
+        };
+        if (skipTypes.contains(moduleTypeName)) {
+            searchPos = nameEnd;
+            continue;
+        }
+        if (isMatchInComment(typeStart, m.capturedLength(0))) { searchPos = nameEnd; continue; }
+        int p = skipWhitespaceAndComments(text, nameEnd);
+        if (p < n && text[p] == '#') {
+            p++;
+            p = skipWhitespaceAndComments(text, p);
+            if (p < n && text[p] == '(') {
+                int close = findMatchingParen(text, p);
+                if (close < 0) { searchPos = nameEnd; continue; }
+                p = skipWhitespaceAndComments(text, close + 1);
+            }
+        }
+        if (p >= n || text[p] != '(') { searchPos = nameEnd; continue; }
+        int openParenPos = p;
+        SymbolInfo instSymbol;
+        instSymbol.fileName = currentFileName;
+        instSymbol.symbolName = instanceName;
+        instSymbol.symbolType = sym_inst;
+        instSymbol.dataType = moduleTypeName;
+        instSymbol.position = m.capturedStart(2);
+        instSymbol.length = instanceName.length();
+        posToLineColumn(instSymbol.position, instSymbol.startLine, instSymbol.startColumn);
+        instSymbol.endLine = instSymbol.startLine;
+        instSymbol.endColumn = instSymbol.startColumn + instanceName.length();
+        instSymbol.moduleScope = getCurrentModuleScope(currentFileName, instSymbol.startLine);
+        addSymbol(instSymbol);
+        int instanceId = symbolDatabase.last().symbolId;
+        parseInstanceConnections(text, openParenPos, moduleTypeName, instanceId, lineStarts);
+        searchPos = findMatchingParen(text, openParenPos);
+        if (searchPos < 0) break;
+        searchPos++;
+    }
+}
+
 QList<sym_list::SymbolInfo> sym_list::findSymbolsByType(sym_type_e symbolType)
 {
     QList<SymbolInfo> result;
@@ -500,6 +851,16 @@ QList<sym_list::SymbolInfo> sym_list::findSymbolsByName(const QString& symbolNam
 
 int sym_list::findSymbolIdByName(const QString& symbolName) const
 {
+    if (s_holdingWriteLock) {
+        // 调用方已持写锁，不再加读锁，避免同一线程死锁
+        if (symbolNameIndex.contains(symbolName)) {
+            const QList<int>& indices = symbolNameIndex[symbolName];
+            if (!indices.isEmpty() && indices.first() < symbolDatabase.size()) {
+                return symbolDatabase[indices.first()].symbolId;
+            }
+        }
+        return -1;
+    }
     QReadLocker lock(&symbolDbLock);
     if (symbolNameIndex.contains(symbolName)) {
         const QList<int>& indices = symbolNameIndex[symbolName];
@@ -997,6 +1358,9 @@ void sym_list::getVariableDeclarations(const QString &text)
 
 void sym_list::getAdditionalSymbols(const QString &text)
 {
+    // 分析 module 实例化及 .pin -> 端口 REFERENCES
+    analyzeModuleInstantiations(text);
+
     // 分析interface声明
     analyzeInterfaces(text);
 
@@ -1493,7 +1857,7 @@ void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos,
     }
 }
 
-// 新增：获取指定位置的模块作用域
+// 新增：获取指定位置的模块作用域（公开接口，供跳转定义时优先同模块符号）
 QString sym_list::getCurrentModuleScope(const QString& fileName, int lineNumber) {
     // 查找包含该行的模块
     QList<SymbolInfo> modules = findSymbolsByType(sym_module);
@@ -2302,6 +2666,50 @@ static int findMatchingBrace(const QString &text, int openBracePos)
     }
     
     return -1; // 未找到匹配的闭括号
+}
+
+// 辅助函数：找到匹配的圆括号 ')'
+static int findMatchingParen(const QString &text, int openParenPos)
+{
+    if (openParenPos < 0 || openParenPos >= text.length() || text[openParenPos] != '(') {
+        return -1;
+    }
+    const int maxSteps = text.length() + 1;
+    int steps = 0;
+    int depth = 1;
+    int pos = openParenPos + 1;
+    while (pos < text.length() && depth > 0 && steps < maxSteps) {
+        steps++;
+        QChar ch = text[pos];
+        if (ch == '(') {
+            depth++;
+        } else if (ch == ')') {
+            depth--;
+            if (depth == 0)
+                return pos;
+        } else if (ch == '"') {
+            pos++;
+            while (pos < text.length() && text[pos] != '"') {
+                if (text[pos] == '\\' && pos + 1 < text.length()) pos += 2;
+                else pos++;
+            }
+        } else if (ch == '/' && pos + 1 < text.length()) {
+            if (text[pos + 1] == '/') {
+                while (pos < text.length() && text[pos] != '\n') pos++;
+            } else if (text[pos + 1] == '*') {
+                pos += 2;
+                const int commentMaxSteps = qMin(text.length() - pos, 500000);
+                int commentSteps = 0;
+                while (pos + 1 < text.length() && commentSteps < commentMaxSteps) {
+                    commentSteps++;
+                    if (text[pos] == '*' && text[pos + 1] == '/') { pos += 2; break; }
+                    pos++;
+                }
+            }
+        }
+        pos++;
+    }
+    return -1;
 }
 
 // 查找所有struct的范围（包括packed和unpacked）；限制数量与迭代以防异常输入卡死

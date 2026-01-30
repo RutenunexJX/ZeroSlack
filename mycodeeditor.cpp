@@ -1463,8 +1463,19 @@ static int definitionTypePriority(sym_list::sym_type_e t)
     case sym_list::sym_module:   return 0;
     case sym_list::sym_interface: return 1;
     case sym_list::sym_package:  return 2;
+    case sym_list::sym_port_input:
+    case sym_list::sym_port_output:
+    case sym_list::sym_port_inout:
+    case sym_list::sym_port_ref:
+    case sym_list::sym_port_interface:
+    case sym_list::sym_port_interface_modport: return 3;  // 端口优先于 reg/wire/logic
     case sym_list::sym_task:
     case sym_list::sym_function: return 4;
+    case sym_list::sym_reg:
+    case sym_list::sym_wire:
+    case sym_list::sym_logic:   return 5;
+    case sym_list::sym_parameter:
+    case sym_list::sym_localparam: return 6;
     default:                     return 10;
     }
 }
@@ -1481,8 +1492,10 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
     }
 
     const QString currentFile = getFileName();
+    int cursorLine = textCursor().blockNumber();
+    QString currentModuleName = symbolList->getCurrentModuleScope(currentFile, cursorLine);
 
-    // ---------- Step 1: 本地搜索（仅当前文件）----------
+    // ---------- Step 1: 本地搜索（仅当前文件），优先当前模块内的符号（如端口 clk 而非其他模块的 logic clk）----------
     QList<sym_list::SymbolInfo> localSymbols = symbolList->findSymbolsByFileName(currentFile);
     sym_list::SymbolInfo localBest;
     bool foundLocal = false;
@@ -1492,6 +1505,9 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
             continue;
         }
         int p = definitionTypePriority(symbol.symbolType);
+        if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
+            p -= 100;  // 同模块符号优先（端口/变量等）
+        }
         if (p < localBestPriority) {
             localBest = symbol;
             localBestPriority = p;
@@ -1522,6 +1538,9 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
             continue; // Step 1 已覆盖，忽略当前文件
         }
         int p = definitionTypePriority(symbol.symbolType);
+        if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
+            p -= 100;
+        }
         if (p < globalBestPriority) {
             globalBest = symbol;
             globalBestPriority = p;
@@ -1542,13 +1561,19 @@ bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const 
         return false;
     }
 
-    // 所有这些类型都被认为是定义（含跨文件跳转的 module/interface/package/task/function）
+    // 所有这些类型都被认为是定义（含端口、跨文件跳转的 module/interface/package/task/function）
     switch (symbol.symbolType) {
         case sym_list::sym_module:
         case sym_list::sym_interface:
         case sym_list::sym_package:
         case sym_list::sym_task:
         case sym_list::sym_function:
+        case sym_list::sym_port_input:
+        case sym_list::sym_port_output:
+        case sym_list::sym_port_inout:
+        case sym_list::sym_port_ref:
+        case sym_list::sym_port_interface:
+        case sym_list::sym_port_interface_modport:
         case sym_list::sym_reg:
         case sym_list::sym_wire:
         case sym_list::sym_logic:

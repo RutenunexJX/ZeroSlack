@@ -98,8 +98,18 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - `reg` / `wire` / `logic` 变量
   - `task` / `function`
   - `interface` / `struct` / `enum` / `parameter` 等扩展类型
+  - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，以及
+    `virtual interface`、`interface.modport` 等；支持 `input clk, rst_n` 等列表声明与继承属性
+  - 实例化引脚（`.pin(sig)`）：符号类型为 `sym_inst_pin`，与模块端口建立 REFERENCES 关系，供“跳转到定义”使用
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
+- 端口与实例化解析（sym_list）
+  - 在 extractSymbolsAndContainsOnePassImpl 中发现 module 后调用 parseModulePorts：
+    跳过 `#(params)`，解析端口列表 `( ... )`，支持注释、逗号分隔、方向/类型继承；
+    端口符号含 dataType（如 logic[7:0]、my_struct_t 等），并与模块建立 CONTAINS 关系。
+  - getAdditionalSymbols 中调用 analyzeModuleInstantiations：识别“ModuleType inst_name #(...) (”模式，
+    为实例添加 sym_inst 符号，再通过 parseInstanceConnections 解析 `.pin(sig)`，
+    为每个引脚添加 sym_inst_pin 并建立到对应模块端口的 REFERENCES 关系。
 
 【作用域树 (Scope Tree) — scope_tree.h】
 符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
@@ -159,7 +169,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - 标识符高亮为蓝色下划线
     - 可选地弹出 Tooltip 展示定义位置等信息
   - Ctrl+左键可跳转到符号定义
-    - 优先跳当前文件中的定义
+    - 优先跳当前文件中的定义；若存在多个同名定义（如端口 clk 与其它模块的 logic clk），
+      优先跳转到**当前模块内**的定义（通过 sym_list::getCurrentModuleScope 获取光标所在模块，
+      对 symbol.moduleScope == currentModuleName 的符号提高优先级）
+    - 端口（input/output/inout/ref、interface/modport）视为可跳转定义，且类型优先级高于 reg/wire/logic
     - 再考虑其他文件中的模块定义
   - 跳转过程会复用 `NavigationManager` 的符号导航接口
 
@@ -176,6 +189,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 功能概览：
 - 在工作区分析完成后，进一步分析符号之间的关系，例如：
   - 模块实例化关系
+  - 实例引脚到模块端口的 REFERENCES（`.pin(sig)` → 对应 module 的 port 定义，供跳转到定义）
   - 变量赋值 / 驱动关系
   - 任务 / 函数调用关系
 - 结果会回写到：
@@ -297,7 +311,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - SymbolAnalyzer：已删除 analyzeEditor、analyzeOpenTabs 内 getEditorAt 循环；
     解析统一走 analyzeFileContent(fileName, content)，sym_list 仅使用 setContentIncremental。
   - sym_list：已移除无调用者的 setCodeEditor / setCodeEditorIncremental，解析入口仅保留
-    setContentIncremental(fileName, content)。
+    setContentIncremental(fileName, content)。持写锁分析路径中，findSymbolIdByName / getSymbolById
+    在 s_holdingWriteLock 为 true 时不再加读锁，与 findSymbolsByFileName / getAllSymbols 一致，避免同一线程死锁。
   - CompletionManager：getModuleInternalVariables / getGlobalSymbolCompletions 等已统一
     使用 matchesAbbreviation；结果截断统一在 CompletionModel 出口（MaxCompletionItems），
     已删除各子方法内重复的 MaxCompletionListSize 截断及该常量。
