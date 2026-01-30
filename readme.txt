@@ -250,10 +250,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 在 SymbolRelationshipEngine 中引入 beginUpdate() 与 endUpdate()，在
     endUpdate 之前不调用 invalidateCache()，批量提交后按需失效缓存。
 
-[] 阶段 D — 语法高亮性能优化 (MyHighlighter)
+[x] 阶段 D — 语法高亮性能优化 (MyHighlighter)（已完成）
   - 将多个关键字的多个正则合并为一个大的正则（如 \b(module|endmodule|reg|...)\b），
-    并启用 QRegularExpression::OptimizePatternOption。
-  - keywords.txt 等配置改为静态缓存单例，避免每次实例化 MyHighlighter 都读文件。
+    并在 Qt 6.4+ 下调用 QRegularExpression::optimize()。
+  - keywords.txt 改为静态缓存单例（loadKeywordsOnce + getKeywordPattern），
+    避免每次实例化 MyHighlighter 都读文件；多线程下用 QMutex 保护。
 
 ==========================================================================
 备注 (Notes)
