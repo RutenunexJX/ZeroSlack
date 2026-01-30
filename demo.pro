@@ -29,6 +29,7 @@ SOURCES += \
 
 HEADERS += \
     completionmanager.h \
+    scope_tree.h \
     completionmodel.h \
     mainwindow.h \
     modemanager.h \
