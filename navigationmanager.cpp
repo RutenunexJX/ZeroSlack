@@ -100,10 +100,16 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 
         connect(connectedWorkspaceManager, &WorkspaceManager::fileChanged,
                 this, [this](const QString& filePath) {
-                    Q_UNUSED(filePath)
-                    // 文件变化时，可能需要刷新模块和符号层次结构
-                    if (currentView == ModuleHierarchyView || currentView == SymbolHierarchyView) {
-                        refreshCurrentView();
+                    // 文件变化时仅刷新该文件对应的子树（局部更新）
+                    if (currentView == ModuleHierarchyView) {
+                        updateModuleHierarchyDataForFile(filePath);
+                        if (navigationWidget && moduleHierarchyCache.contains(filePath)) {
+                            navigationWidget->updateModuleHierarchyForFile(filePath, moduleHierarchyCache[filePath]);
+                        }
+                        emit dataRefreshed(ModuleHierarchyView);
+                    } else if (currentView == SymbolHierarchyView && currentFileName == filePath) {
+                        symbolsByTypeCache.clear();
+                        refreshSymbolHierarchy();
                     }
                 });
     }
@@ -280,14 +286,28 @@ void NavigationManager::onSearchFilterChanged(const QString& filter)
 
 void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int symbolCount)
 {
-    Q_UNUSED(fileName)
     Q_UNUSED(symbolCount)
 
-    // 符号分析完成后，刷新模块和符号视图
-    if (currentView == ModuleHierarchyView || currentView == SymbolHierarchyView) {
-        symbolsByTypeCache.clear();
-        moduleHierarchyCache.clear();
-        refreshCurrentView();
+    // 局部更新：仅刷新受影响的文件对应子树，避免全量重绘
+    switch (currentView) {
+    case FileHierarchyView:
+        // 文件列表未变，不刷新
+        break;
+    case ModuleHierarchyView: {
+        updateModuleHierarchyDataForFile(fileName);
+        if (navigationWidget && moduleHierarchyCache.contains(fileName)) {
+            navigationWidget->updateModuleHierarchyForFile(fileName, moduleHierarchyCache[fileName]);
+        }
+        emit dataRefreshed(ModuleHierarchyView);
+        break;
+    }
+    case SymbolHierarchyView:
+        // 符号视图按当前文件展示，仅当分析的是当前文件时刷新
+        if (currentFileName == fileName) {
+            symbolsByTypeCache.clear();
+            refreshSymbolHierarchy();
+        }
+        break;
     }
 }
 
@@ -389,6 +409,33 @@ void NavigationManager::updateModuleHierarchyData()
         }
         moduleHierarchyCache = filteredCache;
     }
+}
+
+void NavigationManager::updateModuleHierarchyDataForFile(const QString& fileName)
+{
+    if (fileName.isEmpty()) return;
+
+    sym_list* symbolList = sym_list::getInstance();
+    QList<sym_list::SymbolInfo> modules = symbolList->findSymbolsByType(sym_list::sym_module);
+
+    QStringList modulesInFile;
+    for (const sym_list::SymbolInfo& module : qAsConst(modules)) {
+        if (module.fileName == fileName) {
+            modulesInFile.append(module.symbolName);
+        }
+    }
+
+    if (!searchFilter.isEmpty()) {
+        QStringList filtered;
+        for (const QString& moduleName : qAsConst(modulesInFile)) {
+            if (moduleName.contains(searchFilter, Qt::CaseInsensitive)) {
+                filtered.append(moduleName);
+            }
+        }
+        modulesInFile = filtered;
+    }
+
+    moduleHierarchyCache[fileName] = modulesInFile;
 }
 
 void NavigationManager::updateSymbolHierarchyData()

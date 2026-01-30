@@ -97,6 +97,7 @@ private:
     void setupConnections();
     void updateFileHierarchyData();
     void updateModuleHierarchyData();
+    void updateModuleHierarchyDataForFile(const QString& fileName);
     void updateSymbolHierarchyData();
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;

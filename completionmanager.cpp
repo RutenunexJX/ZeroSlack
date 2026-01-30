@@ -6,6 +6,9 @@
 #include <QRegularExpression>
 #include <algorithm>
 
+/// 补全列表最大条数，避免单次传入过多导致模型排序与弹窗卡顿（性能优化）
+static const int MaxCompletionListSize = 500;
+
 // 单例实例
 std::unique_ptr<CompletionManager> CompletionManager::instance = nullptr;
 
@@ -1788,10 +1791,12 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
         }
     }
 
-    // 去重并排序
+    // 去重并排序，限制条数避免补全弹窗卡顿
     results.removeDuplicates();
     results.sort(Qt::CaseInsensitive);
-
+    if (results.size() > MaxCompletionListSize) {
+        results = results.mid(0, MaxCompletionListSize);
+    }
     return results;
 }
 
@@ -1830,15 +1835,12 @@ QStringList CompletionManager::getGlobalSymbolCompletions(const QString& prefix)
         }
     }
 
-    // 去重并排序
+    // 去重并排序，限制条数避免补全弹窗卡顿
     results.removeDuplicates();
     results.sort(Qt::CaseInsensitive);
-
-    // 限制数量避免过多
-    if (results.size() > 15) {
-        results = results.mid(0, 15);
+    if (results.size() > MaxCompletionListSize) {
+        results = results.mid(0, MaxCompletionListSize);
     }
-
     return results;
 }
 
@@ -1872,6 +1874,9 @@ QStringList CompletionManager::getModuleInternalVariablesByType(const QString& m
 
     results.removeDuplicates();
     results.sort(Qt::CaseInsensitive);
+    if (results.size() > MaxCompletionListSize) {
+        results = results.mid(0, MaxCompletionListSize);
+    }
     return results;
 }
 
@@ -2135,6 +2140,9 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
         }
     }
 
+    if (results.size() > MaxCompletionListSize) {
+        results = results.mid(0, MaxCompletionListSize);
+    }
     return results;
 }
 
@@ -2195,6 +2203,9 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
         }
     }
 
+    if (results.size() > MaxCompletionListSize) {
+        results = results.mid(0, MaxCompletionListSize);
+    }
     return results;
 }
 
@@ -2220,6 +2231,9 @@ QStringList CompletionManager::getEnumValueCompletions(const QString& prefix,
 
     results.removeDuplicates();
     results.sort(Qt::CaseInsensitive);
+    if (results.size() > MaxCompletionListSize) {
+        results = results.mid(0, MaxCompletionListSize);
+    }
     return results;
 }
 
@@ -2245,6 +2259,9 @@ QStringList CompletionManager::getStructMemberCompletions(const QString& prefix,
 
     results.removeDuplicates();
     results.sort(Qt::CaseInsensitive);
+    if (results.size() > MaxCompletionListSize) {
+        results = results.mid(0, MaxCompletionListSize);
+    }
     return results;
 }
 

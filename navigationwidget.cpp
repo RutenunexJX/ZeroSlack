@@ -42,6 +42,54 @@ void NavigationWidget::updateSymbolHierarchy(const QHash<sym_list::sym_type_e, Q
     populateSymbolTree();
 }
 
+void NavigationWidget::updateModuleHierarchyForFile(const QString& fileName, const QStringList& modules)
+{
+    currentModuleHierarchy[fileName] = modules;
+
+    // 查找已有文件节点（UserRole 存完整路径）
+    QTreeWidgetItem* fileItem = nullptr;
+    for (int i = 0; i < moduleTreeWidget->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* top = moduleTreeWidget->topLevelItem(i);
+        if (top->data(0, Qt::UserRole).toString() == fileName) {
+            fileItem = top;
+            break;
+        }
+    }
+
+    if (!fileItem) {
+        // 无该文件节点则新建
+        fileItem = new QTreeWidgetItem(moduleTreeWidget);
+        fileItem->setText(0, QFileInfo(fileName).fileName());
+        fileItem->setIcon(0, getFileIcon(fileName));
+        fileItem->setData(0, Qt::UserRole, fileName);
+        fileItem->setData(0, Qt::UserRole + 1, true);
+        fileItem->setExpanded(true);
+    }
+
+    // 移除旧子节点
+    while (fileItem->childCount() > 0) {
+        delete fileItem->takeChild(0);
+    }
+
+    // 按当前搜索过滤添加模块子节点
+    for (const QString& moduleName : modules) {
+        if (!currentSearchFilter.isEmpty() &&
+            !moduleName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
+            continue;
+        }
+        QTreeWidgetItem* moduleItem = createModuleItem(moduleName, fileName);
+        fileItem->addChild(moduleItem);
+    }
+
+    // 若过滤后无子节点且列表为空，可隐藏或保留空节点；若模块列表为空则删除文件节点
+    if (modules.isEmpty() && fileItem->childCount() == 0) {
+        int idx = moduleTreeWidget->indexOfTopLevelItem(fileItem);
+        if (idx >= 0) {
+            delete moduleTreeWidget->takeTopLevelItem(idx);
+        }
+    }
+}
+
 void NavigationWidget::highlightFile(const QString& filePath)
 {
     currentHighlightedFile = filePath;
@@ -337,10 +385,11 @@ void NavigationWidget::populateModuleTree()
 
         if (modules.isEmpty()) continue;
 
-        // 创建文件节点
+        // 创建文件节点（UserRole 存完整路径，便于局部更新时查找）
         QTreeWidgetItem* fileItem = new QTreeWidgetItem(moduleTreeWidget);
         fileItem->setText(0, QFileInfo(fileName).fileName());
         fileItem->setIcon(0, getFileIcon(fileName));
+        fileItem->setData(0, Qt::UserRole, fileName);
         fileItem->setData(0, Qt::UserRole + 1, true); // 标记为文件节点
         fileItem->setExpanded(true);
 
