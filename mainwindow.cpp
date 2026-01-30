@@ -19,6 +19,7 @@
 #include <QTextStream>
 #include <QFileInfo>
 #include <QTimer>
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -118,68 +119,13 @@ void MainWindow::setupManagerConnections()
                             progressDialog->logProgress(QString("📁 扫描到 %1 个SV文件").arg(svFiles.size()));
                         }
 
-                        // 强制刷新UI
+                        // 强制刷新UI（阶段 A：不再在此处调用 processEvents，避免阻塞）
                         progressDialog->update();
                         progressDialog->repaint();
-                        QApplication::processEvents();
                     }
                 });
 
-                // 50ms后开始符号分析（分批处理，支持取消）
-                QTimer::singleShot(50, this, [this]() {
-                    symbolAnalysisCancelled = false;
-                    symbolAnalyzer->analyzeWorkspace(workspaceManager.get(),
-                        [this]() { return symbolAnalysisCancelled; });
-                });
-
-                // 200ms后开始关系分析
-                QTimer::singleShot(200, this, [this, svFiles]() {
-                    // 更新到关系分析阶段
-                    if (progressDialog) {
-                        progressDialog->statusLabel->setText("阶段 2/2: 关系分析进行中...");
-                        progressDialog->currentFileLabel->setText("正在分析文件间的符号依赖关系...");
-                        progressDialog->progressBar->setFormat(QString("%v / %1 文件 (%p%)").arg(svFiles.size()));
-
-                        if (progressDialog->config.showDetails) {
-                            progressDialog->logProgress("🔗 开始关系分析阶段...");
-                            progressDialog->logProgress("🔍 分析模块实例化关系...");
-                            progressDialog->logProgress("🔍 分析变量赋值关系...");
-                            progressDialog->logProgress("🔍 分析任务/函数调用关系...");
-                        }
-
-                        // 强制刷新UI
-                        progressDialog->update();
-                        progressDialog->repaint();
-                        QApplication::processEvents();
-                    }
-
-                    if (relationshipBuilder) {
-                        relationshipAnalysisTracker.totalFiles = svFiles.size();
-                        relationshipAnalysisTracker.processedFiles = 0;
-                        relationshipAnalysisTracker.isActive = true;
-
-                        // 🚀 批量关系分析在后台线程执行，不阻塞主线程
-                        if (relationshipBatchWatcher && relationshipBatchWatcher->isRunning())
-                            relationshipBatchWatcher->cancel();
-                        QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> batchFuture =
-                            QtConcurrent::run([this, svFiles]() {
-                                QVector<QPair<QString, QVector<RelationshipToAdd>>> out;
-                                out.reserve(svFiles.size());
-                                sym_list* db = sym_list::getInstance();
-                                for (const QString& filePath : svFiles) {
-                                    if (relationshipBuilder->isCancelled()) break;
-                                    QFile file(filePath);
-                                    if (!file.open(QIODevice::ReadOnly | QFile::Text)) continue;
-                                    QString content = QTextStream(&file).readAll();
-                                    file.close();
-                                    QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(filePath);
-                                    out.append({filePath, relationshipBuilder->computeRelationships(filePath, content, fs)});
-                                }
-                                return out;
-                            });
-                        relationshipBatchWatcher->setFuture(batchFuture);
-                    }
-                });
+                // 符号分析由 filesScanned 统一触发（openWorkspace 会先发 workspaceOpened 再发 filesScanned，避免重复启动两次）
             });
     connect(workspaceManager.get(), &WorkspaceManager::fileChanged,
             this, [this](const QString& filePath) {
@@ -209,9 +155,9 @@ void MainWindow::setupManagerConnections()
     connect(workspaceManager.get(), &WorkspaceManager::filesScanned,
             this, [this](const QStringList& svFiles) {
                 Q_UNUSED(svFiles)
-                symbolAnalysisCancelled = false;
-                symbolAnalyzer->analyzeWorkspace(workspaceManager.get(),
-                    [this]() { return symbolAnalysisCancelled; });
+                symbolAnalysisCancelled.store(false);
+                symbolAnalyzer->startAnalyzeWorkspaceAsync(workspaceManager.get(),
+                    [this]() { return symbolAnalysisCancelled.load(); });
             });
 
     // ModeManager connections
@@ -242,6 +188,7 @@ void MainWindow::setupManagerConnections()
                 if (progressDialog && totalFiles > 0) {
                     progressDialog->progressBar->setValue(filesDone);
                     progressDialog->progressBar->setMaximum(totalFiles);
+                    progressDialog->setSymbolAnalysisProgress(filesDone, totalFiles);
                     QString shortName = QFileInfo(currentFileName).fileName();
                     if (shortName.length() > 45)
                         shortName = "..." + shortName.right(42);
@@ -257,6 +204,45 @@ void MainWindow::setupManagerConnections()
                         QString("符号分析完成: %1个文件, %2个符号 - 关系分析进行中...")
                         .arg(filesAnalyzed).arg(totalSymbols),
                         3000);
+                }
+                // 阶段 A：符号分析在后台完成后，于主线程启动关系分析（依赖符号表）
+                QStringList svFiles = workspaceManager->getSystemVerilogFiles();
+                if (progressDialog) {
+                    progressDialog->statusLabel->setText("阶段 2/2: 关系分析进行中...");
+                    progressDialog->currentFileLabel->setText("正在分析文件间的符号依赖关系...");
+                    progressDialog->progressBar->setFormat(QString("%v / %1 文件 (%p%)").arg(svFiles.size()));
+                    if (progressDialog->config.showDetails) {
+                        progressDialog->logProgress("🔗 开始关系分析阶段...");
+                        progressDialog->logProgress("🔍 分析模块实例化关系...");
+                        progressDialog->logProgress("🔍 分析变量赋值关系...");
+                        progressDialog->logProgress("🔍 分析任务/函数调用关系...");
+                    }
+                    progressDialog->update();
+                    progressDialog->repaint();
+                }
+                if (relationshipBuilder && !svFiles.isEmpty()) {
+                    relationshipAnalysisTracker.totalFiles = svFiles.size();
+                    relationshipAnalysisTracker.processedFiles = 0;
+                    relationshipAnalysisTracker.isActive = true;
+                    if (relationshipBatchWatcher && relationshipBatchWatcher->isRunning())
+                        relationshipBatchWatcher->cancel();
+                    QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> batchFuture =
+                        QtConcurrent::run([this, svFiles]() {
+                            QVector<QPair<QString, QVector<RelationshipToAdd>>> out;
+                            out.reserve(svFiles.size());
+                            sym_list* db = sym_list::getInstance();
+                            for (const QString& filePath : svFiles) {
+                                if (relationshipBuilder->isCancelled()) break;
+                                QFile file(filePath);
+                                if (!file.open(QIODevice::ReadOnly | QFile::Text)) continue;
+                                QString content = QTextStream(&file).readAll();
+                                file.close();
+                                QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(filePath);
+                                out.append({filePath, relationshipBuilder->computeRelationships(filePath, content, fs)});
+                            }
+                                return out;
+                        });
+                    relationshipBatchWatcher->setFuture(batchFuture);
                 }
             });
 
@@ -617,12 +603,20 @@ void MainWindow::onRelationshipAdded(int fromSymbolId, int toSymbolId,
     Q_UNUSED(type)
 
     // 🚀 关系添加后的处理
-    // 例如：更新UI、刷新补全缓存等
     CompletionManager::getInstance()->invalidateRelationshipCaches();
 
-    // 🚀 如果导航面板可见，更新关系视图
+    // 🚀 推迟刷新导航视图：符号分析后台持写锁时，主线程若立即 refreshCurrentView() 会读 sym_list 阻塞，导致界面卡在 2/30
     if (navigationManager) {
-        navigationManager->refreshCurrentView();
+        if (!relationshipRefreshDeferTimer) {
+            relationshipRefreshDeferTimer = new QTimer(this);
+            relationshipRefreshDeferTimer->setSingleShot(true);
+            connect(relationshipRefreshDeferTimer, &QTimer::timeout, this, [this]() {
+                if (navigationManager)
+                    navigationManager->refreshCurrentView();
+                relationshipRefreshDeferTimer = nullptr;
+            });
+        }
+        relationshipRefreshDeferTimer->start(400);
     }
 }
 
@@ -756,7 +750,7 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
     // 连接信号
     connect(progressDialog, &RelationshipProgressDialog::cancelled,
             this, [this]() {
-                symbolAnalysisCancelled = true;
+                symbolAnalysisCancelled.store(true);
                 if (relationshipBuilder) {
                     relationshipBuilder->cancelAnalysis();
                 }
@@ -787,10 +781,9 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
         progressDialog->logProgress("⏳ 正在加载分析组件...");
     }
 
-    // 强制刷新显示
+    // 强制刷新显示（阶段 A：不再在此处调用 processEvents）
     progressDialog->update();
     progressDialog->repaint();
-    QApplication::processEvents();
 }
 
 void MainWindow::hideAnalysisProgress()

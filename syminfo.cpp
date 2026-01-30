@@ -5,13 +5,19 @@
 
 #include <QRegularExpression>
 #include <QFile>
+#include <QFileInfo>
 #include <QReadLocker>
-#include <QElapsedTimer>
-#include <QDebug>
+#include <QThread>
+#include <QCoreApplication>
+#include <QWriteLocker>
 #include <algorithm>
 #include <memory>
+#include <QVector>
 
 std::unique_ptr<sym_list> sym_list::instance = nullptr;
+
+// 供 setContentIncremental 持写锁时避免 findSymbolsByFileName 内再次加读锁导致死锁
+static thread_local bool s_holdingWriteLock = false;
 
 sym_list::sym_list()
 {
@@ -155,35 +161,46 @@ void sym_list::buildSymbolRelationships(const QString& fileName)
 }
 
 // 单遍合并：从 startPos 起找下一个结构匹配（不在注释内），返回最早的一个
+// maxSearchLen > 0 时仅在 text.mid(startPos, maxSearchLen) 内匹配，避免长文本灾难性回溯卡死
 sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString& text, int startPos,
-                                                                  const QList<StructRange>& structRanges)
+                                                                  const QList<StructRange>& structRanges,
+                                                                  int maxSearchLen)
 {
     StructuralMatchResult best;
     best.position = -1;
+    const bool useWindow = maxSearchLen > 0 && (startPos + maxSearchLen) < text.length();
+    const int searchLen = useWindow ? maxSearchLen : (text.length() - startPos);
+    if (searchLen <= 0) return best;
 
+    const QString searchText = useWindow ? text.mid(startPos, searchLen) : text;
+    const int matchStart = useWindow ? 0 : startPos;
+    const int posOffset = useWindow ? startPos : 0;
+
+    // 方括号内用 {0,500} 限定长度，避免 [^\\]]* 在长文本上灾难性回溯导致卡死
     static const QRegularExpression modulePattern("\\bmodule\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
     static const QRegularExpression endmodulePattern("\\bendmodule\\b");
-    static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegularExpression logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]{0,500}\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]{0,500}\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression logicPattern("\\blogic\\s+(?:\\[[^\\]]{0,500}\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     static const QRegularExpression taskPattern("\\btask\\s+([a-zA-Z_][a-zA-Z0-9_]*)");
-    static const QRegularExpression functionPattern("\\bfunction\\s+(?:\\w+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    // 返回值用 \S+\s+ 单 token，避免 \w{0,150} 灾难性回溯导致卡死
+    static const QRegularExpression functionPattern("\\bfunction\\s+(?:\\S+\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)");
 
     auto tryPattern = [&](const QRegularExpression& pattern, int type, int capGroup) -> void {
-        QRegularExpressionMatch m = pattern.match(text, startPos);
+        QRegularExpressionMatch m = pattern.match(searchText, matchStart);
         if (!m.hasMatch()) return;
-        int pos = m.capturedStart(0);
+        int pos = m.capturedStart(0) + posOffset;
         if (best.position >= 0 && pos > best.position) return;
         if (isMatchInComment(pos, m.capturedLength(0))) return;
         if (type == 4) {  // logic：排除 struct 内部
-            int capPos = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.capturedStart(capGroup) : pos;
+            int capPos = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.capturedStart(capGroup) + posOffset : pos;
             if (capPos >= 0 && isPositionInStructRange(capPos, structRanges)) return;
         }
         best.position = pos;
         best.length = m.capturedLength(0);
         best.matchType = type;
         best.capturedName = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.captured(capGroup) : QString();
-        best.capturePos = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.capturedStart(capGroup) : pos;
+        best.capturePos = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.capturedStart(capGroup) + posOffset : pos;
     };
 
     tryPattern(modulePattern, 0, 1);
@@ -197,17 +214,66 @@ sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString&
     return best;
 }
 
+// 后台 onePass 单次匹配窗口大小，限制正则输入长度避免灾难性回溯
+static const int kBackgroundOnePassWindow = 1024;
+
 void sym_list::extractSymbolsAndContainsOnePass(const QString& text)
 {
-    QList<StructRange> structRanges = findStructRanges(text);
-    QList<int> moduleStack;  // 当前模块栈（symbolId）
+    const bool isBackground = (QThread::currentThread() != QCoreApplication::instance()->thread());
+    // 后台线程跳过 findStructRanges，避免 top_ctrl.sv 等文件上 regex/brace 解析卡死
+    QList<StructRange> structRanges;
+    int maxSearchWindow = 0;
+    if (!isBackground) {
+        structRanges = findStructRanges(text);
+    } else {
+        maxSearchWindow = kBackgroundOnePassWindow;
+    }
+    extractSymbolsAndContainsOnePassImpl(text, structRanges, maxSearchWindow);
+}
 
+void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const QList<StructRange>& structRanges,
+                                                    int maxSearchWindow)
+{
+    QList<int> moduleStack;       // 当前模块栈（symbolId，用于 addRelationship）
+    QList<QString> moduleNameStack; // 当前模块名栈，避免在持写锁时调用 getSymbolById 导致死锁
+
+    // 预计算行首偏移，避免每次 calculateLineColumn 从 0 扫到 position 导致 O(n*pos) 卡死
+    QVector<int> lineStarts;
+    lineStarts.append(0);
+    for (int p = 0; p < text.length(); ) {
+        int idx = text.indexOf('\n', p);
+        if (idx < 0) break;
+        p = idx + 1;
+        lineStarts.append(p);
+    }
+    auto posToLineColumn = [&lineStarts](int position, int &line, int &column) {
+        auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(), position);
+        int lineIdx = qBound(0, (int)(it - lineStarts.begin()) - 1, lineStarts.size() - 1);
+        line = lineIdx;
+        column = position - lineStarts[lineIdx];
+    };
+
+    const int maxIterations = qMax(text.length() * 2, 10000);
+    int iterations = 0;
     int pos = 0;
-    while (pos < text.length()) {
-        StructuralMatchResult m = findNextStructuralMatch(text, pos, structRanges);
-        if (m.position < 0) break;
+    while (pos < text.length() && iterations < maxIterations) {
+        iterations++;
+        StructuralMatchResult m = findNextStructuralMatch(text, pos, structRanges, maxSearchWindow);
+        if (m.position < 0) {
+            // 有窗口时无匹配则前进窗口长度，避免卡在同一段
+            if (maxSearchWindow > 0)
+                pos += maxSearchWindow;
+            else
+                break;
+            continue;
+        }
+        // 保证 pos 至少前进 1，避免 length==0 或 position+length<=pos 时无限循环（如 top_ctrl.sv 卡死）
+        int nextPos = m.position + qMax(m.length, 1);
+        if (nextPos <= pos)
+            nextPos = pos + 1;
+        pos = nextPos;
 
-        pos = m.position + m.length;
+        int matchPos = m.capturePos >= 0 ? m.capturePos : m.position;
 
         if (m.matchType == 0) {
             // module
@@ -217,17 +283,19 @@ void sym_list::extractSymbolsAndContainsOnePass(const QString& text)
             moduleSymbol.symbolType = sym_module;
             moduleSymbol.position = m.position;
             moduleSymbol.length = m.length;
-            calculateLineColumn(text, m.capturePos >= 0 ? m.capturePos : m.position,
-                               moduleSymbol.startLine, moduleSymbol.startColumn);
+            posToLineColumn(matchPos, moduleSymbol.startLine, moduleSymbol.startColumn);
             moduleSymbol.endLine = moduleSymbol.startLine;
             moduleSymbol.endColumn = moduleSymbol.startColumn + moduleSymbol.symbolName.length();
             addSymbol(moduleSymbol);
             int moduleId = symbolDatabase.last().symbolId;
             moduleStack.append(moduleId);
+            moduleNameStack.append(m.capturedName);
         } else if (m.matchType == 1) {
             // endmodule
-            if (!moduleStack.isEmpty())
+            if (!moduleStack.isEmpty()) {
                 moduleStack.removeLast();
+                moduleNameStack.removeLast();
+            }
         } else if (m.matchType >= 2 && m.matchType <= 6) {
             // reg / wire / logic / task / function
             sym_type_e symType = sym_reg;
@@ -242,12 +310,11 @@ void sym_list::extractSymbolsAndContainsOnePass(const QString& text)
             symbol.symbolType = symType;
             symbol.position = m.position;
             symbol.length = m.length;
-            calculateLineColumn(text, m.capturePos >= 0 ? m.capturePos : m.position,
-                                symbol.startLine, symbol.startColumn);
+            posToLineColumn(matchPos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
-            if (!moduleStack.isEmpty() && relationshipEngine) {
-                symbol.moduleScope = getSymbolById(moduleStack.last()).symbolName;
+            if (!moduleNameStack.isEmpty() && relationshipEngine) {
+                symbol.moduleScope = moduleNameStack.last();
                 symbol.scopeLevel = 1;
             }
             addSymbol(symbol);
@@ -381,20 +448,30 @@ int sym_list::getSymbolCountByType(sym_type_e symbolType)
 
 QList<sym_list::SymbolInfo> sym_list::findSymbolsByFileName(const QString& fileName)
 {
-    QReadLocker lock(&symbolDbLock);
     QList<SymbolInfo> result;
-
+    if (s_holdingWriteLock) {
+        // 调用方已持写锁，不再加读锁，避免死锁
+        if (fileNameIndex.contains(fileName)) {
+            const QList<int>& indices = fileNameIndex[fileName];
+            result.reserve(indices.size());
+            for (int index : indices) {
+                if (index < symbolDatabase.size()) {
+                    result.append(symbolDatabase[index]);
+                }
+            }
+        }
+        return result;
+    }
+    QReadLocker lock(&symbolDbLock);
     if (fileNameIndex.contains(fileName)) {
         const QList<int>& indices = fileNameIndex[fileName];
         result.reserve(indices.size());
-
         for (int index : indices) {
             if (index < symbolDatabase.size()) {
                 result.append(symbolDatabase[index]);
             }
         }
     }
-
     return result;
 }
 
@@ -770,58 +847,11 @@ void sym_list::setCodeEditor(MyCodeEditor* codeEditor)
 
     // Clear existing symbols for this file before analysis
     clearSymbolsForFile(currentFileName);
-    const int textChars = text.length();
-    const int textLines = text.count('\n') + (text.isEmpty() ? 0 : 1);
 
-    QElapsedTimer totalTimer;
-    totalTimer.start();
-
-    qint64 tComment = 0, tOnePass = 0, tAdditional = 0, tBuildRels = 0;
-
-    // Build comment regions first
-    {
-        QElapsedTimer t;
-        t.start();
-        buildCommentRegions(text);
-        tComment = t.nsecsElapsed();
-    }
-
-    // 单遍合并：提取 module/reg/wire/logic/task/function 并同步建立 CONTAINS
-    {
-        QElapsedTimer t;
-        t.start();
-        extractSymbolsAndContainsOnePass(text);
-        tOnePass = t.nsecsElapsed();
-    }
-
-    // 其余符号类型（interface、package、struct/enum/typedef、parameter 等）
-    {
-        QElapsedTimer t;
-        t.start();
-        getAdditionalSymbols(text);
-        tAdditional = t.nsecsElapsed();
-    }
-
-    // 构建符号关系（CONTAINS 已部分建立；此处补充 getAdditionalSymbols 的 CONTAINS 及 moduleScope）
-    {
-        QElapsedTimer t;
-        t.start();
-        buildSymbolRelationships(currentFileName);
-        tBuildRels = t.nsecsElapsed();
-    }
-
-    qint64 totalNs = totalTimer.nsecsElapsed();
-    int symbolsInFile = findSymbolsByFileName(currentFileName).size();
-
-    qDebug().noquote() << "[Perf] setCodeEditor"
-        << "file=" << currentFileName
-        << "chars=" << textChars << "lines=" << textLines
-        << "| commentRegions=" << (tComment / 1000) << "us"
-        << "onePass=" << (tOnePass / 1000) << "us"
-        << "additional=" << (tAdditional / 1000) << "us"
-        << "buildRels=" << (tBuildRels / 1000) << "us"
-        << "| total=" << (totalNs / 1000) << "us"
-        << "symbols=" << symbolsInFile;
+    buildCommentRegions(text);
+    extractSymbolsAndContainsOnePass(text);
+    getAdditionalSymbols(text);
+    buildSymbolRelationships(currentFileName);
 
     FileState& stateAfter = fileStates[currentFileName];
     stateAfter.symbolRelevantHash = calculateSymbolRelevantHash(text);
@@ -1019,8 +1049,19 @@ void sym_list::setCodeEditorIncremental(MyCodeEditor* codeEditor)
 
     currentFileName = codeEditor->getFileName();
     QString content = codeEditor->document()->toPlainText();
+    setContentIncremental(currentFileName, content);
+    CompletionManager::getInstance()->invalidateSymbolCaches();
+}
+
+void sym_list::setContentIncremental(const QString& fileName, const QString& content)
+{
+    QWriteLocker lock(&symbolDbLock);
+    s_holdingWriteLock = true;
+
+    currentFileName = fileName;
 
     if (!needsAnalysis(currentFileName, content)) {
+        s_holdingWriteLock = false;
         return;
     }
 
@@ -1031,69 +1072,24 @@ void sym_list::setCodeEditorIncremental(MyCodeEditor* codeEditor)
 
     if (isFirstTime) {
         clearSymbolsForFile(currentFileName);
-        QElapsedTimer totalTimer;
-        totalTimer.start();
-        qint64 tComment = 0, tOnePass = 0, tAdditional = 0, tBuildRels = 0;
-        {
-            QElapsedTimer t; t.start();
-            buildCommentRegions(content);
-            tComment = t.nsecsElapsed();
-        }
-        {
-            QElapsedTimer t; t.start();
-            extractSymbolsAndContainsOnePass(content);
-            tOnePass = t.nsecsElapsed();
-        }
-        {
-            QElapsedTimer t; t.start();
-            getAdditionalSymbols(content);
-            tAdditional = t.nsecsElapsed();
-        }
-        {
-            QElapsedTimer t; t.start();
-            buildSymbolRelationships(currentFileName);
-            tBuildRels = t.nsecsElapsed();
-        }
-        qint64 totalNs = totalTimer.nsecsElapsed();
-        int symbolsInFile = findSymbolsByFileName(currentFileName).size();
-        qDebug().noquote() << "[Perf] setCodeEditorIncremental(first)"
-            << "file=" << currentFileName
-            << "chars=" << content.length() << "lines=" << (content.count('\n') + (content.isEmpty() ? 0 : 1))
-            << "| commentRegions=" << (tComment / 1000) << "us"
-            << "onePass=" << (tOnePass / 1000) << "us"
-            << "additional=" << (tAdditional / 1000) << "us"
-            << "buildRels=" << (tBuildRels / 1000) << "us"
-            << "| total=" << (totalNs / 1000) << "us"
-            << "symbols=" << symbolsInFile;
+        buildCommentRegions(content);
+        extractSymbolsAndContainsOnePass(content);
+        getAdditionalSymbols(content);
+        buildSymbolRelationships(currentFileName);
         state.needsFullAnalysis = false;
         previousFileContents[currentFileName] = content;
     } else {
         QList<int> changedLines = detectChangedLines(currentFileName, content);
         if (!changedLines.isEmpty()) {
-            QElapsedTimer incTimer;
-            incTimer.start();
             analyzeSpecificLines(currentFileName, content, changedLines);
-            qint64 tLines = incTimer.nsecsElapsed();
-            QElapsedTimer relTimer;
-            relTimer.start();
             buildSymbolRelationships(currentFileName);
-            qint64 tRels = relTimer.nsecsElapsed();
-            qDebug().noquote() << "[Perf] setCodeEditorIncremental(delta)"
-                << "file=" << currentFileName
-                << "changedLines=" << changedLines.size()
-                << "| analyzeLines=" << (tLines / 1000) << "us"
-                << "buildRels=" << (tRels / 1000) << "us"
-                << "total=" << ((tLines + tRels) / 1000) << "us";
         }
     }
 
     state.contentHash = calculateContentHash(content);
     state.symbolRelevantHash = calculateSymbolRelevantHash(content);
     state.lastModified = QDateTime::currentDateTime();
-
-    QList<SymbolInfo> fileSymbols = findSymbolsByFileName(currentFileName);
-
-    CompletionManager::getInstance()->invalidateSymbolCaches();
+    s_holdingWriteLock = false;
 }
 
 QString sym_list::calculateContentHash(const QString& content)
@@ -1513,13 +1509,13 @@ int sym_list::findEndModuleLine(const QString &fileName, const SymbolInfo &modul
 
     QStringList lines = content.split('\n');
     int moduleDepth = 0;
+    // 增量维护行首偏移，避免 O(lines^2) 导致大文件卡死
+    int lineStartPos = 0;
+    for (int j = 0; j < moduleSymbol.startLine && j < lines.size(); ++j)
+        lineStartPos += lines[j].length() + 1;
 
     for (int i = moduleSymbol.startLine; i < lines.size(); ++i) {
         const QString &line = lines[i];
-        int lineStartPos = 0;
-        for (int j = 0; j < i; ++j) {
-            lineStartPos += lines[j].length() + 1;
-        }
         static const QRegularExpression moduleWord("\\bmodule\\b");
         static const QRegularExpression endmoduleWord("\\bendmodule\\b");
         if (line.contains(moduleWord) && !isMatchInComment(lineStartPos, line.length())) {
@@ -1531,6 +1527,7 @@ int sym_list::findEndModuleLine(const QString &fileName, const SymbolInfo &modul
                 return i;
             }
         }
+        lineStartPos += line.length() + 1;
     }
 
     return -1; // endmodule not found
@@ -2204,11 +2201,14 @@ static int findMatchingBrace(const QString &text, int openBracePos)
     if (openBracePos < 0 || openBracePos >= text.length() || text[openBracePos] != '{') {
         return -1;
     }
-    
+    const int maxSteps = text.length() + 1;
+    int steps = 0;
+
     int depth = 1;
     int pos = openBracePos + 1;
-    
-    while (pos < text.length() && depth > 0) {
+
+    while (pos < text.length() && depth > 0 && steps < maxSteps) {
+        steps++;
         QChar ch = text[pos];
         if (ch == '{') {
             depth++;
@@ -2235,9 +2235,12 @@ static int findMatchingBrace(const QString &text, int openBracePos)
                     pos++;
                 }
             } else if (text[pos + 1] == '*') {
-                // 多行注释
+                // 多行注释；限制步数以防未闭合 /* 导致扫描整文件
                 pos += 2;
-                while (pos + 1 < text.length()) {
+                const int commentMaxSteps = qMin(text.length() - pos, 500000);
+                int commentSteps = 0;
+                while (pos + 1 < text.length() && commentSteps < commentMaxSteps) {
+                    commentSteps++;
                     if (text[pos] == '*' && text[pos + 1] == '/') {
                         pos += 2;
                         break;
@@ -2252,14 +2255,21 @@ static int findMatchingBrace(const QString &text, int openBracePos)
     return -1; // 未找到匹配的闭括号
 }
 
-// 查找所有struct的范围（包括packed和unpacked）
+// 查找所有struct的范围（包括packed和unpacked）；限制数量与迭代以防异常输入卡死
+static const int kMaxStructRanges = 200;
+static const int kMaxStructMatchIterations = 500;
+
 QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
 {
     QList<StructRange> ranges;
+    if (text.isEmpty()) return ranges;
 
-    static const QRegularExpression packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{");
+    QRegularExpression packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{");
+    packedStructPattern.optimize();
     QRegularExpressionMatchIterator packedIt = packedStructPattern.globalMatch(text);
-    while (packedIt.hasNext()) {
+    int packedCount = 0;
+    while (packedIt.hasNext() && ranges.size() < kMaxStructRanges && packedCount < kMaxStructMatchIterations) {
+        packedCount++;
         QRegularExpressionMatch m = packedIt.next();
         int pos = m.capturedStart(0);
         int len = m.capturedLength(0);
@@ -2277,9 +2287,12 @@ QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
         }
     }
 
-    static const QRegularExpression unpackedStructPattern("\\btypedef\\s+struct\\s*\\{");
+    QRegularExpression unpackedStructPattern("\\btypedef\\s+struct\\s*\\{");
+    unpackedStructPattern.optimize();
     QRegularExpressionMatchIterator unpackedIt = unpackedStructPattern.globalMatch(text);
-    while (unpackedIt.hasNext()) {
+    int unpackedCount = 0;
+    while (unpackedIt.hasNext() && ranges.size() < kMaxStructRanges && unpackedCount < kMaxStructMatchIterations) {
+        unpackedCount++;
         QRegularExpressionMatch m = unpackedIt.next();
         int pos = m.capturedStart(0);
         int len = m.capturedLength(0);

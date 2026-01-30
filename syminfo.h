@@ -157,6 +157,8 @@ public:
     void findVariableDeclarations();
 
     void setCodeEditorIncremental(MyCodeEditor* codeEditor);
+    /** 基于内容的增量分析，供后台线程使用，不依赖 QWidget；与 setCodeEditorIncremental 逻辑一致 */
+    void setContentIncremental(const QString& fileName, const QString& content);
     bool needsAnalysis(const QString& fileName, const QString& content);
 
     // 供外部（如 MainWindow）判断：当前内容是否“影响符号”，若否（仅注释/空格等）可不触发分析
@@ -266,7 +268,9 @@ private:
     
     // 查找所有struct的范围（包括packed和unpacked）
     QList<StructRange> findStructRanges(const QString &text);
-    
+    void extractSymbolsAndContainsOnePassImpl(const QString& text, const QList<StructRange>& structRanges,
+                                               int maxSearchWindow = 0);
+
     // 检查位置是否在struct范围内
     bool isPositionInStructRange(int position, const QList<StructRange> &structRanges);
 
@@ -280,7 +284,8 @@ private:
         int matchType = -1;  // 0=module, 1=endmodule, 2=reg, 3=wire, 4=logic, 5=task, 6=function
     };
     StructuralMatchResult findNextStructuralMatch(const QString& text, int startPos,
-                                                   const QList<StructRange>& structRanges);
+                                                   const QList<StructRange>& structRanges,
+                                                   int maxSearchLen = 0);
 };
 
 // 🚀 NEW: 符号关系工具函数
