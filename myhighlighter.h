@@ -23,6 +23,8 @@ private:
 
     QVector<HighLightRule> highlightRules;
     void addNormalTextFormat();
+    /** 返回合并后的关键字正则（静态缓存，keywords.txt 只读一次） */
+    static QRegularExpression getKeywordPattern();
     void addNumberFormat();
     void addStringFormat();
     void addCommentFormat();
