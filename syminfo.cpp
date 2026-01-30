@@ -223,7 +223,7 @@ sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString&
         int pos = m.capturedStart(0) + posOffset;
         if (best.position >= 0 && pos > best.position) return;
         if (isMatchInComment(pos, m.capturedLength(0))) return;
-        if (type == 4) {  // logic：排除 struct 内部
+        if (type == 4) {  // logic：排除 struct 内部（在 struct 范围内的不加入 logic 池）
             int capPos = (capGroup > 0 && m.lastCapturedIndex() >= capGroup) ? m.capturedStart(capGroup) + posOffset : pos;
             if (capPos >= 0 && isPositionInStructRange(capPos, structRanges)) return;
         }
@@ -252,17 +252,23 @@ sym_list::StructuralMatchResult sym_list::findNextStructuralMatch(const QString&
 // 后台 onePass 单次匹配窗口大小，限制正则输入长度避免灾难性回溯
 static const int kBackgroundOnePassWindow = 1024;
 
+// 判断该行在类型关键字（reg/wire/logic）之前是否包含端口方向；若是则不应作为模块级变量加入（端口已由 parseModulePorts 添加）
+static bool isVariableDeclarationAPort(const QString& text, int typeKeywordPos)
+{
+    if (typeKeywordPos <= 0 || typeKeywordPos >= text.length()) return false;
+    int lineStart = typeKeywordPos;
+    while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--;
+    QString prefix = text.mid(lineStart, typeKeywordPos - lineStart);
+    QRegularExpression portDir("\\b(?:input|output|inout|ref)\\b");
+    return portDir.match(prefix).hasMatch();
+}
+
 void sym_list::extractSymbolsAndContainsOnePass(const QString& text)
 {
     const bool isBackground = (QThread::currentThread() != QCoreApplication::instance()->thread());
-    // 后台线程跳过 findStructRanges，避免 top_ctrl.sv 等文件上 regex/brace 解析卡死
-    QList<StructRange> structRanges;
-    int maxSearchWindow = 0;
-    if (!isBackground) {
-        structRanges = findStructRanges(text);
-    } else {
-        maxSearchWindow = kBackgroundOnePassWindow;
-    }
+    // 始终计算 struct 范围，从根源排除 struct 内 reg/wire/logic（首次加载工作区与打开文件一致）
+    QList<StructRange> structRanges = findStructRanges(text);
+    int maxSearchWindow = isBackground ? kBackgroundOnePassWindow : 0;
     extractSymbolsAndContainsOnePassImpl(text, structRanges, maxSearchWindow);
 }
 
@@ -391,6 +397,9 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const Q
                 scopeStack.pop();
             }
         } else if (m.matchType >= 2 && m.matchType <= 6) {
+            // reg/wire/logic：若该行是端口声明则不加入（端口已由 parseModulePorts 添加），从根源保证 logic 池不含端口
+            if (m.matchType <= 4 && isVariableDeclarationAPort(text, m.position))
+                continue;
             // reg / wire / logic / task / function
             sym_type_e symType = sym_reg;
             if (m.matchType == 3) symType = sym_wire;
@@ -407,7 +416,8 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const Q
             posToLineColumn(matchPos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
-            if (!moduleNameStack.isEmpty() && relationshipEngine) {
+            // 始终用当前模块栈设置 moduleScope，保证“l ”等补全能按模块过滤到 reg/wire/logic（不依赖 addSymbol 内 getCurrentModuleScope，避免 findEndModuleLine 用错内容）
+            if (!moduleNameStack.isEmpty()) {
                 symbol.moduleScope = moduleNameStack.last();
                 symbol.scopeLevel = 1;
             }
@@ -1486,11 +1496,12 @@ void sym_list::setContentIncremental(const QString& fileName, const QString& con
     if (isFirstTime) {
         clearSymbolsForFile(currentFileName);
         buildCommentRegions(content);
+        // 先缓存当前内容，供 extractSymbolsAndContainsOnePass 内 getCurrentModuleScope -> findEndModuleLine 使用，避免读到磁盘旧内容导致 moduleScope 为空、补全“l ”无 logic
+        previousFileContents[currentFileName] = content;
         extractSymbolsAndContainsOnePass(content);
         getAdditionalSymbols(content);
         buildSymbolRelationships(currentFileName);
         state.needsFullAnalysis = false;
-        previousFileContents[currentFileName] = content;
     } else {
         QList<int> changedLines = detectChangedLines(currentFileName, content);
         if (!changedLines.isEmpty()) {
@@ -1502,6 +1513,7 @@ void sym_list::setContentIncremental(const QString& fileName, const QString& con
     state.contentHash = calculateContentHash(content);
     state.symbolRelevantHash = calculateSymbolRelevantHash(content);
     state.lastModified = QDateTime::currentDateTime();
+    previousFileContents[currentFileName] = content;
     s_holdingWriteLock = false;
 }
 
@@ -1802,14 +1814,17 @@ void sym_list::analyzeModulesInLine(const QString& lineText, int lineStartPos, i
     }
 }
 
+// 判断当前行在类型关键字之前是否包含端口方向（input/output/inout/ref），用于排除端口声明避免重复
+static bool isPortDeclarationInLine(const QString& lineText, int typeKeywordStartInLine)
+{
+    if (typeKeywordStartInLine <= 0) return false;
+    QString prefix = lineText.left(typeKeywordStartInLine);
+    QRegularExpression portDir("\\b(?:input|output|inout|ref)\\b");
+    return portDir.match(prefix).hasMatch();
+}
+
 void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum, const QString& fullText)
 {
-    static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    analyzeVariablePattern(lineText, lineStartPos, lineNum, regPattern, sym_reg);
-
-    static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    analyzeVariablePattern(lineText, lineStartPos, lineNum, wirePattern, sym_wire);
-
     QString textToUse = fullText;
     if (textToUse.isEmpty()) {
         if (previousFileContents.contains(currentFileName)) {
@@ -1822,39 +1837,48 @@ void sym_list::analyzeVariablesInLine(const QString& lineText, int lineStartPos,
             }
         }
     }
+    QList<StructRange> structRanges = textToUse.isEmpty() ? QList<StructRange>() : findStructRanges(textToUse);
 
+    static const QRegularExpression regPattern("\\breg\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
+    static const QRegularExpression wirePattern("\\bwire\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
     static const QRegularExpression logicPattern("\\blogic\\s+(?:\\[[^\\]]*\\]\\s*)?([a-zA-Z_][a-zA-Z0-9_]*)");
-    if (!textToUse.isEmpty()) {
-        QList<StructRange> structRanges = findStructRanges(textToUse);
-        QRegularExpressionMatchIterator it = logicPattern.globalMatch(lineText);
 
+    auto addVariableIfNotPortOrStruct = [this, lineText, lineStartPos, lineNum, &structRanges](
+        const QRegularExpression& pattern, sym_type_e symbolType)
+    {
+        QRegularExpressionMatchIterator it = pattern.globalMatch(lineText);
         while (it.hasNext()) {
             QRegularExpressionMatch m = it.next();
             int pos = m.capturedStart(0);
             int absolutePos = lineStartPos + pos;
-            int logicNamePos = lineStartPos + m.capturedStart(1);
+            int namePosInLine = m.capturedStart(1);
+            int absoluteNamePos = lineStartPos + namePosInLine;
 
-            if (!isMatchInComment(absolutePos, m.capturedLength(0))) {
-                if (!isPositionInStructRange(logicNamePos, structRanges)) {
-                    SymbolInfo symbol;
-                    symbol.fileName = currentFileName;
-                    symbol.symbolName = m.captured(1);
-                    symbol.symbolType = sym_logic;
-                    symbol.startLine = lineNum;
-                    symbol.startColumn = m.capturedStart(1);
-                    symbol.endLine = lineNum;
-                    symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
-                    symbol.position = absolutePos;
-                    symbol.length = m.capturedLength(0);
+            if (isMatchInComment(absolutePos, m.capturedLength(0)))
+                continue;
+            if (isPositionInStructRange(absoluteNamePos, structRanges))
+                continue;
+            if (isPortDeclarationInLine(lineText, pos))
+                continue;
 
-                    symbol.moduleScope = getCurrentModuleScope(symbol.fileName, symbol.startLine);
-                    addSymbol(symbol);
-                }
-            }
+            SymbolInfo symbol;
+            symbol.fileName = currentFileName;
+            symbol.symbolName = m.captured(1);
+            symbol.symbolType = symbolType;
+            symbol.startLine = lineNum;
+            symbol.startColumn = namePosInLine;
+            symbol.endLine = lineNum;
+            symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
+            symbol.position = absolutePos;
+            symbol.length = m.capturedLength(0);
+            symbol.moduleScope = getCurrentModuleScope(symbol.fileName, symbol.startLine);
+            addSymbol(symbol);
         }
-    } else {
-        analyzeVariablePattern(lineText, lineStartPos, lineNum, logicPattern, sym_logic);
-    }
+    };
+
+    addVariableIfNotPortOrStruct(regPattern, sym_reg);
+    addVariableIfNotPortOrStruct(wirePattern, sym_wire);
+    addVariableIfNotPortOrStruct(logicPattern, sym_logic);
 }
 
 // 新增：获取指定位置的模块作用域（公开接口，供跳转定义时优先同模块符号）
@@ -2712,7 +2736,7 @@ static int findMatchingParen(const QString &text, int openParenPos)
     return -1;
 }
 
-// 查找所有struct的范围（包括packed和unpacked）；限制数量与迭代以防异常输入卡死
+// 查找所有 struct/union 的范围（含 typedef struct、匿名 struct { }、union { }）；限制数量与迭代以防异常输入卡死
 static const int kMaxStructRanges = 200;
 static const int kMaxStructMatchIterations = 500;
 
@@ -2721,52 +2745,30 @@ QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
     QList<StructRange> ranges;
     if (text.isEmpty()) return ranges;
 
-    QRegularExpression packedStructPattern("\\btypedef\\s+struct\\s+packed\\s*\\{");
-    packedStructPattern.optimize();
-    QRegularExpressionMatchIterator packedIt = packedStructPattern.globalMatch(text);
-    int packedCount = 0;
-    while (packedIt.hasNext() && ranges.size() < kMaxStructRanges && packedCount < kMaxStructMatchIterations) {
-        packedCount++;
-        QRegularExpressionMatch m = packedIt.next();
+    // 统一匹配：typedef struct/struct/union（含 packed、匿名等），直到开括号 {
+    QRegularExpression structUnionPattern("\\b(?:typedef\\s+)?(?:struct|union)\\b[^\\{]*\\{");
+    structUnionPattern.optimize();
+    QRegularExpressionMatchIterator it = structUnionPattern.globalMatch(text);
+    int iterCount = 0;
+    while (it.hasNext() && ranges.size() < kMaxStructRanges && iterCount < kMaxStructMatchIterations) {
+        iterCount++;
+        QRegularExpressionMatch m = it.next();
         int pos = m.capturedStart(0);
         int len = m.capturedLength(0);
-        if (!isMatchInComment(pos, len)) {
-            int braceStart = text.indexOf('{', pos + len - 1);
-            if (braceStart != -1) {
-                int braceEnd = findMatchingBrace(text, braceStart);
-                if (braceEnd != -1) {
-                    StructRange range;
-                    range.startPos = braceStart;
-                    range.endPos = braceEnd;
-                    ranges.append(range);
-                }
-            }
+        if (isMatchInComment(pos, len))
+            continue;
+        // 匹配末尾即为 '{'
+        int braceStart = pos + len - 1;
+        if (text[braceStart] != '{')
+            continue;
+        int braceEnd = findMatchingBrace(text, braceStart);
+        if (braceEnd != -1) {
+            StructRange range;
+            range.startPos = braceStart;
+            range.endPos = braceEnd;
+            ranges.append(range);
         }
     }
-
-    QRegularExpression unpackedStructPattern("\\btypedef\\s+struct\\s*\\{");
-    unpackedStructPattern.optimize();
-    QRegularExpressionMatchIterator unpackedIt = unpackedStructPattern.globalMatch(text);
-    int unpackedCount = 0;
-    while (unpackedIt.hasNext() && ranges.size() < kMaxStructRanges && unpackedCount < kMaxStructMatchIterations) {
-        unpackedCount++;
-        QRegularExpressionMatch m = unpackedIt.next();
-        int pos = m.capturedStart(0);
-        int len = m.capturedLength(0);
-        if (!isMatchInComment(pos, len)) {
-            int braceStart = text.indexOf('{', pos + len - 1);
-            if (braceStart != -1) {
-                int braceEnd = findMatchingBrace(text, braceStart);
-                if (braceEnd != -1) {
-                    StructRange range;
-                    range.startPos = braceStart;
-                    range.endPos = braceEnd;
-                    ranges.append(range);
-                }
-            }
-        }
-    }
-
     return ranges;
 }
 
