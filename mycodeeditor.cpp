@@ -207,11 +207,13 @@ void MyCodeEditor::updateAndEmitDebugScopeInfo()
     int structVarCount = 0;
     int structTypeCount = 0;
     if (!currentModule.isEmpty()) {
-        logicCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_logic, "").size();
-        structVarCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct_var, "").size()
-                         + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct_var, "").size();
-        structTypeCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct, "").size()
-                          + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct, "").size();
+        // 状态栏只用行范围统计，不用关系引擎 fallback，避免键入 s 后删除等操作导致计数含入全局 struct
+        const bool useRelationshipFallback = false;
+        logicCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_logic, "", useRelationshipFallback).size();
+        structVarCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct_var, "", useRelationshipFallback).size()
+                         + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct_var, "", useRelationshipFallback).size();
+        structTypeCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct, "", useRelationshipFallback).size()
+                          + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct, "", useRelationshipFallback).size();
     }
     emit debugScopeInfo(currentModule, logicCount, structVarCount, structTypeCount);
 }
@@ -1713,7 +1715,7 @@ bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const 
         return false;
     }
 
-    // 所有这些类型都被认为是定义（含端口、跨文件跳转的 module/interface/package/task/function）
+    // 所有这些类型都被认为是定义（含端口、跨文件跳转的 module/interface/package/task/function、struct 类型）
     switch (symbol.symbolType) {
         case sym_list::sym_module:
         case sym_list::sym_interface:
@@ -1731,6 +1733,8 @@ bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const 
         case sym_list::sym_logic:
         case sym_list::sym_parameter:
         case sym_list::sym_localparam:
+        case sym_list::sym_packed_struct:
+        case sym_list::sym_unpacked_struct:
             return true;
         default:
             return false;

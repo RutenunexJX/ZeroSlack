@@ -2055,7 +2055,8 @@ void CompletionManager::invalidateCommandModeCache()
 QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,
-    const QString& prefix)
+    const QString& prefix,
+    bool useRelationshipFallback)
 {
     if (moduleName.isEmpty()) {
         return QList<sym_list::SymbolInfo>();
@@ -2134,8 +2135,8 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
         }
     }
 
-    // 🚀 如果 moduleScope 为空，使用关系引擎
-    if (results.isEmpty() && relationshipEngine) {
+    // 🚀 仅当调用方允许时使用关系引擎 fallback（状态栏计数传 false，避免把全局 struct 算进模块数）
+    if (useRelationshipFallback && results.isEmpty() && relationshipEngine) {
         int moduleId = findSymbolIdByName(moduleName);
         if (moduleId != -1) {
             QList<int> childrenIds = relationshipEngine->getModuleChildren(moduleId);

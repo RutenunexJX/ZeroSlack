@@ -23,7 +23,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 新建 / 打开 / 保存 / 另存为
   - 未保存文件关闭时会弹出确认
 - SystemVerilog 语法高亮 (`MyHighlighter`)
-  - 两遍策略：先高亮关键字与数字，再从左到右用“最早出现”的 `"` / `//` / `/*` 确定字符串与注释并覆盖，避免字符串/注释内的关键字被高亮、字符串内的 `//` 被误判为注释；字符串内支持转义引号 `\"`；块注释跨行状态正确保持。
+  - 两遍策略：先根据“掩码”（注释/字符串区间）排除后再高亮关键字与数字，再画字符串与注释；保证注释/字符串内的关键字（如 `// fifo struct` 里的 `struct`）不会被标成关键字色；字符串内支持转义引号 `\"`；块注释跨行状态正确保持。
 - 行号栏 (`LineNumberWidget`)
   - 显示行号
   - 点击行号可将光标跳转到对应行
@@ -100,6 +100,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 合并后按类型与前缀过滤、去重、排序。
 - 全局符号（getGlobalSymbolsByType_Info）：
   - struct 变量仅当 symbol.moduleScope 为空时才视为全局（真正在 package/$unit 等定义），避免模块内 struct 变量泄漏到全局补全。
+- **状态栏 struct 计数**：左下角“struct 变量 / struct 类型”仅按行范围统计（getModuleInternalSymbolsByType(..., useRelationshipFallback=false)），不使用关系引擎 fallback，避免键入 `s ` 再删除等操作后计数含入全局 struct 导致数字偏大。
 
 
 ==========================================================================
@@ -123,6 +124,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 实例化引脚（`.pin(sig)`）：符号类型为 `sym_inst_pin`，与模块端口建立 REFERENCES 关系，供“跳转到定义”使用
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
+- **Struct 与注释**
+  - 规则：注释里的 struct/union 不参与分析。findStructRanges 中若匹配起点在注释内则整段跳过；若该段因跨行匹配吞掉下一行真正的 `typedef struct{`，则在跳过段内用“仅匹配关键字”的正则逐处查找，起点不在注释的 struct 单独加入范围。
+  - 结构体类型识别（analyzeDataTypes）用整段匹配位置判断是否在注释内，避免注释里的 `typedef struct` 被识别。
+  - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`（正则含可选 `(?:\[[^\]]*\])?`）。
 - 端口与实例化解析（sym_list）
   - 在 extractSymbolsAndContainsOnePassImpl 中发现 module 后调用 parseModulePorts：
     跳过 `#(params)`，解析端口列表 `( ... )`，支持注释、逗号分隔、方向/类型继承；
@@ -192,7 +197,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
       只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
     - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
-    - 优先跳当前文件中的定义；端口（input/output/inout/ref、interface/modport）视为可跳转定义，类型优先级高于 reg/wire/logic。
+    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，以及 **struct 类型**（sym_packed_struct / sym_unpacked_struct）；struct 类型在 analyzeDataTypes 中加入时会设置 moduleScope，便于同模块内跳转。
+    - 优先跳当前文件中的定义；端口类型优先级高于 reg/wire/logic。
     - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
   - 跳转过程会复用 `NavigationManager` 的符号导航接口
 
@@ -313,8 +319,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     并在 Qt 6.4+ 下调用 QRegularExpression::optimize()。
   - keywords.txt 改为静态缓存单例（loadKeywordsOnce + getKeywordPattern），
     避免每次实例化 MyHighlighter 都读文件；多线程下用 QMutex 保护。
-  - highlightBlock 采用两遍策略：Pass1 仅高亮关键字与数字；Pass2 从左到右按“最早出现”的
-    `"` / `//` / `/*` 确定字符串与注释并覆盖，解决字符串/注释内误高亮及 `//` 与 `/*` 优先级问题。
+  - highlightBlock：先根据 collectMaskRanges 得到注释/字符串掩码，再在 Pass1 中仅对**不在掩码内**的区间高亮关键字与数字，最后 Pass2 画字符串与注释；从而注释内关键字（如 `// fifo struct` 里的 `struct`）不再被标成关键字色。
 
 [x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
   - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
@@ -324,7 +329,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     同步 clearFile 作用域树；getScopeManager() 惰性创建并返回 ScopeManager。
   - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
     findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
-  - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。
+  - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。状态栏 struct 计数调用 getModuleInternalSymbolsByType(..., useRelationshipFallback=false)，仅按行范围统计，不含关系引擎 fallback。
 
 [x] 阶段 F — 作用域背景持久光标缓存 (MyCodeEditor)（已完成）
   - 问题：highlighCurrentLine 每次光标移动都查 sym_list，分析滞后导致背景“回弹”。
