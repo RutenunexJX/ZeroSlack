@@ -3,6 +3,7 @@
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
 
+#include <QDebug>
 #include <QRegularExpression>
 #include <QFile>
 #include <QFileInfo>
@@ -2089,7 +2090,8 @@ void sym_list::analyzeDataTypes(const QString &text)
         int packedPos = m.capturedStart(0);
         int typeNamePos = m.capturedStart(2);
         QString structTypeName = m.captured(2);
-        if (!isMatchInComment(typeNamePos, structTypeName.length())) {
+        // 用整段匹配位置判断，避免注释里的 typedef struct 被识别
+        if (!isMatchInComment(packedPos, m.capturedLength(0))) {
             QString structMembers = m.captured(1);
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
@@ -2100,6 +2102,7 @@ void sym_list::analyzeDataTypes(const QString &text)
             calculateLineColumn(text, typeNamePos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + structTypeName.length();
+            symbol.moduleScope = getCurrentModuleScope(currentFileName, symbol.startLine);
             addSymbol(symbol);
             symbolsFound++;
             analyzeStructMembers(structMembers, structTypeName, packedPos, text);
@@ -2113,7 +2116,8 @@ void sym_list::analyzeDataTypes(const QString &text)
         int unpackedPos = m.capturedStart(0);
         int typeNamePos = m.capturedStart(2);
         QString structName = m.captured(2);
-        if (!isMatchInComment(typeNamePos, structName.length())) {
+        // 用整段匹配位置判断，避免注释里的 typedef struct 被识别
+        if (!isMatchInComment(unpackedPos, m.capturedLength(0))) {
             QString structMembers = m.captured(1);
             SymbolInfo symbol;
             symbol.fileName = currentFileName;
@@ -2124,6 +2128,7 @@ void sym_list::analyzeDataTypes(const QString &text)
             calculateLineColumn(text, typeNamePos, symbol.startLine, symbol.startColumn);
             symbol.endLine = symbol.startLine;
             symbol.endColumn = symbol.startColumn + structName.length();
+            symbol.moduleScope = getCurrentModuleScope(currentFileName, symbol.startLine);
             addSymbol(symbol);
             symbolsFound++;
             analyzeStructMembers(structMembers, structName, unpackedPos, text);
@@ -2606,7 +2611,8 @@ void sym_list::analyzeStructVariables(const QString &text)
     QSet<QString> addedStructVars;
     
     for (const QString &structType : structTypes) {
-        QString pattern = QString("\\b%1\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*[;,]").arg(QRegularExpression::escape(structType));
+        // 支持 xxx_s name; / xxx_s name, / xxx_s name [4]; / xxx_s name [3:0];
+        QString pattern = QString("\\b%1\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?:\\[[^\\]]*\\])?\\s*[;,]").arg(QRegularExpression::escape(structType));
         QRegularExpression structVarPattern(pattern);
         QList<RegexMatch> structVarMatches = findMatchesOutsideComments(text, structVarPattern);
 
@@ -2748,6 +2754,11 @@ static int findMatchingParen(const QString &text, int openParenPos)
     return -1;
 }
 
+// 置为 1 时在“应用程序输出”中打印 struct 范围识别调试
+#ifndef SV_SYMINFO_STRUCT_DEBUG
+#define SV_SYMINFO_STRUCT_DEBUG 1
+#endif
+
 // 查找所有 struct/union 的范围（含 typedef struct、匿名 struct { }、union { }）；限制数量与迭代以防异常输入卡死
 static const int kMaxStructRanges = 200;
 static const int kMaxStructMatchIterations = 500;
@@ -2757,7 +2768,11 @@ QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
     QList<StructRange> ranges;
     if (text.isEmpty()) return ranges;
 
-    // 统一匹配：typedef struct/struct/union（含 packed、匿名等），直到开括号 {
+    // 先基于当前文本构建注释区域，确保注释里的 struct/union 关键字不会误参与识别
+    buildCommentRegions(text);
+
+    // 规则：注释里的 struct/union 不参与分析（匹配起点在注释内则整段视为注释，不加入）。
+    // 若该段因跨行匹配而包含“起点在代码区”的 struct（如下一行的 typedef struct{），则单独加入。
     QRegularExpression structUnionPattern("\\b(?:typedef\\s+)?(?:struct|union)\\b[^\\{]*\\{");
     structUnionPattern.optimize();
     QRegularExpressionMatchIterator it = structUnionPattern.globalMatch(text);
@@ -2767,8 +2782,38 @@ QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
         QRegularExpressionMatch m = it.next();
         int pos = m.capturedStart(0);
         int len = m.capturedLength(0);
-        if (isMatchInComment(pos, len))
+        QString matched = text.mid(pos, len).left(50).replace(QLatin1Char('\n'), QLatin1Char(' '));
+        if (isMatchInComment(pos, len)) {
+#if SV_SYMINFO_STRUCT_DEBUG
+            qDebug() << "[findStructRanges] SKIP (start in comment) pos=" << pos << "len=" << len << "matched:" << matched;
+#endif
+            // 整段起点在注释内 → 不参与。段内用“只匹配关键字”的正则逐处找，避免贪婪匹配整段只得到一次匹配
+            QString segment = text.mid(pos, len);
+            static const QRegularExpression keywordOnlyPattern("\\b(?:typedef\\s+)?(?:struct|union)\\b");
+            QRegularExpressionMatchIterator it2 = keywordOnlyPattern.globalMatch(segment);
+            while (it2.hasNext() && ranges.size() < kMaxStructRanges) {
+                QRegularExpressionMatch m2 = it2.next();
+                int localStart = m2.capturedStart(0);
+                int localLen = m2.capturedLength(0);
+                int absStart = pos + localStart;
+                if (isMatchInComment(absStart, localLen))
+                    continue;
+                int braceStart = text.indexOf(QLatin1Char('{'), absStart);
+                if (braceStart < 0 || braceStart >= pos + len)
+                    continue;
+                int braceEnd = findMatchingBrace(text, braceStart);
+                if (braceEnd != -1) {
+                    StructRange range;
+                    range.startPos = braceStart;
+                    range.endPos = braceEnd;
+                    ranges.append(range);
+#if SV_SYMINFO_STRUCT_DEBUG
+                    qDebug() << "[findStructRanges] ADD (from skipped span) range" << braceStart << "-" << braceEnd;
+#endif
+                }
+            }
             continue;
+        }
         // 匹配末尾即为 '{'
         int braceStart = pos + len - 1;
         if (text[braceStart] != '{')
@@ -2779,6 +2824,9 @@ QList<sym_list::StructRange> sym_list::findStructRanges(const QString &text)
             range.startPos = braceStart;
             range.endPos = braceEnd;
             ranges.append(range);
+#if SV_SYMINFO_STRUCT_DEBUG
+            qDebug() << "[findStructRanges] ADD range" << braceStart << "-" << braceEnd << "matched:" << matched;
+#endif
         }
     }
     return ranges;
