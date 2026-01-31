@@ -72,8 +72,8 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
-    /** 根据当前文件符号生成 module/logic 作用域行背景的 ExtraSelection 列表（文本背景变深） */
-    QList<QTextEdit::ExtraSelection> getScopeBackgroundSelections() const;
+    /** 从数据库刷新并填充作用域背景缓存（仅分析完成时调用） */
+    void updateScopeBackgrounds();
 
 private:
     void initConnection();
@@ -104,6 +104,9 @@ private:
     QTimer *scopeRefreshTimer = nullptr;
 
     int lastKnownBlockCount = -1;  // 行数变化时触发分析，使新增/删行后作用域背景更新
+
+    /** 缓存的作用域背景选区（QTextCursor 随文档自动更新，仅在分析完成时由 updateScopeBackgrounds 刷新） */
+    QList<QTextEdit::ExtraSelection> m_scopeSelections;
 
     QString textUnderCursor() const;
 

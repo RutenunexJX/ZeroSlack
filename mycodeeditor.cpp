@@ -107,10 +107,6 @@ int MyCodeEditor::getLineNumberWidgetWidth()
 
 void MyCodeEditor::highlighCurrentLine()
 {
-    QList<QTextEdit::ExtraSelection> list = getScopeBackgroundSelections();
-    for (auto& sel : list)
-        sel.format.setProperty(QTextFormat::UserProperty, 997);
-
     QList<QTextEdit::ExtraSelection> existing = extraSelections();
     existing.erase(
         std::remove_if(existing.begin(), existing.end(),
@@ -119,7 +115,9 @@ void MyCodeEditor::highlighCurrentLine()
                 return p == 997 || p == 998;
             }),
         existing.end());
-    list.append(existing);
+
+    QList<QTextEdit::ExtraSelection> list = existing;
+    list.append(m_scopeSelections);
 
     QTextEdit::ExtraSelection currentLine;
     currentLine.format.setBackground(QColor(0,100,100,20));
@@ -140,13 +138,13 @@ void MyCodeEditor::highlighCurrentLine()
     setExtraSelections(list);
 }
 
-QList<QTextEdit::ExtraSelection> MyCodeEditor::getScopeBackgroundSelections() const
+void MyCodeEditor::updateScopeBackgrounds()
 {
-    QList<QTextEdit::ExtraSelection> out;
+    m_scopeSelections.clear();
     QString fileName = getFileName();
-    if (fileName.isEmpty()) return out;
+    if (fileName.isEmpty()) return;
     sym_list* sym = sym_list::getInstance();
-    if (!sym) return out;
+    if (!sym) return;
 
     QList<sym_list::SymbolInfo> all = sym->findSymbolsByFileName(fileName);
     QList<sym_list::SymbolInfo> modules, logics;
@@ -159,7 +157,7 @@ QList<QTextEdit::ExtraSelection> MyCodeEditor::getScopeBackgroundSelections() co
     const int maxLine = (blockCnt > 0) ? blockCnt - 1 : 0;
     const int docLen = document()->characterCount();
     const int docEnd = (docLen > 0) ? docLen - 1 : 0;
-    auto addRange = [this, &out, docEnd, maxLine](int startLine, int endLine, const QColor& bg, bool fullWidth) {
+    auto addRange = [this, docEnd, maxLine](int startLine, int endLine, const QColor& bg, bool fullWidth) {
         int s = qBound(0, startLine, maxLine);
         int e = qBound(0, endLine, maxLine);
         if (e < s) return;
@@ -172,11 +170,12 @@ QList<QTextEdit::ExtraSelection> MyCodeEditor::getScopeBackgroundSelections() co
         QTextEdit::ExtraSelection sel;
         sel.format.setBackground(bg);
         if (fullWidth) sel.format.setProperty(QTextFormat::FullWidthSelection, true);
+        sel.format.setProperty(QTextFormat::UserProperty, 997);
         QTextCursor c(document());
         c.setPosition(posStart);
         c.setPosition(posEnd, QTextCursor::KeepAnchor);
         sel.cursor = c;
-        out.append(sel);
+        m_scopeSelections.append(sel);
     };
 
     for (const sym_list::SymbolInfo& mod : modules) {
@@ -189,7 +188,6 @@ QList<QTextEdit::ExtraSelection> MyCodeEditor::getScopeBackgroundSelections() co
         int endLine = logic.endLine >= logic.startLine ? logic.endLine : logic.startLine;
         addRange(logic.startLine, endLine, QColor(0, 80, 0, 45), true);
     }
-    return out;
 }
 
 void MyCodeEditor::onCursorPositionChangedForDebug()
@@ -225,6 +223,7 @@ void MyCodeEditor::refreshDebugScopeInfo()
 
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 {
+    updateScopeBackgrounds();
     highlighCurrentLine();
 }
 

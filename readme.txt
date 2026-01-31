@@ -264,9 +264,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 性能优化方案 (Performance Optimization Plan)
 ==========================================================================
 
-【核心问题诊断】
+【核心问题诊断】（已由下方阶段 A～F 对应解决）
 
-当前系统存在以下三个主要性能瓶颈，可能导致大工程下界面卡顿：
+当前系统曾存在以下主要性能瓶颈，已通过异步化、轻量化与缓存策略逐一处理：
 
 1. UI 线程阻塞
    - SymbolAnalyzer::analyzeWorkspace 虽已做批处理，若仍在主线程通过
@@ -288,7 +288,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
      引擎侧引入 beginUpdate()/endUpdate() 批量提交，在 endUpdate 前禁止
      invalidateCache()，避免每添加一条关系就清空全局缓存导致的 O(N^2) 行为。
 
-【代办】
+【已完成阶段】
 
 [x] 阶段 A — 彻底的异步化重构 (MainWindow & SymbolAnalyzer)（已完成）
   - 使用 QtConcurrent::run 包装整个工作区扫描与分析循环。
@@ -316,7 +316,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - highlightBlock 采用两遍策略：Pass1 仅高亮关键字与数字；Pass2 从左到右按“最早出现”的
     `"` / `//` / `/*` 确定字符串与注释并覆盖，解决字符串/注释内误高亮及 `//` 与 `/*` 优先级问题。
 
-[~] 阶段 E — 作用域树 (Scope Tree) 符号管理（已实现，作用域问题待解决）
+[x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
   - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
     （findScopeAt、resolveSymbol）；按文件维护作用域树，O(1) 层内查找与正确词法遮蔽。
   - sym_list：在 extractSymbolsAndContainsOnePassImpl 中栈式解析，构建作用域树；扩展
@@ -325,6 +325,15 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
     findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
   - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。
+
+[x] 阶段 F — 作用域背景持久光标缓存 (MyCodeEditor)（已完成）
+  - 问题：highlighCurrentLine 每次光标移动都查 sym_list，分析滞后导致背景“回弹”。
+  - 方案：用 QTextCursor 缓存作用域选区（m_scopeSelections），Qt 随文档自动更新光标位置；
+    仅在分析完成时从数据库刷新缓存（updateScopeBackgrounds）。
+  - 实现：删除 getScopeBackgroundSelections()；新增 updateScopeBackgrounds() 与成员
+    m_scopeSelections；refreshScopeAndCurrentLineHighlight() 先 updateScopeBackgrounds 再
+    highlighCurrentLine；highlighCurrentLine 仅过滤 997/998、追加缓存与当前行 998、setExtraSelections，
+    不再查库。编辑时背景随文本移动，分析完成后刷新至正确语义块。
 
 【冗余清理与架构对齐 (Redundancy Cleanup & Architecture Alignment)】— 已完成
 
@@ -348,6 +357,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     基于 MyCodeEditor 的定时器。
   - SmartRelationshipBuilder：已移除空占位 analyzeInterfaceRelationships 及其调用；
     interface 分析待后续统一扩展接口实现。
+  - MyCodeEditor：作用域背景改为持久光标缓存；删除 getScopeBackgroundSelections()，新增
+    updateScopeBackgrounds() 与 m_scopeSelections，highlighCurrentLine 仅用缓存与当前行重绘，
+    避免每次光标移动查库导致背景回弹。
   - mycodeeditor.cpp：已去除重复 #include（如 QScrollBar）。
 
 架构一致性（后续修改时请保持）：
@@ -378,9 +390,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   不补全、模块内聚合 internal+include+import、全局仅 moduleScope 为空）已修复。若发现其他
   按作用域补全或跳转行为异常，可优先排查作用域解析与 getCurrentModule 边界。
 
-- **作用域背景 (Scope Background)**：左侧条带与编辑器内 module/logic 的绿色背景由符号分析
-  结果驱动。当前行为：增删行后，背景需在**保存文件**后才会更新（符号分析在保存或去抖后的
-  文件变更时触发）。先按此行为使用，后续可考虑在未保存时用当前缓冲区内容做轻量刷新。
+- **作用域背景 (Scope Background)**：左侧条带与编辑器内 module/logic 的背景由符号分析驱动。
+  已采用“持久光标缓存”：编辑时 highlighCurrentLine 仅使用缓存的 m_scopeSelections（Qt 会随
+  文档自动更新光标位置），背景随文本移动无回弹；分析完成后 refreshScopeAndCurrentLineHighlight
+  调用 updateScopeBackgrounds 从数据库刷新缓存。若分析尚未完成则沿用上一轮缓存。
 
 
 ==========================================================================
