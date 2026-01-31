@@ -25,13 +25,10 @@ TabManager::~TabManager()
 
 void TabManager::createNewTab()
 {
-    auto newEditor = createEditor();
-    auto* editorPtr = newEditor.get();
-
-    // Transfer ownership to Qt's parent-child system
+    std::unique_ptr<MyCodeEditor> newEditor = createEditor();
+    MyCodeEditor* editorPtr = newEditor.get();
     tabWidget->addTab(newEditor.release(), "untitled");
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
-
     emit tabCreated(editorPtr);
 }
 
@@ -58,18 +55,13 @@ bool TabManager::openFileInTab(const QString& fileName)
     const QString text = in.readAll();
     file.close();
 
-    // Create editor
-    auto codeEditor = createEditor();
-    auto* editorPtr = codeEditor.get();
-
+    std::unique_ptr<MyCodeEditor> codeEditor = createEditor();
+    MyCodeEditor* editorPtr = codeEditor.get();
     editorPtr->setPlainText(text);
     editorPtr->setFileName(fileToOpen);
     editorPtr->isSaved = true;
-
-    // Transfer ownership to Qt
     tabWidget->addTab(codeEditor.release(), getDisplayName(fileToOpen));
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
-
     emit tabCreated(editorPtr);
     return true;
 }
@@ -180,20 +172,15 @@ QStringList TabManager::getOpenSystemVerilogFiles() const
 void TabManager::updateTabTitle(MyCodeEditor* editor)
 {
     if (!editor) return;
-
-    // Find the tab containing this editor
     for (int i = 0; i < tabWidget->count(); ++i) {
         if (tabWidget->widget(i) == editor) {
             QString fileName = editor->getFileName();
             QString displayName = fileName.isEmpty() ? "untitled" : getDisplayName(fileName);
             tabWidget->setTabText(i, displayName);
-
-            // Update window title if this is the current tab
             if (tabWidget->currentIndex() == i) {
                 QWidget* parentWidget = qobject_cast<QWidget*>(parent());
-                if (parentWidget) {
+                if (parentWidget)
                     parentWidget->setWindowTitle(fileName.isEmpty() ? "untitled" : fileName);
-                }
             }
             break;
         }

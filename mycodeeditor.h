@@ -28,13 +28,23 @@ public:
     bool saveFile();
     bool saveAsFile();
     void setFileName(QString fileName);
-    QString getFileName();
+    QString getFileName() const;
     bool checkSaved();
 
     void showAutoComplete();
     void hideAutoComplete();
     /** 主动刷新并发射 debugScopeInfo（用于切标签时更新状态栏） */
     void refreshDebugScopeInfo();
+
+    /** 刷新作用域背景与当前行高亮（符号分析完成后由 MainWindow 调用） */
+    void refreshScopeAndCurrentLineHighlight();
+
+    /** 作用域条带用：块顶部的 Y 坐标（文档坐标系，与 contentOffset 一致） */
+    qreal getBlockTopY(int blockNumber) const;
+    /** 作用域条带用：块高度 */
+    qreal getBlockHeight(int blockNumber) const;
+    /** 作用域条带用：文档总高度（像素） */
+    qreal getDocumentHeightPx() const;
 
     void clearAlternateModeBuffer();
     void processAlternateModeInput(const QString &input);
@@ -62,6 +72,9 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
+    /** 根据当前文件符号生成 module/logic 作用域行背景的 ExtraSelection 列表（文本背景变深） */
+    QList<QTextEdit::ExtraSelection> getScopeBackgroundSelections() const;
+
 private:
     void initConnection();
     void initFont();
@@ -86,6 +99,11 @@ private:
     // 关系分析去抖：连续输入时重置定时器，停止输入一段时间后再触发单文件关系分析
     QTimer *relationshipAnalysisDebounceTimer;
     static const int RelationshipAnalysisDebounceMs = 2000;
+
+    // 内容变化后延迟刷新作用域背景，避免删除行后灰色消失
+    QTimer *scopeRefreshTimer = nullptr;
+
+    int lastKnownBlockCount = -1;  // 行数变化时触发分析，使新增/删行后作用域背景更新
 
     QString textUnderCursor() const;
 

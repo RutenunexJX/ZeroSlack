@@ -211,7 +211,10 @@ void SymbolAnalyzer::invalidateCache()
 void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& content)
 {
     if (fileName.isEmpty() || !isSystemVerilogFile(fileName)) return;
-    sym_list::getInstance()->setContentIncremental(fileName, content);
+    sym_list* sym = sym_list::getInstance();
+    sym->setContentIncremental(fileName, content);
+    int count = sym->findSymbolsByFileName(fileName).size();
+    emit analysisCompleted(fileName, count);
 }
 
 QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) const
