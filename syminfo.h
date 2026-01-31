@@ -230,6 +230,7 @@ private:
         QString symbolRelevantHash;  // 仅与符号相关的规范化内容哈希，用于跳过“仅注释/空格”等变更
         QDateTime lastModified;
         bool needsFullAnalysis = true;
+        int lastAnalyzedLineCount = 0;  // 上次分析时的行数，增/删行时触发重分析以便作用域背景更新
     };
     QHash<QString, FileState> fileStates;
 

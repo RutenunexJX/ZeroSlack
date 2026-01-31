@@ -1490,8 +1490,9 @@ void sym_list::setContentIncremental(const QString& fileName, const QString& con
 
     FileState& state = fileStates[currentFileName];
 
-    // FIXED: 更清晰的分支逻辑
-    bool isFirstTime = !fileStates.contains(currentFileName) || state.needsFullAnalysis;
+    // 若该文件当前无符号（如 analyzeOpenTabs 刚 clearSymbolsForFile 后）必须做全量分析，否则增量只解析变更行无法恢复 module 等跨行结构
+    bool hasNoSymbols = !fileNameIndex.contains(currentFileName) || fileNameIndex.value(currentFileName).isEmpty();
+    bool isFirstTime = !fileStates.contains(currentFileName) || state.needsFullAnalysis || hasNoSymbols;
 
     if (isFirstTime) {
         clearSymbolsForFile(currentFileName);
@@ -1512,6 +1513,7 @@ void sym_list::setContentIncremental(const QString& fileName, const QString& con
 
     state.contentHash = calculateContentHash(content);
     state.symbolRelevantHash = calculateSymbolRelevantHash(content);
+    state.lastAnalyzedLineCount = content.count('\n') + 1;
     state.lastModified = QDateTime::currentDateTime();
     previousFileContents[currentFileName] = content;
     s_holdingWriteLock = false;
@@ -1551,6 +1553,10 @@ QString sym_list::calculateSymbolRelevantHash(const QString& content)
 bool sym_list::needsAnalysis(const QString& fileName, const QString& content)
 {
     if (!fileStates.contains(fileName)) return true;
+
+    int currentLineCount = content.count('\n') + 1;
+    if (fileStates[fileName].lastAnalyzedLineCount != currentLineCount)
+        return true;
 
     QString newSymbolHash = calculateSymbolRelevantHash(content);
     const QString& stored = fileStates[fileName].symbolRelevantHash;

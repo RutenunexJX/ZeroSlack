@@ -2104,10 +2104,14 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
         bool isCorrectType = isSymbolTypeMatchCommand(symbol.symbolType, symbolType);
         bool isCorrectModule = false;
 
-        // 对于struct类型，它们是全局的，在模块内查询时应该返回空
+        // 对于struct类型：与struct变量一致，按同文件且行范围在 [moduleStartLine, moduleEndLine) 内统计，保证状态栏计数稳定（不依赖关系引擎缓存）
         if (symbolType == sym_list::sym_packed_struct ||
             symbolType == sym_list::sym_unpacked_struct) {
-            continue; // struct类型应该在全局查询，不在模块内查询
+            if (foundModule && symbol.fileName == moduleSymbol.fileName &&
+                symbol.startLine > moduleSymbol.startLine &&
+                symbol.startLine < moduleEndLineExclusive) {
+                isCorrectModule = true;
+            }
         }
         // 对于struct变量：同文件且严格在 [moduleStartLine, moduleEndLine) 之间，防止跨模块泄漏
         else if (symbolType == sym_list::sym_packed_struct_var ||

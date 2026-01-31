@@ -69,8 +69,10 @@ void MainWindow::setupManagerConnections()
                 QString content = editor->toPlainText();
                 // 延后执行，先让标签页显示出来，再在后台做符号/关系分析
                 QTimer::singleShot(0, this, [this, fileName, content]() {
-                    // 只分析新打开的这一个文件，不再重分析所有已打开标签
                     symbolAnalyzer->analyzeFileContent(fileName, content);
+                    MyCodeEditor* ed = tabManager->getCurrentEditor();
+                    if (ed && ed->getFileName() == fileName)
+                        ed->refreshScopeAndCurrentLineHighlight();
                     if (!fileName.isEmpty())
                         requestSingleFileRelationshipAnalysis(fileName, content);
                 });
@@ -95,10 +97,17 @@ void MainWindow::setupManagerConnections()
                 MyCodeEditor* editor = tabManager->getCurrentEditor();
                 QString content = (editor && editor->getFileName() == fileName)
                     ? editor->toPlainText() : QString();
-                if (!content.isEmpty() && !sym_list::getInstance()->contentAffectsSymbols(fileName, content))
+                if (!content.isEmpty() && !sym_list::getInstance()->contentAffectsSymbols(fileName, content)) {
+                    if (editor && editor->getFileName() == fileName)
+                        editor->refreshScopeAndCurrentLineHighlight();
                     return;
-                symbolAnalyzer->analyzeOpenTabs(tabManager.get());
-
+                }
+                // 仅重分析当前保存的文件，避免 analyzeOpenTabs 重分析所有标签导致卡顿
+                symbolAnalyzer->analyzeFileContent(fileName, content);
+                if (editor && editor->getFileName() == fileName) {
+                    editor->refreshScopeAndCurrentLineHighlight();
+                    QTimer::singleShot(0, editor, [editor]() { editor->refreshScopeAndCurrentLineHighlight(); });
+                }
                 if (editor && editor->getFileName() == fileName)
                     requestSingleFileRelationshipAnalysis(fileName, editor->toPlainText());
             });
@@ -185,8 +194,10 @@ void MainWindow::setupManagerConnections()
 
     connect(symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
             this, [this](const QString& fileName, int symbolCount) {
-                Q_UNUSED(fileName)
                 Q_UNUSED(symbolCount)
+                MyCodeEditor* editor = tabManager->getCurrentEditor();
+                if (!editor || editor->getFileName() != fileName) return;
+                editor->refreshScopeAndCurrentLineHighlight();
             });
 
     connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchProgress,

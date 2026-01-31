@@ -9,6 +9,7 @@
 #include "modemanager.h"
 #include "symbolanalyzer.h"
 #include "navigationmanager.h"
+#include "syminfo.h"
 
 #include <QPainter>
 #include <QScrollBar>
@@ -70,9 +71,17 @@ void MyCodeEditor::initConnection()
 
     //textChanged
     connect(this,SIGNAL(textChanged()),this,SLOT(updateSaveState()));
+    scopeRefreshTimer = new QTimer(this);
+    scopeRefreshTimer->setSingleShot(true);
+    connect(scopeRefreshTimer, &QTimer::timeout, this, &MyCodeEditor::highlighCurrentLine);
+    connect(this, &QPlainTextEdit::textChanged, this, [this]() {
+        scopeRefreshTimer->stop();
+        scopeRefreshTimer->start(0);
+    });
 
-    //blockCount
+    //blockCount：行数变化时立即更新 logic 等作用域背景，避免晚一帧
     connect(this,SIGNAL(blockCountChanged(int)),this,SLOT(updateLineNumberWidgetWidth()));
+    connect(this,SIGNAL(blockCountChanged(int)),this,SLOT(highlighCurrentLine()));
 
     //updateRequest
     connect(this,SIGNAL(updateRequest(QRect,int)),this,SLOT(updateLineNumberWidget(QRect,int)));
@@ -98,15 +107,89 @@ int MyCodeEditor::getLineNumberWidgetWidth()
 
 void MyCodeEditor::highlighCurrentLine()
 {
-    QList<QTextEdit::ExtraSelection> extraSelection;
-    QTextEdit::ExtraSelection selection;
-    selection.format.setBackground(QColor(0,100,100,20));
-    selection.format.setProperty(QTextFormat::FullWidthSelection,true);
-    selection.cursor= textCursor();
+    QList<QTextEdit::ExtraSelection> list = getScopeBackgroundSelections();
+    for (auto& sel : list)
+        sel.format.setProperty(QTextFormat::UserProperty, 997);
 
-    extraSelection.append(selection);
+    QList<QTextEdit::ExtraSelection> existing = extraSelections();
+    existing.erase(
+        std::remove_if(existing.begin(), existing.end(),
+            [](const QTextEdit::ExtraSelection& s) {
+                int p = s.format.property(QTextFormat::UserProperty).toInt();
+                return p == 997 || p == 998;
+            }),
+        existing.end());
+    list.append(existing);
 
-    setExtraSelections(extraSelection);
+    QTextEdit::ExtraSelection currentLine;
+    currentLine.format.setBackground(QColor(0,100,100,20));
+    currentLine.format.setProperty(QTextFormat::FullWidthSelection, true);
+    currentLine.format.setProperty(QTextFormat::UserProperty, 998);
+    currentLine.cursor = textCursor();
+    list.append(currentLine);
+
+    const int docLen = document()->characterCount();
+    const int docEnd = (docLen > 0) ? docLen - 1 : 0;
+    for (auto& sel : list) {
+        QTextCursor& c = sel.cursor;
+        int pos = qBound(0, c.position(), docEnd);
+        int anchor = qBound(0, c.anchor(), docEnd);
+        c.setPosition(anchor);
+        c.setPosition(pos, QTextCursor::KeepAnchor);
+    }
+    setExtraSelections(list);
+}
+
+QList<QTextEdit::ExtraSelection> MyCodeEditor::getScopeBackgroundSelections() const
+{
+    QList<QTextEdit::ExtraSelection> out;
+    QString fileName = getFileName();
+    if (fileName.isEmpty()) return out;
+    sym_list* sym = sym_list::getInstance();
+    if (!sym) return out;
+
+    QList<sym_list::SymbolInfo> all = sym->findSymbolsByFileName(fileName);
+    QList<sym_list::SymbolInfo> modules, logics;
+    for (const auto& s : all) {
+        if (s.symbolType == sym_list::sym_module) modules.append(s);
+        else if (s.symbolType == sym_list::sym_logic) logics.append(s);
+    }
+
+    const int blockCnt = document()->blockCount();
+    const int maxLine = (blockCnt > 0) ? blockCnt - 1 : 0;
+    const int docLen = document()->characterCount();
+    const int docEnd = (docLen > 0) ? docLen - 1 : 0;
+    auto addRange = [this, &out, docEnd, maxLine](int startLine, int endLine, const QColor& bg, bool fullWidth) {
+        int s = qBound(0, startLine, maxLine);
+        int e = qBound(0, endLine, maxLine);
+        if (e < s) return;
+        QTextBlock startBlock = document()->findBlockByNumber(s);
+        QTextBlock endBlock = document()->findBlockByNumber(e);
+        if (!startBlock.isValid() || !endBlock.isValid()) return;
+        int posStart = qBound(0, startBlock.position(), docEnd);
+        int posEnd = qBound(0, endBlock.position() + endBlock.length(), docEnd);
+        if (posEnd <= posStart) return;
+        QTextEdit::ExtraSelection sel;
+        sel.format.setBackground(bg);
+        if (fullWidth) sel.format.setProperty(QTextFormat::FullWidthSelection, true);
+        QTextCursor c(document());
+        c.setPosition(posStart);
+        c.setPosition(posEnd, QTextCursor::KeepAnchor);
+        sel.cursor = c;
+        out.append(sel);
+    };
+
+    for (const sym_list::SymbolInfo& mod : modules) {
+        if (!sym->isValidModuleName(mod.symbolName)) continue;
+        int endLine = sym->findEndModuleLine(fileName, mod);
+        if (endLine < 0) continue;
+        addRange(mod.startLine, endLine, QColor(0, 0, 0, 40), true);
+    }
+    for (const sym_list::SymbolInfo& logic : logics) {
+        int endLine = logic.endLine >= logic.startLine ? logic.endLine : logic.startLine;
+        addRange(logic.startLine, endLine, QColor(0, 80, 0, 45), true);
+    }
+    return out;
 }
 
 void MyCodeEditor::onCursorPositionChangedForDebug()
@@ -138,6 +221,31 @@ void MyCodeEditor::updateAndEmitDebugScopeInfo()
 void MyCodeEditor::refreshDebugScopeInfo()
 {
     updateAndEmitDebugScopeInfo();
+}
+
+void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
+{
+    highlighCurrentLine();
+}
+
+qreal MyCodeEditor::getBlockTopY(int blockNumber) const
+{
+    QTextBlock block = document()->findBlockByNumber(blockNumber);
+    if (!block.isValid()) return 0;
+    return blockBoundingGeometry(block).translated(contentOffset()).top();
+}
+
+qreal MyCodeEditor::getBlockHeight(int blockNumber) const
+{
+    QTextBlock block = document()->findBlockByNumber(blockNumber);
+    if (!block.isValid()) return fontMetrics().height();
+    return blockBoundingRect(block).height();
+}
+
+qreal MyCodeEditor::getDocumentHeightPx() const
+{
+    QAbstractTextDocumentLayout* layout = document()->documentLayout();
+    return layout ? layout->documentSize().height() : 0;
 }
 
 void MyCodeEditor::updateLineNumberWidget(QRect rect, int dy)
@@ -270,7 +378,7 @@ void MyCodeEditor::setFileName(QString fileName)
     mFileName = fileName;
 }
 
-QString MyCodeEditor::getFileName()
+QString MyCodeEditor::getFileName() const
 {
     return mFileName;
 }
@@ -318,12 +426,19 @@ void MyCodeEditor::onTextChanged()
 {
     updateSaveState();
 
-    // NEW: Integrate with SymbolAnalyzer for analysis scheduling
     MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
+    int currentBlockCount = document()->blockCount();
+
+    // 行数变化时调度分析，使新增/删行后作用域背景能更新（保存时也会因 needsAnalysis 行数比较而重分析）
+    if (mainWindow && mainWindow->symbolAnalyzer && !getFileName().isEmpty() &&
+        lastKnownBlockCount >= 0 && currentBlockCount != lastKnownBlockCount) {
+        mainWindow->scheduleOpenFileAnalysis(getFileName(), 500);
+    }
+    lastKnownBlockCount = currentBlockCount;
+
     if (mainWindow && mainWindow->symbolAnalyzer &&
         (!mainWindow->workspaceManager || !mainWindow->workspaceManager->isWorkspaceOpen())) {
 
-        // Check for significant keywords in current line
         QTextCursor cursor = textCursor();
         QTextBlock currentBlock = cursor.block();
         QString currentLineText = currentBlock.text();
