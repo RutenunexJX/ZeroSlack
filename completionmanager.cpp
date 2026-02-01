@@ -6,7 +6,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QDebug>
 #include <QRegularExpression>
 #include <algorithm>
 
@@ -1552,7 +1551,6 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
 
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(fileName);
-    qDebug("getCurrentModule: fileName=%s, fileSymbols.size()=%d", qPrintable(fileName), fileSymbols.size());
 
     // 🚀 过滤出模块符号并按位置排序
     QList<sym_list::SymbolInfo> modules;
@@ -1562,7 +1560,6 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
         }
     }
 
-    qDebug("getCurrentModule: modules.size()=%d", modules.size());
     if (modules.isEmpty()) {
         return QString();
     }

@@ -177,7 +177,6 @@ public:
     bool isPositionInMultiLineComment(int pos);
     QList<CommentRegion> getCommentRegions() const;
     QList<RegexMatch> findMatchesOutsideComments(const QString &text, const QRegularExpression &pattern);
-    void findVariableDeclarations();
 
     /** 基于内容的增量分析，供后台线程使用，不依赖 QWidget */
     void setContentIncremental(const QString& fileName, const QString& content);
@@ -191,6 +190,7 @@ public:
     
     // 查找模块的结束行号
     int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
+    /** 兼容壳：仅更新 previousFileContents，struct/typedef/enum 由 SVSymbolParser 在 onePass 中产出 */
     void refreshStructTypedefEnumForFile(const QString &fileName, const QString &content);
 
 private:
@@ -224,7 +224,6 @@ private:
 
     QString currentFileName;
 
-    void getVariableDeclarations(const QString &text);
     void getTasksAndFunctions(const QString &text);
 
     // File state tracking
@@ -252,7 +251,6 @@ private:
 
     // Line-level analysis helper methods
     void analyzeModulesInLine(const QString& lineText, int lineStartPos, int lineNum);
-    void analyzeVariablesInLine(const QString& lineText, int lineStartPos, int lineNum, const QString& fullText = QString());
     void analyzeTasksFunctionsInLine(const QString& lineText, int lineStartPos, int lineNum);
     void analyzeVariablePattern(const QString& lineText, int lineStartPos, int lineNum,
                                 const QRegularExpression& pattern, sym_type_e symbolType);
@@ -270,11 +268,7 @@ private:
     void analyzeModuleContainment(const QString& fileName);
     void analyzeVariableReferences(const QString& fileName, const QString& content);
 
-    void analyzeDataTypes(const QString &text);
     void analyzeAlwaysAndAssign(const QString &text);
-    void analyzeStructVariables(const QString &text);
-    void analyzeStructMembers(const QString &membersText, const QString &structName, int basePosition, const QString &fullText);
-    void analyzeEnumsAndStructs(const QString &text);
     void clearStructTypedefEnumSymbolsForFile(const QString &fileName);
 
     // 辅助结构：存储struct的范围
