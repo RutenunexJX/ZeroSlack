@@ -13,6 +13,7 @@ SOURCES += \
     completionmanager.cpp \
     completionmodel.cpp \
     main.cpp \
+    sv_lexer.cpp \
     mainwindow.cpp \
     modemanager.cpp \
     mycodeeditor.cpp \
@@ -31,6 +32,8 @@ HEADERS += \
     completionmanager.h \
     scope_tree.h \
     completionmodel.h \
+    sv_lexer.h \
+    sv_token.h \
     mainwindow.h \
     modemanager.h \
     mycodeeditor.h \
