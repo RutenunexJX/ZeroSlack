@@ -47,7 +47,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - `m `：module
     - `t `：task
     - `f `：function
-    - 以及扩展的：`i ` (interface), `e ` (enum type), `p ` (parameter) 等；
+    - 以及扩展的：`i ` (interface), `p ` (parameter) 等；
+    - enum 相关：`e `（枚举变量）, `ee `（枚举值）, `ne `（枚举类型，含 typedef enum 与匿名）；模块内补全，ne 在模块外仅显示全局 typedef enum。
     - struct 相关（严格作用域，仅在模块内补全）：`s ` (unpacked struct 变量), `sp ` (packed struct 变量), `ns ` (unpacked struct 类型), `nsp ` (packed struct 类型)
 - Alternate Mode（替代模式 / 命令行模式）
   - 仅接受命令，不编辑正文
@@ -105,6 +106,12 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - struct 变量仅当 symbol.moduleScope 为空时才视为全局（真正在 package/$unit 等定义），避免模块内 struct 变量泄漏到全局补全。
 - **状态栏 struct 计数**：左下角“struct 变量 / struct 类型”仅按行范围统计（getModuleInternalSymbolsByType(..., useRelationshipFallback=false)），不使用关系引擎 fallback，避免键入 `s ` 再删除等操作后计数含入全局 struct 导致数字偏大。
 
+【Enum 相关命令（e / ee / ne）】
+- 命令：`e `（枚举变量）、`ee `（枚举值）、`ne `（枚举类型）。
+- 枚举变量：含 `typedef enum { ... } name_t;` 后用类型名声明的变量（如 `name_t var;`），以及内联 `enum { A, B } var;` 声明的变量；补全列表括号内显示类型名或变量名（匿名枚举显示变量名，如 ON(power_switch)）。
+- 枚举值：补全列表括号内显示来源类型（typedef 类型名或匿名时的枚举变量名）。
+- 枚举类型：ne 补全来源为 sym_typedef（dataType=="enum"）与 sym_enum；模块内显示该模块内的 typedef enum 类型名，模块外显示全局 typedef enum。
+
 
 ==========================================================================
 符号分析系统 (Symbol Analysis System)
@@ -115,7 +122,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - **符号解析架构（Lexer + SVSymbolParser）**
   - 符号解析统一由 `SVLexer`（sv_lexer.h/cpp）与 `SVSymbolParser`（sv_symbol_parser.h/cpp）驱动，作为大纲、补全、代码导航的**唯一数据来源**。Token 类型（sv_token.h）包括 Keyword/Comment/Identifier/Operator/Whitespace/Number/String 等；括号、分号等标点为 Operator，不再视为 Error。
   - SVSymbolParser 对全文 tokenize 后解析 module/task/function/端口列表（ANSI 风格）以及 reg/wire/logic 变量，产出 SymbolInfo 列表；sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePass → SVSymbolParser::parse()，不再使用基于正则的 getAdditionalSymbols 或按行增量 analyzeSpecificLines。
-  - 以下符号类型当前由 SVSymbolParser 直接产出：module、task、function、端口（input/output/inout/ref）、reg/wire/logic，以及 typedef/struct/union/enum 及其变量（sym_typedef、sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_enum、sym_enum_value、sym_packed_struct_var、sym_unpacked_struct_var）。interface、package、parameter、实例化引脚（sym_inst/sym_inst_pin）等扩展符号的解析与关系暂未完全恢复，部分功能存在已知问题，后续会逐步修复。
+  - 以下符号类型当前由 SVSymbolParser 直接产出：module、task、function、端口（input/output/inout/ref）、reg/wire/logic，以及 typedef/struct/union/enum 及其变量（sym_typedef、sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_enum_value、sym_enum_var、sym_packed_struct_var、sym_unpacked_struct_var）；枚举类型名由 sym_typedef（dataType=="enum"）表示。interface、package、parameter、实例化引脚（sym_inst/sym_inst_pin）等扩展符号的解析与关系暂未完全恢复，部分功能存在已知问题，后续会逐步修复。
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
   - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
@@ -180,7 +187,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 主窗口左侧有“导航 Dock 窗口”
   - 可以通过某些快捷键或模式切换来显示/隐藏
 - 能根据当前文件/当前符号更新导航视图
-- 导航树按符号类型分组显示；struct 相关类型在 UI 中可区分：Packed/Unpacked 结构体类型、Packed/Unpacked 结构体变量、结构体成员（getSymbolTypeDisplayName / getSymbolIcon，NavigationManager::symbolTypes 含 sym_packed_struct、sym_unpacked_struct、sym_packed_struct_var、sym_unpacked_struct_var）。
+- 导航树按符号类型分组显示；struct 与 enum 在 UI 中可区分：Packed/Unpacked 结构体类型与变量、结构体成员；类型定义（typedef）、枚举变量、枚举值（getSymbolTypeDisplayName / getSymbolIcon，NavigationManager::symbolTypes 含 sym_typedef、sym_enum_var、sym_enum_value 等）。
 - 支持两种跳转方式：
   - 符号导航：由 `NavigationManager::symbolNavigationRequested` 触发
   - 文件+行号导航：`MainWindow::navigateToFileAndLine`
@@ -200,13 +207,17 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
       只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
     - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
-    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 类型**（sym_packed_struct / sym_unpacked_struct），以及 **struct 变量**（sym_packed_struct_var / sym_unpacked_struct_var）；struct 类型与变量由 SVSymbolParser 产出并设置 moduleScope，便于同模块内跳转。
+    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 类型与变量**（sym_packed_struct / sym_unpacked_struct / sym_packed_struct_var / sym_unpacked_struct_var），以及 **enum 类型、枚举变量、枚举值**（sym_typedef 表示 typedef enum 类型名、sym_enum_var、sym_enum_value）；均由 SVSymbolParser 产出并设置 moduleScope，便于同模块内跳转。
     - 优先跳当前文件中的定义；端口类型优先级高于 reg/wire/logic。
     - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
   - **Struct 相关跳转**：
     - **成员跳转**：在 `var.member` 表达式中 Ctrl+点击成员名（如 member0），根据变量名解析出 struct 类型，跳转到该 struct 内该成员的定义位置；结构体成员的 moduleScope 为结构体类型名，跳转时按类型过滤、不按模块名过滤。
     - **变量跳转**：Ctrl+点击 struct 变量名，跳转到其声明（packed/unpacked struct 变量已纳入 isSymbolDefinition 与 definitionTypePriority）。
     - **类型名跳转**：在声明语句（如 `test_s test_s_var;` 或 `test_sp test_sp_var;`）中 Ctrl+点击类型名，跳转到 `typedef struct [packed] { ... } type_name;` 中别名位置（parseStruct 已记录别名 token 的 startLine/startColumn）。definitionTypePriority 中 sym_packed_struct / sym_unpacked_struct 显式优先级 6，与 parameter/localparam 一致。
+  - **Enum 相关跳转**（与 struct 类似的 3 类）：
+    - **枚举值跳转**：Ctrl+点击枚举值名（如 STATE_IDLE、ON），跳转到该枚举值在 enum 体中的定义行（sym_enum_value 已纳入 isSymbolDefinition 与 definitionTypePriority）。
+    - **枚举类型跳转**：Ctrl+点击 typedef enum 类型名（如 fsm_state_t），跳转到 `typedef enum { ... } type_name;` 中类型名位置（sym_typedef 表示枚举类型）。
+    - **枚举变量跳转**：Ctrl+点击枚举变量名（如 fsm_state、power_switch），跳转到其声明行（sym_enum_var 已纳入 isSymbolDefinition 与 definitionTypePriority）。
   - **跳转后鼠标跟随**：本地跳转（当前文件内）与跨文件跳转（navigateToFileAndLine）完成后均调用 `moveMouseToCursor()`，将鼠标指针移动到新光标位置。
   - 跳转过程会复用 `NavigationManager` 的符号导航接口
 

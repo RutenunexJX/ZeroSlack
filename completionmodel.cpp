@@ -356,6 +356,18 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         defaultValue = "localparam";
         typeDescription = "localparam declarations";
         break;
+    case sym_list::sym_enum_value:
+        defaultValue = "enum_value";
+        typeDescription = "enum values";
+        break;
+    case sym_list::sym_enum:
+        defaultValue = "enum";
+        typeDescription = "enum types";
+        break;
+    case sym_list::sym_enum_var:
+        defaultValue = "enum_var";
+        typeDescription = "enum variables";
+        break;
     default:
         defaultValue = "symbol";
         typeDescription = "symbols";
@@ -439,8 +451,17 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
             // struct类型：直接显示类型名
             item.text = symbol.symbolName;
             item.defaultValue = symbol.symbolName;
-            
+
             // 去重：使用类型名作为唯一标识
+            if (addedItems.contains(symbol.symbolName)) {
+                continue;
+            }
+            addedItems.insert(symbol.symbolName);
+        } else if (symbolType == sym_list::sym_enum_value) {
+            // 枚举值：显示 "NAME(来源类型)"，括号内为枚举类型名
+            item.text = symbol.symbolName;
+            item.defaultValue = symbol.symbolName;
+            item.description = symbol.dataType.isEmpty() ? QStringLiteral("enum") : symbol.dataType;
             if (addedItems.contains(symbol.symbolName)) {
                 continue;
             }
@@ -449,7 +470,7 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
             // 其他类型：正常显示
             item.text = symbol.symbolName;
             item.defaultValue = symbol.symbolName;
-            
+
             // 去重：使用符号名作为唯一标识
             if (addedItems.contains(symbol.symbolName)) {
                 continue;

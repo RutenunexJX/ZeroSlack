@@ -87,6 +87,20 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByType(symbolType);
 
+    // 枚举类型 (ne)：显式 typedef enum + 隐式 sym_enum 合并
+    if (symbolType == sym_list::sym_enum) {
+        QSet<int> seenIds;
+        for (const sym_list::SymbolInfo &s : symbols)
+            seenIds.insert(s.symbolId);
+        QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+        for (const sym_list::SymbolInfo &s : allSymbols) {
+            if (s.symbolType == sym_list::sym_typedef && s.dataType == QLatin1String("enum") && !seenIds.contains(s.symbolId)) {
+                seenIds.insert(s.symbolId);
+                symbols.append(s);
+            }
+        }
+    }
+
     QVector<QPair<sym_list::SymbolInfo, int>> scoredMatches;
     scoredMatches.reserve(qMin(symbols.size(), 30));
 
@@ -1673,6 +1687,10 @@ QStringList CompletionManager::getModuleInternalVariablesByType(const QString& m
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         bool isCorrectModule = (symbol.moduleScope == moduleName);
         bool isCorrectType = (symbol.symbolType == symbolType);
+        // ne：模块内枚举类型 = sym_enum 或 sym_typedef(dataType enum)
+        if (symbolType == sym_list::sym_enum && !isCorrectType) {
+            isCorrectType = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
+        }
         bool matchesPrefix = (prefix.isEmpty() ||
                              matchesAbbreviation(symbol.symbolName, prefix));
 
@@ -1746,7 +1764,7 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 🔧 FIX: 全局符号类型定义
+    // 🔧 FIX: 全局符号类型定义（含 sym_enum，ne 命令用）
     QList<sym_list::sym_type_e> globalSymbolTypes = {
         sym_list::sym_module,
         sym_list::sym_task,
@@ -1756,7 +1774,8 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
         sym_list::sym_typedef,
         sym_list::sym_def_define,
         sym_list::sym_packed_struct,
-        sym_list::sym_unpacked_struct
+        sym_list::sym_unpacked_struct,
+        sym_list::sym_enum
     };
 
     // 🔧 FIX: 检查是否为全局符号类型（struct类型也是全局的）
@@ -1775,8 +1794,14 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
             totalSymbolsOfType++;
         }
 
+        // sym_enum：显式 typedef enum + 隐式 sym_enum
+        bool typeMatches = (symbol.symbolType == symbolType);
+        if (symbolType == sym_list::sym_enum && !typeMatches) {
+            typeMatches = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
+        }
+
         // 🔧 FIX: 只返回指定类型的全局符号
-        if (symbol.symbolType == symbolType) {
+        if (typeMatches) {
             // 🔧 FIX: 全局符号应该没有 moduleScope 或者 moduleScope 为空
             // 对于某些符号类型（如 module, interface），它们本身就是顶级声明
             bool isGlobalSymbol = false;
@@ -1802,7 +1827,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
 
     results.removeDuplicates();
     results.sort(Qt::CaseInsensitive);
-
 
     return results;
 }

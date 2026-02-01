@@ -455,7 +455,10 @@ void NavigationManager::updateSymbolHierarchyData()
         sym_list::sym_packed_struct,
         sym_list::sym_unpacked_struct,
         sym_list::sym_packed_struct_var,
-        sym_list::sym_unpacked_struct_var
+        sym_list::sym_unpacked_struct_var,
+        sym_list::sym_typedef,      // 枚举类型（typedef enum）等
+        sym_list::sym_enum_var,
+        sym_list::sym_enum_value
     };
 
     for (sym_list::sym_type_e symbolType : symbolTypes) {
