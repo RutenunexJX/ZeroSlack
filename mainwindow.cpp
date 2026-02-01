@@ -58,7 +58,6 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupManagerConnections()
 {
-    // TabManager connections
     // 优化：打开文件时只分析新打开的文件，且延后到下一事件循环，避免卡顿
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this](MyCodeEditor* editor) {
@@ -112,19 +111,15 @@ void MainWindow::setupManagerConnections()
                     requestSingleFileRelationshipAnalysis(fileName, editor->toPlainText());
             });
 
-    // WorkspaceManager connections
     connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened,
             this, [this](const QString& workspacePath) {
                 Q_UNUSED(workspacePath)
                 QStringList svFiles = workspaceManager->getSystemVerilogFiles();
 
-                // 显示进度对话框
                 showAnalysisProgress(svFiles);
 
-                // 🔧 关键修复：立即更新进度对话框内容，不等待
                 QTimer::singleShot(10, this, [this, svFiles]() {
                     if (progressDialog) {
-                        // 立即显示符号分析阶段
                         progressDialog->statusLabel->setText("阶段 1/2: 符号分析进行中...");
                         progressDialog->currentFileLabel->setText("正在扫描和解析SystemVerilog文件结构...");
                         progressDialog->progressBar->setFormat("符号分析中... 请稍候");
@@ -134,17 +129,13 @@ void MainWindow::setupManagerConnections()
                             progressDialog->logProgress(QString("📁 扫描到 %1 个SV文件").arg(svFiles.size()));
                         }
 
-                        // 强制刷新UI（阶段 A：不再在此处调用 processEvents，避免阻塞）
                         progressDialog->update();
                         progressDialog->repaint();
                     }
                 });
-
-                // 符号分析由 filesScanned 统一触发（openWorkspace 会先发 workspaceOpened 再发 filesScanned，避免重复启动两次）
             });
     connect(workspaceManager.get(), &WorkspaceManager::fileChanged,
             this, [this](const QString& filePath) {
-                // 防抖：保存时 QFileSystemWatcher 常会触发两次，只对最后一次做一次分析
                 if (fileChangeDebounceTimers.contains(filePath)) {
                     QTimer* oldTimer = fileChangeDebounceTimers.take(filePath);
                     oldTimer->stop();
@@ -175,7 +166,6 @@ void MainWindow::setupManagerConnections()
                     [this]() { return symbolAnalysisCancelled.load(); });
             });
 
-    // ModeManager connections
     connect(modeManager.get(), &ModeManager::modeChanged,
             this,[]{});
 
@@ -222,7 +212,6 @@ void MainWindow::setupManagerConnections()
                         .arg(filesAnalyzed).arg(totalSymbols),
                         3000);
                 }
-                // 阶段 A：符号分析在后台完成后，于主线程启动关系分析（依赖符号表）
                 QStringList svFiles = workspaceManager->getSystemVerilogFiles();
                 if (progressDialog) {
                     progressDialog->statusLabel->setText("阶段 2/2: 关系分析进行中...");
@@ -263,22 +252,18 @@ void MainWindow::setupManagerConnections()
                 }
             });
 
-    // NEW: Connect managers to navigation manager
     navigationManager->connectToTabManager(tabManager.get());
     navigationManager->connectToWorkspaceManager(workspaceManager.get());
     navigationManager->connectToSymbolAnalyzer(symbolAnalyzer.get());
 
-    // 🔧 FIX: 确保relationshipBuilder存在再连接
     if (!relationshipBuilder)
         return;
 
-    // 🚀 连接SmartRelationshipBuilder信号（基于实际存在的信号）
     connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCompleted,
             this, [this](const QString& fileName, int relationshipsFound) {
                 if (progressDialog) {
                     progressDialog->updateProgress(fileName, relationshipsFound);
 
-                    // 【新增】在进度对话框中显示当前处理的文件信息
                     QString shortName = QFileInfo(fileName).fileName();
                     if (progressDialog->config.showDetails) {
                         progressDialog->logProgress(
@@ -286,11 +271,9 @@ void MainWindow::setupManagerConnections()
                     }
                 }
 
-                // 手动跟踪批量分析进度
                 if (relationshipAnalysisTracker.isActive) {
                     relationshipAnalysisTracker.processedFiles++;
 
-                    // 【新增】更新进度对话框的状态显示
                     if (progressDialog) {
                         progressDialog->statusLabel->setText(
                             QString("阶段 2/2: 关系分析进行中 (%1/%2)")
@@ -298,7 +281,6 @@ void MainWindow::setupManagerConnections()
                             .arg(relationshipAnalysisTracker.totalFiles));
                     }
 
-                    // 检查是否所有文件都分析完成
                     if (relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
                         relationshipAnalysisTracker.isActive = false;
 
@@ -311,7 +293,6 @@ void MainWindow::setupManagerConnections()
                             }
                         }
 
-                        // 延迟一点确保最后的updateProgress调用完成
                         QTimer::singleShot(200, this, [this]() {
                             if (progressDialog) {
                                 progressDialog->finishAnalysis();
@@ -327,7 +308,6 @@ void MainWindow::setupManagerConnections()
                     }
                 }
 
-                // 状态栏更新
                 QString shortName = QFileInfo(fileName).fileName();
                 if (statusBar()) {
                     statusBar()->showMessage(
@@ -337,7 +317,6 @@ void MainWindow::setupManagerConnections()
                 }
             });
 
-    // 🚀 连接分析错误信号
     connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisError,
             this, [this](const QString& fileName, const QString& error) {
                 Q_UNUSED(fileName)
@@ -346,7 +325,6 @@ void MainWindow::setupManagerConnections()
                     progressDialog->showError(fileName, error);
                 }
 
-                // 🔧 FIX: 错误也算作处理完成，避免进度卡住
                 if (relationshipAnalysisTracker.isActive) {
                     relationshipAnalysisTracker.processedFiles++;
 
@@ -362,7 +340,6 @@ void MainWindow::setupManagerConnections()
                 }
             });
 
-    // 🚀 连接取消信号
     connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCancelled,
             this, [this]() {
                 relationshipAnalysisTracker.isActive = false;
@@ -376,7 +353,6 @@ void MainWindow::setupManagerConnections()
                 }
             });
 
-    // 🔧 FIX: 添加关系引擎信号连接
     if (relationshipEngine) {
         connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipAdded,
                 this, &MainWindow::onRelationshipAdded);
@@ -389,38 +365,31 @@ void MainWindow::setupManagerConnections()
 
 void MainWindow::setupNavigationPane()
 {
-    // 创建导航widget
     navigationWidget = new NavigationWidget(this);
 
-    // 创建dock widget
     navigationDock = new QDockWidget("导航", this);
     navigationDock->setWidget(navigationWidget);
     navigationDock->setFeatures(QDockWidget::DockWidgetMovable |
                                QDockWidget::DockWidgetFloatable |
                                QDockWidget::DockWidgetClosable);
 
-    // 设置dock widget的大小策略
     navigationDock->setMinimumWidth(200);
     navigationDock->setMaximumWidth(400);
     navigationWidget->setMinimumWidth(180);
 
-    // 将dock添加到左侧
     addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
 
-    // 将navigation widget连接到navigation manager
     navigationManager->setNavigationWidget(navigationWidget);
 }
 
 void MainWindow::connectNavigationSignals()
 {
-    // 连接导航请求信号
     connect(navigationManager.get(), &NavigationManager::navigationRequested,
             this, &MainWindow::onNavigationRequested);
 
     connect(navigationManager.get(), &NavigationManager::symbolNavigationRequested,
             this, &MainWindow::onSymbolNavigationRequested);
 
-    // Ctrl+Click 跳转到定义（跨文件）：编辑器发出 definitionJumpRequested 后由主窗口打开文件并跳转
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this](MyCodeEditor* editor) {
                 if (editor) {
@@ -431,7 +400,6 @@ void MainWindow::connectNavigationSignals()
                 }
             });
 
-    // 连接标签页变化到导航管理器
     connect(tabManager.get(), &TabManager::activeTabChanged,
             this, [this](MyCodeEditor* editor) {
                 if (editor && navigationManager) {
@@ -454,7 +422,6 @@ void MainWindow::navigateToFileAndLine(const QString& filePath, int lineNumber)
 {
     if (filePath.isEmpty()) return;
 
-    // 首先尝试在已打开的标签页中找到文件
     bool fileFound = false;
     for (int i = 0; i < ui->tabWidget->count(); ++i) {
         MyCodeEditor* editor = tabManager->getEditorAt(i);
@@ -465,18 +432,15 @@ void MainWindow::navigateToFileAndLine(const QString& filePath, int lineNumber)
         }
     }
 
-    // 如果文件没有打开，则打开它
     if (!fileFound) {
         if (!tabManager->openFileInTab(filePath)) {
             return; // 无法打开文件
         }
     }
 
-    // 导航到指定行
     if (lineNumber > 0) {
         MyCodeEditor* currentEditor = tabManager->getCurrentEditor();
         if (currentEditor) {
-            // 将光标移动到指定行
             QTextCursor cursor = currentEditor->textCursor();
             cursor.movePosition(QTextCursor::Start);
             for (int i = 1; i < lineNumber; ++i) {
@@ -586,19 +550,15 @@ void MainWindow::setupRelationshipEngine()
 {
     if (!relationshipEngine) return;
 
-    // 🚀 将关系引擎连接到符号数据库
     sym_list* symbolDatabase = sym_list::getInstance();
     symbolDatabase->setRelationshipEngine(relationshipEngine.get());
 
-    // 🚀 将关系引擎连接到补全管理器
     CompletionManager* completionManager = CompletionManager::getInstance();
     completionManager->setRelationshipEngine(relationshipEngine.get());
 
-    // 🚀 创建智能关系构建器
     relationshipBuilder = std::make_unique<SmartRelationshipBuilder>(
         relationshipEngine.get(), symbolDatabase, this);
 
-    // 🚀 异步单文件关系分析
     relationshipSingleFileWatcher = new QFutureWatcher<QVector<RelationshipToAdd>>(this);
     connect(relationshipSingleFileWatcher, &QFutureWatcher<QVector<RelationshipToAdd>>::finished,
             this, &MainWindow::onSingleFileRelationshipFinished);
@@ -607,14 +567,12 @@ void MainWindow::setupRelationshipEngine()
     connect(relationshipBatchWatcher, &QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>::finished,
             this, &MainWindow::onBatchRelationshipFinished);
 
-    // 🚀 连接关系引擎的信号
     connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipAdded,
             this, &MainWindow::onRelationshipAdded);
 
     connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipsCleared,
             this, &MainWindow::onRelationshipsCleared);
 
-    // 🚀 连接关系构建器的信号
     connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCompleted,
             this, &MainWindow::onRelationshipAnalysisCompleted);
 
@@ -622,7 +580,6 @@ void MainWindow::setupRelationshipEngine()
             this, &MainWindow::onRelationshipAnalysisError);
 }
 
-// 🚀 NEW: 关系引擎信号处理
 void MainWindow::onRelationshipAdded(int fromSymbolId, int toSymbolId,
                                     /*SymbolRelationshipEngine::RelationType*/int type)
 {
@@ -630,10 +587,8 @@ void MainWindow::onRelationshipAdded(int fromSymbolId, int toSymbolId,
     Q_UNUSED(toSymbolId)
     Q_UNUSED(type)
 
-    // 🚀 关系添加后的处理
     CompletionManager::getInstance()->invalidateRelationshipCaches();
 
-    // 🚀 推迟刷新导航视图：符号分析后台持写锁时，主线程若立即 refreshCurrentView() 会读 sym_list 阻塞，导致界面卡在 2/30
     if (navigationManager) {
         if (!relationshipRefreshDeferTimer) {
             relationshipRefreshDeferTimer = new QTimer(this);
@@ -650,7 +605,6 @@ void MainWindow::onRelationshipAdded(int fromSymbolId, int toSymbolId,
 
 void MainWindow::onRelationshipsCleared()
 {
-    // 🚀 关系清除后的处理
     CompletionManager::getInstance()->invalidateRelationshipCaches();
 
     if (navigationManager) {
@@ -660,9 +614,7 @@ void MainWindow::onRelationshipsCleared()
 
 void MainWindow::onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound)
 {
-    // 🚀 刷新相关缓存
     CompletionManager::getInstance()->refreshRelationshipData();
-    // 🚀 更新状态栏信息
     if (statusBar()) {
         statusBar()->showMessage(
             QString("Smart analysis completed: %1 relationships in %2")

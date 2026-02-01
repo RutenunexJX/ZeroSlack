@@ -10,20 +10,16 @@
 #include <algorithm>
 
 /// 补全列表最大条数，避免单次传入过多导致模型排序与弹窗卡顿（性能优化）
-// 单例实例
 std::unique_ptr<CompletionManager> CompletionManager::instance = nullptr;
 
 CompletionManager::CompletionManager()
 {
-    // 预分配内存以提高性能
     keywordMatchCache.reserve(100);
     keywordScoreCache.reserve(100);
     symbolScoreCache.reserve(200);
     singleMatchCache.reserve(1000);
     singleScoreCache.reserve(1000);
     positionCache.reserve(500);
-
-    // 🚀 NEW: Reserve space for optimized caches
     allSymbolScoreCache.reserve(150);
     allSymbolMatchCache.reserve(150);
     precomputedCompletions.reserve(20);
@@ -42,21 +38,16 @@ CompletionManager* CompletionManager::getInstance()
     return instance.get();
 }
 
-// ===== 🚀 超高性能的符号匹配方法 =====
-
 QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const QString& prefix)
 {
     QString cacheKey = QString("all_symbols_%1").arg(prefix);
 
-    // 🚀 智能缓存检查
     if (allSymbolScoreCache.contains(cacheKey) && allSymbolsCacheValid) {
         return allSymbolScoreCache[cacheKey];
     }
 
-    // 🚀 确保所有符号缓存是最新的
     updateAllSymbolsCache();
 
-    // 🚀 使用预计算的符号名称列表进行快速过滤
     QVector<QPair<QString, int>> scoredMatches;
     scoredMatches.reserve(qMin(cachedAllSymbolNames.size(), 50));
 
@@ -67,7 +58,6 @@ QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const 
         }
     }
 
-    // 🚀 高效排序
     std::sort(scoredMatches.begin(), scoredMatches.end(),
               [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
                   if (a.second != b.second) {
@@ -76,17 +66,14 @@ QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const 
                   return a.first < b.first;
               });
 
-    // 🚀 限制结果数量以提高性能
     if (scoredMatches.size() > 20) {
         scoredMatches = scoredMatches.mid(0, 20);
     }
 
-    // 缓存结果
     allSymbolScoreCache[cacheKey] = scoredMatches;
     return scoredMatches;
 }
 
-// 🚀 智能符号匹配方法（使用索引优化）
 QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatches(
     sym_list::sym_type_e symbolType, const QString& prefix)
 {
@@ -97,14 +84,12 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
         return symbolScoreCache[cacheKey];
     }
 
-    // 🚀 使用高性能索引查找
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByType(symbolType);
 
     QVector<QPair<sym_list::SymbolInfo, int>> scoredMatches;
     scoredMatches.reserve(qMin(symbols.size(), 30));
 
-    // 🚀 优化的匹配逻辑
     for (const sym_list::SymbolInfo &symbol : qAsConst(symbols)) {
         int score = 0;
 
@@ -130,7 +115,6 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
         }
     }
 
-    // 🚀 高效排序
     std::sort(scoredMatches.begin(), scoredMatches.end(),
               [](const QPair<sym_list::SymbolInfo, int> &a, const QPair<sym_list::SymbolInfo, int> &b) {
                   if (a.second != b.second) {
@@ -139,7 +123,6 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
                   return a.first.symbolName < b.first.symbolName;
               });
 
-    // 限制结果数量
     if (scoredMatches.size() > 15) {
         scoredMatches = scoredMatches.mid(0, 15);
     }
@@ -148,56 +131,43 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
     return scoredMatches;
 }
 
-// 🚀 智能缓存更新（避免过度刷新）
 void CompletionManager::forceRefreshSymbolCaches()
 {
-    // 🚀 智能检查：避免不必要的刷新
     if (shouldSkipCacheRefresh()) {
         return;
     }
 
-    // 重置大小检测，强制更新
     lastSymbolDatabaseSize = -1;
     lastSymbolDatabaseHash.clear();
-
-    // 清除所有符号相关缓存
     invalidateSymbolCaches();
-
-    // 立即更新缓存
     updateSymbolCaches();
     updateAllSymbolsCache();
 
-    // 🚀 预计算常用补全
     if (smartCachingEnabled) {
         precomputeFrequentCompletions();
     }
 }
 
-// 🚀 更新所有符号缓存
 void CompletionManager::updateAllSymbolsCache()
 {
     if (allSymbolsCacheValid) return;
 
-    // 🚀 使用高性能方法获取所有唯一符号名称
     sym_list* symbolList = sym_list::getInstance();
     QSet<QString> uniqueNames = symbolList->getUniqueSymbolNames();
 
     cachedAllSymbolNames = uniqueNames.toList();
-    cachedAllSymbolNames.sort(); // 排序以提高查找效率
+    cachedAllSymbolNames.sort();
 
-    // 清空旧的匹配缓存
     allSymbolScoreCache.clear();
     allSymbolMatchCache.clear();
 
     allSymbolsCacheValid = true;
 }
 
-// 🚀 预计算常用补全
 void CompletionManager::precomputeFrequentCompletions()
 {
     sym_list* symbolList = sym_list::getInstance();
 
-    // 为每种符号类型预计算名称列表
     QList<sym_list::sym_type_e> commonTypes = {
         sym_list::sym_reg, sym_list::sym_wire, sym_list::sym_logic,
         sym_list::sym_module, sym_list::sym_task, sym_list::sym_function
@@ -208,7 +178,6 @@ void CompletionManager::precomputeFrequentCompletions()
         precomputedCompletions[symbolType] = names;
     }
 
-    // 预计算常用前缀的匹配结果
     QStringList commonPrefixes = {"c", "d", "e", "m", "r", "s", "t", "v", "w"};
 
     for (const QString& prefix : commonPrefixes) {
@@ -228,7 +197,6 @@ void CompletionManager::precomputeFrequentCompletions()
     precomputedDataValid = true;
 }
 
-// 🚀 智能判断是否应该跳过缓存刷新
 bool CompletionManager::shouldSkipCacheRefresh()
 {
     if (!smartCachingEnabled) return false;
@@ -237,7 +205,6 @@ bool CompletionManager::shouldSkipCacheRefresh()
     int currentSize = symbolList->getAllSymbols().size();
     QString currentHash = calculateSymbolDatabaseHash();
 
-    // 大小没有变化且内容哈希相同
     bool sizeUnchanged = (currentSize == lastSymbolDatabaseSize);
     bool contentUnchanged = (!lastSymbolDatabaseHash.isEmpty() && currentHash == lastSymbolDatabaseHash);
 
@@ -245,20 +212,17 @@ bool CompletionManager::shouldSkipCacheRefresh()
         return true;
     }
 
-    // 更新追踪变量
     lastSymbolDatabaseSize = currentSize;
     lastSymbolDatabaseHash = currentHash;
 
     return false;
 }
 
-// 🚀 计算符号数据库内容哈希
 QString CompletionManager::calculateSymbolDatabaseHash()
 {
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 使用符号数量和前几个符号名称生成轻量级哈希
     QString hashInput = QString::number(allSymbols.size());
 
     int sampleSize = qMin(10, allSymbols.size());
@@ -269,7 +233,6 @@ QString CompletionManager::calculateSymbolDatabaseHash()
     return QString::number(qHash(hashInput));
 }
 
-// 🚀 启用/禁用智能缓存
 void CompletionManager::enableSmartCaching(bool enabled)
 {
     smartCachingEnabled = enabled;
@@ -283,12 +246,10 @@ QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
 {
     QString cacheKey = QString("all_symbols_list_%1").arg(prefix);
 
-    // 检查简单字符串缓存
     if (allSymbolMatchCache.contains(cacheKey) && allSymbolsCacheValid) {
         return allSymbolMatchCache[cacheKey];
     }
 
-    // 🚀 尝试使用预计算的结果
     if (precomputedDataValid && prefix.length() == 1 && precomputedPrefixMatches.contains(prefix)) {
         QStringList result = precomputedPrefixMatches[prefix];
         if (result.size() > 15) {
@@ -299,22 +260,18 @@ QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
         return result;
     }
 
-    // 获取评分匹配
     QVector<QPair<QString, int>> scoredMatches = getScoredAllSymbolMatches(prefix);
 
-    // 提取字符串列表
     QStringList result;
     result.reserve(scoredMatches.size());
     for (const auto &match : qAsConst(scoredMatches)) {
         result.append(match.first);
     }
 
-    // 限制结果数量
     if (result.size() > 15) {
         result = result.mid(0, 15);
     }
 
-    // 缓存字符串结果
     allSymbolMatchCache[cacheKey] = result;
 
     return result;
@@ -322,7 +279,6 @@ QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
 
 QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolType, const QString& prefix)
 {
-    // 🚀 尝试使用预计算的结果
     if (precomputedDataValid && prefix.isEmpty() && precomputedCompletions.contains(symbolType)) {
         QStringList result = precomputedCompletions[symbolType];
         if (result.size() > 15) {
@@ -343,7 +299,6 @@ QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolT
         }
     }
 
-    // 限制结果数量
     if (result.size() > 15) {
         result = result.mid(0, 15);
     }
@@ -351,11 +306,8 @@ QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolT
     return result;
 }
 
-// ===== 缓存管理功能（优化版） =====
-
 void CompletionManager::invalidateAllCaches()
 {
-    // 🚀 现有的缓存清理（保持不变）
     keywordMatchCache.clear();
     keywordScoreCache.clear();
     symbolTypeCache.clear();
@@ -364,21 +316,17 @@ void CompletionManager::invalidateAllCaches()
     singleScoreCache.clear();
     positionCache.clear();
 
-    // 🚀 现有的新增缓存清理
     allSymbolScoreCache.clear();
     allSymbolMatchCache.clear();
     precomputedCompletions.clear();
     precomputedPrefixMatches.clear();
 
-    // 🚀 现有的关系缓存清理
     moduleChildrenCache.clear();
     clockDomainCache.clear();
     resetSignalCache.clear();
 
-    // 🚀 新增：命令模式缓存清理
     invalidateCommandModeCache();
 
-    // 🚀 重置状态标志（保持不变）
     allSymbolsCacheValid = false;
     precomputedDataValid = false;
 }
@@ -388,15 +336,12 @@ void CompletionManager::invalidateSymbolCaches()
     symbolTypeCache.clear();
     symbolScoreCache.clear();
 
-    // 清除所有符号相关缓存
     allSymbolScoreCache.clear();
     allSymbolMatchCache.clear();
     allSymbolsCacheValid = false;
 
-    // 🚀 新增：同时清理命令模式缓存
     invalidateCommandModeCache();
 
-    // 保留预计算数据，除非符号结构发生重大变化
     if (smartCachingEnabled) {
         sym_list* symbolList = sym_list::getInstance();
         int currentSize = symbolList->getAllSymbols().size();
@@ -418,14 +363,12 @@ void CompletionManager::updateSymbolCaches()
     sym_list* symbolList = sym_list::getInstance();
     int currentSize = symbolList->getAllSymbols().size();
 
-    // 🚀 智能更新检测
     bool shouldUpdate = (currentSize != lastSymbolDatabaseSize) || symbolTypeCache.isEmpty();
 
     if (shouldUpdate) {
         invalidateSymbolCaches();
         lastSymbolDatabaseSize = currentSize;
 
-        // 🚀 使用高性能索引方法填充缓存
         symbolTypeCache[sym_list::sym_reg] = symbolList->findSymbolsByType(sym_list::sym_reg);
         symbolTypeCache[sym_list::sym_wire] = symbolList->findSymbolsByType(sym_list::sym_wire);
         symbolTypeCache[sym_list::sym_logic] = symbolList->findSymbolsByType(sym_list::sym_logic);
@@ -433,12 +376,9 @@ void CompletionManager::updateSymbolCaches()
         symbolTypeCache[sym_list::sym_task] = symbolList->findSymbolsByType(sym_list::sym_task);
         symbolTypeCache[sym_list::sym_function] = symbolList->findSymbolsByType(sym_list::sym_function);
 
-        // 🚀 标记需要更新所有符号缓存
         allSymbolsCacheValid = false;
     }
 }
-
-// ===== 原有的核心匹配功能保持不变 =====
 
 bool CompletionManager::matchesAbbreviation(const QString &text, const QString &abbreviation)
 {
@@ -446,7 +386,6 @@ bool CompletionManager::matchesAbbreviation(const QString &text, const QString &
         return false;
     }
 
-    // 检查缓存
     QString cacheKey = buildSingleMatchKey(text, abbreviation);
     if (singleMatchCache.contains(cacheKey)) {
         return singleMatchCache[cacheKey];
@@ -455,13 +394,11 @@ bool CompletionManager::matchesAbbreviation(const QString &text, const QString &
     const QString lowerText = text.toLower();
     const QString lowerAbbrev = abbreviation.toLower();
 
-    // 前缀匹配优先
     if (lowerText.startsWith(lowerAbbrev)) {
         singleMatchCache[cacheKey] = true;
         return true;
     }
 
-    // 缩写匹配（传入原始文本以支持驼峰命名检测）
     bool result = isValidAbbreviationMatch(text, abbreviation);
     singleMatchCache[cacheKey] = result;
     return result;
@@ -473,7 +410,6 @@ int CompletionManager::calculateMatchScore(const QString &text, const QString &a
         return 0;
     }
 
-    // 检查缓存
     QString cacheKey = buildSingleMatchKey(text, abbreviation);
     if (singleScoreCache.contains(cacheKey)) {
         return singleScoreCache[cacheKey];
@@ -484,30 +420,24 @@ int CompletionManager::calculateMatchScore(const QString &text, const QString &a
 
     int score = 0;
 
-    // 精确匹配
     if (lowerText == lowerAbbrev) {
         score = 1000;
     }
-    // 前缀匹配
     else if (lowerText.startsWith(lowerAbbrev)) {
         score = 800 + (100 - abbreviation.length());
     }
-    // 包含匹配
     else if (lowerText.contains(lowerAbbrev)) {
         score = 400 + (100 - text.length());
     }
-    // 缩写匹配（传入原始文本以支持驼峰命名检测）
     else if (isValidAbbreviationMatch(text, abbreviation)) {
         QList<int> positions = findAbbreviationPositions(text, abbreviation);
         score = 500;
 
-        // 单词边界奖励
         int wordBoundaryMatches = 0;
         for (int pos : qAsConst(positions)) {
             if (pos == 0 || lowerText[pos - 1] == '_' || lowerText[pos - 1] == ' ') {
                 wordBoundaryMatches++;
             }
-            // 驼峰命名边界检查
             if (pos > 0 && pos < lowerText.length()) {
                 QChar prevChar = text[pos - 1];
                 QChar currChar = text[pos];
@@ -518,9 +448,8 @@ int CompletionManager::calculateMatchScore(const QString &text, const QString &a
         }
 
         score += wordBoundaryMatches * 50;
-        score -= text.length(); // 较短文本的奖励
+        score -= text.length();
 
-        // 连续字符奖励
         for (int i = 1; i < positions.size(); i++) {
             if (positions[i] == positions[i-1] + 1) {
                 score += 10;
@@ -528,12 +457,9 @@ int CompletionManager::calculateMatchScore(const QString &text, const QString &a
         }
     }
 
-    // 缓存结果
     singleScoreCache[cacheKey] = score;
     return score;
 }
-
-// ===== 辅助方法 =====
 
 bool CompletionManager::isValidAbbreviationMatch(const QString &text, const QString &abbreviation)
 {
@@ -568,7 +494,6 @@ bool CompletionManager::isValidAbbreviationMatch(const QString &text, const QStr
                 }
             }
 
-            // 如果是分隔符，跳过分隔符并检查下一个字符是否匹配
             if (isSeparator && textPos + 1 < text.length()) {
                 QChar nextChar = lowerText[textPos + 1];
                 if (abbrevChar == nextChar) {
@@ -609,7 +534,6 @@ QList<int> CompletionManager::findAbbreviationPositions(const QString &text, con
             positions.append(textPos);
             abbrevPos++;
         } else {
-            // 处理分隔符：跳过分隔符字符
             bool isSeparator = (text[textPos] == '_' || text[textPos] == ' ');
             if (textPos > 0) {
                 QChar prevChar = text[textPos - 1];
@@ -686,27 +610,22 @@ QStringList CompletionManager::getKeywordCompletions(const QString& prefix)
 {
     QString cacheKey = buildKeywordCacheKey(prefix);
 
-    // 检查简单字符串缓存
     if (keywordMatchCache.contains(cacheKey)) {
         return keywordMatchCache[cacheKey];
     }
 
-    // 获取评分匹配
     QVector<QPair<QString, int>> scoredMatches = getScoredKeywordMatches(prefix);
 
-    // 提取字符串列表
     QStringList result;
     result.reserve(scoredMatches.size());
     for (const auto &match : qAsConst(scoredMatches)) {
         result.append(match.first);
     }
 
-    // 限制结果数量
     if (result.size() > 10) {
         result = result.mid(0, 10);
     }
 
-    // 缓存字符串结果
     keywordMatchCache[cacheKey] = result;
 
     return result;
@@ -716,7 +635,6 @@ QStringList CompletionManager::getAbbreviationMatches(const QStringList &candida
 {
     QVector<QPair<QString, int>> scoredMatches = getScoredKeywordMatches(abbreviation);
 
-    // 只返回匹配的字符串（保持与原始接口兼容）
     QStringList result;
     result.reserve(scoredMatches.size());
 
@@ -741,13 +659,12 @@ QVector<QPair<QString, int>> CompletionManager::calculateScoredMatches(const QSt
         }
     }
 
-    // 按分数排序
     std::sort(scoredMatches.begin(), scoredMatches.end(),
               [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
                   if (a.second != b.second) {
                       return a.second > b.second;
                   }
-                  return a.first < b.first; // 相同分数时按字母顺序
+                  return a.first < b.first;
               });
 
     return scoredMatches;
@@ -799,7 +716,6 @@ void CompletionManager::setRelationshipEngine(SymbolRelationshipEngine* engine)
             engine, sym_list::getInstance(), nullptr);
     }
 
-    // 标记关系缓存需要更新
     relationshipCacheValid = false;
 }
 
@@ -815,34 +731,28 @@ QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QStrin
     QVector<QPair<QString, int>> results;
 
     if (!relationshipEngine) {
-        // 降级到传统补全
         return getScoredAllSymbolMatches(prefix);
     }
 
-    // 🚀 确定当前上下文
     QString currentModule = getCurrentModule(fileName, cursorPosition);
-    QString context = "general"; // 可以进一步细化上下文类型
+    QString context = "general";
 
-    // 🚀 获取上下文感知的补全
     QStringList contextCompletions = getContextAwareCompletions(prefix, currentModule, context);
 
     results.reserve(contextCompletions.size());
 
-    // 🚀 为每个补全计算智能评分
     for (const QString& completion : qAsConst(contextCompletions)) {
         int baseScore = calculateMatchScore(completion, prefix);
         int contextScore = calculateContextScore(completion, context);
         int relationshipScore = calculateRelationshipScore(completion, currentModule);
         int scopeScore = calculateScopeScore(completion, currentModule);
 
-        // 🚀 综合评分算法
         int finalScore = baseScore * 0.4 + contextScore * 0.2 +
                         relationshipScore * 0.3 + scopeScore * 0.1;
 
         results.append(qMakePair(completion, finalScore));
     }
 
-    // 🚀 按综合评分排序
     std::sort(results.begin(), results.end(),
               [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
                   if (a.second != b.second) {
@@ -851,7 +761,6 @@ QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QStrin
                   return a.first < b.first;
               });
 
-    // 限制结果数量
     if (results.size() > 20) {
         results = results.mid(0, 20);
     }
@@ -866,13 +775,12 @@ QString CompletionManager::extractStructTypeFromContext(const QString &context)
     if (m.hasMatch()) {
         QString varName = m.captured(1);
 
-        // 查找该变量的类型
         sym_list* symList = sym_list::getInstance();
         for (const auto &symbol : symList->getAllSymbols()) {
             if (symbol.symbolName == varName &&
                 (symbol.symbolType == sym_list::sym_packed_struct_var ||
                  symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
-                return symbol.moduleScope;  // 返回结构体类型名称
+                return symbol.moduleScope;
             }
         }
     }
@@ -890,13 +798,11 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
         QString structVarName = extractStructVariableFromContext(context);
         if (!structVarName.isEmpty()) {
 
-            // 获取结构体变量的类型
             QString structTypeName = getStructTypeForVariable(structVarName, currentModule);
             if (!structTypeName.isEmpty()) {
                 QStringList members = getStructMemberCompletions(prefix, structTypeName);
                 results.append(members);
 
-                // 结构体成员优先级最高，直接返回
                 if (!results.isEmpty()) {
                     return results;
                 }
@@ -904,16 +810,12 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
         }
     }
 
-    // ========================================================================
-    // 2. 枚举值补全 - 检测赋值上下文
-    // ========================================================================
     if (context.contains("=") || context.contains("assign") ||
         context.contains("case") || context.contains("if")) {
 
         QString enumVarName = extractEnumVariableFromContext(context);
         if (!enumVarName.isEmpty()) {
 
-            // 获取枚举变量的类型
             QString enumTypeName = getEnumTypeForVariable(enumVarName, currentModule);
             if (!enumTypeName.isEmpty()) {
                 QStringList enumValues = getEnumValueCompletions(prefix, enumTypeName);
@@ -921,15 +823,11 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
             }
         }
 
-        // 即使没有找到特定枚举变量，也显示所有匹配的枚举值
         if (results.isEmpty()) {
             results.append(getEnumValueCompletions(prefix, ""));
         }
     }
 
-    // ========================================================================
-    // 3. 模块端口补全 - 检测模块实例化上下文
-    // ========================================================================
     if (context.contains("(") && (context.contains("module") ||
         context.contains("instantiation"))) {
 
@@ -941,9 +839,6 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
         }
     }
 
-    // ========================================================================
-    // 4. 时钟域相关补全
-    // ========================================================================
     if (context.contains("clk", Qt::CaseInsensitive) ||
         context.contains("clock", Qt::CaseInsensitive) ||
         context.contains("always_ff")) {
@@ -951,9 +846,6 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
         results.append(clockSignals);
     }
 
-    // ========================================================================
-    // 5. 复位信号相关补全
-    // ========================================================================
     if (context.contains("rst", Qt::CaseInsensitive) ||
         context.contains("reset", Qt::CaseInsensitive) ||
         context.contains("negedge") || context.contains("posedge")) {
@@ -962,24 +854,16 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
         results.append(resetSignals);
     }
 
-    // ========================================================================
-    // 6. 基于当前模块的上下文补全
-    // ========================================================================
     if (!currentModule.isEmpty()) {
-        // 优先显示当前模块内的符号
         QStringList moduleSymbols = getModuleChildrenCompletions(currentModule, prefix);
         results.append(moduleSymbols);
 
-        // 如果关系引擎可用，获取相关符号
         if (relationshipEngine) {
             QStringList relatedSymbols = getRelatedSymbolCompletions(currentModule, prefix);
             results.append(relatedSymbols);
         }
     }
 
-    // ========================================================================
-    // 7. 任务和函数补全
-    // ========================================================================
     if (context.contains("task") || context.contains("function") ||
         context.contains("call")) {
 
@@ -987,38 +871,25 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
         results.append(taskFunctions);
     }
 
-    // ========================================================================
-    // 8. 类型相关补全 - 根据上下文类型过滤
-    // ========================================================================
     if (context.contains("typedef") || context.contains("type")) {
-        // 类型定义上下文
         results.append(getGlobalSymbolsByType(sym_list::sym_typedef, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_enum, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_packed_struct, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_unpacked_struct, prefix));
     }
 
-    // ========================================================================
-    // 9. 变量声明上下文
-    // ========================================================================
     if (context.contains("reg") || context.contains("wire") ||
         context.contains("logic") || context.contains("var")) {
 
-        // 在变量声明上下文中，显示类型信息
         results.append(getSVKeywordCompletions(prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_enum, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_packed_struct, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_unpacked_struct, prefix));
     }
 
-    // ========================================================================
-    // 10. 默认补全 - 如果没有特定上下文
-    // ========================================================================
     if (results.isEmpty() || context == "general" || context.isEmpty()) {
 
-        // 显示最相关的符号类型
         if (!currentModule.isEmpty()) {
-            // 模块内部符号
             results.append(getModuleInternalVariablesByType(currentModule,
                           sym_list::sym_reg, prefix));
             results.append(getModuleInternalVariablesByType(currentModule,
@@ -1027,36 +898,26 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
                           sym_list::sym_logic, prefix));
         }
 
-        // 全局符号
         results.append(getGlobalSymbolsByType(sym_list::sym_module, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_enum, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_packed_struct, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_task, prefix));
         results.append(getGlobalSymbolsByType(sym_list::sym_function, prefix));
 
-        // 系统关键字
         results.append(getSVKeywordCompletions(prefix));
 
     }
 
-    // ========================================================================
-    // 11. 结果后处理
-    // ========================================================================
-
-    // 去重并排序
     results.removeDuplicates();
 
-    // 按匹配质量排序
     QVector<QPair<QString, int>> scoredResults;
     for (const QString& result : results) {
         int score = calculateMatchScore(result, prefix);
 
-        // 上下文加分
         if (!context.isEmpty() && context != "general") {
             score += calculateContextScore(result, context);
         }
 
-        // 当前模块加分
         if (!currentModule.isEmpty()) {
             score += calculateScopeScore(result, currentModule);
         }
@@ -1064,22 +925,19 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
         scoredResults.append(qMakePair(result, score));
     }
 
-    // 排序
     std::sort(scoredResults.begin(), scoredResults.end(),
               [](const QPair<QString, int>& a, const QPair<QString, int>& b) {
                   if (a.second != b.second) {
-                      return a.second > b.second;  // 按分数降序
+                      return a.second > b.second;
                   }
-                  return a.first < b.first;        // 按字母序升序
+                  return a.first < b.first;
               });
 
-    // 提取排序后的结果
     QStringList finalResults;
     for (const auto& pair : scoredResults) {
         finalResults.append(pair.first);
     }
 
-    // 限制结果数量
     if (finalResults.size() > 50) {
         finalResults = finalResults.mid(0, 50);
     }
@@ -1087,8 +945,6 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
     return finalResults;
 }
 
-
-// 从上下文中提取结构体变量名
 QString CompletionManager::extractStructVariableFromContext(const QString& context)
 {
     static const QRegularExpression dotPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\.$");
@@ -1106,7 +962,6 @@ QString CompletionManager::extractStructVariableFromContext(const QString& conte
     return "";
 }
 
-// 从上下文中提取枚举变量名
 QString CompletionManager::extractEnumVariableFromContext(const QString& context)
 {
     static const QRegularExpression assignPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*=");
@@ -1130,7 +985,6 @@ QString CompletionManager::extractEnumVariableFromContext(const QString& context
     return "";
 }
 
-// 从上下文中提取模块类型名
 QString CompletionManager::extractModuleTypeFromContext(const QString& context)
 {
     static const QRegularExpression instPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(");
@@ -1142,13 +996,11 @@ QString CompletionManager::extractModuleTypeFromContext(const QString& context)
     return "";
 }
 
-// 获取变量的结构体类型
 QString CompletionManager::getStructTypeForVariable(const QString& varName,
                                                    const QString& currentModule)
 {
     sym_list* symList = sym_list::getInstance();
 
-    // 首先在当前模块中查找
     if (!currentModule.isEmpty()) {
         QList<sym_list::SymbolInfo> moduleSymbols =
             getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct_var, "");
@@ -1157,12 +1009,11 @@ QString CompletionManager::getStructTypeForVariable(const QString& varName,
 
         for (const auto& symbol : moduleSymbols) {
             if (symbol.symbolName == varName) {
-                return symbol.moduleScope;  // moduleScope存储了结构体类型名
+                return symbol.moduleScope;
             }
         }
     }
 
-    // 在全局范围查找
     for (const auto& symbol : symList->getAllSymbols()) {
         if (symbol.symbolName == varName &&
             (symbol.symbolType == sym_list::sym_packed_struct_var ||
@@ -1188,25 +1039,22 @@ bool CompletionManager::tryParseStructMemberContext(const QString &line,
     return false;
 }
 
-// 获取变量的枚举类型
 QString CompletionManager::getEnumTypeForVariable(const QString& varName,
                                                  const QString& currentModule)
 {
     sym_list* symList = sym_list::getInstance();
 
-    // 首先在当前模块中查找
     if (!currentModule.isEmpty()) {
         QList<sym_list::SymbolInfo> moduleSymbols =
             getModuleInternalSymbolsByType(currentModule, sym_list::sym_enum_var, "");
 
         for (const auto& symbol : moduleSymbols) {
             if (symbol.symbolName == varName) {
-                return symbol.moduleScope;  // moduleScope存储了枚举类型名
+                return symbol.moduleScope;
             }
         }
     }
 
-    // 在全局范围查找
     for (const auto& symbol : symList->getAllSymbols()) {
         if (symbol.symbolName == varName &&
             symbol.symbolType == sym_list::sym_enum_var) {
@@ -1217,7 +1065,6 @@ QString CompletionManager::getEnumTypeForVariable(const QString& varName,
     return "";
 }
 
-// 获取模块端口补全
 QStringList CompletionManager::getModulePortCompletions(const QString& prefix,
                                                        const QString& moduleTypeName)
 {
@@ -1227,15 +1074,12 @@ QStringList CompletionManager::getModulePortCompletions(const QString& prefix,
         return results;
     }
 
-    // 查找模块的端口信息
     sym_list* symList = sym_list::getInstance();
 
-    // 找到模块定义
     for (const auto& symbol : symList->getAllSymbols()) {
         if (symbol.symbolType == sym_list::sym_module &&
             symbol.symbolName == moduleTypeName) {
 
-            // 获取该模块内部的端口信息
             QStringList ports = getModuleInternalVariablesByType(moduleTypeName,
                                sym_list::sym_wire, prefix);
             ports.append(getModuleInternalVariablesByType(moduleTypeName,
@@ -1280,18 +1124,8 @@ QStringList CompletionManager::getSVKeywordCompletions(const QString& prefix)
     return results;
 }
 
-
-
-
-
-
-
-
-
-
 QStringList CompletionManager::getBasicSymbolCompletions(const QString& prefix)
 {
-    // 🚀 只返回匹配前缀的符号，但限制数量
     QVector<QPair<QString, int>> scoredMatches = getScoredAllSymbolMatches(prefix);
 
     QStringList result;
@@ -1305,14 +1139,12 @@ QStringList CompletionManager::getBasicSymbolCompletions(const QString& prefix)
     return result;
 }
 
-// 🚀 NEW: 获取模块子符号补全
 QStringList CompletionManager::getModuleChildrenCompletions(const QString& moduleName, const QString& prefix)
 {
     if (!relationshipEngine || moduleName.isEmpty()) {
         return QStringList();
     }
 
-    // 检查缓存
     QString cacheKey = QString("module_children_%1_%2").arg(moduleName, prefix);
     if (relationshipCacheValid && moduleChildrenCache.contains(cacheKey)) {
         return moduleChildrenCache[cacheKey];
@@ -1320,13 +1152,10 @@ QStringList CompletionManager::getModuleChildrenCompletions(const QString& modul
 
     QStringList results;
 
-    // 🚀 查找模块ID
     int moduleId = findSymbolIdByName(moduleName);
     if (moduleId != -1) {
-        // 🚀 获取模块包含的所有符号ID
         QList<int> childrenIds = relationshipEngine->getModuleChildren(moduleId);
 
-        // 🚀 转换为符号名称并过滤
         QStringList childrenNames = getSymbolNamesFromIds(childrenIds);
 
         for (const QString& childName : childrenNames) {
@@ -1336,13 +1165,11 @@ QStringList CompletionManager::getModuleChildrenCompletions(const QString& modul
         }
     }
 
-    // 缓存结果
     moduleChildrenCache[cacheKey] = results;
 
     return results;
 }
 
-// 🚀 NEW: 获取相关符号补全
 QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbolName, const QString& prefix)
 {
     if (!relationshipEngine || symbolName.isEmpty()) {
@@ -1358,16 +1185,13 @@ QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbol
 
     int symbolId = findSymbolIdByName(symbolName);
     if (symbolId != -1) {
-        // 🚀 获取各种关系的符号
         QList<int> referencedIds = relationshipEngine->getSymbolDependencies(symbolId);
         QList<int> referencingIds = relationshipEngine->getSymbolReferences(symbolId);
 
-        // 🚀 合并所有相关符号
         QSet<int> allRelatedIds;
         for (int id : referencedIds) allRelatedIds.insert(id);
         for (int id : referencingIds) allRelatedIds.insert(id);
 
-        // 🚀 转换为名称并过滤
         QStringList relatedNames = getSymbolNamesFromIds(allRelatedIds.toList());
 
         for (const QString& relatedName : relatedNames) {
@@ -1381,7 +1205,6 @@ QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbol
     return results;
 }
 
-// 🚀 NEW: 获取符号引用补全
 QStringList CompletionManager::getSymbolReferencesCompletions(const QString& symbolName, const QString& prefix)
 {
     if (!relationshipEngine || symbolName.isEmpty()) {
@@ -1405,7 +1228,6 @@ QStringList CompletionManager::getSymbolReferencesCompletions(const QString& sym
     return results;
 }
 
-// 🚀 NEW: 获取时钟域补全
 QStringList CompletionManager::getClockDomainCompletions(const QString& prefix)
 {
     if (!relationshipEngine) {
@@ -1419,12 +1241,10 @@ QStringList CompletionManager::getClockDomainCompletions(const QString& prefix)
 
     QStringList results;
 
-    // 🚀 查找所有时钟关系
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        // 🚀 检查是否有时钟关系
         QList<int> clockedModules = relationshipEngine->getRelatedSymbols(
             symbol.symbolId, SymbolRelationshipEngine::CLOCKS, true);
 
@@ -1440,7 +1260,6 @@ QStringList CompletionManager::getClockDomainCompletions(const QString& prefix)
     return results;
 }
 
-// 🚀 NEW: 获取复位信号补全
 QStringList CompletionManager::getResetSignalCompletions(const QString& prefix)
 {
     if (!relationshipEngine) {
@@ -1458,7 +1277,6 @@ QStringList CompletionManager::getResetSignalCompletions(const QString& prefix)
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        // 🚀 检查是否有复位关系
         QList<int> resetModules = relationshipEngine->getRelatedSymbols(
             symbol.symbolId, SymbolRelationshipEngine::RESETS, true);
 
@@ -1474,7 +1292,6 @@ QStringList CompletionManager::getResetSignalCompletions(const QString& prefix)
     return results;
 }
 
-// 🚀 NEW: 获取作用域内变量补全
 QStringList CompletionManager::getVariableCompletionsInScope(const QString& moduleName,
                                                            sym_list::sym_type_e variableType,
                                                            const QString& prefix)
@@ -1485,7 +1302,6 @@ QStringList CompletionManager::getVariableCompletionsInScope(const QString& modu
         return getSymbolCompletions(variableType, prefix);
     }
 
-    // 🚀 获取模块内指定类型的变量
     QStringList moduleChildren = getModuleChildrenCompletions(moduleName, prefix);
 
     sym_list* symbolList = sym_list::getInstance();
@@ -1502,7 +1318,6 @@ QStringList CompletionManager::getVariableCompletionsInScope(const QString& modu
     return results;
 }
 
-// 🚀 NEW: 获取Task/Function补全
 QStringList CompletionManager::getTaskFunctionCompletions(const QString& prefix)
 {
     QStringList results;
@@ -1516,13 +1331,11 @@ QStringList CompletionManager::getTaskFunctionCompletions(const QString& prefix)
     return results;
 }
 
-// 🚀 NEW: 获取可实例化模块补全
 QStringList CompletionManager::getInstantiableModules(const QString& prefix)
 {
     return getSymbolCompletions(sym_list::sym_module, prefix);
 }
 
-// 🚀 NEW: 关系缓存管理
 void CompletionManager::invalidateRelationshipCaches()
 {
     moduleChildrenCache.clear();
@@ -1541,8 +1354,6 @@ void CompletionManager::refreshRelationshipData()
     }
 }
 
-// 🚀 NEW: 辅助方法实现
-
 QString CompletionManager::getCurrentModule(const QString& fileName, int cursorPosition)
 {
     if (fileName.isEmpty() || cursorPosition < 0) {
@@ -1552,7 +1363,6 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(fileName);
 
-    // 🚀 过滤出模块符号并按位置排序
     QList<sym_list::SymbolInfo> modules;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
         if (symbol.symbolType == sym_list::sym_module) {
@@ -1564,7 +1374,6 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
         return QString();
     }
 
-    // 按开始位置排序
     std::sort(modules.begin(), modules.end(),
               [](const sym_list::SymbolInfo& a, const sym_list::SymbolInfo& b) {
                   return a.position < b.position;
@@ -1667,7 +1476,6 @@ void CompletionManager::updateRelationshipCaches()
     if (relationshipCacheValid || !relationshipEngine)
         return;
 
-    // 🚀 构建符号到模块的映射缓存
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
@@ -1683,9 +1491,7 @@ void CompletionManager::updateRelationshipCaches()
 QStringList CompletionManager::filterCompletionsByContext(const QStringList& completions,
                                                         const QString& context)
 {
-    // 🚀 根据上下文过滤补全建议
     if (context == "assignment") {
-        // 在赋值上下文中，优先显示变量
         QStringList filtered;
         sym_list* symbolList = sym_list::getInstance();
 
@@ -1704,12 +1510,11 @@ QStringList CompletionManager::filterCompletionsByContext(const QStringList& com
         return filtered;
     }
 
-    return completions; // 默认不过滤
+    return completions;
 }
 
 int CompletionManager::calculateContextScore(const QString& symbol, const QString& context)
 {
-    // 🚀 根据上下文计算额外评分
     if (context == "clock" && symbol.contains("clk", Qt::CaseInsensitive)) {
         return 50;
     }
@@ -1727,24 +1532,22 @@ int CompletionManager::calculateRelationshipScore(const QString& symbol, const Q
         return 0;
     }
 
-    // 🚀 如果符号与当前上下文有关系，给予额外评分
     int symbolId = findSymbolIdByName(symbol);
     int contextId = findSymbolIdByName(currentContext);
 
     if (symbolId != -1 && contextId != -1) {
-        // 检查各种关系类型
         if (relationshipEngine->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CONTAINS)) {
-            return 40; // 包含关系评分最高
+            return 40;
         }
 
         if (relationshipEngine->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::REFERENCES) ||
             relationshipEngine->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::REFERENCES)) {
-            return 30; // 引用关系评分中等
+            return 30;
         }
 
         if (relationshipEngine->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::CALLS) ||
             relationshipEngine->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CALLS)) {
-            return 25; // 调用关系评分
+            return 25;
         }
     }
 
@@ -1757,7 +1560,6 @@ int CompletionManager::calculateScopeScore(const QString& symbol, const QString&
         return 0;
     }
 
-    // 🚀 如果符号在当前模块作用域内，给予额外评分
     if (symbolToModuleCache.contains(symbol) &&
         symbolToModuleCache[symbol] == currentModule) {
         return 20;
@@ -1768,8 +1570,6 @@ int CompletionManager::calculateScopeScore(const QString& symbol, const QString&
 
 int CompletionManager::calculateUsageFrequencyScore(const QString& symbol)
 {
-    // 🚀 TODO: 实现基于使用频率的评分
-    // 这需要统计符号的使用频率历史数据
     Q_UNUSED(symbol)
     return 0;
 }
@@ -1785,7 +1585,6 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        // 检查是否属于指定模块且为内部变量类型
         if (symbol.moduleScope == moduleName &&
             isInternalVariableType(symbol.symbolType)) {
 
@@ -1794,7 +1593,6 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
         }
     }
 
-    // 🚀 方法2：如果 moduleScope 字段为空，使用关系引擎
     if (results.isEmpty() && relationshipEngine) {
         int moduleId = findSymbolIdByName(moduleName);
         if (moduleId != -1) {
@@ -1814,7 +1612,6 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
     return results;
 }
 
-// 🚀 判断是否为内部变量类型
 bool CompletionManager::isInternalVariableType(sym_list::sym_type_e symbolType)
 {
     return symbolType == sym_list::sym_reg ||
@@ -1829,7 +1626,6 @@ QStringList CompletionManager::getGlobalSymbolCompletions(const QString& prefix)
     QStringList results;
     sym_list* symbolList = sym_list::getInstance();
 
-    // 🚀 只返回模块声明、任务、函数等全局符号
     QList<sym_list::sym_type_e> globalTypes = {
         sym_list::sym_module,
         sym_list::sym_task,
@@ -1862,15 +1658,12 @@ QStringList CompletionManager::getModuleInternalVariablesByType(const QString& m
         return results;
     }
 
-    // 🔧 FIX: 强化过滤逻辑，添加额外验证
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
     int matchedCount = 0;
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        // 严格的过滤条件
         bool isCorrectModule = (symbol.moduleScope == moduleName);
         bool isCorrectType = (symbol.symbolType == symbolType);
-        // 🚀 使用模糊匹配功能（支持前缀匹配、包含匹配和缩写匹配）
         bool matchesPrefix = (prefix.isEmpty() ||
                              matchesAbbreviation(symbol.symbolName, prefix));
 
@@ -1990,7 +1783,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
             }
 
             if (isGlobalSymbol) {
-                // 🚀 使用模糊匹配功能（支持前缀匹配、包含匹配和缩写匹配）
                 if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
                     results.append(symbol.symbolName);
                     foundCount++;
@@ -1999,7 +1791,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
         }
     }
 
-    // 去重并排序
     results.removeDuplicates();
     results.sort(Qt::CaseInsensitive);
 
@@ -2031,6 +1822,7 @@ QString CompletionManager::getSymbolTypeName(sym_list::sym_type_e symbolType)
         case sym_list::sym_always: return "always";
         case sym_list::sym_always_ff: return "always_ff";
         case sym_list::sym_always_comb: return "always_comb";
+        case sym_list::sym_always_latch: return "always_latch";
         case sym_list::sym_assign: return "assign";
         case sym_list::sym_xilinx_constraint: return "xilinx_constraint";
         case sym_list::sym_package: return "package";
@@ -2042,7 +1834,6 @@ QString CompletionManager::getSymbolTypeName(sym_list::sym_type_e symbolType)
 bool CompletionManager::isSymbolTypeMatchCommand(sym_list::sym_type_e symbolType,
                                                 sym_list::sym_type_e commandType)
 {
-    // 🚀 精确匹配：命令类型必须与符号类型完全一致
     return symbolType == commandType;
 }
 
@@ -2056,6 +1847,9 @@ QString CompletionManager::getSymbolTypeString(sym_list::sym_type_e symbolType)
     case sym_list::sym_task:       return "task";
     case sym_list::sym_function:   return "function";
     case sym_list::sym_always:     return "always";
+    case sym_list::sym_always_ff:  return "always_ff";
+    case sym_list::sym_always_comb: return "always_comb";
+    case sym_list::sym_always_latch: return "always_latch";
     case sym_list::sym_assign:     return "assign";
     case sym_list::sym_typedef:    return "typedef";
     default:                       return QString("unknown_%1").arg(static_cast<int>(symbolType));
@@ -2081,10 +1875,8 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     QList<sym_list::SymbolInfo> results;
     sym_list* symbolList = sym_list::getInstance();
 
-    // 🚀 直接搜索并返回 SymbolInfo，避免字符串转换
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 找到模块符号以获取模块的行范围（用于严格边界检查）
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
     for (const sym_list::SymbolInfo& sym : allSymbols) {
@@ -2095,7 +1887,6 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
         }
     }
 
-    // 确定当前模块的结束行（下一模块起始行作为独占上界），防止多模块同文件时符号泄漏
     int moduleEndLineExclusive = INT_MAX;
     if (foundModule) {
         QList<sym_list::SymbolInfo> fileModules;
@@ -2117,11 +1908,9 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     }
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        // 过滤条件
         bool isCorrectType = isSymbolTypeMatchCommand(symbol.symbolType, symbolType);
         bool isCorrectModule = false;
 
-        // 对于struct类型：与struct变量一致，按同文件且行范围在 [moduleStartLine, moduleEndLine) 内统计，保证状态栏计数稳定（不依赖关系引擎缓存）
         if (symbolType == sym_list::sym_packed_struct ||
             symbolType == sym_list::sym_unpacked_struct) {
             if (foundModule && symbol.fileName == moduleSymbol.fileName &&
@@ -2130,7 +1919,6 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
                 isCorrectModule = true;
             }
         }
-        // 对于struct变量：同文件且严格在 [moduleStartLine, moduleEndLine) 之间，防止跨模块泄漏
         else if (symbolType == sym_list::sym_packed_struct_var ||
                  symbolType == sym_list::sym_unpacked_struct_var) {
             if (foundModule && symbol.fileName == moduleSymbol.fileName &&
@@ -2139,19 +1927,16 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
                 isCorrectModule = true;
             }
         } else {
-            // 对于其他类型，使用moduleScope判断
             isCorrectModule = (symbol.moduleScope == moduleName);
         }
 
         if (isCorrectModule && isCorrectType) {
-            // 使用模糊匹配功能（支持前缀匹配、包含匹配和缩写匹配）
             if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
                 results.append(symbol);
             }
         }
     }
 
-    // 🚀 仅当调用方允许时使用关系引擎 fallback（状态栏计数传 false，避免把全局 struct 算进模块数）
     if (useRelationshipFallback && results.isEmpty() && relationshipEngine) {
         int moduleId = findSymbolIdByName(moduleName);
         if (moduleId != -1) {
@@ -2366,7 +2151,6 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
     return results;
 }
 
-// 获取枚举值补全
 QStringList CompletionManager::getEnumValueCompletions(const QString& prefix,
                                                       const QString& enumTypeName)
 {

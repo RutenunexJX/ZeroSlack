@@ -60,13 +60,16 @@ QSet<QString> SVSymbolParser::structuralKeywords()
                << QLatin1String("input") << QLatin1String("output") << QLatin1String("inout") << QLatin1String("ref")
                << QLatin1String("reg") << QLatin1String("wire") << QLatin1String("logic")
                << QLatin1String("begin") << QLatin1String("end")
-               << QLatin1String("typedef") << QLatin1String("struct") << QLatin1String("union") << QLatin1String("enum");
+               << QLatin1String("typedef") << QLatin1String("struct") << QLatin1String("union") << QLatin1String("enum")
+               << QLatin1String("always") << QLatin1String("always_ff") << QLatin1String("always_comb") << QLatin1String("always_latch")
+               << QLatin1String("assign");
     return s_keywords;
 }
 
 void SVSymbolParser::tokenize()
 {
     m_tokens.clear();
+    m_comments.clear();
     QStringList lines = m_content.split(QLatin1Char('\n'));
     int lexerState = 0;
     for (int lineIdx = 0; lineIdx < lines.size(); ++lineIdx) {
@@ -77,8 +80,19 @@ void SVSymbolParser::tokenize()
             Token t = lexer.nextToken();
             lexerState = lexer.getState();
             if (t.type == TokenType::EOF_SYMBOL) break;
-            if (t.type == TokenType::Whitespace || t.type == TokenType::Comment)
+            if (t.type == TokenType::Whitespace)
                 continue;
+            if (t.type == TokenType::Comment) {
+                sym_list::CommentRegion c;
+                c.startPos = m_lineStarts.value(lineIdx, 0) + t.offset;
+                c.endPos = c.startPos + t.length;
+                c.startLine = lineIdx;
+                c.startColumn = t.offset;
+                c.endLine = lineIdx;
+                c.endColumn = t.offset + t.length;
+                m_comments.append(c);
+                continue;
+            }
             SVToken st;
             st.token = t;
             st.line = lineIdx;
@@ -86,6 +100,13 @@ void SVSymbolParser::tokenize()
             m_tokens.append(st);
         }
     }
+}
+
+QList<sym_list::CommentRegion> SVSymbolParser::takeComments()
+{
+    QList<sym_list::CommentRegion> out = m_comments;
+    m_comments.clear();
+    return out;
 }
 
 void SVSymbolParser::advance()
@@ -326,7 +347,7 @@ QString SVSymbolParser::parseEnum(const QString &typeName)
     return resultName;
 }
 
-void SVSymbolParser::parseStruct(const QString &typeName, bool isPacked)
+void SVSymbolParser::parseStruct(const QString &typeName, bool isPacked, bool trailingIsInlineVar)
 {
     const SVToken *t0 = peek();
     if (t0 && tokenTextAt(m_content, m_lineStarts, *t0) == QLatin1String("packed")) {
@@ -418,9 +439,31 @@ void SVSymbolParser::parseStruct(const QString &typeName, bool isPacked)
     t = peek();
     if (t && t->token.type == TokenType::Identifier && !checkKeyword(tokenTextAt(m_content, m_lineStarts, *t))) {
         QString aliasName = tokenTextAt(m_content, m_lineStarts, *t);
-        m_knownTypes.insert(aliasName);
+        if (trailingIsInlineVar) {
+            sym_list::sym_type_e varType = isPacked ? sym_list::sym_packed_struct_var : sym_list::sym_unpacked_struct_var;
+            sym_list::SymbolInfo varSym;
+            varSym.fileName = m_fileName;
+            varSym.symbolName = aliasName;
+            varSym.symbolType = varType;
+            varSym.startLine = t->line;
+            varSym.startColumn = t->col;
+            varSym.endLine = t->line;
+            varSym.endColumn = t->col + aliasName.length();
+            varSym.position = m_lineStarts.value(t->line, 0) + t->col;
+            varSym.length = aliasName.length();
+            varSym.dataType = structName;
+            if (!m_scopeStack.isEmpty()) varSym.moduleScope = m_scopeStack.last();
+            varSym.scopeLevel = 1;
+            m_symbols.append(varSym);
+        } else
+            m_knownTypes.insert(aliasName);
         advance();
     }
+}
+
+void SVSymbolParser::parseStructDecl()
+{
+    parseStruct(QString(), false, true);
 }
 
 void SVSymbolParser::parseTypedef()
@@ -567,6 +610,237 @@ void SVSymbolParser::parseVarDecl(const QString &typeName, sym_list::sym_type_e 
     }
 }
 
+void SVSymbolParser::parseAlways(const QString &keyword)
+{
+    const SVToken *kwTok = peek();
+    if (!kwTok) return;
+    int line = kwTok->line;
+    int col = kwTok->col;
+    sym_list::sym_type_e st = sym_list::sym_always;
+    if (keyword == QLatin1String("always_ff")) st = sym_list::sym_always_ff;
+    else if (keyword == QLatin1String("always_comb")) st = sym_list::sym_always_comb;
+    else if (keyword == QLatin1String("always_latch")) st = sym_list::sym_always_latch;
+    advance();
+    if (isAtEnd()) return;
+    const SVToken *t = peek();
+    if (t && t->token.type == TokenType::Operator) {
+        QString op = tokenTextAt(m_content, m_lineStarts, *t);
+        if (op == QLatin1String("@")) {
+            advance();
+            if (isAtEnd()) return;
+            t = peek();
+            if (t && t->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String("(")) {
+                int pos = m_lineStarts.value(t->line, 0) + t->col;
+                int close = findMatchingParen(m_content, pos);
+                if (close >= 0) {
+                    while (!isAtEnd()) {
+                        const SVToken *cur = peek();
+                        if (!cur) break;
+                        int curPos = m_lineStarts.value(cur->line, 0) + cur->col;
+                        if (curPos > close) break;
+                        advance();
+                    }
+                }
+            }
+        }
+    }
+    sym_list::SymbolInfo sym;
+    sym.fileName = m_fileName;
+    sym.symbolName = QString(QLatin1String("always_line#")) + QString::number(line + 1);
+    sym.symbolType = st;
+    sym.startLine = line;
+    sym.startColumn = col;
+    sym.endLine = line;
+    sym.endColumn = col + keyword.length();
+    sym.position = m_lineStarts.value(line, 0) + col;
+    sym.length = keyword.length();
+    if (!m_scopeStack.isEmpty()) sym.moduleScope = m_scopeStack.last();
+    sym.scopeLevel = 1;
+    m_symbols.append(sym);
+    if (isAtEnd()) return;
+    t = peek();
+    QString tok = t ? tokenTextAt(m_content, m_lineStarts, *t) : QString();
+    if (tok == QLatin1String("begin")) {
+        int depth = 1;
+        advance();
+        while (!isAtEnd() && depth > 0) {
+            t = peek();
+            if (!t) break;
+            tok = tokenTextAt(m_content, m_lineStarts, *t);
+            if (t->token.type == TokenType::Identifier) {
+                if (tok == QLatin1String("begin")) depth++;
+                else if (tok == QLatin1String("end")) depth--;
+            }
+            advance();
+        }
+    } else {
+        int parenDepth = 0;
+        while (!isAtEnd()) {
+            t = peek();
+            if (!t) break;
+            tok = tokenTextAt(m_content, m_lineStarts, *t);
+            if (t->token.type == TokenType::Operator && tok.length() == 1) {
+                if (tok == QLatin1String("(")) parenDepth++;
+                else if (tok == QLatin1String(")")) parenDepth--;
+                else if (tok == QLatin1String(";") && parenDepth == 0) { advance(); return; }
+            }
+            advance();
+        }
+    }
+}
+
+void SVSymbolParser::parseAssign()
+{
+    const SVToken *assignTok = peek();
+    if (!assignTok || !match(TokenType::Identifier, QLatin1String("assign"))) return;
+    advance();
+    if (isAtEnd()) return;
+    const SVToken *t = peek();
+    QString tok = t ? tokenTextAt(m_content, m_lineStarts, *t) : QString();
+    if (!t || t->token.type != TokenType::Identifier || checkKeyword(tok)) return;
+    QString lhsName = tok;
+    int line = t->line;
+    int col = t->col;
+    advance();
+    int parenDepth = 0;
+    while (!isAtEnd()) {
+        t = peek();
+        if (!t) break;
+        tok = tokenTextAt(m_content, m_lineStarts, *t);
+        if (t->token.type == TokenType::Operator && tok.length() == 1) {
+            if (tok == QLatin1String("(")) parenDepth++;
+            else if (tok == QLatin1String(")")) parenDepth--;
+            else if (tok == QLatin1String(";") && parenDepth == 0) { advance(); break; }
+        }
+        advance();
+    }
+    sym_list::SymbolInfo sym;
+    sym.fileName = m_fileName;
+    sym.symbolName = lhsName;
+    sym.symbolType = sym_list::sym_assign;
+    sym.startLine = line;
+    sym.startColumn = col;
+    sym.endLine = line;
+    sym.endColumn = col + lhsName.length();
+    sym.position = m_lineStarts.value(line, 0) + col;
+    sym.length = lhsName.length();
+    if (!m_scopeStack.isEmpty()) sym.moduleScope = m_scopeStack.last();
+    sym.scopeLevel = 1;
+    m_symbols.append(sym);
+}
+
+void SVSymbolParser::parseInstantiation(const QString &typeName, const QString &instanceNameFromModule,
+                                        int instLineFromModule, int instColFromModule)
+{
+    QString instName;
+    int instLine = instLineFromModule;
+    int instCol = instColFromModule;
+    const SVToken *t = nullptr;
+    if (instanceNameFromModule.isEmpty()) {
+        if (isAtEnd()) return;
+        t = peek();
+        if (t && t->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String("#")) {
+            advance();
+            if (isAtEnd()) return;
+            t = peek();
+            if (t && t->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String("(")) {
+                int pos = m_lineStarts.value(t->line, 0) + t->col;
+                int close = findMatchingParen(m_content, pos);
+                if (close >= 0) {
+                    while (!isAtEnd()) {
+                        const SVToken *cur = peek();
+                        if (!cur) break;
+                        int curPos = m_lineStarts.value(cur->line, 0) + cur->col;
+                        if (curPos > close) break;
+                        advance();
+                    }
+                }
+            }
+        }
+        if (isAtEnd()) return;
+        t = peek();
+        if (t && t->token.type == TokenType::Identifier && !checkKeyword(tokenTextAt(m_content, m_lineStarts, *t))) {
+            instName = tokenTextAt(m_content, m_lineStarts, *t);
+            instLine = t->line;
+            instCol = t->col;
+            advance();
+        }
+    } else {
+        instName = instanceNameFromModule;
+    }
+    if (instName.isEmpty()) return;
+    sym_list::SymbolInfo instSym;
+    instSym.fileName = m_fileName;
+    instSym.symbolName = instName;
+    instSym.symbolType = sym_list::sym_inst;
+    instSym.startLine = instLine;
+    instSym.startColumn = instCol;
+    instSym.endLine = instLine;
+    instSym.endColumn = instCol + instName.length();
+    instSym.position = m_lineStarts.value(instLine, 0) + instCol;
+    instSym.length = instName.length();
+    instSym.dataType = typeName;
+    if (!m_scopeStack.isEmpty()) instSym.moduleScope = m_scopeStack.last();
+    instSym.scopeLevel = 1;
+    m_symbols.append(instSym);
+    if (isAtEnd()) return;
+    t = peek();
+    if (!t || t->token.type != TokenType::Operator || tokenTextAt(m_content, m_lineStarts, *t) != QLatin1String("(")) return;
+    advance();
+    int depth = 1;
+    while (!isAtEnd() && depth > 0) {
+        t = peek();
+        if (!t) break;
+        QString tok = tokenTextAt(m_content, m_lineStarts, *t);
+        if (t->token.type == TokenType::Operator && tok.length() == 1) {
+            if (tok == QLatin1String("(")) depth++;
+            else if (tok == QLatin1String(")")) { depth--; if (depth == 0) { advance(); break; } }
+        }
+        if (depth == 1 && t->token.type == TokenType::Operator && tok == QLatin1String(".")) {
+            advance();
+            if (isAtEnd()) break;
+            const SVToken *pinTok = peek();
+            if (pinTok && pinTok->token.type == TokenType::Identifier) {
+                QString pinName = tokenTextAt(m_content, m_lineStarts, *pinTok);
+                advance();
+                if (!isAtEnd()) {
+                    const SVToken *openParenTok = peek();
+                    if (openParenTok && openParenTok->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *openParenTok) == QLatin1String("(")) {
+                        int pos = m_lineStarts.value(openParenTok->line, 0) + openParenTok->col;
+                        advance();
+                        int close = findMatchingParen(m_content, pos);
+                        if (close >= 0) {
+                            sym_list::SymbolInfo pinSym;
+                            pinSym.fileName = m_fileName;
+                            pinSym.symbolName = pinName;
+                            pinSym.symbolType = sym_list::sym_inst_pin;
+                            pinSym.startLine = pinTok->line;
+                            pinSym.startColumn = pinTok->col;
+                            pinSym.endLine = pinTok->line;
+                            pinSym.endColumn = pinTok->col + pinName.length();
+                            pinSym.position = m_lineStarts.value(pinTok->line, 0) + pinTok->col;
+                            pinSym.length = pinName.length();
+                            pinSym.moduleScope = instName;
+                            pinSym.dataType = typeName;
+                            pinSym.scopeLevel = 1;
+                            m_symbols.append(pinSym);
+                            while (!isAtEnd()) {
+                                const SVToken *cur = peek();
+                                if (!cur) break;
+                                int curPos = m_lineStarts.value(cur->line, 0) + cur->col;
+                                if (curPos > close) break;
+                                advance();
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+        advance();
+    }
+}
+
 void SVSymbolParser::parseModule()
 {
     if (!match(TokenType::Identifier, QLatin1String("module"))) return;
@@ -621,6 +895,10 @@ void SVSymbolParser::parseModule()
         }
         if (t->token.type == TokenType::Identifier && tok == QLatin1String("typedef")) {
             parseTypedef();
+            continue;
+        }
+        if (t->token.type == TokenType::Identifier && (tok == QLatin1String("struct") || tok == QLatin1String("union"))) {
+            parseStructDecl();
             continue;
         }
         if (t->token.type == TokenType::Identifier && m_knownTypes.contains(tok)) {
@@ -747,6 +1025,38 @@ void SVSymbolParser::parseModule()
                 advance();
             }
             continue;
+        }
+        if (t->token.type == TokenType::Identifier && (tok == QLatin1String("always") || tok == QLatin1String("always_ff") || tok == QLatin1String("always_comb") || tok == QLatin1String("always_latch"))) {
+            parseAlways(tok);
+            continue;
+        }
+        if (t->token.type == TokenType::Identifier && tok == QLatin1String("assign")) {
+            parseAssign();
+            continue;
+        }
+        if (t->token.type == TokenType::Identifier && !m_knownTypes.contains(tok) && !checkKeyword(tok)) {
+            QString typeName = tok;
+            advance();
+            if (isAtEnd()) { continue; }
+            const SVToken *nextTok = peek();
+            QString nextStr = nextTok ? tokenTextAt(m_content, m_lineStarts, *nextTok) : QString();
+            if (nextTok && nextTok->token.type == TokenType::Operator && (nextStr == QLatin1String("#") || nextStr == QLatin1String("("))) {
+                parseInstantiation(typeName);
+                continue;
+            }
+            if (nextTok && nextTok->token.type == TokenType::Identifier && !checkKeyword(nextStr)) {
+                QString possibleInst = nextStr;
+                int instLine = nextTok->line;
+                int instCol = nextTok->col;
+                advance();
+                if (!isAtEnd()) {
+                    const SVToken *after = peek();
+                    if (after && after->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *after) == QLatin1String("(")) {
+                        parseInstantiation(typeName, possibleInst, instLine, instCol);
+                        continue;
+                    }
+                }
+            }
         }
         advance();
     }

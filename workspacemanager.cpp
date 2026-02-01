@@ -7,7 +7,6 @@
 WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
 {
-    // Reserve space for file lists
     allFiles.reserve(500);
     svFiles.reserve(100);
 
@@ -20,8 +19,6 @@ WorkspaceManager::~WorkspaceManager()
 bool WorkspaceManager::openWorkspace(const QString& folderPath)
 {
     QString pathToOpen = folderPath;
-
-    // If no path provided, show folder dialog
     if (pathToOpen.isEmpty()) {
         pathToOpen = QFileDialog::getExistingDirectory(
             qobject_cast<QWidget*>(parent()),
@@ -29,18 +26,12 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
         if (pathToOpen.isEmpty()) return false; // User cancelled
     }
 
-    // Close current workspace if open
     if (isWorkspaceOpen()) {
         closeWorkspace();
     }
 
     workspacePath = pathToOpen;
-
-
-    // Scan directory
     scanDirectory(workspacePath);
-
-    // Setup file watching
     startFileWatching();
 
     emit workspaceOpened(workspacePath);
@@ -52,11 +43,7 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
 void WorkspaceManager::closeWorkspace()
 {
     if (!isWorkspaceOpen()) return;
-
-    // Stop file watching
     stopFileWatching();
-
-    // Clear data
     workspacePath.clear();
     allFiles.clear();
     svFiles.clear();
@@ -103,7 +90,6 @@ void WorkspaceManager::startFileWatching()
 {
     if (!isWorkspaceOpen()) return;
 
-    // Create file watcher if needed
     if (!fileWatcher) {
         fileWatcher = std::make_unique<QFileSystemWatcher>(this);
         connect(fileWatcher.get(), &QFileSystemWatcher::fileChanged,
@@ -112,7 +98,6 @@ void WorkspaceManager::startFileWatching()
                 this, &WorkspaceManager::onDirectoryChanged);
     }
 
-    // Clear existing watches
     const QStringList watchedFiles = fileWatcher->files();
     const QStringList watchedDirs = fileWatcher->directories();
 
@@ -123,7 +108,6 @@ void WorkspaceManager::startFileWatching()
         fileWatcher->removePaths(watchedDirs);
     }
 
-    // Add workspace files and directory to watcher
     if (!allFiles.isEmpty()) {
         fileWatcher->addPaths(allFiles);
     }
@@ -156,11 +140,8 @@ void WorkspaceManager::onDirectoryChanged(const QString& path)
 {
     if (path != workspacePath) return;
 
-    // Rescan directory
     QStringList oldFiles = allFiles;
     scanDirectory(workspacePath);
-
-    // Only update if changed
     if (allFiles != oldFiles) {
         updateFileWatcher();
         emit filesScanned(svFiles);
@@ -179,7 +160,6 @@ void WorkspaceManager::scanDirectory(const QString& path)
         allFiles.append(iterator.next());
     }
 
-    // Filter SystemVerilog files
     filterSystemVerilogFiles();
 }
 
@@ -187,13 +167,11 @@ void WorkspaceManager::updateFileWatcher()
 {
     if (!fileWatcher || !isWorkspaceOpen()) return;
 
-    // Remove old file watches (keep directory watches)
     const QStringList watchedFiles = fileWatcher->files();
     if (!watchedFiles.isEmpty()) {
         fileWatcher->removePaths(watchedFiles);
     }
 
-    // Add new files to watcher
     if (!allFiles.isEmpty()) {
         fileWatcher->addPaths(allFiles);
     }

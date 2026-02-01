@@ -137,7 +137,6 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
     completions.clear();
 
     if (type == KeywordCompletion) {
-        // Add keywords
         for (const QString &keyword : keywords) {
             CompletionItem item;
             item.text = keyword;
@@ -146,9 +145,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
             completions.append(item);
         }
     } else if (type == SymbolCompletion) {
-        // UPDATED: Improved symbol handling for normal mode
         if (symbols.size() == keywords.size()) {
-            // Normal mode: keywords and symbols should match 1:1
             for (int i = 0; i < keywords.size() && i < symbols.size(); i++) {
                 CompletionItem item;
                 item.text = keywords[i];
@@ -156,7 +153,6 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.symbolType = symbols[i].symbolType;
                 item.score = calculateScore(keywords[i], prefix);
 
-                // UPDATED: Set proper description based on symbol type
                 switch (symbols[i].symbolType) {
                 case sym_list::sym_module:
                     item.description = "module";
@@ -193,7 +189,6 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 completions.append(item);
             }
         } else {
-            // Fallback: just add symbols
             for (const sym_list::SymbolInfo &symbol : symbols) {
                 CompletionItem item;
                 item.text = symbol.symbolName;
@@ -201,7 +196,6 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.symbolType = symbol.symbolType;
                 item.score = calculateScore(symbol.symbolName, prefix);
 
-                // Add type description
                 switch (symbol.symbolType) {
                 case sym_list::sym_module:
                     item.description = "module";
@@ -377,7 +371,6 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     descItem.defaultValue = defaultValue;
     completions.append(descItem);
 
-    // Always add default value as first selectable item
     CompletionItem defaultItem;
     defaultItem.text = QString("[DEFAULT] %1").arg(defaultValue);
     defaultItem.type = SymbolCompletion;
@@ -394,7 +387,6 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
 
     int matchCount = 0;
     for (const auto& match : qAsConst(scoredMatches)) {
-        // Skip if it's the same as default value to avoid duplicates
         if (match.first.symbolName == defaultValue) {
             continue;
         }
@@ -501,20 +493,16 @@ int CompletionModel::calculateScore(const QString &text, const QString &prefix) 
     const QString lowerText = text.toLower();
     const QString lowerPrefix = prefix.toLower();
 
-    // Exact match
     if (lowerText == lowerPrefix) return 1000;
 
-    // Prefix match
     if (lowerText.startsWith(lowerPrefix)) {
         return 800 + (100 - prefix.length());
     }
 
-    // Contains match
     if (lowerText.contains(lowerPrefix)) {
         return 400 + (100 - text.length());
     }
 
-    // Abbreviation match (simplified)
     int score = 0;
     int textPos = 0;
     for (const QChar &ch : lowerPrefix) {
@@ -554,6 +542,7 @@ QString CompletionModel::getTypeDescription(sym_list::sym_type_e symbolType)
     case sym_list::sym_always: return "always blocks";
     case sym_list::sym_always_ff: return "always_ff blocks";
     case sym_list::sym_always_comb: return "always_comb blocks";
+    case sym_list::sym_always_latch: return "always_latch blocks";
     case sym_list::sym_assign: return "continuous assignments";
     case sym_list::sym_xilinx_constraint: return "synthesis constraints";
 

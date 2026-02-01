@@ -68,7 +68,6 @@ Token SVLexer::nextToken()
 
     const int start = m_pos;
 
-    // Inside block comment from previous line
     if (m_state == 1) {
         int i = m_pos;
         while (i < m_line.length()) {
@@ -91,7 +90,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Whitespace
     if (isSpace(peek())) {
         while (!atEnd() && isSpace(peek()))
             advance();
@@ -102,7 +100,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Line comment
     if (peek() == QLatin1Char('/') && peek(1) == QLatin1Char('/')) {
         m_pos = m_line.length();
         Token t;
@@ -112,7 +109,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Block comment start
     if (peek() == QLatin1Char('/') && peek(1) == QLatin1Char('*')) {
         advance();
         advance();
@@ -133,7 +129,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Double-quoted string with \" escape
     if (peek() == QLatin1Char('"')) {
         advance();
         while (!atEnd()) {
@@ -155,7 +150,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Number: digits optional . digits
     if (isDigit(peek())) {
         while (!atEnd() && isDigit(peek()))
             advance();
@@ -171,7 +165,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Identifier (keyword decided in Highlighter via keywords.txt)
     if (isLetterOrUnderscore(peek())) {
         while (!atEnd() && isIdentifierChar(peek()))
             advance();
@@ -182,7 +175,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Operator: single-character punctuation (comment / already handled above)
     static const QString operators = QStringLiteral("~!@#$%^&*()-+=|[]{}:;<>,.?/");
     if (operators.contains(peek())) {
         advance();
@@ -193,7 +185,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Single character: advance to avoid infinite loop (no token or Error)
     advance();
     Token t;
     t.type = TokenType::Error;
