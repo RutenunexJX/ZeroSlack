@@ -8,7 +8,6 @@
 #include <QFileInfo>
 #include <QFileInfo>
 #include <QThread>
-#include <QRegularExpression>
 #include <QApplication>
 #include <QEventLoop>
 
@@ -230,34 +229,40 @@ QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) c
     return svFiles;
 }
 
+static bool lineContainsKeywordAsWord(const QString& line, const QString& keyword)
+{
+    int pos = 0;
+    while ((pos = line.indexOf(keyword, pos)) >= 0) {
+        bool startOk = (pos == 0) || (!line[pos - 1].isLetterOrNumber() && line[pos - 1] != QLatin1Char('_'));
+        bool endOk = (pos + keyword.size() >= line.size()) || (!line[pos + keyword.size()].isLetterOrNumber() && line[pos + keyword.size()] != QLatin1Char('_'));
+        if (startOk && endOk)
+            return true;
+        pos += keyword.size();
+    }
+    return false;
+}
+
 bool SymbolAnalyzer::hasSignificantChanges(const QString& oldContent, const QString& newContent) const
 {
-    // Check for significant keywords that would affect symbol structure
-    static QStringList significantKeywords = {
-        "module", "endmodule", "reg", "wire", "logic",
-        "task", "endtask", "function", "endfunction"
+    static const QStringList significantKeywords = {
+        QLatin1String("module"), QLatin1String("endmodule"), QLatin1String("reg"), QLatin1String("wire"), QLatin1String("logic"),
+        QLatin1String("task"), QLatin1String("endtask"), QLatin1String("function"), QLatin1String("endfunction")
     };
 
-    QStringList oldLines = oldContent.split('\n');
-    QStringList newLines = newContent.split('\n');
-
+    QStringList oldLines = oldContent.split(QLatin1Char('\n'));
+    QStringList newLines = newContent.split(QLatin1Char('\n'));
     int maxLines = qMax(oldLines.size(), newLines.size());
 
     for (int i = 0; i < maxLines; ++i) {
         QString oldLine = (i < oldLines.size()) ? oldLines[i].trimmed() : QString();
         QString newLine = (i < newLines.size()) ? newLines[i].trimmed() : QString();
-
         if (oldLine != newLine) {
-            // Check if either line contains significant keywords
             for (const QString& keyword : significantKeywords) {
-                QRegularExpression keywordRegex("\\b" + QRegularExpression::escape(keyword) + "\\b");
-                if (oldLine.contains(keywordRegex) || newLine.contains(keywordRegex)) {
+                if (lineContainsKeywordAsWord(oldLine, keyword) || lineContainsKeywordAsWord(newLine, keyword))
                     return true;
-                }
             }
         }
     }
-
     return false;
 }
 

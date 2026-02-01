@@ -155,20 +155,6 @@ Token SVLexer::nextToken()
         return t;
     }
 
-    // Single-quoted string
-    if (peek() == QLatin1Char('\'')) {
-        advance();
-        while (!atEnd() && peek() != QLatin1Char('\''))
-            advance();
-        if (!atEnd())
-            advance();
-        Token t;
-        t.type = TokenType::String;
-        t.offset = start;
-        t.length = m_pos - start;
-        return t;
-    }
-
     // Number: digits optional . digits
     if (isDigit(peek())) {
         while (!atEnd() && isDigit(peek()))
@@ -193,6 +179,17 @@ Token SVLexer::nextToken()
         t.type = TokenType::Identifier;
         t.offset = start;
         t.length = m_pos - start;
+        return t;
+    }
+
+    // Operator: single-character punctuation (comment / already handled above)
+    static const QString operators = QStringLiteral("~!@#$%^&*()-+=|[]{}:;<>,.?/");
+    if (operators.contains(peek())) {
+        advance();
+        Token t;
+        t.type = TokenType::Operator;
+        t.offset = start;
+        t.length = 1;
         return t;
     }
 

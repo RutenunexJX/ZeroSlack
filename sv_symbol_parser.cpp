@@ -1,19 +1,24 @@
 #include "sv_symbol_parser.h"
 #include <QSet>
-#include <QRegularExpression>
 #include <QDebug>
 
 static QSet<QString> s_keywords;
 
-static bool lineHasDirectionBefore(const QString &content, const QVector<int> &lineStarts, int line, int col)
+static QString tokenTextAt(const QString &content, const QVector<int> &lineStarts, const SVToken &st);
+
+static bool lineHasDirectionBefore(const QVector<SVToken> &tokens, const QString &content,
+                                   const QVector<int> &lineStarts, int line, int col)
 {
-    if (line < 0 || line >= lineStarts.size()) return false;
-    int lineStart = lineStarts[line];
-    int lineEnd = (line + 1 < lineStarts.size()) ? lineStarts[line + 1] : content.length();
-    int span = qMin(col + 64, lineEnd - lineStart);
-    QString lineText = content.mid(lineStart, span);
-    static const QRegularExpression portDir(QLatin1String("\\b(?:input|output|inout|ref)\\b"));
-    return portDir.match(lineText).hasMatch();
+    static const QSet<QString> directionKeywords = {
+        QLatin1String("input"), QLatin1String("output"),
+        QLatin1String("inout"), QLatin1String("ref")
+    };
+    for (const SVToken &st : tokens) {
+        if (st.line != line || st.col >= col) continue;
+        QString text = tokenTextAt(content, lineStarts, st);
+        if (directionKeywords.contains(text)) return true;
+    }
+    return false;
 }
 
 static int findMatchingParen(const QString &text, int openParenPos)
@@ -149,7 +154,7 @@ static void emitPortSymbols(QList<sym_list::SymbolInfo> *out, const QList<PortNa
 void SVSymbolParser::parsePortList(const QString &moduleName)
 {
     const SVToken *t = peek();
-    if (!t || t->token.type != TokenType::Error) return;
+    if (!t || t->token.type != TokenType::Operator) return;
     QString s = tokenTextAt(m_content, m_lineStarts, *t);
     if (s != QLatin1String("(")) return;
     advance();
@@ -171,7 +176,7 @@ void SVSymbolParser::parsePortList(const QString &moduleName)
         t = peek();
         if (!t) break;
         QString tok = tokenTextAt(m_content, m_lineStarts, *t);
-        if (t->token.type == TokenType::Error && tok.length() == 1) {
+        if (t->token.type == TokenType::Operator && tok.length() == 1) {
             QChar c = tok[0];
             if (c == QLatin1Char('(')) { depth++; advance(); continue; }
             if (c == QLatin1Char(')')) {
@@ -237,7 +242,6 @@ void SVSymbolParser::parsePortList(const QString &moduleName)
 void SVSymbolParser::parseModule()
 {
     if (!match(TokenType::Identifier, QLatin1String("module"))) return;
-    const SVToken *modTok = peek();
     advance();
     if (isAtEnd()) return;
     const SVToken *nameTok = peek();
@@ -264,11 +268,11 @@ void SVSymbolParser::parseModule()
         const SVToken *t = peek();
         if (!t) break;
         QString tok = tokenTextAt(m_content, m_lineStarts, *t);
-        if (t->token.type == TokenType::Error && tok.length() == 1 && tok[0] == QLatin1Char('#')) {
+        if (t->token.type == TokenType::Operator && tok.length() == 1 && tok[0] == QLatin1Char('#')) {
             advance();
             if (isAtEnd()) break;
             t = peek();
-            if (t->token.type == TokenType::Error && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String("(")) {
+            if (t && t->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String("(")) {
                 int pos = m_lineStarts.value(t->line, 0) + t->col;
                 int close = findMatchingParen(m_content, pos);
                 if (close >= 0) {
@@ -283,7 +287,7 @@ void SVSymbolParser::parseModule()
             }
             continue;
         }
-        if (t->token.type == TokenType::Error && tok.length() == 1 && tok[0] == QLatin1Char('(')) {
+        if (t->token.type == TokenType::Operator && tok.length() == 1 && tok[0] == QLatin1Char('(')) {
             parsePortList(moduleName);
             continue;
         }
@@ -316,7 +320,6 @@ void SVSymbolParser::parseModule()
             if (!m_scopeStack.isEmpty()) taskSym.moduleScope = m_scopeStack.last();
             taskSym.scopeLevel = 1;
             advance();
-            int depth = 0;
             while (!isAtEnd()) {
                 const SVToken *cur = peek();
                 if (!cur) break;
@@ -371,7 +374,7 @@ void SVSymbolParser::parseModule()
             continue;
         }
         if (t->token.type == TokenType::Identifier && (tok == QLatin1String("reg") || tok == QLatin1String("wire") || tok == QLatin1String("logic"))) {
-            if (lineHasDirectionBefore(m_content, m_lineStarts, t->line, t->col)) {
+            if (lineHasDirectionBefore(m_tokens, m_content, m_lineStarts, t->line, t->col)) {
                 advance();
                 continue;
             }
@@ -381,7 +384,7 @@ void SVSymbolParser::parseModule()
                 const SVToken *cur = peek();
                 if (!cur) break;
                 QString curText = tokenTextAt(m_content, m_lineStarts, *cur);
-                if (cur->token.type == TokenType::Error && (curText == QLatin1String("[") || curText == QLatin1String("]"))) {
+                if (cur->token.type == TokenType::Operator && (curText == QLatin1String("[") || curText == QLatin1String("]"))) {
                     advance();
                     continue;
                 }
