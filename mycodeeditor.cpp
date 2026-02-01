@@ -19,6 +19,7 @@
 #include <QFileInfo>
 #include <QDir>
 
+#include <QDebug>
 #include <QKeyEvent>
 #include <QTextCursor>
 #include <QApplication>
@@ -202,6 +203,7 @@ void MyCodeEditor::updateAndEmitDebugScopeInfo()
     int cursorPosition = textCursor().position();
     CompletionManager* manager = CompletionManager::getInstance();
     QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
+    qDebug("updateAndEmitDebugScopeInfo: fileName=%s, currentModule=%s", qPrintable(fileName), qPrintable(currentModule));
 
     int logicCount = 0;
     int structVarCount = 0;

@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QDebug>
 #include <QRegularExpression>
 #include <algorithm>
 
@@ -1551,6 +1552,7 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
 
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(fileName);
+    qDebug("getCurrentModule: fileName=%s, fileSymbols.size()=%d", qPrintable(fileName), fileSymbols.size());
 
     // 🚀 过滤出模块符号并按位置排序
     QList<sym_list::SymbolInfo> modules;
@@ -1560,6 +1562,7 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
         }
     }
 
+    qDebug("getCurrentModule: modules.size()=%d", modules.size());
     if (modules.isEmpty()) {
         return QString();
     }
@@ -1570,9 +1573,8 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
                   return a.position < b.position;
               });
 
-    // 🚀 需要更精确地检测模块边界
-    // 这里需要找到 endmodule 的位置
-    QString currentModuleName = findModuleAtPosition(modules, cursorPosition, fileName);
+    QString content = symbolList->getCachedFileContent(fileName);
+    QString currentModuleName = findModuleAtPosition(modules, cursorPosition, fileName, content);
 
     return currentModuleName;
 }
@@ -1619,23 +1621,40 @@ QStringList CompletionManager::getSymbolNamesFromIds(const QList<int>& symbolIds
 QString CompletionManager::findModuleAtPosition(
     const QList<sym_list::SymbolInfo>& modules,
     int cursorPosition,
-    const QString& fileName)
+    const QString& fileName,
+    const QString& fileContent)
 {
-    // 🚀 读取文件内容以精确查找 endmodule 位置
-    QFile file(fileName);
-    QString fileContent;
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        fileContent = file.readAll();
+    QString content = fileContent;
+    if (content.isEmpty()) {
+        QFile file(fileName);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            content = file.readAll();
+        }
+    }
+    if (content.isEmpty()) {
+        return QString();
+    }
+
+    // 0-based cursor line from position
+    int cursorLine = 0;
+    int pos = 0;
+    while (pos < cursorPosition && pos < content.length()) {
+        if (content[pos] == QLatin1Char('\n')) cursorLine++;
+        pos++;
     }
 
     for (const auto& module : modules) {
         if (cursorPosition < module.position) continue;
-        // 必须存在配对 endmodule 才视为有效模块，不再用“下一模块起始”作为边界
-        int moduleEndPosition = findEndModulePosition(fileContent, module);
-        if (moduleEndPosition < 0) continue;
         if (!sym_list::isValidModuleName(module.symbolName)) continue;
-        if (cursorPosition < moduleEndPosition)
-            return module.symbolName;
+
+        if (module.endLine > 0) {
+            if (cursorLine >= module.startLine && cursorLine <= module.endLine)
+                return module.symbolName;
+        } else {
+            int moduleEndPosition = findEndModulePosition(content, module);
+            if (moduleEndPosition >= 0 && cursorPosition < moduleEndPosition)
+                return module.symbolName;
+        }
     }
 
     return QString(); // 不在任何有效模块内

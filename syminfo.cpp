@@ -2,6 +2,7 @@
 #include "scope_tree.h"
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
+#include "sv_symbol_parser.h"
 
 #include <QDebug>
 #include <QRegularExpression>
@@ -276,170 +277,81 @@ void sym_list::extractSymbolsAndContainsOnePass(const QString& text)
 void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, const QList<StructRange>& structRanges,
                                                     int maxSearchWindow)
 {
-    QList<int> moduleStack;       // 当前模块栈（symbolId，用于 addRelationship）
-    QList<QString> moduleNameStack; // 当前模块名栈，避免在持写锁时调用 getSymbolById 导致死锁
+    Q_UNUSED(maxSearchWindow);
+    QList<int> moduleStack;
+    QList<QString> moduleNameStack;
 
-    // 作用域树：按文件维护，栈式解析构建
     ScopeManager* scopeMgr = getScopeManager();
     scopeMgr->clearFile(currentFileName);
     ScopeNode* fileRoot = new ScopeNode(ScopeType::Global, 0);
-    fileRoot->endLine = 0;  // 0 表示无上界
+    fileRoot->endLine = 0;
     scopeMgr->setFileRoot(currentFileName, fileRoot);
     QStack<ScopeNode*> scopeStack;
     scopeStack.push(fileRoot);
 
-    // 预计算行首偏移，避免每次 calculateLineColumn 从 0 扫到 position 导致 O(n*pos) 卡死
-    QVector<int> lineStarts;
-    lineStarts.append(0);
-    for (int p = 0; p < text.length(); ) {
-        int idx = text.indexOf('\n', p);
-        if (idx < 0) break;
-        p = idx + 1;
-        lineStarts.append(p);
-    }
-    auto posToLineColumn = [&lineStarts](int position, int &line, int &column) {
-        auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(), position);
-        int lineIdx = qBound(0, (int)(it - lineStarts.begin()) - 1, lineStarts.size() - 1);
-        line = lineIdx;
-        column = position - lineStarts[lineIdx];
-    };
+    SVSymbolParser parser(text, currentFileName);
+    QList<SymbolInfo> parsed = parser.parse();
 
-    const int maxIterations = qMax(text.length() * 2, 10000);
-    int iterations = 0;
-    int pos = 0;
-    while (pos < text.length() && iterations < maxIterations) {
-        iterations++;
-        StructuralMatchResult m = findNextStructuralMatch(text, pos, structRanges, maxSearchWindow);
-        if (m.position < 0) {
-            // 有窗口时无匹配则前进窗口长度，避免卡在同一段
-            if (maxSearchWindow > 0)
-                pos += maxSearchWindow;
-            else
-                break;
-            continue;
-        }
-        // 保证 pos 至少前进 1，避免 length==0 或 position+length<=pos 时无限循环（如 top_ctrl.sv 卡死）
-        int nextPos = m.position + qMax(m.length, 1);
-        if (nextPos <= pos)
-            nextPos = pos + 1;
-        pos = nextPos;
-
-        int matchPos = m.capturePos >= 0 ? m.capturePos : m.position;
-
-        if (m.matchType == 0) {
-            // module
-            SymbolInfo moduleSymbol;
-            moduleSymbol.fileName = currentFileName;
-            moduleSymbol.symbolName = m.capturedName;
-            moduleSymbol.symbolType = sym_module;
-            moduleSymbol.position = m.position;
-            moduleSymbol.length = m.length;
-            posToLineColumn(matchPos, moduleSymbol.startLine, moduleSymbol.startColumn);
-            moduleSymbol.endLine = moduleSymbol.startLine;
-            moduleSymbol.endColumn = moduleSymbol.startColumn + moduleSymbol.symbolName.length();
-            addSymbol(moduleSymbol);
-            int moduleId = symbolDatabase.last().symbolId;
-            moduleStack.append(moduleId);
-            moduleNameStack.append(m.capturedName);
-            parseModulePorts(text, m.position, m.capturedName, moduleId, lineStarts);
-            ScopeNode* modNode = new ScopeNode(ScopeType::Module, moduleSymbol.startLine);
-            modNode->parent = scopeStack.top();
-            scopeStack.top()->children.append(modNode);
-            modNode->symbols[moduleSymbol.symbolName] = symbolDatabase.last();
-            scopeStack.push(modNode);
-        } else if (m.matchType == 1) {
-            // endmodule
-            int matchLine = 0, dummyCol = 0;
-            posToLineColumn(m.position, matchLine, dummyCol);
-            while (!scopeStack.isEmpty() && scopeStack.top()->type != ScopeType::Module)
-                scopeStack.pop();
-            if (!scopeStack.isEmpty()) {
-                scopeStack.top()->endLine = matchLine;
-                scopeStack.pop();
-            }
-            if (!moduleStack.isEmpty()) {
+    for (const SymbolInfo &sym : qAsConst(parsed)) {
+        while (scopeStack.size() > 1 && scopeStack.top()->endLine > 0 && sym.startLine > scopeStack.top()->endLine) {
+            ScopeNode* node = scopeStack.pop();
+            if (node->type == ScopeType::Module && !moduleStack.isEmpty()) {
                 moduleStack.removeLast();
                 moduleNameStack.removeLast();
             }
-        } else if (m.matchType == 7) {
-            // endtask
-            int matchLine = 0, dummyCol = 0;
-            posToLineColumn(m.position, matchLine, dummyCol);
-            while (!scopeStack.isEmpty() && scopeStack.top()->type != ScopeType::Task)
-                scopeStack.pop();
-            if (!scopeStack.isEmpty()) {
-                scopeStack.top()->endLine = matchLine;
-                scopeStack.pop();
-            }
-        } else if (m.matchType == 8) {
-            // endfunction
-            int matchLine = 0, dummyCol = 0;
-            posToLineColumn(m.position, matchLine, dummyCol);
-            while (!scopeStack.isEmpty() && scopeStack.top()->type != ScopeType::Function)
-                scopeStack.pop();
-            if (!scopeStack.isEmpty()) {
-                scopeStack.top()->endLine = matchLine;
-                scopeStack.pop();
-            }
-        } else if (m.matchType == 9) {
-            // begin -> Block 作用域
-            int sl = 0, sc = 0;
-            posToLineColumn(m.position, sl, sc);
-            ScopeNode* blockNode = new ScopeNode(ScopeType::Block, sl);
-            blockNode->parent = scopeStack.top();
-            scopeStack.top()->children.append(blockNode);
-            scopeStack.push(blockNode);
-        } else if (m.matchType == 10) {
-            // end -> 弹出最内层作用域（通常为 Block）
-            int matchLine = 0, dummyCol = 0;
-            posToLineColumn(m.position, matchLine, dummyCol);
-            if (!scopeStack.isEmpty()) {
-                scopeStack.top()->endLine = matchLine;
-                scopeStack.pop();
-            }
-        } else if (m.matchType >= 2 && m.matchType <= 6) {
-            // reg/wire/logic：若该行是端口声明则不加入（端口已由 parseModulePorts 添加），从根源保证 logic 池不含端口
-            if (m.matchType <= 4 && isVariableDeclarationAPort(text, m.position))
-                continue;
-            // reg / wire / logic / task / function
-            sym_type_e symType = sym_reg;
-            if (m.matchType == 3) symType = sym_wire;
-            else if (m.matchType == 4) symType = sym_logic;
-            else if (m.matchType == 5) symType = sym_task;
-            else if (m.matchType == 6) symType = sym_function;
+        }
 
-            SymbolInfo symbol;
-            symbol.fileName = currentFileName;
-            symbol.symbolName = m.capturedName;
-            symbol.symbolType = symType;
-            symbol.position = m.position;
-            symbol.length = m.length;
-            posToLineColumn(matchPos, symbol.startLine, symbol.startColumn);
-            symbol.endLine = symbol.startLine;
-            symbol.endColumn = symbol.startColumn + symbol.symbolName.length();
-            // 始终用当前模块栈设置 moduleScope，保证“l ”等补全能按模块过滤到 reg/wire/logic（不依赖 addSymbol 内 getCurrentModuleScope，避免 findEndModuleLine 用错内容）
-            if (!moduleNameStack.isEmpty()) {
-                symbol.moduleScope = moduleNameStack.last();
-                symbol.scopeLevel = 1;
-            }
-            addSymbol(symbol);
-            SymbolInfo& added = symbolDatabase.last();
+        if (sym.symbolType == sym_module) {
+            addSymbol(sym);
+            int moduleId = symbolDatabase.last().symbolId;
+            SymbolInfo added = symbolDatabase.last();
+            moduleStack.append(moduleId);
+            moduleNameStack.append(sym.symbolName);
+            ScopeNode* modNode = new ScopeNode(ScopeType::Module, sym.startLine);
+            modNode->endLine = sym.endLine;
+            modNode->parent = scopeStack.top();
+            scopeStack.top()->children.append(modNode);
+            modNode->symbols[sym.symbolName] = added;
+            scopeStack.push(modNode);
+            continue;
+        }
+
+        if (sym.symbolType == sym_task || sym.symbolType == sym_function) {
+            addSymbol(sym);
+            SymbolInfo added = symbolDatabase.last();
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
+            ScopeType st = (sym.symbolType == sym_task) ? ScopeType::Task : ScopeType::Function;
+            ScopeNode* subNode = new ScopeNode(st, sym.startLine);
+            subNode->endLine = sym.endLine;
+            subNode->parent = scopeStack.top();
+            scopeStack.top()->children.append(subNode);
+            subNode->symbols[sym.symbolName] = added;
+            scopeStack.push(subNode);
+            continue;
+        }
+
+        if (sym.symbolType == sym_port_input || sym.symbolType == sym_port_output
+            || sym.symbolType == sym_port_inout || sym.symbolType == sym_port_ref
+            || sym.symbolType == sym_port_interface || sym.symbolType == sym_port_interface_modport) {
+            addSymbol(sym);
+            SymbolInfo added = symbolDatabase.last();
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
             if (!scopeStack.isEmpty())
                 scopeStack.top()->symbols[added.symbolName] = added;
-            if (relationshipEngine && !moduleStack.isEmpty()) {
-                int newId = added.symbolId;
-                relationshipEngine->addRelationship(moduleStack.last(), newId,
-                                                    SymbolRelationshipEngine::CONTAINS);
-            }
-            // task/function 打开新作用域
-            if (m.matchType == 5 || m.matchType == 6) {
-                ScopeType st = (m.matchType == 5) ? ScopeType::Task : ScopeType::Function;
-                ScopeNode* subNode = new ScopeNode(st, symbol.startLine);
-                subNode->parent = scopeStack.top();
-                scopeStack.top()->children.append(subNode);
-                subNode->symbols[symbol.symbolName] = added;
-                scopeStack.push(subNode);
-            }
+            continue;
+        }
+
+        if (sym.symbolType == sym_reg || sym.symbolType == sym_wire || sym.symbolType == sym_logic) {
+            if (isPositionInStructRange(sym.position, structRanges))
+                continue;
+            addSymbol(sym);
+            SymbolInfo added = symbolDatabase.last();
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
+            if (!scopeStack.isEmpty())
+                scopeStack.top()->symbols[added.symbolName] = added;
         }
     }
 }
@@ -921,6 +833,9 @@ QList<sym_list::SymbolInfo> sym_list::findSymbolsByFileName(const QString& fileN
                     result.append(symbolDatabase[index]);
                 }
             }
+        } else if (!fileName.isEmpty()) {
+            QStringList keys = fileNameIndex.keys();
+            qDebug("findSymbolsByFileName: fileName=%s not in index; keyCount=%d; sampleKeys=%s", qPrintable(fileName), keys.size(), qPrintable(keys.mid(0, 10).join(QLatin1String(" | "))));
         }
         return result;
     }
@@ -933,6 +848,9 @@ QList<sym_list::SymbolInfo> sym_list::findSymbolsByFileName(const QString& fileN
                 result.append(symbolDatabase[index]);
             }
         }
+    } else if (!fileName.isEmpty()) {
+        QStringList keys = fileNameIndex.keys();
+        qDebug("findSymbolsByFileName: fileName=%s not in index; keyCount=%d; sampleKeys=%s", qPrintable(fileName), keys.size(), qPrintable(keys.mid(0, 10).join(QLatin1String(" | "))));
     }
     return result;
 }
@@ -1483,8 +1401,10 @@ void sym_list::setContentIncremental(const QString& fileName, const QString& con
     s_holdingWriteLock = true;
 
     currentFileName = fileName;
+    qDebug("setContentIncremental: fileName=%s", qPrintable(fileName));
 
     if (!needsAnalysis(currentFileName, content)) {
+        qDebug("setContentIncremental: SKIP needsAnalysis=false");
         s_holdingWriteLock = false;
         return;
     }
@@ -1494,6 +1414,7 @@ void sym_list::setContentIncremental(const QString& fileName, const QString& con
     // 若该文件当前无符号（如 analyzeOpenTabs 刚 clearSymbolsForFile 后）必须做全量分析，否则增量只解析变更行无法恢复 module 等跨行结构
     bool hasNoSymbols = !fileNameIndex.contains(currentFileName) || fileNameIndex.value(currentFileName).isEmpty();
     bool isFirstTime = !fileStates.contains(currentFileName) || state.needsFullAnalysis || hasNoSymbols;
+    qDebug("setContentIncremental: isFirstTime=%d, hasNoSymbols=%d", isFirstTime, hasNoSymbols);
 
     if (isFirstTime) {
         clearSymbolsForFile(currentFileName);
@@ -1501,6 +1422,13 @@ void sym_list::setContentIncremental(const QString& fileName, const QString& con
         // 先缓存当前内容，供 extractSymbolsAndContainsOnePass 内 getCurrentModuleScope -> findEndModuleLine 使用，避免读到磁盘旧内容导致 moduleScope 为空、补全“l ”无 logic
         previousFileContents[currentFileName] = content;
         extractSymbolsAndContainsOnePass(content);
+        {
+            QList<SymbolInfo> fileSyms = findSymbolsByFileName(currentFileName);
+            int nMod = 0;
+            for (const auto& s : fileSyms)
+                if (s.symbolType == sym_module) nMod++;
+            qDebug("setContentIncremental: after onePass, file=%s, symbols=%d, modules=%d", qPrintable(currentFileName), fileSyms.size(), nMod);
+        }
         getAdditionalSymbols(content);
         buildSymbolRelationships(currentFileName);
         state.needsFullAnalysis = false;
@@ -1908,6 +1836,12 @@ QString sym_list::getCurrentModuleScope(const QString& fileName, int lineNumber)
             return moduleSymbol.symbolName;
     }
     return QString();
+}
+
+QString sym_list::getCachedFileContent(const QString& fileName) const
+{
+    QReadLocker lock(&symbolDbLock);
+    return previousFileContents.value(fileName, QString());
 }
 
 void sym_list::analyzeVariablePattern(const QString& lineText, int lineStartPos, int lineNum,

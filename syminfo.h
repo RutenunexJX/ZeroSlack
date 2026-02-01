@@ -165,6 +165,9 @@ public:
     /** 获取指定文件、行号所在的模块名（供跳转定义时优先同模块符号） */
     QString getCurrentModuleScope(const QString& fileName, int lineNumber);
 
+    /** 返回与分析一致的文件内容缓存（供当前模块判定等使用），无缓存则返回空 */
+    QString getCachedFileContent(const QString& fileName) const;
+
     /** 判断是否为合法模块名：非空且符合 SV 标识符规范 [a-zA-Z_][a-zA-Z0-9_]* */
     static bool isValidModuleName(const QString& name);
 

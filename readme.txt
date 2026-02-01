@@ -396,6 +396,14 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   该文件是否满足“成对 module/endmodule + 合法模块名”，并排查上述场景。后续会持续改进
   module 识别的鲁棒性。
 
+- **状态栏「当前模块」**：已改为使用 SVSymbolParser 产出的 module.startLine/endLine 与
+  sym_list::getCachedFileContent 的缓存内容做“光标是否在模块内”判定（CompletionManager::
+  findModuleAtPosition），不再仅依赖磁盘读取与 findEndModulePosition 正则。若仍显示「无模块」，
+  ​可能原因包括：（1）缓存内容与编辑器当前内容不一致，cursorPosition 在“缓存 + position 转行号”
+  时产生偏差；（2）需改为传入编辑器当前缓冲区内容做 position-to-line，使行号与光标所在文档一致。
+  建议后续：getCurrentModule 或 findModuleAtPosition 支持可选“当前文档内容”参数，优先用其做
+  position 转 cursorLine，无再回退到缓存/磁盘。
+
 - **作用域树 (Scope Tree)**：getCompletions(prefix, cursorFile, cursorLine) 基于 findScopeAt
   的按作用域补全与词法遮蔽已实现框架；struct 相关命令（s/sp/ns/nsp）的严格作用域（模块外
   不补全、模块内聚合 internal+include+import、全局仅 moduleScope 为空）已修复。若发现其他
