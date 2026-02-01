@@ -356,6 +356,11 @@ void SVSymbolParser::parseStruct(const QString &typeName, bool isPacked, bool tr
     }
     if (!match(TokenType::Identifier, QLatin1String("struct")) && !match(TokenType::Identifier, QLatin1String("union"))) return;
     advance();
+    const SVToken *tAfterStruct = peek();
+    if (tAfterStruct && tokenTextAt(m_content, m_lineStarts, *tAfterStruct) == QLatin1String("packed")) {
+        isPacked = true;
+        advance();
+    }
     QString structName = typeName;
     const SVToken *t = peek();
     if (t && t->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String("{")) {
@@ -459,6 +464,7 @@ void SVSymbolParser::parseStruct(const QString &typeName, bool isPacked, bool tr
     if (!m_scopeStack.isEmpty()) ss.moduleScope = m_scopeStack.last();
     ss.scopeLevel = 1;
     m_symbols.append(ss);
+    m_knownTypes.insert(structName);
     t = peek();
     if (t && t->token.type == TokenType::Identifier && !checkKeyword(tokenTextAt(m_content, m_lineStarts, *t))) {
         QString aliasName = tokenTextAt(m_content, m_lineStarts, *t);
@@ -927,6 +933,17 @@ void SVSymbolParser::parseModule()
         if (t->token.type == TokenType::Identifier && m_knownTypes.contains(tok)) {
             advance();
             sym_list::sym_type_e varType = sym_list::sym_unpacked_struct_var;
+            for (int i = m_symbols.size() - 1; i >= 0; --i) {
+                const sym_list::SymbolInfo &sym = m_symbols.at(i);
+                if (sym.symbolName == tok && sym.symbolType == sym_list::sym_packed_struct) {
+                    varType = sym_list::sym_packed_struct_var;
+                    break;
+                }
+                if (sym.symbolName == tok && sym.symbolType == sym_list::sym_unpacked_struct) {
+                    varType = sym_list::sym_unpacked_struct_var;
+                    break;
+                }
+            }
             parseVarDecl(tok, varType);
             continue;
         }

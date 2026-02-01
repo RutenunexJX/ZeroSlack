@@ -132,6 +132,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - **Struct 与注释**
   - 结构体/typedef/enum 类型与变量由 SVSymbolParser 在单遍解析中产出（parseTypedef/parseStruct/parseEnum/parseVarDecl），注释内的内容由 Lexer 识别为 Comment 不参与符号产出。
   - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`。
+  - **Packed / Unpacked 区分**：parseStruct 同时支持 `packed struct`（关键字在 struct 前）与 `struct packed`（关键字在 struct 后），产出 sym_packed_struct / sym_unpacked_struct 及对应 sym_packed_struct_var / sym_unpacked_struct_var。用 typedef 类型名声明的变量（如 `test_sp var;`）会在主循环中根据已解析的 m_symbols 查找该类型名，若为 sym_packed_struct 则产出 sym_packed_struct_var，若为 sym_unpacked_struct 则产出 sym_unpacked_struct_var，从而 s / sp / ns / nsp 补全与跳转能正确区分。
+  - 产出 struct 类型后会将类型名加入 m_knownTypes，便于同文件后续 `type_name var;` 被识别为已知类型并解析为正确的 packed/unpacked 变量符号。
 
 【作用域树 (Scope Tree) — scope_tree.h】
 符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
@@ -178,6 +180,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 主窗口左侧有“导航 Dock 窗口”
   - 可以通过某些快捷键或模式切换来显示/隐藏
 - 能根据当前文件/当前符号更新导航视图
+- 导航树按符号类型分组显示；struct 相关类型在 UI 中可区分：Packed/Unpacked 结构体类型、Packed/Unpacked 结构体变量、结构体成员（getSymbolTypeDisplayName / getSymbolIcon，NavigationManager::symbolTypes 含 sym_packed_struct、sym_unpacked_struct、sym_packed_struct_var、sym_unpacked_struct_var）。
 - 支持两种跳转方式：
   - 符号导航：由 `NavigationManager::symbolNavigationRequested` 触发
   - 文件+行号导航：`MainWindow::navigateToFileAndLine`
@@ -203,7 +206,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - **Struct 相关跳转**：
     - **成员跳转**：在 `var.member` 表达式中 Ctrl+点击成员名（如 member0），根据变量名解析出 struct 类型，跳转到该 struct 内该成员的定义位置；结构体成员的 moduleScope 为结构体类型名，跳转时按类型过滤、不按模块名过滤。
     - **变量跳转**：Ctrl+点击 struct 变量名，跳转到其声明（packed/unpacked struct 变量已纳入 isSymbolDefinition 与 definitionTypePriority）。
-    - **类型名跳转**：在声明语句（如 `test_s test_s_var;`）中 Ctrl+点击类型名 test_s，跳转到 `typedef struct { ... } test_s;` 中别名 test_s 的位置（parseStruct 已记录别名 token 的 startLine/startColumn）。
+    - **类型名跳转**：在声明语句（如 `test_s test_s_var;` 或 `test_sp test_sp_var;`）中 Ctrl+点击类型名，跳转到 `typedef struct [packed] { ... } type_name;` 中别名位置（parseStruct 已记录别名 token 的 startLine/startColumn）。definitionTypePriority 中 sym_packed_struct / sym_unpacked_struct 显式优先级 6，与 parameter/localparam 一致。
   - **跳转后鼠标跟随**：本地跳转（当前文件内）与跨文件跳转（navigateToFileAndLine）完成后均调用 `moveMouseToCursor()`，将鼠标指针移动到新光标位置。
   - 跳转过程会复用 `NavigationManager` 的符号导航接口
 

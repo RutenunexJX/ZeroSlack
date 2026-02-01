@@ -533,6 +533,11 @@ QString NavigationWidget::getSymbolTypeDisplayName(sym_list::sym_type_e symbolTy
     case sym_list::sym_logic: return "逻辑";
     case sym_list::sym_task: return "任务";
     case sym_list::sym_function: return "函数";
+    case sym_list::sym_packed_struct: return "Packed 结构体类型";
+    case sym_list::sym_unpacked_struct: return "Unpacked 结构体类型";
+    case sym_list::sym_packed_struct_var: return "Packed 结构体变量";
+    case sym_list::sym_unpacked_struct_var: return "Unpacked 结构体变量";
+    case sym_list::sym_struct_member: return "结构体成员";
     default: return "符号";
     }
 }
@@ -562,6 +567,12 @@ QIcon NavigationWidget::getSymbolIcon(sym_list::sym_type_e symbolType)
     case sym_list::sym_task:
     case sym_list::sym_function:
         return style()->standardIcon(QStyle::SP_MediaPlay);
+    case sym_list::sym_packed_struct:
+    case sym_list::sym_unpacked_struct:
+    case sym_list::sym_packed_struct_var:
+    case sym_list::sym_unpacked_struct_var:
+    case sym_list::sym_struct_member:
+        return style()->standardIcon(QStyle::SP_FileIcon);
     default:
         return style()->standardIcon(QStyle::SP_FileIcon);
     }

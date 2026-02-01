@@ -1531,7 +1531,9 @@ static int definitionTypePriority(sym_list::sym_type_e t)
     case sym_list::sym_packed_struct_var:
     case sym_list::sym_unpacked_struct_var: return 5;
     case sym_list::sym_parameter:
-    case sym_list::sym_localparam: return 6;
+    case sym_list::sym_localparam:
+    case sym_list::sym_packed_struct:
+    case sym_list::sym_unpacked_struct: return 6;
     case sym_list::sym_struct_member: return 7;
     default:                     return 10;
     }
