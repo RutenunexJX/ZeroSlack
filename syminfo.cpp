@@ -265,7 +265,8 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, int max
 
         if (sym.symbolType == sym_typedef || sym.symbolType == sym_enum
             || sym.symbolType == sym_packed_struct || sym.symbolType == sym_unpacked_struct
-            || sym.symbolType == sym_enum_value || sym.symbolType == sym_struct_member
+            || sym.symbolType == sym_enum_value || sym.symbolType == sym_enum_var
+            || sym.symbolType == sym_struct_member
             || sym.symbolType == sym_packed_struct_var || sym.symbolType == sym_unpacked_struct_var) {
             addSymbol(sym);
             SymbolInfo added = symbolDatabase.last();

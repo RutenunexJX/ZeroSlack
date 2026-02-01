@@ -839,8 +839,11 @@ void MyCodeEditor::onAutoCompleteTimer()
             for (const QString &symbolName : symbolNames) {
                 QList<sym_list::SymbolInfo> matchingSymbols = symbolList->findSymbolsByName(symbolName);
                 for (const sym_list::SymbolInfo &symbol : matchingSymbols) {
-                    if (symbol.symbolType == currentCommandType &&
-                        (currentModule.isEmpty() || symbol.moduleScope == currentModule)) {
+                    bool typeOk = (symbol.symbolType == currentCommandType);
+                    if (currentCommandType == sym_list::sym_enum && !typeOk) {
+                        typeOk = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
+                    }
+                    if (typeOk && (currentModule.isEmpty() || symbol.moduleScope == currentModule)) {
                         filteredSymbols.append(symbol);
                         break;
                     }
@@ -1078,7 +1081,6 @@ void MyCodeEditor::initCustomCommands()
     customCommands.append(functionCommand);
 
     customCommands << CustomCommand{"i ", sym_list::sym_interface, "interfaces", "interface"};
-    customCommands << CustomCommand{"e ", sym_list::sym_enum, "enum types", "enum"};
     customCommands << CustomCommand{"d ", sym_list::sym_def_define, "define macros", "`define"};
     // lp 在前，避免 "lp " 被识别成 "p "
     customCommands << CustomCommand{"lp ", sym_list::sym_localparam, "local parameters", "localparam"};
@@ -1087,8 +1089,10 @@ void MyCodeEditor::initCustomCommands()
     customCommands << CustomCommand{"c ", sym_list::sym_assign, "continuous assigns", "assign"};
     customCommands << CustomCommand{"u ", sym_list::sym_typedef, "type definitions", "typedef"};
 
-    customCommands << CustomCommand{"ev ", sym_list::sym_enum_value, "enum values", "enum_value"};
-    customCommands << CustomCommand{"en ", sym_list::sym_enum_var, "enum variables", "enum_var"};
+    // 枚举：较长前缀在前，避免 "ee " / "ne " 被识别成 "e "
+    customCommands << CustomCommand{"ee ", sym_list::sym_enum_value, "enum values", "enum_value"};
+    customCommands << CustomCommand{"ne ", sym_list::sym_enum, "enum types", "enum"};
+    customCommands << CustomCommand{"e ", sym_list::sym_enum_var, "enum variables", "enum_var"};
     customCommands << CustomCommand{"sm ", sym_list::sym_struct_member, "struct members", "member"};
     
     // 结构体：较长前缀放前面，避免 "nsp " 被识别成 "sp "、"ns " 被识别成 "s "
@@ -1529,12 +1533,15 @@ static int definitionTypePriority(sym_list::sym_type_e t)
     case sym_list::sym_wire:
     case sym_list::sym_logic:
     case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var: return 5;
+    case sym_list::sym_unpacked_struct_var:
+    case sym_list::sym_enum_var: return 5;
     case sym_list::sym_parameter:
     case sym_list::sym_localparam:
     case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct: return 6;
-    case sym_list::sym_struct_member: return 7;
+    case sym_list::sym_unpacked_struct:
+    case sym_list::sym_typedef: return 6;  // 含 typedef enum 枚举类型
+    case sym_list::sym_struct_member:
+    case sym_list::sym_enum_value: return 7;
     default:                     return 10;
     }
 }
@@ -1689,6 +1696,9 @@ bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const 
         case sym_list::sym_packed_struct_var:
         case sym_list::sym_unpacked_struct_var:
         case sym_list::sym_struct_member:
+        case sym_list::sym_typedef:       // 枚举类型（typedef enum）
+        case sym_list::sym_enum_var:     // 枚举变量
+        case sym_list::sym_enum_value:   // 枚举值
             return true;
         default:
             return false;

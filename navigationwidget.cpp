@@ -538,6 +538,9 @@ QString NavigationWidget::getSymbolTypeDisplayName(sym_list::sym_type_e symbolTy
     case sym_list::sym_packed_struct_var: return "Packed 结构体变量";
     case sym_list::sym_unpacked_struct_var: return "Unpacked 结构体变量";
     case sym_list::sym_struct_member: return "结构体成员";
+    case sym_list::sym_typedef: return "类型定义";
+    case sym_list::sym_enum_var: return "枚举变量";
+    case sym_list::sym_enum_value: return "枚举值";
     default: return "符号";
     }
 }
@@ -572,6 +575,9 @@ QIcon NavigationWidget::getSymbolIcon(sym_list::sym_type_e symbolType)
     case sym_list::sym_packed_struct_var:
     case sym_list::sym_unpacked_struct_var:
     case sym_list::sym_struct_member:
+    case sym_list::sym_typedef:
+    case sym_list::sym_enum_var:
+    case sym_list::sym_enum_value:
         return style()->standardIcon(QStyle::SP_FileIcon);
     default:
         return style()->standardIcon(QStyle::SP_FileIcon);
