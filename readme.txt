@@ -23,7 +23,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 新建 / 打开 / 保存 / 另存为
   - 未保存文件关闭时会弹出确认
 - SystemVerilog 语法高亮 (`MyHighlighter`)
-  - 两遍策略：先根据“掩码”（注释/字符串区间）排除后再高亮关键字与数字，再画字符串与注释；保证注释/字符串内的关键字（如 `// fifo struct` 里的 `struct`）不会被标成关键字色；字符串内支持转义引号 `\"`；块注释跨行状态正确保持。
+  - 基于专用词法分析器 `SVLexer`（sv_lexer.h/cpp、sv_token.h），完全移除高亮路径中的 `QRegularExpression`，避免正则回溯导致的 UI 卡顿。
+  - 按行驱动：`highlightBlock` 内用 `SVLexer::nextToken()` 逐 token 推进，根据 token 类型（Keyword/Comment/Identifier/Number/String 等）调用 `setFormat`；多行块注释通过 `setState`/`getState` 跨块保持。
+  - 关键字表：从资源文件 `config/keywords.txt` 加载（静态缓存），涵盖 Verilog/SystemVerilog 与预处理器关键字；Identifier 与表匹配时按关键字高亮，注释与字符串内不会误标。
+  - 支持单行注释 `//`、块注释 `/* */`、双引号/单引号字符串（含 `\"` 转义）、数字、标识符；高亮类型与颜色与原有行为一致。
 - 行号栏 (`LineNumberWidget`)
   - 显示行号
   - 点击行号可将光标跳转到对应行
@@ -315,11 +318,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     endUpdate 之前不调用 invalidateCache()，批量提交后按需失效缓存。
 
 [x] 阶段 D — 语法高亮性能与正确性 (MyHighlighter)（已完成）
-  - 将多个关键字的多个正则合并为一个大的正则（如 \b(module|endmodule|reg|...)\b），
-    并在 Qt 6.4+ 下调用 QRegularExpression::optimize()。
-  - keywords.txt 改为静态缓存单例（loadKeywordsOnce + getKeywordPattern），
-    避免每次实例化 MyHighlighter 都读文件；多线程下用 QMutex 保护。
-  - highlightBlock：先根据 collectMaskRanges 得到注释/字符串掩码，再在 Pass1 中仅对**不在掩码内**的区间高亮关键字与数字，最后 Pass2 画字符串与注释；从而注释内关键字（如 `// fifo struct` 里的 `struct`）不再被标成关键字色。
+  - **Lexer 化重构**：完全移除 MyHighlighter 内的 QRegularExpression，改用专用词法分析器 SVLexer
+    （sv_lexer.h/cpp、sv_token.h）。highlightBlock 仅调用 SVLexer::nextToken() 按 token 高亮，
+    避免正则回溯与多遍匹配带来的主线程卡顿。
+  - 关键字仍从 config/keywords.txt 静态加载（loadKeywordsOnce + QMutex），Lexer 输出 Identifier，
+    Highlighter 用关键字表判断后应用关键字格式；注释/字符串由 Lexer 直接识别为 Comment/String，
+    故注释内关键字不会误标。
+  - 关键字表已补全为常用 Verilog/SystemVerilog 与预处理器关键字（见 config/keywords.txt）。
 
 [x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
   - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
@@ -371,7 +376,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 信号安全：SymbolRelationshipEngine::addRelationship 须保持 Qt::QueuedConnection，
     禁止在后台线程直接触发 UI 刷新。
   - 写锁保护：sym_list 的增量解析仍受 QMutex / QReadWriteLock 保护，防止多线程崩溃。
-  - 正则优化：解析用正则已迁移至静态缓存单例，避免在循环内重复实例化 QRegularExpression。
+  - 正则优化：符号解析用正则已迁移至静态缓存单例，避免在循环内重复实例化 QRegularExpression；
+    语法高亮已改为 SVLexer 驱动，高亮路径中不再使用正则。
 
 若发现新的冗余，可参考本节原则处理并更新本段说明。
 

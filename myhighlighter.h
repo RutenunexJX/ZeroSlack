@@ -1,35 +1,31 @@
 #ifndef MYHIGHLIGHTER_H
 #define MYHIGHLIGHTER_H
 
-#include <QObject>
 #include <QSyntaxHighlighter>
-#include <QRegularExpression>
+#include <QTextCharFormat>
 
-class MyHighlighter: public QSyntaxHighlighter
+class QTextDocument;
+
+class MyHighlighter : public QSyntaxHighlighter
 {
+    Q_OBJECT
+
 public:
     explicit MyHighlighter(QTextDocument *parent = nullptr);
+
 protected:
-    void highlightBlock(const QString &text);
+    void highlightBlock(const QString &text) override;
 
 private:
-    QString mFontFamily = "Consolas";
-    int mFontSize = 14;
+    // Formats
+    QTextCharFormat keywordFormat;
+    QTextCharFormat commentFormat;
+    QTextCharFormat numberFormat;
+    QTextCharFormat stringFormat;
+    QTextCharFormat errorFormat; // Optional for debugging
 
-    struct HighLightRule{
-        QRegularExpression pattern;
-        QTextCharFormat format;
-    };
-
-    QVector<HighLightRule> highlightRules;
-    void addNormalTextFormat();
-    /** 返回合并后的关键字正则（静态缓存，keywords.txt 只读一次） */
-    static QRegularExpression getKeywordPattern();
-    void addNumberFormat();
-    void addStringFormat();
-    void addCommentFormat();
-    void addMultiLineCommentFormat(const QString &text);
-    void addKeywordsFormat();
+    // Helper to initialize formats
+    void initFormats();
 };
 
 #endif // MYHIGHLIGHTER_H
