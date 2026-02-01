@@ -31,11 +31,11 @@ public:
 
     void showAutoComplete();
     void hideAutoComplete();
-    /** 主动刷新并发射 debugScopeInfo（用于切标签时更新状态栏） */
-    void refreshDebugScopeInfo();
-
     /** 刷新作用域背景与当前行高亮（符号分析完成后由 MainWindow 调用） */
     void refreshScopeAndCurrentLineHighlight();
+
+    /** 将全局鼠标移动到当前光标位置（跳转后由本类或 MainWindow 调用） */
+    void moveMouseToCursor();
 
     /** 作用域条带用：块顶部的 Y 坐标（文档坐标系，与 contentOffset 一致） */
     qreal getBlockTopY(int blockNumber) const;
@@ -50,8 +50,6 @@ public:
 
 private slots:
     void highlighCurrentLine();
-    void onCursorPositionChangedForDebug();
-    void updateAndEmitDebugScopeInfo();
     void updateLineNumberWidget(QRect rect, int dy);
     void updateLineNumberWidgetWidth();
     void updateSaveState();
@@ -146,7 +144,7 @@ private:
     QString getWordAtTextPosition(int position);
     QTextCursor getWordCursorAtPosition(int position);
     bool getPackageNameFromImport(const QPoint& position, QString& packageName, int& startPos, int& endPos);
-    void jumpToDefinition(const QString& symbolName);
+    void jumpToDefinition(const QString& symbolName, int cursorPosition = -1);
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
     void clearHoveredSymbolHighlight();
     bool isSymbolDefinition(const sym_list::SymbolInfo& symbol, const QString& searchWord);
@@ -167,8 +165,6 @@ private:
     bool isConsecutiveSpaces();
 signals:
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
-    /** Debug：光标所在模块及该模块内 logic/struct var/struct type 数量 */
-    void debugScopeInfo(const QString& currentModule, int logicCount, int structVarCount, int structTypeCount);
 };
 
 class LineNumberWidget : public QWidget

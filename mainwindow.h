@@ -76,7 +76,6 @@ private slots:
     void onRelationshipAnalysisError(const QString& fileName, const QString& error);
 
     void onDebug0();
-    void onDebugScopeInfo(const QString& currentModule, int logicCount, int structVarCount, int structTypeCount);
 private:
     Ui::MainWindow *ui;
     QString currentFile;
