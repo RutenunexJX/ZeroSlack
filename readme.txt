@@ -115,7 +115,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - **符号解析架构（Lexer + SVSymbolParser）**
   - 符号解析统一由 `SVLexer`（sv_lexer.h/cpp）与 `SVSymbolParser`（sv_symbol_parser.h/cpp）驱动，作为大纲、补全、代码导航的**唯一数据来源**。Token 类型（sv_token.h）包括 Keyword/Comment/Identifier/Operator/Whitespace/Number/String 等；括号、分号等标点为 Operator，不再视为 Error。
   - SVSymbolParser 对全文 tokenize 后解析 module/task/function/端口列表（ANSI 风格）以及 reg/wire/logic 变量，产出 SymbolInfo 列表；sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePass → SVSymbolParser::parse()，不再使用基于正则的 getAdditionalSymbols 或按行增量 analyzeSpecificLines。
-  - 以下符号类型当前由 SVSymbolParser 直接产出：module、task、function、端口（input/output/inout/ref）、reg/wire/logic。interface、package、typedef、parameter、实例化引脚（sym_inst/sym_inst_pin）等扩展符号的解析与关系暂未完全恢复，部分功能存在已知问题，后续会逐步修复。
+  - 以下符号类型当前由 SVSymbolParser 直接产出：module、task、function、端口（input/output/inout/ref）、reg/wire/logic，以及 typedef/struct/union/enum 及其变量（sym_typedef、sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_enum、sym_enum_value、sym_packed_struct_var、sym_unpacked_struct_var）。interface、package、parameter、实例化引脚（sym_inst/sym_inst_pin）等扩展符号的解析与关系暂未完全恢复，部分功能存在已知问题，后续会逐步修复。
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
   - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
@@ -126,13 +126,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - `reg` / `wire` / `logic` 变量
   - `task` / `function`
   - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，以及 dataType（如 logic[7:0]）等，由 SVSymbolParser 解析。
-  - `interface` / `struct` / `enum` / `parameter` 等扩展类型仍由 sym_list 内 analyzeDataTypes 等路径支持（部分依赖正则），与 SVSymbolParser 主路径并存；实例化引脚（`.pin(sig)`）及 REFERENCES 关系由 SmartRelationshipBuilder 等负责，当前可能存在未恢复或已知问题。
+  - struct/typedef/enum 已迁移至 SVSymbolParser 单遍解析，不再使用正则；`interface` / `parameter` 等扩展类型及实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责，当前可能存在未恢复或已知问题。
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
 - **Struct 与注释**
   - 规则：注释里的 struct/union 不参与分析。findStructRanges 中若匹配起点在注释内则整段跳过；若该段因跨行匹配吞掉下一行真正的 `typedef struct{`，则在跳过段内用“仅匹配关键字”的正则逐处查找，起点不在注释的 struct 单独加入范围。
-  - 结构体类型识别（analyzeDataTypes）用整段匹配位置判断是否在注释内，避免注释里的 `typedef struct` 被识别。
-  - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`（正则含可选 `(?:\[[^\]]*\])?`）。
+  - 结构体/typedef/enum 类型与变量由 SVSymbolParser 在单遍解析中产出（parseTypedef/parseStruct/parseEnum/parseVarDecl），不再依赖 analyzeDataTypes 等正则路径。
+  - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`。
 
 【作用域树 (Scope Tree) — scope_tree.h】
 符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
@@ -361,6 +361,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - MainWindow / MyCodeEditor：已删除 onDebugPrintSymbolIds、disLineNumber 空函数；
     延后符号分析已迁移至 MainWindow::scheduleOpenFileAnalysis，SymbolAnalyzer 不再持有
     基于 MyCodeEditor 的定时器。
+  - 调试逻辑已全部移除：代码中不再包含 qDebug 输出、SV_SYMINFO_STRUCT_DEBUG 等调试宏及
+    相关分支；发布构建无需再通过宏关闭调试输出。
   - SmartRelationshipBuilder：已移除空占位 analyzeInterfaceRelationships 及其调用；
     interface 分析待后续统一扩展接口实现。
   - MyCodeEditor：作用域背景改为持久光标缓存；删除 getScopeBackgroundSelections()，新增

@@ -18,7 +18,8 @@ struct SVToken {
 class SVSymbolParser
 {
 public:
-    SVSymbolParser(const QString &content, const QString &fileName);
+    SVSymbolParser(const QString &content, const QString &fileName,
+                   const QSet<QString> &predefinedTypes = QSet<QString>());
 
     QList<sym_list::SymbolInfo> parse();
 
@@ -32,12 +33,17 @@ private:
 
     void parseModule();
     void parsePortList(const QString &moduleName);
+    void parseTypedef();
+    QString parseEnum(const QString &typeName);
+    void parseStruct(const QString &typeName, bool isPacked);
+    void parseVarDecl(const QString &typeName, sym_list::sym_type_e type);
 
     QString m_content;
     QString m_fileName;
     QVector<SVToken> m_tokens;
     int m_pos = 0;
     QStringList m_scopeStack;
+    QSet<QString> m_knownTypes;
 
     QList<sym_list::SymbolInfo> m_symbols;
     QVector<int> m_lineStarts;
