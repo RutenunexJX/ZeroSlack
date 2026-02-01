@@ -197,9 +197,14 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
       只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
     - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
-    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，以及 **struct 类型**（sym_packed_struct / sym_unpacked_struct）；struct 类型由 SVSymbolParser 产出并设置 moduleScope，便于同模块内跳转。
+    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 类型**（sym_packed_struct / sym_unpacked_struct），以及 **struct 变量**（sym_packed_struct_var / sym_unpacked_struct_var）；struct 类型与变量由 SVSymbolParser 产出并设置 moduleScope，便于同模块内跳转。
     - 优先跳当前文件中的定义；端口类型优先级高于 reg/wire/logic。
     - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
+  - **Struct 相关跳转**：
+    - **成员跳转**：在 `var.member` 表达式中 Ctrl+点击成员名（如 member0），根据变量名解析出 struct 类型，跳转到该 struct 内该成员的定义位置；结构体成员的 moduleScope 为结构体类型名，跳转时按类型过滤、不按模块名过滤。
+    - **变量跳转**：Ctrl+点击 struct 变量名，跳转到其声明（packed/unpacked struct 变量已纳入 isSymbolDefinition 与 definitionTypePriority）。
+    - **类型名跳转**：在声明语句（如 `test_s test_s_var;`）中 Ctrl+点击类型名 test_s，跳转到 `typedef struct { ... } test_s;` 中别名 test_s 的位置（parseStruct 已记录别名 token 的 startLine/startColumn）。
+  - **跳转后鼠标跟随**：本地跳转（当前文件内）与跨文件跳转（navigateToFileAndLine）完成后均调用 `moveMouseToCursor()`，将鼠标指针移动到新光标位置。
   - 跳转过程会复用 `NavigationManager` 的符号导航接口
 
 
@@ -363,8 +368,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - MainWindow / MyCodeEditor：已删除 onDebugPrintSymbolIds、disLineNumber 空函数；
     延后符号分析已迁移至 MainWindow::scheduleOpenFileAnalysis，SymbolAnalyzer 不再持有
     基于 MyCodeEditor 的定时器。
-  - 调试逻辑已全部移除：代码中不再包含 qDebug 输出、SV_SYMINFO_STRUCT_DEBUG 等调试宏及
-    相关分支；发布构建无需再通过宏关闭调试输出。
+  - 调试逻辑已全部移除：代码中不再包含 qDebug 输出、调试信号（如 debugScopeInfo、debugStructMemberCompletion）
+    及对应槽/连接；状态栏不再显示“当前模块 / logic / struct 计数”（已随调试信号一并移除）；发布构建无需再通过宏关闭调试输出。
   - SmartRelationshipBuilder：已移除空占位 analyzeInterfaceRelationships 及其调用；
     interface 分析待后续统一扩展接口实现。
   - MyCodeEditor：作用域背景改为持久光标缓存；删除 getScopeBackgroundSelections()，新增

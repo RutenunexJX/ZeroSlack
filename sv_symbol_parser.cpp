@@ -370,7 +370,10 @@ void SVSymbolParser::parseStruct(const QString &typeName, bool isPacked, bool tr
     if (tok != QLatin1String("{")) return;
     int structStartLine = t->line;
     int structStartCol = t->col;
+    int aliasLine = -1;
+    int aliasCol = -1;
     advance();
+    const int memberStartIndex = m_symbols.size();
     while (!isAtEnd()) {
         t = peek();
         if (!t) break;
@@ -379,60 +382,80 @@ void SVSymbolParser::parseStruct(const QString &typeName, bool isPacked, bool tr
             advance();
             break;
         }
-        if (t->token.type == TokenType::Identifier && !checkKeyword(tok)) {
+        bool isBasicType = (tok == QLatin1String("logic") || tok == QLatin1String("reg") || tok == QLatin1String("wire")
+                           || tok == QLatin1String("bit") || tok == QLatin1String("int") || tok == QLatin1String("integer")
+                           || tok == QLatin1String("byte") || tok == QLatin1String("shortint") || tok == QLatin1String("longint"));
+        if (t->token.type == TokenType::Identifier && (!checkKeyword(tok) || isBasicType)) {
             QString memberTypeName = tok;
-            bool isKnownOrBasic = m_knownTypes.contains(memberTypeName)
-                || memberTypeName == QLatin1String("logic") || memberTypeName == QLatin1String("reg")
-                || memberTypeName == QLatin1String("wire") || memberTypeName == QLatin1String("int")
-                || memberTypeName == QLatin1String("integer") || memberTypeName == QLatin1String("bit");
-            if (isKnownOrBasic) {
-                advance();
-                while (!isAtEnd()) {
-                    t = peek();
-                    if (!t) break;
-                    tok = tokenTextAt(m_content, m_lineStarts, *t);
-                    if (t->token.type == TokenType::Operator && (tok == QLatin1String("[") || tok == QLatin1String("]"))) {
-                        advance();
-                        continue;
-                    }
-                    if (t->token.type == TokenType::Identifier && !checkKeyword(tok)) {
-                        sym_list::SymbolInfo mem;
-                        mem.fileName = m_fileName;
-                        mem.symbolName = tok;
-                        mem.symbolType = sym_list::sym_struct_member;
-                        mem.startLine = t->line;
-                        mem.startColumn = t->col;
-                        mem.endLine = t->line;
-                        mem.endColumn = t->col + tok.length();
-                        mem.position = m_lineStarts.value(t->line, 0) + t->col;
-                        mem.length = tok.length();
-                        mem.moduleScope = structName;
-                        mem.scopeLevel = 1;
-                        mem.dataType = memberTypeName;
-                        m_symbols.append(mem);
-                        advance();
-                        t = peek();
-                        if (t && t->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String(";")) advance();
-                        break;
-                    }
+            advance();
+            while (!isAtEnd()) {
+                t = peek();
+                if (!t) break;
+                tok = tokenTextAt(m_content, m_lineStarts, *t);
+                if (t->token.type == TokenType::Operator && (tok == QLatin1String("[") || tok == QLatin1String("]"))) {
                     advance();
+                    continue;
                 }
-            } else advance();
+                if (t->token.type == TokenType::Identifier && !checkKeyword(tok)) {
+                    sym_list::SymbolInfo mem;
+                    mem.fileName = m_fileName;
+                    mem.symbolName = tok;
+                    mem.symbolType = sym_list::sym_struct_member;
+                    mem.startLine = t->line;
+                    mem.startColumn = t->col;
+                    mem.endLine = t->line;
+                    mem.endColumn = t->col + tok.length();
+                    mem.position = m_lineStarts.value(t->line, 0) + t->col;
+                    mem.length = tok.length();
+                    mem.moduleScope = structName;
+                    mem.scopeLevel = 1;
+                    mem.dataType = memberTypeName;
+                    m_symbols.append(mem);
+                    advance();
+                    t = peek();
+                    if (t && t->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *t) == QLatin1String(";")) advance();
+                    break;
+                }
+                advance();
+            }
             continue;
         }
         advance();
+    }
+    t = peek();
+    if (t && t->token.type == TokenType::Identifier && !checkKeyword(tokenTextAt(m_content, m_lineStarts, *t))) {
+        const QString aliasName = tokenTextAt(m_content, m_lineStarts, *t);
+        if (!trailingIsInlineVar && !aliasName.isEmpty()) {
+            aliasLine = t->line;
+            aliasCol = t->col;
+            for (int i = memberStartIndex; i < m_symbols.size(); ++i) {
+                if (m_symbols[i].symbolType == sym_list::sym_struct_member && m_symbols[i].moduleScope == structName) {
+                    m_symbols[i].moduleScope = aliasName;
+                }
+            }
+            structName = aliasName;
+        }
     }
     sym_list::sym_type_e structSymType = isPacked ? sym_list::sym_packed_struct : sym_list::sym_unpacked_struct;
     sym_list::SymbolInfo ss;
     ss.fileName = m_fileName;
     ss.symbolName = structName;
     ss.symbolType = structSymType;
-    ss.startLine = structStartLine;
-    ss.startColumn = structStartCol;
-    ss.endLine = structStartLine;
-    ss.endColumn = structStartCol + 1;
-    ss.position = m_lineStarts.value(structStartLine, 0) + structStartCol;
-    ss.length = 1;
+    if (aliasLine >= 0) {
+        ss.startLine = aliasLine;
+        ss.startColumn = aliasCol;
+        ss.endLine = aliasLine;
+        ss.endColumn = aliasCol + structName.length();
+        ss.position = m_lineStarts.value(aliasLine, 0) + aliasCol;
+        ss.length = structName.length();
+    } else {
+        ss.startLine = structStartLine;
+        ss.startColumn = structStartCol;
+        ss.endLine = structStartLine;
+        ss.endColumn = structStartCol + 1;
+        ss.position = m_lineStarts.value(structStartLine, 0) + structStartCol;
+        ss.length = 1;
+    }
     if (!m_scopeStack.isEmpty()) ss.moduleScope = m_scopeStack.last();
     ss.scopeLevel = 1;
     m_symbols.append(ss);
@@ -1051,8 +1074,28 @@ void SVSymbolParser::parseModule()
                 advance();
                 if (!isAtEnd()) {
                     const SVToken *after = peek();
-                    if (after && after->token.type == TokenType::Operator && tokenTextAt(m_content, m_lineStarts, *after) == QLatin1String("(")) {
+                    QString afterStr = after ? tokenTextAt(m_content, m_lineStarts, *after) : QString();
+                    if (after && after->token.type == TokenType::Operator && afterStr == QLatin1String("(")) {
                         parseInstantiation(typeName, possibleInst, instLine, instCol);
+                        continue;
+                    }
+                    if (after && after->token.type == TokenType::Operator
+                        && (afterStr == QLatin1String(";") || afterStr == QLatin1String(",")
+                            || afterStr == QLatin1String("=") || afterStr == QLatin1String("["))) {
+                        sym_list::SymbolInfo varSym;
+                        varSym.fileName = m_fileName;
+                        varSym.symbolName = possibleInst;
+                        varSym.symbolType = sym_list::sym_unpacked_struct_var;
+                        varSym.startLine = instLine;
+                        varSym.startColumn = instCol;
+                        varSym.endLine = instLine;
+                        varSym.endColumn = instCol + possibleInst.length();
+                        varSym.position = m_lineStarts.value(instLine, 0) + instCol;
+                        varSym.length = possibleInst.length();
+                        varSym.dataType = typeName;
+                        if (!m_scopeStack.isEmpty()) varSym.moduleScope = m_scopeStack.last();
+                        varSym.scopeLevel = 1;
+                        m_symbols.append(varSym);
                         continue;
                     }
                 }

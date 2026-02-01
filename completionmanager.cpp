@@ -780,7 +780,8 @@ QString CompletionManager::extractStructTypeFromContext(const QString &context)
             if (symbol.symbolName == varName &&
                 (symbol.symbolType == sym_list::sym_packed_struct_var ||
                  symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
-                return symbol.moduleScope;
+                if (!symbol.dataType.isEmpty())
+                    return symbol.dataType;
             }
         }
     }
@@ -947,7 +948,8 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
 
 QString CompletionManager::extractStructVariableFromContext(const QString& context)
 {
-    static const QRegularExpression dotPattern("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\.$");
+    // Matches "var." and "var[0]." and "var[i][j]."; group 1 captures the variable name
+    static const QRegularExpression dotPattern("([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*\\[[^\\]]*\\])*\\s*\\.$");
     QRegularExpressionMatch m = dotPattern.match(context);
     if (m.hasMatch()) {
         return m.captured(1);
@@ -999,6 +1001,7 @@ QString CompletionManager::extractModuleTypeFromContext(const QString& context)
 QString CompletionManager::getStructTypeForVariable(const QString& varName,
                                                    const QString& currentModule)
 {
+    QString result;
     sym_list* symList = sym_list::getInstance();
 
     if (!currentModule.isEmpty()) {
@@ -1008,21 +1011,27 @@ QString CompletionManager::getStructTypeForVariable(const QString& varName,
             getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct_var, ""));
 
         for (const auto& symbol : moduleSymbols) {
-            if (symbol.symbolName == varName) {
-                return symbol.moduleScope;
+            if (symbol.symbolName == varName && !symbol.dataType.isEmpty()) {
+                result = symbol.dataType;
+                break;
             }
         }
     }
 
-    for (const auto& symbol : symList->getAllSymbols()) {
-        if (symbol.symbolName == varName &&
-            (symbol.symbolType == sym_list::sym_packed_struct_var ||
-             symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
-            return symbol.moduleScope;
+    if (result.isEmpty()) {
+        for (const auto& symbol : symList->getAllSymbols()) {
+            if (symbol.symbolName == varName &&
+                (symbol.symbolType == sym_list::sym_packed_struct_var ||
+                 symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
+                if (!symbol.dataType.isEmpty()) {
+                    result = symbol.dataType;
+                    break;
+                }
+            }
         }
     }
 
-    return "";
+    return result;
 }
 
 bool CompletionManager::tryParseStructMemberContext(const QString &line,

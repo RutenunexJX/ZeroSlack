@@ -66,7 +66,6 @@ MyCodeEditor::~MyCodeEditor()
 void MyCodeEditor::initConnection()
 {
     connect(this,SIGNAL(cursorPositionChanged()),this,SLOT(highlighCurrentLine()));
-    connect(this,SIGNAL(cursorPositionChanged()),this,SLOT(onCursorPositionChangedForDebug()));
     connect(this,SIGNAL(textChanged()),this,SLOT(updateSaveState()));
     scopeRefreshTimer = new QTimer(this);
     scopeRefreshTimer->setSingleShot(true);
@@ -183,39 +182,6 @@ void MyCodeEditor::updateScopeBackgrounds()
         int endLine = logic.endLine >= logic.startLine ? logic.endLine : logic.startLine;
         addRange(logic.startLine, endLine, QColor(0, 80, 0, 45), true);
     }
-}
-
-void MyCodeEditor::onCursorPositionChangedForDebug()
-{
-    updateAndEmitDebugScopeInfo();
-}
-
-void MyCodeEditor::updateAndEmitDebugScopeInfo()
-{
-    QString fileName = getFileName();
-    if (fileName.isEmpty()) return;
-    int cursorPosition = textCursor().position();
-    CompletionManager* manager = CompletionManager::getInstance();
-    QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
-
-    int logicCount = 0;
-    int structVarCount = 0;
-    int structTypeCount = 0;
-    if (!currentModule.isEmpty()) {
-        // 状态栏只用行范围统计，不用关系引擎 fallback，避免键入 s 后删除等操作导致计数含入全局 struct
-        const bool useRelationshipFallback = false;
-        logicCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_logic, "", useRelationshipFallback).size();
-        structVarCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct_var, "", useRelationshipFallback).size()
-                         + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct_var, "", useRelationshipFallback).size();
-        structTypeCount = manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct, "", useRelationshipFallback).size()
-                          + manager->getModuleInternalSymbolsByType(currentModule, sym_list::sym_unpacked_struct, "", useRelationshipFallback).size();
-    }
-    emit debugScopeInfo(currentModule, logicCount, structVarCount, structTypeCount);
-}
-
-void MyCodeEditor::refreshDebugScopeInfo()
-{
-    updateAndEmitDebugScopeInfo();
 }
 
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
@@ -1315,7 +1281,8 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
         // 3) 否则走原有的符号跳转逻辑
         QString wordUnderCursor = getWordAtPosition(event->pos());
         if (!wordUnderCursor.isEmpty()) {
-            jumpToDefinition(wordUnderCursor);
+            QTextCursor cur = cursorForPosition(event->pos());
+            jumpToDefinition(wordUnderCursor, cur.position());
             event->accept();
             return;
         }
@@ -1560,14 +1527,17 @@ static int definitionTypePriority(sym_list::sym_type_e t)
     case sym_list::sym_function: return 4;
     case sym_list::sym_reg:
     case sym_list::sym_wire:
-    case sym_list::sym_logic:   return 5;
+    case sym_list::sym_logic:
+    case sym_list::sym_packed_struct_var:
+    case sym_list::sym_unpacked_struct_var: return 5;
     case sym_list::sym_parameter:
     case sym_list::sym_localparam: return 6;
+    case sym_list::sym_struct_member: return 7;
     default:                     return 10;
     }
 }
 
-void MyCodeEditor::jumpToDefinition(const QString& symbolName)
+void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPosition)
 {
     if (symbolName.isEmpty()) {
         return;
@@ -1579,25 +1549,54 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
     }
 
     const QString currentFile = getFileName();
-    int cursorLine = textCursor().blockNumber();
-    QString currentModuleName = symbolList->getCurrentModuleScope(currentFile, cursorLine);
+    const int lineForScope = (cursorPosition >= 0) ? document()->findBlock(cursorPosition).blockNumber() : textCursor().blockNumber();
+    QString currentModuleName = symbolList->getCurrentModuleScope(currentFile, lineForScope);
 
+    QString structTypeNameForMember;
+    QString lineUpToCursor;
+    QString varName, memberPrefix;
+    if (cursorPosition >= 0) {
+        QTextBlock block = document()->findBlock(cursorPosition);
+        const int posInBlock = cursorPosition - block.position();
+        lineUpToCursor = block.text().left(posInBlock).trimmed();
+        CompletionManager* manager = CompletionManager::getInstance();
+        bool try1 = manager->tryParseStructMemberContext(lineUpToCursor, varName, memberPrefix);
+        if (try1 && !varName.isEmpty()) {
+            QString mod = manager->getCurrentModule(currentFile, cursorPosition);
+            structTypeNameForMember = manager->getStructTypeForVariable(varName, mod);
+        }
+    }
     // 作用域限定：在模块内时只考虑当前模块的符号，避免跨模块跳转（如两个模块都有 clk_main 时只跳本模块）
     auto inScope = [&currentModuleName](const sym_list::SymbolInfo& s) {
         if (currentModuleName.isEmpty()) return true;
         return s.moduleScope == currentModuleName;
     };
 
+    auto filterStructMemberByType = [&structTypeNameForMember](const sym_list::SymbolInfo& symbol) {
+        if (structTypeNameForMember.isEmpty()) return false;
+        return symbol.symbolType == sym_list::sym_struct_member && symbol.moduleScope != structTypeNameForMember;
+    };
+
     // ---------- Step 1: 本地搜索（仅当前文件），在模块内时仅当前模块符号 ----------
     QList<sym_list::SymbolInfo> localSymbols = symbolList->findSymbolsByFileName(currentFile);
+    int sameNameCount = 0;
+    int memberSymbolCount = 0;
+    for (const sym_list::SymbolInfo& s : qAsConst(localSymbols)) {
+        if (s.symbolName != symbolName) continue;
+        sameNameCount++;
+        if (s.symbolType == sym_list::sym_struct_member) memberSymbolCount++;
+    }
     sym_list::SymbolInfo localBest;
     bool foundLocal = false;
     int localBestPriority = 999;
+    int localCandidateCount = 0;
     for (const sym_list::SymbolInfo& symbol : qAsConst(localSymbols)) {
         if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
             continue;
         }
-        if (!inScope(symbol)) continue;  // 不在当前作用域则跳过
+        if (filterStructMemberByType(symbol)) continue;  // 结构体成员按“变量.成员”解析出的类型过滤
+        if (symbol.symbolType != sym_list::sym_struct_member && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤；成员符号的 moduleScope 是结构体名
+        localCandidateCount++;
         int p = definitionTypePriority(symbol.symbolType);
         if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
             p -= 100;  // 同模块符号优先（端口/变量等）
@@ -1616,6 +1615,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
         cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, localBest.startColumn);
         setTextCursor(cursor);
         centerCursor();
+        moveMouseToCursor();
         return;
     }
 
@@ -1628,10 +1628,11 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
         if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
             continue;
         }
+        if (filterStructMemberByType(symbol)) continue;  // 结构体成员按“变量.成员”解析出的类型过滤
         if (symbol.fileName == currentFile) {
             continue; // Step 1 已覆盖，忽略当前文件
         }
-        if (!inScope(symbol)) continue;  // 不在当前作用域则跳过（避免跳到其他模块的同名端口）
+        if (symbol.symbolType != sym_list::sym_struct_member && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤
         int p = definitionTypePriority(symbol.symbolType);
         if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
             p -= 100;
@@ -1646,6 +1647,13 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName)
     // ---------- Step 3: 跨文件时通过信号由 MainWindow 打开文件并跳转 ----------
     if (foundGlobal) {
         emit definitionJumpRequested(globalBest.symbolName, globalBest.fileName, globalBest.startLine + 1);
+    }
+}
+
+void MyCodeEditor::moveMouseToCursor()
+{
+    if (viewport() && viewport()->isVisible()) {
+        QCursor::setPos(viewport()->mapToGlobal(cursorRect().center()));
     }
 }
 
@@ -1676,6 +1684,9 @@ bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const 
         case sym_list::sym_localparam:
         case sym_list::sym_packed_struct:
         case sym_list::sym_unpacked_struct:
+        case sym_list::sym_packed_struct_var:
+        case sym_list::sym_unpacked_struct_var:
+        case sym_list::sym_struct_member:
             return true;
         default:
             return false;
