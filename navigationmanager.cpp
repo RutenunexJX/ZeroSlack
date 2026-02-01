@@ -451,7 +451,11 @@ void NavigationManager::updateSymbolHierarchyData()
         sym_list::sym_wire,
         sym_list::sym_logic,
         sym_list::sym_task,
-        sym_list::sym_function
+        sym_list::sym_function,
+        sym_list::sym_packed_struct,
+        sym_list::sym_unpacked_struct,
+        sym_list::sym_packed_struct_var,
+        sym_list::sym_unpacked_struct_var
     };
 
     for (sym_list::sym_type_e symbolType : symbolTypes) {
