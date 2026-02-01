@@ -270,14 +270,8 @@ private:
     void analyzeModuleContainment(const QString& fileName);
     void analyzeVariableReferences(const QString& fileName, const QString& content);
 
-    void analyzeInterfaces(const QString &text);
     void analyzeDataTypes(const QString &text);
-    void analyzePackages(const QString &text);
-    void analyzePreprocessorDirectives(const QString &text);
     void analyzeAlwaysAndAssign(const QString &text);
-    void analyzeParameters(const QString &text);
-    void analyzeConstraints(const QString &text);
-    void getAdditionalSymbols(const QString &text);
     void analyzeStructVariables(const QString &text);
     void analyzeStructMembers(const QString &membersText, const QString &structName, int basePosition, const QString &fullText);
     void analyzeEnumsAndStructs(const QString &text);
@@ -300,24 +294,9 @@ private:
     /** 解析实例化 .pin(sig) 并建立实例 pin 到模块端口的 REFERENCES */
     void parseInstanceConnections(const QString& text, int instStartPos, const QString& moduleTypeName,
                                   int instanceSymbolId, const QVector<int>& lineStarts);
-    /** 扫描全文识别 module 实例化并解析 .pin 连接 */
-    void analyzeModuleInstantiations(const QString& text);
 
     // 检查位置是否在struct范围内
     bool isPositionInStructRange(int position, const QList<StructRange> &structRanges);
-
-    // 单遍合并：从 startPos 起找下一个“结构”匹配（module/endmodule/reg/wire/logic/task/function）
-    // 返回 position >= 0 表示找到，position < 0 表示无更多匹配
-    struct StructuralMatchResult {
-        int position = -1;
-        int length = 0;
-        int capturePos = -1;
-        QString capturedName;
-        int matchType = -1;  // 0=module, 1=endmodule, 2=reg, 3=wire, 4=logic, 5=task, 6=function, 7=endtask, 8=endfunction, 9=begin, 10=end
-    };
-    StructuralMatchResult findNextStructuralMatch(const QString& text, int startPos,
-                                                   const QList<StructRange>& structRanges,
-                                                   int maxSearchLen = 0);
 };
 
 // 🚀 NEW: 符号关系工具函数

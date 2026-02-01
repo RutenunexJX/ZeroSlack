@@ -8,6 +8,7 @@ enum class TokenType {
     Comment,
     Error,
     Identifier,
+    Operator,
     Whitespace,
     Number,
     String,

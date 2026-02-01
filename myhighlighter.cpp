@@ -79,6 +79,8 @@ void MyHighlighter::highlightBlock(const QString &text)
         case TokenType::String:
             setFormat(token.offset, token.length, stringFormat);
             break;
+        case TokenType::Operator:
+            break;
         case TokenType::Error:
             break;
         case TokenType::Whitespace:

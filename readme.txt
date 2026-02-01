@@ -24,9 +24,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 未保存文件关闭时会弹出确认
 - SystemVerilog 语法高亮 (`MyHighlighter`)
   - 基于专用词法分析器 `SVLexer`（sv_lexer.h/cpp、sv_token.h），完全移除高亮路径中的 `QRegularExpression`，避免正则回溯导致的 UI 卡顿。
-  - 按行驱动：`highlightBlock` 内用 `SVLexer::nextToken()` 逐 token 推进，根据 token 类型（Keyword/Comment/Identifier/Number/String 等）调用 `setFormat`；多行块注释通过 `setState`/`getState` 跨块保持。
+  - 按行驱动：`highlightBlock` 内用 `SVLexer::nextToken()` 逐 token 推进，根据 token 类型（Keyword/Comment/Identifier/Operator/Number/String 等）调用 `setFormat`；多行块注释通过 `setState`/`getState` 跨块保持。
   - 关键字表：从资源文件 `config/keywords.txt` 加载（静态缓存），涵盖 Verilog/SystemVerilog 与预处理器关键字；Identifier 与表匹配时按关键字高亮，注释与字符串内不会误标。
-  - 支持单行注释 `//`、块注释 `/* */`、双引号/单引号字符串（含 `\"` 转义）、数字、标识符；高亮类型与颜色与原有行为一致。
+  - 支持单行注释 `//`、块注释 `/* */`、双引号字符串（含 `\"` 转义）、数字、标识符、操作符（括号/分号等，TokenType::Operator）；Verilog 中单引号用于字面量（如 `1'b1`），不作为字符串高亮。
 - 行号栏 (`LineNumberWidget`)
   - 显示行号
   - 点击行号可将光标跳转到对应行
@@ -112,6 +112,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
 
+- **符号解析架构（Lexer + SVSymbolParser）**
+  - 符号解析统一由 `SVLexer`（sv_lexer.h/cpp）与 `SVSymbolParser`（sv_symbol_parser.h/cpp）驱动，作为大纲、补全、代码导航的**唯一数据来源**。Token 类型（sv_token.h）包括 Keyword/Comment/Identifier/Operator/Whitespace/Number/String 等；括号、分号等标点为 Operator，不再视为 Error。
+  - SVSymbolParser 对全文 tokenize 后解析 module/task/function/端口列表（ANSI 风格）以及 reg/wire/logic 变量，产出 SymbolInfo 列表；sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePass → SVSymbolParser::parse()，不再使用基于正则的 getAdditionalSymbols 或按行增量 analyzeSpecificLines。
+  - 以下符号类型当前由 SVSymbolParser 直接产出：module、task、function、端口（input/output/inout/ref）、reg/wire/logic。interface、package、typedef、parameter、实例化引脚（sym_inst/sym_inst_pin）等扩展符号的解析与关系暂未完全恢复，部分功能存在已知问题，后续会逐步修复。
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
   - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
@@ -121,23 +125,14 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     若缺少配对 endmodule 或模块名不合法，该段代码不会被判为“在模块内”。
   - `reg` / `wire` / `logic` 变量
   - `task` / `function`
-  - `interface` / `struct` / `enum` / `parameter` 等扩展类型
-  - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，以及
-    `virtual interface`、`interface.modport` 等；支持 `input clk, rst_n` 等列表声明与继承属性
-  - 实例化引脚（`.pin(sig)`）：符号类型为 `sym_inst_pin`，与模块端口建立 REFERENCES 关系，供“跳转到定义”使用
+  - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，以及 dataType（如 logic[7:0]）等，由 SVSymbolParser 解析。
+  - `interface` / `struct` / `enum` / `parameter` 等扩展类型仍由 sym_list 内 analyzeDataTypes 等路径支持（部分依赖正则），与 SVSymbolParser 主路径并存；实例化引脚（`.pin(sig)`）及 REFERENCES 关系由 SmartRelationshipBuilder 等负责，当前可能存在未恢复或已知问题。
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
 - **Struct 与注释**
   - 规则：注释里的 struct/union 不参与分析。findStructRanges 中若匹配起点在注释内则整段跳过；若该段因跨行匹配吞掉下一行真正的 `typedef struct{`，则在跳过段内用“仅匹配关键字”的正则逐处查找，起点不在注释的 struct 单独加入范围。
   - 结构体类型识别（analyzeDataTypes）用整段匹配位置判断是否在注释内，避免注释里的 `typedef struct` 被识别。
   - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`（正则含可选 `(?:\[[^\]]*\])?`）。
-- 端口与实例化解析（sym_list）
-  - 在 extractSymbolsAndContainsOnePassImpl 中发现 module 后调用 parseModulePorts：
-    跳过 `#(params)`，解析端口列表 `( ... )`，支持注释、逗号分隔、方向/类型继承；
-    端口符号含 dataType（如 logic[7:0]、my_struct_t 等），并与模块建立 CONTAINS 关系。
-  - getAdditionalSymbols 中调用 analyzeModuleInstantiations：识别“ModuleType inst_name #(...) (”模式，
-    为实例添加 sym_inst 符号，再通过 parseInstanceConnections 解析 `.pin(sig)`，
-    为每个引脚添加 sym_inst_pin 并建立到对应模块端口的 REFERENCES 关系。
 
 【作用域树 (Scope Tree) — scope_tree.h】
 符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
@@ -147,12 +142,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     parent/children 指针、本层符号 QHash<QString, SymbolInfo>（O(1) 查找）。
   - ScopeManager：按文件维护根节点；由 sym_list 在解析时构建并持有（getScopeManager()）。
 - 解析方式（栈式）
-  - 在 sym_list::extractSymbolsAndContainsOnePassImpl 中维护 QStack<ScopeNode*>：
-    - 遇到 module / task / function / begin 时创建对应 ScopeNode 并 push；
-    - 遇到 reg / wire / logic 时写入当前 scopeStack.top()->symbols 并照常 addSymbol；
-    - 遇到 endmodule / endtask / endfunction / end 时设置 endLine 并 pop。
-  - 正则匹配已扩展：除原有 module/endmodule/reg/wire/logic/task/function 外，增加
-    endtask、endfunction、begin、end 的匹配，用于正确闭合作用域。
+  - 在 sym_list::extractSymbolsAndContainsOnePassImpl 中先调用 SVSymbolParser::parse() 得到符号列表，再按符号顺序维护 QStack<ScopeNode*>：
+    - 遇到 module / task / function 时创建对应 ScopeNode 并 push；
+    - 遇到 reg / wire / logic / 端口时写入当前 scopeStack.top()->symbols 并照常 addSymbol；
+    - 遇到 endmodule / endtask / endfunction（通过符号的 startLine/endLine）时设置 endLine 并 pop。
+  - 结构符号与作用域闭合完全由 SVSymbolParser 产出的 SymbolInfo 驱动，不再使用 findNextStructuralMatch 等正则匹配。
 - 接口
   - findScopeAt(fileName, line)：返回该行所在的最深层作用域。
   - resolveSymbol(name, startScope)：沿 parent 链向上查找符号，实现词法遮蔽（内层同名遮蔽外层）。
@@ -287,8 +281,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
    - 若工作区分析通过 createBackgroundEditor 频繁创建 MyCodeEditor (QWidget)
      来读取文件，每个文件一个编辑器实例，内存与 CPU 初始化开销巨大。
    - 目标：废弃“临时编辑器”方式，改为 analyzeFileContent(const QString& content)
-     等接口，直接对 QString 或轻量级 QTextDocument 做正则解析，避免创建
-     MyCodeEditor 实例；多线程访问 sym_list 时需保证单例线程安全或后台独立
+     等接口，直接对 QString 调用 sym_list::setContentIncremental（内部由 SVSymbolParser 解析），
+     ​避免创建 MyCodeEditor 实例；多线程访问 sym_list 时需保证单例线程安全或后台独立
      临时表再合并。
 
 3. 高频同步 IO 与无效重算
@@ -306,7 +300,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 [x] 阶段 B — 解析器轻量化 (SymbolAnalyzer)（已完成）
   - 废弃 createBackgroundEditor；新增 analyzeFileContent(fileName, content)，
-    直接对 QString 调用 sym_list::setContentIncremental 进行正则解析。
+    直接对 QString 调用 sym_list::setContentIncremental。
+  - setContentIncremental 内部统一走 extractSymbolsAndContainsOnePass，即 SVSymbolParser::parse()，
+    不再使用基于正则的 getAdditionalSymbols；非首次分析也改为全量重算，保证符号唯一来自 SVSymbolParser。
   - analyzeWorkspace / analyzeFile 改为 QFile+QTextStream 读内容后调用
     setContentIncremental，不再创建 MyCodeEditor。
   - sym_list::getInstance() 使用静态 QMutex 保证多线程下单例创建安全；
@@ -329,9 +325,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 [x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
   - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
     （findScopeAt、resolveSymbol）；按文件维护作用域树，O(1) 层内查找与正确词法遮蔽。
-  - sym_list：在 extractSymbolsAndContainsOnePassImpl 中栈式解析，构建作用域树；扩展
-    findNextStructuralMatch 支持 endtask/endfunction/begin/end；clearSymbolsForFile 时
-    同步 clearFile 作用域树；getScopeManager() 惰性创建并返回 ScopeManager。
+  - sym_list：在 extractSymbolsAndContainsOnePassImpl 中先调用 SVSymbolParser::parse() 得到符号列表，
+    再按符号顺序栈式构建作用域树；clearSymbolsForFile 时同步 clearFile 作用域树；
+    getScopeManager() 惰性创建并返回 ScopeManager。findNextStructuralMatch 已移除，结构符号完全由 SVSymbolParser 产出。
   - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
     findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
   - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。状态栏 struct 计数调用 getModuleInternalSymbolsByType(..., useRelationshipFallback=false)，仅按行范围统计，不含关系引擎 fallback。
@@ -376,14 +372,21 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 信号安全：SymbolRelationshipEngine::addRelationship 须保持 Qt::QueuedConnection，
     禁止在后台线程直接触发 UI 刷新。
   - 写锁保护：sym_list 的增量解析仍受 QMutex / QReadWriteLock 保护，防止多线程崩溃。
-  - 正则优化：符号解析用正则已迁移至静态缓存单例，避免在循环内重复实例化 QRegularExpression；
-    语法高亮已改为 SVLexer 驱动，高亮路径中不再使用正则。
+  - 符号解析：主路径已迁移至 SVLexer + SVSymbolParser，setContentIncremental 仅通过 extractSymbolsAndContainsOnePass
+    调用 SVSymbolParser::parse()；getAdditionalSymbols、analyzeModuleInstantiations、analyzeSpecificLines 等
+    基于正则的符号路径已移除。语法高亮由 SVLexer 驱动，高亮路径中不再使用正则；hasSignificantChanges 等
+    改为简单字符串/词边界判断。
 
 若发现新的冗余，可参考本节原则处理并更新本段说明。
 
 ==========================================================================
 已知问题 (Known Issues)
 ==========================================================================
+
+- **迁移后部分功能未完全恢复**：符号解析已统一迁移到 SVLexer + SVSymbolParser 架构，部分依赖旧正则路径的
+  功能（如 interface/package/typedef/parameter 的完整索引、实例化引脚 REFERENCES、部分补全与跳转）暂未完全
+  恢复或存在已知问题，后续会逐步修复。当前可优先依赖 module/task/function/port/reg/wire/logic 等由 SVSymbolParser
+  直接产出的符号。
 
 - **Module 识别 (Module Recognition)**：当前 module 识别仍存在已知问题与局限。有效模块
   的判定已统一为“必须有 module + 配对 endmodule + 合法模块名”（见上文“有效模块判定”），
