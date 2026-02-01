@@ -206,8 +206,9 @@ private:
 
     bool isInternalVariableType(sym_list::sym_type_e symbolType);
     QString findModuleAtPosition(const QList<sym_list::SymbolInfo>& modules,
-                               int cursorPosition,
-                               const QString& fileName);
+                                 int cursorPosition,
+                                 const QString& fileName,
+                                 const QString& fileContent);
 
     // 🚀 新增：检查符号类型是否匹配命令
     bool isSymbolTypeMatchCommand(sym_list::sym_type_e symbolType,
