@@ -1,4 +1,4 @@
-#include "symbolrelationshipengine.h"
+﻿#include "symbolrelationshipengine.h"
 #include "syminfo.h"
 #include <QCoreApplication>
 #include <QThread>
@@ -9,7 +9,6 @@
 SymbolRelationshipEngine::SymbolRelationshipEngine(QObject *parent)
     : QObject(parent)
 {
-    // 预分配空间提高性能
     relationshipGraph.reserve(1000);
     queryCache.reserve(500);
 }
@@ -18,34 +17,26 @@ SymbolRelationshipEngine::~SymbolRelationshipEngine()
 {
 }
 
-// 🚀 核心关系管理API实现
-
 void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
                                               RelationType type, const QString& context, int confidence)
 {
-    if (fromSymbolId == toSymbolId) return; // 防止自引用
+    if (fromSymbolId == toSymbolId) return;
 
-    // 检查关系是否已存在
     if (hasRelationship(fromSymbolId, toSymbolId, type)) {
         return;
     }
 
-    // 创建关系边
     RelationshipEdge outgoingEdge(toSymbolId, type, context, confidence);
     RelationshipEdge incomingEdge(fromSymbolId, type, context, confidence);
 
-    // 添加到关系图
     relationshipGraph[fromSymbolId].outgoingEdges.append(outgoingEdge);
     relationshipGraph[toSymbolId].incomingEdges.append(incomingEdge);
 
-    // 更新类型索引
     addToTypeIndex(fromSymbolId, toSymbolId, type);
 
-    // 阶段 C：批量提交期间不逐条失效缓存，避免 O(N^2)
     if (updateDepth == 0)
         invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
 
-    // 若在非主线程（如符号分析后台线程），通过 invokeMethod 在主线程发射信号，避免排队传递 RelationType
     if (QThread::currentThread() != QCoreApplication::instance()->thread()) {
         QMetaObject::invokeMethod(this, "emitRelationshipAddedQueued", Qt::QueuedConnection,
                                   Q_ARG(int, fromSymbolId), Q_ARG(int, toSymbolId), Q_ARG(int, static_cast<int>(type)));
@@ -65,7 +56,6 @@ void SymbolRelationshipEngine::removeRelationship(int fromSymbolId, int toSymbol
         return;
     }
 
-    // 从输出边移除
     RelationshipNode& fromNode = relationshipGraph[fromSymbolId];
     fromNode.outgoingEdges.erase(
         std::remove_if(fromNode.outgoingEdges.begin(), fromNode.outgoingEdges.end(),
@@ -75,7 +65,6 @@ void SymbolRelationshipEngine::removeRelationship(int fromSymbolId, int toSymbol
         fromNode.outgoingEdges.end()
     );
 
-    // 从输入边移除
     RelationshipNode& toNode = relationshipGraph[toSymbolId];
     toNode.incomingEdges.erase(
         std::remove_if(toNode.incomingEdges.begin(), toNode.incomingEdges.end(),
@@ -85,7 +74,6 @@ void SymbolRelationshipEngine::removeRelationship(int fromSymbolId, int toSymbol
         toNode.incomingEdges.end()
     );
 
-    // 更新类型索引
     removeFromTypeIndex(fromSymbolId, toSymbolId, type);
 
     if (updateDepth == 0)
@@ -103,7 +91,6 @@ void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
     if (updateDepth == 0)
         invalidateCacheForSymbol(symbolId);
 
-    // 移除所有输出关系
     for (const RelationshipEdge& edge : node.outgoingEdges) {
         if (relationshipGraph.contains(edge.targetId)) {
             RelationshipNode& targetNode = relationshipGraph[edge.targetId];
@@ -118,7 +105,6 @@ void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
         removeFromTypeIndex(symbolId, edge.targetId, edge.type);
     }
 
-    // 移除所有输入关系
     for (const RelationshipEdge& edge : node.incomingEdges) {
         if (relationshipGraph.contains(edge.targetId)) {
             RelationshipNode& sourceNode = relationshipGraph[edge.targetId];
@@ -133,7 +119,6 @@ void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
         removeFromTypeIndex(edge.targetId, symbolId, edge.type);
     }
 
-    // 移除节点（缓存已在函数开头按 symbol 粒度失效）
     relationshipGraph.remove(symbolId);
 }
 
@@ -147,11 +132,8 @@ void SymbolRelationshipEngine::clearAllRelationships()
     emit relationshipsCleared();
 }
 
-// 🚀 基本查询API实现
-
 QList<int> SymbolRelationshipEngine::getRelatedSymbols(int symbolId, RelationType type, bool outgoing) const
 {
-    // 检查缓存
     QPair<int, RelationType> cacheKey(symbolId, type);
     if (cacheValid && queryCache.contains(cacheKey)) {
         return queryCache[cacheKey];
@@ -174,7 +156,6 @@ QList<int> SymbolRelationshipEngine::getRelatedSymbols(int symbolId, RelationTyp
         }
     }
 
-    // 缓存结果
     if (cacheValid) {
         queryCache[cacheKey] = result;
     }
@@ -217,8 +198,6 @@ bool SymbolRelationshipEngine::hasRelationship(int fromSymbolId, int toSymbolId,
     return false;
 }
 
-// 🚀 高频查询API实现 (针对SystemVerilog特化)
-
 QList<int> SymbolRelationshipEngine::getModuleChildren(int moduleId) const
 {
     return getRelatedSymbols(moduleId, CONTAINS, true);
@@ -226,19 +205,14 @@ QList<int> SymbolRelationshipEngine::getModuleChildren(int moduleId) const
 
 QList<int> SymbolRelationshipEngine::getSymbolReferences(int symbolId) const
 {
-    return getRelatedSymbols(symbolId, REFERENCES, false); // 输入关系：谁引用了这个符号
+    return getRelatedSymbols(symbolId, REFERENCES, false);
 }
 
 QList<int> SymbolRelationshipEngine::getSymbolDependencies(int symbolId) const
 {
-    return getRelatedSymbols(symbolId, REFERENCES, true); // 输出关系：这个符号引用了谁
+    return getRelatedSymbols(symbolId, REFERENCES, true);
 }
-/*
-QList<int> SymbolRelationshipEngine::getModuleInstances(int moduleId) const
-{
-    return getRelatedSymbols(moduleId, INSTANTIATES, false); // 输入关系：谁实例化了这个模块
-}
-*/
+
 QList<int> SymbolRelationshipEngine::getModuleInstances(int moduleId) const
 {
     if (moduleId <= 0)
@@ -251,10 +225,8 @@ QList<int> SymbolRelationshipEngine::getModuleInstances(int moduleId) const
 
 QList<int> SymbolRelationshipEngine::getTaskCalls(int taskId) const
 {
-    return getRelatedSymbols(taskId, CALLS, false); // 输入关系：谁调用了这个task
+    return getRelatedSymbols(taskId, CALLS, false);
 }
-
-// 🚀 高级查询API实现
 
 QList<int> SymbolRelationshipEngine::findRelationshipPath(int fromSymbolId, int toSymbolId, int maxDepth) const
 {
@@ -264,7 +236,6 @@ QList<int> SymbolRelationshipEngine::findRelationshipPath(int fromSymbolId, int 
 
     findPathRecursive(fromSymbolId, toSymbolId, 0, maxDepth, visited, currentPath, allPaths);
 
-    // 返回最短路径
     if (allPaths.isEmpty()) {
         return QList<int>();
     }
@@ -315,8 +286,6 @@ QList<int> SymbolRelationshipEngine::getSymbolHierarchy(int rootSymbolId) const
     return result;
 }
 
-// 🚀 批量操作API实现
-
 void SymbolRelationshipEngine::beginUpdate()
 {
     ++updateDepth;
@@ -334,19 +303,16 @@ void SymbolRelationshipEngine::endUpdate()
 void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
 {
     beginUpdate();
-    // 先清除该文件的现有关系
     invalidateFileRelationships(fileName);
 
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(fileName);
 
-    // 🚀 构建模块包含关系
     for (const sym_list::SymbolInfo& symbol : qAsConst(fileSymbols)) {
         if (symbol.symbolType == sym_list::sym_module) {
             int moduleId = symbol.symbolId;
             symbolsByFile[fileName].insert(moduleId);
 
-            // 查找该模块包含的所有符号
             for (const sym_list::SymbolInfo& otherSymbol : qAsConst(fileSymbols)) {
                 if (otherSymbol.symbolId != moduleId &&
                     isSymbolInModule(otherSymbol, symbol)) {
@@ -360,8 +326,6 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
         }
     }
 
-    // 🚀 TODO: 分析变量引用关系，task调用关系等
-    // 这需要更复杂的代码解析，可以后续实现
     endUpdate();
 }
 
@@ -371,7 +335,6 @@ void SymbolRelationshipEngine::invalidateFileRelationships(const QString& fileNa
 
     const QSet<int>& fileSymbolIds = symbolsByFile[fileName];
 
-    // 移除文件中所有符号的关系
     for (int symbolId : fileSymbolIds) {
         removeAllRelationships(symbolId);
     }
@@ -386,7 +349,6 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 按文件分组重建关系
     QHash<QString, QList<sym_list::SymbolInfo>> symbolsByFile;
     for (const sym_list::SymbolInfo& symbol : qAsConst(allSymbols)) {
         symbolsByFile[symbol.fileName].append(symbol);
@@ -396,8 +358,6 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
         buildFileRelationships(it.key());
     }
 }
-
-// 🚀 统计和调试API实现
 
 int SymbolRelationshipEngine::getRelationshipCount() const
 {
@@ -422,7 +382,6 @@ QStringList SymbolRelationshipEngine::getRelationshipSummary() const
     summary << QString("Total symbols: %1").arg(relationshipGraph.size());
     summary << QString("Total relationships: %1").arg(getRelationshipCount());
 
-    // 按类型统计
     QList<RelationType> types = {CONTAINS, REFERENCES, INSTANTIATES, CALLS};
     for (RelationType type : types) {
         int count = getRelationshipCount(type);
@@ -433,8 +392,6 @@ QStringList SymbolRelationshipEngine::getRelationshipSummary() const
 
     return summary;
 }
-
-// 🚀 辅助方法实现
 
 void SymbolRelationshipEngine::invalidateCache()
 {
@@ -454,7 +411,6 @@ void SymbolRelationshipEngine::invalidateCacheForSymbol(int symbolId)
 
     const RelationshipNode& node = relationshipGraph[symbolId];
 
-    // 失效以该符号为 key 的缓存：遍历 queryCache 移除 first == symbolId 的条目
     QMutableHashIterator<QPair<int, RelationType>, QList<int>> it(queryCache);
     while (it.hasNext()) {
         it.next();
@@ -463,7 +419,6 @@ void SymbolRelationshipEngine::invalidateCacheForSymbol(int symbolId)
         }
     }
 
-    // 失效“邻居”的缓存：与该符号有边的另一端，其 (id, type) 查询结果可能包含 symbolId
     for (const RelationshipEdge& edge : node.outgoingEdges) {
         queryCache.remove(qMakePair(edge.targetId, edge.type));
     }
@@ -533,7 +488,7 @@ void SymbolRelationshipEngine::getInfluencedSymbolsRecursive(int symbolId, int c
     if (visited.contains(symbolId)) return;
 
     visited.insert(symbolId);
-    if (currentDepth > 0) { // 不包含起始符号
+    if (currentDepth > 0) {
         result.append(symbolId);
     }
 
@@ -558,5 +513,5 @@ SymbolRelationshipEngine::RelationType stringToRelationshipType(const QString& t
     if (typeStr == "Generates") return SymbolRelationshipEngine::GENERATES;
     if (typeStr == "Constrains") return SymbolRelationshipEngine::CONSTRAINS;
 
-    return SymbolRelationshipEngine::CONTAINS; // 默认值
+    return SymbolRelationshipEngine::CONTAINS;
 }

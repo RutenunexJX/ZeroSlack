@@ -13,7 +13,6 @@ ModeManager::ModeManager(QTabWidget* tabWidget, QObject *parent)
         return;
     }
 
-    // Initialize timers
     shiftReleaseTimer = new QTimer(this);
     shiftReleaseTimer->setSingleShot(true);
     shiftReleaseTimer->setInterval(SHIFT_TIMEOUT);
@@ -23,11 +22,7 @@ ModeManager::ModeManager(QTabWidget* tabWidget, QObject *parent)
     shiftDoubleClickTimer->setSingleShot(true);
     shiftDoubleClickTimer->setInterval(DOUBLE_CLICK_INTERVAL);
     connect(shiftDoubleClickTimer, &QTimer::timeout, this, &ModeManager::onDoubleClickTimeout);
-
-    // Setup shortcuts
     setupModeShortcuts(qobject_cast<QWidget*>(parent));
-
-    // Apply initial mode styles
     applyModeStyles();
 }
 
@@ -37,13 +32,8 @@ ModeManager::~ModeManager()
 
 void ModeManager::switchMode()
 {
-    // Toggle mode
     currentMode = (currentMode == NormalMode) ? AlternateMode : NormalMode;
-
-    // Apply new tab colors immediately
     applyModeStyles();
-
-    // Update shortcuts
     updateShortcutStates();
 
     emit modeChanged(currentMode);
@@ -68,10 +58,9 @@ bool ModeManager::handleKeyPress(QKeyEvent *event)
             shiftPressed = true;
             shiftReleaseTimer->start(); // Start timeout for this press
         }
-        return true; // Event handled
+        return true;
     }
 
-    // If any other key is pressed, reset double-click detection
     if (event->key() != Qt::Key_Shift) {
         resetShiftDoubleClick();
     }
@@ -83,19 +72,14 @@ bool ModeManager::handleKeyRelease(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Shift && !event->isAutoRepeat()) {
         if (shiftPressed && shiftReleaseTimer->isActive()) {
-            // Valid shift press-release cycle
             shiftClickCount++;
-
             if (shiftClickCount == 1) {
-                // First click - start double-click detection window
                 shiftDoubleClickTimer->start();
             } else if (shiftClickCount == 2) {
-                // Double-click detected!
                 switchMode();
                 resetShiftDoubleClick();
             }
         } else {
-            // Invalid shift release (timeout or not properly pressed)
             resetShiftDoubleClick();
         }
 
@@ -109,14 +93,12 @@ bool ModeManager::handleKeyRelease(QKeyEvent *event)
 
 void ModeManager::onShiftTimeout()
 {
-    // Shift held too long - reset
     shiftPressed = false;
     resetShiftDoubleClick();
 }
 
 void ModeManager::onDoubleClickTimeout()
 {
-    // Double-click window expired - reset
     resetShiftDoubleClick();
 }
 
@@ -124,12 +106,9 @@ void ModeManager::setupModeShortcuts(QWidget* parent)
 {
     if (!parent) return;
 
-    // Create normal mode shortcuts (C++11 compatible)
     normalModeShortcuts[0] = std::unique_ptr<QShortcut>(new QShortcut(QKeySequence("Ctrl+1"), parent));
     normalModeShortcuts[1] = std::unique_ptr<QShortcut>(new QShortcut(QKeySequence("Ctrl+2"), parent));
     normalModeShortcuts[2] = std::unique_ptr<QShortcut>(new QShortcut(QKeySequence("Ctrl+3"), parent));
-
-    // Create alternate mode shortcuts with different key combinations
     alternateModeShortcuts[0] = std::unique_ptr<QShortcut>(new QShortcut(QKeySequence("Ctrl+7"), parent));
     alternateModeShortcuts[1] = std::unique_ptr<QShortcut>(new QShortcut(QKeySequence("Alt+O"), parent));
     alternateModeShortcuts[2] = std::unique_ptr<QShortcut>(new QShortcut(QKeySequence("Alt+S"), parent));
@@ -146,8 +125,6 @@ void ModeManager::setupModeShortcuts(QWidget* parent)
     });
     connect(alternateModeShortcuts[2].get(), &QShortcut::activated, this, []() {
     });
-
-    // Initially disable alternate mode shortcuts
     updateShortcutStates();
 }
 
@@ -166,7 +143,6 @@ void ModeManager::applyModeStyles()
         tabBackgroundColor = "#3c3c3c";
     }
 
-    // Apply styles to QTabBar specifically
     tabWidget->tabBar()->setStyleSheet(QString(
         "QTabBar::tab {"
         "    background-color: %2;"
@@ -184,7 +160,6 @@ void ModeManager::applyModeStyles()
         "}")
         .arg(tabTextColor, tabBackgroundColor));
 
-    // Preserve editor fonts after mode switch
     for (int i = 0; i < tabWidget->count(); ++i) {
         MyCodeEditor *editor = qobject_cast<MyCodeEditor*>(tabWidget->widget(i));
         if (editor) {
@@ -195,7 +170,6 @@ void ModeManager::applyModeStyles()
 
 void ModeManager::updateShortcutStates()
 {
-    // Enable/disable shortcuts based on current mode
     for (auto& shortcut : normalModeShortcuts) {
         if (shortcut) {
             shortcut->setEnabled(currentMode == NormalMode);

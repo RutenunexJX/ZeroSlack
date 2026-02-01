@@ -78,7 +78,6 @@ private:
     NavigationWidget* navigationWidget = nullptr;
     NavigationView currentView = FileHierarchyView;
 
-    // Connected managers
     TabManager* connectedTabManager = nullptr;
     WorkspaceManager* connectedWorkspaceManager = nullptr;
     SymbolAnalyzer* connectedSymbolAnalyzer = nullptr;

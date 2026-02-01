@@ -20,7 +20,6 @@ public:
     sym_list();
     ~sym_list();
 
-    // UPDATED: Smart pointer singleton pattern
     static sym_list* getInstance();
 
     enum sym_type_e{
@@ -33,18 +32,17 @@ public:
         sym_interface_parameter,
         sym_interface_modport,
 
-        sym_enum,                    // 枚举类型定义
-        sym_enum_var,               // 枚举变量
-        sym_enum_value,             // 枚举值
+        sym_enum,
+        sym_enum_var,
+        sym_enum_value,
 
-        // Enhanced struct support
-        sym_packed_struct,          // packed struct类型
-        sym_unpacked_struct,        // unpacked struct类型
-        sym_packed_struct_var,      // packed struct变量
-        sym_unpacked_struct_var,    // unpacked struct变量
-        sym_struct_member,          // 结构体成员
+        sym_packed_struct,
+        sym_unpacked_struct,
+        sym_packed_struct_var,
+        sym_unpacked_struct_var,
+        sym_struct_member,
 
-        sym_typedef,                // typedef定义
+        sym_typedef,
 
         sym_generate_if,
         sym_generate_for,
@@ -53,6 +51,7 @@ public:
         sym_always,
         sym_always_ff,
         sym_always_comb,
+        sym_always_latch,
         sym_assign,
 
         sym_def_ifdef,
@@ -82,9 +81,8 @@ public:
         sym_module,
         sym_module_parameter,
         sym_inst,
-        sym_inst_pin,             // 实例化处的 .pin(sig) 引脚，用于 REFERENCES 到模块端口
+        sym_inst_pin,
 
-        // 模块端口类型（ANSI 风格，用于“跳转到定义”等）
         sym_port_input,
         sym_port_output,
         sym_port_inout,
@@ -95,7 +93,6 @@ public:
         sym_package
     };
 
-    // 🚀 UPDATED: 简化的符号信息结构
     struct SymbolInfo {
         QString fileName;
         QString symbolName;
@@ -107,18 +104,9 @@ public:
         int position;
         int length;
 
-        // 🚀 NEW: 简化的索引系统
-        int symbolId;              // 全局唯一ID (替代symbolAbsoluteIndex)
-
-        // 🚀 REMOVED: 复杂的关系字段全部移除，由SymbolRelationshipEngine管理
-        // 删除: int symbolAbsoluteIndex;
-        // 删除: QList<int> bidirIndexTable;
-
-        // 🚀 NEW: 可选的快速访问字段(由关系引擎同步维护)
-        QString moduleScope;       // 所属模块名称(用于快速过滤和显示)
-        int scopeLevel = 0;        // 作用域层级(0=全局, 1=模块内, 2=块内等)
-
-        // 端口/用户类型显示：如 my_struct_t、logic[7:0] 等
+        int symbolId;
+        QString moduleScope;
+        int scopeLevel = 0;
         QString dataType;
     };
 
@@ -176,32 +164,28 @@ public:
     bool isPositionInComment(int position);
     bool isPositionInMultiLineComment(int pos);
     QList<CommentRegion> getCommentRegions() const;
-    QList<RegexMatch> findMatchesOutsideComments(const QString &text, const QRegularExpression &pattern);
 
     /** 基于内容的增量分析，供后台线程使用，不依赖 QWidget */
     void setContentIncremental(const QString& fileName, const QString& content);
     bool needsAnalysis(const QString& fileName, const QString& content);
 
-    // 供外部（如 MainWindow）判断：当前内容是否“影响符号”，若否（仅注释/空格等）可不触发分析
+    /** 供外部判断：当前内容是否影响符号，若否（仅注释/空格等）可不触发分析 */
     bool contentAffectsSymbols(const QString& fileName, const QString& content);
 
-    // 单遍合并：在一次遍历中提取 module/reg/wire/logic/task/function 并同步建立 CONTAINS 关系
+    /** 单遍合并：在一次遍历中提取 module/reg/wire/logic/task/function 并同步建立 CONTAINS 关系 */
     void extractSymbolsAndContainsOnePass(const QString& text);
-    
-    // 查找模块的结束行号
+
     int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
-    /** 兼容壳：仅更新 previousFileContents，struct/typedef/enum 由 SVSymbolParser 在 onePass 中产出 */
     void refreshStructTypedefEnumForFile(const QString &fileName, const QString &content);
 
 private:
-    mutable QReadWriteLock symbolDbLock;  // 供后台线程只读访问 findSymbolsByName/getSymbolById 等
-    // Central symbol storage
+    mutable QReadWriteLock symbolDbLock;
     QList<SymbolInfo> symbolDatabase;
 
-    QHash<sym_type_e, QList<int>> symbolTypeIndex;        // 类型 -> 数据库索引列表
-    QHash<QString, QList<int>> symbolNameIndex;          // 名称 -> 数据库索引列表
-    QHash<QString, QList<int>> fileNameIndex;            // 文件名 -> 数据库索引列表
-    QHash<int, int> symbolIdToIndex;                     // 🚀 NEW: symbolId -> 数据库索引映射
+    QHash<sym_type_e, QList<int>> symbolTypeIndex;
+    QHash<QString, QList<int>> symbolNameIndex;
+    QHash<QString, QList<int>> fileNameIndex;
+    QHash<int, int> symbolIdToIndex;
 
     mutable QHash<sym_type_e, QStringList> cachedSymbolNamesByType;
     mutable QSet<QString> cachedUniqueNames;
@@ -215,47 +199,29 @@ private:
 
     static std::unique_ptr<sym_list> instance;
 
-    void getModuleName(const QString &text);
-    void buildCommentRegions(const QString &text);
-    void findSingleLineComments(const QString &text);
-    void findMultiLineComments(const QString &text);
     void calculateLineColumn(const QString &text, int position, int &line, int &column);
     bool isMatchInComment(int matchStart, int matchLength);
 
     QString currentFileName;
 
-    void getTasksAndFunctions(const QString &text);
-
-    // File state tracking
     struct FileState {
         QString contentHash;
-        QString symbolRelevantHash;  // 仅与符号相关的规范化内容哈希，用于跳过“仅注释/空格”等变更
+        QString symbolRelevantHash;
         QDateTime lastModified;
         bool needsFullAnalysis = true;
-        int lastAnalyzedLineCount = 0;  // 上次分析时的行数，增/删行时触发重分析以便作用域背景更新
+        int lastAnalyzedLineCount = 0;
     };
     QHash<QString, FileState> fileStates;
 
-    // Line-based symbol mapping
-    QHash<QString, QHash<int, QList<SymbolInfo>>> lineBasedSymbols; // fileName -> line -> symbols
+    QHash<QString, QHash<int, QList<SymbolInfo>>> lineBasedSymbols;
 
     QString calculateContentHash(const QString& content);
     QString calculateSymbolRelevantHash(const QString& content);
     QList<int> detectChangedLines(const QString& fileName, const QString& newContent);
     void clearSymbolsForLines(const QString& fileName, const QList<int>& lines);
-    void analyzeSpecificLines(const QString& fileName, const QString& content, const QList<int>& lines);
     void updateLineBasedSymbols(const SymbolInfo& symbol);
 
-    // Cache file content for line-level comparison
     QHash<QString, QString> previousFileContents;
-
-    // Line-level analysis helper methods
-    void analyzeModulesInLine(const QString& lineText, int lineStartPos, int lineNum);
-    void analyzeTasksFunctionsInLine(const QString& lineText, int lineStartPos, int lineNum);
-    void analyzeVariablePattern(const QString& lineText, int lineStartPos, int lineNum,
-                                const QRegularExpression& pattern, sym_type_e symbolType);
-    void analyzeTaskFunctionPattern(const QString& lineText, int lineStartPos, int lineNum,
-                                    const QRegularExpression& pattern, sym_type_e symbolType);
 
     void rebuildAllIndexes();
     void addToIndexes(int symbolIndex);
@@ -268,32 +234,11 @@ private:
     void analyzeModuleContainment(const QString& fileName);
     void analyzeVariableReferences(const QString& fileName, const QString& content);
 
-    void analyzeAlwaysAndAssign(const QString &text);
     void clearStructTypedefEnumSymbolsForFile(const QString &fileName);
 
-    // 辅助结构：存储struct的范围
-    struct StructRange {
-        int startPos;  // struct开始位置（'{'的位置）
-        int endPos;    // struct结束位置（'}'的位置）
-    };
-    
-    // 查找所有struct的范围（包括packed和unpacked）
-    QList<StructRange> findStructRanges(const QString &text);
-    void extractSymbolsAndContainsOnePassImpl(const QString& text, const QList<StructRange>& structRanges,
-                                               int maxSearchWindow = 0);
-
-    /** 解析 module 头部端口列表（ANSI 风格），忽略 #(params)，仅解析 (ports)；会 addSymbol 并建立 CONTAINS */
-    void parseModulePorts(const QString& text, int moduleKeywordPos, const QString& moduleName, int moduleId,
-                          const QVector<int>& lineStarts);
-    /** 解析实例化 .pin(sig) 并建立实例 pin 到模块端口的 REFERENCES */
-    void parseInstanceConnections(const QString& text, int instStartPos, const QString& moduleTypeName,
-                                  int instanceSymbolId, const QVector<int>& lineStarts);
-
-    // 检查位置是否在struct范围内
-    bool isPositionInStructRange(int position, const QList<StructRange> &structRanges);
+    void extractSymbolsAndContainsOnePassImpl(const QString& text, int maxSearchWindow = 0);
 };
 
-// 🚀 NEW: 符号关系工具函数
 bool isSymbolInModule(const sym_list::SymbolInfo& symbol, const sym_list::SymbolInfo& module);
 QString getModuleNameContainingSymbol(const sym_list::SymbolInfo& symbol, const QList<sym_list::SymbolInfo>& allSymbols);
 

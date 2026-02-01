@@ -1,5 +1,3 @@
-// ============ mycodeeditor.h 更新内容 ============
-
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
 
@@ -9,10 +7,10 @@
 #include <QPlainTextEdit>
 #include <QCompleter>
 #include <QTimer>
-#include <QMouseEvent>  // 新增：鼠标事件支持
+#include <QMouseEvent>
 
 class LineNumberWidget;
-class MainWindow;  // 新增：前向声明
+class MainWindow;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -67,7 +65,6 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
 
-    // 新增：鼠标事件处理
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
@@ -89,7 +86,6 @@ private:
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
 
-    // Completion system
     QCompleter *completer;
     CompletionModel *completionModel;
     QTimer *autoCompleteTimer;
@@ -103,19 +99,18 @@ private:
     // 内容变化后延迟刷新作用域背景，避免删除行后灰色消失
     QTimer *scopeRefreshTimer = nullptr;
 
-    int lastKnownBlockCount = -1;  // 行数变化时触发分析，使新增/删行后作用域背景更新
+    int lastKnownBlockCount = -1;
 
     /** 缓存的作用域背景选区（QTextCursor 随文档自动更新，仅在分析完成时由 updateScopeBackgrounds 刷新） */
     QList<QTextEdit::ExtraSelection> m_scopeSelections;
 
     QString textUnderCursor() const;
 
-    // Custom command system
     struct CustomCommand {
-        QString prefix;              // e.g., "r "
-        sym_list::sym_type_e symbolType;  // e.g., sym_reg
-        QString description;         // e.g., "reg variables"
-        QString defaultValue;        // e.g., "reg"
+        QString prefix;
+        sym_list::sym_type_e symbolType;
+        QString description;
+        QString defaultValue;
     };
 
     QList<CustomCommand> customCommands;
@@ -134,7 +129,6 @@ private:
     int commandStartPosition = -1;
     int commandEndPosition = -1;
 
-    // Alternate mode system
     bool isInAlternateMode = false;
     QString alternateCommandBuffer;
     QStringList alternateModeCommands;
@@ -143,13 +137,11 @@ private:
     void executeAlternateModeCommand(const QString &command);
     void showAlternateModeCommands(const QString &filter = QString());
 
-    // 新增：定义跳转功能
     bool ctrlPressed = false;
     QString hoveredWord;
     int hoveredWordStartPos = -1;
     int hoveredWordEndPos = -1;
 
-    // Definition jump methods
     QString getWordAtPosition(const QPoint& position);
     QString getWordAtTextPosition(int position);
     QTextCursor getWordCursorAtPosition(int position);
@@ -162,12 +154,10 @@ private:
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();
 
-    // include 跳转相关
     bool getIncludeInfoAtPosition(const QPoint& position, int &startPos, int &endPos, QString &includePath);
     bool tryJumpToIncludeAtPosition(const QPoint& position);
     bool openIncludeFile(const QString& includePath);
 
-    // 增强功能
     void showSymbolTooltip(const QString& symbolName, const QPoint& position);
     QString getSymbolTypeString(sym_list::sym_type_e symbolType);
 
@@ -176,7 +166,6 @@ private:
     bool commandModeExitedByDoubleSpace = false;
     bool isConsecutiveSpaces();
 signals:
-    // 可以添加一个信号来通知定义跳转事件
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
     /** Debug：光标所在模块及该模块内 logic/struct var/struct type 数量 */
     void debugScopeInfo(const QString& currentModule, int logicCount, int structVarCount, int structTypeCount);

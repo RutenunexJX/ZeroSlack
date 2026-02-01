@@ -130,8 +130,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
 - **Struct 与注释**
-  - 规则：注释里的 struct/union 不参与分析。findStructRanges 中若匹配起点在注释内则整段跳过；若该段因跨行匹配吞掉下一行真正的 `typedef struct{`，则在跳过段内用“仅匹配关键字”的正则逐处查找，起点不在注释的 struct 单独加入范围。
-  - 结构体/typedef/enum 类型与变量由 SVSymbolParser 在单遍解析中产出（parseTypedef/parseStruct/parseEnum/parseVarDecl），不再依赖 analyzeDataTypes 等正则路径。
+  - 结构体/typedef/enum 类型与变量由 SVSymbolParser 在单遍解析中产出（parseTypedef/parseStruct/parseEnum/parseVarDecl），注释内的内容由 Lexer 识别为 Comment 不参与符号产出。
   - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`。
 
 【作用域树 (Scope Tree) — scope_tree.h】
@@ -154,7 +153,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 分析模式：
 - 打开标签分析：`analyzeOpenTabs`
-  - 对当前所有打开的 SV 文件，通过 `TabManager::getPlainTextFromOpenFile` 取内容后调用 `analyzeFileContent`，不依赖编辑器对象
+  - 对当前打开的 SV 文件（`TabManager::getOpenSystemVerilogFiles()`），先对该批文件名执行 `clearSymbolsForFile`，再逐文件通过 `getPlainTextFromOpenFile` 取内容后调用 `analyzeFileContent`，不依赖编辑器对象
 - 工作区分析：`analyzeWorkspace` / `startAnalyzeWorkspaceAsync`
   - 通过 `WorkspaceManager` 拿到整个目录树中的 `.sv/.v/.vh/.svh/.vp/.svp` 文件
   - 使用 QFile+QTextStream 读入内容，每个文件送入 `sym_list::setContentIncremental`（阶段 B 轻量化，不创建 MyCodeEditor）
@@ -162,8 +161,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 供文件变化回调 (`fileChanged`) 调用
 
 增量分析：
-- `MainWindow::scheduleOpenFileAnalysis(fileName, delayMs)` 按 fileName 去抖，超时后从 TabManager 取内容调用 `analyzeFileContent`
-  - 根据是否包含关键字（如 `module` / `task` / `function` 等）决定延时（1s/3s），避免每次按键都触发全量分析
+- `MainWindow::scheduleOpenFileAnalysis(fileName, delayMs)` 按 fileName 去抖，超时后从 TabManager 取内容调用 `analyzeFileContent`；`cancelScheduledOpenFileAnalysis(fileName)` 可取消已调度分析。
+  - 触发与延时：行数变化时 500ms；无工作区时根据**当前行**是否含显著关键字（`module`/`endmodule`/`reg`/`wire`/`logic`/`task`/`endtask`/`function`/`endfunction`）决定 1s 或 3s，避免每次按键都触发全量分析。
 
 
 ==========================================================================
@@ -186,15 +185,19 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 【定义跳转（Ctrl+Click）】
 - 在 `MyCodeEditor` 中：
-  - 按住 Ctrl 并将鼠标移动到标识符上时：
-    - 光标变成手型（仅当当前作用域内存在该符号定义时）
-    - 标识符高亮为蓝色下划线
+  - 按住 Ctrl 并将鼠标移动到标识符或 `` `include `` 路径上时：
+    - 光标变成手型（仅当当前作用域内存在该符号定义，或位于可跳转的 include/package 上时）
+    - 标识符或路径高亮为蓝色下划线
     - 可选地弹出 Tooltip 展示定义位置等信息
-  - Ctrl+左键可跳转到符号定义
+  - Ctrl+左键跳转优先级：
+    1) **Include**：若点击在 `` `include "filename" `` 的路径字符串上，通过 `tryJumpToIncludeAtPosition` / `openIncludeFile` 打开被包含文件。
+    2) **Package**：若点击在 `import pkg::*;` / `import pkg::sym;` 的 package 名上，跳转到该 package 定义（`getPackageNameFromImport` + `jumpToDefinition`）。
+    3) **符号定义**：否则按符号名跳转（`getWordAtPosition` + `jumpToDefinition`）。
+  - 符号跳转规则：
     - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
       只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
     - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
-    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，以及 **struct 类型**（sym_packed_struct / sym_unpacked_struct）；struct 类型在 analyzeDataTypes 中加入时会设置 moduleScope，便于同模块内跳转。
+    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，以及 **struct 类型**（sym_packed_struct / sym_unpacked_struct）；struct 类型由 SVSymbolParser 产出并设置 moduleScope，便于同模块内跳转。
     - 优先跳当前文件中的定义；端口类型优先级高于 reg/wire/logic。
     - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
   - 跳转过程会复用 `NavigationManager` 的符号导航接口
@@ -220,18 +223,17 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - `CompletionManager` 中（用于关系感知型补全）
 
 分析流程（简化）：
-1. 打开 Workspace
+1. 打开 Workspace（批量）
    - 先触发符号批量分析 (`SymbolAnalyzer::analyzeWorkspace`)
-   - 然后由 `SmartRelationshipBuilder` 对所有 SV 文件进行逐个关系分析
-2. `RelationshipProgressDialog`
-   - 显示两阶段进度：
-     - 阶段 1：符号分析
-     - 阶段 2：关系分析
-   - 展示当前正在处理的文件、已完成数量、进度条等
-   - 支持“取消”分析，触发 `analysisCancelled`
-3. 分析结果
-   - `analysisCompleted(fileName, relationshipsFound)` 按文件汇报
-   - 所有文件处理后，会自动关闭进度对话框并在状态栏给出汇总
+   - 然后由 `SmartRelationshipBuilder` 对所有 SV 文件进行逐个关系分析（`analyzeMultipleFiles`），结果经 `relationshipBatchWatcher` 回主线程 `beginUpdate`/`endUpdate` 写回引擎。
+2. 单文件关系分析（编辑/保存时）
+   - `MainWindow::requestSingleFileRelationshipAnalysis(fileName, content)`：仅当 `hasSignificantChanges` 通过时才触发；在后台 `QtConcurrent::run` 中调用 `SmartRelationshipBuilder::computeRelationships`，结果经 `relationshipSingleFileWatcher` 回主线程写回。
+   - 触发时机：符号分析超时后（`scheduleOpenFileAnalysis` 回调里）、保存后、文件监视到变更后；编辑器中 `onTextChanged` 启动 `relationshipAnalysisDebounceTimer`（约 2s），停止输入后到时再请求单文件关系分析，避免连续按键重复触发。
+3. `RelationshipProgressDialog`
+   - 显示两阶段进度：阶段 1 符号分析（`setSymbolAnalysisProgress`）、阶段 2 关系分析（`updateProgress`）
+   - 展示当前正在处理的文件、已完成数量、进度条等；支持“取消”分析，触发 `analysisCancelled`
+4. 分析结果
+   - `analysisCompleted(fileName, relationshipsFound)` 按文件汇报；所有文件处理后自动关闭进度对话框并在状态栏给出汇总
 
 其它：
 - 所有新增/清空关系会通知 `CompletionManager` 刷新内部缓存

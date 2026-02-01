@@ -65,11 +65,8 @@ MyCodeEditor::~MyCodeEditor()
 
 void MyCodeEditor::initConnection()
 {
-    //cursor
     connect(this,SIGNAL(cursorPositionChanged()),this,SLOT(highlighCurrentLine()));
     connect(this,SIGNAL(cursorPositionChanged()),this,SLOT(onCursorPositionChangedForDebug()));
-
-    //textChanged
     connect(this,SIGNAL(textChanged()),this,SLOT(updateSaveState()));
     scopeRefreshTimer = new QTimer(this);
     scopeRefreshTimer->setSingleShot(true);
@@ -82,8 +79,6 @@ void MyCodeEditor::initConnection()
     //blockCount：行数变化时立即更新 logic 等作用域背景，避免晚一帧
     connect(this,SIGNAL(blockCountChanged(int)),this,SLOT(updateLineNumberWidgetWidth()));
     connect(this,SIGNAL(blockCountChanged(int)),this,SLOT(highlighCurrentLine()));
-
-    //updateRequest
     connect(this,SIGNAL(updateRequest(QRect,int)),this,SLOT(updateLineNumberWidget(QRect,int)));
 }
 
@@ -326,8 +321,6 @@ void MyCodeEditor::lineNumberWidgetWheelEvent(QWheelEvent *event)
 bool MyCodeEditor::saveFile()
 {
     QString fileName;
-
-    // Check if we have a valid filename and the file exists
     if(mFileName.isEmpty() || !QFile::exists(mFileName)){
         fileName = QFileDialog::getSaveFileName(this, "Save file");
 
@@ -391,7 +384,6 @@ bool MyCodeEditor::checkSaved()
 
 void MyCodeEditor::initAutoComplete()
 {
-    // Create completion model and completer
     completionModel = new CompletionModel(this);
     completer = new QCompleter(this);
     completer->setModel(completionModel);
@@ -399,8 +391,6 @@ void MyCodeEditor::initAutoComplete()
     completer->setCompletionMode(QCompleter::PopupCompletion);
     completer->setCaseSensitivity(Qt::CaseInsensitive);
     completer->setMaxVisibleItems(15);
-
-    // Timer setup
     autoCompleteTimer = new QTimer(this);
     autoCompleteTimer->setSingleShot(true);
     autoCompleteTimer->setInterval(0);
@@ -413,8 +403,6 @@ void MyCodeEditor::initAutoComplete()
         if (mw && mw->relationshipBuilder && !getFileName().isEmpty())
             mw->requestSingleFileRelationshipAnalysis(getFileName(), toPlainText());
     });
-
-    // Connect signals
     connect(autoCompleteTimer, &QTimer::timeout, this, &MyCodeEditor::onAutoCompleteTimer);
     connect(completer, QOverload<const QModelIndex &>::of(&QCompleter::activated),
             this, &MyCodeEditor::onCompletionActivated);
@@ -472,7 +460,6 @@ void MyCodeEditor::onTextChanged()
         relationshipAnalysisDebounceTimer->start();
     }
 
-    // Autocompletion logic
     autoCompleteTimer->stop();
 
     QTextCursor cursor = textCursor();
@@ -533,12 +520,10 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
 {
     CompletionManager* manager = CompletionManager::getInstance();
 
-    // 🚀 获取当前光标位置和文件名
     QTextCursor cursor = textCursor();
     int cursorPosition = cursor.position();
     QString fileName = getFileName();
 
-    // 🚀 使用严格的模块作用域补全
     QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
 
     if (!currentModule.isEmpty()) {
@@ -565,7 +550,6 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 {
     CompletionModel::CompletionItem item = completionModel->getItem(index);
 
-    // Skip non-selectable items (headers)
     if (item.text.contains("::") || item.text == "No matching commands" || item.text == "No matching symbols") {
         return;
     }
@@ -580,24 +564,20 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
     if (isInCustomCommandMode) {
         QString actualCompletion;
 
-        // Use defaultValue if available, otherwise use text
         if (!item.defaultValue.isEmpty()) {
             actualCompletion = item.defaultValue;
         } else {
             actualCompletion = item.text;
         }
 
-        // Replace entire line with completion
         cursor.movePosition(QTextCursor::StartOfLine, QTextCursor::MoveAnchor);
         cursor.movePosition(QTextCursor::EndOfLine, QTextCursor::KeepAnchor);
         cursor.insertText(actualCompletion);
 
-        // Clear command mode
         isInCustomCommandMode = false;
         currentCommandPrefix.clear();
         clearCommandHighlight();
     } else {
-        // Standard symbol completion - replace current word
         cursor.setPosition(wordStartPos);
         cursor.setPosition(textCursor().position(), QTextCursor::KeepAnchor);
         cursor.insertText(item.text);
@@ -667,7 +647,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         isInAlternateMode = (mainWindow->modeManager->getCurrentMode() == ModeManager::AlternateMode);
     }
 
-    // Always allow Shift key events to propagate to MainWindow for mode switching
     if (event->key() == Qt::Key_Shift) {
         event->ignore();
         return;
@@ -703,7 +682,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
             }
         }
 
-        // Handle other alternate mode input
         if (event->key() == Qt::Key_Backspace) {
             if (!alternateCommandBuffer.isEmpty()) {
                 alternateCommandBuffer.chop(1);
@@ -736,7 +714,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         return;
     }
 
-    // Normal mode QCompleter handling
     if (completer->popup()->isVisible()) {
         switch (event->key()) {
         case Qt::Key_Down:
@@ -747,15 +724,12 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         case Qt::Key_Enter:
         case Qt::Key_Tab:
             {
-                // Handle case when no item is explicitly selected
                 QModelIndex currentIndex = completer->popup()->currentIndex();
                 if (!currentIndex.isValid() && completionModel->rowCount() > 0) {
-                    // Auto-select first valid item if none selected
                     for (int i = 0; i < completionModel->rowCount(); i++) {
                         QModelIndex index = completionModel->index(i, 0);
                         CompletionModel::CompletionItem item = completionModel->getItem(index);
 
-                        // Skip headers and non-selectable items
                         if (!item.text.contains("::") &&
                             item.text != "No matching commands" &&
                             item.text != "No matching symbols") {
@@ -802,15 +776,11 @@ void MyCodeEditor::showAutoComplete()
         QTextCursor cursor = textCursor();
         QRect rect = cursorRect(cursor);
         rect.setWidth(completer->popup()->sizeHintForColumn(0) + 20);
-
-        // Auto-select first valid item in command mode
         if (isInCustomCommandMode) {
-            // Find first selectable item (skip headers)
             for (int i = 0; i < completionModel->rowCount(); i++) {
                 QModelIndex index = completionModel->index(i, 0);
                 CompletionModel::CompletionItem item = completionModel->getItem(index);
 
-                // Skip non-selectable items (headers, "No matching" messages)
                 if (!item.text.contains("::") &&
                     item.text != "No matching commands" &&
                     item.text != "No matching symbols") {
@@ -1002,19 +972,15 @@ QStringList MyCodeEditor::getCommandModeInternalVariables(const QString &prefix)
 {
     CompletionManager* manager = CompletionManager::getInstance();
 
-    // 获取当前光标位置和文件名
     QTextCursor cursor = textCursor();
     int cursorPosition = cursor.position();
     QString fileName = getFileName();
 
-    // 🚀 关键：获取当前模块名
     QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
 
     if (!currentModule.isEmpty()) {
-        // 🚀 在模块内：根据命令类型过滤内部变量
         return manager->getModuleInternalVariablesByType(currentModule, currentCommandType, prefix);
     } else {
-        // 🚀 在模块外：根据命令类型返回全局符号
         return manager->getGlobalSymbolsByType(currentCommandType, prefix);
     }
 }
@@ -1027,7 +993,6 @@ void MyCodeEditor::highlightCommandText()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
-    // Find the command prefix position
     int prefixPos = -1;
     for (const CustomCommand &cmd : qAsConst(customCommands)) {
         int pos = lineUpToCursor.lastIndexOf(cmd.prefix);
@@ -1042,14 +1007,11 @@ void MyCodeEditor::highlightCommandText()
 
     if (prefixPos == -1) return;
 
-    // Calculate absolute positions
     commandStartPosition = currentBlock.position() + prefixPos;
     commandEndPosition = cursor.position();
 
-    // Create extra selection for command highlight
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
-    // Remove any existing command highlight
     extraSelections.erase(
         std::remove_if(extraSelections.begin(), extraSelections.end(),
             [](const QTextEdit::ExtraSelection &selection) {
@@ -1058,7 +1020,6 @@ void MyCodeEditor::highlightCommandText()
         extraSelections.end()
     );
 
-    // Add new command highlight
     QTextEdit::ExtraSelection commandSelection;
     commandSelection.format.setBackground(QColor(60, 60, 60, 180)); // Dark background for command text
     commandSelection.format.setForeground(QColor(255, 255, 255));   // White text
@@ -1075,7 +1036,6 @@ void MyCodeEditor::highlightCommandText()
 
 void MyCodeEditor::clearCommandHighlight()
 {
-    // Remove command highlight from extra selections
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
     extraSelections.erase(
@@ -1096,16 +1056,10 @@ QString MyCodeEditor::getWordUnderCursor()
 {
     QTextCursor cursor = textCursor();
     int currentPos = cursor.position();
-
-    // Find word start
     cursor.movePosition(QTextCursor::StartOfWord, QTextCursor::MoveAnchor);
     wordStartPos = cursor.position();
-
-    // Find word end
     cursor.setPosition(currentPos);
     cursor.movePosition(QTextCursor::EndOfWord, QTextCursor::MoveAnchor);
-
-    // Extract word
     cursor.setPosition(wordStartPos, QTextCursor::MoveAnchor);
     cursor.setPosition(currentPos, QTextCursor::KeepAnchor);
 
@@ -1115,8 +1069,6 @@ QString MyCodeEditor::getWordUnderCursor()
 void MyCodeEditor::initCustomCommands()
 {
     customCommands.clear();
-
-    // Define custom commands with default values
     CustomCommand regCommand;
     regCommand.prefix = "r ";
     regCommand.symbolType = sym_list::sym_reg;
@@ -1183,11 +1135,9 @@ void MyCodeEditor::initCustomCommands()
 
 bool MyCodeEditor::checkForCustomCommand(const QString &lineUpToCursor)
 {
-    // Check if we're in a custom command
     for (const CustomCommand &cmd : qAsConst(customCommands)) {
         int prefixPos = lineUpToCursor.lastIndexOf(cmd.prefix);
         if (prefixPos != -1) {
-            // Check if there's only whitespace or nothing before the prefix
             QString beforePrefix = lineUpToCursor.left(prefixPos).trimmed();
             if (beforePrefix.isEmpty()) {
                 isInCustomCommandMode = true;
@@ -1235,7 +1185,6 @@ void MyCodeEditor::initAlternateModeCommands()
 {
     alternateModeCommands.clear();
 
-    // Define alternate mode commands
     alternateModeCommands << "save" << "save_as" << "open" << "new" << "close"
                          << "copy" << "paste" << "cut" << "undo" << "redo"
                          << "find" << "replace" << "goto_line" << "select_all"
@@ -1248,16 +1197,13 @@ void MyCodeEditor::processAlternateModeInput(const QString &input)
 
     alternateCommandBuffer = input.trimmed().toLower();
 
-    // Ensure immediate display of command list
     showAlternateModeCommands(alternateCommandBuffer);
 }
 
 void MyCodeEditor::showAlternateModeCommands(const QString &filter)
 {
-    // Update command completion list
     completionModel->updateCommandCompletions(alternateModeCommands, filter);
 
-    // Show if there's content
     if (completionModel->rowCount() > 0) {
         showAutoComplete();
     } else {
@@ -1276,7 +1222,6 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
     }
 
     if (cmd == "save") {
-        // Use TabManager instead of direct MainWindow calls
         if (mainWindow->tabManager) {
             mainWindow->tabManager->saveCurrentTab();
         }
@@ -1330,24 +1275,20 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
         hoveredWord.clear();
     }
 
-    // Check if we're in alternate mode
     MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
     if (mainWindow && mainWindow->modeManager) {
         isInAlternateMode = (mainWindow->modeManager->getCurrentMode() == ModeManager::AlternateMode);
     }
 
-    // Always allow Shift key release events to propagate to MainWindow for mode switching
     if (event->key() == Qt::Key_Shift) {
         QPlainTextEdit::keyReleaseEvent(event);
         return;
     }
 
-    // For other keys in alternate mode, don't propagate
     if (isInAlternateMode) {
         return;
     }
 
-    // Normal mode - pass through to base class
     QPlainTextEdit::keyReleaseEvent(event);
 }
 

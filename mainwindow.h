@@ -8,7 +8,6 @@
 #include <QDockWidget>
 #include <memory>
 
-// Forward declarations for managers
 class TabManager;
 class WorkspaceManager;
 class ModeManager;
@@ -16,7 +15,6 @@ class SymbolAnalyzer;
 class NavigationManager;
 class NavigationWidget;
 
-// 🚀 NEW: Relationship system (needed for RelationshipToAdd and SmartRelationshipBuilder)
 class SymbolRelationshipEngine;
 #include "smartrelationshipbuilder.h"
 #include <QFutureWatcher>
@@ -31,21 +29,18 @@ class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
-    // Allow MyCodeEditor to access managers
     friend class MyCodeEditor;
 
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    // Public access to managers for MyCodeEditor
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<WorkspaceManager> workspaceManager;
     std::unique_ptr<ModeManager> modeManager;
     std::unique_ptr<SymbolAnalyzer> symbolAnalyzer;
     std::unique_ptr<NavigationManager> navigationManager;
 
-    // 🚀 NEW: Public access to relationship system
     std::unique_ptr<SymbolRelationshipEngine> relationshipEngine;
     std::unique_ptr<SmartRelationshipBuilder> relationshipBuilder;
 
@@ -75,7 +70,6 @@ private slots:
     void onNavigationRequested(const QString& filePath, int lineNumber);
     void onSymbolNavigationRequested(const sym_list::SymbolInfo& symbol);
 
-    // 🚀 NEW: Relationship engine signal handlers
     void onRelationshipAdded(int fromSymbolId, int toSymbolId, int /*SymbolRelationshipEngine::RelationType*/ type);
     void onRelationshipsCleared();
     void onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound);
@@ -96,7 +90,6 @@ private:
         bool isActive = false;
     } relationshipAnalysisTracker;
 
-    // 🚀 异步关系分析：单文件与批量
     QFutureWatcher<QVector<RelationshipToAdd>>* relationshipSingleFileWatcher = nullptr;
     QString pendingRelationshipFileName;
     /** 阶段 C：上次对该文件做关系分析时的内容，用于 hasSignificantChanges 去抖 */
@@ -129,8 +122,6 @@ private:
     void navigateToFileAndLine(const QString& filePath, int lineNumber = -1);
 
     void setupManagerConnections();
-
-    // 🚀 NEW: Relationship system setup
     void setupRelationshipEngine();
 
     QPushButton* debugButton;

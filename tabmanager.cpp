@@ -11,7 +11,6 @@ TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
         return;
     }
 
-    // Connect tab widget signals
     connect(tabWidget, &QTabWidget::tabCloseRequested,
             this, &TabManager::onTabCloseRequested);
     connect(tabWidget, &QTabWidget::currentChanged,
@@ -35,8 +34,6 @@ void TabManager::createNewTab()
 bool TabManager::openFileInTab(const QString& fileName)
 {
     QString fileToOpen = fileName;
-
-    // If no filename provided, show file dialog
     if (fileToOpen.isEmpty()) {
         fileToOpen = QFileDialog::getOpenFileName(
             qobject_cast<QWidget*>(parent()), "open file");
@@ -100,15 +97,11 @@ void TabManager::closeTab(int index)
     if (!codeEditor) return;
 
     QString fileName = codeEditor->getFileName();
-
-    // Check if file needs saving
     if (!confirmCloseUnsaved(codeEditor)) {
         return; // User cancelled or save failed
     }
 
     tabWidget->removeTab(index);
-    // Widget automatically deleted by Qt parent-child relationship
-
     emit tabClosed(fileName);
 }
 
