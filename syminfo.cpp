@@ -3,7 +3,9 @@
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
 #include "sv_symbol_parser.h"
+#include "sv_treesitter_parser.h"
 
+#include <QDebug>
 #include <QRegularExpression>
 #include <QFile>
 #include <QFileInfo>
@@ -177,6 +179,19 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, int max
     scopeMgr->setFileRoot(currentFileName, fileRoot);
     QStack<ScopeNode*> scopeStack;
     scopeStack.push(fileRoot);
+
+    // 调试：每次分析文件时用 SVTreeSitterParser 解析并打印（加载工作区、打开文件、编辑器内容变更都会走到这里）
+    {
+        SVTreeSitterParser tsParser;
+        tsParser.parse(text);
+        QList<SymbolInfo> tsSymbols = tsParser.getSymbols();
+        qDebug() << "SVTreeSitterParser [file]" << currentFileName << "symbols:" << tsSymbols.size();
+        if (!tsSymbols.isEmpty()) {
+            const SymbolInfo &first = tsSymbols.first();
+            qDebug() << "  first: name=" << first.symbolName << "type=" << first.symbolType
+                     << "line=" << first.startLine << "col=" << first.startColumn;
+        }
+    }
 
     QSet<QString> knownTypes;
     for (const SymbolInfo &s : symbolDatabase) {
