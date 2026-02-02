@@ -64,3 +64,15 @@ RESOURCES += \
 
 DISTFILES += \
     readme.txt
+
+INCLUDEPATH += $$PWD/thirdparty/tree_sitter/lib/include
+
+INCLUDEPATH += $$PWD/thirdparty/tree_sitter/lib/src
+SOURCES += $$PWD/thirdparty/tree_sitter/lib/src/lib.c
+
+SOURCES += \
+    $$PWD/thirdparty/tree_sitter_systemverilog/src/parser.c
+	
+QMAKE_CFLAGS += -std=c99 -Wno-unused-parameter
+
+win32-g++: DEFINES += __USE_MINGW_ANSI_STDIO=1
