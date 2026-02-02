@@ -1,49 +1,25 @@
 #include "mainwindow.h"
 #include "symbolrelationshipengine.h"
+#include "sv_treesitter_parser.h"
 
 #include <QApplication>
 
-extern "C" {
-#include <tree_sitter/api.h>
-}
-extern "C" TSLanguage *tree_sitter_systemverilog();
-
 int main(int argc, char *argv[])
 {
-    // === Tree-sitter 测试开始 ===
-    qDebug() << "Initializing Tree-sitter...";
-    // 1. 创建解析器
-    TSParser *parser = ts_parser_new();
-
-    // 2. 设置语言
-    TSLanguage *lang = tree_sitter_systemverilog();
-    bool success = ts_parser_set_language(parser, lang);
-
-    if (success) {
-        qDebug() << "Tree-sitter language set successfully!";
-
-        // 3. 解析一段简单的代码
-        const char *source_code = "module test(input clk); endmodule";
-        TSTree *tree = ts_parser_parse_string(
-            parser,
-            NULL,
-            source_code,
-            strlen(source_code)
-        );
-
-        // 4. 获取根节点并打印类型，验证解析是否工作
-        TSNode root_node = ts_tree_root_node(tree);
-        const char *type = ts_node_type(root_node);
-        qDebug() << "Root node type:" << type; // 应该输出 "source_file" 或类似内容
-
-        // 5. 清理
-        ts_tree_delete(tree);
-    } else {
-        qCritical() << "Failed to set SystemVerilog language!";
+    // === SVTreeSitterParser 集成验证 ===
+    {
+        SVTreeSitterParser parser;
+        QString code = QStringLiteral("module test(input clk); endmodule");
+        parser.parse(code);
+        QList<sym_list::SymbolInfo> symbols = parser.getSymbols();
+        qDebug() << "SVTreeSitterParser: got" << symbols.size() << "symbol(s)";
+        if (!symbols.isEmpty()) {
+            const sym_list::SymbolInfo &first = symbols.first();
+            qDebug() << "  first: name=" << first.symbolName << "type=" << first.symbolType
+                     << "line=" << first.startLine << "col=" << first.startColumn;
+        }
     }
-
-    ts_parser_delete(parser);
-    // === Tree-sitter 测试结束 ===
+    // === 集成验证结束 ===
 
 
     QApplication a(argc, argv);

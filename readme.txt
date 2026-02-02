@@ -119,10 +119,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
 
-- **符号解析架构（Lexer + SVSymbolParser）**
-  - 符号解析统一由 `SVLexer`（sv_lexer.h/cpp）与 `SVSymbolParser`（sv_symbol_parser.h/cpp）驱动，作为大纲、补全、代码导航的**唯一数据来源**。Token 类型（sv_token.h）包括 Keyword/Comment/Identifier/Operator/Whitespace/Number/String 等；括号、分号等标点为 Operator，不再视为 Error。
+- **符号解析架构（Lexer + SVSymbolParser，Tree-sitter 并行验证）**
+  - **当前数据来源**：大纲、补全、代码导航的符号数据**仍由** `SVLexer`（sv_lexer.h/cpp）与 `SVSymbolParser`（sv_symbol_parser.h/cpp）提供。Token 类型（sv_token.h）包括 Keyword/Comment/Identifier/Operator/Whitespace/Number/String 等；括号、分号等标点为 Operator，不再视为 Error。
   - SVSymbolParser 对全文 tokenize 后解析 module/task/function/端口列表（ANSI 风格）以及 reg/wire/logic 变量，产出 SymbolInfo 列表；sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePass → SVSymbolParser::parse()，不再使用基于正则的 getAdditionalSymbols 或按行增量 analyzeSpecificLines。
   - 以下符号类型当前由 SVSymbolParser 直接产出：module、task、function、端口（input/output/inout/ref）、reg/wire/logic，以及 typedef/struct/union/enum 及其变量（sym_typedef、sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_enum_value、sym_enum_var、sym_packed_struct_var、sym_unpacked_struct_var）；枚举类型名由 sym_typedef（dataType=="enum"）表示。interface、package、parameter、实例化引脚（sym_inst/sym_inst_pin）等扩展符号的解析与关系暂未完全恢复，部分功能存在已知问题，后续会逐步修复。
+  - **Tree-sitter 集成（SVTreeSitterParser）**：项目已集成 tree-sitter 核心库（thirdparty/tree_sitter）与 tree-sitter-systemverilog 语法（thirdparty/tree_sitter_systemverilog），并实现 C++ 封装类 `SVTreeSitterParser`（sv_treesitter_parser.h/cpp）。该类对源码做全量解析，遍历 AST 产出与 SVSymbolParser 相同格式的 QList<SymbolInfo>，当前支持的节点类型包括：module_declaration、program_declaration、package_declaration、interface_declaration、class_declaration、module_instantiation（含实例名与模块类型）。**现阶段** SVTreeSitterParser 仅在每次文件分析时并行运行并输出调试信息，解析结果未写入符号库、不参与大纲/补全/导航；待验证与完善后将逐步替代或与 SVSymbolParser 协同使用。SVSymbolParser 未被删除，两套解析器并存。
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
   - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
@@ -266,6 +267,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 【依赖】
 - Qt 5/6（建议在与你当前 `.pro` 文件兼容的版本上构建）
 - 支持 C++11 及以上的编译器（项目大量使用 `std::unique_ptr` 等）
+- Tree-sitter：符号解析可选路径依赖 thirdparty/tree_sitter 与 thirdparty/tree_sitter_systemverilog（demo.pro 已配置 INCLUDEPATH 与 SOURCES），用于 SVTreeSitterParser；构建时需能编译 C 源（lib.c、parser.c）
 
 【构建步骤（命令行示例）】
 1. 打开 Qt 提供的命令行环境（如：`Qt x.y.z (MSVC/MinGW) Command Prompt`）
@@ -410,6 +412,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   功能（如 interface/package/typedef/parameter 的完整索引、实例化引脚 REFERENCES、部分补全与跳转）暂未完全
   恢复或存在已知问题，后续会逐步修复。当前可优先依赖 module/task/function/port/reg/wire/logic 等由 SVSymbolParser
   直接产出的符号。
+
+- **Tree-sitter（SVTreeSitterParser）**：当前仅用于调试与验证，不参与符号库写入。部分文件中 module_declaration
+  的 name 字段提取可能为空（调试输出中 first: name= ""），与 grammar 中 name 子节点位置或字段名有关，待后续
+  修正；package/interface 等声明在部分文件上已能正确产出名称（如 PKG_global.sv 的 gl_pkg）。
 
 - **Module 识别 (Module Recognition)**：当前 module 识别仍存在已知问题与局限。有效模块
   的判定已统一为“必须有 module + 配对 endmodule + 合法模块名”（见上文“有效模块判定”），
