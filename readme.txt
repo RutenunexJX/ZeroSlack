@@ -119,11 +119,12 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
 
-- **符号解析架构（主路径已切换为 Tree-sitter，当前功能异常）**
-  - **当前数据来源**：大纲、补全、代码导航的符号数据**由** `SVTreeSitterParser`（sv_treesitter_parser.h/cpp）提供。sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePassImpl → SVTreeSitterParser::parseSymbols()，解析结果写入符号库并驱动作用域树与 CONTAINS 关系。**注意**：当前该路径存在功能异常，暂不回退代码，后续将修复或调优。
-  - **Tree-sitter（SVTreeSitterParser）**：项目已集成 tree-sitter 核心库（thirdparty/tree_sitter）与 tree-sitter-systemverilog 语法（thirdparty/tree_sitter_systemverilog）。parseSymbols() 从 AST 根递归遍历，维护 module/interface/program 作用域栈，产出带 fileName、moduleScope 的 SymbolInfo。支持的节点类型包括：module_declaration、program_declaration、package_declaration、interface_declaration、class_declaration、module_instantiation（含实例名与模块类型）、task_declaration、function_declaration、always_construct、ansi_port_declaration、port_declaration（input/output/inout/ref）、data_declaration（reg/logic/wire 变量）、net_declaration（wire）；module 名称从 module_ansi_header / module_nonansi_header 子节点正确提取。takeComments() 当前返回空列表，注释区域尚未从 AST 收集。
-  - **当前不产出的符号**：typedef、struct/union/enum 及其变量（sym_typedef、sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_enum_value、sym_enum_var、sym_packed_struct_var、sym_unpacked_struct_var）在 Tree-sitter 路径中**未**实现，故依赖这些符号的大纲/补全/跳转（如 s/sp/ns/nsp、e/ee/ne 等）会缺失或异常。实例化引脚（sym_inst_pin）与 REFERENCES 等由 SmartRelationshipBuilder 负责，与解析器无关。
-  - **SVSymbolParser**：sv_symbol_parser.h/cpp 仍保留在工程中，但主路径（extractSymbolsAndContainsOnePassImpl）**不再调用**；语法高亮仍由 `SVLexer`（sv_lexer.h/cpp、sv_token.h）驱动。工具栏「Tree-sitter 验证」按钮（MainWindow::onDebug0）仍通过 SVTreeSitterParser::parse(content) + getSymbols() 做验证输出，不写入符号库。
+- **符号解析架构（仅使用 Tree-sitter）**
+  - **当前数据来源**：大纲、补全、代码导航的符号数据**由** `SVTreeSitterParser`（sv_treesitter_parser.h/cpp）**独家**提供。sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePassImpl → SVTreeSitterParser::parseSymbols()，解析结果写入符号库并驱动作用域树与 CONTAINS 关系。
+  - **Tree-sitter（SVTreeSitterParser）**：项目已集成 tree-sitter 核心库（thirdparty/tree_sitter）与 tree-sitter-systemverilog 语法（thirdparty/tree_sitter_systemverilog）。parseSymbols() 从 AST 根递归遍历，维护 module/interface/program 作用域栈，产出带 fileName、moduleScope 的 SymbolInfo。支持的节点类型包括：module_declaration、program_declaration、package_declaration、interface_declaration、class_declaration、module_instantiation（含实例名与模块类型）、task_declaration、function_declaration、always_construct、ansi_port_declaration、port_declaration（input/output/inout/ref）、data_declaration（reg/logic/wire/enum 变量，类型由 AST 节点 reg/logic/net_type、enum_base_type 判定）、net_declaration（wire）、parameter_declaration（sym_parameter）、local_parameter_declaration（sym_localparam）、type_declaration（sym_typedef；typedef enum 时同时产出 sym_enum_value）；module 名称从 *_header 子节点或 simple_identifier 正确提取。类型与端口方向等均按 AST 节点类型判断，不使用字符串匹配。takeComments() 当前返回空列表，注释区域尚未从 AST 收集。
+  - **已产出**：parameter/localparam、typedef（含 dataType 如 "enum"）、枚举类型变量（sym_enum_var）、枚举值（sym_enum_value）。**尚未产出**：struct/union 类型与变量（sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_*_struct_var），故 s/sp/ns/nsp 相关补全/跳转会缺失或异常。实例化引脚（sym_inst_pin）与 REFERENCES 等由 SmartRelationshipBuilder 负责。
+  - **net_declaration 与 data_declaration 歧义**：语法上「类型名 + 标识符 + 分号」（如 `test_e test;`）可同时匹配 net_declaration（nettype_identifier + list_of_net_decl_assignments）与 data_declaration。grammar 中 net_declaration 为 PREC_DYNAMIC 0、data_declaration 为 1，tree-sitter 优先选 net_declaration，故此类变量声明会被解析为 wire。建议在符号层做语义补救：当 net_declaration 的 nettype_identifier 在已解析的 typedef/enum 类型中时，按变量（如 sym_enum_var）处理。
+  - **SVSymbolParser 已移除**：符号解析仅使用 SVTreeSitterParser；语法高亮仍由 `SVLexer`（sv_lexer.h/cpp、sv_token.h）驱动。工具栏「Tree-sitter 验证」按钮（MainWindow::onDebug0）仍通过 SVTreeSitterParser::parse(content) + getSymbols() 做验证输出，不写入符号库。
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
   - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
@@ -134,13 +135,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - `reg` / `wire` / `logic` 变量
   - `task` / `function`
   - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，以及 dataType（如 logic[7:0]）等，由 SVTreeSitterParser 从 ansi_port_declaration / port_declaration 节点解析。
-  - struct/typedef/enum 当前**未**由 Tree-sitter 路径产出，依赖它们的补全/跳转会缺失或异常；`interface` / `parameter` 等扩展类型及实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责，当前可能存在未恢复或已知问题。
+  - parameter/localparam/typedef/enum 已由 SVTreeSitterParser 产出；struct/union 尚未产出，依赖 s/sp/ns/nsp 的补全/跳转会缺失或异常。`interface`、实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责。
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
 - **Struct 与注释**
-  - 结构体/typedef/enum 类型与变量在当前 Tree-sitter 主路径中**未**产出，相关补全与跳转会受影响；注释区域（commentRegions）由 takeComments() 提供，当前返回空列表，注释感知能力暂未接入 AST。注释内容仍由 Lexer 识别为 Comment，高亮路径不受影响。
+  - typedef/enum 类型与变量已由 Tree-sitter 产出（sym_typedef、sym_enum_var、sym_enum_value）；struct/union 尚未产出，s/sp/ns/nsp 相关补全与跳转会受影响。注释区域（commentRegions）由 takeComments() 提供，当前返回空列表，注释感知能力暂未接入 AST。注释内容仍由 Lexer 识别为 Comment，高亮路径不受影响。
   - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`。
-  - **Packed / Unpacked 区分**：当前 Tree-sitter 路径**不产出** struct/typedef/enum 符号，故 s / sp / ns / nsp 补全与跳转会缺失或异常。若后续在 SVTreeSitterParser 中实现，需支持 `packed struct` / `struct packed` 产出 sym_packed_struct / sym_unpacked_struct 及对应变量符号，并维护类型名以便 `type_name var;` 解析为正确的 packed/unpacked 变量。
+  - **Packed / Unpacked 区分**：struct 类型与变量当前 Tree-sitter 路径不产出，故 s / sp / ns / nsp 补全与跳转会缺失或异常。若后续在 SVTreeSitterParser 中实现，需支持 `packed struct` / `struct packed` 产出 sym_packed_struct / sym_unpacked_struct 及对应变量符号，并维护类型名以便 `type_name var;` 解析为正确的 packed/unpacked 变量。
 
 【作用域树 (Scope Tree) — scope_tree.h】
 符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
@@ -207,7 +208,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
       只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
     - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
-    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 类型与变量**，以及 **enum 类型、枚举变量、枚举值**；当前由 SVTreeSitterParser 产出的符号（module/task/function/port/reg/wire/logic/inst 等）可跳转，typedef/struct/enum 相关符号在 Tree-sitter 路径中未产出，对应跳转会缺失或异常。
+    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 类型与变量**，以及 **enum 类型、枚举变量、枚举值**；SVTreeSitterParser 已产出 module/task/function/port/reg/wire/logic/parameter/localparam/typedef/enum 等，可跳转；struct 相关符号尚未产出，对应跳转会缺失或异常。
     - 优先跳当前文件中的定义；端口类型优先级高于 reg/wire/logic。
     - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
   - **Struct 相关跳转**：
@@ -349,7 +350,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     （findScopeAt、resolveSymbol）；按文件维护作用域树，O(1) 层内查找与正确词法遮蔽。
   - sym_list：在 extractSymbolsAndContainsOnePassImpl 中先调用 SVTreeSitterParser::parseSymbols() 得到符号列表，
     再按符号顺序栈式构建作用域树；clearSymbolsForFile 时同步 clearFile 作用域树；
-    getScopeManager() 惰性创建并返回 ScopeManager。findNextStructuralMatch 已移除，结构符号由 SVTreeSitterParser 产出（当前存在功能异常，typedef/struct/enum 未产出）。
+    getScopeManager() 惰性创建并返回 ScopeManager。findNextStructuralMatch 已移除，结构符号由 SVTreeSitterParser 产出；typedef/enum 已产出，struct 尚未产出。
   - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
     findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
   - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。状态栏 struct 计数调用 getModuleInternalSymbolsByType(..., useRelationshipFallback=false)，仅按行范围统计，不含关系引擎 fallback。
@@ -396,8 +397,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 信号安全：SymbolRelationshipEngine::addRelationship 须保持 Qt::QueuedConnection，
     禁止在后台线程直接触发 UI 刷新。
   - 写锁保护：sym_list 的增量解析仍受 QMutex / QReadWriteLock 保护，防止多线程崩溃。
-  - 符号解析：主路径已切换为 SVTreeSitterParser，setContentIncremental 仅通过 extractSymbolsAndContainsOnePass
-    调用 SVTreeSitterParser::parseSymbols()；当前该路径存在功能异常，暂不回退代码。SVSymbolParser 仍保留在工程中但主路径不调用。语法高亮由 SVLexer 驱动；hasSignificantChanges 等
+  - 符号解析：仅使用 SVTreeSitterParser，setContentIncremental 通过 extractSymbolsAndContainsOnePass
+    调用 SVTreeSitterParser::parseSymbols()。SVSymbolParser 已从工程中移除。语法高亮由 SVLexer 驱动；hasSignificantChanges 等
     改为简单字符串/词边界判断。
 
 若发现新的冗余，可参考本节原则处理并更新本段说明。
@@ -406,16 +407,14 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 已知问题 (Known Issues)
 ==========================================================================
 
-- **主路径已切换为 Tree-sitter，当前功能异常**：extractSymbolsAndContainsOnePassImpl 已改为使用
-  SVTreeSitterParser::parseSymbols()，不再调用 SVSymbolParser。当前该路径存在功能异常（如大纲/补全/跳转
-  行为异常或缺失），暂不回退代码，后续将修复或调优。typedef/struct/enum 及相关符号（sym_typedef、
-  sym_packed_struct、sym_enum_var 等）在 Tree-sitter 路径中未实现产出，依赖这些符号的 s/sp/ns/nsp、
-  e/ee/ne 等补全与跳转会缺失或异常。commentRegions 由 takeComments() 提供，当前返回空列表。
-  SVSymbolParser 仍保留在工程中但主路径不调用。
+- **符号解析仅使用 Tree-sitter**：extractSymbolsAndContainsOnePassImpl 使用 SVTreeSitterParser::parseSymbols()；
+  SVSymbolParser 已从工程中移除。parameter/localparam/typedef/enum 已产出；struct 相关符号未产出，s/sp/ns/nsp 补全与跳转会缺失或异常。commentRegions 由 takeComments() 提供，当前返回空列表。
 
 - **Tree-sitter（SVTreeSitterParser）**：主路径已使用 parseSymbols() 写入符号库；工具栏「Tree-sitter 验证」
   按钮仍通过 parse(content) + getSymbols() 做验证输出。module 名称已从 module_ansi_header / module_nonansi_header
   正确提取；若后续发现其他声明类型在部分 grammar 结构下名称为空，可参考 nameFromDeclarationNode 的 fallback 逻辑扩展。
+  **「类型名 变量名;」被解析为 wire**：因 grammar 歧义，`TYPE_NAME id;` 会优先匹配 net_declaration（PREC_DYNAMIC 0），
+  故如 `test_e test;` 的变量会显示为 wire。建议在符号层根据 nettype_identifier 是否为本文件已解析的 typedef/enum 类型做语义补救，按变量产出。
 
 - **Module 识别 (Module Recognition)**：当前 module 识别仍存在已知问题与局限。有效模块
   的判定已统一为“必须有 module + 配对 endmodule + 合法模块名”（见上文“有效模块判定”），

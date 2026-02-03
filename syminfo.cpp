@@ -252,6 +252,16 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, int max
             continue;
         }
 
+        if (sym.symbolType == sym_parameter || sym.symbolType == sym_localparam) {
+            addSymbol(sym);
+            SymbolInfo added = symbolDatabase.last();
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
+            if (!scopeStack.isEmpty())
+                scopeStack.top()->symbols[added.symbolName] = added;
+            continue;
+        }
+
         if (sym.symbolType == sym_always || sym.symbolType == sym_always_ff || sym.symbolType == sym_always_comb
             || sym.symbolType == sym_always_latch || sym.symbolType == sym_assign
             || sym.symbolType == sym_inst || sym.symbolType == sym_inst_pin) {
