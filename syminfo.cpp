@@ -2,7 +2,7 @@
 #include "scope_tree.h"
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
-#include "sv_symbol_parser.h"
+#include "sv_treesitter_parser.h"
 
 #include <QDebug>
 #include <QRegularExpression>
@@ -187,9 +187,9 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, int max
         }
     }
 
-    SVSymbolParser parser(text, currentFileName, knownTypes);
-    QList<SymbolInfo> parsed = parser.parse();
-    commentRegions = parser.takeComments();
+    SVTreeSitterParser tsParser(text, currentFileName);
+    QList<SymbolInfo> parsed = tsParser.parseSymbols();
+    commentRegions = tsParser.takeComments();
 
     for (const SymbolInfo &sym : qAsConst(parsed)) {
         while (scopeStack.size() > 1 && scopeStack.top()->endLine > 0 && sym.startLine > scopeStack.top()->endLine) {
