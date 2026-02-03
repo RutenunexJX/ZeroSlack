@@ -29,6 +29,7 @@ public:
 private:
     void visitNode(TSNode node, QStack<QString> &scopeStack, QList<sym_list::SymbolInfo> &out, const QByteArray &utf8);
 
+    /** Points to process-wide shared TSParser (never owned; do not delete in destructor). */
     TSParser *m_parser;
     TSTree *m_tree;
     QString m_currentContent;

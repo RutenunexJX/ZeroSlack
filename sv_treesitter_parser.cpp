@@ -1,9 +1,33 @@
 #include "sv_treesitter_parser.h"
 #include <QDebug>
 #include <cstring>
+#include <QMutex>
 
 extern "C" TSLanguage *tree_sitter_systemverilog();
 
+/** Process-wide shared TSParser; created once, never deleted (reused for performance). */
+static TSParser *sharedParser()
+{
+    static TSParser *s_parser = nullptr;
+    static QMutex s_initMutex;
+    QMutexLocker lock(&s_initMutex);
+    if (!s_parser) {
+        s_parser = ts_parser_new();
+        TSLanguage *lang = tree_sitter_systemverilog();
+        if (!ts_parser_set_language(s_parser, lang))
+            qCritical("SVTreeSitterParser: Failed to set Tree-sitter SystemVerilog language");
+    }
+    return s_parser;
+}
+
+/** Serializes ts_parser_parse_string calls (TSParser is not thread-safe). */
+static QMutex &parseMutex()
+{
+    static QMutex s_parseMutex;
+    return s_parseMutex;
+}
+
+/** Extract node text; utf8 must be valid UTF-8 (e.g. from QString::toUtf8()) for correct QString conversion. */
 static QString nodeText(const QByteArray &utf8, TSNode node)
 {
     if (utf8.isEmpty()) return QString();
@@ -17,19 +41,36 @@ static QString nodeText(const QByteArray &utf8, TSNode node)
 
 static QString nameFromDeclarationNode(const QByteArray &utf8, TSNode node)
 {
+    // 1. Try direct field "name" (common for vars and some declarations)
     TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-    QString name = nodeText(utf8, nameNode);
-    if (!name.isEmpty()) return name;
-    // ANSI/Non-ANSI: module name is on the header child (module_ansi_header / module_nonansi_header)
-    for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+    if (!ts_node_is_null(nameNode)) {
+        QString name = nodeText(utf8, nameNode);
+        if (!name.isEmpty()) return name;
+    }
+
+    // 2. Scan children for *_header (common for module/interface/program)
+    uint32_t childCount = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < childCount; ++i) {
         TSNode child = ts_node_named_child(node, i);
-        const char *childType = ts_node_type(child);
-        if (!childType) continue;
-        if (strcmp(childType, "module_ansi_header") == 0 || strcmp(childType, "module_nonansi_header") == 0) {
-            name = nodeText(utf8, ts_node_child_by_field_name(child, "name", 4));
-            if (!name.isEmpty()) return name;
+        const char *type = ts_node_type(child);
+        if (!type) continue;
+
+        if (strstr(type, "_header")) {
+            TSNode headerName = ts_node_child_by_field_name(child, "name", 4);
+            if (!ts_node_is_null(headerName)) return nodeText(utf8, headerName);
+
+            // Fallback: first simple_identifier inside header
+            uint32_t grandChildCount = ts_node_named_child_count(child);
+            for (uint32_t j = 0; j < grandChildCount; ++j) {
+                TSNode grandChild = ts_node_named_child(child, j);
+                const char *grandType = ts_node_type(grandChild);
+                if (grandType && strcmp(grandType, "simple_identifier") == 0)
+                    return nodeText(utf8, grandChild);
+            }
         }
     }
+
+    // 3. Fallback: first simple_identifier or escaped_identifier at declaration level
     for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
         TSNode child = ts_node_named_child(node, i);
         const char *childType = ts_node_type(child);
@@ -66,11 +107,7 @@ SVTreeSitterParser::SVTreeSitterParser()
     : m_parser(nullptr)
     , m_tree(nullptr)
 {
-    m_parser = ts_parser_new();
-    TSLanguage *lang = tree_sitter_systemverilog();
-    if (!ts_parser_set_language(m_parser, lang)) {
-        qCritical("SVTreeSitterParser: Failed to set Tree-sitter SystemVerilog language");
-    }
+    m_parser = sharedParser();
 }
 
 SVTreeSitterParser::SVTreeSitterParser(const QString &content, const QString &fileName)
@@ -84,6 +121,7 @@ SVTreeSitterParser::SVTreeSitterParser(const QString &content, const QString &fi
             m_tree = nullptr;
         }
         QByteArray utf8 = content.toUtf8();
+        QMutexLocker lock(&parseMutex());
         m_tree = ts_parser_parse_string(m_parser, nullptr, utf8.constData(), static_cast<uint32_t>(utf8.size()));
     }
 }
@@ -94,10 +132,7 @@ SVTreeSitterParser::~SVTreeSitterParser()
         ts_tree_delete(m_tree);
         m_tree = nullptr;
     }
-    if (m_parser) {
-        ts_parser_delete(m_parser);
-        m_parser = nullptr;
-    }
+    // m_parser points to shared instance; do not delete
 }
 
 void SVTreeSitterParser::parse(const QString &content)
@@ -108,11 +143,39 @@ void SVTreeSitterParser::parse(const QString &content)
         m_tree = nullptr;
     }
     QByteArray utf8 = content.toUtf8();
-    m_tree = ts_parser_parse_string(m_parser, nullptr, utf8.constData(), static_cast<uint32_t>(utf8.size()));
+    {
+        QMutexLocker lock(&parseMutex());
+        m_tree = ts_parser_parse_string(m_parser, nullptr, utf8.constData(), static_cast<uint32_t>(utf8.size()));
+    }
     if (m_tree) {
         TSNode root = ts_tree_root_node(m_tree);
         qDebug() << "SVTreeSitterParser: root type =" << ts_node_type(root);
     }
+}
+
+/** True if node or any descendant has the given named node type (tree-sitter structure, not text). */
+static bool hasDescendantOfType(TSNode node, const char *typeName)
+{
+    if (ts_node_is_null(node)) return false;
+    const char *t = ts_node_type(node);
+    if (t && strcmp(t, typeName) == 0) return true;
+    for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+        if (hasDescendantOfType(ts_node_named_child(node, i), typeName)) return true;
+    }
+    return false;
+}
+
+/** Find first descendant with the given node type; returns that node or null. */
+static TSNode findFirstDescendantOfType(TSNode node, const char *typeName)
+{
+    if (ts_node_is_null(node)) return node;
+    const char *t = ts_node_type(node);
+    if (t && strcmp(t, typeName) == 0) return node;
+    for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+        TSNode found = findFirstDescendantOfType(ts_node_named_child(node, i), typeName);
+        if (!ts_node_is_null(found)) return found;
+    }
+    return ts_node_child(node, 0); /* return any null-ish node; caller checks ts_node_is_null */
 }
 
 static void collectIdentifiersFromList(const QByteArray &utf8, TSNode listNode,
@@ -130,6 +193,35 @@ static void collectIdentifiersFromList(const QByteArray &utf8, TSNode listNode,
     }
 }
 
+/** Recursively find enum_name_declaration nodes and emit sym_enum_value for each (enum value name). */
+static void collectEnumValuesInNode(const QByteArray &utf8, TSNode node, const QString &enumTypeName,
+                                    const QString &scope, QList<sym_list::SymbolInfo> &out,
+                                    const QString &fileName)
+{
+    const char *type = ts_node_type(node);
+    if (type && strcmp(type, "enum_name_declaration") == 0) {
+        QString name;
+        TSNode idNode = ts_node_child_by_field_name(node, "enum_identifier", 15);
+        if (!ts_node_is_null(idNode))
+            name = nodeText(utf8, idNode);
+        if (name.isEmpty()) {
+            for (uint32_t j = 0, m = ts_node_named_child_count(node); j < m; ++j) {
+                TSNode c = ts_node_named_child(node, j);
+                const char *tc = ts_node_type(c);
+                if (tc && (strcmp(tc, "simple_identifier") == 0 || strcmp(tc, "escaped_identifier") == 0)) {
+                    name = nodeText(utf8, c);
+                    break;
+                }
+            }
+        }
+        if (!name.isEmpty())
+            out.append(makeSymbolInfo(node, name, sym_list::sym_enum_value, utf8, enumTypeName, scope, fileName));
+        return;
+    }
+    for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i)
+        collectEnumValuesInNode(utf8, ts_node_named_child(node, i), enumTypeName, scope, out, fileName);
+}
+
 void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
                                    QList<sym_list::SymbolInfo> &out, const QByteArray &utf8)
 {
@@ -140,6 +232,14 @@ void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
     const QString scope = scopeStack.isEmpty() ? QString() : scopeStack.top();
 
     if (strcmp(type, "module_declaration") == 0) {
+        // Debug: print child types to help diagnose grammar/name extraction
+        QStringList childTypes;
+        for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+            const char *ct = ts_node_type(ts_node_named_child(node, i));
+            if (ct) childTypes.append(QString::fromUtf8(ct));
+        }
+        qDebug() << "SVTreeSitterParser: module_declaration children:" << childTypes;
+
         QString name = nameFromDeclarationNode(utf8, node);
         if (!name.isEmpty()) {
             out.append(makeSymbolInfo(node, name, sym_list::sym_module, utf8, QString(), scope, m_currentFileName));
@@ -246,11 +346,11 @@ void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
         for (uint32_t i = 0, n = ts_node_child_count(node); i < n; ++i) {
             TSNode c = ts_node_child(node, i);
             if (ts_node_type(c) && strcmp(ts_node_type(c), "port_direction") == 0) {
-                QString dir = nodeText(utf8, c).trimmed().toLower();
-                if (dir == "input") portType = sym_list::sym_port_input;
-                else if (dir == "output") portType = sym_list::sym_port_output;
-                else if (dir == "inout") portType = sym_list::sym_port_inout;
-                else if (dir == "ref") portType = sym_list::sym_port_ref;
+                // Use AST: port_direction has child node type input/output/inout/ref
+                if (hasDescendantOfType(c, "input")) portType = sym_list::sym_port_input;
+                else if (hasDescendantOfType(c, "output")) portType = sym_list::sym_port_output;
+                else if (hasDescendantOfType(c, "inout")) portType = sym_list::sym_port_inout;
+                else if (hasDescendantOfType(c, "ref")) portType = sym_list::sym_port_ref;
                 break;
             }
         }
@@ -286,28 +386,80 @@ void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
     if (strcmp(type, "data_declaration") == 0) {
         QString typeText;
         TSNode listVar = ts_node_child_by_field_name(node, "list_of_variable_decl_assignments", 30);
-        if (!ts_node_is_null(listVar)) {
-            TSNode dataTypeNode = ts_node_child_by_field_name(node, "data_type_or_implicit", 20);
-            if (!ts_node_is_null(dataTypeNode))
-                typeText = nodeText(utf8, dataTypeNode).trimmed().toLower();
-            sym_list::sym_type_e symType = sym_list::sym_logic;
-            if (typeText.contains("reg")) symType = sym_list::sym_reg;
-            else if (typeText.contains("logic")) symType = sym_list::sym_logic;
-            else if (typeText.contains("wire")) symType = sym_list::sym_wire;
-            for (uint32_t i = 0, n = ts_node_named_child_count(listVar); i < n; ++i) {
-                TSNode va = ts_node_named_child(listVar, i);
-                if (ts_node_is_null(va)) continue;
-                const char *vat = ts_node_type(va);
-                if (!vat || strcmp(vat, "variable_decl_assignment") != 0) continue;
-                QString name = nodeText(utf8, ts_node_child_by_field_name(va, "name", 4));
-                if (!name.isEmpty())
-                    out.append(makeSymbolInfo(va, name, symType, utf8, typeText, scope, m_currentFileName));
+        if (ts_node_is_null(listVar)) {
+            // Grammar may not expose field name; find by child type
+            for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+                TSNode child = ts_node_named_child(node, i);
+                if (ts_node_type(child) && strcmp(ts_node_type(child), "list_of_variable_decl_assignments") == 0) {
+                    listVar = child;
+                    break;
+                }
             }
         }
+        if (ts_node_is_null(listVar)) {
+            return;
+        }
+        TSNode dataTypeNode = ts_node_child_by_field_name(node, "data_type_or_implicit", 20);
+        if (ts_node_is_null(dataTypeNode)) {
+            for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+                TSNode child = ts_node_named_child(node, i);
+                if (ts_node_type(child) && strcmp(ts_node_type(child), "data_type_or_implicit") == 0) {
+                    dataTypeNode = child;
+                    break;
+                }
+            }
+        }
+        if (!ts_node_is_null(dataTypeNode))
+            typeText = nodeText(utf8, dataTypeNode).trimmed().toLower();
+        sym_list::sym_type_e symType = sym_list::sym_logic;
+        // Use AST node types (tree-sitter grammar: reg/logic/wire are node types; net_type is rule)
+        if (hasDescendantOfType(dataTypeNode, "enum_base_type"))
+            symType = sym_list::sym_enum_var;
+        else if (hasDescendantOfType(dataTypeNode, "reg"))
+            symType = sym_list::sym_reg;
+        else if (hasDescendantOfType(dataTypeNode, "logic"))
+            symType = sym_list::sym_logic;
+        else if (hasDescendantOfType(dataTypeNode, "net_type"))
+            symType = sym_list::sym_wire;
+        for (uint32_t i = 0, n = ts_node_named_child_count(listVar); i < n; ++i) {
+            TSNode va = ts_node_named_child(listVar, i);
+            if (ts_node_is_null(va)) continue;
+            const char *vat = ts_node_type(va);
+            if (!vat || strcmp(vat, "variable_decl_assignment") != 0) continue;
+            QString name = nodeText(utf8, ts_node_child_by_field_name(va, "name", 4));
+            if (name.isEmpty()) {
+                TSNode nameNode;
+                for (uint32_t j = 0, m = ts_node_named_child_count(va); j < m; ++j) {
+                    TSNode c = ts_node_named_child(va, j);
+                    if (ts_node_type(c) && (strcmp(ts_node_type(c), "simple_identifier") == 0 || strcmp(ts_node_type(c), "escaped_identifier") == 0)) {
+                        name = nodeText(utf8, c);
+                        break;
+                    }
+                }
+            }
+            if (!name.isEmpty()) {
+                const char *typeLabel = (symType == sym_list::sym_reg) ? "reg" : (symType == sym_list::sym_wire) ? "wire"
+                    : (symType == sym_list::sym_enum_var) ? "enum_var" : "logic";
+                qDebug("TreeSitterParser: data_declaration -> %s '%s' (scope=%s) typeText='%s'", typeLabel, qPrintable(name), qPrintable(scope), qPrintable(typeText));
+                out.append(makeSymbolInfo(va, name, symType, utf8, typeText, scope, m_currentFileName));
+            }
+        }
+        // Anonymous enum { A, B } var: collect enum values (use AST, not text)
+        if (!ts_node_is_null(dataTypeNode) && hasDescendantOfType(dataTypeNode, "enum_base_type"))
+            collectEnumValuesInNode(utf8, dataTypeNode, QString(), scope, out, m_currentFileName);
         return;
     }
     if (strcmp(type, "net_declaration") == 0) {
         TSNode listNet = ts_node_child_by_field_name(node, "list_of_net_decl_assignments", 26);
+        if (ts_node_is_null(listNet)) {
+            for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+                TSNode child = ts_node_named_child(node, i);
+                if (ts_node_type(child) && strcmp(ts_node_type(child), "list_of_net_decl_assignments") == 0) {
+                    listNet = child;
+                    break;
+                }
+            }
+        }
         if (!ts_node_is_null(listNet)) {
             for (uint32_t i = 0, n = ts_node_named_child_count(listNet); i < n; ++i) {
                 TSNode na = ts_node_named_child(listNet, i);
@@ -315,16 +467,139 @@ void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
                 const char *nat = ts_node_type(na);
                 if (!nat || strcmp(nat, "net_decl_assignment") != 0) continue;
                 QString name;
-                for (uint32_t j = 0, m = ts_node_named_child_count(na); j < m; ++j) {
-                    TSNode idNode = ts_node_named_child(na, j);
-                    const char *tid = ts_node_type(idNode);
-                    if (tid && (strcmp(tid, "simple_identifier") == 0 || strcmp(tid, "escaped_identifier") == 0)) {
-                        name = nodeText(utf8, idNode);
-                        break;
+                TSNode nameField = ts_node_child_by_field_name(na, "name", 4);
+                if (!ts_node_is_null(nameField))
+                    name = nodeText(utf8, nameField);
+                if (name.isEmpty()) {
+                    for (uint32_t j = 0, m = ts_node_named_child_count(na); j < m; ++j) {
+                        TSNode idNode = ts_node_named_child(na, j);
+                        const char *tid = ts_node_type(idNode);
+                        if (tid && (strcmp(tid, "simple_identifier") == 0 || strcmp(tid, "escaped_identifier") == 0)) {
+                            name = nodeText(utf8, idNode);
+                            break;
+                        }
                     }
                 }
-                if (!name.isEmpty())
+                if (!name.isEmpty()) {
+                    qDebug("TreeSitterParser: net_declaration -> wire '%s' (scope=%s)", qPrintable(name), qPrintable(scope));
                     out.append(makeSymbolInfo(na, name, sym_list::sym_wire, utf8, QString("wire"), scope, m_currentFileName));
+                }
+            }
+        }
+        return;
+    }
+
+    // parameter_declaration: ( _parameter_declaration_no_semicolon ";" ) -> list_of_param_assignments may be inside first child
+    if (strcmp(type, "parameter_declaration") == 0) {
+        TSNode listNode = ts_node_named_child(node, 0); // placeholder; overwritten if found
+        bool foundList = false;
+        for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n && !foundList; ++i) {
+            TSNode child = ts_node_named_child(node, i);
+            const char *ct = ts_node_type(child);
+            if (ct && strcmp(ct, "list_of_param_assignments") == 0) {
+                listNode = child;
+                foundList = true;
+                break;
+            }
+            for (uint32_t j = 0, m = ts_node_named_child_count(child); j < m; ++j) {
+                TSNode sub = ts_node_named_child(child, j);
+                if (ts_node_type(sub) && strcmp(ts_node_type(sub), "list_of_param_assignments") == 0) {
+                    listNode = sub;
+                    foundList = true;
+                    break;
+                }
+            }
+        }
+        if (foundList) {
+            for (uint32_t i = 0, n = ts_node_named_child_count(listNode); i < n; ++i) {
+                TSNode pa = ts_node_named_child(listNode, i);
+                if (ts_node_type(pa) && strcmp(ts_node_type(pa), "param_assignment") == 0) {
+                    QString name;
+                    for (uint32_t j = 0, m = ts_node_named_child_count(pa); j < m; ++j) {
+                        TSNode c = ts_node_named_child(pa, j);
+                        const char *tc = ts_node_type(c);
+                        if (tc && (strcmp(tc, "simple_identifier") == 0 || strcmp(tc, "escaped_identifier") == 0)) {
+                            name = nodeText(utf8, c);
+                            break;
+                        }
+                    }
+                    if (!name.isEmpty())
+                        out.append(makeSymbolInfo(pa, name, sym_list::sym_parameter, utf8, QString(), scope, m_currentFileName));
+                }
+            }
+        }
+        return;
+    }
+
+    // local_parameter_declaration: same structure, emit sym_localparam
+    if (strcmp(type, "local_parameter_declaration") == 0) {
+        TSNode listNode = ts_node_named_child(node, 0);
+        bool foundList = false;
+        for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n && !foundList; ++i) {
+            TSNode child = ts_node_named_child(node, i);
+            const char *ct = ts_node_type(child);
+            if (ct && strcmp(ct, "list_of_param_assignments") == 0) {
+                listNode = child;
+                foundList = true;
+                break;
+            }
+            for (uint32_t j = 0, m = ts_node_named_child_count(child); j < m; ++j) {
+                TSNode sub = ts_node_named_child(child, j);
+                if (ts_node_type(sub) && strcmp(ts_node_type(sub), "list_of_param_assignments") == 0) {
+                    listNode = sub;
+                    foundList = true;
+                    break;
+                }
+            }
+        }
+        if (foundList) {
+            for (uint32_t i = 0, n = ts_node_named_child_count(listNode); i < n; ++i) {
+                TSNode pa = ts_node_named_child(listNode, i);
+                if (ts_node_type(pa) && strcmp(ts_node_type(pa), "param_assignment") == 0) {
+                    QString name;
+                    for (uint32_t j = 0, m = ts_node_named_child_count(pa); j < m; ++j) {
+                        TSNode c = ts_node_named_child(pa, j);
+                        const char *tc = ts_node_type(c);
+                        if (tc && (strcmp(tc, "simple_identifier") == 0 || strcmp(tc, "escaped_identifier") == 0)) {
+                            name = nodeText(utf8, c);
+                            break;
+                        }
+                    }
+                    if (!name.isEmpty())
+                        out.append(makeSymbolInfo(pa, name, sym_list::sym_localparam, utf8, QString(), scope, m_currentFileName));
+                }
+            }
+        }
+        return;
+    }
+
+    // type_declaration: typedef data_type type_name ; -> sym_typedef (u command). dataType from data_type text (e.g. "enum").
+    if (strcmp(type, "type_declaration") == 0) {
+        TSNode typeNameNode = ts_node_child_by_field_name(node, "type_name", 9);
+        QString typeName = nodeText(utf8, typeNameNode);
+        if (typeName.isEmpty()) {
+            for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+                TSNode c = ts_node_named_child(node, i);
+                const char *tc = ts_node_type(c);
+                if (tc && (strcmp(tc, "simple_identifier") == 0 || strcmp(tc, "escaped_identifier") == 0)) {
+                    typeName = nodeText(utf8, c);
+                    break;
+                }
+            }
+        }
+        QString dataTypeStr;
+        for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+            TSNode c = ts_node_named_child(node, i);
+            if (ts_node_type(c) && strcmp(ts_node_type(c), "data_type") == 0) {
+                dataTypeStr = nodeText(utf8, c).trimmed().toLower();
+                break;
+            }
+        }
+        if (!typeName.isEmpty()) {
+            out.append(makeSymbolInfo(node, typeName, sym_list::sym_typedef, utf8, dataTypeStr, scope, m_currentFileName));
+            // If typedef enum { A, B } name; emit sym_enum_value (use AST: enum_base_type present)
+            if (hasDescendantOfType(node, "enum_base_type")) {
+                collectEnumValuesInNode(utf8, node, typeName, scope, out, m_currentFileName);
             }
         }
         return;
@@ -338,6 +613,7 @@ QList<sym_list::SymbolInfo> SVTreeSitterParser::parseSymbols()
 {
     QList<sym_list::SymbolInfo> out;
     if (m_currentContent.isEmpty()) return out;
+    // Ensure m_tree is valid before traversing (re-parse if needed)
     if (!m_tree) {
         parse(m_currentContent);
         if (!m_tree) return out;
@@ -346,6 +622,14 @@ QList<sym_list::SymbolInfo> SVTreeSitterParser::parseSymbols()
     TSNode root = ts_tree_root_node(m_tree);
     QStack<QString> scopeStack;
     visitNode(root, scopeStack, out, utf8);
+
+    int countReg = 0, countWire = 0, countLogic = 0;
+    for (const sym_list::SymbolInfo &s : out) {
+        if (s.symbolType == sym_list::sym_reg) countReg++;
+        else if (s.symbolType == sym_list::sym_wire) countWire++;
+        else if (s.symbolType == sym_list::sym_logic) countLogic++;
+    }
+    qDebug("TreeSitterParser: Found %d symbols in file %s (reg=%d wire=%d logic=%d)", out.size(), qPrintable(m_currentFileName), countReg, countWire, countLogic);
     return out;
 }
 
