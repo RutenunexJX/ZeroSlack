@@ -20,6 +20,16 @@ static QString nameFromDeclarationNode(const QByteArray &utf8, TSNode node)
     TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
     QString name = nodeText(utf8, nameNode);
     if (!name.isEmpty()) return name;
+    // ANSI/Non-ANSI: module name is on the header child (module_ansi_header / module_nonansi_header)
+    for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
+        TSNode child = ts_node_named_child(node, i);
+        const char *childType = ts_node_type(child);
+        if (!childType) continue;
+        if (strcmp(childType, "module_ansi_header") == 0 || strcmp(childType, "module_nonansi_header") == 0) {
+            name = nodeText(utf8, ts_node_child_by_field_name(child, "name", 4));
+            if (!name.isEmpty()) return name;
+        }
+    }
     for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
         TSNode child = ts_node_named_child(node, i);
         const char *childType = ts_node_type(child);
