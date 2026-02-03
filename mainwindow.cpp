@@ -11,8 +11,10 @@
 #include "symbolrelationshipengine.h"
 #include "smartrelationshipbuilder.h"
 #include "syminfo.h"
+#include "sv_treesitter_parser.h"
 #include <QtConcurrent/QtConcurrent>
 
+#include <QElapsedTimer>
 #include <QMessageBox>
 #include <QTextCursor>
 #include <QTextBlock>
@@ -815,7 +817,7 @@ void MainWindow::hideAnalysisProgress()
 
 void MainWindow::setupDebugButton()
 {
-    debugButton = new QPushButton("调试: 打印Symbol IDs", this);
+    debugButton = new QPushButton("Tree-sitter 验证", this);
 
     // 添加到工具栏或菜单栏
     ui->toolBar->addWidget(debugButton);
@@ -823,7 +825,68 @@ void MainWindow::setupDebugButton()
     connect(debugButton, &QPushButton::clicked, this, &MainWindow::onDebug0);
 }
 
-void MainWindow::onDebug0(){
-    relationshipEngine->getModuleInstances(1);
+void MainWindow::onDebug0()
+{
+    // --- Tree-sitter MVP Verification ---
+
+    // 1. Get current editor and content
+    MyCodeEditor *editor = tabManager->getCurrentEditor();
+    if (!editor) {
+        qDebug() << "[TreeSitter-Test] Error: No active editor found.";
+        return;
+    }
+
+    QString content = editor->toPlainText();
+    if (content.isEmpty()) {
+        qDebug() << "[TreeSitter-Test] Warning: Editor is empty.";
+        return;
+    }
+
+    qDebug() << "[TreeSitter-Test] Starting verification on file:" << editor->getFileName();
+
+    // 2. Instantiate Parser
+    SVTreeSitterParser parser;
+
+    // 3. Parse and Benchmark
+    QElapsedTimer timer;
+    timer.start();
+
+    parser.parse(content);
+
+    qint64 parseTime = timer.nsecsElapsed() / 1000; // microseconds
+    qDebug() << "[TreeSitter-Test] Parsing completed in" << parseTime << "us";
+
+    // 4. Extract Symbols
+    QList<sym_list::SymbolInfo> symbols = parser.getSymbols();
+
+    // 5. Output Results to Console
+    qDebug() << "[TreeSitter-Test] Extracted" << symbols.size() << "symbols:";
+
+    for (const auto &sym : symbols) {
+        QString typeStr;
+        switch (sym.symbolType) {
+            case sym_list::sym_module: typeStr = "MODULE"; break;
+            case sym_list::sym_inst: typeStr = "INSTANCE"; break;
+            case sym_list::sym_interface: typeStr = "INTERFACE"; break;
+            case sym_list::sym_package: typeStr = "PACKAGE"; break;
+            case sym_list::sym_user: typeStr = "USER_TYPE"; break;
+            default: typeStr = QString::number(sym.symbolType); break;
+        }
+
+        qDebug() << QString("  - [%1] %2 (Line: %3, Type: %4)")
+                    .arg(typeStr)
+                    .arg(sym.symbolName)
+                    .arg(sym.startLine)
+                    .arg(sym.dataType.isEmpty() ? "-" : sym.dataType);
+    }
+
+    // 6. UI Feedback
+    QString summary = QString("Tree-sitter Verification Complete\n\n"
+                              "Time: %1 us\n"
+                              "Symbols: %2\n\n"
+                              "Check Application Output for details.")
+                      .arg(parseTime)
+                      .arg(symbols.size());
+    QMessageBox::information(this, "Tree-sitter Verification", summary);
 }
 
