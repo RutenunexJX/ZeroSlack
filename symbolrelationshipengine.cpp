@@ -1,10 +1,11 @@
-﻿#include "symbolrelationshipengine.h"
+#include "symbolrelationshipengine.h"
 #include "syminfo.h"
 #include <QCoreApplication>
 #include <QThread>
 #include <QDebug>
 #include <QMetaObject>
 #include <algorithm>
+#include <utility>
 
 SymbolRelationshipEngine::SymbolRelationshipEngine(QObject *parent)
     : QObject(parent)
@@ -241,7 +242,7 @@ QList<int> SymbolRelationshipEngine::findRelationshipPath(int fromSymbolId, int 
     }
 
     QList<int> shortestPath = allPaths[0];
-    for (const QList<int>& path : qAsConst(allPaths)) {
+    for (const QList<int>& path : std::as_const(allPaths)) {
         if (path.size() < shortestPath.size()) {
             shortestPath = path;
         }
@@ -274,7 +275,7 @@ QList<int> SymbolRelationshipEngine::getSymbolHierarchy(int rootSymbolId) const
         int currentId = toProcess.takeFirst();
         QList<int> children = getModuleChildren(currentId);
 
-        for (int childId : qAsConst(children)) {
+        for (int childId : std::as_const(children)) {
             if (!visited.contains(childId)) {
                 visited.insert(childId);
                 result.append(childId);
@@ -308,12 +309,12 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(fileName);
 
-    for (const sym_list::SymbolInfo& symbol : qAsConst(fileSymbols)) {
+    for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
         if (symbol.symbolType == sym_list::sym_module) {
             int moduleId = symbol.symbolId;
             symbolsByFile[fileName].insert(moduleId);
 
-            for (const sym_list::SymbolInfo& otherSymbol : qAsConst(fileSymbols)) {
+            for (const sym_list::SymbolInfo& otherSymbol : std::as_const(fileSymbols)) {
                 if (otherSymbol.symbolId != moduleId &&
                     isSymbolInModule(otherSymbol, symbol)) {
 
@@ -350,7 +351,7 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
     QHash<QString, QList<sym_list::SymbolInfo>> symbolsByFile;
-    for (const sym_list::SymbolInfo& symbol : qAsConst(allSymbols)) {
+    for (const sym_list::SymbolInfo& symbol : std::as_const(allSymbols)) {
         symbolsByFile[symbol.fileName].append(symbol);
     }
 
@@ -472,7 +473,7 @@ void SymbolRelationshipEngine::findPathRecursive(int currentId, int targetId, in
         allPaths.append(currentPath);
     } else {
         QList<int> related = getAllRelatedSymbols(currentId, true);
-        for (int relatedId : qAsConst(related)) {
+        for (int relatedId : std::as_const(related)) {
             findPathRecursive(relatedId, targetId, currentDepth + 1, maxDepth, visited, currentPath, allPaths);
         }
     }
@@ -493,7 +494,7 @@ void SymbolRelationshipEngine::getInfluencedSymbolsRecursive(int symbolId, int c
     }
 
     QList<int> influenced = getAllRelatedSymbols(symbolId, true);
-    for (int influencedId : qAsConst(influenced)) {
+    for (int influencedId : std::as_const(influenced)) {
         getInfluencedSymbolsRecursive(influencedId, currentDepth + 1, maxDepth, visited, result);
     }
 }

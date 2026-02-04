@@ -13,8 +13,10 @@
 #include <QCoreApplication>
 #include <QWriteLocker>
 #include <QMutex>
+#include <QSet>
 #include <algorithm>
 #include <memory>
+#include <utility>
 #include <QVector>
 
 std::unique_ptr<sym_list> sym_list::instance = nullptr;
@@ -191,7 +193,7 @@ void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, int max
     QList<SymbolInfo> parsed = tsParser.parseSymbols();
     commentRegions = tsParser.takeComments();
 
-    for (const SymbolInfo &sym : qAsConst(parsed)) {
+    for (const SymbolInfo &sym : std::as_const(parsed)) {
         while (scopeStack.size() > 1 && scopeStack.top()->endLine > 0 && sym.startLine > scopeStack.top()->endLine) {
             ScopeNode* node = scopeStack.pop();
             if (node->type == ScopeType::Module && !moduleStack.isEmpty()) {
@@ -680,7 +682,7 @@ QString sym_list::calculateSymbolRelevantHash(const QString& content)
     }
     QStringList lines = work.split('\n');
     QStringList kept;
-    for (const QString& line : qAsConst(lines)) {
+    for (const QString& line : std::as_const(lines)) {
         QString t = line.trimmed();
         if (t.isEmpty() || t.startsWith("//")) continue;
         kept.append(QString(t).replace(QRegularExpression("\\s+"), " "));
@@ -754,7 +756,10 @@ QList<int> sym_list::detectChangedLines(const QString& fileName, const QString& 
     }
 
     previousFileContents[fileName] = newContent;
-    changedLines = changedLines.toSet().toList();
+    {
+        QSet<int> uniqueLines(changedLines.begin(), changedLines.end());
+        changedLines = QList<int>(uniqueLines.begin(), uniqueLines.end());
+    }
     std::sort(changedLines.begin(), changedLines.end());
 
     return changedLines;

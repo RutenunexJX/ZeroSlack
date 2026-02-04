@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <algorithm>
+#include <utility>
 
 /// 补全列表最大条数，避免单次传入过多导致模型排序与弹窗卡顿（性能优化）
 std::unique_ptr<CompletionManager> CompletionManager::instance = nullptr;
@@ -51,7 +52,7 @@ QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const 
     QVector<QPair<QString, int>> scoredMatches;
     scoredMatches.reserve(qMin(cachedAllSymbolNames.size(), 50));
 
-    for (const QString& symbolName : qAsConst(cachedAllSymbolNames)) {
+    for (const QString& symbolName : std::as_const(cachedAllSymbolNames)) {
         int score = calculateMatchScore(symbolName, prefix);
         if (score > 0) {
             scoredMatches.append(qMakePair(symbolName, score));
@@ -104,7 +105,7 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
     QVector<QPair<sym_list::SymbolInfo, int>> scoredMatches;
     scoredMatches.reserve(qMin(symbols.size(), 30));
 
-    for (const sym_list::SymbolInfo &symbol : qAsConst(symbols)) {
+    for (const sym_list::SymbolInfo &symbol : std::as_const(symbols)) {
         int score = 0;
 
         if (prefix.isEmpty()) {
@@ -169,7 +170,7 @@ void CompletionManager::updateAllSymbolsCache()
     sym_list* symbolList = sym_list::getInstance();
     QSet<QString> uniqueNames = symbolList->getUniqueSymbolNames();
 
-    cachedAllSymbolNames = uniqueNames.toList();
+    cachedAllSymbolNames = QStringList(uniqueNames.begin(), uniqueNames.end());
     cachedAllSymbolNames.sort();
 
     allSymbolScoreCache.clear();
@@ -196,7 +197,7 @@ void CompletionManager::precomputeFrequentCompletions()
 
     for (const QString& prefix : commonPrefixes) {
         QStringList matches;
-        for (const QString& name : qAsConst(cachedAllSymbolNames)) {
+        for (const QString& name : std::as_const(cachedAllSymbolNames)) {
             if (name.startsWith(prefix, Qt::CaseInsensitive)) {
                 matches.append(name);
             }
@@ -278,7 +279,7 @@ QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
 
     QStringList result;
     result.reserve(scoredMatches.size());
-    for (const auto &match : qAsConst(scoredMatches)) {
+    for (const auto &match : std::as_const(scoredMatches)) {
         result.append(match.first);
     }
 
@@ -307,7 +308,7 @@ QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolT
     QStringList result;
     result.reserve(scoredMatches.size());
 
-    for (const auto &match : qAsConst(scoredMatches)) {
+    for (const auto &match : std::as_const(scoredMatches)) {
         if (!result.contains(match.first.symbolName)) {
             result.append(match.first.symbolName);
         }
@@ -448,7 +449,7 @@ int CompletionManager::calculateMatchScore(const QString &text, const QString &a
         score = 500;
 
         int wordBoundaryMatches = 0;
-        for (int pos : qAsConst(positions)) {
+        for (int pos : std::as_const(positions)) {
             if (pos == 0 || lowerText[pos - 1] == '_' || lowerText[pos - 1] == ' ') {
                 wordBoundaryMatches++;
             }
@@ -632,7 +633,7 @@ QStringList CompletionManager::getKeywordCompletions(const QString& prefix)
 
     QStringList result;
     result.reserve(scoredMatches.size());
-    for (const auto &match : qAsConst(scoredMatches)) {
+    for (const auto &match : std::as_const(scoredMatches)) {
         result.append(match.first);
     }
 
@@ -652,7 +653,7 @@ QStringList CompletionManager::getAbbreviationMatches(const QStringList &candida
     QStringList result;
     result.reserve(scoredMatches.size());
 
-    for (const auto &match : qAsConst(scoredMatches)) {
+    for (const auto &match : std::as_const(scoredMatches)) {
         if (candidates.contains(match.first)) {
             result.append(match.first);
         }
@@ -755,7 +756,7 @@ QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QStrin
 
     results.reserve(contextCompletions.size());
 
-    for (const QString& completion : qAsConst(contextCompletions)) {
+    for (const QString& completion : std::as_const(contextCompletions)) {
         int baseScore = calculateMatchScore(completion, prefix);
         int contextScore = calculateContextScore(completion, context);
         int relationshipScore = calculateRelationshipScore(completion, currentModule);
@@ -1154,7 +1155,7 @@ QStringList CompletionManager::getBasicSymbolCompletions(const QString& prefix)
     QStringList result;
     result.reserve(10);  // 限制为10个
 
-    for (const auto &match : qAsConst(scoredMatches)) {
+    for (const auto &match : std::as_const(scoredMatches)) {
         result.append(match.first);
         if (result.size() >= 10) break;  // 最多10个
     }
@@ -1215,7 +1216,7 @@ QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbol
         for (int id : referencedIds) allRelatedIds.insert(id);
         for (int id : referencingIds) allRelatedIds.insert(id);
 
-        QStringList relatedNames = getSymbolNamesFromIds(allRelatedIds.toList());
+        QStringList relatedNames = getSymbolNamesFromIds(QList<int>(allRelatedIds.begin(), allRelatedIds.end()));
 
         for (const QString& relatedName : relatedNames) {
             if (prefix.isEmpty() || relatedName.startsWith(prefix, Qt::CaseInsensitive)) {
@@ -1520,7 +1521,7 @@ QStringList CompletionManager::filterCompletionsByContext(const QStringList& com
 
         for (const QString& completion : completions) {
             QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(completion);
-            for (const sym_list::SymbolInfo& symbol : qAsConst(symbols)) {
+            for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
                 if (symbol.symbolType == sym_list::sym_reg ||
                     symbol.symbolType == sym_list::sym_wire ||
                     symbol.symbolType == sym_list::sym_logic) {

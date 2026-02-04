@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <utility>
 
 WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
@@ -78,7 +79,7 @@ QStringList WorkspaceManager::getFilesByExtension(const QString& extension) cons
 
     filteredFiles.reserve(allFiles.size() / 10);
 
-    for (const QString& filePath : qAsConst(allFiles)) {
+    for (const QString& filePath : std::as_const(allFiles)) {
         if (QFileInfo(filePath).suffix().toLower() == lowerExt) {
             filteredFiles.append(filePath);
         }
@@ -191,7 +192,7 @@ void WorkspaceManager::filterSystemVerilogFiles()
     svFiles.clear();
     svFiles.reserve(allFiles.size() / 10);
 
-    for (const QString& filePath : qAsConst(allFiles)) {
+    for (const QString& filePath : std::as_const(allFiles)) {
         if (isSystemVerilogFile(filePath)) {
             svFiles.append(filePath);
         }

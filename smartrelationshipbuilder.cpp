@@ -2,6 +2,7 @@
 #include <QRegularExpression>
 #include <QApplication>
 #include <algorithm>
+#include <utility>
 
 SmartRelationshipBuilder::SmartRelationshipBuilder(SymbolRelationshipEngine* engine,
                                                  sym_list* symbolDatabase,
@@ -120,7 +121,7 @@ void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName, Ana
     context.localSymbolIds.clear();
     context.symbolIdToType.clear();
 
-    for (const sym_list::SymbolInfo& symbol : qAsConst(context.fileSymbols)) {
+    for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
         context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
 
@@ -140,7 +141,7 @@ void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(const QString& fi
     context.localSymbolIds.clear();
     context.symbolIdToType.clear();
 
-    for (const sym_list::SymbolInfo& symbol : qAsConst(fileSymbols)) {
+    for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
         context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
 
@@ -203,7 +204,7 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
             if (leftVarId != -1) {
                 QStringList rightVars = extractVariablesFromExpression(rightExpr);
 
-                for (const QString& rightVar : qAsConst(rightVars)) {
+                for (const QString& rightVar : std::as_const(rightVars)) {
                     int rightVarId = findSymbolIdByName(rightVar, context);
                     if (rightVarId != -1 && rightVarId != leftVarId) {
                         addRelationshipWithContext(
@@ -250,7 +251,7 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
                 QString condition = match.captured(2);
                 QStringList referencedVars = extractVariablesFromExpression(condition);
 
-                for (const QString& varName : qAsConst(referencedVars)) {
+                for (const QString& varName : std::as_const(referencedVars)) {
                     int varId = findSymbolIdByName(varName, context);
                     if (varId != -1 && context.currentModuleId != -1) {
                         addRelationshipWithContext(
@@ -326,7 +327,7 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
                 QString sensitivityList = sensMatch.captured(1);
                 QStringList signalNames = extractVariablesFromExpression(sensitivityList);
 
-                for (const QString& signalName : qAsConst(signalNames)) {
+                for (const QString& signalName : std::as_const(signalNames)) {
                     int signalId = findSymbolIdByName(signalName, context);
                     if (signalId != -1 && context.currentModuleId != -1) {
                         addRelationshipWithContext(

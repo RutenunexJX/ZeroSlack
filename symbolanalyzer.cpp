@@ -10,6 +10,7 @@
 #include <QThread>
 #include <QApplication>
 #include <QEventLoop>
+#include <utility>
 
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     : QObject(parent)
@@ -40,11 +41,11 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
     QStringList openFileNames = tabManager->getAllOpenFileNames();
     QStringList svFiles = tabManager->getOpenSystemVerilogFiles();
 
-    for (const QString& fileName : qAsConst(openFileNames)) {
+    for (const QString& fileName : std::as_const(openFileNames)) {
         symbolList->clearSymbolsForFile(fileName);
     }
 
-    for (const QString& fileName : qAsConst(svFiles)) {
+    for (const QString& fileName : std::as_const(svFiles)) {
         QString content = tabManager->getPlainTextFromOpenFile(fileName);
         if (!content.isNull())
             analyzeFileContent(fileName, content);
@@ -52,7 +53,7 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
 
     int symbolsFromOpenFiles = 0;
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
-    for (const sym_list::SymbolInfo& symbol : qAsConst(allSymbols)) {
+    for (const sym_list::SymbolInfo& symbol : std::as_const(allSymbols)) {
         if (openFileNames.contains(symbol.fileName))
             symbolsFromOpenFiles++;
     }

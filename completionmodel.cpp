@@ -3,6 +3,7 @@
 #include <QFont>
 #include <QColor>
 #include <algorithm>
+#include <utility>
 
 static const int CompletionItemMetaTypeId = qRegisterMetaType<CompletionModel::CompletionItem>("CompletionModel::CompletionItem");
 
@@ -398,7 +399,7 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     QVector<QPair<sym_list::SymbolInfo, int>> scoredMatches = manager->getScoredSymbolMatches(symbolType, prefix);
 
     int matchCount = 0;
-    for (const auto& match : qAsConst(scoredMatches)) {
+    for (const auto& match : std::as_const(scoredMatches)) {
         if (match.first.symbolName == defaultValue) {
             continue;
         }
