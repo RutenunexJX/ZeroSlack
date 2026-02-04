@@ -407,6 +407,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 已知问题 (Known Issues)
 ==========================================================================
 
+- **UI 卡顿 (UI Lag)**：以下操作时界面可能出现短暂卡顿或响应延迟，属已知现象，后续会通过进一步异步化与分批更新优化：
+  - 打开工作区：选择目录并加载工作区时，会触发批量文件扫描与符号分析，主线程可能参与进度更新或数据回写，导致界面短暂不流畅。
+  - 从导航页打开文件：在导航面板中点击文件或符号进行跳转/打开时，若需加载大文件或触发符号/关系查询，会有可感知的延迟。
+  - 符号分析进行中：打开标签分析、工作区分析或单文件分析执行时，若与 UI 刷新、导航树更新、状态栏更新等叠加，可能出现卡顿。当前分析已采用 QtConcurrent 等异步方式，但结果回主线程写回符号库/关系引擎、刷新导航与补全缓存时仍可能造成主线程短时繁忙。
+
 - **符号解析仅使用 Tree-sitter**：extractSymbolsAndContainsOnePassImpl 使用 SVTreeSitterParser::parseSymbols()；
   SVSymbolParser 已从工程中移除。parameter/localparam/typedef/enum 已产出；struct 相关符号未产出，s/sp/ns/nsp 补全与跳转会缺失或异常。commentRegions 由 takeComments() 提供，当前返回空列表。
 

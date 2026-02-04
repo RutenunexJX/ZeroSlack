@@ -4,6 +4,7 @@
 #include "workspacemanager.h"
 #include "symbolanalyzer.h"
 #include "completionmanager.h"
+#include <utility>
 
 NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
@@ -217,7 +218,7 @@ void NavigationManager::navigateToModule(const QString& moduleName)
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> modules = symbolList->findSymbolsByName(moduleName);
 
-    for (const sym_list::SymbolInfo& module : qAsConst(modules)) {
+    for (const sym_list::SymbolInfo& module : std::as_const(modules)) {
         if (module.symbolType == sym_list::sym_module) {
             navigateToSymbol(module);
             break;
@@ -386,7 +387,7 @@ void NavigationManager::updateModuleHierarchyData()
     // 构建模块层次结构
     // TODO: 实现模块实例化关系解析
     // 现在简单按文件分组
-    for (const sym_list::SymbolInfo& module : qAsConst(modules)) {
+    for (const sym_list::SymbolInfo& module : std::as_const(modules)) {
         QString fileName = module.fileName;
         if (!fileName.isEmpty()) {
             moduleHierarchyCache[fileName].append(module.symbolName);
@@ -398,7 +399,7 @@ void NavigationManager::updateModuleHierarchyData()
         QHash<QString, QStringList> filteredCache;
         for (auto it = moduleHierarchyCache.begin(); it != moduleHierarchyCache.end(); ++it) {
             QStringList filteredModules;
-            for (const QString& moduleName : qAsConst(it.value())) {
+            for (const QString& moduleName : std::as_const(it.value())) {
                 if (moduleName.contains(searchFilter, Qt::CaseInsensitive)) {
                     filteredModules.append(moduleName);
                 }
@@ -419,7 +420,7 @@ void NavigationManager::updateModuleHierarchyDataForFile(const QString& fileName
     QList<sym_list::SymbolInfo> modules = symbolList->findSymbolsByType(sym_list::sym_module);
 
     QStringList modulesInFile;
-    for (const sym_list::SymbolInfo& module : qAsConst(modules)) {
+    for (const sym_list::SymbolInfo& module : std::as_const(modules)) {
         if (module.fileName == fileName) {
             modulesInFile.append(module.symbolName);
         }
@@ -427,7 +428,7 @@ void NavigationManager::updateModuleHierarchyDataForFile(const QString& fileName
 
     if (!searchFilter.isEmpty()) {
         QStringList filtered;
-        for (const QString& moduleName : qAsConst(modulesInFile)) {
+        for (const QString& moduleName : std::as_const(modulesInFile)) {
             if (moduleName.contains(searchFilter, Qt::CaseInsensitive)) {
                 filtered.append(moduleName);
             }
@@ -467,7 +468,7 @@ void NavigationManager::updateSymbolHierarchyData()
         // 如果有当前文件，只显示当前文件的符号
         if (!currentFileName.isEmpty()) {
             QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(currentFileName);
-            for (const sym_list::SymbolInfo& symbol : qAsConst(fileSymbols)) {
+            for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
                 if (symbol.symbolType == symbolType) {
                     symbolNames.append(symbol.symbolName);
                 }

@@ -2,6 +2,7 @@
 #include <QHeaderView>
 #include <QFileInfo>
 #include <QDir>
+#include <utility>
 
 NavigationWidget::NavigationWidget(QWidget *parent)
     : QWidget(parent)
@@ -198,7 +199,7 @@ void NavigationWidget::onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int colu
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
 
-    for (const sym_list::SymbolInfo& foundSymbol : qAsConst(symbols)) {
+    for (const sym_list::SymbolInfo& foundSymbol : std::as_const(symbols)) {
         if (foundSymbol.symbolType == symbolType) {
             symbol = foundSymbol;
             break;
@@ -331,7 +332,7 @@ void NavigationWidget::populateFileTree()
     // 按目录结构组织文件
     QHash<QString, QTreeWidgetItem*> dirItems;
 
-    for (const QString& filePath : qAsConst(currentFileList)) {
+    for (const QString& filePath : std::as_const(currentFileList)) {
         QFileInfo fileInfo(filePath);
         QString dirPath = fileInfo.absolutePath();
         QString fileName = fileInfo.fileName();

@@ -32,6 +32,7 @@
 #include <QPen>
 #include <QBrush>
 #include <QRegularExpression>
+#include <utility>
 
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 {
@@ -268,19 +269,30 @@ void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
 
 void MyCodeEditor::lineNumberWidgetMousePressEvent(QMouseEvent *event)
 {
-    QTextBlock block = document()->findBlockByLineNumber(event->y()/fontMetrics().height()+verticalScrollBar()->value());
+    QTextBlock block = document()->findBlockByLineNumber(static_cast<int>(event->position().y()) / fontMetrics().height() + verticalScrollBar()->value());
     setTextCursor(QTextCursor(block));
 }
 
 void MyCodeEditor::lineNumberWidgetWheelEvent(QWheelEvent *event)
 {
-    event->delta();
-    if(event->orientation() == Qt::Horizontal){
-        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - event->delta());
+    QPoint angle = event->angleDelta();
+
+    // In Qt6, use angleDelta().y() for vertical scrolling and x() for horizontal.
+    // Standard mouse wheels usually provide a y component.
+    if (!angle.isNull()) {
+        int dy = angle.y();
+        int dx = angle.x();
+
+        // Handle vertical scrolling (standard wheel)
+        if (dy != 0) {
+            verticalScrollBar()->setValue(verticalScrollBar()->value() - dy);
+        }
+        // Handle horizontal scrolling (if available/supported by input device)
+        else if (dx != 0) {
+            horizontalScrollBar()->setValue(horizontalScrollBar()->value() - dx);
+        }
     }
-    else{
-        verticalScrollBar()->setValue(verticalScrollBar()->value() - event->delta());
-    }
+
     event->accept();
 }
 
@@ -721,7 +733,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
 QString MyCodeEditor::getCurrentCommandDefaultValue()
 {
-    for (const CustomCommand &cmd : qAsConst(customCommands)) {
+    for (const CustomCommand &cmd : std::as_const(customCommands)) {
         if (cmd.symbolType == currentCommandType) {
             return cmd.defaultValue;
         }
@@ -963,7 +975,7 @@ void MyCodeEditor::highlightCommandText()
     QString lineUpToCursor = lineText.left(positionInLine);
 
     int prefixPos = -1;
-    for (const CustomCommand &cmd : qAsConst(customCommands)) {
+    for (const CustomCommand &cmd : std::as_const(customCommands)) {
         int pos = lineUpToCursor.lastIndexOf(cmd.prefix);
         if (pos != -1) {
             QString beforePrefix = lineUpToCursor.left(pos).trimmed();
@@ -1105,7 +1117,7 @@ void MyCodeEditor::initCustomCommands()
 
 bool MyCodeEditor::checkForCustomCommand(const QString &lineUpToCursor)
 {
-    for (const CustomCommand &cmd : qAsConst(customCommands)) {
+    for (const CustomCommand &cmd : std::as_const(customCommands)) {
         int prefixPos = lineUpToCursor.lastIndexOf(cmd.prefix);
         if (prefixPos != -1) {
             QString beforePrefix = lineUpToCursor.left(prefixPos).trimmed();
@@ -1590,7 +1602,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
     QList<sym_list::SymbolInfo> localSymbols = symbolList->findSymbolsByFileName(currentFile);
     int sameNameCount = 0;
     int memberSymbolCount = 0;
-    for (const sym_list::SymbolInfo& s : qAsConst(localSymbols)) {
+    for (const sym_list::SymbolInfo& s : std::as_const(localSymbols)) {
         if (s.symbolName != symbolName) continue;
         sameNameCount++;
         if (s.symbolType == sym_list::sym_struct_member) memberSymbolCount++;
@@ -1599,7 +1611,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
     bool foundLocal = false;
     int localBestPriority = 999;
     int localCandidateCount = 0;
-    for (const sym_list::SymbolInfo& symbol : qAsConst(localSymbols)) {
+    for (const sym_list::SymbolInfo& symbol : std::as_const(localSymbols)) {
         if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
             continue;
         }
@@ -1633,7 +1645,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
     sym_list::SymbolInfo globalBest;
     bool foundGlobal = false;
     int globalBestPriority = 999;
-    for (const sym_list::SymbolInfo& symbol : qAsConst(allSymbols)) {
+    for (const sym_list::SymbolInfo& symbol : std::as_const(allSymbols)) {
         if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
             continue;
         }
