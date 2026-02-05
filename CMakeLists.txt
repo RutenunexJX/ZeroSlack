@@ -12,7 +12,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)            # Tree-sitter 使用 C99
 
 # =========================================================
-# 2. Qt 6 配置
+# 2. Slang 集成配置 (Build System Only)
+# =========================================================
+# 禁用 Slang 的额外组件以加速构建并减少依赖
+set(SLANG_INCLUDE_TOOLS OFF CACHE BOOL "" FORCE)
+set(SLANG_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
+set(SLANG_INCLUDE_PYLIB OFF CACHE BOOL "" FORCE)
+# 关闭 mimalloc，避免与 Qt/CRT 全局分配器冲突导致启动崩溃
+set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
+
+# 添加 Slang 子项目
+# 确保 thirdparty/slang 已经通过 git submodule 下载
+add_subdirectory(thirdparty/slang)
+# MinGW/GCC: 使用 COFF 大对象格式，避免 Compilation.cpp 等大翻译单元导致 "file too big"
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(slang_slang PRIVATE -Wa,-mbig-obj)
+endif()
+
+# =========================================================
+# 3. Qt 6 配置
 # =========================================================
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -22,7 +40,7 @@ set(CMAKE_AUTOUIC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 
 # =========================================================
-# 3. 源文件与资源
+# 4. 源文件与资源
 # =========================================================
 set(PROJECT_SOURCES
     # --- C++ 源文件 ---
@@ -79,7 +97,7 @@ set(PROJECT_SOURCES
 )
 
 # =========================================================
-# 4. 定义可执行目标
+# 5. 定义可执行目标
 # =========================================================
 # 对应 .pro 的 TARGET
 add_executable(demo ${PROJECT_SOURCES})
@@ -90,7 +108,7 @@ if(WIN32)
 endif()
 
 # =========================================================
-# 5. 包含路径与链接库
+# 6. 包含路径与链接库
 # =========================================================
 # 对应 .pro 的 INCLUDEPATH
 target_include_directories(demo PRIVATE
@@ -99,16 +117,17 @@ target_include_directories(demo PRIVATE
     thirdparty/tree_sitter/lib/src
 )
 
-# 链接 Qt 库
+# 链接库：Qt6 + Slang
 target_link_libraries(demo PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::Concurrent
+    slang::slang
 )
 
 # =========================================================
-# 6. 编译器标志与宏定义
+# 7. 编译器标志与宏定义
 # =========================================================
 
 # 针对 tree-sitter 的 C 文件忽略特定警告 (对应 QMAKE_CFLAGS += -Wno-unused-parameter)
@@ -122,9 +141,3 @@ set_source_files_properties(
 if(MINGW)
     target_compile_definitions(demo PRIVATE __USE_MINGW_ANSI_STDIO=1)
 endif()
-
-# =========================================================
-# 7. (可选) 未来集成 Slang 的预留位置
-# =========================================================
-# target_include_directories(demo PRIVATE /path/to/slang/include)
-# target_link_libraries(demo PRIVATE slang::slang)
