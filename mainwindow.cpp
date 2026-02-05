@@ -14,12 +14,19 @@
 #include "sv_treesitter_parser.h"
 #include <QtConcurrent/QtConcurrent>
 
+#include <slang/syntax/SyntaxTree.h>
+#include <slang/syntax/SyntaxNode.h>
+#include <slang/diagnostics/Diagnostics.h>
+#include <slang/parsing/Token.h>
+
+#include <functional>
 #include <QElapsedTimer>
 #include <QMessageBox>
 #include <QTextCursor>
 #include <QTextBlock>
 #include <QTextStream>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QDebug>
 
@@ -827,66 +834,137 @@ void MainWindow::setupDebugButton()
 
 void MainWindow::onDebug0()
 {
-    // --- Tree-sitter MVP Verification ---
-
     // 1. Get current editor and content
     MyCodeEditor *editor = tabManager->getCurrentEditor();
     if (!editor) {
-        qDebug() << "[TreeSitter-Test] Error: No active editor found.";
+        qDebug() << "[Verification] Error: No active editor found.";
         return;
     }
 
     QString content = editor->toPlainText();
     if (content.isEmpty()) {
-        qDebug() << "[TreeSitter-Test] Warning: Editor is empty.";
+        qDebug() << "[Verification] Warning: Editor is empty.";
         return;
     }
 
-    qDebug() << "[TreeSitter-Test] Starting verification on file:" << editor->getFileName();
+    QString fileName = editor->getFileName();
+    qDebug() << "========================================";
+    qDebug() << "   Starting Verification: " << fileName;
+    qDebug() << "========================================";
 
-    // 2. Instantiate Parser
-    SVTreeSitterParser parser;
-
-    // 3. Parse and Benchmark
+    // --- Slang Analysis ---
+    qDebug() << "[Slang] Parsing content...";
     QElapsedTimer timer;
     timer.start();
 
-    parser.parse(content);
+    qint64 slangTime = 0;
+    QString slangRootName;
+    QString slangSummary;  // 解析到的内容摘要，便于和 Tree-sitter 对比
+    size_t slangDiagnosticsCount = 0;
 
-    qint64 parseTime = timer.nsecsElapsed() / 1000; // microseconds
-    qDebug() << "[TreeSitter-Test] Parsing completed in" << parseTime << "us";
+    try {
+        std::string src = content.toStdString();
+        std::string nameStr = fileName.toStdString();
+        // 显式 string_view 以消除与 fromText(text, Bag&, name, path) 重载的歧义
+        auto tree = slang::syntax::SyntaxTree::fromText(
+            std::string_view(src),
+            std::string_view(nameStr),
+            std::string_view{});
 
-    // 4. Extract Symbols
-    QList<sym_list::SymbolInfo> symbols = parser.getSymbols();
+        slangTime = timer.nsecsElapsed() / 1000; // microseconds
 
-    // 5. Output Results to Console
-    qDebug() << "[TreeSitter-Test] Extracted" << symbols.size() << "symbols:";
+        const auto& root = tree->root();
+        auto rootKind = root.kind;
+        slangRootName = QString::fromStdString(std::string(slang::syntax::toString(rootKind)));
 
-    for (const auto &sym : symbols) {
-        QString typeStr;
-        switch (sym.symbolType) {
-            case sym_list::sym_module: typeStr = "MODULE"; break;
-            case sym_list::sym_inst: typeStr = "INSTANCE"; break;
-            case sym_list::sym_interface: typeStr = "INTERFACE"; break;
-            case sym_list::sym_package: typeStr = "PACKAGE"; break;
-            case sym_list::sym_user: typeStr = "USER_TYPE"; break;
-            default: typeStr = QString::number(sym.symbolType); break;
+        // 递归收集语法树摘要：节点类型 + 可选名称（首 token 文本），便于看出具体识别到了什么
+        QStringList detailLines;
+        const int maxDepth = 4;
+        const int maxLines = 35;
+        std::function<void(const slang::syntax::SyntaxNode&, int)> collectDetail;
+        collectDetail = [&](const slang::syntax::SyntaxNode& node, int depth) {
+            if (detailLines.size() >= maxLines) return;
+            QString kindStr = QString::fromStdString(std::string(slang::syntax::toString(node.kind)));
+            QString indent(depth * 2, QChar(' '));
+            QString nameHint;
+            try {
+                auto tok = node.getFirstToken();
+                if (tok.valid()) {
+                    std::string_view raw = tok.rawText();
+                    if (!raw.empty() && raw.size() <= 64) {
+                        QString t = QString::fromUtf8(raw.data(), int(raw.size()));
+                        if (t.contains(QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$"))) {
+                            nameHint = " \"" + t + "\"";
+                        }
+                    }
+                }
+            } catch (...) {}
+            if (depth == 0) {
+                detailLines.append(kindStr + nameHint);
+            } else {
+                detailLines.append(indent + kindStr + nameHint);
+            }
+            if (depth >= maxDepth) return;
+            const size_t maxChildren = 12;
+            size_t n = node.getChildCount();
+            for (size_t i = 0; i < n && detailLines.size() < maxLines; ++i) {
+                if (i >= maxChildren) {
+                    detailLines.append(indent + "  ... (+" + QString::number(n - maxChildren) + " 项)");
+                    break;
+                }
+                const slang::syntax::SyntaxNode* child = node.childNode(i);
+                if (child)
+                    collectDetail(*child, depth + 1);
+            }
+        };
+        collectDetail(root, 0);
+        slangSummary = detailLines.join("\n");
+
+        qDebug() << "[Slang] Parse completed in" << slangTime << "us";
+        qDebug() << "[Slang] Root Node:" << slangRootName;
+        qDebug() << "[Slang] Parsed:" << slangSummary;
+
+        auto& diagnostics = tree->diagnostics();
+        slangDiagnosticsCount = diagnostics.size();
+
+        if (diagnostics.empty()) {
+            qDebug() << "[Slang] Diagnostics: OK (No errors)";
+        } else {
+            qDebug() << "[Slang] Diagnostics found:" << slangDiagnosticsCount;
+            for (const auto& diag : diagnostics) {
+                qDebug() << "[Slang] Error Code:" << QString::fromStdString(std::string(slang::toString(diag.code)));
+            }
         }
 
-        qDebug() << QString("  - [%1] %2 (Line: %3, Type: %4)")
-                    .arg(typeStr)
-                    .arg(sym.symbolName)
-                    .arg(sym.startLine)
-                    .arg(sym.dataType.isEmpty() ? "-" : sym.dataType);
+    } catch (const std::exception& e) {
+        qDebug() << "[Slang] EXCEPTION:" << e.what();
     }
 
-    // 6. UI Feedback
-    QString summary = QString("Tree-sitter Verification Complete\n\n"
-                              "Time: %1 us\n"
-                              "Symbols: %2\n\n"
+    // --- Tree-sitter Analysis ---
+    SVTreeSitterParser parser;
+    timer.restart();
+    parser.parse(content);
+    qint64 tsTime = timer.nsecsElapsed() / 1000; // microseconds
+    QList<sym_list::SymbolInfo> symbols = parser.getSymbols();
+
+    // --- Summary ---
+    QString summary = QString("Verification Complete\n\n"
+                              "File: %1\n\n"
+                              "--- Slang ---\n"
+                              "Time: %2 us\n"
+                              "Parsed: %3\n"
+                              "Diagnostics: %4\n\n"
+                              "--- Tree-sitter ---\n"
+                              "Time: %5 us\n"
+                              "Symbols: %6\n\n"
                               "Check Application Output for details.")
-                      .arg(parseTime)
+                      .arg(QFileInfo(fileName).fileName())
+                      .arg(slangTime)
+                      .arg(slangSummary)
+                      .arg(slangDiagnosticsCount)
+                      .arg(tsTime)
                       .arg(symbols.size());
-    QMessageBox::information(this, "Tree-sitter Verification", summary);
+
+    QMessageBox::information(this, "Parser Verification", summary);
 }
 

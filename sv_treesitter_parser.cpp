@@ -147,10 +147,6 @@ void SVTreeSitterParser::parse(const QString &content)
         QMutexLocker lock(&parseMutex());
         m_tree = ts_parser_parse_string(m_parser, nullptr, utf8.constData(), static_cast<uint32_t>(utf8.size()));
     }
-    if (m_tree) {
-        TSNode root = ts_tree_root_node(m_tree);
-        qDebug() << "SVTreeSitterParser: root type =" << ts_node_type(root);
-    }
 }
 
 /** True if node or any descendant has the given named node type (tree-sitter structure, not text). */
@@ -232,14 +228,6 @@ void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
     const QString scope = scopeStack.isEmpty() ? QString() : scopeStack.top();
 
     if (strcmp(type, "module_declaration") == 0) {
-        // Debug: print child types to help diagnose grammar/name extraction
-        QStringList childTypes;
-        for (uint32_t i = 0, n = ts_node_named_child_count(node); i < n; ++i) {
-            const char *ct = ts_node_type(ts_node_named_child(node, i));
-            if (ct) childTypes.append(QString::fromUtf8(ct));
-        }
-        qDebug() << "SVTreeSitterParser: module_declaration children:" << childTypes;
-
         QString name = nameFromDeclarationNode(utf8, node);
         if (!name.isEmpty()) {
             out.append(makeSymbolInfo(node, name, sym_list::sym_module, utf8, QString(), scope, m_currentFileName));
@@ -438,9 +426,6 @@ void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
                 }
             }
             if (!name.isEmpty()) {
-                const char *typeLabel = (symType == sym_list::sym_reg) ? "reg" : (symType == sym_list::sym_wire) ? "wire"
-                    : (symType == sym_list::sym_enum_var) ? "enum_var" : "logic";
-                qDebug("TreeSitterParser: data_declaration -> %s '%s' (scope=%s) typeText='%s'", typeLabel, qPrintable(name), qPrintable(scope), qPrintable(typeText));
                 out.append(makeSymbolInfo(va, name, symType, utf8, typeText, scope, m_currentFileName));
             }
         }
@@ -481,7 +466,6 @@ void SVTreeSitterParser::visitNode(TSNode node, QStack<QString> &scopeStack,
                     }
                 }
                 if (!name.isEmpty()) {
-                    qDebug("TreeSitterParser: net_declaration -> wire '%s' (scope=%s)", qPrintable(name), qPrintable(scope));
                     out.append(makeSymbolInfo(na, name, sym_list::sym_wire, utf8, QString("wire"), scope, m_currentFileName));
                 }
             }
@@ -623,13 +607,6 @@ QList<sym_list::SymbolInfo> SVTreeSitterParser::parseSymbols()
     QStack<QString> scopeStack;
     visitNode(root, scopeStack, out, utf8);
 
-    int countReg = 0, countWire = 0, countLogic = 0;
-    for (const sym_list::SymbolInfo &s : out) {
-        if (s.symbolType == sym_list::sym_reg) countReg++;
-        else if (s.symbolType == sym_list::sym_wire) countWire++;
-        else if (s.symbolType == sym_list::sym_logic) countLogic++;
-    }
-    qDebug("TreeSitterParser: Found %d symbols in file %s (reg=%d wire=%d logic=%d)", out.size(), qPrintable(m_currentFileName), countReg, countWire, countLogic);
     return out;
 }
 
@@ -637,14 +614,12 @@ QList<sym_list::SymbolInfo> SVTreeSitterParser::getSymbols()
 {
     QList<sym_list::SymbolInfo> out;
     if (!m_tree || m_currentContent.isEmpty()) {
-        qDebug() << "SVTreeSitterParser::getSymbols: no tree or content, returning" << out.size() << "symbols";
         return out;
     }
     QByteArray utf8 = m_currentContent.toUtf8();
     TSNode root = ts_tree_root_node(m_tree);
     QStack<QString> scopeStack;
     visitNode(root, scopeStack, out, utf8);
-    qDebug() << "SVTreeSitterParser::getSymbols: found" << out.size() << "symbols";
     return out;
 }
 
