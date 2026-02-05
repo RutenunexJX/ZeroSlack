@@ -56,6 +56,7 @@ set(PROJECT_SOURCES
     navigationmanager.cpp
     navigationwidget.cpp
     relationshipprogressdialog.cpp
+    slangmanager.cpp
     smartrelationshipbuilder.cpp
     symbolanalyzer.cpp
     symbolrelationshipengine.cpp
@@ -77,6 +78,7 @@ set(PROJECT_SOURCES
     navigationmanager.h
     navigationwidget.h
     relationshipprogressdialog.h
+    slangmanager.h
     smartrelationshipbuilder.h
     symbolanalyzer.h
     symbolrelationshipengine.h

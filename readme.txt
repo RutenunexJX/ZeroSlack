@@ -119,10 +119,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
 
-- **符号解析架构（仅使用 Tree-sitter）**
-  - **当前数据来源**：大纲、补全、代码导航的符号数据**由** `SVTreeSitterParser`（sv_treesitter_parser.h/cpp）**独家**提供。sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePassImpl → SVTreeSitterParser::parseSymbols()，解析结果写入符号库并驱动作用域树与 CONTAINS 关系。
+- **双轨解析架构（Tree-sitter + Slang）**
+  - **UI 与符号**：大纲、补全、代码导航的符号数据**由** `SVTreeSitterParser`（sv_treesitter_parser.h/cpp）**独家**提供。sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePassImpl → SVTreeSitterParser::parseSymbols()，解析结果写入符号库并驱动作用域树与 CONTAINS 关系。语法高亮由 SVLexer 驱动。**不改动** sv_treesitter_parser，继续用于高亮与简单 outline。
+  - **语义分析（Slang）**：`SlangManager`（slangmanager.h/cpp）基于 `slang::ast::Compilation` 对单文件做解析与 elaboration，目前用于**模块实例化关系**（INSTANTIATES）。SmartRelationshipBuilder 在分析「谁实例化了谁」时调用 SlangManager::extractModuleInstantiations，遍历 Slang AST 中的 InstanceSymbol，提取实例名、模块定义名与行号（1-based），不再使用正则，保证 100% 准确。解析/elaboration 失败时返回空列表，不崩溃。其余关系类型（变量赋值/引用、task/function 调用、always、clock/reset 等）仍使用 SmartRelationshipBuilder 内原有正则逻辑。
+- **符号解析数据来源（仅使用 Tree-sitter）**
+  - **当前数据来源**：如上，符号数据由 SVTreeSitterParser 独家提供。
   - **Tree-sitter（SVTreeSitterParser）**：项目已集成 tree-sitter 核心库（thirdparty/tree_sitter）与 tree-sitter-systemverilog 语法（thirdparty/tree_sitter_systemverilog）。parseSymbols() 从 AST 根递归遍历，维护 module/interface/program 作用域栈，产出带 fileName、moduleScope 的 SymbolInfo。支持的节点类型包括：module_declaration、program_declaration、package_declaration、interface_declaration、class_declaration、module_instantiation（含实例名与模块类型）、task_declaration、function_declaration、always_construct、ansi_port_declaration、port_declaration（input/output/inout/ref）、data_declaration（reg/logic/wire/enum 变量，类型由 AST 节点 reg/logic/net_type、enum_base_type 判定）、net_declaration（wire）、parameter_declaration（sym_parameter）、local_parameter_declaration（sym_localparam）、type_declaration（sym_typedef；typedef enum 时同时产出 sym_enum_value）；module 名称从 *_header 子节点或 simple_identifier 正确提取。类型与端口方向等均按 AST 节点类型判断，不使用字符串匹配。takeComments() 当前返回空列表，注释区域尚未从 AST 收集。
-  - **已产出**：parameter/localparam、typedef（含 dataType 如 "enum"）、枚举类型变量（sym_enum_var）、枚举值（sym_enum_value）。**尚未产出**：struct/union 类型与变量（sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_*_struct_var），故 s/sp/ns/nsp 相关补全/跳转会缺失或异常。实例化引脚（sym_inst_pin）与 REFERENCES 等由 SmartRelationshipBuilder 负责。
+  - **已产出**：parameter/localparam、typedef（含 dataType 如 "enum"）、枚举类型变量（sym_enum_var）、枚举值（sym_enum_value）。**尚未产出**：struct/union 类型与变量（sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_*_struct_var），故 s/sp/ns/nsp 相关补全/跳转会缺失或异常。实例化引脚（sym_inst_pin）与 REFERENCES 等由 SmartRelationshipBuilder 负责；模块实例化关系（INSTANTIATES）由 SlangManager + Slang 语义分析产出，见上文「双轨解析架构」。
   - **net_declaration 与 data_declaration 歧义**：语法上「类型名 + 标识符 + 分号」（如 `test_e test;`）可同时匹配 net_declaration（nettype_identifier + list_of_net_decl_assignments）与 data_declaration。grammar 中 net_declaration 为 PREC_DYNAMIC 0、data_declaration 为 1，tree-sitter 优先选 net_declaration，故此类变量声明会被解析为 wire。建议在符号层做语义补救：当 net_declaration 的 nettype_identifier 在已解析的 typedef/enum 类型中时，按变量（如 sym_enum_var）处理。
   - **SVSymbolParser 已移除**：符号解析仅使用 SVTreeSitterParser；语法高亮仍由 `SVLexer`（sv_lexer.h/cpp、sv_token.h）驱动。工具栏「Tree-sitter 验证」按钮（MainWindow::onDebug0）仍通过 SVTreeSitterParser::parse(content) + getSymbols() 做验证输出，不写入符号库。
 - 支持解析的 SystemVerilog 符号包括但不限于：
@@ -135,7 +138,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - `reg` / `wire` / `logic` 变量
   - `task` / `function`
   - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，以及 dataType（如 logic[7:0]）等，由 SVTreeSitterParser 从 ansi_port_declaration / port_declaration 节点解析。
-  - parameter/localparam/typedef/enum 已由 SVTreeSitterParser 产出；struct/union 尚未产出，依赖 s/sp/ns/nsp 的补全/跳转会缺失或异常。`interface`、实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责。
+  - parameter/localparam/typedef/enum 已由 SVTreeSitterParser 产出；struct/union 尚未产出，依赖 s/sp/ns/nsp 的补全/跳转会缺失或异常。`interface`、实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责；模块实例化（INSTANTIATES）由 SlangManager 基于 Slang AST 产出。
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
 - **Struct 与注释**
@@ -229,12 +232,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：
 - `SymbolRelationshipEngine`
+- `SlangManager`（slangmanager.h/cpp）：基于 Slang 的语义分析，当前仅用于提取模块/接口/程序实例化（InstanceSymbol），供 SmartRelationshipBuilder 写入 INSTANTIATES 关系。
 - `SmartRelationshipBuilder`
 - `RelationshipProgressDialog`
 
 功能概览：
 - 在工作区分析完成后，进一步分析符号之间的关系，例如：
-  - 模块实例化关系
+  - **模块实例化关系（INSTANTIATES）**：由 `SlangManager::extractModuleInstantiations` 通过 Slang AST（Compilation + InstanceSymbol 遍历）产出，行号与实例/模块名 100% 准确；SmartRelationshipBuilder 仅负责将结果映射为 addRelationshipWithContext(..., INSTANTIATES)。
   - 实例引脚到模块端口的 REFERENCES（`.pin(sig)` → 对应 module 的 port 定义，供跳转到定义）
   - 变量赋值 / 驱动关系
   - 任务 / 函数调用关系
@@ -245,7 +249,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 分析流程（简化）：
 1. 打开 Workspace（批量）
    - 先触发符号批量分析 (`SymbolAnalyzer::analyzeWorkspace`)
-   - 然后由 `SmartRelationshipBuilder` 对所有 SV 文件进行逐个关系分析（`analyzeMultipleFiles`），结果经 `relationshipBatchWatcher` 回主线程 `beginUpdate`/`endUpdate` 写回引擎。
+   - 然后由 `SmartRelationshipBuilder` 对所有 SV 文件进行逐个关系分析（`analyzeMultipleFiles`），内部对每个文件在模块实例化环节调用 SlangManager；结果经 `relationshipBatchWatcher` 回主线程 `beginUpdate`/`endUpdate` 写回引擎。
 2. 单文件关系分析（编辑/保存时）
    - `MainWindow::requestSingleFileRelationshipAnalysis(fileName, content)`：仅当 `hasSignificantChanges` 通过时才触发；在后台 `QtConcurrent::run` 中调用 `SmartRelationshipBuilder::computeRelationships`，结果经 `relationshipSingleFileWatcher` 回主线程写回。
    - 触发时机：符号分析超时后（`scheduleOpenFileAnalysis` 回调里）、保存后、文件监视到变更后；编辑器中 `onTextChanged` 启动 `relationshipAnalysisDebounceTimer`（约 2s），停止输入后到时再请求单文件关系分析，避免连续按键重复触发。
@@ -256,6 +260,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
    - `analysisCompleted(fileName, relationshipsFound)` 按文件汇报；所有文件处理后自动关闭进度对话框并在状态栏给出汇总
 
 其它：
+- MainWindow 持有 `SlangManager` 实例，创建 SmartRelationshipBuilder 时传入；CompletionManager 通过 setSlangManager 获得同一实例，以便其内部的 SmartRelationshipBuilder 也使用 Slang 做实例化分析。
 - 所有新增/清空关系会通知 `CompletionManager` 刷新内部缓存
 - 导航面板可以基于最新的关系数据刷新视图
 
@@ -266,8 +271,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 【依赖】
 - Qt 5/6（建议在与你当前 `.pro` 文件兼容的版本上构建）
-- 支持 C++11 及以上的编译器（项目大量使用 `std::unique_ptr` 等）
-- Tree-sitter：符号解析可选路径依赖 thirdparty/tree_sitter 与 thirdparty/tree_sitter_systemverilog（demo.pro 已配置 INCLUDEPATH 与 SOURCES），用于 SVTreeSitterParser；构建时需能编译 C 源（lib.c、parser.c）
+- 支持 C++20 的编译器（Slang 要求 C++20；项目使用 `std::unique_ptr` 等）
+- Tree-sitter：符号解析依赖 thirdparty/tree_sitter 与 thirdparty/tree_sitter_systemverilog，用于 SVTreeSitterParser；构建时需能编译 C 源（lib.c、parser.c）
+- Slang：thirdparty/slang 子项目，用于 SlangManager 的语义分析（模块实例化）；CMake 已配置 slang::slang 链接与 C++20
 
 【构建步骤（命令行示例）】
 1. 打开 Qt 提供的命令行环境（如：`Qt x.y.z (MSVC/MinGW) Command Prompt`）
@@ -387,7 +393,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 调试逻辑已全部移除：代码中不再包含 qDebug 输出、调试信号（如 debugScopeInfo、debugStructMemberCompletion）
     及对应槽/连接；状态栏不再显示“当前模块 / logic / struct 计数”（已随调试信号一并移除）；发布构建无需再通过宏关闭调试输出。
   - SmartRelationshipBuilder：已移除空占位 analyzeInterfaceRelationships 及其调用；
-    interface 分析待后续统一扩展接口实现。
+    interface 分析待后续统一扩展接口实现。模块实例化（INSTANTIATES）已改为使用 SlangManager
+    + Slang AST（extractModuleInstantiations），不再使用 QRegularExpression；其余关系类型仍用正则。
   - MyCodeEditor：作用域背景改为持久光标缓存；删除 getScopeBackgroundSelections()，新增
     updateScopeBackgrounds() 与 m_scopeSelections，highlighCurrentLine 仅用缓存与当前行重绘，
     避免每次光标移动查库导致背景回弹。
@@ -412,8 +419,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 从导航页打开文件：在导航面板中点击文件或符号进行跳转/打开时，若需加载大文件或触发符号/关系查询，会有可感知的延迟。
   - 符号分析进行中：打开标签分析、工作区分析或单文件分析执行时，若与 UI 刷新、导航树更新、状态栏更新等叠加，可能出现卡顿。当前分析已采用 QtConcurrent 等异步方式，但结果回主线程写回符号库/关系引擎、刷新导航与补全缓存时仍可能造成主线程短时繁忙。
 
-- **符号解析仅使用 Tree-sitter**：extractSymbolsAndContainsOnePassImpl 使用 SVTreeSitterParser::parseSymbols()；
-  SVSymbolParser 已从工程中移除。parameter/localparam/typedef/enum 已产出；struct 相关符号未产出，s/sp/ns/nsp 补全与跳转会缺失或异常。commentRegions 由 takeComments() 提供，当前返回空列表。
+- **双轨解析**：符号解析仅使用 Tree-sitter（SVTreeSitterParser）；模块实例化关系使用 Slang（SlangManager）。
+  extractSymbolsAndContainsOnePassImpl 使用 SVTreeSitterParser::parseSymbols()；SVSymbolParser 已从工程中移除。
+  parameter/localparam/typedef/enum 已产出；struct 相关符号未产出，s/sp/ns/nsp 补全与跳转会缺失或异常。commentRegions 由 takeComments() 提供，当前返回空列表。
 
 - **Tree-sitter（SVTreeSitterParser）**：主路径已使用 parseSymbols() 写入符号库；工具栏「Tree-sitter 验证」
   按钮仍通过 parse(content) + getSymbols() 做验证输出。module 名称已从 module_ansi_header / module_nonansi_header

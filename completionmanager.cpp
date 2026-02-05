@@ -1,5 +1,6 @@
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
+#include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 
 #include <QDateTime>
@@ -722,13 +723,18 @@ bool CompletionManager::isSymbolCacheValid()
     return lastSymbolDatabaseSize == symbolList->getAllSymbols().size();
 }
 
+void CompletionManager::setSlangManager(SlangManager* slangManager)
+{
+    m_slangManager = slangManager;
+}
+
 void CompletionManager::setRelationshipEngine(SymbolRelationshipEngine* engine)
 {
     relationshipEngine = engine;
 
     if (engine && !relationshipBuilder) {
         relationshipBuilder = std::make_unique<SmartRelationshipBuilder>(
-            engine, sym_list::getInstance(), nullptr);
+            engine, sym_list::getInstance(), m_slangManager, nullptr);
     }
 
     relationshipCacheValid = false;

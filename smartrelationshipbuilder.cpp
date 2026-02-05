@@ -6,8 +6,9 @@
 
 SmartRelationshipBuilder::SmartRelationshipBuilder(SymbolRelationshipEngine* engine,
                                                  sym_list* symbolDatabase,
+                                                 SlangManager* slangManager,
                                                  QObject *parent)
-    : QObject(parent), relationshipEngine(engine), symbolDatabase(symbolDatabase)
+    : QObject(parent), relationshipEngine(engine), symbolDatabase(symbolDatabase), m_slangManager(slangManager)
 {
     initializePatterns();
 }
@@ -18,7 +19,6 @@ SmartRelationshipBuilder::~SmartRelationshipBuilder()
 
 void SmartRelationshipBuilder::initializePatterns()
 {
-    patterns.moduleInstantiation = QRegularExpression("([a-zA-Z_][a-zA-Z0-9_]*)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
     patterns.variableAssignment = QRegularExpression("([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*([^;]+);");
     patterns.variableReference = QRegularExpression("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b");
     patterns.taskCall = QRegularExpression("([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(.*\\)\\s*;|([a-zA-Z_][a-zA-Z0-9_]*)\\s*;");
@@ -154,31 +154,24 @@ void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(const QString& fi
 
 void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
-    QStringList lines = content.split('\n');
+    if (!m_slangManager)
+        return;
 
-    for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
-        if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
+    QVector<ModuleInstantiationInfo> insts = m_slangManager->extractModuleInstantiations(context.currentFileName, content);
+    for (const ModuleInstantiationInfo& info : std::as_const(insts)) {
+        // lineMin/lineMax are 0-based; info.lineNumber is 1-based
+        if (lineMin >= 0 && (info.lineNumber - 1 < lineMin || info.lineNumber - 1 > lineMax))
             continue;
-        const QString& line = lines[lineNum].trimmed();
 
-        if (line.isEmpty() || line.startsWith("//")) continue;
-
-        QRegularExpressionMatchIterator it = patterns.moduleInstantiation.globalMatch(line);
-        while (it.hasNext()) {
-            QRegularExpressionMatch match = it.next();
-            QString moduleTypeName = match.captured(1);
-            QString instanceName = match.captured(2);
-
-            int moduleTypeId = findSymbolIdByName(moduleTypeName, context);
-            if (moduleTypeId != -1 && context.currentModuleId != -1) {
-                addRelationshipWithContext(
-                    context.currentModuleId,
-                    moduleTypeId,
-                    SymbolRelationshipEngine::INSTANTIATES,
-                    QString("Instance: %1 at line %2").arg(instanceName).arg(lineNum + 1),
-                    90
-                );
-            }
+        int moduleTypeId = findSymbolIdByName(info.moduleName, context);
+        if (moduleTypeId != -1 && context.currentModuleId != -1) {
+            addRelationshipWithContext(
+                context.currentModuleId,
+                moduleTypeId,
+                SymbolRelationshipEngine::INSTANTIATES,
+                QString("Instance: %1 at line %2").arg(info.instanceName).arg(info.lineNumber),
+                90
+            );
         }
     }
 }
