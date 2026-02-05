@@ -13,6 +13,7 @@
 #include "scope_tree.h"
 
 class SymbolRelationshipEngine;
+class SlangManager;
 class SmartRelationshipBuilder;
 
 class CompletionManager
@@ -22,6 +23,7 @@ public:
     ~CompletionManager();
 
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
+    void setSlangManager(SlangManager* slangManager);
     SymbolRelationshipEngine* getRelationshipEngine() const;
 
     bool matchesAbbreviation(const QString &text, const QString &abbreviation);
@@ -143,6 +145,7 @@ private:
     int cacheInvalidationThreshold = 100;
 
     SymbolRelationshipEngine* relationshipEngine = nullptr;
+    SlangManager* m_slangManager = nullptr;
     std::unique_ptr<SmartRelationshipBuilder> relationshipBuilder;
 
     QHash<QString, QStringList> moduleChildrenCache;

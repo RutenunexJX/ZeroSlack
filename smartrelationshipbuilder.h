@@ -7,6 +7,7 @@
 #include <QRegularExpression>
 #include <QHash>
 #include <QList>
+#include "slangmanager.h"
 #include "symbolrelationshipengine.h"
 #include "syminfo.h"
 #include <QVector>
@@ -28,6 +29,7 @@ class SmartRelationshipBuilder : public QObject
 public:
     explicit SmartRelationshipBuilder(SymbolRelationshipEngine* engine,
                                     sym_list* symbolDatabase,
+                                    SlangManager* slangManager,
                                     QObject *parent = nullptr);
     ~SmartRelationshipBuilder();
 
@@ -63,6 +65,7 @@ signals:
 private:
     SymbolRelationshipEngine* relationshipEngine;
     sym_list* symbolDatabase;
+    SlangManager* m_slangManager = nullptr;
 
     int analysisDepth = 3;
     bool enableAdvancedAnalysis = true;
@@ -72,7 +75,6 @@ private:
     bool checkCancellation(const QString& currentFile = "");
 
     struct AnalysisPatterns {
-        QRegularExpression moduleInstantiation;
         QRegularExpression variableAssignment;
         QRegularExpression variableReference;
         QRegularExpression taskCall;

@@ -9,6 +9,7 @@
 #include "navigationmanager.h"
 #include "navigationwidget.h"
 #include "symbolrelationshipengine.h"
+#include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "syminfo.h"
 #include "sv_treesitter_parser.h"
@@ -559,11 +560,13 @@ void MainWindow::setupRelationshipEngine()
     sym_list* symbolDatabase = sym_list::getInstance();
     symbolDatabase->setRelationshipEngine(relationshipEngine.get());
 
+    slangManager = std::make_unique<SlangManager>();
     CompletionManager* completionManager = CompletionManager::getInstance();
+    completionManager->setSlangManager(slangManager.get());
     completionManager->setRelationshipEngine(relationshipEngine.get());
 
     relationshipBuilder = std::make_unique<SmartRelationshipBuilder>(
-        relationshipEngine.get(), symbolDatabase, this);
+        relationshipEngine.get(), symbolDatabase, slangManager.get(), this);
 
     relationshipSingleFileWatcher = new QFutureWatcher<QVector<RelationshipToAdd>>(this);
     connect(relationshipSingleFileWatcher, &QFutureWatcher<QVector<RelationshipToAdd>>::finished,
