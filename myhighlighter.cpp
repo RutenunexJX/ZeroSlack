@@ -1,34 +1,6 @@
 #include "myhighlighter.h"
-#include "sv_lexer.h"
-#include "sv_token.h"
-#include <QFile>
-#include <QMutex>
-#include <QTextStream>
-
-static QStringList s_cachedKeywords;
-static QMutex s_keywordCacheMutex;
-static bool s_keywordsLoaded = false;
-
-static QStringList loadKeywordsOnce()
-{
-    QMutexLocker lock(&s_keywordCacheMutex);
-    if (s_keywordsLoaded)
-        return s_cachedKeywords;
-    QFile file(":/config/config/keywords.txt");
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        s_keywordsLoaded = true;
-        return s_cachedKeywords;
-    }
-    QTextStream in(&file);
-    while (!in.atEnd()) {
-        QString line = in.readLine().trimmed();
-        if (!line.isEmpty())
-            s_cachedKeywords.append(line);
-    }
-    file.close();
-    s_keywordsLoaded = true;
-    return s_cachedKeywords;
-}
+#include <QTextDocument>
+#include <QTextBlock>
 
 MyHighlighter::MyHighlighter(QTextDocument *parent)
     : QSyntaxHighlighter(parent)
@@ -51,43 +23,39 @@ void MyHighlighter::initFormats()
     errorFormat.setUnderlineColor(Qt::red);
 }
 
+const QTextCharFormat* MyHighlighter::formatFor(HlCategory category) const
+{
+    switch (category) {
+    case HlCategory::Keyword: return &keywordFormat;
+    case HlCategory::Comment: return &commentFormat;
+    case HlCategory::Number:  return &numberFormat;
+    case HlCategory::String:  return &stringFormat;
+    // Operators / identifiers render with the default text format (matches prior behavior).
+    default:                  return nullptr;
+    }
+}
+
 void MyHighlighter::highlightBlock(const QString &text)
 {
-    SVLexer lexer(text);
-    lexer.setState(previousBlockState());
+    QTextDocument* doc = document();
+    if (!doc)
+        return;
 
-    const QStringList keywords = loadKeywordsOnce();
-
-    Token token;
-    while ((token = lexer.nextToken()).type != TokenType::EOF_SYMBOL) {
-        switch (token.type) {
-        case TokenType::Keyword:
-            setFormat(token.offset, token.length, keywordFormat);
-            break;
-        case TokenType::Comment:
-            setFormat(token.offset, token.length, commentFormat);
-            break;
-        case TokenType::Identifier: {
-            QString word = text.mid(token.offset, token.length);
-            if (keywords.contains(word))
-                setFormat(token.offset, token.length, keywordFormat);
-            break;
-        }
-        case TokenType::Number:
-            setFormat(token.offset, token.length, numberFormat);
-            break;
-        case TokenType::String:
-            setFormat(token.offset, token.length, stringFormat);
-            break;
-        case TokenType::Operator:
-            break;
-        case TokenType::Error:
-            break;
-        case TokenType::Whitespace:
-        default:
-            break;
-        }
+    // Keep the tree-sitter model in sync with the document. A document edit bumps revision();
+    // re-parse once per highlight pass (the first highlightBlock of the pass), then every block in
+    // the pass reads the fresh tree. (Incremental ts_tree_edit is a later optimization.)
+    if (doc->revision() != m_parsedRevision) {
+        m_tsdoc.setText(doc->toPlainText());
+        m_parsedRevision = doc->revision();
     }
 
-    setCurrentBlockState(lexer.getState());
+    const int blockStart = currentBlock().position();
+    const QVector<HlSpan> spans = m_tsdoc.highlightSpans(blockStart, text.length());
+    for (const HlSpan& s : spans) {
+        if (const QTextCharFormat* f = formatFor(s.category))
+            setFormat(s.start, s.length, *f);
+    }
+
+    // Propagate multi-line block-comment state so following blocks re-highlight when a /* */ opens.
+    setCurrentBlockState(m_tsdoc.blockEndCommentState(blockStart, text.length()));
 }

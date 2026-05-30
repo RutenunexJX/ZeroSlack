@@ -48,7 +48,6 @@ set(PROJECT_SOURCES
     mainwindow.cpp
     completionmanager.cpp
     completionmodel.cpp
-    sv_lexer.cpp
     sv_treesitter_parser.cpp
     tsdocument.cpp
     modemanager.cpp
@@ -71,10 +70,8 @@ set(PROJECT_SOURCES
     scope_tree.h
     version.h
     completionmodel.h
-    sv_lexer.h
     sv_treesitter_parser.h
     tsdocument.h
-    sv_token.h
     modemanager.h
     mycodeeditor.h
     myhighlighter.h

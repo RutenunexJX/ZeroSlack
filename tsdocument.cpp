@@ -163,3 +163,19 @@ QVector<HlSpan> TSDocument::highlightSpans(int blockStartChar, int blockLenChar)
     collectSpans(scope, startByte, endByte, blockStartChar, spans);
     return spans;
 }
+
+int TSDocument::blockEndCommentState(int blockStartChar, int blockLenChar) const
+{
+    const uint32_t endByte = static_cast<uint32_t>(blockStartChar + blockLenChar) * 2u;
+    if (endByte == 0)
+        return 0;
+    TSNode node = ts_node_descendant_for_byte_range(ts_tree_root_node(m_tree),
+                                                    endByte - 1, endByte - 1);
+    while (!ts_node_is_null(node)) {
+        const char* t = ts_node_type(node);
+        if (t && std::strcmp(t, "block_comment") == 0)
+            return ts_node_end_byte(node) > endByte ? 1 : 0;
+        node = ts_node_parent(node);
+    }
+    return 0;
+}

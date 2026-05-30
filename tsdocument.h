@@ -67,6 +67,10 @@ public:
     // are clipped per block.
     QVector<HlSpan> highlightSpans(int blockStartChar, int blockLenChar) const;
 
+    // QSyntaxHighlighter block state: 1 if the block's end sits inside a block_comment that
+    // continues onto the next block (so the following block must be re-highlighted), else 0.
+    int blockEndCommentState(int blockStartChar, int blockLenChar) const;
+
 private:
     void reparse(TSTree* oldTree);
 

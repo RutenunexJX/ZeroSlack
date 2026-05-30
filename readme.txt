@@ -16,7 +16,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 --------------------------------------------------------------------------
 当前状态 (Status)
 --------------------------------------------------------------------------
-- 版本：0.0.11/slang11（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 版本：0.0.11/slang12（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
   右下角（构建时间见该标签 tooltip）。
 - 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
   extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
@@ -64,10 +64,19 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     Slang = 语义层（防抖/保存时跑），负责符号类型、名字/类型解析、跨文件跳转、类型感知补全、实例化、诊断。
     符号库 sym_list 仍由 Slang 提供语义；Tree-sitter 另维护一份轻量「实时 scope」驱动即时 UI。最终移除 SVLexer。
   - 路线：A1 增量文档模型（TSDocument）→ A2 Tree-sitter 高亮（替换 SVLexer）→ A3 实时 scope/大纲 → A4 收敛与清理。
-  - 进度：**A1 已完成**——tsdocument.h/cpp 提供每文档持久 TSTree + 增量重解析（ts_tree_edit + 增量 parse），
-    rootNode/hasError/namedNodeTypeAt 等接口；无头测试 test_sv/ts_doc_test.cpp 验证：合法 SV 无错、半句代码仍出树
-    （容错）、增量编辑后树有效，6/6 通过。A2 起步：grammar 暴露细粒度 token 类型（如 module_keyword），
-    高亮将按 node/token 类型映射（无需 highlights.scm）。
+  - 进度：**A1、A2 已完成**。
+    - A1：tsdocument.h/cpp 提供每文档持久 TSTree + 增量重解析（ts_tree_edit + 增量 parse）；UTF-16 解析
+      （ts_parser_parse_string_encoding + UTF16LE），字节偏移 = 字符索引*2，含中文也精确。
+    - A2：高亮改由 Tree-sitter 驱动，移除 SVLexer。
+      · classifyTokenType：one_line_comment/block_comment→Comment、string_literal→String、
+        *_keyword 及匿名「词」token（logic/reg/begin…）→Keyword、匿名「符号」token→Operator、*number*→Number。
+      · highlightSpans 按块取最小覆盖节点 DFS、命中类别整节点出 span、裁剪到块、转块内字符坐标。
+      · MyHighlighter 持一份 TSDocument；highlightBlock 按 document()->revision() 防抖整树重解析一次，
+        再逐块取 span 上色；blockEndCommentState 用 block state 传播多行块注释 /* */ 的重高亮。
+      · 无头验证 test_sv/ts_doc_test.cpp 8/8：关键字/注释（含中文）/数字/运算符分类正确、UTF-16 偏移精确、半句容错。
+      · 已知：highlightBlock 当前每次编辑整树重解析（tree-sitter 全解析快，但大文件每键可能略卡），
+        后续 A2c 可改 contentsChange→applyEdit 增量 + ts_tree_get_changed_ranges 精确重高亮。
+    - 待办：A3 实时 scope/大纲；A4 收敛清理（删除 sv_lexer.* 物理文件、统一文档）。
 
 
 ==========================================================================
