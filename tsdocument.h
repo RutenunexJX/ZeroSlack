@@ -55,6 +55,12 @@ public:
                    TSPoint startPoint, TSPoint oldEndPoint, TSPoint newEndPoint,
                    const QString& newFullText);
 
+    // Convenience for editor integration: edit described in CHAR positions (QTextDocument coords).
+    // [startChar, oldEndChar) in the CURRENT text is replaced; newFullText is the whole new text.
+    // Byte offsets and TSPoints (row/col) are derived internally (current text held by this object
+    // provides the pre-edit coordinates), so callers don't track the old text themselves.
+    void applyEditChars(int startChar, int oldEndChar, int newEndChar, const QString& newFullText);
+
     TSNode rootNode() const;                 // always valid (empty doc parses to an empty tree)
     bool hasError() const;                   // tree contains ERROR / MISSING nodes (half-typed code)
     const QString& text() const { return m_text; }

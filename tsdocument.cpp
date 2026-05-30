@@ -90,6 +90,39 @@ void TSDocument::applyEdit(uint32_t startByte, uint32_t oldEndByte, uint32_t new
     reparse(m_tree);
 }
 
+namespace {
+// Tree-sitter point (row, column-in-bytes) at a char index. Columns are UTF-16 bytes (= 2*char).
+TSPoint pointAtChar(const QString& text, int charIndex)
+{
+    const int n = charIndex < text.size() ? charIndex : static_cast<int>(text.size());
+    uint32_t row = 0;
+    int lineStart = 0;
+    for (int i = 0; i < n; ++i) {
+        if (text.at(i) == QLatin1Char('\n')) {
+            ++row;
+            lineStart = i + 1;
+        }
+    }
+    TSPoint p;
+    p.row = row;
+    p.column = static_cast<uint32_t>(charIndex - lineStart) * 2u;
+    return p;
+}
+} // namespace
+
+void TSDocument::applyEditChars(int startChar, int oldEndChar, int newEndChar,
+                                const QString& newFullText)
+{
+    // m_text is still the pre-edit text here -> use it for the start / old-end points.
+    const TSPoint sp  = pointAtChar(m_text, startChar);
+    const TSPoint oep = pointAtChar(m_text, oldEndChar);
+    const TSPoint nep = pointAtChar(newFullText, newEndChar);
+    applyEdit(static_cast<uint32_t>(startChar) * 2u,
+              static_cast<uint32_t>(oldEndChar) * 2u,
+              static_cast<uint32_t>(newEndChar) * 2u,
+              sp, oep, nep, newFullText);
+}
+
 TSNode TSDocument::rootNode() const
 {
     return ts_tree_root_node(m_tree);

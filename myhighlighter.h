@@ -7,15 +7,16 @@
 
 class QTextDocument;
 
-// Syntax highlighter backed by the real-time Tree-sitter layer (TSDocument). It keeps a per-editor
-// live parse tree in sync with the QTextDocument and colors each block from tree-sitter highlight
-// spans. Error-tolerant (works on half-typed code) and correct with non-ASCII (UTF-16 offsets).
+// Syntax highlighter backed by the real-time Tree-sitter layer. It does NOT own or parse the tree;
+// the owning MyCodeEditor keeps a TSDocument in sync (incrementally, on contentsChange, before this
+// highlighter runs) and passes it in. highlightBlock just reads tree-sitter highlight spans, so it
+// is error-tolerant (works on half-typed code) and correct with non-ASCII (UTF-16 offsets).
 class MyHighlighter : public QSyntaxHighlighter
 {
     Q_OBJECT
 
 public:
-    explicit MyHighlighter(QTextDocument *parent = nullptr);
+    MyHighlighter(QTextDocument *parent, const TSDocument *tsdoc);
 
 protected:
     void highlightBlock(const QString &text) override;
@@ -30,8 +31,7 @@ private:
     QTextCharFormat stringFormat;
     QTextCharFormat errorFormat;
 
-    TSDocument m_tsdoc;          // live tree-sitter model for this document
-    int m_parsedRevision = -1;   // QTextDocument::revision() the tree was last parsed at
+    const TSDocument *m_tsdoc = nullptr;   // owned by the editor; kept in sync before we run
 };
 
 #endif // MYHIGHLIGHTER_H

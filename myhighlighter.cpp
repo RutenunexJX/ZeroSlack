@@ -2,8 +2,8 @@
 #include <QTextDocument>
 #include <QTextBlock>
 
-MyHighlighter::MyHighlighter(QTextDocument *parent)
-    : QSyntaxHighlighter(parent)
+MyHighlighter::MyHighlighter(QTextDocument *parent, const TSDocument *tsdoc)
+    : QSyntaxHighlighter(parent), m_tsdoc(tsdoc)
 {
     initFormats();
 }
@@ -37,25 +37,18 @@ const QTextCharFormat* MyHighlighter::formatFor(HlCategory category) const
 
 void MyHighlighter::highlightBlock(const QString &text)
 {
-    QTextDocument* doc = document();
-    if (!doc)
+    if (!m_tsdoc)
         return;
 
-    // Keep the tree-sitter model in sync with the document. A document edit bumps revision();
-    // re-parse once per highlight pass (the first highlightBlock of the pass), then every block in
-    // the pass reads the fresh tree. (Incremental ts_tree_edit is a later optimization.)
-    if (doc->revision() != m_parsedRevision) {
-        m_tsdoc.setText(doc->toPlainText());
-        m_parsedRevision = doc->revision();
-    }
-
+    // The editor has already synced m_tsdoc to the current document (its contentsChange slot is
+    // connected before this highlighter, so it runs first). Just read spans for this block.
     const int blockStart = currentBlock().position();
-    const QVector<HlSpan> spans = m_tsdoc.highlightSpans(blockStart, text.length());
+    const QVector<HlSpan> spans = m_tsdoc->highlightSpans(blockStart, text.length());
     for (const HlSpan& s : spans) {
         if (const QTextCharFormat* f = formatFor(s.category))
             setFormat(s.start, s.length, *f);
     }
 
     // Propagate multi-line block-comment state so following blocks re-highlight when a /* */ opens.
-    setCurrentBlockState(m_tsdoc.blockEndCommentState(blockStart, text.length()));
+    setCurrentBlockState(m_tsdoc->blockEndCommentState(blockStart, text.length()));
 }

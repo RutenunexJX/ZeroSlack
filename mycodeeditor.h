@@ -3,6 +3,7 @@
 
 #include "syminfo.h"
 #include "completionmodel.h"
+#include "tsdocument.h"
 
 #include <QPlainTextEdit>
 #include <QCompleter>
@@ -11,6 +12,7 @@
 
 class LineNumberWidget;
 class MainWindow;
+class MyHighlighter;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -56,6 +58,8 @@ private slots:
     void onTextChanged();
     void onAutoCompleteTimer();
     void onCompletionActivated(const QModelIndex &index);
+    /** 把文档编辑增量同步到 Tree-sitter 实时树（在高亮器重绘前先更新，故连接顺序须早于高亮器）。 */
+    void onTsContentsChange(int position, int charsRemoved, int charsAdded);
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
@@ -83,6 +87,11 @@ private:
 
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
+
+    // 实时语法层：每编辑器一份 live tree-sitter 树（高亮 + 后续实时 scope）。编辑器在 contentsChange
+    // 时增量更新它，再由 MyHighlighter 读取出 span 上色。
+    TSDocument m_tsdoc;
+    MyHighlighter *m_highlighter = nullptr;
 
     QCompleter *completer;
     CompletionModel *completionModel;

@@ -97,6 +97,33 @@ int main() {
         check("line3 trailing chinese comment -> Comment @2", hasCatAt(sp, HlCategory::Comment, 2));
     }
 
+    // 5) Incremental applyEditChars must produce the same highlight as a full re-parse (validates
+    //    the editor's edit path: byte/point derivation from char positions).
+    {
+        QString A = QStringLiteral("module m;\nendmodule\n");
+        QString ins = QStringLiteral("  logic x;\n");
+        int pos = 10;  // char offset just after "module m;\n"
+        QString B = A.left(pos) + ins + A.mid(pos);
+
+        TSDocument inc; inc.setText(A);
+        inc.applyEditChars(pos, pos, pos + ins.length(), B);
+        TSDocument full; full.setText(B);
+
+        QStringList bl = B.split('\n');
+        bool same = true;
+        for (int li = 0; li < bl.size() && same; ++li) {
+            int s = lineStartChar(B, li);
+            auto a = inc.highlightSpans(s, bl[li].length());
+            auto b = full.highlightSpans(s, bl[li].length());
+            if (a.size() != b.size()) { same = false; break; }
+            for (int k = 0; k < a.size(); ++k)
+                if (a[k].start != b[k].start || a[k].length != b[k].length || a[k].category != b[k].category) {
+                    same = false; break;
+                }
+        }
+        check("incremental applyEditChars == full parse (highlight spans)", same);
+    }
+
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

@@ -92,7 +92,21 @@ void MyCodeEditor::initFont()
 
 void MyCodeEditor::initHighlighter()
 {
-    new MyHighlighter(document());
+    // Seed the live tree with current content, then connect contentsChange BEFORE creating the
+    // highlighter so our incremental tree update runs first; the highlighter then reads the fresh
+    // tree when QSyntaxHighlighter reformats the changed blocks.
+    m_tsdoc.setText(document()->toPlainText());
+    connect(document(), &QTextDocument::contentsChange,
+            this, &MyCodeEditor::onTsContentsChange);
+    m_highlighter = new MyHighlighter(document(), &m_tsdoc);
+}
+
+void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
+{
+    // Incrementally update the tree-sitter model (m_tsdoc keeps the pre-edit text, so it can derive
+    // the old end point itself). Runs before the highlighter's reformat (connected later).
+    m_tsdoc.applyEditChars(position, position + charsRemoved, position + charsAdded,
+                           document()->toPlainText());
 }
 
 int MyCodeEditor::getLineNumberWidgetWidth()

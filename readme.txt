@@ -16,7 +16,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 --------------------------------------------------------------------------
 当前状态 (Status)
 --------------------------------------------------------------------------
-- 版本：0.0.11/slang12（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 版本：0.0.11/slang13（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
   右下角（构建时间见该标签 tooltip）。
 - 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
   extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
@@ -74,8 +74,12 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
       · MyHighlighter 持一份 TSDocument；highlightBlock 按 document()->revision() 防抖整树重解析一次，
         再逐块取 span 上色；blockEndCommentState 用 block state 传播多行块注释 /* */ 的重高亮。
       · 无头验证 test_sv/ts_doc_test.cpp 8/8：关键字/注释（含中文）/数字/运算符分类正确、UTF-16 偏移精确、半句容错。
-      · 已知：highlightBlock 当前每次编辑整树重解析（tree-sitter 全解析快，但大文件每键可能略卡），
-        后续 A2c 可改 contentsChange→applyEdit 增量 + ts_tree_get_changed_ranges 精确重高亮。
+      · A2c（slang13）重构集成模型：编辑器 MyCodeEditor 持有 TSDocument，在 document() 的 contentsChange
+        里**增量** applyEditChars（连接顺序早于高亮器，故先更新树、高亮器后读取）；MyHighlighter 改为只持
+        const TSDocument* 读取 span，不再在 highlightBlock 内重解析。修复了 slang12「初始/滚动不上色、
+        只有编辑过的行才上色」的缺陷，并以增量编辑替代每键全解析以改善大文件流畅度。
+        TSDocument::applyEditChars 从字符位置推导字节/行列点（用对象内的旧文本求旧端点）。
+        无头验证新增：incremental applyEditChars 与全量 setText 的高亮 span 完全一致（9/9）。
     - 待办：A3 实时 scope/大纲；A4 收敛清理（删除 sv_lexer.* 物理文件、统一文档）。
 
 
