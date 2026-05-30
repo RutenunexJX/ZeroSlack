@@ -2,18 +2,40 @@
 #define TSDOCUMENT_H
 
 #include <QString>
-#include <QByteArray>
+#include <QVector>
 
 extern "C" {
 #include <tree_sitter/api.h>
 }
 
-// Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document's UTF-8
-// buffer and supports incremental re-parse on edits. This is the foundation of the "real-time
-// syntactic layer" (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
+// Highlight categories produced from tree-sitter token types (see classifyTokenType).
+enum class HlCategory {
+    None,
+    Keyword,
+    Comment,
+    String,
+    Number,
+    Operator,
+    Identifier
+};
+
+// One highlight span, in block-LOCAL char coordinates (ready for QSyntaxHighlighter::setFormat).
+struct HlSpan {
+    int start;          // char offset within the queried block
+    int length;         // char length
+    HlCategory category;
+};
+
+// Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
+// supports incremental re-parse on edits. Foundation of the real-time syntactic layer
+// (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
 //
-// Threading: not thread-safe; intended to live with its editor on the UI thread. Each instance
-// owns its own TSParser, so multiple documents don't contend.
+// Text is parsed as UTF-16 (Qt's native QString encoding), so tree-sitter byte offsets map to
+// QString char indices as byte/2 — correct even with non-ASCII (e.g. Chinese comments), with no
+// UTF-8<->UTF-16 offset bookkeeping. Assumes little-endian (Windows/x86); fine for this target.
+//
+// Threading: not thread-safe; lives with its editor on the UI thread. Each instance owns its own
+// TSParser, so multiple documents don't contend.
 class TSDocument
 {
 public:
@@ -26,26 +48,35 @@ public:
     // Full (re)parse of the entire text from scratch.
     void setText(const QString& text);
 
-    // Incremental edit. Caller supplies the span being replaced (byte + row/col, in the CURRENT
-    // buffer before the edit) and the full new text. Uses ts_tree_edit + incremental parse so the
-    // unchanged majority of the tree is reused.
+    // Incremental edit. Byte/point fields are tree-sitter native (UTF-16 bytes; point columns in
+    // bytes, i.e. 2*charColumn). Caller supplies the span being replaced (in the CURRENT buffer
+    // before the edit) and the full new text. Uses ts_tree_edit + incremental parse.
     void applyEdit(uint32_t startByte, uint32_t oldEndByte, uint32_t newEndByte,
                    TSPoint startPoint, TSPoint oldEndPoint, TSPoint newEndPoint,
                    const QString& newFullText);
 
     TSNode rootNode() const;                 // always valid (empty doc parses to an empty tree)
     bool hasError() const;                   // tree contains ERROR / MISSING nodes (half-typed code)
-    const QByteArray& utf8() const { return m_utf8; }
+    const QString& text() const { return m_text; }
 
-    // Convenience: type name of the smallest named node spanning [startByte, endByte).
-    const char* namedNodeTypeAt(uint32_t byteOffset) const;
+    // Type name of the smallest named node at the given char offset (debug / scope helpers).
+    const char* namedNodeTypeAt(int charOffset) const;
+
+    // Highlight spans (block-local char coords) for the char range [blockStartChar, +blockLenChar).
+    // Walks the live tree; clips tokens to the block. Multi-line tokens (block comments, strings)
+    // are clipped per block.
+    QVector<HlSpan> highlightSpans(int blockStartChar, int blockLenChar) const;
 
 private:
     void reparse(TSTree* oldTree);
 
     TSParser* m_parser = nullptr;  // owned
     TSTree*   m_tree   = nullptr;  // owned
-    QByteArray m_utf8;             // current document bytes (UTF-8)
+    QString   m_text;              // current document text (UTF-16)
 };
+
+// Map a tree-sitter token type to a highlight category. isNamed distinguishes grammar tokens
+// (e.g. "module_keyword", "comment") from anonymous punctuation/operator tokens (";", "(", "=").
+HlCategory classifyTokenType(const char* type, bool isNamed);
 
 #endif // TSDOCUMENT_H

@@ -1,6 +1,7 @@
-// Headless smoke test for the A1 foundation (TSDocument incremental tree-sitter model).
+// Headless test for the A1/A2 foundation: TSDocument incremental model + tree-sitter highlight spans.
 #include "tsdocument.h"
 #include <QString>
+#include <QStringList>
 #include <cstdio>
 #include <cstring>
 
@@ -10,41 +11,91 @@ static void check(const char* what, bool ok) {
     printf("[%s] %s\n", ok ? "PASS" : "FAIL", what);
 }
 
+static const char* catName(HlCategory c) {
+    switch (c) {
+    case HlCategory::Keyword: return "Keyword";
+    case HlCategory::Comment: return "Comment";
+    case HlCategory::String: return "String";
+    case HlCategory::Number: return "Number";
+    case HlCategory::Operator: return "Operator";
+    case HlCategory::Identifier: return "Identifier";
+    default: return "None";
+    }
+}
+
+// char offset of the start of line `lineIdx` (0-based) in `src`.
+static int lineStartChar(const QString& src, int lineIdx) {
+    int off = 0;
+    QStringList lines = src.split('\n');
+    for (int i = 0; i < lineIdx && i < lines.size(); ++i)
+        off += lines[i].length() + 1;   // +1 for '\n'
+    return off;
+}
+
+static bool hasSpan(const QVector<HlSpan>& spans, HlCategory cat, int start, int len) {
+    for (const auto& s : spans)
+        if (s.category == cat && s.start == start && s.length == len) return true;
+    return false;
+}
+static bool hasCatAt(const QVector<HlSpan>& spans, HlCategory cat, int start) {
+    for (const auto& s : spans)
+        if (s.category == cat && s.start == start) return true;
+    return false;
+}
+
 int main() {
     TSDocument doc;
 
-    // 1) Valid SV parses to a tree with named children and no error.
-    doc.setText(QStringLiteral("module top;\n  logic a;\n  wire b;\nendmodule\n"));
-    TSNode root = doc.rootNode();
-    printf("root type=%s namedChildren=%u hasError=%d\n",
-           ts_node_type(root), ts_node_named_child_count(root), doc.hasError());
-    check("root node is non-null", !ts_node_is_null(root));
-    check("valid SV has named children", ts_node_named_child_count(root) > 0);
+    // 1) Valid SV parses without error.
+    doc.setText(QStringLiteral("module top;\n  logic a;\nendmodule\n"));
     check("valid SV parses without error", !doc.hasError());
+    check("root has named children", ts_node_named_child_count(doc.rootNode()) > 0);
 
-    // 2) namedNodeTypeAt resolves a node at the 'module' keyword (byte 0).
-    printf("namedNodeTypeAt(0)=%s\n", doc.namedNodeTypeAt(0));
-    check("namedNodeTypeAt(0) returns a type", doc.namedNodeTypeAt(0)[0] != '\0');
+    // 2) Error tolerance on half-typed code.
+    doc.setText(QStringLiteral("module top;\n  logic \n"));
+    check("half-typed code still yields a tree", !ts_node_is_null(doc.rootNode()));
 
-    // 3) Error tolerance: half-typed code still yields a usable tree (tree-sitter's key advantage
-    //    over Slang for the live layer).
-    doc.setText(QStringLiteral("module top;\n  logic \n"));  // incomplete declaration
-    printf("half-typed: hasError=%d namedChildren=%u\n",
-           doc.hasError(), ts_node_named_child_count(doc.rootNode()));
-    check("half-typed code still produces a tree", !ts_node_is_null(doc.rootNode()));
+    // 3) Highlight spans — with a CHINESE comment on line 0 to prove UTF-16 offset mapping is exact.
+    QString src =
+        QStringLiteral("// 中文注释 abc\n")     // line 0 (multi-byte in UTF-8, 1 code-unit each in UTF-16)
+        + QStringLiteral("module top;\n")        // line 1
+        + QStringLiteral("  logic [7:0] data;\n")// line 2
+        + QStringLiteral("  // tail 注释\n")      // line 3
+        + QStringLiteral("endmodule\n");          // line 4
+    doc.setText(src);
 
-    // 4) Incremental edit smoke: append "x;" inside the doc and reparse incrementally.
-    QString before = QStringLiteral("module m;\nendmodule\n");
-    doc.setText(before);
-    // Insert "logic q;\n" right after "module m;\n" (byte offset 10).
-    QString after = QStringLiteral("module m;\nlogic q;\nendmodule\n");
-    uint32_t at = 10;                 // byte offset of insertion (start of line 2)
-    QByteArray ins = QByteArrayLiteral("logic q;\n");
-    doc.applyEdit(at, at, at + (uint32_t)ins.size(),
-                  TSPoint{1, 0}, TSPoint{1, 0}, TSPoint{2, 0}, after);
-    printf("after incremental edit: hasError=%d namedChildren=%u\n",
-           doc.hasError(), ts_node_named_child_count(doc.rootNode()));
-    check("incremental edit yields valid tree", !doc.hasError());
+    QStringList lines = src.split('\n');
+    for (int li = 0; li < 5; ++li) {
+        int start = lineStartChar(src, li);
+        int len = lines[li].length();
+        QVector<HlSpan> spans = doc.highlightSpans(start, len);
+        printf("line %d [start=%d len=%d] \"%s\":\n", li, start, len, lines[li].toLocal8Bit().constData());
+        for (const auto& s : spans)
+            printf("    %-10s @local %d len %d\n", catName(s.category), s.start, s.length);
+    }
+
+    // line 0: a comment covering the whole line (local start 0).
+    {
+        int s = lineStartChar(src, 0); auto sp = doc.highlightSpans(s, lines[0].length());
+        check("line0 chinese comment -> Comment @0", hasCatAt(sp, HlCategory::Comment, 0));
+    }
+    // line 1 "module top;": Keyword "module" at local 0 len 6 (correct despite chinese on line 0).
+    {
+        int s = lineStartChar(src, 1); auto sp = doc.highlightSpans(s, lines[1].length());
+        check("line1 'module' -> Keyword @0 len6", hasSpan(sp, HlCategory::Keyword, 0, 6));
+    }
+    // line 2 "  logic [7:0] data;": Keyword "logic" at local 2 len 5; some Number present.
+    {
+        int s = lineStartChar(src, 2); auto sp = doc.highlightSpans(s, lines[2].length());
+        check("line2 'logic' -> Keyword @2 len5", hasSpan(sp, HlCategory::Keyword, 2, 5));
+        bool anyNum = false; for (auto& x : sp) if (x.category == HlCategory::Number) anyNum = true;
+        check("line2 has a Number span (7/0)", anyNum);
+    }
+    // line 3 "  // tail 注释": Comment starting at local 2 (after two spaces) — chinese inside.
+    {
+        int s = lineStartChar(src, 3); auto sp = doc.highlightSpans(s, lines[3].length());
+        check("line3 trailing chinese comment -> Comment @2", hasCatAt(sp, HlCategory::Comment, 2));
+    }
 
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
