@@ -68,6 +68,7 @@ set(PROJECT_SOURCES
     mainwindow.h
     completionmanager.h
     scope_tree.h
+    version.h
     completionmodel.h
     sv_lexer.h
     sv_treesitter_parser.h

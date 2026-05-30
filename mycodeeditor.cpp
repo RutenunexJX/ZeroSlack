@@ -1616,7 +1616,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
             continue;
         }
         if (filterStructMemberByType(symbol)) continue;  // 结构体成员按“变量.成员”解析出的类型过滤
-        if (symbol.symbolType != sym_list::sym_struct_member && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤；成员符号的 moduleScope 是结构体名
+        if (symbol.symbolType != sym_list::sym_struct_member && symbol.symbolType != sym_list::sym_enum_value && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤；成员符号的 moduleScope 是结构体名
         localCandidateCount++;
         int p = definitionTypePriority(symbol.symbolType);
         if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
@@ -1632,8 +1632,11 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
         // 当前文件内跳转
         QTextCursor cursor = textCursor();
         cursor.movePosition(QTextCursor::Start);
-        cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, localBest.startLine);
-        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, localBest.startColumn);
+        // startLine/startColumn 为 1-based；下移 startLine-1 个块即落在定义所在行，右移 startColumn-1 落在名字处。
+        const int downLines = (localBest.startLine > 0) ? localBest.startLine - 1 : 0;
+        const int rightCols = (localBest.startColumn > 0) ? localBest.startColumn - 1 : 0;
+        cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, downLines);
+        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, rightCols);
         setTextCursor(cursor);
         centerCursor();
         moveMouseToCursor();
@@ -1653,7 +1656,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
         if (symbol.fileName == currentFile) {
             continue; // Step 1 已覆盖，忽略当前文件
         }
-        if (symbol.symbolType != sym_list::sym_struct_member && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤
+        if (symbol.symbolType != sym_list::sym_struct_member && symbol.symbolType != sym_list::sym_enum_value && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤
         int p = definitionTypePriority(symbol.symbolType);
         if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
             p -= 100;
@@ -1843,10 +1846,15 @@ bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
         return false;
     }
 
-    // 在模块内时：仅当当前模块中存在该符号的定义才允许跳转（作用域限定）
+    // 在模块内时：仅当当前模块中存在该符号的定义才允许跳转（作用域限定）。
+    // 例外：枚举值/结构体成员的 moduleScope 是其「类型名」（供补全按类型过滤），不是模块名，
+    // 故这两类不按模块名限定，只要存在可跳转定义即可。
     if (!currentModuleName.isEmpty()) {
         for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (symbol.moduleScope == currentModuleName && isSymbolDefinition(symbol, symbolName)) {
+            const bool typeScoped = (symbol.symbolType == sym_list::sym_enum_value
+                                     || symbol.symbolType == sym_list::sym_struct_member);
+            if ((typeScoped || symbol.moduleScope == currentModuleName)
+                && isSymbolDefinition(symbol, symbolName)) {
                 return true;
             }
         }

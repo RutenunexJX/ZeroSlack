@@ -1028,12 +1028,17 @@ int sym_list::findEndModuleLine(const QString &fileName, const SymbolInfo &modul
 
     QStringList lines = content.split('\n');
     int moduleDepth = 0;
+    // startLine 为 1-based（Slang/Tree-sitter 均如此），module 关键字位于 0-based 索引 startLine-1。
+    // 从该行开始扫描，确保计入本模块自身的 module 关键字（depth 1），否则首个 endmodule 会使 depth
+    // 变为 -1 而永远 != 0，导致返回 -1（光标在模块内却被判为「无模块」）。
+    int scanStart = moduleSymbol.startLine - 1;
+    if (scanStart < 0) scanStart = 0;
     // 增量维护行首偏移，避免 O(lines^2) 导致大文件卡死
     int lineStartPos = 0;
-    for (int j = 0; j < moduleSymbol.startLine && j < lines.size(); ++j)
+    for (int j = 0; j < scanStart && j < lines.size(); ++j)
         lineStartPos += lines[j].length() + 1;
 
-    for (int i = moduleSymbol.startLine; i < lines.size(); ++i) {
+    for (int i = scanStart; i < lines.size(); ++i) {
         const QString &line = lines[i];
         static const QRegularExpression moduleWord("\\bmodule\\b");
         static const QRegularExpression endmoduleWord("\\bendmodule\\b");

@@ -13,7 +13,10 @@
 #include "smartrelationshipbuilder.h"
 #include "syminfo.h"
 #include "sv_treesitter_parser.h"
+#include "version.h"
 #include <QtConcurrent/QtConcurrent>
+#include <QLabel>
+#include <QStatusBar>
 
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/syntax/SyntaxNode.h>
@@ -52,6 +55,18 @@ MainWindow::MainWindow(QWidget *parent)
     connectNavigationSignals();
 
     setupDebugButton();
+
+    // 版本号显示：窗口标题 + 状态栏右下角常驻标签，便于确认当前运行的是哪一版构建。
+    setWindowTitle(QStringLiteral("ZeroSlack  %1").arg(QLatin1String(APP_VERSION)));
+    if (statusBar()) {
+        QLabel* versionLabel = new QLabel(
+            QStringLiteral("v%1").arg(QLatin1String(APP_VERSION)), this);
+        versionLabel->setToolTip(
+            QStringLiteral("ZeroSlack %1\n构建于 %2")
+                .arg(QLatin1String(APP_VERSION), QLatin1String(APP_BUILD_TIME)));
+        versionLabel->setStyleSheet(QStringLiteral("color:#888; margin-right:6px;"));
+        statusBar()->addPermanentWidget(versionLabel);
+    }
 }
 
 MainWindow::~MainWindow()
