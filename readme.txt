@@ -29,9 +29,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   3) **端口去重**：跳过端口背后的 net/var（PortSymbol.internalSymbol），端口不再既算 port 又算 logic/wire；
   4) 跳过顶层自动实例、按定义去重实例体（模块被多次例化时成员不重复）；
   5) function/task 形参与返回值/局部变量 moduleScope 改为所在子程序名（如 add_one），不再以模块名
-     泄漏进 l/r/w 补全；scope-tree 路径不受影响，光标在子程序内仍可补全其局部符号。
-- 待验证/待补：内联匿名 enum/struct 的值/成员；注释感知（commentRegions）；
-  单文件 elaboration 的跨文件解析；GUI 实测。
+     泄漏进 l/r/w 补全；scope-tree 路径不受影响，光标在子程序内仍可补全其局部符号；
+  6) 内联匿名 enum/struct（无 typedef）在变量站点产出枚举值/成员，moduleScope = 变量名、dataType = 变量名，
+     满足 ee / var.member 补全契约（emitEnumValues / emitStructMembers 复用于 typedef 站点与匿名变量站点）。
+- 无头补全测试：test_sv/completion_test.cpp 直接驱动 CompletionManager（getStructTypeForVariable /
+  getStructMemberCompletions / getModuleInternalSymbolsByType）断言结果，全部通过（含匿名 struct 成员、
+  function 局部不泄漏）。补全“逻辑层”可脱离 GUI 测试；Ctrl+Click 跳转的 UI 交互仍需 GUI。
+- 待验证/待补：注释感知（commentRegions）；单文件 elaboration 的跨文件解析；GUI 实测（弹窗/跳转交互）。
 
 
 ==========================================================================
@@ -456,8 +460,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 端口去重（跳过 PortSymbol.internalSymbol）；跳过顶层自动实例；按定义去重实例体（多次例化不重复成员）；
   - typedef enum/struct 于 typedef 站点产出值/成员/类型符号，moduleScope = 类型别名，满足补全/跳转契约。
   以下为已知/待验证的缺口：
-  - **内联匿名 enum/struct**：无 typedef 的内联匿名类型（如 `enum {A,B} v;`、`struct {...} s;`）的
-    枚举值 / 成员当前不产出（仅 typedef 命名类型支持）。
+  - **内联匿名 enum/struct**（已修复）：无 typedef 的内联匿名类型（如 `enum {A,B} v;`、`struct {...} s;`）
+    在变量站点产出枚举值/成员，moduleScope = 变量名、变量 dataType = 变量名，满足 ee / var.member 补全契约。
+    多个变量共用同一匿名类型时会按各自变量名各产出一份（轻微重复，可接受）。
   - **function/task 局部符号**（已修复）：fillSymbolInfo 在计算 moduleScope 时优先向上查找最近的
     SubroutineSymbol，将形参/返回值/局部变量的 moduleScope 设为所在 task/function 名（而非模块名），
     从而不再泄漏进 `l `/`r `/`w ` 模块级补全（该路径按 moduleScope == 模块名过滤）；scope-tree 路径

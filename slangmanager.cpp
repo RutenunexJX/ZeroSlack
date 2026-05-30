@@ -91,6 +91,44 @@ bool fillSymbolInfo(const slang::SourceManager* sm,
     return true;
 }
 
+// Emit one sym_enum_value per enumerator, keyed (moduleScope) by scopeKey — the type alias name
+// for typedef'd enums, or the variable name for inline anonymous enums. getEnumValueCompletions
+// matches sym_enum_value whose moduleScope == that key.
+void emitEnumValues(const slang::SourceManager* sm,
+                    const slang::ast::EnumType& et,
+                    const QString& scopeKey,
+                    QList<sym_list::SymbolInfo>& outList)
+{
+    for (const auto& ev : et.values()) {
+        sym_list::SymbolInfo m;
+        if (!fillSymbolInfo(sm, ev, m, nullptr))
+            continue;
+        m.symbolType = sym_list::sym_enum_value;
+        m.moduleScope = scopeKey;
+        outList.append(m);
+    }
+}
+
+// Emit one sym_struct_member per field, keyed (moduleScope) by scopeKey — the type alias name for
+// typedef'd structs, or the variable name for inline anonymous structs. getStructMemberCompletions
+// matches sym_struct_member whose moduleScope == that key.
+void emitStructMembers(const slang::SourceManager* sm,
+                       const slang::ast::Scope& structScope,
+                       const QString& scopeKey,
+                       QList<sym_list::SymbolInfo>& outList)
+{
+    for (const auto& member : structScope.members()) {
+        if (member.kind != slang::ast::SymbolKind::Field)
+            continue;
+        sym_list::SymbolInfo m;
+        if (!fillSymbolInfo(sm, member, m, nullptr))
+            continue;
+        m.symbolType = sym_list::sym_struct_member;
+        m.moduleScope = scopeKey;
+        outList.append(m);
+    }
+}
+
 sym_list::sym_type_e variableOrNetTypeToSymType(const slang::ast::Type& type)
 {
     const slang::ast::Type& canon = type.getCanonicalType();
@@ -212,16 +250,29 @@ void collectSymbols(slang::ast::Compilation& compilation,
                 return;
             info.symbolType = variableOrNetTypeToSymType(var.getType());
             info.moduleScope = moduleScope;
-            // For enum/struct variables, record the declared type's alias name (e.g. "state_t",
-            // "test_s") so var.member / enum-value completion can resolve the type. Consumed by
-            // CompletionManager::get{Struct,Enum}TypeForVariable; anonymous inline types have no
-            // name and leave dataType empty (handled by the completion fallback).
+            // For enum/struct variables, record the type key in dataType so var.member /
+            // enum-value completion can resolve the type (consumed by get{Struct,Enum}TypeForVariable).
+            // Typedef'd types use the alias name (members/values already emitted at the typedef site).
+            // Inline anonymous types (no alias) have no typedef site, so key members/values by the
+            // variable name here and emit them now.
             if (info.symbolType == sym_list::sym_enum_var
                 || info.symbolType == sym_list::sym_packed_struct_var
                 || info.symbolType == sym_list::sym_unpacked_struct_var) {
                 QString typeName = QString::fromStdString(std::string(var.getType().name));
-                if (!typeName.isEmpty())
-                    info.dataType = typeName;
+                if (!typeName.isEmpty()) {
+                    info.dataType = typeName;  // typedef'd: emitted at typedef site
+                } else {
+                    const QString key = info.symbolName;  // anonymous: key by variable name
+                    info.dataType = key;
+                    const slang::ast::Type& canon = var.getType().getCanonicalType();
+                    if (canon.kind == SymbolKind::EnumType) {
+                        emitEnumValues(sm, canon.as<EnumType>(), key, outList);
+                    } else if (canon.kind == SymbolKind::PackedStructType) {
+                        emitStructMembers(sm, static_cast<const slang::ast::Scope&>(canon.as<PackedStructType>()), key, outList);
+                    } else if (canon.kind == SymbolKind::UnpackedStructType) {
+                        emitStructMembers(sm, static_cast<const slang::ast::Scope&>(canon.as<UnpackedStructType>()), key, outList);
+                    }
+                }
             }
             outList.append(info);
             if (var.kind != SymbolKind::FormalArgument)
@@ -283,16 +334,7 @@ void collectSymbols(slang::ast::Compilation& compilation,
             if (target.kind == SymbolKind::EnumType) {
                 info.dataType = QLatin1String("enum");
                 outList.append(info);
-                // Emit enum values keyed by this typedef name; getEnumValueCompletions matches
-                // sym_enum_value whose moduleScope == enum type name.
-                for (const auto& ev : target.as<EnumType>().values()) {
-                    sym_list::SymbolInfo m;
-                    if (!fillSymbolInfo(sm, ev, m, nullptr))
-                        continue;
-                    m.symbolType = sym_list::sym_enum_value;
-                    m.moduleScope = aliasName;
-                    outList.append(m);
-                }
+                emitEnumValues(sm, target.as<EnumType>(), aliasName, outList);
             }
             else if (target.kind == SymbolKind::PackedStructType
                      || target.kind == SymbolKind::UnpackedStructType) {
@@ -306,21 +348,10 @@ void collectSymbols(slang::ast::Compilation& compilation,
                                             : sym_list::sym_unpacked_struct;
                 typeSym.dataType.clear();
                 outList.append(typeSym);
-                // Emit members keyed by this typedef name; getStructMemberCompletions matches
-                // sym_struct_member whose moduleScope == struct type name.
                 const slang::ast::Scope& structScope = packed
                     ? static_cast<const slang::ast::Scope&>(target.as<PackedStructType>())
                     : static_cast<const slang::ast::Scope&>(target.as<UnpackedStructType>());
-                for (const auto& member : structScope.members()) {
-                    if (member.kind != SymbolKind::Field)
-                        continue;
-                    sym_list::SymbolInfo m;
-                    if (!fillSymbolInfo(sm, member, m, nullptr))
-                        continue;
-                    m.symbolType = sym_list::sym_struct_member;
-                    m.moduleScope = aliasName;
-                    outList.append(m);
-                }
+                emitStructMembers(sm, structScope, aliasName, outList);
             }
             else {
                 outList.append(info);

@@ -96,6 +96,11 @@ module top #(
     typedef enum { ON, OFF } power_e;
     power_e power;
 
+    // --- 内联匿名 enum / struct（无 typedef）---
+    // 期望：MODE_A/MODE_B 的 moduleScope = mode；hi/lo 的 moduleScope = byte_split
+    enum { MODE_A, MODE_B }                         mode;
+    struct packed { logic [3:0] hi; logic [3:0] lo; } byte_split;
+
     // --- 实例化（INSTANTIATES + 引脚跳转）---
     adder #(.WIDTH(8)) u_adder (
         .a   (counter),
