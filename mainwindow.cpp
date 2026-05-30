@@ -695,7 +695,7 @@ void MainWindow::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
     connect(timer, &QTimer::timeout, this, [this, fileName, timer]() {
         QString content = tabManager->getPlainTextFromOpenFile(fileName);
         if (!content.isNull())
-            symbolAnalyzer->analyzeFileContent(fileName, content);
+            symbolAnalyzer->analyzeFileContentAsync(fileName, content);  // Slang off the UI thread
         if (openFileAnalysisTimers.value(fileName) == timer)
             openFileAnalysisTimers.remove(fileName);
         timer->deleteLater();

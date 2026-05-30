@@ -16,7 +16,12 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 --------------------------------------------------------------------------
 当前状态 (Status)
 --------------------------------------------------------------------------
-- 版本：0.0.11/slang13（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 版本：0.0.11/slang14（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 性能：单文件编辑分析改为后台线程（symbolAnalyzer->analyzeFileContentAsync）。此前 scheduleOpenFileAnalysis
+  到时在主线程跑整文件 Slang parse+elaborate（非增量），大文件会冻结 UI ~数十~上百 ms，表现为「打字后
+  移动光标卡顿」。现 Slang 重解析在 QtConcurrent 后台执行，结果在主线程写回 sym_list。
+  （注：cursorPositionChanged→highlighCurrentLine 每次光标移动重铺全部作用域背景 ExtraSelection，
+  属另一处潜在开销，待按需优化。）
   右下角（构建时间见该标签 tooltip）。
 - 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
   extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，

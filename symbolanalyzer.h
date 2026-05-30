@@ -29,6 +29,8 @@ public:
     void analyzeFile(const QString& filePath);
     /** 阶段 B：基于内容的解析，不创建 QWidget；直接对 QString 做正则解析，供工作区/单文件分析使用 */
     void analyzeFileContent(const QString& fileName, const QString& content);
+    /** 交互路径：Slang 重解析在后台线程进行，结果在主线程写回 sym_list，避免编辑时 UI 冻结。 */
+    void analyzeFileContentAsync(const QString& fileName, const QString& content);
 
     // Utility
     bool isAnalysisNeeded(const QString& fileName, const QString& content) const;

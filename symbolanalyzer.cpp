@@ -191,6 +191,27 @@ void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& 
     emit analysisCompleted(fileName, list.size());
 }
 
+void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QString& content)
+{
+    if (fileName.isEmpty() || !isSystemVerilogFile(fileName)) return;
+
+    // The expensive part is Slang parse + elaboration; run it off the UI thread. A fresh local
+    // SlangManager keeps the background task self-contained (extractSymbols holds no shared state).
+    auto* watcher = new QFutureWatcher<QList<sym_list::SymbolInfo>>(this);
+    connect(watcher, &QFutureWatcher<QList<sym_list::SymbolInfo>>::finished, this,
+            [this, fileName, content, watcher]() {
+                QList<sym_list::SymbolInfo> list = watcher->result();
+                watcher->deleteLater();
+                // Write-back (DB + scope tree + caches) on the main thread.
+                sym_list::getInstance()->setSymbolsForFile(fileName, list, content);
+                emit analysisCompleted(fileName, list.size());
+            });
+    watcher->setFuture(QtConcurrent::run([fileName, content]() {
+        SlangManager local;
+        return local.extractSymbols(fileName, content);
+    }));
+}
+
 QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) const
 {
     QStringList svFiles;
