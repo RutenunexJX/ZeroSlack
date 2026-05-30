@@ -16,7 +16,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 --------------------------------------------------------------------------
 当前状态 (Status)
 --------------------------------------------------------------------------
-- 版本：0.0.11/slang10（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 版本：0.0.11/slang11（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
   右下角（构建时间见该标签 tooltip）。
 - 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
   extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
@@ -58,6 +58,16 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   把函数形参 x、返回值变量 add_one 当成模块级 logic，且 (2) 的导航过滤也失效（因为 moduleScope 已被改成 top）。
   修复：仅当 moduleScope 为空时才回退到所在模块名，否则保留 Slang 值。此后 `l ` 指令与导航过滤同时正确。
 - 待验证/待补：注释感知（commentRegions）；单文件 elaboration 的跨文件解析；GUI 实测（弹窗交互）。
+
+- **目标架构（Route A：Tree-sitter 实时层 + Slang 语义层）**：
+  - 分工：Tree-sitter = 实时语法层（每次按键、容错），负责语法高亮、实时大纲/折叠、"光标当前在哪个 scope"；
+    Slang = 语义层（防抖/保存时跑），负责符号类型、名字/类型解析、跨文件跳转、类型感知补全、实例化、诊断。
+    符号库 sym_list 仍由 Slang 提供语义；Tree-sitter 另维护一份轻量「实时 scope」驱动即时 UI。最终移除 SVLexer。
+  - 路线：A1 增量文档模型（TSDocument）→ A2 Tree-sitter 高亮（替换 SVLexer）→ A3 实时 scope/大纲 → A4 收敛与清理。
+  - 进度：**A1 已完成**——tsdocument.h/cpp 提供每文档持久 TSTree + 增量重解析（ts_tree_edit + 增量 parse），
+    rootNode/hasError/namedNodeTypeAt 等接口；无头测试 test_sv/ts_doc_test.cpp 验证：合法 SV 无错、半句代码仍出树
+    （容错）、增量编辑后树有效，6/6 通过。A2 起步：grammar 暴露细粒度 token 类型（如 module_keyword），
+    高亮将按 node/token 类型映射（无需 highlights.scm）。
 
 
 ==========================================================================
