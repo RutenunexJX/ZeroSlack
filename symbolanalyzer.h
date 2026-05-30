@@ -4,10 +4,11 @@
 #include <QObject>
 #include <QStringList>
 #include <QFutureWatcher>
-#include <QPair>
+#include <QList>
 #include <functional>
 #include "syminfo.h"
 
+class SlangManager;
 class TabManager;
 class WorkspaceManager;
 
@@ -49,10 +50,10 @@ private:
     // Analysis state tracking
     QHash<QString, QString> lastAnalyzedContent;
 
-    // 阶段 A：后台工作区分析（不创建 QWidget，不调用 processEvents）
-    QFutureWatcher<QPair<int, int>>* workspaceAnalysisWatcher = nullptr;
+    SlangManager* m_slangManager = nullptr;
+    // 阶段 A：后台工作区分析，返回符号列表，主线程写回 sym_list
+    QFutureWatcher<QList<sym_list::SymbolInfo>>* workspaceAnalysisWatcher = nullptr;
 
-    // Helper methods（阶段 B：已废弃 createBackgroundEditor，改用 analyzeFileContent + 文件内容）
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
     bool isSystemVerilogFile(const QString &fileName) const;
 };

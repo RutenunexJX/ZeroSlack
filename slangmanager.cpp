@@ -2,12 +2,357 @@
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
+#include <slang/ast/Scope.h>
+#include <slang/ast/SemanticFacts.h>
+#include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
+#include <slang/ast/symbols/MemberSymbols.h>
+#include <slang/ast/symbols/ParameterSymbols.h>
+#include <slang/ast/symbols/PortSymbols.h>
+#include <slang/ast/symbols/SubroutineSymbols.h>
+#include <slang/ast/symbols/VariableSymbols.h>
+#include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/SyntaxTree.h>
+#include <slang/syntax/SyntaxNode.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
 
+#include <QFile>
+#include <QTextStream>
 #include <string>
+
+using namespace slang::ast;
+
+namespace {
+
+// Map Slang symbol to our sym_type_e and fill SymbolInfo. Returns true if the symbol was emitted.
+bool fillSymbolInfo(const slang::SourceManager* sm,
+                    const slang::ast::Symbol& sym,
+                    sym_list::SymbolInfo& out,
+                    QString* outModuleScope)
+{
+    if (!sm || !sym.location.valid())
+        return false;
+
+    std::string nameStr(sym.name);
+    out.symbolName = QString::fromStdString(nameStr);
+    out.fileName = QString::fromStdString(std::string(sm->getFileName(sym.location)));
+    size_t line = sm->getLineNumber(sym.location);
+    out.startLine = (line == 0) ? 1 : static_cast<int>(line);
+    size_t col = sm->getColumnNumber(sym.location);
+    out.startColumn = (col == 0) ? 1 : static_cast<int>(col);
+    out.position = static_cast<int>(sym.location.offset());
+    out.length = 0;
+    out.symbolId = 0;
+    out.scopeLevel = 0;
+    out.dataType.clear();
+
+    if (const slang::syntax::SyntaxNode* syntax = sym.getSyntax()) {
+        slang::SourceRange range = syntax->sourceRange();
+        if (range.end().valid()) {
+            size_t endLine = sm->getLineNumber(range.end());
+            size_t endCol = sm->getColumnNumber(range.end());
+            out.endLine = (endLine == 0) ? out.startLine : static_cast<int>(endLine);
+            out.endColumn = (endCol == 0) ? out.startColumn : static_cast<int>(endCol);
+        } else {
+            out.endLine = out.startLine;
+            out.endColumn = out.startColumn;
+        }
+    } else {
+        out.endLine = out.startLine;
+        out.endColumn = out.startColumn;
+    }
+
+    if (outModuleScope) {
+        // Walk enclosing scopes. If the nearest named container is a task/function, scope the
+        // symbol to that subroutine (not the module) so function/task locals (formal args,
+        // return value, body vars) don't leak into module-level r/w/l completion, which filters
+        // by moduleScope == module. The scope-tree path ignores moduleScope, so locals still
+        // surface inside the subroutine. A package container yields the package name.
+        QString scopeName;
+        for (const Scope* scope = sym.getParentScope(); scope;) {
+            const Symbol* scopeSym = &scope->asSymbol();
+            if (const auto* sub = scopeSym->as_if<SubroutineSymbol>()) {
+                scopeName = QString::fromStdString(std::string(sub->name));
+                break;
+            }
+            if (const auto* pkg = scopeSym->as_if<PackageSymbol>()) {
+                scopeName = QString::fromStdString(std::string(pkg->name));
+                break;
+            }
+            scope = scopeSym->getParentScope();
+        }
+        if (scopeName.isEmpty()) {
+            if (const DefinitionSymbol* def = sym.getDeclaringDefinition())
+                scopeName = QString::fromStdString(std::string(def->name));
+        }
+        *outModuleScope = scopeName;
+    }
+    return true;
+}
+
+sym_list::sym_type_e variableOrNetTypeToSymType(const slang::ast::Type& type)
+{
+    const slang::ast::Type& canon = type.getCanonicalType();
+    using slang::ast::SymbolKind;
+    SymbolKind k = canon.kind;
+
+    if (k == SymbolKind::ScalarType) {
+        const auto& st = canon.as<ScalarType>();
+        if (st.scalarKind == ScalarType::Reg)
+            return sym_list::sym_reg;
+        return sym_list::sym_logic;
+    }
+    if (k == SymbolKind::EnumType)
+        return sym_list::sym_enum_var;
+    if (k == SymbolKind::PackedStructType)
+        return sym_list::sym_packed_struct_var;
+    if (k == SymbolKind::UnpackedStructType)
+        return sym_list::sym_unpacked_struct_var;
+    if (const IntegralType* it = canon.as_if<IntegralType>()) {
+        if (it->isDeclaredReg())
+            return sym_list::sym_reg;
+        return sym_list::sym_logic;
+    }
+    return sym_list::sym_logic;
+}
+
+sym_list::sym_type_e portDirectionToSymType(slang::ast::ArgumentDirection dir)
+{
+    using slang::ast::ArgumentDirection;
+    switch (dir) {
+    case ArgumentDirection::In:    return sym_list::sym_port_input;
+    case ArgumentDirection::Out:    return sym_list::sym_port_output;
+    case ArgumentDirection::InOut:  return sym_list::sym_port_inout;
+    case ArgumentDirection::Ref:    return sym_list::sym_port_ref;
+    default:                        return sym_list::sym_port_inout;
+    }
+}
+
+void collectSymbols(slang::ast::Compilation& compilation,
+                    QList<sym_list::SymbolInfo>& outList)
+{
+    const slang::SourceManager* sm = compilation.getSourceManager();
+    if (!sm)
+        return;
+    const slang::ast::RootSymbol& root = compilation.getRoot();
+
+    // (1) Module / interface / program definitions. root.visit() walks the elaborated instance
+    //     tree, NOT definitions, so definitions must be emitted explicitly here — one entry per
+    //     definition, always present even for uninstantiated modules.
+    for (const slang::ast::Symbol* defSym : compilation.getDefinitions()) {
+        const auto* def = defSym ? defSym->as_if<DefinitionSymbol>() : nullptr;
+        if (!def)
+            continue;
+        sym_list::SymbolInfo info;
+        if (!fillSymbolInfo(sm, *def, info, nullptr))
+            continue;
+        if (def->definitionKind == DefinitionKind::Module)
+            info.symbolType = sym_list::sym_module;
+        else if (def->definitionKind == DefinitionKind::Interface)
+            info.symbolType = sym_list::sym_interface;
+        else if (def->definitionKind == DefinitionKind::Program)
+            info.symbolType = sym_list::sym_module;
+        else
+            continue;
+        info.moduleScope.clear();
+        outList.append(info);
+    }
+
+    // (2) Top-level auto-instances (uninstantiated/top modules) should not appear as instance
+    //     symbols; collect them so we can skip emitting spurious sym_inst rows for them.
+    QSet<const void*> topInstances;
+    for (const slang::ast::InstanceSymbol* ti : root.topInstances)
+        topInstances.insert(ti);
+
+    // (3) Pass A: collect the net/variable that backs each port, so the main pass can skip it
+    //     (otherwise every ANSI port is emitted twice: once as a port, once as a net/var).
+    QSet<const void*> portInternals;
+    {
+        auto portCollector = makeVisitor([&](auto& v, const PortSymbol& port) {
+            if (port.internalSymbol)
+                portInternals.insert(port.internalSymbol);
+            v.visitDefault(port);
+        });
+        root.visit(portCollector);
+    }
+
+    // (4) Pass B: emit instances and all body members. Each definition's body is walked only
+    //     once (visitedDefs) so a module instantiated N times doesn't duplicate its members.
+    QSet<const void*> visitedDefs;
+    auto visitor = makeVisitor(
+        [&](auto& v, const InstanceSymbol& inst) {
+            if (!topInstances.contains(&inst)) {
+                sym_list::SymbolInfo info;
+                QString moduleScope;
+                if (fillSymbolInfo(sm, inst, info, &moduleScope)) {
+                    info.symbolType = sym_list::sym_inst;
+                    info.dataType = QString::fromStdString(std::string(inst.getDefinition().name));
+                    info.moduleScope = moduleScope;
+                    outList.append(info);
+                }
+            }
+            const void* defKey = &inst.getDefinition();
+            if (visitedDefs.contains(defKey))
+                return;  // members of this definition already captured
+            visitedDefs.insert(defKey);
+            v.visitDefault(inst);
+        },
+        [&](auto& v, const VariableSymbol& var) {
+            if (portInternals.contains(&var))
+                return;  // backing var of a port; emitted as the port itself
+            // Struct/union fields are emitted at their typedef site (TypeAliasType visitor),
+            // where the enclosing struct type name is known and used as moduleScope. Skipping
+            // here avoids a wrong moduleScope (the module name) and duplicate members.
+            if (var.kind == SymbolKind::Field)
+                return;
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, var, info, &moduleScope))
+                return;
+            info.symbolType = variableOrNetTypeToSymType(var.getType());
+            info.moduleScope = moduleScope;
+            // For enum/struct variables, record the declared type's alias name (e.g. "state_t",
+            // "test_s") so var.member / enum-value completion can resolve the type. Consumed by
+            // CompletionManager::get{Struct,Enum}TypeForVariable; anonymous inline types have no
+            // name and leave dataType empty (handled by the completion fallback).
+            if (info.symbolType == sym_list::sym_enum_var
+                || info.symbolType == sym_list::sym_packed_struct_var
+                || info.symbolType == sym_list::sym_unpacked_struct_var) {
+                QString typeName = QString::fromStdString(std::string(var.getType().name));
+                if (!typeName.isEmpty())
+                    info.dataType = typeName;
+            }
+            outList.append(info);
+            if (var.kind != SymbolKind::FormalArgument)
+                v.visitDefault(var);
+        },
+        [&](auto& v, const NetSymbol& net) {
+            if (portInternals.contains(&net))
+                return;  // backing net of a port; emitted as the port itself
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, net, info, &moduleScope))
+                return;
+            info.symbolType = sym_list::sym_wire;
+            info.moduleScope = moduleScope;
+            outList.append(info);
+            v.visitDefault(net);
+        },
+        [&](auto& v, const SubroutineSymbol& sub) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, sub, info, &moduleScope))
+                return;
+            info.symbolType = (sub.subroutineKind == SubroutineKind::Task)
+                ? sym_list::sym_task
+                : sym_list::sym_function;
+            info.moduleScope = moduleScope;
+            outList.append(info);
+            v.visitDefault(sub);
+        },
+        [&](auto& v, const PortSymbol& port) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, port, info, &moduleScope))
+                return;
+            info.symbolType = portDirectionToSymType(port.direction);
+            info.moduleScope = moduleScope;
+            outList.append(info);
+            v.visitDefault(port);
+        },
+        [&](auto& v, const ParameterSymbol& param) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, param, info, &moduleScope))
+                return;
+            info.symbolType = param.isLocalParam() ? sym_list::sym_localparam : sym_list::sym_parameter;
+            info.moduleScope = moduleScope;
+            outList.append(info);
+            v.visitDefault(param);
+        },
+        [&](auto& v, const TypeAliasType& typeAlias) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, typeAlias, info, &moduleScope))
+                return;
+            info.symbolType = sym_list::sym_typedef;
+            info.moduleScope = moduleScope;
+            const QString aliasName = info.symbolName;
+            const slang::ast::Type& target = typeAlias.getCanonicalType();
+            if (target.kind == SymbolKind::EnumType) {
+                info.dataType = QLatin1String("enum");
+                outList.append(info);
+                // Emit enum values keyed by this typedef name; getEnumValueCompletions matches
+                // sym_enum_value whose moduleScope == enum type name.
+                for (const auto& ev : target.as<EnumType>().values()) {
+                    sym_list::SymbolInfo m;
+                    if (!fillSymbolInfo(sm, ev, m, nullptr))
+                        continue;
+                    m.symbolType = sym_list::sym_enum_value;
+                    m.moduleScope = aliasName;
+                    outList.append(m);
+                }
+            }
+            else if (target.kind == SymbolKind::PackedStructType
+                     || target.kind == SymbolKind::UnpackedStructType) {
+                const bool packed = (target.kind == SymbolKind::PackedStructType);
+                info.dataType = QLatin1String("struct");
+                outList.append(info);
+                // Emit the struct *type* symbol too, so ns/nsp completion and type-name jump
+                // (which look for sym_packed_struct / sym_unpacked_struct) resolve.
+                sym_list::SymbolInfo typeSym = info;
+                typeSym.symbolType = packed ? sym_list::sym_packed_struct
+                                            : sym_list::sym_unpacked_struct;
+                typeSym.dataType.clear();
+                outList.append(typeSym);
+                // Emit members keyed by this typedef name; getStructMemberCompletions matches
+                // sym_struct_member whose moduleScope == struct type name.
+                const slang::ast::Scope& structScope = packed
+                    ? static_cast<const slang::ast::Scope&>(target.as<PackedStructType>())
+                    : static_cast<const slang::ast::Scope&>(target.as<UnpackedStructType>());
+                for (const auto& member : structScope.members()) {
+                    if (member.kind != SymbolKind::Field)
+                        continue;
+                    sym_list::SymbolInfo m;
+                    if (!fillSymbolInfo(sm, member, m, nullptr))
+                        continue;
+                    m.symbolType = sym_list::sym_struct_member;
+                    m.moduleScope = aliasName;
+                    outList.append(m);
+                }
+            }
+            else {
+                outList.append(info);
+            }
+            v.visitDefault(typeAlias);
+        },
+        [&](auto& v, const EnumType& enumType) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, enumType, info, &moduleScope))
+                return;
+            info.symbolType = sym_list::sym_enum;
+            info.moduleScope = moduleScope;
+            outList.append(info);
+            v.visitDefault(enumType);
+        },
+        [&](auto& v, const PackageSymbol& pkg) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, pkg, info, &moduleScope))
+                return;
+            info.symbolType = sym_list::sym_package;
+            info.moduleScope = QString::fromStdString(std::string(pkg.name));
+            outList.append(info);
+            v.visitDefault(pkg);
+        }
+    );
+
+    root.visit(visitor);
+}
+
+} // namespace
 
 QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const QString& fileName,
                                                                            const QString& content)
@@ -16,7 +361,6 @@ QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const
     try {
         std::string src = content.toStdString();
         std::string nameStr = fileName.toStdString();
-        // Parse: single-file in-memory content (same pattern as mainwindow verification)
         auto tree = slang::syntax::SyntaxTree::fromText(
             std::string_view(src),
             std::string_view(nameStr),
@@ -25,34 +369,101 @@ QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const
         if (!tree)
             return result;
 
-        // Elaboration with IgnoreUnknownModules so undefined modules don't abort the run
         slang::Bag bag;
-        auto& opts = bag.insertOrGet<slang::ast::CompilationOptions>();
-        opts.flags |= slang::ast::CompilationFlags::IgnoreUnknownModules;
+        auto& opts = bag.insertOrGet<CompilationOptions>();
+        opts.flags |= CompilationFlags::IgnoreUnknownModules;
 
-        slang::ast::Compilation compilation(bag);
+        Compilation compilation(bag);
         compilation.addSyntaxTree(tree);
-        const slang::ast::RootSymbol& root = compilation.getRoot();
+        const RootSymbol& root = compilation.getRoot();
         const slang::SourceManager* sm = compilation.getSourceManager();
         if (!sm)
             return result;
 
-        // Visit all InstanceSymbols (module/interface/program instances), extract name + def name + line
         using namespace slang::ast;
-        auto visitor = slang::ast::makeVisitor(
+        auto visitor = makeVisitor(
             [&](auto& v, const InstanceSymbol& inst) {
                 ModuleInstantiationInfo info;
                 info.instanceName = QString::fromStdString(std::string(inst.name));
                 info.moduleName = QString::fromStdString(std::string(inst.getDefinition().name));
                 size_t line = sm->getLineNumber(inst.location);
-                info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);  // Slang is 1-based; 0 = invalid
+                info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
                 result.append(info);
-                v.visitDefault(inst);  // recurse into instance body for nested instances
+                v.visitDefault(inst);
             });
 
         root.visit(visitor);
     } catch (const std::exception&) {
-        // Parsing or elaboration failed; return empty list (caller can still use other analysis)
+        result.clear();
+    } catch (...) {
+        result.clear();
+    }
+    return result;
+}
+
+QList<sym_list::SymbolInfo> SlangManager::extractSymbols(const QString& fileName, const QString& content)
+{
+    QList<sym_list::SymbolInfo> result;
+    try {
+        std::string src = content.toStdString();
+        std::string nameStr = fileName.toStdString();
+        auto tree = slang::syntax::SyntaxTree::fromText(
+            std::string_view(src),
+            std::string_view(nameStr),
+            std::string_view{});
+
+        if (!tree)
+            return result;
+
+        slang::Bag bag;
+        auto& opts = bag.insertOrGet<CompilationOptions>();
+        opts.flags |= CompilationFlags::IgnoreUnknownModules;
+
+        Compilation compilation(bag);
+        compilation.addSyntaxTree(tree);
+
+        collectSymbols(compilation, result);
+    } catch (const std::exception&) {
+        result.clear();
+    } catch (...) {
+        result.clear();
+    }
+    return result;
+}
+
+QList<sym_list::SymbolInfo> SlangManager::extractWorkspaceSymbols(const QStringList& filePaths)
+{
+    QList<sym_list::SymbolInfo> result;
+    if (filePaths.isEmpty())
+        return result;
+    try {
+        std::vector<std::string> pathStrs;
+        pathStrs.reserve(filePaths.size());
+        for (const QString& p : filePaths)
+            pathStrs.push_back(p.toStdString());
+
+        std::vector<std::string_view> pathViews;
+        pathViews.reserve(pathStrs.size());
+        for (const std::string& s : pathStrs)
+            pathViews.push_back(s);
+
+        auto treeOrErr = slang::syntax::SyntaxTree::fromFiles(pathViews);
+        if (!treeOrErr)
+            return result;
+
+        std::shared_ptr<slang::syntax::SyntaxTree> tree = std::move(*treeOrErr);
+        if (!tree)
+            return result;
+
+        slang::Bag bag;
+        auto& opts = bag.insertOrGet<CompilationOptions>();
+        opts.flags |= CompilationFlags::IgnoreUnknownModules;
+
+        Compilation compilation(bag);
+        compilation.addSyntaxTree(tree);
+
+        collectSymbols(compilation, result);
+    } catch (const std::exception&) {
         result.clear();
     } catch (...) {
         result.clear();

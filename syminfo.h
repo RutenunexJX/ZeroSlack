@@ -137,6 +137,11 @@ public:
     QList<SymbolInfo> getAllSymbols();
     void clearSymbolsForFile(const QString& fileName);
 
+    /** Replace all symbols for a file with the given list (e.g. from Slang), then rebuild scope tree and CONTAINS relationships. */
+    void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols);
+    /** Same as above; if content is non-empty, updates fileStates (contentHash, symbolRelevantHash, lastAnalyzedLineCount) for needsAnalysis. */
+    void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols, const QString& content);
+
     SymbolInfo getSymbolById(int symbolId) const;
     bool hasSymbol(int symbolId) const;
 
@@ -232,6 +237,8 @@ private:
     void rebuildAllRelationships();
     void buildSymbolRelationships(const QString& fileName);
     void analyzeModuleContainment(const QString& fileName);
+    /** Rebuild ScopeManager tree and CONTAINS relationships for fileName from current symbolDatabase entries. */
+    void rebuildScopeAndRelationshipsForFile(const QString& fileName);
     void analyzeVariableReferences(const QString& fileName, const QString& content);
 
     void clearStructTypedefEnumSymbolsForFile(const QString &fileName);

@@ -484,6 +484,138 @@ void sym_list::clearSymbolsForFile(const QString& fileName)
     }
 }
 
+void sym_list::setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols)
+{
+    setSymbolsForFile(fileName, symbols, QString());
+}
+
+void sym_list::setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols, const QString& content)
+{
+    QWriteLocker lock(&symbolDbLock);
+    s_holdingWriteLock = true;
+
+    currentFileName = fileName;
+    clearSymbolsForFile(fileName);
+
+    for (const SymbolInfo& sym : symbols) {
+        SymbolInfo s = sym;
+        s.fileName = fileName;
+        addSymbol(s);
+    }
+
+    rebuildScopeAndRelationshipsForFile(fileName);
+
+    if (!content.isEmpty()) {
+        FileState& state = fileStates[fileName];
+        state.contentHash = calculateContentHash(content);
+        state.symbolRelevantHash = calculateSymbolRelevantHash(content);
+        state.lastAnalyzedLineCount = content.count('\n') + 1;
+        state.lastModified = QDateTime::currentDateTime();
+        state.needsFullAnalysis = false;
+        previousFileContents[fileName] = content;
+    }
+
+    CompletionManager::getInstance()->invalidateSymbolCaches();
+    invalidateCache();
+    s_holdingWriteLock = false;
+}
+
+void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
+{
+    if (!fileNameIndex.contains(fileName))
+        return;
+
+    QList<SymbolInfo> fileSymbols;
+    for (int index : fileNameIndex[fileName]) {
+        if (index < symbolDatabase.size())
+            fileSymbols.append(symbolDatabase[index]);
+    }
+    if (fileSymbols.isEmpty())
+        return;
+
+    std::sort(fileSymbols.begin(), fileSymbols.end(), [](const SymbolInfo& a, const SymbolInfo& b) {
+        if (a.startLine != b.startLine) return a.startLine < b.startLine;
+        if (a.symbolType == sym_module) return true;
+        if (b.symbolType == sym_module) return false;
+        return a.symbolId < b.symbolId;
+    });
+
+    ScopeManager* scopeMgr = getScopeManager();
+    scopeMgr->clearFile(fileName);
+    ScopeNode* fileRoot = new ScopeNode(ScopeType::Global, 0);
+    fileRoot->endLine = 0;
+    scopeMgr->setFileRoot(fileName, fileRoot);
+    QStack<ScopeNode*> scopeStack;
+    QStack<int> moduleStack;
+    scopeStack.push(fileRoot);
+
+    for (const SymbolInfo& sym : std::as_const(fileSymbols)) {
+        while (scopeStack.size() > 1 && scopeStack.top()->endLine > 0 && sym.startLine > scopeStack.top()->endLine) {
+            ScopeNode* node = scopeStack.pop();
+            if (node->type == ScopeType::Module && !moduleStack.isEmpty())
+                moduleStack.pop();
+        }
+
+        if (sym.symbolType == sym_module) {
+            moduleStack.push(sym.symbolId);
+            ScopeNode* modNode = new ScopeNode(ScopeType::Module, sym.startLine);
+            modNode->endLine = sym.endLine > 0 ? sym.endLine : sym.startLine;
+            modNode->parent = scopeStack.top();
+            scopeStack.top()->children.append(modNode);
+            modNode->symbols[sym.symbolName] = sym;
+            scopeStack.push(modNode);
+            continue;
+        }
+
+        if (sym.symbolType == sym_task || sym.symbolType == sym_function) {
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), sym.symbolId, SymbolRelationshipEngine::CONTAINS);
+            ScopeType st = (sym.symbolType == sym_task) ? ScopeType::Task : ScopeType::Function;
+            ScopeNode* subNode = new ScopeNode(st, sym.startLine);
+            subNode->endLine = sym.endLine > 0 ? sym.endLine : sym.startLine;
+            subNode->parent = scopeStack.top();
+            scopeStack.top()->children.append(subNode);
+            subNode->symbols[sym.symbolName] = sym;
+            scopeStack.push(subNode);
+            continue;
+        }
+
+        if (sym.symbolType == sym_port_input || sym.symbolType == sym_port_output
+            || sym.symbolType == sym_port_inout || sym.symbolType == sym_port_ref
+            || sym.symbolType == sym_port_interface || sym.symbolType == sym_port_interface_modport
+            || sym.symbolType == sym_reg || sym.symbolType == sym_wire || sym.symbolType == sym_logic
+            || sym.symbolType == sym_parameter || sym.symbolType == sym_localparam
+            || sym.symbolType == sym_typedef || sym.symbolType == sym_enum
+            || sym.symbolType == sym_enum_value || sym.symbolType == sym_enum_var
+            || sym.symbolType == sym_struct_member
+            || sym.symbolType == sym_packed_struct_var || sym.symbolType == sym_unpacked_struct_var
+            || sym.symbolType == sym_inst || sym.symbolType == sym_inst_pin) {
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), sym.symbolId, SymbolRelationshipEngine::CONTAINS);
+            if (!scopeStack.isEmpty())
+                scopeStack.top()->symbols[sym.symbolName] = sym;
+            continue;
+        }
+
+        if (sym.symbolType == sym_packed_struct || sym.symbolType == sym_unpacked_struct) {
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), sym.symbolId, SymbolRelationshipEngine::CONTAINS);
+            if (!scopeStack.isEmpty())
+                scopeStack.top()->symbols[sym.symbolName] = sym;
+            continue;
+        }
+
+        if (sym.symbolType == sym_package) {
+            if (relationshipEngine && !moduleStack.isEmpty())
+                relationshipEngine->addRelationship(moduleStack.last(), sym.symbolId, SymbolRelationshipEngine::CONTAINS);
+            if (!scopeStack.isEmpty())
+                scopeStack.top()->symbols[sym.symbolName] = sym;
+        }
+    }
+
+    buildSymbolRelationships(fileName);
+}
+
 void sym_list::rebuildAllIndexes()
 {
     symbolTypeIndex.clear();

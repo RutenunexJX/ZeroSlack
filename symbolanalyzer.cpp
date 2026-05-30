@@ -1,4 +1,5 @@
 #include "symbolanalyzer.h"
+#include "slangmanager.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "completionmanager.h"
@@ -6,8 +7,6 @@
 #include <QFile>
 #include <QTextStream>
 #include <QFileInfo>
-#include <QFileInfo>
-#include <QThread>
 #include <QApplication>
 #include <QEventLoop>
 #include <utility>
@@ -15,8 +14,9 @@
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     : QObject(parent)
 {
-    workspaceAnalysisWatcher = new QFutureWatcher<QPair<int, int>>(this);
-    connect(workspaceAnalysisWatcher, &QFutureWatcher<QPair<int, int>>::finished,
+    m_slangManager = new SlangManager();
+    workspaceAnalysisWatcher = new QFutureWatcher<QList<sym_list::SymbolInfo>>(this);
+    connect(workspaceAnalysisWatcher, &QFutureWatcher<QList<sym_list::SymbolInfo>>::finished,
             this, &SymbolAnalyzer::onWorkspaceAnalysisFinished);
 }
 
@@ -29,6 +29,8 @@ SymbolAnalyzer::~SymbolAnalyzer()
         workspaceAnalysisWatcher->deleteLater();
         workspaceAnalysisWatcher = nullptr;
     }
+    delete m_slangManager;
+    m_slangManager = nullptr;
 }
 
 void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
@@ -38,31 +40,28 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
     emit analysisStarted("open_tabs");
 
     sym_list* symbolList = sym_list::getInstance();
-    QStringList openFileNames = tabManager->getAllOpenFileNames();
     QStringList svFiles = tabManager->getOpenSystemVerilogFiles();
-
-    for (const QString& fileName : std::as_const(openFileNames)) {
-        symbolList->clearSymbolsForFile(fileName);
-    }
+    int symbolsFromOpenFiles = 0;
 
     for (const QString& fileName : std::as_const(svFiles)) {
         QString content = tabManager->getPlainTextFromOpenFile(fileName);
-        if (!content.isNull())
-            analyzeFileContent(fileName, content);
-    }
-
-    int symbolsFromOpenFiles = 0;
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
-    for (const sym_list::SymbolInfo& symbol : std::as_const(allSymbols)) {
-        if (openFileNames.contains(symbol.fileName))
-            symbolsFromOpenFiles++;
+        if (content.isNull()) continue;
+        QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(fileName, content);
+        symbolList->setSymbolsForFile(fileName, list, content);
+        symbolsFromOpenFiles += list.size();
     }
 
     emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
 }
 
-namespace {
-    const int kWorkspaceBatchSize = 50;  // 每批处理文件数，控制内存与 UI 响应
+static QHash<QString, QList<sym_list::SymbolInfo>> groupSymbolsByFile(const QList<sym_list::SymbolInfo>& list)
+{
+    QHash<QString, QList<sym_list::SymbolInfo>> byFile;
+    for (const sym_list::SymbolInfo& s : list) {
+        if (!s.fileName.isEmpty())
+            byFile[s.fileName].append(s);
+    }
+    return byFile;
 }
 
 void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled)
@@ -73,45 +72,33 @@ void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::f
 
     QStringList svFiles = workspaceManager->getSystemVerilogFiles();
     const int totalFiles = svFiles.size();
-    sym_list* symbolList = sym_list::getInstance();
-    int totalSymbolsFound = 0;
-    int filesAnalyzed = 0;
-    QString lastProcessedPath;
-
-    for (int i = 0; i < totalFiles; ) {
-        const int batchEnd = qMin(i + kWorkspaceBatchSize, totalFiles);
-
-        for (int j = i; j < batchEnd; ++j) {
-            const QString& filePath = svFiles.at(j);
-            QFile file(filePath);
-            if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
-                continue;
-            }
-            QString content = QTextStream(&file).readAll();
-            file.close();
-
-            int symbolsBefore = symbolList->getAllSymbols().size();
-            symbolList->setContentIncremental(filePath, content);
-            int symbolsAfter = symbolList->getAllSymbols().size();
-
-            totalSymbolsFound += (symbolsAfter - symbolsBefore);
-            filesAnalyzed++;
-            lastProcessedPath = filePath;
-        }
-
-        i = batchEnd;
-        emit batchProgress(filesAnalyzed, totalFiles, lastProcessedPath);
-
-        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-
-        if (isCancelled && isCancelled()) {
-            break;
-        }
+    if (totalFiles == 0) {
+        CompletionManager::getInstance()->forceRefreshSymbolCaches();
+        emit batchAnalysisCompleted(0, 0);
+        emit analysisCompleted(workspaceManager->getWorkspacePath(), 0);
+        return;
     }
 
-    CompletionManager::getInstance()->forceRefreshSymbolCaches();
+    QList<sym_list::SymbolInfo> allSymbols = m_slangManager->extractWorkspaceSymbols(svFiles);
+    if (isCancelled && isCancelled()) {
+        emit batchAnalysisCompleted(0, 0);
+        emit analysisCompleted(workspaceManager->getWorkspacePath(), 0);
+        return;
+    }
 
-    emit batchAnalysisCompleted(svFiles.size(), totalSymbolsFound);
+    QHash<QString, QList<sym_list::SymbolInfo>> byFile = groupSymbolsByFile(allSymbols);
+    sym_list* symbolList = sym_list::getInstance();
+    int filesAnalyzed = 0;
+    int totalSymbolsFound = 0;
+    for (auto it = byFile.begin(); it != byFile.end(); ++it) {
+        symbolList->setSymbolsForFile(it.key(), it.value());
+        filesAnalyzed++;
+        totalSymbolsFound += it.value().size();
+    }
+    emit batchProgress(filesAnalyzed, totalFiles, byFile.isEmpty() ? QString() : byFile.keys().first());
+
+    CompletionManager::getInstance()->forceRefreshSymbolCaches();
+    emit batchAnalysisCompleted(filesAnalyzed, totalSymbolsFound);
     emit analysisCompleted(workspaceManager->getWorkspacePath(), totalSymbolsFound);
 }
 
@@ -128,32 +115,13 @@ void SymbolAnalyzer::startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManag
 
     emit analysisStarted(workspacePath);
 
-    QFuture<QPair<int, int>> future = QtConcurrent::run([this, svFiles, totalFiles, isCancelled]() {
-        sym_list* symbolList = sym_list::getInstance();
-        int totalSymbolsFound = 0;
-        int filesAnalyzed = 0;
-
-        for (int j = 0; j < totalFiles; ++j) {
-            if (isCancelled && isCancelled())
-                break;
-            const QString& filePath = svFiles.at(j);
-            QFile file(filePath);
-            if (!file.open(QIODevice::ReadOnly | QFile::Text))
-                continue;
-            QString content = QTextStream(&file).readAll();
-            file.close();
-
-            int symbolsBefore = symbolList->getAllSymbols().size();
-            symbolList->setContentIncremental(filePath, content);
-            int symbolsAfter = symbolList->getAllSymbols().size();
-            totalSymbolsFound += (symbolsAfter - symbolsBefore);
-            filesAnalyzed++;
-            emit batchProgress(filesAnalyzed, totalFiles, filePath);
-        }
-        return qMakePair(filesAnalyzed, totalSymbolsFound);
+    QFuture<QList<sym_list::SymbolInfo>> future = QtConcurrent::run([this, svFiles, totalFiles, isCancelled]() {
+        QList<sym_list::SymbolInfo> result = m_slangManager->extractWorkspaceSymbols(svFiles);
+        return result;
     });
 
     workspaceAnalysisWatcher->setProperty("workspacePath", workspacePath);
+    workspaceAnalysisWatcher->setProperty("totalFiles", totalFiles);
     workspaceAnalysisWatcher->setFuture(future);
 }
 
@@ -163,13 +131,20 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
     if (workspaceAnalysisWatcher->isCanceled())
         return;
 
-    QPair<int, int> result = workspaceAnalysisWatcher->result();
-    int filesAnalyzed = result.first;
-    int totalSymbolsFound = result.second;
+    QList<sym_list::SymbolInfo> list = workspaceAnalysisWatcher->result();
     QString workspacePath = workspaceAnalysisWatcher->property("workspacePath").toString();
 
-    CompletionManager::getInstance()->forceRefreshSymbolCaches();
+    QHash<QString, QList<sym_list::SymbolInfo>> byFile = groupSymbolsByFile(list);
+    sym_list* symbolList = sym_list::getInstance();
+    int filesAnalyzed = 0;
+    int totalSymbolsFound = 0;
+    for (auto it = byFile.begin(); it != byFile.end(); ++it) {
+        symbolList->setSymbolsForFile(it.key(), it.value());
+        filesAnalyzed++;
+        totalSymbolsFound += it.value().size();
+    }
 
+    CompletionManager::getInstance()->forceRefreshSymbolCaches();
     emit batchAnalysisCompleted(filesAnalyzed, totalSymbolsFound);
     emit analysisCompleted(workspacePath, totalSymbolsFound);
 }
@@ -188,11 +163,10 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
     QString content = QTextStream(&file).readAll();
     file.close();
 
+    QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(filePath, content);
     sym_list* symbolList = sym_list::getInstance();
-    int symbolsBefore = symbolList->getAllSymbols().size();
-    symbolList->setContentIncremental(filePath, content);
-    int symbolsFound = symbolList->getAllSymbols().size() - symbolsBefore;
-    emit analysisCompleted(filePath, symbolsFound);
+    symbolList->setSymbolsForFile(filePath, list, content);
+    emit analysisCompleted(filePath, list.size());
 }
 
 bool SymbolAnalyzer::isAnalysisNeeded(const QString& fileName, const QString& content) const
@@ -211,10 +185,10 @@ void SymbolAnalyzer::invalidateCache()
 void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& content)
 {
     if (fileName.isEmpty() || !isSystemVerilogFile(fileName)) return;
+    QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(fileName, content);
     sym_list* sym = sym_list::getInstance();
-    sym->setContentIncremental(fileName, content);
-    int count = sym->findSymbolsByFileName(fileName).size();
-    emit analysisCompleted(fileName, count);
+    sym->setSymbolsForFile(fileName, list, content);
+    emit analysisCompleted(fileName, list.size());
 }
 
 QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) const

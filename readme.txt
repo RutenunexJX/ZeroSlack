@@ -13,6 +13,26 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 适合用作：浏览/理解中大型 SystemVerilog 工程、快速跳转与补全、做一些“静态 IDE”级别的体验。
 
+--------------------------------------------------------------------------
+当前状态 (Status)
+--------------------------------------------------------------------------
+- 版本：0.0.11（分支 tree_sitter_and_slang）
+- 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
+  extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
+  尚未做完整运行实测。Tree-sitter 符号路径降级为遗留代码（仅「Tree-sitter 验证」按钮使用），
+  语法高亮仍由 SVLexer 驱动。详见下文「符号分析系统」与「已知问题」。
+- 已补并经无头测试验证（test_sv/dump_symbols.cpp 直接调用 SlangManager::extractSymbols 打印符号）：
+  1) typedef struct/enum 于 typedef 站点产出 struct 类型符号（sym_packed_struct/sym_unpacked_struct）、
+     struct 成员与枚举值（moduleScope = 类型别名）、enum/struct 变量 dataType = 类型别名；
+  2) **module/interface 符号**改由 compilation.getDefinitions() 产出（此前 root.visit() 只遍历实例树，
+     完全不产出 sym_module，导致模块作用域/补全全断）；
+  3) **端口去重**：跳过端口背后的 net/var（PortSymbol.internalSymbol），端口不再既算 port 又算 logic/wire；
+  4) 跳过顶层自动实例、按定义去重实例体（模块被多次例化时成员不重复）；
+  5) function/task 形参与返回值/局部变量 moduleScope 改为所在子程序名（如 add_one），不再以模块名
+     泄漏进 l/r/w 补全；scope-tree 路径不受影响，光标在子程序内仍可补全其局部符号。
+- 待验证/待补：内联匿名 enum/struct 的值/成员；注释感知（commentRegions）；
+  单文件 elaboration 的跨文件解析；GUI 实测。
+
 
 ==========================================================================
 核心功能 (Core Features)
@@ -119,15 +139,25 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
 
-- **双轨解析架构（Tree-sitter + Slang）**
-  - **UI 与符号**：大纲、补全、代码导航的符号数据**由** `SVTreeSitterParser`（sv_treesitter_parser.h/cpp）**独家**提供。sym_list::setContentIncremental 首次与非首次均走 extractSymbolsAndContainsOnePassImpl → SVTreeSitterParser::parseSymbols()，解析结果写入符号库并驱动作用域树与 CONTAINS 关系。语法高亮由 SVLexer 驱动。**不改动** sv_treesitter_parser，继续用于高亮与简单 outline。
-  - **语义分析（Slang）**：`SlangManager`（slangmanager.h/cpp）基于 `slang::ast::Compilation` 对单文件做解析与 elaboration，目前用于**模块实例化关系**（INSTANTIATES）。SmartRelationshipBuilder 在分析「谁实例化了谁」时调用 SlangManager::extractModuleInstantiations，遍历 Slang AST 中的 InstanceSymbol，提取实例名、模块定义名与行号（1-based），不再使用正则，保证 100% 准确。解析/elaboration 失败时返回空列表，不崩溃。其余关系类型（变量赋值/引用、task/function 调用、always、clock/reset 等）仍使用 SmartRelationshipBuilder 内原有正则逻辑。
-- **符号解析数据来源（仅使用 Tree-sitter）**
-  - **当前数据来源**：如上，符号数据由 SVTreeSitterParser 独家提供。
-  - **Tree-sitter（SVTreeSitterParser）**：项目已集成 tree-sitter 核心库（thirdparty/tree_sitter）与 tree-sitter-systemverilog 语法（thirdparty/tree_sitter_systemverilog）。parseSymbols() 从 AST 根递归遍历，维护 module/interface/program 作用域栈，产出带 fileName、moduleScope 的 SymbolInfo。支持的节点类型包括：module_declaration、program_declaration、package_declaration、interface_declaration、class_declaration、module_instantiation（含实例名与模块类型）、task_declaration、function_declaration、always_construct、ansi_port_declaration、port_declaration（input/output/inout/ref）、data_declaration（reg/logic/wire/enum 变量，类型由 AST 节点 reg/logic/net_type、enum_base_type 判定）、net_declaration（wire）、parameter_declaration（sym_parameter）、local_parameter_declaration（sym_localparam）、type_declaration（sym_typedef；typedef enum 时同时产出 sym_enum_value）；module 名称从 *_header 子节点或 simple_identifier 正确提取。类型与端口方向等均按 AST 节点类型判断，不使用字符串匹配。takeComments() 当前返回空列表，注释区域尚未从 AST 收集。
-  - **已产出**：parameter/localparam、typedef（含 dataType 如 "enum"）、枚举类型变量（sym_enum_var）、枚举值（sym_enum_value）。**尚未产出**：struct/union 类型与变量（sym_packed_struct、sym_unpacked_struct、sym_struct_member、sym_*_struct_var），故 s/sp/ns/nsp 相关补全/跳转会缺失或异常。实例化引脚（sym_inst_pin）与 REFERENCES 等由 SmartRelationshipBuilder 负责；模块实例化关系（INSTANTIATES）由 SlangManager + Slang 语义分析产出，见上文「双轨解析架构」。
-  - **net_declaration 与 data_declaration 歧义**：语法上「类型名 + 标识符 + 分号」（如 `test_e test;`）可同时匹配 net_declaration（nettype_identifier + list_of_net_decl_assignments）与 data_declaration。grammar 中 net_declaration 为 PREC_DYNAMIC 0、data_declaration 为 1，tree-sitter 优先选 net_declaration，故此类变量声明会被解析为 wire。建议在符号层做语义补救：当 net_declaration 的 nettype_identifier 在已解析的 typedef/enum 类型中时，按变量（如 sym_enum_var）处理。
-  - **SVSymbolParser 已移除**：符号解析仅使用 SVTreeSitterParser；语法高亮仍由 `SVLexer`（sv_lexer.h/cpp、sv_token.h）驱动。工具栏「Tree-sitter 验证」按钮（MainWindow::onDebug0）仍通过 SVTreeSitterParser::parse(content) + getSymbols() 做验证输出，不写入符号库。
+- **解析架构（Slang 符号 + SVLexer 高亮）**
+  - **符号数据（Slang，独家）**：大纲、补全、代码导航、作用域树与 CONTAINS 关系所依赖的符号数据**由** `SlangManager`（slangmanager.h/cpp）基于 `slang::ast::Compilation` 的 parse + elaboration **独家**提供。SymbolAnalyzer 对单文件调用 `SlangManager::extractSymbols(fileName, content)`，对整个工作区调用 `extractWorkspaceSymbols(filePaths)`（所有文件一起编译），得到 `QList<sym_list::SymbolInfo>` 后调用 `sym_list::setSymbolsForFile(fileName, list[, content])` 写入符号库，并在其中重建作用域树与 CONTAINS 关系。解析/elaboration 失败时返回空列表，不崩溃。
+  - **语法高亮（SVLexer）**：高亮路径独立，由 `SVLexer`（sv_lexer.h/cpp、sv_token.h）逐 token 驱动，不依赖 Slang 或 Tree-sitter。
+  - **Tree-sitter（SVTreeSitterParser）保留**：符号路径已不再使用 Tree-sitter；`SVTreeSitterParser` 仅保留给工具栏「Tree-sitter 验证」按钮（MainWindow::onDebug0 通过 parse(content) + getSymbols() 做验证输出，不写入符号库）。`sym_list::setContentIncremental` / `extractSymbolsAndContainsOnePass` 等旧的 Tree-sitter 符号入口现为**未调用的遗留代码**（保留以备回退/对照）。
+  - **模块实例化关系（INSTANTIATES）**：由 `SlangManager::extractModuleInstantiations` 通过 Slang AST 的 InstanceSymbol 遍历产出（实例名/模块定义名/行号 1-based，100% 准确），SmartRelationshipBuilder 负责写入关系。其余关系类型（变量赋值/引用、task/function 调用、always、clock/reset 等）仍使用 SmartRelationshipBuilder 内原有正则逻辑。
+- **Slang 符号提取明细（slangmanager.cpp::collectSymbolsFromRoot）**
+  - 单文件 `extractSymbols` 用 `SyntaxTree::fromText` + `CompilationFlags::IgnoreUnknownModules`，使未定义模块不致中断；工作区 `extractWorkspaceSymbols` 用 `SyntaxTree::fromFiles` 把所有文件一起编译，类型 / package 的跨文件引用可正确解析。
+  - 从 `RootSymbol` 用 `makeVisitor` 递归遍历，按 Slang 符号类型映射为 `SymbolInfo`：
+    - `DefinitionSymbol`：Module→sym_module、Interface→sym_interface、Program→sym_module；
+    - `InstanceSymbol`→sym_inst（dataType = 模块定义名）；
+    - `VariableSymbol`：按 canonical type 判定 → reg / logic（ScalarType / IntegralType）、enum 变量（sym_enum_var）、packed/unpacked struct 变量（sym_packed_struct_var / sym_unpacked_struct_var）；Field→sym_struct_member；FormalArgument 按类型；
+    - `NetSymbol`→sym_wire；`SubroutineSymbol`→sym_task / sym_function；
+    - `PortSymbol`→按方向 sym_port_input / output / inout / ref；
+    - `ParameterSymbol`→sym_parameter / sym_localparam（isLocalParam）；
+    - `TypeAliasType`→sym_typedef（dataType 标记 "enum" / "struct"）；`EnumType`→sym_enum；`EnumValueSymbol`→sym_enum_value；`PackageSymbol`→sym_package。
+  - 行号为 1-based（与 Qt/UI 一致，等同原 Tree-sitter 路径）。moduleScope 由 `getDeclaringDefinition()` 推出；包成员则取所在 package 名。
+  - **已解决**：struct 成员 / 变量、enum、typedef 已由 Slang 产出，s/sp/e/ee/ne 相关补全与跳转可用；原 Tree-sitter 路径「`TYPE_NAME id;` 被误判为 wire」的 grammar 歧义，因 Slang 做语义判定而不再存在。
+  - **typedef 站点产出（slangmanager.cpp）**：在 TypeAliasType visitor 中，对 typedef enum 额外遍历 EnumType::values() 产出 sym_enum_value（moduleScope = 别名，如 state_t）；对 typedef struct 额外产出 struct 类型符号（sym_packed_struct / sym_unpacked_struct）并遍历成员产出 sym_struct_member（moduleScope = 别名，如 test_s）。VariableSymbol visitor 对 enum/struct 变量写入 dataType = 声明类型别名。由此满足补全/跳转的数据契约：get{Struct,Enum}TypeForVariable 读 var.dataType、get{Struct,Enum}MemberCompletions 按 moduleScope == 类型名过滤。Field/EnumValue 的独立 handler 已移除（改在 typedef 站点产出，避免 moduleScope 取成模块名及重复）。
+  - **当前缺口**：**内联匿名** enum/struct（无 typedef，如 `enum {A,B} v;`）的枚举值 / 成员当前不产出（仅 typedef 命名类型支持）；普通变量（reg/wire/logic）的 dataType（如 logic[7:0]）当前未填充（无消费者，仅 typedef/inst/enum 变量/struct 变量填 dataType）；commentRegions 在 setSymbolsForFile 路径不再维护（注释高亮仍由 SVLexer 保证）。上述均为编译通过、尚待运行实测。
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
   - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
@@ -137,14 +167,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     若缺少配对 endmodule 或模块名不合法，该段代码不会被判为“在模块内”。
   - `reg` / `wire` / `logic` 变量
   - `task` / `function`
-  - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，以及 dataType（如 logic[7:0]）等，由 SVTreeSitterParser 从 ansi_port_declaration / port_declaration 节点解析。
-  - parameter/localparam/typedef/enum 已由 SVTreeSitterParser 产出；struct/union 尚未产出，依赖 s/sp/ns/nsp 的补全/跳转会缺失或异常。`interface`、实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责；模块实例化（INSTANTIATES）由 SlangManager 基于 Slang AST 产出。
+  - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，由 Slang 的 PortSymbol 按方向产出（dataType 当前未填充）。
+  - parameter/localparam/typedef/enum、struct 成员与变量均已由 Slang 产出，s/sp/e/ee/ne 的补全 / 跳转可用（struct 类型名符号见上文「当前缺口」）。`interface`、实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责；模块实例化（INSTANTIATES）由 SlangManager 基于 Slang AST 产出。
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
 - **Struct 与注释**
-  - typedef/enum 类型与变量已由 Tree-sitter 产出（sym_typedef、sym_enum_var、sym_enum_value）；struct/union 尚未产出，s/sp/ns/nsp 相关补全与跳转会受影响。注释区域（commentRegions）由 takeComments() 提供，当前返回空列表，注释感知能力暂未接入 AST。注释内容仍由 Lexer 识别为 Comment，高亮路径不受影响。
-  - 结构体变量：支持 `type name;` / `type name,` 以及数组形式 `type name [4];`、`type name [3:0];`。
-  - **Packed / Unpacked 区分**：struct 类型与变量当前 Tree-sitter 路径不产出，故 s / sp / ns / nsp 补全与跳转会缺失或异常。若后续在 SVTreeSitterParser 中实现，需支持 `packed struct` / `struct packed` 产出 sym_packed_struct / sym_unpacked_struct 及对应变量符号，并维护类型名以便 `type_name var;` 解析为正确的 packed/unpacked 变量。
+  - typedef/enum 类型与变量、struct 成员与变量均已由 Slang 产出（sym_typedef、sym_enum、sym_enum_var、sym_enum_value、sym_struct_member、sym_packed_struct_var、sym_unpacked_struct_var）。注释感知（commentRegions）当前未在 Slang 路径维护；注释内容仍由 SVLexer 识别为 Comment，高亮路径不受影响。
+  - **Packed / Unpacked 区分**：struct **变量**已通过 Slang 的 canonical type 区分 packed/unpacked（sym_packed_struct_var / sym_unpacked_struct_var）。struct **类型名**符号（sym_packed_struct / sym_unpacked_struct）尚未单独产出，目前以 sym_typedef(dataType="struct") 表示，ns/nsp 与类型名跳转依赖此形式，行为待验证。
 
 【作用域树 (Scope Tree) — scope_tree.h】
 符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
@@ -154,24 +183,24 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     parent/children 指针、本层符号 QHash<QString, SymbolInfo>（O(1) 查找）。
   - ScopeManager：按文件维护根节点；由 sym_list 在解析时构建并持有（getScopeManager()）。
 - 解析方式（栈式）
-  - 在 sym_list::extractSymbolsAndContainsOnePassImpl 中先调用 SVTreeSitterParser::parseSymbols() 得到符号列表（符号已含 moduleScope），再按符号顺序维护 QStack<ScopeNode*>：
-    - 遇到 module / task / function 时创建对应 ScopeNode 并 push；
-    - 遇到 reg / wire / logic / 端口时写入当前 scopeStack.top()->symbols 并照常 addSymbol；
-    - 遇到 endmodule / endtask / endfunction（通过符号的 startLine/endLine）时设置 endLine 并 pop。
-  - 结构符号与作用域闭合由 SVTreeSitterParser 产出的 SymbolInfo 驱动，不再使用 findNextStructuralMatch 等正则匹配。
+  - 由 `sym_list::setSymbolsForFile` 调用 `rebuildScopeAndRelationshipsForFile(fileName)`：先取该文件全部符号并按 startLine（module 优先）排序，再按行号顺序维护 QStack<ScopeNode*> 与 QStack<int>（模块 id）：
+    - 进入新符号前，若其 startLine 越过栈顶作用域 endLine 则出栈（闭合 module/task/function）；
+    - 遇到 module 创建 Module 作用域并 push、记录模块 id；遇到 task / function 创建对应作用域并 push；
+    - 遇到 reg / wire / logic / 端口 / parameter / typedef / enum / struct 成员变量等写入当前 scopeStack.top()->symbols，并对栈顶模块 addRelationship(..., CONTAINS)。
+  - 作用域起止由 Slang 给出的 SymbolInfo.startLine / endLine 驱动；最后调用 buildSymbolRelationships(fileName) 构建其余关系。
 - 接口
   - findScopeAt(fileName, line)：返回该行所在的最深层作用域。
   - resolveSymbol(name, startScope)：沿 parent 链向上查找符号，实现词法遮蔽（内层同名遮蔽外层）。
   - 在 clearSymbolsForFile 时会同步清除该文件的作用域树。
 
-分析模式：
+分析模式（SymbolAnalyzer 自持一个 SlangManager 实例 m_slangManager）：
 - 打开标签分析：`analyzeOpenTabs`
-  - 对当前打开的 SV 文件（`TabManager::getOpenSystemVerilogFiles()`），先对该批文件名执行 `clearSymbolsForFile`，再逐文件通过 `getPlainTextFromOpenFile` 取内容后调用 `analyzeFileContent`，不依赖编辑器对象
+  - 对当前打开的 SV 文件（`TabManager::getOpenSystemVerilogFiles()`），逐文件通过 `getPlainTextFromOpenFile` 取内容，调用 `m_slangManager->extractSymbols(fileName, content)` 后 `sym_list::setSymbolsForFile(fileName, list, content)`，不依赖编辑器对象。
 - 工作区分析：`analyzeWorkspace` / `startAnalyzeWorkspaceAsync`
   - 通过 `WorkspaceManager` 拿到整个目录树中的 `.sv/.v/.vh/.svh/.vp/.svp` 文件
-  - 使用 QFile+QTextStream 读入内容，每个文件送入 `sym_list::setContentIncremental`（阶段 B 轻量化，不创建 MyCodeEditor）
-- 单文件分析：`analyzeFile`
-  - 供文件变化回调 (`fileChanged`) 调用
+  - 调用 `m_slangManager->extractWorkspaceSymbols(svFiles)` 把所有文件一起编译得到全部符号，再按 fileName 分组（groupSymbolsByFile），逐文件 `setSymbolsForFile`；`startAnalyzeWorkspaceAsync` 在 QtConcurrent::run 后台编译、`onWorkspaceAnalysisFinished` 回主线程写回。
+- 单文件分析：`analyzeFile`（读磁盘）/ `analyzeFileContent`（直接用内容）
+  - 供文件变化回调 (`fileChanged`) 与增量分析调用，均走 extractSymbols + setSymbolsForFile。
 
 增量分析：
 - `MainWindow::scheduleOpenFileAnalysis(fileName, delayMs)` 按 fileName 去抖，超时后从 TabManager 取内容调用 `analyzeFileContent`；`cancelScheduledOpenFileAnalysis(fileName)` 可取消已调度分析。
@@ -211,13 +240,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
       只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
     - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
-    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 类型与变量**，以及 **enum 类型、枚举变量、枚举值**；SVTreeSitterParser 已产出 module/task/function/port/reg/wire/logic/parameter/localparam/typedef/enum 等，可跳转；struct 相关符号尚未产出，对应跳转会缺失或异常。
+    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 变量与成员**，以及 **enum 类型、枚举变量、枚举值**；这些均已由 Slang 产出，可跳转。struct **类型名**（sym_packed_struct / sym_unpacked_struct）当前以 sym_typedef 形式存在，类型名跳转行为待验证（见上文「当前缺口」）。
     - 优先跳当前文件中的定义；端口类型优先级高于 reg/wire/logic。
     - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
   - **Struct 相关跳转**：
     - **成员跳转**：在 `var.member` 表达式中 Ctrl+点击成员名（如 member0），根据变量名解析出 struct 类型，跳转到该 struct 内该成员的定义位置；结构体成员的 moduleScope 为结构体类型名，跳转时按类型过滤、不按模块名过滤。
     - **变量跳转**：Ctrl+点击 struct 变量名，跳转到其声明（packed/unpacked struct 变量已纳入 isSymbolDefinition 与 definitionTypePriority）。
-    - **类型名跳转**：在声明语句（如 `test_s test_s_var;` 或 `test_sp test_sp_var;`）中 Ctrl+点击类型名，跳转到 `typedef struct [packed] { ... } type_name;` 中别名位置。当前 Tree-sitter 路径不产出 struct 类型符号，该跳转会缺失或异常。definitionTypePriority 中 sym_packed_struct / sym_unpacked_struct 显式优先级 6，与 parameter/localparam 一致。
+    - **类型名跳转**：在声明语句（如 `test_s test_s_var;` 或 `test_sp test_sp_var;`）中 Ctrl+点击类型名，跳转到 `typedef struct [packed] { ... } type_name;` 中别名位置。Slang 当前以 sym_typedef(dataType="struct") 表示该类型名，尚未单独产出 sym_packed_struct / sym_unpacked_struct，该跳转行为待验证。definitionTypePriority 中 sym_packed_struct / sym_unpacked_struct 显式优先级 6，与 parameter/localparam 一致。
   - **Enum 相关跳转**（与 struct 类似的 3 类）：
     - **枚举值跳转**：Ctrl+点击枚举值名（如 STATE_IDLE、ON），跳转到该枚举值在 enum 体中的定义行（sym_enum_value 已纳入 isSymbolDefinition 与 definitionTypePriority）。
     - **枚举类型跳转**：Ctrl+点击 typedef enum 类型名（如 fsm_state_t），跳转到 `typedef enum { ... } type_name;` 中类型名位置（sym_typedef 表示枚举类型）。
@@ -232,7 +261,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：
 - `SymbolRelationshipEngine`
-- `SlangManager`（slangmanager.h/cpp）：基于 Slang 的语义分析，当前仅用于提取模块/接口/程序实例化（InstanceSymbol），供 SmartRelationshipBuilder 写入 INSTANTIATES 关系。
+- `SlangManager`（slangmanager.h/cpp）：基于 Slang 的语义分析。现负责**全部符号提取**（extractSymbols / extractWorkspaceSymbols，供 SymbolAnalyzer 使用），以及模块/接口/程序实例化（extractModuleInstantiations，供 SmartRelationshipBuilder 写入 INSTANTIATES 关系）。
 - `SmartRelationshipBuilder`
 - `RelationshipProgressDialog`
 
@@ -272,8 +301,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 【依赖】
 - Qt 5/6（建议在与你当前 `.pro` 文件兼容的版本上构建）
 - 支持 C++20 的编译器（Slang 要求 C++20；项目使用 `std::unique_ptr` 等）
-- Tree-sitter：符号解析依赖 thirdparty/tree_sitter 与 thirdparty/tree_sitter_systemverilog，用于 SVTreeSitterParser；构建时需能编译 C 源（lib.c、parser.c）
-- Slang：thirdparty/slang 子项目，用于 SlangManager 的语义分析（模块实例化）；CMake 已配置 slang::slang 链接与 C++20
+- Slang：thirdparty/slang 子项目，用于 SlangManager 的语义分析（**符号提取** + 模块实例化）；CMake 已配置 slang::slang 链接与 C++20
+- Tree-sitter：thirdparty/tree_sitter 与 thirdparty/tree_sitter_systemverilog，现仅供 SVTreeSitterParser 的「Tree-sitter 验证」按钮使用（不再参与符号库）；构建时仍需能编译 C 源（lib.c、parser.c）
 
 【构建步骤（命令行示例）】
 1. 打开 Qt 提供的命令行环境（如：`Qt x.y.z (MSVC/MinGW) Command Prompt`）
@@ -310,7 +339,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
    - 若工作区分析通过 createBackgroundEditor 频繁创建 MyCodeEditor (QWidget)
      来读取文件，每个文件一个编辑器实例，内存与 CPU 初始化开销巨大。
    - 目标：废弃“临时编辑器”方式，改为 analyzeFileContent(const QString& content)
-     等接口，直接对 QString 调用 sym_list::setContentIncremental（内部由 SVTreeSitterParser::parseSymbols() 解析），
+     等接口，直接对 QString 提取符号（现由 SlangManager::extractSymbols 解析、setSymbolsForFile 写回），
      ​避免创建 MyCodeEditor 实例；多线程访问 sym_list 时需保证单例线程安全或后台独立
      临时表再合并。
 
@@ -329,11 +358,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 [x] 阶段 B — 解析器轻量化 (SymbolAnalyzer)（已完成）
   - 废弃 createBackgroundEditor；新增 analyzeFileContent(fileName, content)，
-    直接对 QString 调用 sym_list::setContentIncremental。
-  - setContentIncremental 内部统一走 extractSymbolsAndContainsOnePass，即 SVTreeSitterParser::parseSymbols()；
-    非首次分析也改为全量重算，保证符号唯一来自 SVTreeSitterParser（当前该路径存在功能异常）。
-  - analyzeWorkspace / analyzeFile 改为 QFile+QTextStream 读内容后调用
-    setContentIncremental，不再创建 MyCodeEditor。
+    直接对 QString 做解析。
+  - 符号提取迁移至 Slang：analyzeFileContent / analyzeFile / analyzeOpenTabs 调用 SlangManager::extractSymbols，
+    工作区调用 extractWorkspaceSymbols，结果经 sym_list::setSymbolsForFile 写回（全量重算），
+    不再走 setContentIncremental / SVTreeSitterParser，不再创建 MyCodeEditor。
   - sym_list::getInstance() 使用静态 QMutex 保证多线程下单例创建安全；
     getAllSymbols() 使用 QReadLocker，持写锁时通过 s_holdingWriteLock 避免死锁。
 
@@ -354,9 +382,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 [x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
   - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
     （findScopeAt、resolveSymbol）；按文件维护作用域树，O(1) 层内查找与正确词法遮蔽。
-  - sym_list：在 extractSymbolsAndContainsOnePassImpl 中先调用 SVTreeSitterParser::parseSymbols() 得到符号列表，
-    再按符号顺序栈式构建作用域树；clearSymbolsForFile 时同步 clearFile 作用域树；
-    getScopeManager() 惰性创建并返回 ScopeManager。findNextStructuralMatch 已移除，结构符号由 SVTreeSitterParser 产出；typedef/enum 已产出，struct 尚未产出。
+  - sym_list：setSymbolsForFile 写入 Slang 符号后调用 rebuildScopeAndRelationshipsForFile，
+    按 startLine 排序后栈式构建作用域树；clearSymbolsForFile 时同步 clearFile 作用域树；
+    getScopeManager() 惰性创建并返回 ScopeManager。结构符号（module/task/function/typedef/enum/struct 成员变量）均由 Slang 产出。
   - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
     findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
   - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。状态栏 struct 计数调用 getModuleInternalSymbolsByType(..., useRelationshipFallback=false)，仅按行范围统计，不含关系引擎 fallback。
@@ -376,9 +404,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 已完成的清理：
   - SymbolAnalyzer：已删除 analyzeEditor、analyzeOpenTabs 内 getEditorAt 循环；
-    解析统一走 analyzeFileContent(fileName, content)，sym_list 仅使用 setContentIncremental。
-  - sym_list：已移除无调用者的 setCodeEditor / setCodeEditorIncremental，解析入口仅保留
-    setContentIncremental(fileName, content)。持写锁分析路径中，findSymbolIdByName / getSymbolById
+    解析统一走 analyzeFileContent(fileName, content)，符号经 SlangManager 提取后由 sym_list::setSymbolsForFile 写回。
+  - sym_list：已移除无调用者的 setCodeEditor / setCodeEditorIncremental；Slang 路径的写入入口为
+    setSymbolsForFile(fileName, list[, content])（setContentIncremental 保留为遗留）。持写锁分析路径中，findSymbolIdByName / getSymbolById
     在 s_holdingWriteLock 为 true 时不再加读锁，与 findSymbolsByFileName / getAllSymbols 一致，避免同一线程死锁。
   - CompletionManager：getModuleInternalVariables / getGlobalSymbolCompletions 等已统一
     使用 matchesAbbreviation；结果截断统一在 CompletionModel 出口（MaxCompletionItems），
@@ -404,9 +432,9 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 信号安全：SymbolRelationshipEngine::addRelationship 须保持 Qt::QueuedConnection，
     禁止在后台线程直接触发 UI 刷新。
   - 写锁保护：sym_list 的增量解析仍受 QMutex / QReadWriteLock 保护，防止多线程崩溃。
-  - 符号解析：仅使用 SVTreeSitterParser，setContentIncremental 通过 extractSymbolsAndContainsOnePass
-    调用 SVTreeSitterParser::parseSymbols()。SVSymbolParser 已从工程中移除。语法高亮由 SVLexer 驱动；hasSignificantChanges 等
-    改为简单字符串/词边界判断。
+  - 符号解析：仅使用 Slang（SlangManager::extractSymbols / extractWorkspaceSymbols），写回经 sym_list::setSymbolsForFile。
+    setContentIncremental / SVTreeSitterParser 符号路径为遗留代码（仅 Tree-sitter 验证按钮使用），SVSymbolParser 已移除。
+    语法高亮由 SVLexer 驱动；hasSignificantChanges 等改为简单字符串/词边界判断。
 
 若发现新的冗余，可参考本节原则处理并更新本段说明。
 
@@ -419,15 +447,31 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 从导航页打开文件：在导航面板中点击文件或符号进行跳转/打开时，若需加载大文件或触发符号/关系查询，会有可感知的延迟。
   - 符号分析进行中：打开标签分析、工作区分析或单文件分析执行时，若与 UI 刷新、导航树更新、状态栏更新等叠加，可能出现卡顿。当前分析已采用 QtConcurrent 等异步方式，但结果回主线程写回符号库/关系引擎、刷新导航与补全缓存时仍可能造成主线程短时繁忙。
 
-- **双轨解析**：符号解析仅使用 Tree-sitter（SVTreeSitterParser）；模块实例化关系使用 Slang（SlangManager）。
-  extractSymbolsAndContainsOnePassImpl 使用 SVTreeSitterParser::parseSymbols()；SVSymbolParser 已从工程中移除。
-  parameter/localparam/typedef/enum 已产出；struct 相关符号未产出，s/sp/ns/nsp 补全与跳转会缺失或异常。commentRegions 由 takeComments() 提供，当前返回空列表。
+- **符号解析（Slang 迁移中）**：符号解析已迁移至 Slang（SlangManager::extractSymbols / extractWorkspaceSymbols），
+  写回经 sym_list::setSymbolsForFile。该迁移为**未提交的进行中改动**，已编译通过并用无头测试
+  （test_sv/dump_symbols.cpp）验证符号字段，GUI 实测待做；遗留的 Tree-sitter 符号路径
+  （setContentIncremental / extractSymbolsAndContainsOnePass）保留但已不被调用。
+  已修复并验证（见 collectSymbols）：
+  - module/interface 改由 compilation.getDefinitions() 产出（修复 root.visit() 不产出 sym_module 的致命缺陷）；
+  - 端口去重（跳过 PortSymbol.internalSymbol）；跳过顶层自动实例；按定义去重实例体（多次例化不重复成员）；
+  - typedef enum/struct 于 typedef 站点产出值/成员/类型符号，moduleScope = 类型别名，满足补全/跳转契约。
+  以下为已知/待验证的缺口：
+  - **内联匿名 enum/struct**：无 typedef 的内联匿名类型（如 `enum {A,B} v;`、`struct {...} s;`）的
+    枚举值 / 成员当前不产出（仅 typedef 命名类型支持）。
+  - **function/task 局部符号**（已修复）：fillSymbolInfo 在计算 moduleScope 时优先向上查找最近的
+    SubroutineSymbol，将形参/返回值/局部变量的 moduleScope 设为所在 task/function 名（而非模块名），
+    从而不再泄漏进 `l `/`r `/`w ` 模块级补全（该路径按 moduleScope == 模块名过滤）；scope-tree 路径
+    不依赖 moduleScope，光标在子程序内仍可补全其局部符号。
+  - **变量 dataType**：reg/wire/logic 等变量的 dataType（如 logic[7:0]）当前未填充（无消费者）；enum/struct
+    变量已填 dataType = 类型别名，inst 填模块名，typedef 填 enum/struct 标记。
+  - **注释感知**：commentRegions 在 setSymbolsForFile 路径不再维护；注释高亮仍由 SVLexer 保证。
+  - **单文件 elaboration**：extractSymbols 对单文件做 elaboration，跨文件的类型/package 引用可能解析失败，
+    导致部分符号缺失（单文件 vs 全工程权衡）；工作区分析用 fromFiles 整体编译可缓解。
+  - **编译依赖**：新增引用 slang 头（CompilationUnitSymbols / MemberSymbols / VariableSymbols / PortSymbols /
+    ParameterSymbols / SubroutineSymbols / AllTypes 等），需确认在当前 slang 版本下可编译链接。
 
-- **Tree-sitter（SVTreeSitterParser）**：主路径已使用 parseSymbols() 写入符号库；工具栏「Tree-sitter 验证」
-  按钮仍通过 parse(content) + getSymbols() 做验证输出。module 名称已从 module_ansi_header / module_nonansi_header
-  正确提取；若后续发现其他声明类型在部分 grammar 结构下名称为空，可参考 nameFromDeclarationNode 的 fallback 逻辑扩展。
-  **「类型名 变量名;」被解析为 wire**：因 grammar 歧义，`TYPE_NAME id;` 会优先匹配 net_declaration（PREC_DYNAMIC 0），
-  故如 `test_e test;` 的变量会显示为 wire。建议在符号层根据 nettype_identifier 是否为本文件已解析的 typedef/enum 类型做语义补救，按变量产出。
+- **Tree-sitter（SVTreeSitterParser）**：仅保留给工具栏「Tree-sitter 验证」按钮（parse(content) + getSymbols()），
+  不再参与符号库写入；原「`TYPE_NAME id;` 被解析为 wire」的 grammar 歧义已因改用 Slang 语义判定而消失。
 
 - **Module 识别 (Module Recognition)**：当前 module 识别仍存在已知问题与局限。有效模块
   的判定已统一为“必须有 module + 配对 endmodule + 合法模块名”（见上文“有效模块判定”），
@@ -441,16 +485,17 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   module 识别的鲁棒性。
 
 - **状态栏「当前模块」**：使用符号库中 module 的 startLine/endLine 与 sym_list::getCachedFileContent
-  的缓存内容做“光标是否在模块内”判定（CompletionManager::findModuleAtPosition），不再仅依赖磁盘读取与 findEndModulePosition 正则。当前符号由 SVTreeSitterParser 产出。若仍显示「无模块」，
+  的缓存内容做“光标是否在模块内”判定（CompletionManager::findModuleAtPosition），不再仅依赖磁盘读取与 findEndModulePosition 正则。当前符号由 Slang（SlangManager）产出。若仍显示「无模块」，
   ​可能原因包括：（1）缓存内容与编辑器当前内容不一致，cursorPosition 在“缓存 + position 转行号”
   时产生偏差；（2）需改为传入编辑器当前缓冲区内容做 position-to-line，使行号与光标所在文档一致。
   建议后续：getCurrentModule 或 findModuleAtPosition 支持可选“当前文档内容”参数，优先用其做
   position 转 cursorLine，无再回退到缓存/磁盘。
 
-- **作用域树 (Scope Tree)**：getCompletions(prefix, cursorFile, cursorLine) 基于 findScopeAt
-  的按作用域补全与词法遮蔽已实现框架；struct 相关命令（s/sp/ns/nsp）的严格作用域（模块外
-  不补全、模块内聚合 internal+include+import、全局仅 moduleScope 为空）已修复。若发现其他
-  按作用域补全或跳转行为异常，可优先排查作用域解析与 getCurrentModule 边界。
+- **作用域树 (Scope Tree)**：现由 setSymbolsForFile → rebuildScopeAndRelationshipsForFile 基于 Slang 符号的
+  startLine/endLine 重建。getCompletions(prefix, cursorFile, cursorLine) 基于 findScopeAt 的按作用域补全与
+  词法遮蔽已实现框架；struct 相关命令（s/sp/ns/nsp）的严格作用域（模块外不补全、模块内聚合
+  internal+include+import、全局仅 moduleScope 为空）已修复。注意作用域闭合依赖 Slang 给出的 endLine，
+  若 endLine 缺失或不准会影响出栈与遮蔽；若发现按作用域补全或跳转异常，可优先排查 endLine 与 getCurrentModule 边界。
 
 - **作用域背景 (Scope Background)**：左侧条带与编辑器内 module/logic 的背景由符号分析驱动。
   已采用“持久光标缓存”：编辑时 highlighCurrentLine 仅使用缓存的 m_scopeSelections（Qt 会随
