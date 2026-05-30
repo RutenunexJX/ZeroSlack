@@ -16,7 +16,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 --------------------------------------------------------------------------
 当前状态 (Status)
 --------------------------------------------------------------------------
-- 版本：0.0.11/slang8（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 版本：0.0.11/slang9（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
   右下角（构建时间见该标签 tooltip）。
 - 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
   extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
@@ -47,6 +47,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   emit 出定义的 1-based startLine，用第二个文件 helper_mod.sv）。补全/跳转的“逻辑层”可脱离 GUI 自动测试
   与回归；仅弹窗渲染/鼠标 Ctrl+Click 等纯 UI 交互需 GUI 实测。
 - GUI 版本号显示：version.h 定义 APP_VERSION；MainWindow 构造时写入窗口标题与状态栏常驻标签。
+- 导航大纲（符号视图）修复：(1) NavigationWidget::updateSymbolHierarchy 的 orderedTypes 之前只含
+  module/reg/wire/logic/task/function，导致 typedef/enum/struct/参数/端口/实例虽在缓存却不渲染；
+  已补全这些类型（含 display name 与 icon），NavigationManager::updateSymbolHierarchyData 的类型列表同步。
+  (2) function/task 内部符号（形参 / 返回值变量，moduleScope=子程序名）会混进模块级「逻辑」分组；
+  updateSymbolHierarchyData 现按「moduleScope ∈ 子程序名集合」过滤掉它们（DB 仍保留，仅大纲不显示）。
 - 待验证/待补：注释感知（commentRegions）；单文件 elaboration 的跨文件解析；GUI 实测（弹窗交互）。
 
 

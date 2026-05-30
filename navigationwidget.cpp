@@ -424,14 +424,30 @@ void NavigationWidget::populateSymbolTree()
         return;
     }
 
-    // 按符号类型组织
+    // 按符号类型组织（顺序即大纲分组顺序）
     static const QList<sym_list::sym_type_e> orderedTypes = {
         sym_list::sym_module,
+        sym_list::sym_parameter,
+        sym_list::sym_localparam,
+        sym_list::sym_port_input,
+        sym_list::sym_port_output,
+        sym_list::sym_port_inout,
+        sym_list::sym_port_ref,
         sym_list::sym_reg,
         sym_list::sym_wire,
         sym_list::sym_logic,
+        sym_list::sym_typedef,
+        sym_list::sym_enum,
+        sym_list::sym_enum_var,
+        sym_list::sym_enum_value,
+        sym_list::sym_packed_struct,
+        sym_list::sym_unpacked_struct,
+        sym_list::sym_packed_struct_var,
+        sym_list::sym_unpacked_struct_var,
+        sym_list::sym_struct_member,
         sym_list::sym_task,
-        sym_list::sym_function
+        sym_list::sym_function,
+        sym_list::sym_inst
     };
 
     for (sym_list::sym_type_e symbolType : orderedTypes) {
@@ -534,6 +550,14 @@ QString NavigationWidget::getSymbolTypeDisplayName(sym_list::sym_type_e symbolTy
     case sym_list::sym_logic: return "逻辑";
     case sym_list::sym_task: return "任务";
     case sym_list::sym_function: return "函数";
+    case sym_list::sym_parameter: return "参数";
+    case sym_list::sym_localparam: return "本地参数";
+    case sym_list::sym_port_input: return "输入端口";
+    case sym_list::sym_port_output: return "输出端口";
+    case sym_list::sym_port_inout: return "双向端口";
+    case sym_list::sym_port_ref: return "ref 端口";
+    case sym_list::sym_enum: return "枚举类型";
+    case sym_list::sym_inst: return "实例";
     case sym_list::sym_packed_struct: return "Packed 结构体类型";
     case sym_list::sym_unpacked_struct: return "Unpacked 结构体类型";
     case sym_list::sym_packed_struct_var: return "Packed 结构体变量";
@@ -571,12 +595,23 @@ QIcon NavigationWidget::getSymbolIcon(sym_list::sym_type_e symbolType)
     case sym_list::sym_task:
     case sym_list::sym_function:
         return style()->standardIcon(QStyle::SP_MediaPlay);
+    case sym_list::sym_parameter:
+    case sym_list::sym_localparam:
+        return style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+    case sym_list::sym_port_input:
+    case sym_list::sym_port_output:
+    case sym_list::sym_port_inout:
+    case sym_list::sym_port_ref:
+        return style()->standardIcon(QStyle::SP_ArrowRight);
+    case sym_list::sym_inst:
+        return style()->standardIcon(QStyle::SP_DirIcon);
     case sym_list::sym_packed_struct:
     case sym_list::sym_unpacked_struct:
     case sym_list::sym_packed_struct_var:
     case sym_list::sym_unpacked_struct_var:
     case sym_list::sym_struct_member:
     case sym_list::sym_typedef:
+    case sym_list::sym_enum:
     case sym_list::sym_enum_var:
     case sym_list::sym_enum_value:
         return style()->standardIcon(QStyle::SP_FileIcon);

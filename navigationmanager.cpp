@@ -5,6 +5,7 @@
 #include "symbolanalyzer.h"
 #include "completionmanager.h"
 #include <utility>
+#include <QSet>
 
 NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
@@ -445,47 +446,63 @@ void NavigationManager::updateSymbolHierarchyData()
 
     sym_list* symbolList = sym_list::getInstance();
 
-    // 获取各种类型的符号
+    // 大纲展示的符号类型（顺序由 NavigationWidget 的 orderedTypes 决定）
     static const QList<sym_list::sym_type_e> symbolTypes = {
         sym_list::sym_module,
+        sym_list::sym_parameter,
+        sym_list::sym_localparam,
+        sym_list::sym_port_input,
+        sym_list::sym_port_output,
+        sym_list::sym_port_inout,
+        sym_list::sym_port_ref,
         sym_list::sym_reg,
         sym_list::sym_wire,
         sym_list::sym_logic,
-        sym_list::sym_task,
-        sym_list::sym_function,
+        sym_list::sym_typedef,
+        sym_list::sym_enum,
+        sym_list::sym_enum_var,
+        sym_list::sym_enum_value,
         sym_list::sym_packed_struct,
         sym_list::sym_unpacked_struct,
         sym_list::sym_packed_struct_var,
         sym_list::sym_unpacked_struct_var,
-        sym_list::sym_typedef,      // 枚举类型（typedef enum）等
-        sym_list::sym_enum_var,
-        sym_list::sym_enum_value
+        sym_list::sym_struct_member,
+        sym_list::sym_task,
+        sym_list::sym_function,
+        sym_list::sym_inst
     };
 
+    // 有当前文件则只取该文件符号，否则取全部
+    QList<sym_list::SymbolInfo> symbols = currentFileName.isEmpty()
+        ? symbolList->getAllSymbols()
+        : symbolList->findSymbolsByFileName(currentFileName);
+
+    // task/function 名构成「子程序作用域」：其内部符号（形参 / 返回值 / 局部变量）的 moduleScope
+    // 等于子程序名，应从大纲排除，避免函数内部变量混入模块级 逻辑/寄存器 等分组。
+    QSet<QString> subroutineScopes;
+    for (const sym_list::SymbolInfo& s : std::as_const(symbols)) {
+        if (s.symbolType == sym_list::sym_task || s.symbolType == sym_list::sym_function)
+            subroutineScopes.insert(s.symbolName);
+    }
+
+    QHash<sym_list::sym_type_e, QStringList> byType;
+    for (const sym_list::SymbolInfo& s : std::as_const(symbols)) {
+        const bool isSubroutine = (s.symbolType == sym_list::sym_task
+                                   || s.symbolType == sym_list::sym_function);
+        if (!isSubroutine && subroutineScopes.contains(s.moduleScope))
+            continue;  // 子程序内部符号，不进大纲
+        byType[s.symbolType].append(s.symbolName);
+    }
+
     for (sym_list::sym_type_e symbolType : symbolTypes) {
-        QStringList symbolNames;
+        QStringList symbolNames = byType.value(symbolType);
+        if (symbolNames.isEmpty()) continue;
 
-        // 如果有当前文件，只显示当前文件的符号
-        if (!currentFileName.isEmpty()) {
-            QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(currentFileName);
-            for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
-                if (symbol.symbolType == symbolType) {
-                    symbolNames.append(symbol.symbolName);
-                }
-            }
-        } else {
-            // 否则显示所有符号
-            symbolNames = symbolList->getSymbolNamesByType(symbolType);
-        }
-
-        // 应用搜索过滤器
-        if (!searchFilter.isEmpty()) {
+        if (!searchFilter.isEmpty())
             symbolNames = filterFiles(symbolNames, searchFilter);
-        }
 
-        if (!symbolNames.isEmpty()) {
+        if (!symbolNames.isEmpty())
             symbolsByTypeCache[symbolType] = symbolNames;
-        }
     }
 }
 
