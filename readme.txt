@@ -16,7 +16,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 --------------------------------------------------------------------------
 当前状态 (Status)
 --------------------------------------------------------------------------
-- 版本：0.0.11/slang7（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 版本：0.0.11/slang8（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
   右下角（构建时间见该标签 tooltip）。
 - 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
   extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
@@ -38,13 +38,16 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
      的 module 关键字、返回 -1，导致 getCurrentModuleScope 判为「无模块」（即已知问题「光标在模块内却显示无模块」）；
   b) canJumpToDefinition / jumpToDefinition：枚举值 / 结构体成员的 moduleScope 是「类型名」而非模块名，
      故这两类不按模块名作用域过滤（否则在模块内点击它们会被判不可跳转 / 跳不过去）；
-  c) 本地跳转落点 off-by-one：下移 startLine-1、右移 startColumn-1，精确落在定义行/名字处。
+  c) 本地跳转落点 off-by-one：下移 startLine-1、右移 startColumn-1，精确落在定义行/名字处；
+  d) 跨文件跳转/符号导航/tooltip 行号 off-by-one：三处 startLine+1（mycodeeditor.cpp 跨文件 emit 与
+     tooltip、mainwindow.cpp onSymbolNavigationRequested）在 1-based startLine 下都多跳一行；
+     navigateToFileAndLine(L) 本身正确（Down×(L-1) 落 1-based 第 L 行），故改为直接传 startLine。
 - 无头测试：test_sv/completion_test.cpp 驱动 CompletionManager 断言补全（含匿名 struct 成员、function 局部
-  不泄漏）；test_sv/jump_test.cpp 断言跳转（跨模块隔离、enum/struct 可跳、落点行号）。补全/跳转的“逻辑层”
-  可脱离 GUI 自动测试与回归；仅弹窗渲染/鼠标 Ctrl+Click 等纯 UI 交互需 GUI 实测。
+  不泄漏）；test_sv/jump_test.cpp 断言跳转 9 项（跨模块隔离、enum/struct 可跳、本地落点行号、**跨文件**
+  emit 出定义的 1-based startLine，用第二个文件 helper_mod.sv）。补全/跳转的“逻辑层”可脱离 GUI 自动测试
+  与回归；仅弹窗渲染/鼠标 Ctrl+Click 等纯 UI 交互需 GUI 实测。
 - GUI 版本号显示：version.h 定义 APP_VERSION；MainWindow 构造时写入窗口标题与状态栏常驻标签。
-- 待验证/待补：注释感知（commentRegions）；单文件 elaboration 的跨文件解析；跨文件跳转落点（navigateToFileAndLine
-  的 startLine+1 行基待核）；GUI 实测（弹窗交互）。
+- 待验证/待补：注释感知（commentRegions）；单文件 elaboration 的跨文件解析；GUI 实测（弹窗交互）。
 
 
 ==========================================================================

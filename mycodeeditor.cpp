@@ -1670,7 +1670,8 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
 
     // ---------- Step 3: 跨文件时通过信号由 MainWindow 打开文件并跳转 ----------
     if (foundGlobal) {
-        emit definitionJumpRequested(globalBest.symbolName, globalBest.fileName, globalBest.startLine + 1);
+        // startLine 为 1-based；navigateToFileAndLine 期望 1-based 行号，直接传，勿再 +1。
+        emit definitionJumpRequested(globalBest.symbolName, globalBest.fileName, globalBest.startLine);
     }
 }
 
@@ -1799,7 +1800,7 @@ void MyCodeEditor::showSymbolTooltip(const QString& symbolName, const QPoint& po
                              .arg(symbol.symbolName)
                              .arg(getSymbolTypeString(symbol.symbolType))
                              .arg(QFileInfo(symbol.fileName).fileName())
-                             .arg(symbol.startLine + 1);
+                             .arg(symbol.startLine);  // startLine 已是 1-based
             }
         }
     }

@@ -5,6 +5,8 @@
 #include <QTextStream>
 #include <QTextCursor>
 #include <QString>
+#include <QFileInfo>
+#include <QDir>
 #include <QPlainTextEdit>
 #include <QCompleter>
 #include <QTimer>
@@ -73,6 +75,42 @@ int main(int argc, char** argv) {
     ed.jumpToDefinition("counter", ed.textCursor().position());
     printf("-- jump(counter): landed block=%d, symbol.startLine=%d (1-based) --\n",
            ed.textCursor().blockNumber(), counter.startLine);
+    ++g_checks;
+    if (ed.textCursor().blockNumber() != counter.startLine - 1) ++g_fails;
+    printf("[%s] local jump(counter) lands on block startLine-1\n",
+           ed.textCursor().blockNumber() == counter.startLine - 1 ? "PASS" : "FAIL");
+
+    // --- cross-file jump: target defined in a second file; capture the emitted (file,line) ---
+    // Derive helper path from the main file's directory (robust to the run cwd).
+    QString helperPath = QFileInfo(path).dir().filePath(QStringLiteral("helper_mod.sv"));
+    QFile hf(helperPath);
+    if (!hf.exists())
+        printf("[WARN] helper file not found: %s\n", helperPath.toLocal8Bit().constData());
+    if (hf.open(QIODevice::ReadOnly | QFile::Text)) {
+        QString hc = QTextStream(&hf).readAll();
+        hf.close();
+        sym_list::getInstance()->setSymbolsForFile(helperPath, mgr.extractSymbols(helperPath, hc), hc);
+
+        int emittedLine = -1;
+        QString emittedFile;
+        QObject::connect(&ed, &MyCodeEditor::definitionJumpRequested,
+                         [&](const QString&, const QString& file, int line) {
+                             emittedFile = file; emittedLine = line;
+                         });
+
+        int helperStartLine = -1;
+        for (const auto& s : sym_list::getInstance()->findSymbolsByName("helper_mod"))
+            if (s.symbolType == sym_list::sym_module) helperStartLine = s.startLine;
+
+        placeCursor(ed, 29);  // outside any module in test_symbols.sv -> no scope filter
+        ed.jumpToDefinition("helper_mod", ed.textCursor().position());
+        printf("-- cross-file jump(helper_mod): emitted file=%s line=%d, startLine=%d --\n",
+               emittedFile.toLocal8Bit().constData(), emittedLine, helperStartLine);
+        ++g_checks;
+        bool ok = (emittedLine == helperStartLine) && emittedFile.endsWith("helper_mod.sv");
+        if (!ok) ++g_fails;
+        printf("[%s] cross-file emits 1-based startLine of definition\n", ok ? "PASS" : "FAIL");
+    }
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

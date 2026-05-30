@@ -436,7 +436,7 @@ void MainWindow::onNavigationRequested(const QString& filePath, int lineNumber)
 
 void MainWindow::onSymbolNavigationRequested(const sym_list::SymbolInfo& symbol)
 {
-    navigateToFileAndLine(symbol.fileName, symbol.startLine + 1); // +1 because lines are 0-based
+    navigateToFileAndLine(symbol.fileName, symbol.startLine); // startLine 为 1-based，navigateToFileAndLine 也按 1-based
 }
 
 void MainWindow::navigateToFileAndLine(const QString& filePath, int lineNumber)
