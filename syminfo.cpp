@@ -335,9 +335,10 @@ void sym_list::analyzeModuleContainment(const QString& fileName)
 
                 int symbolIndex = symbolIdToIndex[symbol.symbolId];
                 if (symbolIndex < symbolDatabase.size()) {
-                    if (symbol.symbolType != sym_packed_struct_var &&
-                        symbol.symbolType != sym_unpacked_struct_var &&
-                        symbol.symbolType != sym_struct_member) {
+                    // moduleScope 现由 Slang 精确提供（含 task/function 子程序作用域、struct/enum 类型名）。
+                    // 不再按行范围粗暴覆盖（isSymbolInModule 只看 startLine，会把函数内部符号误判进模块、
+                    // 把 moduleScope 从子程序名改成模块名）。仅当 moduleScope 为空时才回退到所在模块名。
+                    if (symbolDatabase[symbolIndex].moduleScope.isEmpty()) {
                         symbolDatabase[symbolIndex].moduleScope = module.symbolName;
                         symbolDatabase[symbolIndex].scopeLevel = 1;
                     }

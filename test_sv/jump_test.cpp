@@ -51,6 +51,19 @@ int main(int argc, char** argv) {
     SlangManager mgr;
     sym_list::getInstance()->setSymbolsForFile(path, mgr.extractSymbols(path, content), content);
 
+    // After the full GUI path (setSymbolsForFile -> rebuildScopeAndRelationships -> analyzeModuleContainment),
+    // function-local symbols must KEEP their subroutine moduleScope (not get clobbered to the module).
+    auto scopeOf = [](const QString& name, sym_list::sym_type_e t) -> QString {
+        for (const auto& s : sym_list::getInstance()->findSymbolsByName(name))
+            if (s.symbolType == t) return s.moduleScope;
+        return QStringLiteral("<none>");
+    };
+    QString xScope = scopeOf("x", sym_list::sym_logic);
+    printf("-- DB moduleScope after setSymbolsForFile: x=%s --\n", xScope.toLocal8Bit().constData());
+    ++g_checks; if (xScope != QStringLiteral("add_one")) ++g_fails;
+    printf("[%s] formal-arg x keeps moduleScope=add_one (not clobbered to top)\n",
+           xScope == QStringLiteral("add_one") ? "PASS" : "FAIL");
+
     MyCodeEditor ed;
     ed.setFileName(path);
     ed.setPlainText(content);

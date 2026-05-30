@@ -16,7 +16,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 --------------------------------------------------------------------------
 当前状态 (Status)
 --------------------------------------------------------------------------
-- 版本：0.0.11/slang9（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
+- 版本：0.0.11/slang10（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
   右下角（构建时间见该标签 tooltip）。
 - 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
   extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
@@ -52,6 +52,11 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   已补全这些类型（含 display name 与 icon），NavigationManager::updateSymbolHierarchyData 的类型列表同步。
   (2) function/task 内部符号（形参 / 返回值变量，moduleScope=子程序名）会混进模块级「逻辑」分组；
   updateSymbolHierarchyData 现按「moduleScope ∈ 子程序名集合」过滤掉它们（DB 仍保留，仅大纲不显示）。
+- **moduleScope 被行范围覆盖的根因修复（关键）**：analyzeModuleContainment（buildSymbolRelationships 调用）
+  之前用 isSymbolInModule（仅判 startLine > 模块起始行）把模块体内所有符号的 moduleScope 覆盖成模块名，
+  把 Slang 精确给出的子程序作用域（如 add_one）冲掉成 top。这导致 `l ` 指令（按 moduleScope==模块名过滤）
+  把函数形参 x、返回值变量 add_one 当成模块级 logic，且 (2) 的导航过滤也失效（因为 moduleScope 已被改成 top）。
+  修复：仅当 moduleScope 为空时才回退到所在模块名，否则保留 Slang 值。此后 `l ` 指令与导航过滤同时正确。
 - 待验证/待补：注释感知（commentRegions）；单文件 elaboration 的跨文件解析；GUI 实测（弹窗交互）。
 
 
