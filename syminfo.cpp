@@ -2,15 +2,12 @@
 #include "scope_tree.h"
 #include "completionmanager.h"
 #include "symbolrelationshipengine.h"
-#include "sv_treesitter_parser.h"
 
 #include <QDebug>
 #include <QRegularExpression>
 #include <QFile>
 #include <QFileInfo>
 #include <QReadLocker>
-#include <QThread>
-#include <QCoreApplication>
 #include <QWriteLocker>
 #include <QMutex>
 #include <QSet>
@@ -156,139 +153,6 @@ void sym_list::buildSymbolRelationships(const QString& fileName)
 
     analyzeModuleContainment(fileName);
     relationshipEngine->buildFileRelationships(fileName);
-}
-
-static const int kBackgroundOnePassWindow = 1024;
-
-void sym_list::extractSymbolsAndContainsOnePass(const QString& text)
-{
-    const bool isBackground = (QThread::currentThread() != QCoreApplication::instance()->thread());
-    int maxSearchWindow = isBackground ? kBackgroundOnePassWindow : 0;
-    extractSymbolsAndContainsOnePassImpl(text, maxSearchWindow);
-}
-
-void sym_list::extractSymbolsAndContainsOnePassImpl(const QString& text, int maxSearchWindow)
-{
-    Q_UNUSED(maxSearchWindow);
-    QList<int> moduleStack;
-    QList<QString> moduleNameStack;
-
-    ScopeManager* scopeMgr = getScopeManager();
-    scopeMgr->clearFile(currentFileName);
-    ScopeNode* fileRoot = new ScopeNode(ScopeType::Global, 0);
-    fileRoot->endLine = 0;
-    scopeMgr->setFileRoot(currentFileName, fileRoot);
-    QStack<ScopeNode*> scopeStack;
-    scopeStack.push(fileRoot);
-
-    QSet<QString> knownTypes;
-    for (const SymbolInfo &s : symbolDatabase) {
-        if (s.symbolType == sym_packed_struct || s.symbolType == sym_unpacked_struct
-            || s.symbolType == sym_typedef || s.symbolType == sym_enum) {
-            knownTypes.insert(s.symbolName);
-        }
-    }
-
-    SVTreeSitterParser tsParser(text, currentFileName);
-    QList<SymbolInfo> parsed = tsParser.parseSymbols();
-    commentRegions = tsParser.takeComments();
-
-    for (const SymbolInfo &sym : std::as_const(parsed)) {
-        while (scopeStack.size() > 1 && scopeStack.top()->endLine > 0 && sym.startLine > scopeStack.top()->endLine) {
-            ScopeNode* node = scopeStack.pop();
-            if (node->type == ScopeType::Module && !moduleStack.isEmpty()) {
-                moduleStack.removeLast();
-                moduleNameStack.removeLast();
-            }
-        }
-
-        if (sym.symbolType == sym_module) {
-            addSymbol(sym);
-            int moduleId = symbolDatabase.last().symbolId;
-            SymbolInfo added = symbolDatabase.last();
-            moduleStack.append(moduleId);
-            moduleNameStack.append(sym.symbolName);
-            ScopeNode* modNode = new ScopeNode(ScopeType::Module, sym.startLine);
-            modNode->endLine = sym.endLine;
-            modNode->parent = scopeStack.top();
-            scopeStack.top()->children.append(modNode);
-            modNode->symbols[sym.symbolName] = added;
-            scopeStack.push(modNode);
-            continue;
-        }
-
-        if (sym.symbolType == sym_task || sym.symbolType == sym_function) {
-            addSymbol(sym);
-            SymbolInfo added = symbolDatabase.last();
-            if (relationshipEngine && !moduleStack.isEmpty())
-                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
-            ScopeType st = (sym.symbolType == sym_task) ? ScopeType::Task : ScopeType::Function;
-            ScopeNode* subNode = new ScopeNode(st, sym.startLine);
-            subNode->endLine = sym.endLine;
-            subNode->parent = scopeStack.top();
-            scopeStack.top()->children.append(subNode);
-            subNode->symbols[sym.symbolName] = added;
-            scopeStack.push(subNode);
-            continue;
-        }
-
-        if (sym.symbolType == sym_port_input || sym.symbolType == sym_port_output
-            || sym.symbolType == sym_port_inout || sym.symbolType == sym_port_ref
-            || sym.symbolType == sym_port_interface || sym.symbolType == sym_port_interface_modport) {
-            addSymbol(sym);
-            SymbolInfo added = symbolDatabase.last();
-            if (relationshipEngine && !moduleStack.isEmpty())
-                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
-            if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[added.symbolName] = added;
-            continue;
-        }
-
-        if (sym.symbolType == sym_reg || sym.symbolType == sym_wire || sym.symbolType == sym_logic) {
-            addSymbol(sym);
-            SymbolInfo added = symbolDatabase.last();
-            if (relationshipEngine && !moduleStack.isEmpty())
-                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
-            if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[added.symbolName] = added;
-            continue;
-        }
-
-        if (sym.symbolType == sym_parameter || sym.symbolType == sym_localparam) {
-            addSymbol(sym);
-            SymbolInfo added = symbolDatabase.last();
-            if (relationshipEngine && !moduleStack.isEmpty())
-                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
-            if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[added.symbolName] = added;
-            continue;
-        }
-
-        if (sym.symbolType == sym_always || sym.symbolType == sym_always_ff || sym.symbolType == sym_always_comb
-            || sym.symbolType == sym_always_latch || sym.symbolType == sym_assign
-            || sym.symbolType == sym_inst || sym.symbolType == sym_inst_pin) {
-            addSymbol(sym);
-            SymbolInfo added = symbolDatabase.last();
-            if (relationshipEngine && !moduleStack.isEmpty())
-                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
-            if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[added.symbolName] = added;
-            continue;
-        }
-
-        if (sym.symbolType == sym_typedef || sym.symbolType == sym_enum
-            || sym.symbolType == sym_packed_struct || sym.symbolType == sym_unpacked_struct
-            || sym.symbolType == sym_enum_value || sym.symbolType == sym_enum_var
-            || sym.symbolType == sym_struct_member
-            || sym.symbolType == sym_packed_struct_var || sym.symbolType == sym_unpacked_struct_var) {
-            addSymbol(sym);
-            SymbolInfo added = symbolDatabase.last();
-            if (relationshipEngine && !moduleStack.isEmpty())
-                relationshipEngine->addRelationship(moduleStack.last(), added.symbolId, SymbolRelationshipEngine::CONTAINS);
-            if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[added.symbolName] = added;
-        }
-    }
 }
 
 QList<sym_list::SymbolInfo> sym_list::findSymbolsByType(sym_type_e symbolType)
@@ -755,45 +619,6 @@ bool sym_list::isPositionInMultiLineComment(int pos)
 QList<sym_list::CommentRegion> sym_list::getCommentRegions() const
 {
     return commentRegions;
-}
-
-void sym_list::setContentIncremental(const QString& fileName, const QString& content)
-{
-    QWriteLocker lock(&symbolDbLock);
-    s_holdingWriteLock = true;
-
-    currentFileName = fileName;
-
-    if (!needsAnalysis(currentFileName, content)) {
-        s_holdingWriteLock = false;
-        return;
-    }
-
-    FileState& state = fileStates[currentFileName];
-
-    bool hasNoSymbols = !fileNameIndex.contains(currentFileName) || fileNameIndex.value(currentFileName).isEmpty();
-    bool isFirstTime = !fileStates.contains(currentFileName) || state.needsFullAnalysis || hasNoSymbols;
-
-    if (isFirstTime) {
-        clearSymbolsForFile(currentFileName);
-        // 先缓存当前内容，供 extractSymbolsAndContainsOnePass 内 getCurrentModuleScope -> findEndModuleLine 使用，避免读到磁盘旧内容导致 moduleScope 为空、补全“l ”无 logic
-        previousFileContents[currentFileName] = content;
-        extractSymbolsAndContainsOnePass(content);
-        buildSymbolRelationships(currentFileName);
-        state.needsFullAnalysis = false;
-    } else {
-        clearSymbolsForFile(currentFileName);
-        previousFileContents[currentFileName] = content;
-        extractSymbolsAndContainsOnePass(content);
-        buildSymbolRelationships(currentFileName);
-    }
-
-    state.contentHash = calculateContentHash(content);
-    state.symbolRelevantHash = calculateSymbolRelevantHash(content);
-    state.lastAnalyzedLineCount = content.count('\n') + 1;
-    state.lastModified = QDateTime::currentDateTime();
-    previousFileContents[currentFileName] = content;
-    s_holdingWriteLock = false;
 }
 
 QString sym_list::calculateContentHash(const QString& content)

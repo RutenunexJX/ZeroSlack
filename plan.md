@@ -27,4 +27,4 @@ README 继续做“当前状态 + 架构交接”，本文件记录下一步执�
 
 - 不引入新的测试框架，沿用现有测试文件里的 `printf` + 返回码断言风格。
 - 不做 GUI 自动化；本轮只接入现有无头/近无头测试。
-- 不删除 `sv_treesitter_parser`、Tree-sitter 验证按钮或 `sym_list` 遗留 API，这些留到 P1。
+- P1 已清理 `sv_treesitter_parser`、Tree-sitter 验证按钮及对应 `sym_list` 遗留入口。

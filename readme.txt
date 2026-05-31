@@ -89,10 +89,6 @@ smartrelationshipbuilder.cpp / symbolrelationshipengine.cpp
 - 关系分析和关系存储。
 - module instantiation 由 Slang 提供较准确信息；其他关系仍有部分正则/启发式逻辑。
 
-sv_treesitter_parser.cpp / sv_treesitter_parser.h
-- 保留给工具栏“Tree-sitter 验证”按钮使用。
-- 不再作为正式符号库来源。
-
 
 ==========================================================================
 已完成的架构迁移
@@ -242,10 +238,10 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 - completion_test.cpp、jump_test.cpp、ts_doc_test.cpp 已正式接入 CMake/CTest。
 - 补全、跳转、Tree-sitter 文档/高亮/live scope 已有自动回归测试入口。
 
-优先级 P1
-- 清理 sv_treesitter_parser / Tree-sitter 验证按钮的遗留用途。
-- 如果不再需要对照调试，可删除旧 Tree-sitter 符号提取路径。
-- 梳理 sym_list 中仍未调用或仅历史遗留的 API。
+已完成 P1
+- 已删除 sv_treesitter_parser / Tree-sitter 验证按钮的遗留用途。
+- 已删除旧 Tree-sitter 符号提取路径和 sym_list 中对应的未调用入口。
+- Tree-sitter 仍保留为 TSDocument 实时语法、高亮和 live scope 来源。
 
 优先级 P1
 - 工作区分析继续细化为更明确的增量策略。

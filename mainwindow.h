@@ -77,7 +77,6 @@ private slots:
     void onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound);
     void onRelationshipAnalysisError(const QString& fileName, const QString& error);
 
-    void onDebug0();
 private:
     Ui::MainWindow *ui;
     QString currentFile;
@@ -125,8 +124,6 @@ private:
     void setupManagerConnections();
     void setupRelationshipEngine();
 
-    QPushButton* debugButton;
-    void setupDebugButton();
 };
 
 #endif // MAINWINDOW_H

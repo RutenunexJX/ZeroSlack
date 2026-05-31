@@ -170,15 +170,10 @@ public:
     bool isPositionInMultiLineComment(int pos);
     QList<CommentRegion> getCommentRegions() const;
 
-    /** 基于内容的增量分析，供后台线程使用，不依赖 QWidget */
-    void setContentIncremental(const QString& fileName, const QString& content);
     bool needsAnalysis(const QString& fileName, const QString& content);
 
     /** 供外部判断：当前内容是否影响符号，若否（仅注释/空格等）可不触发分析 */
     bool contentAffectsSymbols(const QString& fileName, const QString& content);
-
-    /** 单遍合并：在一次遍历中提取 module/reg/wire/logic/task/function 并同步建立 CONTAINS 关系 */
-    void extractSymbolsAndContainsOnePass(const QString& text);
 
     int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
     void refreshStructTypedefEnumForFile(const QString &fileName, const QString &content);
@@ -243,7 +238,6 @@ private:
 
     void clearStructTypedefEnumSymbolsForFile(const QString &fileName);
 
-    void extractSymbolsAndContainsOnePassImpl(const QString& text, int maxSearchWindow = 0);
 };
 
 bool isSymbolInModule(const sym_list::SymbolInfo& symbol, const sym_list::SymbolInfo& module);

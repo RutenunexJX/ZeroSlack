@@ -49,7 +49,6 @@ set(ZEROSLACK_CORE_SOURCES
     mainwindow.cpp
     completionmanager.cpp
     completionmodel.cpp
-    sv_treesitter_parser.cpp
     tsdocument.cpp
     modemanager.cpp
     mycodeeditor.cpp
@@ -71,7 +70,6 @@ set(ZEROSLACK_CORE_SOURCES
     scope_tree.h
     version.h
     completionmodel.h
-    sv_treesitter_parser.h
     tsdocument.h
     modemanager.h
     mycodeeditor.h
