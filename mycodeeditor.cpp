@@ -1,6 +1,5 @@
 #include "mycodeeditor.h"
 #include "myhighlighter.h"
-#include "perflog.h"
 #include "mainwindow.h"
 #include "completionmodel.h"
 #include "completionmanager.h"
@@ -67,20 +66,18 @@ MyCodeEditor::~MyCodeEditor()
 
 void MyCodeEditor::initConnection()
 {
-    connect(this,SIGNAL(cursorPositionChanged()),this,SLOT(highlighCurrentLine()));
-    connect(this,SIGNAL(textChanged()),this,SLOT(updateSaveState()));
     scopeRefreshTimer = new QTimer(this);
     scopeRefreshTimer->setSingleShot(true);
     connect(scopeRefreshTimer, &QTimer::timeout, this, &MyCodeEditor::highlighCurrentLine);
-    connect(this, &QPlainTextEdit::textChanged, this, [this]() {
-        scopeRefreshTimer->stop();
-        scopeRefreshTimer->start(0);
-    });
 
-    //blockCount：行数变化时立即更新 logic 等作用域背景，避免晚一帧
-    connect(this,SIGNAL(blockCountChanged(int)),this,SLOT(updateLineNumberWidgetWidth()));
-    connect(this,SIGNAL(blockCountChanged(int)),this,SLOT(highlighCurrentLine()));
-    connect(this,SIGNAL(updateRequest(QRect,int)),this,SLOT(updateLineNumberWidget(QRect,int)));
+    // Coalesce cursor/text changes into one selection refresh per event loop.
+    auto scheduleHighlightRefresh = [this]() { scopeRefreshTimer->start(0); };
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, scheduleHighlightRefresh);
+    connect(this, &QPlainTextEdit::textChanged, this, scheduleHighlightRefresh);
+
+    connect(this, &QPlainTextEdit::textChanged, this, &MyCodeEditor::updateSaveState);
+    connect(this, SIGNAL(blockCountChanged(int)), this, SLOT(updateLineNumberWidgetWidth()));
+    connect(this, SIGNAL(updateRequest(QRect,int)), this, SLOT(updateLineNumberWidget(QRect,int)));
 }
 
 void MyCodeEditor::initFont()
@@ -104,7 +101,6 @@ void MyCodeEditor::initHighlighter()
 
 void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
 {
-    PERF_SCOPE("ts_edit");
     // Incrementally update the tree-sitter model (m_tsdoc keeps the pre-edit text, so it can derive
     // the old end point itself). Runs before the highlighter's reformat (connected later).
     m_tsdoc.applyEditChars(position, position + charsRemoved, position + charsAdded,
@@ -118,18 +114,17 @@ int MyCodeEditor::getLineNumberWidgetWidth()
 
 void MyCodeEditor::highlighCurrentLine()
 {
-    PERF_SCOPE("highlighCurrentLine");
-    QList<QTextEdit::ExtraSelection> existing = extraSelections();
-    existing.erase(
-        std::remove_if(existing.begin(), existing.end(),
+    // Drop previous scope-background (997) and current-line (998) selections, then re-add only the
+    // current-line highlight. The scope-background shading was a debug visualization and has been
+    // removed (it forced expensive full-viewport repaints via large full-width ExtraSelections).
+    QList<QTextEdit::ExtraSelection> list = extraSelections();
+    list.erase(
+        std::remove_if(list.begin(), list.end(),
             [](const QTextEdit::ExtraSelection& s) {
                 int p = s.format.property(QTextFormat::UserProperty).toInt();
                 return p == 997 || p == 998;
             }),
-        existing.end());
-
-    QList<QTextEdit::ExtraSelection> list = existing;
-    list.append(m_scopeSelections);
+        list.end());
 
     QTextEdit::ExtraSelection currentLine;
     currentLine.format.setBackground(QColor(0,100,100,20));
@@ -150,62 +145,8 @@ void MyCodeEditor::highlighCurrentLine()
     setExtraSelections(list);
 }
 
-void MyCodeEditor::updateScopeBackgrounds()
-{
-    PERF_SCOPE("updateScopeBackgrounds");
-    m_scopeSelections.clear();
-    QString fileName = getFileName();
-    if (fileName.isEmpty()) return;
-    sym_list* sym = sym_list::getInstance();
-    if (!sym) return;
-
-    QList<sym_list::SymbolInfo> all = sym->findSymbolsByFileName(fileName);
-    QList<sym_list::SymbolInfo> modules, logics;
-    for (const auto& s : all) {
-        if (s.symbolType == sym_list::sym_module) modules.append(s);
-        else if (s.symbolType == sym_list::sym_logic) logics.append(s);
-    }
-
-    const int blockCnt = document()->blockCount();
-    const int maxLine = (blockCnt > 0) ? blockCnt - 1 : 0;
-    const int docLen = document()->characterCount();
-    const int docEnd = (docLen > 0) ? docLen - 1 : 0;
-    auto addRange = [this, docEnd, maxLine](int startLine, int endLine, const QColor& bg, bool fullWidth) {
-        int s = qBound(0, startLine, maxLine);
-        int e = qBound(0, endLine, maxLine);
-        if (e < s) return;
-        QTextBlock startBlock = document()->findBlockByNumber(s);
-        QTextBlock endBlock = document()->findBlockByNumber(e);
-        if (!startBlock.isValid() || !endBlock.isValid()) return;
-        int posStart = qBound(0, startBlock.position(), docEnd);
-        int posEnd = qBound(0, endBlock.position() + endBlock.length(), docEnd);
-        if (posEnd <= posStart) return;
-        QTextEdit::ExtraSelection sel;
-        sel.format.setBackground(bg);
-        if (fullWidth) sel.format.setProperty(QTextFormat::FullWidthSelection, true);
-        sel.format.setProperty(QTextFormat::UserProperty, 997);
-        QTextCursor c(document());
-        c.setPosition(posStart);
-        c.setPosition(posEnd, QTextCursor::KeepAnchor);
-        sel.cursor = c;
-        m_scopeSelections.append(sel);
-    };
-
-    for (const sym_list::SymbolInfo& mod : modules) {
-        if (!sym->isValidModuleName(mod.symbolName)) continue;
-        int endLine = sym->findEndModuleLine(fileName, mod);
-        if (endLine < 0) continue;
-        addRange(mod.startLine, endLine, QColor(0, 0, 0, 40), true);
-    }
-    for (const sym_list::SymbolInfo& logic : logics) {
-        int endLine = logic.endLine >= logic.startLine ? logic.endLine : logic.startLine;
-        addRange(logic.startLine, endLine, QColor(0, 80, 0, 45), true);
-    }
-}
-
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 {
-    updateScopeBackgrounds();
     highlighCurrentLine();
 }
 
@@ -419,15 +360,6 @@ void MyCodeEditor::onTextChanged()
     updateSaveState();
 
     MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-    int currentBlockCount = document()->blockCount();
-
-    // 行数变化时调度分析，使新增/删行后作用域背景能更新（保存时也会因 needsAnalysis 行数比较而重分析）
-    if (mainWindow && mainWindow->symbolAnalyzer && !getFileName().isEmpty() &&
-        lastKnownBlockCount >= 0 && currentBlockCount != lastKnownBlockCount) {
-        mainWindow->scheduleOpenFileAnalysis(getFileName(), 500);
-    }
-    lastKnownBlockCount = currentBlockCount;
-
     if (mainWindow && mainWindow->symbolAnalyzer &&
         (!mainWindow->workspaceManager || !mainWindow->workspaceManager->isWorkspaceOpen())) {
 
@@ -448,17 +380,17 @@ void MyCodeEditor::onTextChanged()
             }
         }
 
-        if (hasSignificantKeyword) {
-            if (!getFileName().isEmpty())
-                mainWindow->scheduleOpenFileAnalysis(getFileName(), 1000);
-        } else {
-            if (!getFileName().isEmpty())
-                mainWindow->scheduleOpenFileAnalysis(getFileName(), 3000);
-        }
+        if (hasSignificantKeyword && !getFileName().isEmpty())
+            mainWindow->scheduleOpenFileAnalysis(getFileName(), 1000);
     }
 
     // 关系分析去抖：连续输入时重置定时器；定时器到时再触发单文件关系分析，requestSingleFileRelationshipAnalysis 内部会取消未完成任务
-    if (mainWindow && mainWindow->relationshipBuilder && !getFileName().isEmpty()) {
+    const bool skipRelationshipAnalysis = m_lastEditWasWhitespaceInsertion;
+    m_lastEditWasWhitespaceInsertion = false;
+
+    // Plain whitespace edits (spaces/tabs/newlines) cannot change symbol relationships, but the
+    // old path still queued a delayed full-document toPlainText() copy on large files.
+    if (!skipRelationshipAnalysis && mainWindow && mainWindow->relationshipBuilder && !getFileName().isEmpty()) {
         relationshipAnalysisDebounceTimer->stop();
         relationshipAnalysisDebounceTimer->start();
     }
@@ -591,6 +523,8 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
+    m_lastEditWasWhitespaceInsertion = false;
+
     if (event->key() == Qt::Key_Control && !ctrlPressed) {
         ctrlPressed = true;
 
@@ -752,6 +686,15 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
             return;
         }
     }
+
+    const Qt::KeyboardModifiers semanticNeutralModifiers =
+        Qt::ShiftModifier | Qt::KeypadModifier;
+    const Qt::KeyboardModifiers modifiers = event->modifiers() & ~semanticNeutralModifiers;
+    const QString insertedText = event->text();
+    m_lastEditWasWhitespaceInsertion =
+        modifiers == Qt::NoModifier &&
+        !insertedText.isEmpty() &&
+        insertedText.trimmed().isEmpty();
 
     QPlainTextEdit::keyPressEvent(event);
 }

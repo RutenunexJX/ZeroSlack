@@ -3,7 +3,6 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "completionmanager.h"
-#include "perflog.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
 #include <QTextStream>
@@ -201,7 +200,6 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
     auto* watcher = new QFutureWatcher<QList<sym_list::SymbolInfo>>(this);
     connect(watcher, &QFutureWatcher<QList<sym_list::SymbolInfo>>::finished, this,
             [this, fileName, content, watcher]() {
-                PERF_SCOPE("sym_writeback");
                 QList<sym_list::SymbolInfo> list = watcher->result();
                 watcher->deleteLater();
                 // Write-back (DB + scope tree + caches) on the main thread.
@@ -247,21 +245,30 @@ bool SymbolAnalyzer::hasSignificantChanges(const QString& oldContent, const QStr
         QLatin1String("task"), QLatin1String("endtask"), QLatin1String("function"), QLatin1String("endfunction")
     };
 
-    QStringList oldLines = oldContent.split(QLatin1Char('\n'));
-    QStringList newLines = newContent.split(QLatin1Char('\n'));
-    int maxLines = qMax(oldLines.size(), newLines.size());
-
-    for (int i = 0; i < maxLines; ++i) {
-        QString oldLine = (i < oldLines.size()) ? oldLines[i].trimmed() : QString();
-        QString newLine = (i < newLines.size()) ? newLines[i].trimmed() : QString();
-        if (oldLine != newLine) {
+    // 收集「含结构关键字的行」的集合（去序、忽略空白）。
+    auto significantLines = [&](const QString& content) {
+        QStringList out;
+        const QStringList lines = content.split(QLatin1Char('\n'));
+        for (const QString& raw : lines) {
+            const QString line = raw.trimmed();
+            if (line.isEmpty())
+                continue;
             for (const QString& keyword : significantKeywords) {
-                if (lineContainsKeywordAsWord(oldLine, keyword) || lineContainsKeywordAsWord(newLine, keyword))
-                    return true;
+                if (lineContainsKeywordAsWord(line, keyword)) {
+                    out.append(line);
+                    break;
+                }
             }
         }
-    }
-    return false;
+        out.sort();
+        return out;
+    };
+
+    // 仅当「结构行集合」变化时才算显著变更。
+    // 修复：原实现按行号逐行比较，插入/删除一个换行会使后续所有行错位，而这些行多含 reg/wire/logic
+    // 等关键字，于是几乎任何编辑（哪怕只敲回车）都被误判为显著、触发关系分析。改为比较去序的结构行集合后，
+    // 插入空行 / 行号平移不再触发分析；只有真正增删/修改结构声明才触发。
+    return significantLines(oldContent) != significantLines(newContent);
 }
 
 bool SymbolAnalyzer::isSystemVerilogFile(const QString& fileName) const

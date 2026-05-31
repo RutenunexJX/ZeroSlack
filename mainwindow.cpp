@@ -14,7 +14,6 @@
 #include "syminfo.h"
 #include "sv_treesitter_parser.h"
 #include "version.h"
-#include "perflog.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QLabel>
 #include <QStatusBar>
@@ -639,7 +638,6 @@ void MainWindow::onRelationshipsCleared()
 
 void MainWindow::onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound)
 {
-    PERF_SCOPE("rel_completed_refreshRelationshipData");
     CompletionManager::getInstance()->refreshRelationshipData();
     if (statusBar()) {
         statusBar()->showMessage(
@@ -673,7 +671,6 @@ void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, 
     lastRelationshipAnalysisContent.insert(fileName, content);
     // 避免快速连续 setFuture 导致崩溃：先等待当前任务结束再提交新任务（fileSaved + fileChanged + 去抖定时器可能同时触发）
     if (relationshipSingleFileWatcher->isRunning()) {
-        PERF_SCOPE("rel_waitForFinished_BLOCK");
         QFuture<QVector<RelationshipToAdd>> oldFuture = relationshipSingleFileWatcher->future();
         relationshipSingleFileWatcher->cancel();
         oldFuture.waitForFinished();
@@ -721,7 +718,6 @@ void MainWindow::cancelScheduledOpenFileAnalysis(const QString& fileName)
 
 void MainWindow::onSingleFileRelationshipFinished()
 {
-    PERF_SCOPE("rel_writeback");
     if (!relationshipSingleFileWatcher || !relationshipEngine || !relationshipBuilder)
         return;
     if (relationshipSingleFileWatcher->isCanceled()) {

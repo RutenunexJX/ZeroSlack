@@ -71,9 +71,6 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
-    /** 从数据库刷新并填充作用域背景缓存（仅分析完成时调用） */
-    void updateScopeBackgrounds();
-
 private:
     void initConnection();
     void initFont();
@@ -105,13 +102,10 @@ private:
     QTimer *relationshipAnalysisDebounceTimer;
     static const int RelationshipAnalysisDebounceMs = 2000;
 
-    // 内容变化后延迟刷新作用域背景，避免删除行后灰色消失
+    // Coalesce current-line selection refresh after cursor/text changes.
     QTimer *scopeRefreshTimer = nullptr;
 
-    int lastKnownBlockCount = -1;
-
-    /** 缓存的作用域背景选区（QTextCursor 随文档自动更新，仅在分析完成时由 updateScopeBackgrounds 刷新） */
-    QList<QTextEdit::ExtraSelection> m_scopeSelections;
+    bool m_lastEditWasWhitespaceInsertion = false;
 
     QString textUnderCursor() const;
 
