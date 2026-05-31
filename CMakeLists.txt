@@ -11,6 +11,8 @@ set(CMAKE_CXX_STANDARD 20)          # Slang 需要 C++20
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)            # Tree-sitter 使用 C99
 
+include(CTest)
+
 # =========================================================
 # 2. Slang 集成配置 (Build System Only)
 # =========================================================
@@ -42,9 +44,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 # =========================================================
 # 4. 源文件与资源
 # =========================================================
-set(PROJECT_SOURCES
+set(ZEROSLACK_CORE_SOURCES
     # --- C++ 源文件 ---
-    main.cpp
     mainwindow.cpp
     completionmanager.cpp
     completionmodel.cpp
@@ -99,10 +100,12 @@ set(PROJECT_SOURCES
 )
 
 # =========================================================
-# 5. 定义可执行目标
+# 5. 定义核心库与可执行目标
 # =========================================================
+add_library(zeroslack_core STATIC ${ZEROSLACK_CORE_SOURCES})
+
 # 对应 .pro 的 TARGET
-add_executable(demo ${PROJECT_SOURCES})
+add_executable(demo main.cpp)
 
 # 设置 Windows 应用程序属性 (防止出现黑色控制台窗口)
 if(WIN32)
@@ -113,20 +116,22 @@ endif()
 # 6. 包含路径与链接库
 # =========================================================
 # 对应 .pro 的 INCLUDEPATH
-target_include_directories(demo PRIVATE
+target_include_directories(zeroslack_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     thirdparty/tree_sitter/lib/include
     thirdparty/tree_sitter/lib/src
 )
 
 # 链接库：Qt6 + Slang
-target_link_libraries(demo PRIVATE
+target_link_libraries(zeroslack_core PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::Concurrent
     slang::slang
 )
+
+target_link_libraries(demo PRIVATE zeroslack_core)
 
 # =========================================================
 # 7. 编译器标志与宏定义
@@ -141,5 +146,48 @@ set_source_files_properties(
 
 # MinGW 特定定义 (对应 win32-g++: DEFINES += ...)
 if(MINGW)
-    target_compile_definitions(demo PRIVATE __USE_MINGW_ANSI_STDIO=1)
+    target_compile_definitions(zeroslack_core PUBLIC __USE_MINGW_ANSI_STDIO=1)
+endif()
+
+# =========================================================
+# 8. 回归测试
+# =========================================================
+if(BUILD_TESTING)
+    get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+    get_filename_component(ZEROSLACK_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(ZEROSLACK_TEST_PATH
+        "${QT_INSTALL_PREFIX}/bin;${ZEROSLACK_COMPILER_BIN_DIR};$ENV{PATH}"
+    )
+    string(REPLACE ";" "\\;" ZEROSLACK_TEST_PATH "${ZEROSLACK_TEST_PATH}")
+
+    add_executable(ts_doc_test test_sv/ts_doc_test.cpp)
+    target_link_libraries(ts_doc_test PRIVATE zeroslack_core)
+
+    add_executable(completion_test test_sv/completion_test.cpp)
+    target_link_libraries(completion_test PRIVATE zeroslack_core)
+
+    add_executable(jump_test test_sv/jump_test.cpp)
+    target_link_libraries(jump_test PRIVATE zeroslack_core)
+
+    add_test(NAME ts_doc_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:ts_doc_test>
+    )
+    add_test(NAME completion_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:completion_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
+    )
+    add_test(NAME jump_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:jump_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
+    )
 endif()

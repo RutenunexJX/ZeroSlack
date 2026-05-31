@@ -211,18 +211,19 @@ slang16 性能修复记录
 测试和验证
 ==========================================================================
 
-当前 CTest 未注册测试用例：
+当前已接入 CTest 回归测试：
 
     ctest --output-on-failure
 
-会返回 No tests were found。
+应发现并运行 3 个测试。
 
-仓库中存在一些历史/手动测试入口：
+已注册的无头/近无头测试：
 - test_sv/ts_doc_test.cpp：Tree-sitter 文档与高亮相关验证。
 - test_sv/completion_test.cpp：补全逻辑验证。
 - test_sv/jump_test.cpp：跳转逻辑验证。
 
-这些测试不是当前 CTest 自动化的一部分。如需长期维护，应把它们整理进 CMake/CTest。
+这些测试通过 CMakeLists.txt 注册为 ts_doc_test、completion_test、jump_test。
+completion_test 和 jump_test 由 CTest 注入 Qt offscreen 运行环境。
 
 GUI 相关能力仍需人工或 GUI 自动化验证：
 - Ctrl+Click。
@@ -235,9 +236,11 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 后续建议
 ==========================================================================
 
-优先级 P0
-- 把 completion_test.cpp、jump_test.cpp、ts_doc_test.cpp 正式接入 CMake/CTest。
-- 为补全和跳转建立稳定自动回归测试，避免每次改 Slang/Tree-sitter 路径都靠人工试。
+详细执行计划见 plan.md；README 只保留当前状态和交接信息。
+
+已完成 P0
+- completion_test.cpp、jump_test.cpp、ts_doc_test.cpp 已正式接入 CMake/CTest。
+- 补全、跳转、Tree-sitter 文档/高亮/live scope 已有自动回归测试入口。
 
 优先级 P1
 - 清理 sv_treesitter_parser / Tree-sitter 验证按钮的遗留用途。
