@@ -77,9 +77,28 @@ Feature/UI Layer
 - `getRelationships(scope)`
 - `getDiagnostics(file)`
 
-完成后，补全、跳转、导航、关系查询应逐步改为读 `SemanticIndex` facade。
+实现路线分两条，不要混成同一件事，否则会被存量规模拖死：
 
-### 阶段 2：AnalysisScheduler
+- **新代码合规（硬约束，facade 落地即生效）**：从 facade 可用起，所有新增功能只走 facade，禁止再直接读写 `sym_list`。这是一道门，不是迁移工作量，可以立即达成。
+- **存量迁移（持续进行，可长期并行）**：现有补全、跳转、导航、关系查询对 `sym_list` 的直接引用分散在 completion / editor / navigation 等多个文件，量很大。按文件逐步迁移，不要求在本阶段内一次清空；facade 与 `sym_list` 在迁移期并存是预期状态，不视为阶段未完成。
+
+阶段“完成”的判定以新代码合规为准；存量迁移作为跨阶段的持续任务，贯穿后续阶段推进。
+
+### 阶段 2：DocumentModel
+
+目的：把“打开文档的状态”从 `MyCodeEditor` 里抽出来，成为独立、可被调度层订阅的一层。
+
+现状是 `MyCodeEditor` 直接持有 `TSDocument` 并自己管理文档状态，导致分析触发逻辑也被迫挂在编辑器上。最小版本包含：
+
+- 每个打开文档的文本版本号。
+- dirty / saved 状态。
+- 该文档的 `TSDocument`（live tree）持有权。
+- 光标位置、当前 enclosing module 等轻量信息。
+- 对外发布文档事件（opened / edited / saved），供 `AnalysisScheduler` 订阅。
+
+完成后，`MyCodeEditor` 只负责编辑器 UI 与交互，文档状态和事件由 `DocumentModel` 统一持有。
+
+### 阶段 3：AnalysisScheduler
 
 目的：收束分析触发路径。
 
@@ -102,7 +121,12 @@ Feature/UI Layer
 
 `MainWindow` 和 `MyCodeEditor` 不再继续承担分析调度中心职责。
 
-### 阶段 3：ProjectModel
+实现注意：
+
+- 本阶段依赖阶段 2 的 `DocumentModel` 提供统一文档事件，否则 scheduler 只能在 `MainWindow` / `MyCodeEditor` 上转发信号，退化成壳子。
+- scheduler 抽取与阶段 1 的存量 `sym_list` 读取迁移会相互牵动，不必强求严格串行：可以先让 scheduler 接管“何时触发、是否取消、是否 debounce”的决策，数据读取迁移继续并行推进。
+
+### 阶段 4：ProjectModel
 
 目的：让 ZeroSlack 真正理解 SV 工程输入，而不是只扫描文件。
 
@@ -118,7 +142,7 @@ Feature/UI Layer
 
 后续 SlangManager / AnalysisScheduler 使用 `ProjectModel` 提供的工程输入，而不是各自临时拼文件列表。
 
-### 阶段 4：Query Services
+### 阶段 5：Query Services
 
 目的：让产品功能复用统一查询能力。
 
@@ -134,7 +158,7 @@ Feature/UI Layer
 
 现有 Ctrl+Click、导航跳转、补全、关系浏览应迁移到这些服务。后续 UI 功能只调用服务，不复制符号过滤和跳转逻辑。
 
-### 阶段 5：SemanticIndex Snapshot
+### 阶段 6：SemanticIndex Snapshot
 
 目的：稳定线程边界和 UI 读取一致性。
 
@@ -184,6 +208,7 @@ UI 只读 snapshot
 ```text
 多文件 fixture
 → SemanticIndex facade
+→ DocumentModel
 → AnalysisScheduler
 → ProjectModel
 → Query Services
@@ -194,7 +219,7 @@ UI 只读 snapshot
 
 底座完成时，应满足：
 
-- 后续新增功能主要接入 `ProjectModel / AnalysisScheduler / SemanticIndex / Query Services`。
+- 后续新增功能主要接入 `ProjectModel / DocumentModel / AnalysisScheduler / SemanticIndex / Query Services`。
 - `MainWindow` 只做窗口协调，不做分析策略中心。
 - `MyCodeEditor` 只做编辑器 UI 和即时 Tree-sitter 体验，不承担工程语义判断中心。
 - 现有补全、跳转、导航、关系分析、GUI smoke、大文件性能测试全部保持通过。
