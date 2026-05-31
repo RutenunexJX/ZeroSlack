@@ -81,6 +81,8 @@ private:
     void initAutoComplete();
     int getLineNumberWidgetWidth();
 
+    /** 当前模块名（光标处）——由 live tree-sitter 即时求出，替代防抖的 Slang getCurrentModule(Scope)。 */
+    QString currentModuleNameAt(int charPos) const;
     QString getWordUnderCursor();
     QStringList getCompletionSuggestions(const QString &prefix);
     bool isInCommentArea();

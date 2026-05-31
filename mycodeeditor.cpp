@@ -209,6 +209,13 @@ void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
     highlighCurrentLine();
 }
 
+QString MyCodeEditor::currentModuleNameAt(int charPos) const
+{
+    // Live, error-tolerant enclosing module from the tree-sitter tree (A3). The editor keeps
+    // m_tsdoc synced on every edit, so this is never stale (unlike the debounced Slang path).
+    return m_tsdoc.enclosingModuleName(charPos < 0 ? 0 : charPos);
+}
+
 qreal MyCodeEditor::getBlockTopY(int blockNumber) const
 {
     QTextBlock block = document()->findBlockByNumber(blockNumber);
@@ -486,7 +493,7 @@ void MyCodeEditor::onTextChanged()
             QString varName, memberPrefix;
             CompletionManager* mgr = CompletionManager::getInstance();
             if (mgr->tryParseStructMemberContext(lineBeforeSpace, varName, memberPrefix)) {
-                QString mod = mgr->getCurrentModule(getFileName(), cursor.position() - 1);
+                QString mod = currentModuleNameAt(cursor.position() - 1);
                 if (!mgr->getStructTypeForVariable(varName, mod).isEmpty()) {
                     shouldContinueAutoComplete = true;
                 }
@@ -520,7 +527,7 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
     int cursorPosition = cursor.position();
     QString fileName = getFileName();
 
-    QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
+    QString currentModule = currentModuleNameAt(cursorPosition);
 
     if (!currentModule.isEmpty()) {
         // 在模块内：只返回模块内部变量
@@ -833,7 +840,7 @@ void MyCodeEditor::onAutoCompleteTimer()
         CompletionManager* manager = CompletionManager::getInstance();
         int cursorPosition = cursor.position();
         QString fileName = getFileName();
-        QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
+        QString currentModule = currentModuleNameAt(cursorPosition);
 
         // 对于struct相关的命令，直接获取SymbolInfo列表以保留类型信息
         QList<sym_list::SymbolInfo> filteredSymbols;
@@ -903,7 +910,7 @@ void MyCodeEditor::onAutoCompleteTimer()
     QString varName, memberPrefix;
     CompletionManager* manager = CompletionManager::getInstance();
     if (manager->tryParseStructMemberContext(lineForParse, varName, memberPrefix)) {
-        QString currentModule = manager->getCurrentModule(getFileName(), cursor.position());
+        QString currentModule = currentModuleNameAt(cursor.position());
         QString structTypeName = manager->getStructTypeForVariable(varName, currentModule);
         if (!structTypeName.isEmpty()) {
             QStringList memberNames = manager->getStructMemberCompletions(memberPrefix, structTypeName);
@@ -975,7 +982,7 @@ QStringList MyCodeEditor::getCommandModeInternalVariables(const QString &prefix)
     int cursorPosition = cursor.position();
     QString fileName = getFileName();
 
-    QString currentModule = manager->getCurrentModule(fileName, cursorPosition);
+    QString currentModule = currentModuleNameAt(cursorPosition);
 
     if (!currentModule.isEmpty()) {
         return manager->getModuleInternalVariablesByType(currentModule, currentCommandType, prefix);
@@ -1588,8 +1595,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
     }
 
     const QString currentFile = getFileName();
-    const int lineForScope = (cursorPosition >= 0) ? document()->findBlock(cursorPosition).blockNumber() : textCursor().blockNumber();
-    QString currentModuleName = symbolList->getCurrentModuleScope(currentFile, lineForScope);
+    QString currentModuleName = currentModuleNameAt(cursorPosition >= 0 ? cursorPosition : textCursor().position());
 
     QString structTypeNameForMember;
     QString lineUpToCursor;
@@ -1601,7 +1607,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
         CompletionManager* manager = CompletionManager::getInstance();
         bool try1 = manager->tryParseStructMemberContext(lineUpToCursor, varName, memberPrefix);
         if (try1 && !varName.isEmpty()) {
-            QString mod = manager->getCurrentModule(currentFile, cursorPosition);
+            QString mod = currentModuleNameAt(cursorPosition);
             structTypeNameForMember = manager->getStructTypeForVariable(varName, mod);
         }
     }
@@ -1857,8 +1863,7 @@ bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
     }
 
     QString currentFile = getFileName();
-    int cursorLine = textCursor().blockNumber();
-    QString currentModuleName = symbolList->getCurrentModuleScope(currentFile, cursorLine);
+    QString currentModuleName = currentModuleNameAt(textCursor().position());
 
     QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
     if (symbols.isEmpty()) {
