@@ -1,580 +1,279 @@
 ==========================================================================
-项目简介 (Project Overview)
+ZeroSlack README / Development Handoff
 ==========================================================================
 
-ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器，基于 Qt 开发。
-它在普通文本编辑器的基础上，重点增强了以下能力：
+ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器，基于 Qt 6 + CMake
+开发。当前重点不是做完整 IDE，而是提供工程浏览、符号理解、补全、跳转和语法高亮等
+“静态 IDE”能力。
 
-- SystemVerilog 语法高亮与多标签编辑
-- 模块/变量/任务/函数等符号的实时解析与索引
-- 自定义命令驱动的智能补全系统
-- 工作区级别的批量符号分析与关系分析
-- Ctrl+单击 跳转到定义、导航面板浏览符号
-
-适合用作：浏览/理解中大型 SystemVerilog 工程、快速跳转与补全、做一些“静态 IDE”级别的体验。
-
---------------------------------------------------------------------------
-当前状态 (Status)
---------------------------------------------------------------------------
-- 版本：0.0.11/slang15（分支 tree_sitter_and_slang）。版本号见 version.h，运行时显示在窗口标题与状态栏
-- A3（实时 scope）：编辑器「当前模块」判定改用 live tree-sitter（MyCodeEditor::currentModuleNameAt →
-  TSDocument::enclosingModuleName），替换防抖/正则的 CompletionManager::getCurrentModule 与
-  sym_list::getCurrentModuleScope。补全门控（l/r/w/s/sp/ne…）与 Ctrl+Click 跳转的作用域判定即时且容错，
-  不再因 Slang 滞后而出现「光标在模块内却判为无模块」。补全候选/跳转目标仍来自 Slang 符号库（语义层）。
-  无头验证 jump_test.cpp 10/10：canJumpToDefinition 经 live scope 仍正确（跨模块隔离、enum/struct、跨文件）。
-- 性能：单文件编辑分析改为后台线程（symbolAnalyzer->analyzeFileContentAsync）。此前 scheduleOpenFileAnalysis
-  到时在主线程跑整文件 Slang parse+elaborate（非增量），大文件会冻结 UI ~数十~上百 ms，表现为「打字后
-  移动光标卡顿」。现 Slang 重解析在 QtConcurrent 后台执行，结果在主线程写回 sym_list。
-  （注：cursorPositionChanged→highlighCurrentLine 每次光标移动重铺全部作用域背景 ExtraSelection，
-  属另一处潜在开销，待按需优化。）
-  右下角（构建时间见该标签 tooltip）。
-- 架构：**Slang 语义层 + Tree-sitter 实时层**（Route A）。符号/类型/跨文件/跳转目标/补全候选由 Slang
-  （SlangManager::extractSymbols → sym_list::setSymbolsForFile）提供；语法高亮与「当前模块」作用域判定
-  由 live tree-sitter（TSDocument）即时提供。SVLexer 已移除；旧的 Tree-sitter 符号路径
-  （SVTreeSitterParser/setContentIncremental）仅剩「Tree-sitter 验证」按钮使用（待后续清理）。
-- 已补并经无头测试验证（test_sv/dump_symbols.cpp 直接调用 SlangManager::extractSymbols 打印符号）：
-  1) typedef struct/enum 于 typedef 站点产出 struct 类型符号（sym_packed_struct/sym_unpacked_struct）、
-     struct 成员与枚举值（moduleScope = 类型别名）、enum/struct 变量 dataType = 类型别名；
-  2) **module/interface 符号**改由 compilation.getDefinitions() 产出（此前 root.visit() 只遍历实例树，
-     完全不产出 sym_module，导致模块作用域/补全全断）；
-  3) **端口去重**：跳过端口背后的 net/var（PortSymbol.internalSymbol），端口不再既算 port 又算 logic/wire；
-  4) 跳过顶层自动实例、按定义去重实例体（模块被多次例化时成员不重复）；
-  5) function/task 形参与返回值/局部变量 moduleScope 改为所在子程序名（如 add_one），不再以模块名
-     泄漏进 l/r/w 补全；scope-tree 路径不受影响，光标在子程序内仍可补全其局部符号；
-  6) 内联匿名 enum/struct（无 typedef）在变量站点产出枚举值/成员，moduleScope = 变量名、dataType = 变量名，
-     满足 ee / var.member 补全契约（emitEnumValues / emitStructMembers 复用于 typedef 站点与匿名变量站点）。
-- 跳转修复（无头测试 test_sv/jump_test.cpp，offscreen 构造 MyCodeEditor，7 项全过）：
-  a) findEndModuleLine 的 off-by-one：startLine 为 1-based，扫描需从 startLine-1 起，否则计不到本模块
-     的 module 关键字、返回 -1，导致 getCurrentModuleScope 判为「无模块」（即已知问题「光标在模块内却显示无模块」）；
-  b) canJumpToDefinition / jumpToDefinition：枚举值 / 结构体成员的 moduleScope 是「类型名」而非模块名，
-     故这两类不按模块名作用域过滤（否则在模块内点击它们会被判不可跳转 / 跳不过去）；
-  c) 本地跳转落点 off-by-one：下移 startLine-1、右移 startColumn-1，精确落在定义行/名字处；
-  d) 跨文件跳转/符号导航/tooltip 行号 off-by-one：三处 startLine+1（mycodeeditor.cpp 跨文件 emit 与
-     tooltip、mainwindow.cpp onSymbolNavigationRequested）在 1-based startLine 下都多跳一行；
-     navigateToFileAndLine(L) 本身正确（Down×(L-1) 落 1-based 第 L 行），故改为直接传 startLine。
-- 无头测试：test_sv/completion_test.cpp 驱动 CompletionManager 断言补全（含匿名 struct 成员、function 局部
-  不泄漏）；test_sv/jump_test.cpp 断言跳转 9 项（跨模块隔离、enum/struct 可跳、本地落点行号、**跨文件**
-  emit 出定义的 1-based startLine，用第二个文件 helper_mod.sv）。补全/跳转的“逻辑层”可脱离 GUI 自动测试
-  与回归；仅弹窗渲染/鼠标 Ctrl+Click 等纯 UI 交互需 GUI 实测。
-- GUI 版本号显示：version.h 定义 APP_VERSION；MainWindow 构造时写入窗口标题与状态栏常驻标签。
-- 导航大纲（符号视图）修复：(1) NavigationWidget::updateSymbolHierarchy 的 orderedTypes 之前只含
-  module/reg/wire/logic/task/function，导致 typedef/enum/struct/参数/端口/实例虽在缓存却不渲染；
-  已补全这些类型（含 display name 与 icon），NavigationManager::updateSymbolHierarchyData 的类型列表同步。
-  (2) function/task 内部符号（形参 / 返回值变量，moduleScope=子程序名）会混进模块级「逻辑」分组；
-  updateSymbolHierarchyData 现按「moduleScope ∈ 子程序名集合」过滤掉它们（DB 仍保留，仅大纲不显示）。
-- **moduleScope 被行范围覆盖的根因修复（关键）**：analyzeModuleContainment（buildSymbolRelationships 调用）
-  之前用 isSymbolInModule（仅判 startLine > 模块起始行）把模块体内所有符号的 moduleScope 覆盖成模块名，
-  把 Slang 精确给出的子程序作用域（如 add_one）冲掉成 top。这导致 `l ` 指令（按 moduleScope==模块名过滤）
-  把函数形参 x、返回值变量 add_one 当成模块级 logic，且 (2) 的导航过滤也失效（因为 moduleScope 已被改成 top）。
-  修复：仅当 moduleScope 为空时才回退到所在模块名，否则保留 Slang 值。此后 `l ` 指令与导航过滤同时正确。
-- 待验证/待补：注释感知（commentRegions）；单文件 elaboration 的跨文件解析；GUI 实测（弹窗交互）。
-
-- **目标架构（Route A：Tree-sitter 实时层 + Slang 语义层）**：
-  - 分工：Tree-sitter = 实时语法层（每次按键、容错），负责语法高亮、实时大纲/折叠、"光标当前在哪个 scope"；
-    Slang = 语义层（防抖/保存时跑），负责符号类型、名字/类型解析、跨文件跳转、类型感知补全、实例化、诊断。
-    符号库 sym_list 仍由 Slang 提供语义；Tree-sitter 另维护一份轻量「实时 scope」驱动即时 UI。最终移除 SVLexer。
-  - 路线：A1 增量文档模型（TSDocument）→ A2 Tree-sitter 高亮（替换 SVLexer）→ A3 实时 scope/大纲 → A4 收敛与清理。
-  - 进度：**A1、A2 已完成**。
-    - A1：tsdocument.h/cpp 提供每文档持久 TSTree + 增量重解析（ts_tree_edit + 增量 parse）；UTF-16 解析
-      （ts_parser_parse_string_encoding + UTF16LE），字节偏移 = 字符索引*2，含中文也精确。
-    - A2：高亮改由 Tree-sitter 驱动，移除 SVLexer。
-      · classifyTokenType：one_line_comment/block_comment→Comment、string_literal→String、
-        *_keyword 及匿名「词」token（logic/reg/begin…）→Keyword、匿名「符号」token→Operator、*number*→Number。
-      · highlightSpans 按块取最小覆盖节点 DFS、命中类别整节点出 span、裁剪到块、转块内字符坐标。
-      · MyHighlighter 持一份 TSDocument；highlightBlock 按 document()->revision() 防抖整树重解析一次，
-        再逐块取 span 上色；blockEndCommentState 用 block state 传播多行块注释 /* */ 的重高亮。
-      · 无头验证 test_sv/ts_doc_test.cpp 8/8：关键字/注释（含中文）/数字/运算符分类正确、UTF-16 偏移精确、半句容错。
-      · A2c（slang13）重构集成模型：编辑器 MyCodeEditor 持有 TSDocument，在 document() 的 contentsChange
-        里**增量** applyEditChars（连接顺序早于高亮器，故先更新树、高亮器后读取）；MyHighlighter 改为只持
-        const TSDocument* 读取 span，不再在 highlightBlock 内重解析。修复了 slang12「初始/滚动不上色、
-        只有编辑过的行才上色」的缺陷，并以增量编辑替代每键全解析以改善大文件流畅度。
-        TSDocument::applyEditChars 从字符位置推导字节/行列点（用对象内的旧文本求旧端点）。
-        无头验证新增：incremental applyEditChars 与全量 setText 的高亮 span 完全一致（9/9）。
-    - A3：编辑器「当前模块」判定改用 live tree-sitter（currentModuleNameAt → enclosingModuleName），
-      替换防抖/正则的 getCurrentModule(Scope)；补全门控与跳转作用域即时且容错（jump_test 10/10）。
-    - A4：已删除 sv_lexer.cpp/.h、sv_token.h（SVLexer 彻底移除）；readme 同步为最终架构。
-      （demo.pro 为已废弃的 qmake 工程，不含 slang，构建以 CMakeLists.txt 为准。）
-    - 待办（非阻塞）：性能优化（updateScopeBackgrounds / refreshRelationshipData 等分析完成回调的主线程开销，
-      已用 perflog.h 插桩待定位）；清理旧 Tree-sitter 符号路径（setContentIncremental 等遗留死代码）。
+当前版本：0.0.11/slang16
+当前分支：tree_sitter_and_slang
+版本显示：运行时显示在窗口标题和状态栏右下角，定义在 version.h。
 
 
 ==========================================================================
-核心功能 (Core Features)
+当前架构
 ==========================================================================
 
-【编辑器基础】
-- 多标签页文本编辑 (`TabManager`)
-  - 新建 / 打开 / 保存 / 另存为
-  - 未保存文件关闭时会弹出确认
-- SystemVerilog 语法高亮 (`MyHighlighter`，由 Tree-sitter 驱动 —— A2 起，SVLexer 已移除)
-  - 基于 live tree-sitter 树（TSDocument）：`highlightBlock` 调用 `TSDocument::highlightSpans(blockStart, len)`
-    取该块的高亮 span 并 `setFormat`；分类见 `classifyTokenType`（关键字/注释/字符串/数字/运算符）。
-  - 容错：半句代码也能高亮（tree-sitter 错误恢复）；非 ASCII（中文注释）偏移精确（UTF-16 解析，byte/2=字符索引）。
-  - 多行块注释 `/* */`：`blockEndCommentState` 返回块尾是否仍在 block_comment 内，作为 QSyntaxHighlighter
-    block state 传播，使后续块正确续高亮。
-  - 关键字识别来自 grammar token 类型（`*_keyword` 及匿名「词」token 如 logic/reg/begin），不再用 keywords.txt。
-- 行号栏 (`LineNumberWidget`)
-  - 显示行号
-  - 点击行号可将光标跳转到对应行
-- 基本编辑操作
-  - Copy / Cut / Paste / Undo / Redo
+ZeroSlack 现在采用 Route A 架构：
 
+    Tree-sitter 实时语法层 + Slang 语义层
 
-【三种工作模式 (`ModeManager`)】
-- Normal Mode（普通模式）
-  - 标准文本编辑
-  - 智能补全始终可用
-- Command Mode（命令模式）
-  - 通过特定前缀进入，针对不同符号类型给出补全
-  - 示例前缀（在行首输入）：
-    - `r `：reg 变量
-    - `w `：wire 变量
-    - `l `：logic 变量
-    - `m `：module
-    - `t `：task
-    - `f `：function
-    - 以及扩展的：`i ` (interface), `p ` (parameter) 等；
-    - enum 相关：`e `（枚举变量）, `ee `（枚举值）, `ne `（枚举类型，含 typedef enum 与匿名）；模块内补全，ne 在模块外仅显示全局 typedef enum。
-    - struct 相关（严格作用域，仅在模块内补全）：`s ` (unpacked struct 变量), `sp ` (packed struct 变量), `ns ` (unpacked struct 类型), `nsp ` (packed struct 类型)
-- Alternate Mode（替代模式 / 命令行模式）
-  - 仅接受命令，不编辑正文
-  - 支持命令：`save` / `save_as` / `open` / `new` / `copy` / `paste` / `cut` /
-    `undo` / `redo` / `select_all` / `comment` 等
-  - 命令输入时会通过同一套补全弹窗展示和选择
+分工如下。
 
-【模式切换】
-- 通过对 Shift 键的双击检测在 Normal / Alternate 模式间切换
-- 不同模式下 Tab 外观颜色可区分状态
-- 按键事件统一由 `ModeManager` 处理，`MainWindow` 和 `MyCodeEditor` 都会转发按键
+Tree-sitter 负责实时、容错、低延迟的信息：
+- 语法高亮。
+- 注释 / 字符串 / 关键字 / 数字 / 操作符分类。
+- 每个编辑器文档内的增量语法树。
+- 光标当前位置所属 module scope 的即时判断。
+
+Slang 负责真实语义信息：
+- module/interface/package/function/task/typedef/enum/struct/logic/wire/reg/port/instance 等符号提取。
+- 类型、结构体成员、枚举值、实例化关系等语义信息。
+- 补全候选、跳转目标、符号导航窗格、scope tree 和关系分析的数据来源。
+- 工作区级符号分析。
+
+关键原则：
+- UI 即时反馈尽量走 Tree-sitter。
+- 需要“这到底是什么类型/定义/关系”的问题走 Slang。
+- sym_list 的符号数据以 Slang 为准。
+- 旧 SVLexer 已删除，不应恢复。
+- demo.pro 是废弃 qmake 工程，不维护；构建以 CMakeLists.txt 为准。
 
 
 ==========================================================================
-智能补全系统 (Advanced Autocompletion)
+核心文件
 ==========================================================================
 
-核心组件：`CompletionManager` + `CompletionModel` + `QCompleter`
+main.cpp
+- Qt 应用入口。
 
-- 支持缩写与模糊匹配
-  - 例如：`vti` 可以匹配 `var_temp_in_tempModule`
-- 评分规则
-  - 更偏向前缀匹配
-  - 更偏向单词边界 / 连续字符匹配
-- 上下文感知
-  - 根据当前模式（Normal / Command / Alternate）和符号类型调整候选列表
-  - 在 Command Mode 下，列表会分组显示不同类型符号
-- 视口自适应
-  - 弹出框大小会跟随内容动态调整
-  - 能根据窗口边界调整出现位置
+mainwindow.cpp / mainwindow.h
+- 主窗口、菜单、工具栏、状态栏、工作区入口。
+- 符号分析、关系分析、导航和版本号显示的协调层。
 
-在 `MyCodeEditor` 中：
-- 文本变化会启动一个 0ms 的定时器，集中触发补全逻辑
-- 会根据光标所在模块、在注释内与否等条件筛选候选
-- 命令模式下会对整行命令区域进行高亮（深色背景 + 白字）
+mycodeeditor.cpp / mycodeeditor.h
+- 代码编辑器控件。
+- 持有每个文档自己的 TSDocument。
+- 负责按键、补全触发、当前行高亮、Ctrl+Click 跳转等编辑器交互。
 
-【基于作用域树的补全】
-- CompletionManager::getCompletions(prefix, cursorFile, cursorLine)
-  - 通过 ScopeManager::findScopeAt(cursorFile, cursorLine) 得到光标所在作用域；
-  - 从该作用域起沿 parent 链向上，收集各层 symbols 中与 prefix 匹配的名称（内层已出现的不重复）；
-  - 自然实现“局部变量 → task/function 内符号 → 模块内符号 → 全局”的补全顺序与词法遮蔽。
-- cursorLine 与 SymbolInfo::startLine 一致，为 0-based 行号；若编辑器使用 1-based 需先减 1。
+tsdocument.cpp / tsdocument.h
+- 每文档 live tree-sitter 语法树。
+- 支持 UTF-16 文本、增量 edit、highlightSpans、enclosingModuleName。
 
-【Struct 相关命令的严格作用域（s / sp / ns / nsp）】
-- 命令：`s `（unpacked struct 变量）、`sp `（packed struct 变量）、`ns `（unpacked struct 类型）、`nsp `（packed struct 类型）。
-- 模块外（光标不在任何 module…endmodule 内）：
-  - 补全列表为空，不弹出补全弹窗，避免全局命名空间污染。
-- 模块内：
-  - 通过 CompletionManager::getModuleContextSymbolsByType 聚合三类符号：
-    1) 模块内部：严格在 [当前模块起始行, 下一模块起始行) 内的符号，防止多模块同文件时符号泄漏；
-    2) Include：模块体内 `` `include "filename" `` 所引用文件中的符号；
-    3) Import：模块体内 `import pkg::*;` / `import pkg::sym;` 所引用 package 中的符号。
-  - 合并后按类型与前缀过滤、去重、排序。
-- 全局符号（getGlobalSymbolsByType_Info）：
-  - struct 变量仅当 symbol.moduleScope 为空时才视为全局（真正在 package/$unit 等定义），避免模块内 struct 变量泄漏到全局补全。
-- **状态栏 struct 计数**：左下角“struct 变量 / struct 类型”仅按行范围统计（getModuleInternalSymbolsByType(..., useRelationshipFallback=false)），不使用关系引擎 fallback，避免键入 `s ` 再删除等操作后计数含入全局 struct 导致数字偏大。
+myhighlighter.cpp / myhighlighter.h
+- QSyntaxHighlighter 封装。
+- 从 TSDocument 读取当前 block 的语法 span 并 setFormat。
 
-【Enum 相关命令（e / ee / ne）】
-- 命令：`e `（枚举变量）、`ee `（枚举值）、`ne `（枚举类型）。
-- 枚举变量：含 `typedef enum { ... } name_t;` 后用类型名声明的变量（如 `name_t var;`），以及内联 `enum { A, B } var;` 声明的变量；补全列表括号内显示类型名或变量名（匿名枚举显示变量名，如 ON(power_switch)）。
-- 枚举值：补全列表括号内显示来源类型（typedef 类型名或匿名时的枚举变量名）。
-- 枚举类型：ne 补全来源为 sym_typedef（dataType=="enum"）与 sym_enum；模块内显示该模块内的 typedef enum 类型名，模块外显示全局 typedef enum。
+slangmanager.cpp / slangmanager.h
+- Slang 语义提取入口。
+- 负责从 Slang AST / symbol model 中产出 sym_list::SymbolInfo。
 
+symbolanalyzer.cpp / symbolanalyzer.h
+- SlangManager 的调度层。
+- 单文件分析走后台线程，结果回主线程写入 sym_list。
+- hasSignificantChanges 用于判断是否需要重跑语义/关系分析。
 
-==========================================================================
-符号分析系统 (Symbol Analysis System)
-==========================================================================
+syminfo.cpp / syminfo.h
+- 全局符号数据库 sym_list。
+- 保存符号、scope tree、关系分析所需的部分缓存。
 
-核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
+completionmanager.cpp / completionmanager.h
+- 补全逻辑。
+- 使用 Slang 符号库 + live Tree-sitter 当前 module 信息。
 
-- **解析架构（Slang 语义层 + Tree-sitter 实时层）**
-  - **符号数据（Slang，独家）**：大纲、补全、代码导航、作用域树与 CONTAINS 关系所依赖的符号数据**由** `SlangManager`（slangmanager.h/cpp）基于 `slang::ast::Compilation` 的 parse + elaboration **独家**提供。SymbolAnalyzer 对单文件调用 `SlangManager::extractSymbols(fileName, content)`，对整个工作区调用 `extractWorkspaceSymbols(filePaths)`（所有文件一起编译），得到 `QList<sym_list::SymbolInfo>` 后调用 `sym_list::setSymbolsForFile(fileName, list[, content])` 写入符号库，并在其中重建作用域树与 CONTAINS 关系。解析/elaboration 失败时返回空列表，不崩溃。
-  - **语法高亮 + 实时作用域（Tree-sitter）**：由每文档 live tree（TSDocument）驱动，每次编辑增量更新；
-    高亮（highlightSpans）与「当前模块」判定（enclosingModuleName）即时且容错。SVLexer 已移除。
-  - **Tree-sitter（SVTreeSitterParser）保留**：符号路径已不再使用 Tree-sitter；`SVTreeSitterParser` 仅保留给工具栏「Tree-sitter 验证」按钮（MainWindow::onDebug0 通过 parse(content) + getSymbols() 做验证输出，不写入符号库）。`sym_list::setContentIncremental` / `extractSymbolsAndContainsOnePass` 等旧的 Tree-sitter 符号入口现为**未调用的遗留代码**（保留以备回退/对照）。
-  - **模块实例化关系（INSTANTIATES）**：由 `SlangManager::extractModuleInstantiations` 通过 Slang AST 的 InstanceSymbol 遍历产出（实例名/模块定义名/行号 1-based，100% 准确），SmartRelationshipBuilder 负责写入关系。其余关系类型（变量赋值/引用、task/function 调用、always、clock/reset 等）仍使用 SmartRelationshipBuilder 内原有正则逻辑。
-- **Slang 符号提取明细（slangmanager.cpp::collectSymbolsFromRoot）**
-  - 单文件 `extractSymbols` 用 `SyntaxTree::fromText` + `CompilationFlags::IgnoreUnknownModules`，使未定义模块不致中断；工作区 `extractWorkspaceSymbols` 用 `SyntaxTree::fromFiles` 把所有文件一起编译，类型 / package 的跨文件引用可正确解析。
-  - 从 `RootSymbol` 用 `makeVisitor` 递归遍历，按 Slang 符号类型映射为 `SymbolInfo`：
-    - `DefinitionSymbol`：Module→sym_module、Interface→sym_interface、Program→sym_module；
-    - `InstanceSymbol`→sym_inst（dataType = 模块定义名）；
-    - `VariableSymbol`：按 canonical type 判定 → reg / logic（ScalarType / IntegralType）、enum 变量（sym_enum_var）、packed/unpacked struct 变量（sym_packed_struct_var / sym_unpacked_struct_var）；Field→sym_struct_member；FormalArgument 按类型；
-    - `NetSymbol`→sym_wire；`SubroutineSymbol`→sym_task / sym_function；
-    - `PortSymbol`→按方向 sym_port_input / output / inout / ref；
-    - `ParameterSymbol`→sym_parameter / sym_localparam（isLocalParam）；
-    - `TypeAliasType`→sym_typedef（dataType 标记 "enum" / "struct"）；`EnumType`→sym_enum；`EnumValueSymbol`→sym_enum_value；`PackageSymbol`→sym_package。
-  - 行号为 1-based（与 Qt/UI 一致，等同原 Tree-sitter 路径）。moduleScope 由 `getDeclaringDefinition()` 推出；包成员则取所在 package 名。
-  - **已解决**：struct 成员 / 变量、enum、typedef 已由 Slang 产出，s/sp/e/ee/ne 相关补全与跳转可用；原 Tree-sitter 路径「`TYPE_NAME id;` 被误判为 wire」的 grammar 歧义，因 Slang 做语义判定而不再存在。
-  - **typedef 站点产出（slangmanager.cpp）**：在 TypeAliasType visitor 中，对 typedef enum 额外遍历 EnumType::values() 产出 sym_enum_value（moduleScope = 别名，如 state_t）；对 typedef struct 额外产出 struct 类型符号（sym_packed_struct / sym_unpacked_struct）并遍历成员产出 sym_struct_member（moduleScope = 别名，如 test_s）。VariableSymbol visitor 对 enum/struct 变量写入 dataType = 声明类型别名。由此满足补全/跳转的数据契约：get{Struct,Enum}TypeForVariable 读 var.dataType、get{Struct,Enum}MemberCompletions 按 moduleScope == 类型名过滤。Field/EnumValue 的独立 handler 已移除（改在 typedef 站点产出，避免 moduleScope 取成模块名及重复）。
-  - **当前缺口**：**内联匿名** enum/struct（无 typedef，如 `enum {A,B} v;`）的枚举值 / 成员当前不产出（仅 typedef 命名类型支持）；普通变量（reg/wire/logic）的 dataType（如 logic[7:0]）当前未填充（无消费者，仅 typedef/inst/enum 变量/struct 变量填 dataType）；commentRegions 在 setSymbolsForFile 路径不再维护（注释高亮由 Tree-sitter（one_line_comment/block_comment）提供）。上述均为编译通过、尚待运行实测。
-- 支持解析的 SystemVerilog 符号包括但不限于：
-  - `module` / `endmodule`
-  - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
-    1) 存在 `module` 声明；
-    2) 存在与之配对的 `endmodule`（按深度匹配，支持嵌套 module）；
-    3) 模块名为合法 SV 标识符：非空且符合 `[a-zA-Z_][a-zA-Z0-9_]*`（sym_list::isValidModuleName）。
-    若缺少配对 endmodule 或模块名不合法，该段代码不会被判为“在模块内”。
-  - `reg` / `wire` / `logic` 变量
-  - `task` / `function`
-  - 模块端口（ANSI 风格）：`input` / `output` / `inout` / `ref`，由 Slang 的 PortSymbol 按方向产出（dataType 当前未填充）。
-  - parameter/localparam/typedef/enum、struct 成员与变量均已由 Slang 产出，s/sp/e/ee/ne 的补全 / 跳转可用（struct 类型名符号见上文「当前缺口」）。`interface`、实例化引脚（`.pin(sig)`）与 REFERENCES 关系由 SmartRelationshipBuilder 等负责；模块实例化（INSTANTIATES）由 SlangManager 基于 Slang AST 产出。
-- 具备注释感知能力
-  - 通过符号数据库中的注释范围表，避免解析注释中的符号
-- **Struct 与注释**
-  - typedef/enum 类型与变量、struct 成员与变量均已由 Slang 产出（sym_typedef、sym_enum、sym_enum_var、sym_enum_value、sym_struct_member、sym_packed_struct_var、sym_unpacked_struct_var）。注释感知（commentRegions）当前未在 Slang 路径维护；注释由 Tree-sitter 识别并高亮，高亮路径不受影响。
-  - **Packed / Unpacked 区分**：struct **变量**已通过 Slang 的 canonical type 区分 packed/unpacked（sym_packed_struct_var / sym_unpacked_struct_var）。struct **类型名**符号（sym_packed_struct / sym_unpacked_struct）尚未单独产出，目前以 sym_typedef(dataType="struct") 表示，ns/nsp 与类型名跳转依赖此形式，行为待验证。
+navigationmanager.cpp / navigationwidget.cpp
+- 导航窗格数据组织和 UI 展示。
 
-【作用域树 (Scope Tree) — scope_tree.h】
-符号管理采用分层作用域表，替代原先扁平的 QList + 字符串 moduleScope 匹配（O(N) 查找、无法正确表达嵌套与遮蔽）。
+smartrelationshipbuilder.cpp / symbolrelationshipengine.cpp
+- 关系分析和关系存储。
+- module instantiation 由 Slang 提供较准确信息；其他关系仍有部分正则/启发式逻辑。
 
-- 数据结构
-  - ScopeNode：作用域类型（Global / Module / Task / Function / Block）、行范围（startLine, endLine）、
-    parent/children 指针、本层符号 QHash<QString, SymbolInfo>（O(1) 查找）。
-  - ScopeManager：按文件维护根节点；由 sym_list 在解析时构建并持有（getScopeManager()）。
-- 解析方式（栈式）
-  - 由 `sym_list::setSymbolsForFile` 调用 `rebuildScopeAndRelationshipsForFile(fileName)`：先取该文件全部符号并按 startLine（module 优先）排序，再按行号顺序维护 QStack<ScopeNode*> 与 QStack<int>（模块 id）：
-    - 进入新符号前，若其 startLine 越过栈顶作用域 endLine 则出栈（闭合 module/task/function）；
-    - 遇到 module 创建 Module 作用域并 push、记录模块 id；遇到 task / function 创建对应作用域并 push；
-    - 遇到 reg / wire / logic / 端口 / parameter / typedef / enum / struct 成员变量等写入当前 scopeStack.top()->symbols，并对栈顶模块 addRelationship(..., CONTAINS)。
-  - 作用域起止由 Slang 给出的 SymbolInfo.startLine / endLine 驱动；最后调用 buildSymbolRelationships(fileName) 构建其余关系。
-- 接口
-  - findScopeAt(fileName, line)：返回该行所在的最深层作用域。
-  - resolveSymbol(name, startScope)：沿 parent 链向上查找符号，实现词法遮蔽（内层同名遮蔽外层）。
-  - 在 clearSymbolsForFile 时会同步清除该文件的作用域树。
-
-分析模式（SymbolAnalyzer 自持一个 SlangManager 实例 m_slangManager）：
-- 打开标签分析：`analyzeOpenTabs`
-  - 对当前打开的 SV 文件（`TabManager::getOpenSystemVerilogFiles()`），逐文件通过 `getPlainTextFromOpenFile` 取内容，调用 `m_slangManager->extractSymbols(fileName, content)` 后 `sym_list::setSymbolsForFile(fileName, list, content)`，不依赖编辑器对象。
-- 工作区分析：`analyzeWorkspace` / `startAnalyzeWorkspaceAsync`
-  - 通过 `WorkspaceManager` 拿到整个目录树中的 `.sv/.v/.vh/.svh/.vp/.svp` 文件
-  - 调用 `m_slangManager->extractWorkspaceSymbols(svFiles)` 把所有文件一起编译得到全部符号，再按 fileName 分组（groupSymbolsByFile），逐文件 `setSymbolsForFile`；`startAnalyzeWorkspaceAsync` 在 QtConcurrent::run 后台编译、`onWorkspaceAnalysisFinished` 回主线程写回。
-- 单文件分析：`analyzeFile`（读磁盘）/ `analyzeFileContent`（直接用内容）
-  - 供文件变化回调 (`fileChanged`) 与增量分析调用，均走 extractSymbols + setSymbolsForFile。
-
-增量分析：
-- `MainWindow::scheduleOpenFileAnalysis(fileName, delayMs)` 按 fileName 去抖，超时后从 TabManager 取内容调用 `analyzeFileContent`；`cancelScheduledOpenFileAnalysis(fileName)` 可取消已调度分析。
-  - 触发与延时：行数变化时 500ms；无工作区时根据**当前行**是否含显著关键字（`module`/`endmodule`/`reg`/`wire`/`logic`/`task`/`endtask`/`function`/`endfunction`）决定 1s 或 3s，避免每次按键都触发全量分析。
+sv_treesitter_parser.cpp / sv_treesitter_parser.h
+- 保留给工具栏“Tree-sitter 验证”按钮使用。
+- 不再作为正式符号库来源。
 
 
 ==========================================================================
-工作区与导航 (Workspace & Navigation)
+已完成的架构迁移
 ==========================================================================
 
-【Workspace (`WorkspaceManager`)】
-- 支持选择一个目录作为“工作区”
-- 递归扫描 SystemVerilog 文件
-- 监听文件变动并自动重新分析（符号 + 关系）
+A1: TSDocument 增量文档模型
+- 每个编辑器文档持有自己的 TSTree。
+- contentsChange 时调用 applyEditChars 做增量更新。
+- 使用 UTF-16 解析，中文注释等非 ASCII 偏移正确。
 
-【导航系统 (`NavigationManager` + `NavigationWidget`)】
-- 主窗口左侧有“导航 Dock 窗口”
-  - 可以通过某些快捷键或模式切换来显示/隐藏
-- 能根据当前文件/当前符号更新导航视图
-- 导航树按符号类型分组显示；struct 与 enum 在 UI 中可区分：Packed/Unpacked 结构体类型与变量、结构体成员；类型定义（typedef）、枚举变量、枚举值（getSymbolTypeDisplayName / getSymbolIcon，NavigationManager::symbolTypes 含 sym_typedef、sym_enum_var、sym_enum_value 等）。
-- 支持两种跳转方式：
-  - 符号导航：由 `NavigationManager::symbolNavigationRequested` 触发
-  - 文件+行号导航：`MainWindow::navigateToFileAndLine`
-- 行号栏点击：快速把光标跳转到某一行
+A2: Tree-sitter 高亮
+- 高亮由 Tree-sitter span 驱动。
+- 支持关键字、注释、字符串、数字、操作符等分类。
+- 旧 SVLexer 已删除。
 
-【定义跳转（Ctrl+Click）】
-- 在 `MyCodeEditor` 中：
-  - 按住 Ctrl 并将鼠标移动到标识符或 `` `include `` 路径上时：
-    - 光标变成手型（仅当当前作用域内存在该符号定义，或位于可跳转的 include/package 上时）
-    - 标识符或路径高亮为蓝色下划线
-    - 可选地弹出 Tooltip 展示定义位置等信息
-  - Ctrl+左键跳转优先级：
-    1) **Include**：若点击在 `` `include "filename" `` 的路径字符串上，通过 `tryJumpToIncludeAtPosition` / `openIncludeFile` 打开被包含文件。
-    2) **Package**：若点击在 `import pkg::*;` / `import pkg::sym;` 的 package 名上，跳转到该 package 定义（`getPackageNameFromImport` + `jumpToDefinition`）。
-    3) **符号定义**：否则按符号名跳转（`getWordAtPosition` + `jumpToDefinition`）。
-  - 符号跳转规则：
-    - **作用域限定**：光标在某个模块内时（sym_list::getCurrentModuleScope 非空），
-      只考虑**当前模块**的符号；不会跳到其他模块的同名端口或变量（例如两个模块都有 clk_main 时，只跳本模块的）。
-    - 若当前模块内**没有**该符号定义（其他模块有），则不视为可跳转、不跳转（canJumpToDefinition 与 jumpToDefinition 均按当前模块过滤）。
-    - 可跳转定义类型包含：module/interface/package/task/function、端口、reg/wire/logic/parameter/localparam，**struct 变量与成员**，以及 **enum 类型、枚举变量、枚举值**；这些均已由 Slang 产出，可跳转。struct **类型名**（sym_packed_struct / sym_unpacked_struct）当前以 sym_typedef 形式存在，类型名跳转行为待验证（见上文「当前缺口」）。
-    - 优先跳当前文件中的定义；端口类型优先级高于 reg/wire/logic。
-    - 再考虑其他文件中、且仍在当前模块作用域内的定义（若有）。
-  - **Struct 相关跳转**：
-    - **成员跳转**：在 `var.member` 表达式中 Ctrl+点击成员名（如 member0），根据变量名解析出 struct 类型，跳转到该 struct 内该成员的定义位置；结构体成员的 moduleScope 为结构体类型名，跳转时按类型过滤、不按模块名过滤。
-    - **变量跳转**：Ctrl+点击 struct 变量名，跳转到其声明（packed/unpacked struct 变量已纳入 isSymbolDefinition 与 definitionTypePriority）。
-    - **类型名跳转**：在声明语句（如 `test_s test_s_var;` 或 `test_sp test_sp_var;`）中 Ctrl+点击类型名，跳转到 `typedef struct [packed] { ... } type_name;` 中别名位置。Slang 当前以 sym_typedef(dataType="struct") 表示该类型名，尚未单独产出 sym_packed_struct / sym_unpacked_struct，该跳转行为待验证。definitionTypePriority 中 sym_packed_struct / sym_unpacked_struct 显式优先级 6，与 parameter/localparam 一致。
-  - **Enum 相关跳转**（与 struct 类似的 3 类）：
-    - **枚举值跳转**：Ctrl+点击枚举值名（如 STATE_IDLE、ON），跳转到该枚举值在 enum 体中的定义行（sym_enum_value 已纳入 isSymbolDefinition 与 definitionTypePriority）。
-    - **枚举类型跳转**：Ctrl+点击 typedef enum 类型名（如 fsm_state_t），跳转到 `typedef enum { ... } type_name;` 中类型名位置（sym_typedef 表示枚举类型）。
-    - **枚举变量跳转**：Ctrl+点击枚举变量名（如 fsm_state、power_switch），跳转到其声明行（sym_enum_var 已纳入 isSymbolDefinition 与 definitionTypePriority）。
-  - **跳转后鼠标跟随**：本地跳转（当前文件内）与跨文件跳转（navigateToFileAndLine）完成后均调用 `moveMouseToCursor()`，将鼠标指针移动到新光标位置。
-  - 跳转过程会复用 `NavigationManager` 的符号导航接口
+A3: live scope
+- 当前 module 判断改用 TSDocument::enclosingModuleName。
+- 补全和跳转不再依赖滞后的 Slang scope 判断。
+- 光标在 module 内时，能即时得到当前 module。
+
+A4: 架构收敛
+- Slang 作为符号与语义唯一来源。
+- Tree-sitter 作为实时 UI 语法层。
+- readme 与代码路径按该架构整理。
 
 
 ==========================================================================
-符号关系系统 (Symbol Relationship System)
+slang16 性能修复记录
 ==========================================================================
 
-核心组件：
-- `SymbolRelationshipEngine`
-- `SlangManager`（slangmanager.h/cpp）：基于 Slang 的语义分析。现负责**全部符号提取**（extractSymbols / extractWorkspaceSymbols，供 SymbolAnalyzer 使用），以及模块/接口/程序实例化（extractModuleInstantiations，供 SmartRelationshipBuilder 写入 INSTANTIATES 关系）。
-- `SmartRelationshipBuilder`
-- `RelationshipProgressDialog`
+用户复现问题：
+- 打开工作区 test_sv/new。
+- 在大 SystemVerilog 文件里连续输入换行。
+- 随后上下移动光标会卡顿。
 
-功能概览：
-- 在工作区分析完成后，进一步分析符号之间的关系，例如：
-  - **模块实例化关系（INSTANTIATES）**：由 `SlangManager::extractModuleInstantiations` 通过 Slang AST（Compilation + InstanceSymbol 遍历）产出，行号与实例/模块名 100% 准确；SmartRelationshipBuilder 仅负责将结果映射为 addRelationshipWithContext(..., INSTANTIATES)。
-  - 实例引脚到模块端口的 REFERENCES（`.pin(sig)` → 对应 module 的 port 定义，供跳转到定义）
-  - 变量赋值 / 驱动关系
-  - 任务 / 函数调用关系
-- 结果会回写到：
-  - `SymbolRelationshipEngine` 中（作为统一关系存储）
-  - `CompletionManager` 中（用于关系感知型补全）
+定位结论：
+- 纯换行/空格这类空白编辑本不改变语义，却会触发后续语义/关系分析路径。
+- 旧的行数变化触发逻辑会把“插入空行”误判成需要重分析。
+- 旧的作用域阴影背景是调试残留，会造成大范围 ExtraSelection 和不必要重绘。
 
-分析流程（简化）：
-1. 打开 Workspace（批量）
-   - 先触发符号批量分析 (`SymbolAnalyzer::analyzeWorkspace`)
-   - 然后由 `SmartRelationshipBuilder` 对所有 SV 文件进行逐个关系分析（`analyzeMultipleFiles`），内部对每个文件在模块实例化环节调用 SlangManager；结果经 `relationshipBatchWatcher` 回主线程 `beginUpdate`/`endUpdate` 写回引擎。
-2. 单文件关系分析（编辑/保存时）
-   - `MainWindow::requestSingleFileRelationshipAnalysis(fileName, content)`：仅当 `hasSignificantChanges` 通过时才触发；在后台 `QtConcurrent::run` 中调用 `SmartRelationshipBuilder::computeRelationships`，结果经 `relationshipSingleFileWatcher` 回主线程写回。
-   - 触发时机：符号分析超时后（`scheduleOpenFileAnalysis` 回调里）、保存后、文件监视到变更后；编辑器中 `onTextChanged` 启动 `relationshipAnalysisDebounceTimer`（约 2s），停止输入后到时再请求单文件关系分析，避免连续按键重复触发。
-3. `RelationshipProgressDialog`
-   - 显示两阶段进度：阶段 1 符号分析（`setSymbolAnalysisProgress`）、阶段 2 关系分析（`updateProgress`）
-   - 展示当前正在处理的文件、已完成数量、进度条等；支持“取消”分析，触发 `analysisCancelled`
-4. 分析结果
-   - `analysisCompleted(fileName, relationshipsFound)` 按文件汇报；所有文件处理后自动关闭进度对话框并在状态栏给出汇总
+已修复：
+- 纯空白输入不再启动关系分析 debounce。
+- 行数变化不再直接调度 Slang 单文件符号分析。
+- hasSignificantChanges 改为比较“结构关键字行集合”，插入/删除空行不再误判为显著结构变化。
+- 删除作用域阴影背景，仅保留当前行高亮。
+- 删除临时性能日志 perflog.h、notify 探针和 Perf 压测按钮。
 
-其它：
-- MainWindow 持有 `SlangManager` 实例，创建 SmartRelationshipBuilder 时传入；CompletionManager 通过 setSlangManager 获得同一实例，以便其内部的 SmartRelationshipBuilder 也使用 Slang 做实例化分析。
-- 所有新增/清空关系会通知 `CompletionManager` 刷新内部缓存
-- 导航面板可以基于最新的关系数据刷新视图
+保留能力：
+- 高亮仍由 Tree-sitter 实时更新。
+- 补全、跳转、导航、符号分析和关系分析没有被整体禁用。
+- 真正修改 module/function/task/logic/wire/reg 等结构性代码时，仍可触发必要分析。
 
 
 ==========================================================================
-构建与运行 (Build & Run)
+主要功能
 ==========================================================================
 
-【依赖】
-- Qt 5/6（建议在与你当前 `.pro` 文件兼容的版本上构建）
-- 支持 C++20 的编译器（Slang 要求 C++20；项目使用 `std::unique_ptr` 等）
-- Slang：thirdparty/slang 子项目，用于 SlangManager 的语义分析（**符号提取** + 模块实例化）；CMake 已配置 slang::slang 链接与 C++20
-- Tree-sitter：thirdparty/tree_sitter 与 thirdparty/tree_sitter_systemverilog，现仅供 SVTreeSitterParser 的「Tree-sitter 验证」按钮使用（不再参与符号库）；构建时仍需能编译 C 源（lib.c、parser.c）
+编辑器基础
+- 多标签文本编辑。
+- 新建、打开、保存、另存为。
+- 行号栏。
+- 当前行高亮。
+- SystemVerilog 语法高亮。
 
-【构建步骤（命令行示例）】
-1. 打开 Qt 提供的命令行环境（如：`Qt x.y.z (MSVC/MinGW) Command Prompt`）
-2. 进入工程目录：
-   - `cd /path/to/ZeroSlack`
-3. 生成 Makefile：
-   - `qmake demo.pro`
-4. 编译：
-   - `make` 或在 Windows 上使用 `nmake` / `jom`
-5. 运行生成的可执行文件：
-   - `./demo`（或对应平台下的 `.exe`）
+模式
+- Normal Mode：普通编辑。
+- Command Mode：通过前缀触发符号补全。
+- Alternate Mode：命令式操作，如 save/open/copy/paste/comment 等。
 
-【在 Qt Creator 中打开】
-1. 打开 Qt Creator
-2. 选择“打开项目”，选中 `demo.pro`
-3. 按向导配置 Kit 后，直接“构建并运行”
+补全
+- 支持模糊匹配和前缀匹配。
+- 支持 module/reg/wire/logic/task/function/interface/parameter 等符号。
+- 支持 enum/struct 相关命令。
+- 支持 struct member 和 enum value 补全。
+- 当前 module 由 Tree-sitter live scope 提供，候选符号来自 Slang。
 
+跳转
+- Ctrl+Click 跳转到定义。
+- 支持本文件和跨文件跳转。
+- module、typedef、enum、struct、function/task 等符号跳转由 Slang 符号库支撑。
 
-==========================================================================
-性能优化方案 (Performance Optimization Plan)
-==========================================================================
+导航窗格
+- 显示 module、interface、parameter、port、reg/wire/logic、task/function、typedef、enum、struct、instance 等符号分类。
+- function/task 内部形参和局部变量不混入 module 级逻辑分组。
 
-【核心问题诊断】（已由下方阶段 A～F 对应解决）
-
-当前系统曾存在以下主要性能瓶颈，已通过异步化、轻量化与缓存策略逐一处理：
-
-1. UI 线程阻塞
-   - SymbolAnalyzer::analyzeWorkspace 虽已做批处理，若仍在主线程通过
-     QApplication::processEvents() 运行，在处理大型工程时会导致界面响应延迟。
-   - 目标：将所有解析逻辑从 UI 线程剥离，用 QtConcurrent::run 等包装扫描与
-     分析循环，禁止在后台线程调用 processEvents() 或创建 QWidget。
-
-2. 重量级对象开销
-   - 若工作区分析通过 createBackgroundEditor 频繁创建 MyCodeEditor (QWidget)
-     来读取文件，每个文件一个编辑器实例，内存与 CPU 初始化开销巨大。
-   - 目标：废弃“临时编辑器”方式，改为 analyzeFileContent(const QString& content)
-     等接口，直接对 QString 提取符号（现由 SlangManager::extractSymbols 解析、setSymbolsForFile 写回），
-     ​避免创建 MyCodeEditor 实例；多线程访问 sym_list 时需保证单例线程安全或后台独立
-     临时表再合并。
-
-3. 高频同步 IO 与无效重算
-   - 文件保存或变更时触发的全量分析会带来频繁磁盘读取和冗余符号表/关系表构建。
-   - 目标：利用 hasSignificantChanges 等逻辑跳过“仅注释/空白”变更；在关系
-     引擎侧引入 beginUpdate()/endUpdate() 批量提交，在 endUpdate 前禁止
-     invalidateCache()，避免每添加一条关系就清空全局缓存导致的 O(N^2) 行为。
-
-【已完成阶段】
-
-[x] 阶段 A — 彻底的异步化重构 (MainWindow & SymbolAnalyzer)（已完成）
-  - 使用 QtConcurrent::run 包装整个工作区扫描与分析循环。
-  - 禁止在后台线程调用 QApplication::processEvents() 或创建任何 QWidget。
-  - 通过 batchProgress 等信号异步回传进度，仅在主线程更新 progressDialog。
-
-[x] 阶段 B — 解析器轻量化 (SymbolAnalyzer)（已完成）
-  - 废弃 createBackgroundEditor；新增 analyzeFileContent(fileName, content)，
-    直接对 QString 做解析。
-  - 符号提取迁移至 Slang：analyzeFileContent / analyzeFile / analyzeOpenTabs 调用 SlangManager::extractSymbols，
-    工作区调用 extractWorkspaceSymbols，结果经 sym_list::setSymbolsForFile 写回（全量重算），
-    不再走 setContentIncremental / SVTreeSitterParser，不再创建 MyCodeEditor。
-  - sym_list::getInstance() 使用静态 QMutex 保证多线程下单例创建安全；
-    getAllSymbols() 使用 QReadLocker，持写锁时通过 s_holdingWriteLock 避免死锁。
-
-[x] 阶段 C — 语义级去抖与增量策略 (SmartRelationshipBuilder / SymbolRelationshipEngine)（已完成）
-  - 利用已有 hasSignificantChanges：仅当结构/定义变更时才触发关系重构。
-  - 在 SymbolRelationshipEngine 中引入 beginUpdate() 与 endUpdate()，在
-    endUpdate 之前不调用 invalidateCache()，批量提交后按需失效缓存。
-
-[x] 阶段 D — 语法高亮性能与正确性 (MyHighlighter)（已完成；**后被 Route A / A2 取代**：高亮现由 live
-    tree-sitter（TSDocument::highlightSpans）驱动，SVLexer 已于 A4 删除。下述为历史记录。）
-  - **Lexer 化重构**：完全移除 MyHighlighter 内的 QRegularExpression，改用专用词法分析器 SVLexer
-    （sv_lexer.h/cpp、sv_token.h）。highlightBlock 仅调用 SVLexer::nextToken() 按 token 高亮，
-    避免正则回溯与多遍匹配带来的主线程卡顿。
-  - 关键字仍从 config/keywords.txt 静态加载（loadKeywordsOnce + QMutex），Lexer 输出 Identifier，
-    Highlighter 用关键字表判断后应用关键字格式；注释/字符串由 Lexer 直接识别为 Comment/String，
-    故注释内关键字不会误标。
-  - 关键字表已补全为常用 Verilog/SystemVerilog 与预处理器关键字（见 config/keywords.txt）。
-
-[x] 阶段 E — 作用域树 (Scope Tree) 符号管理（已完成）
-  - 新增 scope_tree.h：ScopeNode（Global/Module/Task/Function/Block）、ScopeManager
-    （findScopeAt、resolveSymbol）；按文件维护作用域树，O(1) 层内查找与正确词法遮蔽。
-  - sym_list：setSymbolsForFile 写入 Slang 符号后调用 rebuildScopeAndRelationshipsForFile，
-    按 startLine 排序后栈式构建作用域树；clearSymbolsForFile 时同步 clearFile 作用域树；
-    getScopeManager() 惰性创建并返回 ScopeManager。结构符号（module/task/function/typedef/enum/struct 成员变量）均由 Slang 产出。
-  - CompletionManager：新增 getCompletions(prefix, cursorFile, cursorLine)，基于
-    findScopeAt + 沿 parent 链收集符号，供“按光标所在作用域”的补全使用。
-  - **Struct 补全作用域**：struct 相关命令（s/sp/ns/nsp）已实现严格作用域——模块外不补全，模块内使用 getModuleContextSymbolsByType（模块内 + include + import），且 getModuleInternalSymbolsByType 按“下一模块起始行”严格边界，避免跨模块泄漏；getGlobalSymbolsByType_Info 中 struct 变量仅 moduleScope 为空时视为全局。状态栏 struct 计数调用 getModuleInternalSymbolsByType(..., useRelationshipFallback=false)，仅按行范围统计，不含关系引擎 fallback。
-
-[x] 阶段 F — 作用域背景持久光标缓存 (MyCodeEditor)（已完成）
-  - 问题：highlighCurrentLine 每次光标移动都查 sym_list，分析滞后导致背景“回弹”。
-  - 方案：用 QTextCursor 缓存作用域选区（m_scopeSelections），Qt 随文档自动更新光标位置；
-    仅在分析完成时从数据库刷新缓存（updateScopeBackgrounds）。
-  - 实现：删除 getScopeBackgroundSelections()；新增 updateScopeBackgrounds() 与成员
-    m_scopeSelections；refreshScopeAndCurrentLineHighlight() 先 updateScopeBackgrounds 再
-    highlighCurrentLine；highlighCurrentLine 仅过滤 997/998、追加缓存与当前行 998、setExtraSelections，
-    不再查库。编辑时背景随文本移动，分析完成后刷新至正确语义块。
-
-【冗余清理与架构对齐 (Redundancy Cleanup & Architecture Alignment)】— 已完成
-
-以下清理项已落实，代码库与“异步/数据驱动”架构对齐，当前无已知遗漏冗余。
-
-已完成的清理：
-  - SymbolAnalyzer：已删除 analyzeEditor、analyzeOpenTabs 内 getEditorAt 循环；
-    解析统一走 analyzeFileContent(fileName, content)，符号经 SlangManager 提取后由 sym_list::setSymbolsForFile 写回。
-  - sym_list：已移除无调用者的 setCodeEditor / setCodeEditorIncremental；Slang 路径的写入入口为
-    setSymbolsForFile(fileName, list[, content])（setContentIncremental 保留为遗留）。持写锁分析路径中，findSymbolIdByName / getSymbolById
-    在 s_holdingWriteLock 为 true 时不再加读锁，与 findSymbolsByFileName / getAllSymbols 一致，避免同一线程死锁。
-  - CompletionManager：getModuleInternalVariables / getGlobalSymbolCompletions 等已统一
-    使用 matchesAbbreviation；结果截断统一在 CompletionModel 出口（MaxCompletionItems），
-    已删除各子方法内重复的 MaxCompletionListSize 截断及该常量。
-  - 符号作用域：除原有扁平 symbolDatabase + moduleScope 外，增加 ScopeManager 作用域树，
-    补全可选用 getCompletions(prefix, cursorFile, cursorLine) 实现按行作用域与遮蔽。
-  - SymbolRelationshipEngine：已删除类外冗余 relationshipTypeToString，已精简
-    getModuleInstances 内空调试分支。
-  - MainWindow / MyCodeEditor：已删除 onDebugPrintSymbolIds、disLineNumber 空函数；
-    延后符号分析已迁移至 MainWindow::scheduleOpenFileAnalysis，SymbolAnalyzer 不再持有
-    基于 MyCodeEditor 的定时器。
-  - 调试逻辑已全部移除：代码中不再包含 qDebug 输出、调试信号（如 debugScopeInfo、debugStructMemberCompletion）
-    及对应槽/连接；状态栏不再显示“当前模块 / logic / struct 计数”（已随调试信号一并移除）；发布构建无需再通过宏关闭调试输出。
-  - SmartRelationshipBuilder：已移除空占位 analyzeInterfaceRelationships 及其调用；
-    interface 分析待后续统一扩展接口实现。模块实例化（INSTANTIATES）已改为使用 SlangManager
-    + Slang AST（extractModuleInstantiations），不再使用 QRegularExpression；其余关系类型仍用正则。
-  - MyCodeEditor：作用域背景改为持久光标缓存；删除 getScopeBackgroundSelections()，新增
-    updateScopeBackgrounds() 与 m_scopeSelections，highlighCurrentLine 仅用缓存与当前行重绘，
-    避免每次光标移动查库导致背景回弹。
-  - mycodeeditor.cpp：已去除重复 #include（如 QScrollBar）。
-
-架构一致性（后续修改时请保持）：
-  - 信号安全：SymbolRelationshipEngine::addRelationship 须保持 Qt::QueuedConnection，
-    禁止在后台线程直接触发 UI 刷新。
-  - 写锁保护：sym_list 的增量解析仍受 QMutex / QReadWriteLock 保护，防止多线程崩溃。
-  - 符号解析：仅使用 Slang（SlangManager::extractSymbols / extractWorkspaceSymbols），写回经 sym_list::setSymbolsForFile。
-    setContentIncremental / SVTreeSitterParser 符号路径为遗留代码（仅 Tree-sitter 验证按钮使用），SVSymbolParser 已移除。
-    语法高亮由 Tree-sitter（TSDocument）驱动；hasSignificantChanges 等改为简单字符串/词边界判断。
-
-若发现新的冗余，可参考本节原则处理并更新本段说明。
-
-==========================================================================
-已知问题 (Known Issues)
-==========================================================================
-
-- **UI 卡顿 (UI Lag)**：以下操作时界面可能出现短暂卡顿或响应延迟，属已知现象，后续会通过进一步异步化与分批更新优化：
-  - 打开工作区：选择目录并加载工作区时，会触发批量文件扫描与符号分析，主线程可能参与进度更新或数据回写，导致界面短暂不流畅。
-  - 从导航页打开文件：在导航面板中点击文件或符号进行跳转/打开时，若需加载大文件或触发符号/关系查询，会有可感知的延迟。
-  - 符号分析进行中：打开标签分析、工作区分析或单文件分析执行时，若与 UI 刷新、导航树更新、状态栏更新等叠加，可能出现卡顿。当前分析已采用 QtConcurrent 等异步方式，但结果回主线程写回符号库/关系引擎、刷新导航与补全缓存时仍可能造成主线程短时繁忙。
-
-- **符号解析（Slang 迁移中）**：符号解析已迁移至 Slang（SlangManager::extractSymbols / extractWorkspaceSymbols），
-  写回经 sym_list::setSymbolsForFile。该迁移为**未提交的进行中改动**，已编译通过并用无头测试
-  （test_sv/dump_symbols.cpp）验证符号字段，GUI 实测待做；遗留的 Tree-sitter 符号路径
-  （setContentIncremental / extractSymbolsAndContainsOnePass）保留但已不被调用。
-  已修复并验证（见 collectSymbols）：
-  - module/interface 改由 compilation.getDefinitions() 产出（修复 root.visit() 不产出 sym_module 的致命缺陷）；
-  - 端口去重（跳过 PortSymbol.internalSymbol）；跳过顶层自动实例；按定义去重实例体（多次例化不重复成员）；
-  - typedef enum/struct 于 typedef 站点产出值/成员/类型符号，moduleScope = 类型别名，满足补全/跳转契约。
-  以下为已知/待验证的缺口：
-  - **内联匿名 enum/struct**（已修复）：无 typedef 的内联匿名类型（如 `enum {A,B} v;`、`struct {...} s;`）
-    在变量站点产出枚举值/成员，moduleScope = 变量名、变量 dataType = 变量名，满足 ee / var.member 补全契约。
-    多个变量共用同一匿名类型时会按各自变量名各产出一份（轻微重复，可接受）。
-  - **function/task 局部符号**（已修复）：fillSymbolInfo 在计算 moduleScope 时优先向上查找最近的
-    SubroutineSymbol，将形参/返回值/局部变量的 moduleScope 设为所在 task/function 名（而非模块名），
-    从而不再泄漏进 `l `/`r `/`w ` 模块级补全（该路径按 moduleScope == 模块名过滤）；scope-tree 路径
-    不依赖 moduleScope，光标在子程序内仍可补全其局部符号。
-  - **变量 dataType**：reg/wire/logic 等变量的 dataType（如 logic[7:0]）当前未填充（无消费者）；enum/struct
-    变量已填 dataType = 类型别名，inst 填模块名，typedef 填 enum/struct 标记。
-  - **注释感知**：commentRegions 在 setSymbolsForFile 路径不再维护；注释高亮由 Tree-sitter（one_line_comment/block_comment）提供。
-  - **单文件 elaboration**：extractSymbols 对单文件做 elaboration，跨文件的类型/package 引用可能解析失败，
-    导致部分符号缺失（单文件 vs 全工程权衡）；工作区分析用 fromFiles 整体编译可缓解。
-  - **编译依赖**：新增引用 slang 头（CompilationUnitSymbols / MemberSymbols / VariableSymbols / PortSymbols /
-    ParameterSymbols / SubroutineSymbols / AllTypes 等），需确认在当前 slang 版本下可编译链接。
-
-- **Tree-sitter（SVTreeSitterParser）**：仅保留给工具栏「Tree-sitter 验证」按钮（parse(content) + getSymbols()），
-  不再参与符号库写入；原「`TYPE_NAME id;` 被解析为 wire」的 grammar 歧义已因改用 Slang 语义判定而消失。
-
-- **Module 识别 (Module Recognition)**：当前 module 识别仍存在已知问题与局限。有效模块
-  的判定已统一为“必须有 module + 配对 endmodule + 合法模块名”（见上文“有效模块判定”），
-  但以下情况可能仍会出错或未覆盖：
-  - 宏展开、条件编译（`ifdef/endif`）内的 module/endmodule 边界可能未正确解析；
-  - 跨文件的 module（例如 module 在 include 文件中）边界依赖当前文件的文本范围；
-  - 注释/字符串内出现的 `module`/`endmodule` 已尽量排除，极端嵌套或格式异常时可能误判；
-  - 其他与具体工程代码风格相关的边界情况。
-  若出现“光标在模块内但状态栏显示无模块”、补全作用域错误或跳转目标不准，可优先检查
-  该文件是否满足“成对 module/endmodule + 合法模块名”，并排查上述场景。后续会持续改进
-  module 识别的鲁棒性。
-
-- **状态栏「当前模块」**：使用符号库中 module 的 startLine/endLine 与 sym_list::getCachedFileContent
-  的缓存内容做“光标是否在模块内”判定（CompletionManager::findModuleAtPosition），不再仅依赖磁盘读取与 findEndModulePosition 正则。当前符号由 Slang（SlangManager）产出。若仍显示「无模块」，
-  ​可能原因包括：（1）缓存内容与编辑器当前内容不一致，cursorPosition 在“缓存 + position 转行号”
-  时产生偏差；（2）需改为传入编辑器当前缓冲区内容做 position-to-line，使行号与光标所在文档一致。
-  建议后续：getCurrentModule 或 findModuleAtPosition 支持可选“当前文档内容”参数，优先用其做
-  position 转 cursorLine，无再回退到缓存/磁盘。
-
-- **作用域树 (Scope Tree)**：现由 setSymbolsForFile → rebuildScopeAndRelationshipsForFile 基于 Slang 符号的
-  startLine/endLine 重建。getCompletions(prefix, cursorFile, cursorLine) 基于 findScopeAt 的按作用域补全与
-  词法遮蔽已实现框架；struct 相关命令（s/sp/ns/nsp）的严格作用域（模块外不补全、模块内聚合
-  internal+include+import、全局仅 moduleScope 为空）已修复。注意作用域闭合依赖 Slang 给出的 endLine，
-  若 endLine 缺失或不准会影响出栈与遮蔽；若发现按作用域补全或跳转异常，可优先排查 endLine 与 getCurrentModule 边界。
-
-- **作用域背景 (Scope Background)**：左侧条带与编辑器内 module/logic 的背景由符号分析驱动。
-  已采用“持久光标缓存”：编辑时 highlighCurrentLine 仅使用缓存的 m_scopeSelections（Qt 会随
-  文档自动更新光标位置），背景随文本移动无回弹；分析完成后 refreshScopeAndCurrentLineHighlight
-  调用 updateScopeBackgrounds 从数据库刷新缓存。若分析尚未完成则沿用上一轮缓存。
+关系分析
+- 支持实例化关系等工程浏览能力。
+- 单文件关系分析带显著变更判断，避免空白编辑触发重活。
 
 
 ==========================================================================
-备注 (Notes)
+构建
 ==========================================================================
 
-- 本文件是面向“阅读/维护代码的人”的说明文档，侧重介绍目前仓库中已经实现的架构与能力。
-- 如果你在阅读代码时发现 README 与实际实现不一致，以**代码实现**为准，再回过头来更新本文件即可。
+推荐构建方式：CMake + Ninja + Qt 6 MinGW。
+
+当前本机常用命令：
+
+    $env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;$env:PATH"
+    Set-Location "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug"
+    & "E:\QT6\Tools\Ninja\ninja.exe" demo
+
+运行：
+
+    $bd = "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug"
+    $env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;$env:PATH"
+    $env:QT_PLUGIN_PATH = "E:\QT6\6.10.2\mingw_64\plugins"
+    Start-Process -FilePath "$bd\demo.exe" -WorkingDirectory $bd
+
+注意：
+- 不要使用 demo.pro / qmake 作为正式构建入口。
+- 如果 g++/Qt DLL 找不到，优先检查 PATH 和 QT_PLUGIN_PATH。
+
+
+==========================================================================
+测试和验证
+==========================================================================
+
+当前 CTest 未注册测试用例：
+
+    ctest --output-on-failure
+
+会返回 No tests were found。
+
+仓库中存在一些历史/手动测试入口：
+- test_sv/ts_doc_test.cpp：Tree-sitter 文档与高亮相关验证。
+- test_sv/completion_test.cpp：补全逻辑验证。
+- test_sv/jump_test.cpp：跳转逻辑验证。
+
+这些测试不是当前 CTest 自动化的一部分。如需长期维护，应把它们整理进 CMake/CTest。
+
+GUI 相关能力仍需人工或 GUI 自动化验证：
+- Ctrl+Click。
+- 补全弹窗实际交互。
+- 导航窗格点击跳转。
+- 打开工作区后的大文件编辑流畅度。
+
+
+==========================================================================
+后续建议
+==========================================================================
+
+优先级 P0
+- 把 completion_test.cpp、jump_test.cpp、ts_doc_test.cpp 正式接入 CMake/CTest。
+- 为补全和跳转建立稳定自动回归测试，避免每次改 Slang/Tree-sitter 路径都靠人工试。
+
+优先级 P1
+- 清理 sv_treesitter_parser / Tree-sitter 验证按钮的遗留用途。
+- 如果不再需要对照调试，可删除旧 Tree-sitter 符号提取路径。
+- 梳理 sym_list 中仍未调用或仅历史遗留的 API。
+
+优先级 P1
+- 工作区分析继续细化为更明确的增量策略。
+- 当前单文件 Slang 分析已后台化，但 workspace 级扫描和关系写回仍需要继续观察。
+
+优先级 P2
+- 增加 GUI 自动化测试能力。
+- 可重点覆盖：打开工作区、打开文件、输入换行、上下移动、触发补全、Ctrl+Click 跳转。
+
+优先级 P2
+- 关系分析中仍有部分正则/启发式逻辑。
+- 后续可逐步迁移到 Slang AST / semantic model，减少误判。
+
+
+==========================================================================
+给下一个会话的快速交接
+==========================================================================
+
+如果新开 Codex 会话，建议先让它读这些文件：
+
+1. readme.txt
+2. version.h
+3. mycodeeditor.cpp / mycodeeditor.h
+4. tsdocument.cpp / tsdocument.h
+5. slangmanager.cpp / slangmanager.h
+6. symbolanalyzer.cpp / symbolanalyzer.h
+7. completionmanager.cpp / completionmanager.h
+
+当前不要误会的点：
+- 不是“禁用分析”解决卡顿，而是让空白编辑不再误触发语义/关系分析。
+- Slang 是符号语义来源；Tree-sitter 是实时语法和当前 scope 来源。
+- SVLexer 已经不是当前架构的一部分。
+- readme 中不再保留旧性能插桩方案；后续性能调试应按问题重新加针对性探针。
+- test_sv/new 是用户用来复现大文件卡顿的本地工作区数据，不要随便删除或纳入提交。
