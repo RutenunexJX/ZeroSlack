@@ -215,22 +215,24 @@ slang16 性能修复记录
 
     ctest --output-on-failure
 
-应发现并运行 4 个测试。
+应发现并运行 6 个测试。
 
 已注册的无头/近无头测试：
 - test_sv/ts_doc_test.cpp：Tree-sitter 文档与高亮相关验证。
 - test_sv/completion_test.cpp：补全逻辑验证。
 - test_sv/jump_test.cpp：跳转逻辑验证。
 - test_sv/relationship_test.cpp：多 module 文件中的关系归属回归验证。
+- test_sv/gui_smoke_test.cpp：Qt offscreen GUI 烟测，覆盖打开工作区、打开大文件、编辑换行/字符、移动光标、补全弹窗、Ctrl+Click 和导航窗格双击跳转。
+- test_sv/large_file_perf_test.cpp：大文件性能基线，验证空白/换行编辑不启动不必要的符号分析或关系分析 debounce，同时确认普通字符编辑仍保留必要分析入口。
 
-这些测试通过 CMakeLists.txt 注册为 ts_doc_test、completion_test、jump_test、relationship_test。
+这些测试通过 CMakeLists.txt 注册为 ts_doc_test、completion_test、jump_test、relationship_test、gui_smoke_test、large_file_perf_test。
 completion_test、jump_test 和 relationship_test 由 CTest 注入 Qt offscreen 运行环境。
+gui_smoke_test 和 large_file_perf_test 也由 CTest 注入 Qt offscreen 运行环境；large_file_perf_test 使用 test_sv/new。
 
 GUI 相关能力仍需人工或 GUI 自动化验证：
-- Ctrl+Click。
-- 补全弹窗实际交互。
-- 导航窗格点击跳转。
-- 打开工作区后的大文件编辑流畅度。
+- 已有最小 GUI 自动化烟测覆盖 Ctrl+Click、补全弹窗、导航窗格双击跳转、打开工作区后的大文件基础编辑。
+- 已有大文件性能基线覆盖空白/换行编辑不触发不必要的 Slang / 关系重分析路径。
+- 仍建议继续扩展 GUI 自动化覆盖更多真实工作区操作和失败诊断。
 
 当前人工验证记录：
 - 已在 test_sv/new 工作区验证大文件编辑流畅度。
@@ -242,7 +244,8 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 后续建议
 ==========================================================================
 
-详细执行计划见 plan.md；README 只保留当前状态和交接信息。
+目标骨架见 goal.md；详细执行计划见 plan.md；README 只保留当前状态和交接信息。
+后续功能和重构默认以 goal.md 为现阶段最终目标，除非遇到无法越过的实现问题，不再为每个新功能重新选择架构方向。
 
 已完成 P0
 - completion_test.cpp、jump_test.cpp、ts_doc_test.cpp 已正式接入 CMake/CTest。
@@ -260,8 +263,10 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 - 关系写回仍可继续观察和细化。
 
 下一大版本优先项
-- 增加 GUI 自动化测试能力。
-- 可重点覆盖：打开工作区、打开文件、输入换行、上下移动、触发补全、Ctrl+Click 跳转。
+- 扩展 GUI 自动化测试能力。
+- 已有最小 smoke test 覆盖：打开工作区、打开文件、输入换行/字符、上下移动、触发补全、Ctrl+Click 跳转、导航窗格双击跳转。
+- 已有大文件性能基线覆盖：空白/换行编辑不启动不必要的符号分析或关系分析 debounce。
+- 后续可继续补更细的失败诊断、更多真实工作区路径和跨文件关系 fixture。
 
 已完成 P3
 - 已修正多 module 文件中部分关系误归属到首个 module 的问题。
@@ -271,10 +276,10 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 
 下一大版本最低目标
 - 目标应是“GUI / 工作区可靠性版本”，而不是继续扩大架构重构范围。
-- 至少补上 GUI 自动化烟测：打开工作区、打开大文件、编辑换行、移动光标、触发补全、Ctrl+Click、导航窗格跳转。
-- 至少固化大文件性能基线：空白/换行编辑后不触发不必要的 Slang / 关系重分析，连续编辑和移动光标无明显卡顿回归。
+- GUI 自动化烟测已补最小入口：打开工作区、打开大文件、编辑换行/字符、移动光标、触发补全、Ctrl+Click、导航窗格跳转。
+- 大文件性能基线已补最小入口：空白/换行编辑后不触发不必要的 Slang / 关系重分析；连续编辑和移动光标仍可继续扩展更细性能断言。
 - 至少增加一个更接近真实工程的多文件关系 fixture，验证跨文件跳转、实例化、调用、赋值、条件读取、clock/reset。
-- 完成标准见 plan.md；新会话优先读取 readme.txt 和 plan.md。
+- 完成标准见 goal.md 和 plan.md；新会话优先读取 readme.txt、plan.md 和 goal.md。
 
 
 ==========================================================================
@@ -284,14 +289,17 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 如果新开 Codex 会话，建议先让它读这些文件：
 
 1. readme.txt
-2. version.h
-3. mycodeeditor.cpp / mycodeeditor.h
-4. tsdocument.cpp / tsdocument.h
-5. slangmanager.cpp / slangmanager.h
-6. symbolanalyzer.cpp / symbolanalyzer.h
-7. completionmanager.cpp / completionmanager.h
+2. plan.md
+3. goal.md
+4. version.h
+5. mycodeeditor.cpp / mycodeeditor.h
+6. tsdocument.cpp / tsdocument.h
+7. slangmanager.cpp / slangmanager.h
+8. symbolanalyzer.cpp / symbolanalyzer.h
+9. completionmanager.cpp / completionmanager.h
 
 当前不要误会的点：
+- goal.md 是现阶段产品 / 架构最终骨架；后续实现默认按 ProjectModel / DocumentModel / AnalysisScheduler / SemanticIndex / Query Services 方向收敛。
 - 不是“禁用分析”解决卡顿，而是让空白编辑不再误触发语义/关系分析。
 - Slang 是符号语义来源；Tree-sitter 是实时语法和当前 scope 来源。
 - SVLexer 已经不是当前架构的一部分。

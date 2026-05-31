@@ -151,6 +151,8 @@ endif()
 # 8. 回归测试
 # =========================================================
 if(BUILD_TESTING)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
     get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
     get_filename_component(ZEROSLACK_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     set(ZEROSLACK_TEST_PATH
@@ -169,6 +171,12 @@ if(BUILD_TESTING)
 
     add_executable(relationship_test test_sv/relationship_test.cpp)
     target_link_libraries(relationship_test PRIVATE zeroslack_core)
+
+    add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
+    target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)
+    target_link_libraries(large_file_perf_test PRIVATE zeroslack_core Qt6::Test)
 
     add_test(NAME ts_doc_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -197,5 +205,22 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:relationship_test>
+    )
+    add_test(NAME gui_smoke_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:gui_smoke_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
+    )
+    add_test(NAME large_file_perf_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:large_file_perf_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
     )
 endif()
