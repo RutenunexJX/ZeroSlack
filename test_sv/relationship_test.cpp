@@ -33,6 +33,18 @@ static int symbolId(const QList<sym_list::SymbolInfo>& symbols,
     return -1;
 }
 
+static int symbolIdInScope(const QList<sym_list::SymbolInfo>& symbols,
+                           const QString& name,
+                           sym_list::sym_type_e type,
+                           const QString& moduleScope)
+{
+    for (const auto& s : symbols) {
+        if (s.symbolName == name && s.symbolType == type && s.moduleScope == moduleScope)
+            return s.symbolId;
+    }
+    return -1;
+}
+
 static bool hasRel(const QVector<RelationshipToAdd>& rels,
                    int fromId,
                    int toId,
@@ -83,12 +95,13 @@ int main(int argc, char** argv)
         "  end\n"
         "endmodule\n"
         "\n"
-        "module beta(input logic clk, input logic rst_n, input logic cond);\n"
+        "module beta(input logic clk, input logic rst_n, input logic cond, input logic src, output logic dst);\n"
         "  task do_beta; endtask\n"
         "  leaf u_leaf();\n"
         "  always @(posedge clk or negedge rst_n) begin\n"
         "    if (cond) begin\n"
         "      do_beta;\n"
+        "      dst = src; // do_beta; dst = cond;\n"
         "    end\n"
         "  end\n"
         "endmodule\n");
@@ -103,12 +116,22 @@ int main(int argc, char** argv)
     const int leafId = symbolId(symbols, QStringLiteral("leaf"), sym_list::sym_module);
     const int doBetaId = symbolId(symbols, QStringLiteral("do_beta"), sym_list::sym_task);
     const int condId = symbolId(symbols, QStringLiteral("cond"), sym_list::sym_port_input);
+    const int srcId = symbolId(symbols, QStringLiteral("src"), sym_list::sym_port_input);
+    const int dstId = symbolId(symbols, QStringLiteral("dst"), sym_list::sym_port_output);
+    const int betaClkId = symbolIdInScope(symbols, QStringLiteral("clk"), sym_list::sym_port_input,
+                                          QStringLiteral("beta"));
+    const int rstId = symbolIdInScope(symbols, QStringLiteral("rst_n"), sym_list::sym_port_input,
+                                      QStringLiteral("beta"));
 
     expectBool("symbols include alpha", alphaId > 0, true);
     expectBool("symbols include beta", betaId > 0, true);
     expectBool("symbols include leaf", leafId > 0, true);
     expectBool("symbols include do_beta", doBetaId > 0, true);
     expectBool("symbols include cond", condId > 0, true);
+    expectBool("symbols include src", srcId > 0, true);
+    expectBool("symbols include dst", dstId > 0, true);
+    expectBool("symbols include beta clk", betaClkId > 0, true);
+    expectBool("symbols include beta rst_n", rstId > 0, true);
 
     SymbolRelationshipEngine engine;
     SmartRelationshipBuilder builder(&engine, db, &slang);
@@ -130,6 +153,15 @@ int main(int argc, char** argv)
                hasRel(rels, betaId, condId, SymbolRelationshipEngine::READS_FROM), true);
     expectBool("alpha does not read cond",
                hasRel(rels, alphaId, condId, SymbolRelationshipEngine::READS_FROM), false);
+
+    expectBool("src assigns to dst",
+               hasRel(rels, srcId, dstId, SymbolRelationshipEngine::ASSIGNS_TO), true);
+    expectBool("commented cond assignment ignored",
+               hasRel(rels, condId, dstId, SymbolRelationshipEngine::ASSIGNS_TO), false);
+    expectBool("beta clocked by clk",
+               hasRel(rels, betaClkId, betaId, SymbolRelationshipEngine::CLOCKS), true);
+    expectBool("beta reset by rst_n",
+               hasRel(rels, rstId, betaId, SymbolRelationshipEngine::RESETS), true);
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

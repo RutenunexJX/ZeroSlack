@@ -4,7 +4,6 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QRegularExpression>
 #include <QHash>
 #include <QList>
 #include "slangmanager.h"
@@ -74,16 +73,6 @@ private:
     std::atomic<bool> cancelled{false};
     bool checkCancellation(const QString& currentFile = "");
 
-    struct AnalysisPatterns {
-        QRegularExpression variableAssignment;
-        QRegularExpression variableReference;
-        QRegularExpression taskCall;
-        QRegularExpression functionCall;
-        QRegularExpression alwaysBlock;
-        QRegularExpression generateBlock;
-    };
-    AnalysisPatterns patterns;
-
     struct AnalysisContext {
         QString currentFileName;
         QString currentModuleName;
@@ -92,28 +81,26 @@ private:
         QList<sym_list::SymbolInfo> fileSymbols;
         /** 用于 computeRelationships 中不访问 DB */
         QHash<int, sym_list::sym_type_e> symbolIdToType;
+        RelationshipExtractionInfo relationshipInfo;
+        bool relationshipInfoLoaded = false;
     };
 
-    void initializePatterns();
     void setupAnalysisContext(const QString& fileName, AnalysisContext& context);
     void setupAnalysisContextFromSymbols(const QString& fileName,
                                          const QList<sym_list::SymbolInfo>& fileSymbols,
                                          AnalysisContext& context);
+    void ensureRelationshipInfo(const QString& content, AnalysisContext& context);
 
     void analyzeModuleInstantiations(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeVariableAssignments(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeVariableReferences(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeAlwaysBlocks(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
-    void analyzeGenerateBlocks(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
 
-    QStringList extractVariablesFromExpression(const QString& expression);
     int findSymbolIdByName(const QString& symbolName, const AnalysisContext& context);
     QString findContainingModule(int lineNumber, const AnalysisContext& context);
     int getContainingModuleId(int lineNumber, const AnalysisContext& context);
     QSet<int> getAffectedSymbolIds(const QString& content, const QList<int>& changedLines, AnalysisContext& context);
-    bool isInCommentOrString(int position, const QString& content);
-    int calculateConfidence(const QString& pattern, const QString& match);
 
     QVector<RelationshipToAdd>* collectResults = nullptr;
     void addRelationshipWithContext(int fromId, int toId,

@@ -88,7 +88,7 @@ navigationmanager.cpp / navigationwidget.cpp
 
 smartrelationshipbuilder.cpp / symbolrelationshipengine.cpp
 - 关系分析和关系存储。
-- module instantiation 由 Slang 提供较准确信息；其他关系仍有部分正则/启发式逻辑。
+- module instantiation、task/function call、assignment、condition/control read、timing sensitivity 由 Slang AST / semantic model 提供；clock/reset 在 Slang timing control 基础上按符号名分类。
 
 
 ==========================================================================
@@ -179,6 +179,8 @@ slang16 性能修复记录
 - 支持实例化关系等工程浏览能力。
 - 单文件关系分析带显著变更判断，避免空白编辑触发重活。
 - 多 module 文件中的实例化、调用、条件读取、时钟/复位关系按所在行归属到对应 module。
+- task/function call、assignment、condition/control read、timing sensitivity 关系由 Slang AST 解析结果驱动，不再使用正则猜测。
+- clock/reset 关系基于 Slang timing control 的符号引用和符号名分类。
 
 
 ==========================================================================
@@ -252,19 +254,27 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 - 已删除旧 Tree-sitter 符号提取路径和 sym_list 中对应的未调用入口。
 - Tree-sitter 仍保留为 TSDocument 实时语法、高亮和 live scope 来源。
 
-已完成 P1
+已完成 P2
 - 工作区批量分析写回每个文件的 symbols + content，和单文件分析共用 sym_list 的内容哈希/符号相关哈希状态。
 - 工作区重新扫描时会覆盖空符号文件的旧结果，并让后续 contentAffectsSymbols 判断有稳定基线。
 - 关系写回仍可继续观察和细化。
 
-优先级 P2
+下一大版本优先项
 - 增加 GUI 自动化测试能力。
 - 可重点覆盖：打开工作区、打开文件、输入换行、上下移动、触发补全、Ctrl+Click 跳转。
 
-优先级 P2
-- 关系分析中仍有部分正则/启发式逻辑。
+已完成 P3
 - 已修正多 module 文件中部分关系误归属到首个 module 的问题。
-- 后续可继续逐步迁移到 Slang AST / semantic model，减少误判。
+- 关系分析中的实例化、task/function call、assignment、condition/control read、timing sensitivity 已迁移到 Slang AST / semantic model。
+- smartrelationshipbuilder 不再使用 QRegularExpression；注释和字符串中的伪调用/伪赋值不再参与这些关系来源。
+- clock/reset 关系基于 Slang timing control 的符号引用和符号名分类，后续仍可按真实工程样例细化分类规则。
+
+下一大版本最低目标
+- 目标应是“GUI / 工作区可靠性版本”，而不是继续扩大架构重构范围。
+- 至少补上 GUI 自动化烟测：打开工作区、打开大文件、编辑换行、移动光标、触发补全、Ctrl+Click、导航窗格跳转。
+- 至少固化大文件性能基线：空白/换行编辑后不触发不必要的 Slang / 关系重分析，连续编辑和移动光标无明显卡顿回归。
+- 至少增加一个更接近真实工程的多文件关系 fixture，验证跨文件跳转、实例化、调用、赋值、条件读取、clock/reset。
+- 完成标准见 plan.md；新会话优先读取 readme.txt 和 plan.md。
 
 
 ==========================================================================
