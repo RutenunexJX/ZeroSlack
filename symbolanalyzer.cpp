@@ -3,6 +3,7 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "completionmanager.h"
+#include "perflog.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
 #include <QTextStream>
@@ -200,6 +201,7 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
     auto* watcher = new QFutureWatcher<QList<sym_list::SymbolInfo>>(this);
     connect(watcher, &QFutureWatcher<QList<sym_list::SymbolInfo>>::finished, this,
             [this, fileName, content, watcher]() {
+                PERF_SCOPE("sym_writeback");
                 QList<sym_list::SymbolInfo> list = watcher->result();
                 watcher->deleteLater();
                 // Write-back (DB + scope tree + caches) on the main thread.

@@ -1,5 +1,6 @@
 #include "mycodeeditor.h"
 #include "myhighlighter.h"
+#include "perflog.h"
 #include "mainwindow.h"
 #include "completionmodel.h"
 #include "completionmanager.h"
@@ -103,6 +104,7 @@ void MyCodeEditor::initHighlighter()
 
 void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
 {
+    PERF_SCOPE("ts_edit");
     // Incrementally update the tree-sitter model (m_tsdoc keeps the pre-edit text, so it can derive
     // the old end point itself). Runs before the highlighter's reformat (connected later).
     m_tsdoc.applyEditChars(position, position + charsRemoved, position + charsAdded,
@@ -116,6 +118,7 @@ int MyCodeEditor::getLineNumberWidgetWidth()
 
 void MyCodeEditor::highlighCurrentLine()
 {
+    PERF_SCOPE("highlighCurrentLine");
     QList<QTextEdit::ExtraSelection> existing = extraSelections();
     existing.erase(
         std::remove_if(existing.begin(), existing.end(),
@@ -149,6 +152,7 @@ void MyCodeEditor::highlighCurrentLine()
 
 void MyCodeEditor::updateScopeBackgrounds()
 {
+    PERF_SCOPE("updateScopeBackgrounds");
     m_scopeSelections.clear();
     QString fileName = getFileName();
     if (fileName.isEmpty()) return;
