@@ -124,6 +124,34 @@ int main() {
         check("incremental applyEditChars == full parse (highlight spans)", same);
     }
 
+    // 6) Live enclosing-module scope (A3): cursor inside which module, derived from the tree.
+    {
+        QString src =
+            QStringLiteral("module top;\n")        // line 0
+            + QStringLiteral("  logic a;\n")        // line 1  (inside top)
+            + QStringLiteral("endmodule\n")          // line 2
+            + QStringLiteral("\n")                   // line 3  (between modules)
+            + QStringLiteral("module adder;\n")      // line 4
+            + QStringLiteral("  logic b;\n")         // line 5  (inside adder)
+            + QStringLiteral("endmodule\n");          // line 6
+        TSDocument d; d.setText(src);
+        auto at = [&](int line) { return d.enclosingModuleName(lineStartChar(src, line) + 2); };
+        check("scope: inside top -> top",     at(1) == QStringLiteral("top"));
+        check("scope: inside adder -> adder", at(5) == QStringLiteral("adder"));
+        check("scope: between modules -> empty", d.enclosingModuleName(lineStartChar(src, 3)).isEmpty());
+
+        // Error tolerance: editing mid-module (an incomplete line) with endmodule present still
+        // resolves the enclosing module — the realistic typing case where tree-sitter beats Slang.
+        QString partial =
+            QStringLiteral("module fsm;\n")    // 0
+            + QStringLiteral("  logic [3:\n")   // 1  incomplete declaration (being typed)
+            + QStringLiteral("  logic ok;\n")   // 2
+            + QStringLiteral("endmodule\n");     // 3
+        TSDocument d2; d2.setText(partial);
+        check("scope: incomplete line w/ endmodule still -> fsm",
+              d2.enclosingModuleName(lineStartChar(partial, 1) + 2) == QStringLiteral("fsm"));
+    }
+
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

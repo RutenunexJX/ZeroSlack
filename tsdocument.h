@@ -68,6 +68,11 @@ public:
     // Type name of the smallest named node at the given char offset (debug / scope helpers).
     const char* namedNodeTypeAt(int charOffset) const;
 
+    // Name of the nearest enclosing module / interface / program at the given char offset, derived
+    // live from the parse tree (instant, error-tolerant). Empty if the offset is not inside one.
+    // Replaces the Slang+regex getCurrentModuleScope for cursor-scope decisions.
+    QString enclosingModuleName(int charOffset) const;
+
     // Highlight spans (block-local char coords) for the char range [blockStartChar, +blockLenChar).
     // Walks the live tree; clips tokens to the block. Multi-line tokens (block comments, strings)
     // are clipped per block.

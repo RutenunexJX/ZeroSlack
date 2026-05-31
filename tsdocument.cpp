@@ -144,6 +144,59 @@ const char* TSDocument::namedNodeTypeAt(int charOffset) const
 }
 
 namespace {
+// Extract the declared name from a *_declaration node: try a "name" field, else find a "*_header"
+// child and take its name field or first simple_identifier.
+QString declarationName(const QString& text, TSNode declNode)
+{
+    auto textOf = [&text](TSNode n) -> QString {
+        if (ts_node_is_null(n)) return QString();
+        uint32_t s = ts_node_start_byte(n), e = ts_node_end_byte(n);
+        if (s >= e) return QString();
+        return text.mid(static_cast<int>(s / 2), static_cast<int>((e - s) / 2));
+    };
+
+    TSNode nameNode = ts_node_child_by_field_name(declNode, "name", 4);
+    if (!ts_node_is_null(nameNode)) {
+        QString n = textOf(nameNode);
+        if (!n.isEmpty()) return n;
+    }
+    const uint32_t childCount = ts_node_named_child_count(declNode);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_named_child(declNode, i);
+        const char* ct = ts_node_type(child);
+        if (!ct || !std::strstr(ct, "_header"))
+            continue;
+        TSNode hn = ts_node_child_by_field_name(child, "name", 4);
+        if (!ts_node_is_null(hn)) return textOf(hn);
+        const uint32_t gc = ts_node_named_child_count(child);
+        for (uint32_t j = 0; j < gc; ++j) {
+            TSNode g = ts_node_named_child(child, j);
+            const char* gt = ts_node_type(g);
+            if (gt && std::strcmp(gt, "simple_identifier") == 0)
+                return textOf(g);
+        }
+    }
+    return QString();
+}
+} // namespace
+
+QString TSDocument::enclosingModuleName(int charOffset) const
+{
+    const uint32_t b = static_cast<uint32_t>(charOffset) * 2u;
+    TSNode node = ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree), b, b);
+    while (!ts_node_is_null(node)) {
+        const char* t = ts_node_type(node);
+        if (t && (std::strcmp(t, "module_declaration") == 0 ||
+                  std::strcmp(t, "interface_declaration") == 0 ||
+                  std::strcmp(t, "program_declaration") == 0)) {
+            return declarationName(m_text, node);
+        }
+        node = ts_node_parent(node);
+    }
+    return QString();
+}
+
+namespace {
 // DFS the subtree of 'node'. When a node classifies to a highlight category, emit a span for the
 // WHOLE node (clipped to the block) and stop descending — this treats "module_keyword", numbers,
 // comments, strings and anonymous keyword/operator tokens as highlight units. Otherwise (structural
