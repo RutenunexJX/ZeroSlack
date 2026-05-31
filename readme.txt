@@ -72,6 +72,7 @@ slangmanager.cpp / slangmanager.h
 symbolanalyzer.cpp / symbolanalyzer.h
 - SlangManager 的调度层。
 - 单文件分析走后台线程，结果回主线程写入 sym_list。
+- 工作区分析在后台提取 Slang 符号，并把每个文件的内容一起回主线程写入 sym_list，用于初始化增量状态。
 - hasSignificantChanges 用于判断是否需要重跑语义/关系分析。
 
 syminfo.cpp / syminfo.h
@@ -177,6 +178,7 @@ slang16 性能修复记录
 关系分析
 - 支持实例化关系等工程浏览能力。
 - 单文件关系分析带显著变更判断，避免空白编辑触发重活。
+- 多 module 文件中的实例化、调用、条件读取、时钟/复位关系按所在行归属到对应 module。
 
 
 ==========================================================================
@@ -211,15 +213,16 @@ slang16 性能修复记录
 
     ctest --output-on-failure
 
-应发现并运行 3 个测试。
+应发现并运行 4 个测试。
 
 已注册的无头/近无头测试：
 - test_sv/ts_doc_test.cpp：Tree-sitter 文档与高亮相关验证。
 - test_sv/completion_test.cpp：补全逻辑验证。
 - test_sv/jump_test.cpp：跳转逻辑验证。
+- test_sv/relationship_test.cpp：多 module 文件中的关系归属回归验证。
 
-这些测试通过 CMakeLists.txt 注册为 ts_doc_test、completion_test、jump_test。
-completion_test 和 jump_test 由 CTest 注入 Qt offscreen 运行环境。
+这些测试通过 CMakeLists.txt 注册为 ts_doc_test、completion_test、jump_test、relationship_test。
+completion_test、jump_test 和 relationship_test 由 CTest 注入 Qt offscreen 运行环境。
 
 GUI 相关能力仍需人工或 GUI 自动化验证：
 - Ctrl+Click。
@@ -237,15 +240,17 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 已完成 P0
 - completion_test.cpp、jump_test.cpp、ts_doc_test.cpp 已正式接入 CMake/CTest。
 - 补全、跳转、Tree-sitter 文档/高亮/live scope 已有自动回归测试入口。
+- relationship_test.cpp 已覆盖多 module 文件中的关系归属回归。
 
 已完成 P1
 - 已删除 sv_treesitter_parser / Tree-sitter 验证按钮的遗留用途。
 - 已删除旧 Tree-sitter 符号提取路径和 sym_list 中对应的未调用入口。
 - Tree-sitter 仍保留为 TSDocument 实时语法、高亮和 live scope 来源。
 
-优先级 P1
-- 工作区分析继续细化为更明确的增量策略。
-- 当前单文件 Slang 分析已后台化，但 workspace 级扫描和关系写回仍需要继续观察。
+已完成 P1
+- 工作区批量分析写回每个文件的 symbols + content，和单文件分析共用 sym_list 的内容哈希/符号相关哈希状态。
+- 工作区重新扫描时会覆盖空符号文件的旧结果，并让后续 contentAffectsSymbols 判断有稳定基线。
+- 关系写回仍可继续观察和细化。
 
 优先级 P2
 - 增加 GUI 自动化测试能力。
@@ -253,7 +258,8 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 
 优先级 P2
 - 关系分析中仍有部分正则/启发式逻辑。
-- 后续可逐步迁移到 Slang AST / semantic model，减少误判。
+- 已修正多 module 文件中部分关系误归属到首个 module 的问题。
+- 后续可继续逐步迁移到 Slang AST / semantic model，减少误判。
 
 
 ==========================================================================

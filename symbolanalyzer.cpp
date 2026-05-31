@@ -15,8 +15,8 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     : QObject(parent)
 {
     m_slangManager = new SlangManager();
-    workspaceAnalysisWatcher = new QFutureWatcher<QList<sym_list::SymbolInfo>>(this);
-    connect(workspaceAnalysisWatcher, &QFutureWatcher<QList<sym_list::SymbolInfo>>::finished,
+    workspaceAnalysisWatcher = new QFutureWatcher<WorkspaceAnalysisResult>(this);
+    connect(workspaceAnalysisWatcher, &QFutureWatcher<WorkspaceAnalysisResult>::finished,
             this, &SymbolAnalyzer::onWorkspaceAnalysisFinished);
 }
 
@@ -64,6 +64,37 @@ static QHash<QString, QList<sym_list::SymbolInfo>> groupSymbolsByFile(const QLis
     return byFile;
 }
 
+static QString readTextFile(const QString& filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QFile::Text))
+        return QString();
+    QTextStream stream(&file);
+    return stream.readAll();
+}
+
+static WorkspaceAnalysisResult buildWorkspaceAnalysisResult(const QStringList& svFiles,
+                                                            const QList<sym_list::SymbolInfo>& allSymbols,
+                                                            std::function<bool()> isCancelled)
+{
+    WorkspaceAnalysisResult result;
+    QHash<QString, QList<sym_list::SymbolInfo>> byFile = groupSymbolsByFile(allSymbols);
+    result.files.reserve(svFiles.size());
+
+    for (const QString& filePath : svFiles) {
+        if (isCancelled && isCancelled())
+            break;
+        WorkspaceFileAnalysis fileResult;
+        fileResult.fileName = filePath;
+        fileResult.content = readTextFile(filePath);
+        fileResult.symbols = byFile.value(filePath);
+        result.totalSymbols += fileResult.symbols.size();
+        result.files.append(std::move(fileResult));
+    }
+
+    return result;
+}
+
 void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled)
 {
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) return;
@@ -86,20 +117,18 @@ void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::f
         return;
     }
 
-    QHash<QString, QList<sym_list::SymbolInfo>> byFile = groupSymbolsByFile(allSymbols);
+    WorkspaceAnalysisResult result = buildWorkspaceAnalysisResult(svFiles, allSymbols, isCancelled);
     sym_list* symbolList = sym_list::getInstance();
     int filesAnalyzed = 0;
-    int totalSymbolsFound = 0;
-    for (auto it = byFile.begin(); it != byFile.end(); ++it) {
-        symbolList->setSymbolsForFile(it.key(), it.value());
+    for (const WorkspaceFileAnalysis& fileResult : std::as_const(result.files)) {
+        symbolList->setSymbolsForFile(fileResult.fileName, fileResult.symbols, fileResult.content);
         filesAnalyzed++;
-        totalSymbolsFound += it.value().size();
+        emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
-    emit batchProgress(filesAnalyzed, totalFiles, byFile.isEmpty() ? QString() : byFile.keys().first());
 
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
-    emit batchAnalysisCompleted(filesAnalyzed, totalSymbolsFound);
-    emit analysisCompleted(workspaceManager->getWorkspacePath(), totalSymbolsFound);
+    emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
+    emit analysisCompleted(workspaceManager->getWorkspacePath(), result.totalSymbols);
 }
 
 void SymbolAnalyzer::startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled)
@@ -115,9 +144,9 @@ void SymbolAnalyzer::startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManag
 
     emit analysisStarted(workspacePath);
 
-    QFuture<QList<sym_list::SymbolInfo>> future = QtConcurrent::run([this, svFiles, totalFiles, isCancelled]() {
+    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([this, svFiles, isCancelled]() {
         QList<sym_list::SymbolInfo> result = m_slangManager->extractWorkspaceSymbols(svFiles);
-        return result;
+        return buildWorkspaceAnalysisResult(svFiles, result, isCancelled);
     });
 
     workspaceAnalysisWatcher->setProperty("workspacePath", workspacePath);
@@ -131,22 +160,21 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
     if (workspaceAnalysisWatcher->isCanceled())
         return;
 
-    QList<sym_list::SymbolInfo> list = workspaceAnalysisWatcher->result();
+    WorkspaceAnalysisResult result = workspaceAnalysisWatcher->result();
     QString workspacePath = workspaceAnalysisWatcher->property("workspacePath").toString();
+    int totalFiles = workspaceAnalysisWatcher->property("totalFiles").toInt();
 
-    QHash<QString, QList<sym_list::SymbolInfo>> byFile = groupSymbolsByFile(list);
     sym_list* symbolList = sym_list::getInstance();
     int filesAnalyzed = 0;
-    int totalSymbolsFound = 0;
-    for (auto it = byFile.begin(); it != byFile.end(); ++it) {
-        symbolList->setSymbolsForFile(it.key(), it.value());
+    for (const WorkspaceFileAnalysis& fileResult : std::as_const(result.files)) {
+        symbolList->setSymbolsForFile(fileResult.fileName, fileResult.symbols, fileResult.content);
         filesAnalyzed++;
-        totalSymbolsFound += it.value().size();
+        emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
-    emit batchAnalysisCompleted(filesAnalyzed, totalSymbolsFound);
-    emit analysisCompleted(workspacePath, totalSymbolsFound);
+    emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
+    emit analysisCompleted(workspacePath, result.totalSymbols);
 }
 
 void SymbolAnalyzer::analyzeFile(const QString& filePath)

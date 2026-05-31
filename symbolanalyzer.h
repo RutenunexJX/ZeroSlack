@@ -5,12 +5,24 @@
 #include <QStringList>
 #include <QFutureWatcher>
 #include <QList>
+#include <QVector>
 #include <functional>
 #include "syminfo.h"
 
 class SlangManager;
 class TabManager;
 class WorkspaceManager;
+
+struct WorkspaceFileAnalysis {
+    QString fileName;
+    QString content;
+    QList<sym_list::SymbolInfo> symbols;
+};
+
+struct WorkspaceAnalysisResult {
+    QVector<WorkspaceFileAnalysis> files;
+    int totalSymbols = 0;
+};
 
 class SymbolAnalyzer : public QObject
 {
@@ -53,8 +65,8 @@ private:
     QHash<QString, QString> lastAnalyzedContent;
 
     SlangManager* m_slangManager = nullptr;
-    // 阶段 A：后台工作区分析，返回符号列表，主线程写回 sym_list
-    QFutureWatcher<QList<sym_list::SymbolInfo>>* workspaceAnalysisWatcher = nullptr;
+    // 阶段 A：后台工作区分析，返回每个文件的符号和内容，主线程写回 sym_list 并初始化增量状态。
+    QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
 
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
     bool isSystemVerilogFile(const QString &fileName) const;

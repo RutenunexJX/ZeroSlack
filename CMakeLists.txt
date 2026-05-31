@@ -167,6 +167,9 @@ if(BUILD_TESTING)
     add_executable(jump_test test_sv/jump_test.cpp)
     target_link_libraries(jump_test PRIVATE zeroslack_core)
 
+    add_executable(relationship_test test_sv/relationship_test.cpp)
+    target_link_libraries(relationship_test PRIVATE zeroslack_core)
+
     add_test(NAME ts_doc_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -187,5 +190,12 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:jump_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
+    )
+    add_test(NAME relationship_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:relationship_test>
     )
 endif()

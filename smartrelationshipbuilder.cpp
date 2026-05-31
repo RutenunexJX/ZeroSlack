@@ -164,9 +164,12 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
             continue;
 
         int moduleTypeId = findSymbolIdByName(info.moduleName, context);
-        if (moduleTypeId != -1 && context.currentModuleId != -1) {
+        int ownerModuleId = getContainingModuleId(info.lineNumber, context);
+        if (ownerModuleId == -1)
+            ownerModuleId = context.currentModuleId;
+        if (moduleTypeId != -1 && ownerModuleId != -1) {
             addRelationshipWithContext(
-                context.currentModuleId,
+                ownerModuleId,
                 moduleTypeId,
                 SymbolRelationshipEngine::INSTANTIATES,
                 QString("Instance: %1 at line %2").arg(info.instanceName).arg(info.lineNumber),
@@ -246,9 +249,12 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
 
                 for (const QString& varName : std::as_const(referencedVars)) {
                     int varId = findSymbolIdByName(varName, context);
-                    if (varId != -1 && context.currentModuleId != -1) {
+                    int ownerModuleId = getContainingModuleId(lineNum + 1, context);
+                    if (ownerModuleId == -1)
+                        ownerModuleId = context.currentModuleId;
+                    if (varId != -1 && ownerModuleId != -1) {
                         addRelationshipWithContext(
-                            context.currentModuleId,
+                            ownerModuleId,
                             varId,
                             SymbolRelationshipEngine::READS_FROM,
                             QString("Condition check at line %1").arg(lineNum + 1),
@@ -264,6 +270,13 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
 void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     QStringList lines = content.split('\n');
+    static const QRegularExpression declarationLinePattern(
+        "^\\s*(task|function|module|interface|program|package|class|typedef|endtask|endfunction|endmodule|endinterface|endprogram|endpackage|endclass)\\b");
+    static const QSet<QString> nonCallStatements = {
+        "if", "for", "foreach", "while", "case", "casex", "casez", "repeat", "wait",
+        "begin", "end", "else", "assign", "always", "initial", "module", "endmodule",
+        "task", "endtask", "function", "endfunction"
+    };
 
     for (int lineNum = 0; lineNum < lines.size(); ++lineNum) {
         if (lineMin >= 0 && (lineNum < lineMin || lineNum > lineMax))
@@ -271,6 +284,7 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
         const QString& line = lines[lineNum].trimmed();
 
         if (line.isEmpty() || line.startsWith("//")) continue;
+        if (declarationLinePattern.match(line).hasMatch()) continue;
 
         QRegularExpressionMatchIterator taskIt = patterns.taskCall.globalMatch(line);
         while (taskIt.hasNext()) {
@@ -279,6 +293,8 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
             if (taskName.isEmpty()) {
                 taskName = match.captured(2);
             }
+            if (nonCallStatements.contains(taskName.toLower()))
+                continue;
 
             int taskId = findSymbolIdByName(taskName, context);
             if (taskId != -1) {
@@ -289,9 +305,12 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
                     taskType = symbolDatabase->getSymbolById(taskId).symbolType;
                 if (taskType == sym_list::sym_task || taskType == sym_list::sym_function) {
 
-                    if (context.currentModuleId != -1) {
+                    int ownerModuleId = getContainingModuleId(lineNum + 1, context);
+                    if (ownerModuleId == -1)
+                        ownerModuleId = context.currentModuleId;
+                    if (ownerModuleId != -1) {
                         addRelationshipWithContext(
-                            context.currentModuleId,
+                            ownerModuleId,
                             taskId,
                             SymbolRelationshipEngine::CALLS,
                             QString("Called at line %1").arg(lineNum + 1),
@@ -322,9 +341,12 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
 
                 for (const QString& signalName : std::as_const(signalNames)) {
                     int signalId = findSymbolIdByName(signalName, context);
-                    if (signalId != -1 && context.currentModuleId != -1) {
+                    int ownerModuleId = getContainingModuleId(lineNum + 1, context);
+                    if (ownerModuleId == -1)
+                        ownerModuleId = context.currentModuleId;
+                    if (signalId != -1 && ownerModuleId != -1) {
                         addRelationshipWithContext(
-                            context.currentModuleId,
+                            ownerModuleId,
                             signalId,
                             SymbolRelationshipEngine::READS_FROM,
                             QString("Always block sensitivity at line %1").arg(lineNum + 1),
@@ -354,11 +376,14 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
             if (match.hasMatch()) {
                 QString clockName = match.captured(2);
                 int clockId = findSymbolIdByName(clockName, context);
+                int ownerModuleId = getContainingModuleId(lineNum + 1, context);
+                if (ownerModuleId == -1)
+                    ownerModuleId = context.currentModuleId;
 
-                if (clockId != -1 && context.currentModuleId != -1) {
+                if (clockId != -1 && ownerModuleId != -1) {
                     addRelationshipWithContext(
                         clockId,
-                        context.currentModuleId,
+                        ownerModuleId,
                         SymbolRelationshipEngine::CLOCKS,
                         QString("Clock domain at line %1").arg(lineNum + 1),
                         95
@@ -374,11 +399,14 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
                 QRegularExpressionMatch match = resetIt.next();
                 QString resetName = match.captured(1);
                 int resetId = findSymbolIdByName(resetName, context);
+                int ownerModuleId = getContainingModuleId(lineNum + 1, context);
+                if (ownerModuleId == -1)
+                    ownerModuleId = context.currentModuleId;
 
-                if (resetId != -1 && context.currentModuleId != -1) {
+                if (resetId != -1 && ownerModuleId != -1) {
                     addRelationshipWithContext(
                         resetId,
-                        context.currentModuleId,
+                        ownerModuleId,
                         SymbolRelationshipEngine::RESETS,
                         QString("Reset signal at line %1").arg(lineNum + 1),
                         90
