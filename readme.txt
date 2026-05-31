@@ -28,10 +28,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   （注：cursorPositionChanged→highlighCurrentLine 每次光标移动重铺全部作用域背景 ExtraSelection，
   属另一处潜在开销，待按需优化。）
   右下角（构建时间见该标签 tooltip）。
-- 进行中：**符号提取从 Tree-sitter 迁移到 Slang**（SlangManager::extractSymbols /
-  extractWorkspaceSymbols → sym_list::setSymbolsForFile）。改动已通过 MinGW/Ninja 编译链接，
-  尚未做完整运行实测。Tree-sitter 符号路径降级为遗留代码（仅「Tree-sitter 验证」按钮使用），
-  语法高亮仍由 SVLexer 驱动。详见下文「符号分析系统」与「已知问题」。
+- 架构：**Slang 语义层 + Tree-sitter 实时层**（Route A）。符号/类型/跨文件/跳转目标/补全候选由 Slang
+  （SlangManager::extractSymbols → sym_list::setSymbolsForFile）提供；语法高亮与「当前模块」作用域判定
+  由 live tree-sitter（TSDocument）即时提供。SVLexer 已移除；旧的 Tree-sitter 符号路径
+  （SVTreeSitterParser/setContentIncremental）仅剩「Tree-sitter 验证」按钮使用（待后续清理）。
 - 已补并经无头测试验证（test_sv/dump_symbols.cpp 直接调用 SlangManager::extractSymbols 打印符号）：
   1) typedef struct/enum 于 typedef 站点产出 struct 类型符号（sym_packed_struct/sym_unpacked_struct）、
      struct 成员与枚举值（moduleScope = 类型别名）、enum/struct 变量 dataType = 类型别名；
@@ -90,7 +90,12 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
         只有编辑过的行才上色」的缺陷，并以增量编辑替代每键全解析以改善大文件流畅度。
         TSDocument::applyEditChars 从字符位置推导字节/行列点（用对象内的旧文本求旧端点）。
         无头验证新增：incremental applyEditChars 与全量 setText 的高亮 span 完全一致（9/9）。
-    - 待办：A3 实时 scope/大纲；A4 收敛清理（删除 sv_lexer.* 物理文件、统一文档）。
+    - A3：编辑器「当前模块」判定改用 live tree-sitter（currentModuleNameAt → enclosingModuleName），
+      替换防抖/正则的 getCurrentModule(Scope)；补全门控与跳转作用域即时且容错（jump_test 10/10）。
+    - A4：已删除 sv_lexer.cpp/.h、sv_token.h（SVLexer 彻底移除）；readme 同步为最终架构。
+      （demo.pro 为已废弃的 qmake 工程，不含 slang，构建以 CMakeLists.txt 为准。）
+    - 待办（非阻塞）：性能优化（updateScopeBackgrounds / refreshRelationshipData 等分析完成回调的主线程开销，
+      已用 perflog.h 插桩待定位）；清理旧 Tree-sitter 符号路径（setContentIncremental 等遗留死代码）。
 
 
 ==========================================================================
@@ -101,11 +106,13 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 多标签页文本编辑 (`TabManager`)
   - 新建 / 打开 / 保存 / 另存为
   - 未保存文件关闭时会弹出确认
-- SystemVerilog 语法高亮 (`MyHighlighter`)
-  - 基于专用词法分析器 `SVLexer`（sv_lexer.h/cpp、sv_token.h），完全移除高亮路径中的 `QRegularExpression`，避免正则回溯导致的 UI 卡顿。
-  - 按行驱动：`highlightBlock` 内用 `SVLexer::nextToken()` 逐 token 推进，根据 token 类型（Keyword/Comment/Identifier/Operator/Number/String 等）调用 `setFormat`；多行块注释通过 `setState`/`getState` 跨块保持。
-  - 关键字表：从资源文件 `config/keywords.txt` 加载（静态缓存），涵盖 Verilog/SystemVerilog 与预处理器关键字；Identifier 与表匹配时按关键字高亮，注释与字符串内不会误标。
-  - 支持单行注释 `//`、块注释 `/* */`、双引号字符串（含 `\"` 转义）、数字、标识符、操作符（括号/分号等，TokenType::Operator）；Verilog 中单引号用于字面量（如 `1'b1`），不作为字符串高亮。
+- SystemVerilog 语法高亮 (`MyHighlighter`，由 Tree-sitter 驱动 —— A2 起，SVLexer 已移除)
+  - 基于 live tree-sitter 树（TSDocument）：`highlightBlock` 调用 `TSDocument::highlightSpans(blockStart, len)`
+    取该块的高亮 span 并 `setFormat`；分类见 `classifyTokenType`（关键字/注释/字符串/数字/运算符）。
+  - 容错：半句代码也能高亮（tree-sitter 错误恢复）；非 ASCII（中文注释）偏移精确（UTF-16 解析，byte/2=字符索引）。
+  - 多行块注释 `/* */`：`blockEndCommentState` 返回块尾是否仍在 block_comment 内，作为 QSyntaxHighlighter
+    block state 传播，使后续块正确续高亮。
+  - 关键字识别来自 grammar token 类型（`*_keyword` 及匿名「词」token 如 logic/reg/begin），不再用 keywords.txt。
 - 行号栏 (`LineNumberWidget`)
   - 显示行号
   - 点击行号可将光标跳转到对应行
@@ -198,9 +205,10 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 
 核心组件：`SymbolAnalyzer` + `sym_list`（符号数据库）+ `CompletionManager` + `ScopeManager`（作用域树）
 
-- **解析架构（Slang 符号 + SVLexer 高亮）**
+- **解析架构（Slang 语义层 + Tree-sitter 实时层）**
   - **符号数据（Slang，独家）**：大纲、补全、代码导航、作用域树与 CONTAINS 关系所依赖的符号数据**由** `SlangManager`（slangmanager.h/cpp）基于 `slang::ast::Compilation` 的 parse + elaboration **独家**提供。SymbolAnalyzer 对单文件调用 `SlangManager::extractSymbols(fileName, content)`，对整个工作区调用 `extractWorkspaceSymbols(filePaths)`（所有文件一起编译），得到 `QList<sym_list::SymbolInfo>` 后调用 `sym_list::setSymbolsForFile(fileName, list[, content])` 写入符号库，并在其中重建作用域树与 CONTAINS 关系。解析/elaboration 失败时返回空列表，不崩溃。
-  - **语法高亮（SVLexer）**：高亮路径独立，由 `SVLexer`（sv_lexer.h/cpp、sv_token.h）逐 token 驱动，不依赖 Slang 或 Tree-sitter。
+  - **语法高亮 + 实时作用域（Tree-sitter）**：由每文档 live tree（TSDocument）驱动，每次编辑增量更新；
+    高亮（highlightSpans）与「当前模块」判定（enclosingModuleName）即时且容错。SVLexer 已移除。
   - **Tree-sitter（SVTreeSitterParser）保留**：符号路径已不再使用 Tree-sitter；`SVTreeSitterParser` 仅保留给工具栏「Tree-sitter 验证」按钮（MainWindow::onDebug0 通过 parse(content) + getSymbols() 做验证输出，不写入符号库）。`sym_list::setContentIncremental` / `extractSymbolsAndContainsOnePass` 等旧的 Tree-sitter 符号入口现为**未调用的遗留代码**（保留以备回退/对照）。
   - **模块实例化关系（INSTANTIATES）**：由 `SlangManager::extractModuleInstantiations` 通过 Slang AST 的 InstanceSymbol 遍历产出（实例名/模块定义名/行号 1-based，100% 准确），SmartRelationshipBuilder 负责写入关系。其余关系类型（变量赋值/引用、task/function 调用、always、clock/reset 等）仍使用 SmartRelationshipBuilder 内原有正则逻辑。
 - **Slang 符号提取明细（slangmanager.cpp::collectSymbolsFromRoot）**
@@ -216,7 +224,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 行号为 1-based（与 Qt/UI 一致，等同原 Tree-sitter 路径）。moduleScope 由 `getDeclaringDefinition()` 推出；包成员则取所在 package 名。
   - **已解决**：struct 成员 / 变量、enum、typedef 已由 Slang 产出，s/sp/e/ee/ne 相关补全与跳转可用；原 Tree-sitter 路径「`TYPE_NAME id;` 被误判为 wire」的 grammar 歧义，因 Slang 做语义判定而不再存在。
   - **typedef 站点产出（slangmanager.cpp）**：在 TypeAliasType visitor 中，对 typedef enum 额外遍历 EnumType::values() 产出 sym_enum_value（moduleScope = 别名，如 state_t）；对 typedef struct 额外产出 struct 类型符号（sym_packed_struct / sym_unpacked_struct）并遍历成员产出 sym_struct_member（moduleScope = 别名，如 test_s）。VariableSymbol visitor 对 enum/struct 变量写入 dataType = 声明类型别名。由此满足补全/跳转的数据契约：get{Struct,Enum}TypeForVariable 读 var.dataType、get{Struct,Enum}MemberCompletions 按 moduleScope == 类型名过滤。Field/EnumValue 的独立 handler 已移除（改在 typedef 站点产出，避免 moduleScope 取成模块名及重复）。
-  - **当前缺口**：**内联匿名** enum/struct（无 typedef，如 `enum {A,B} v;`）的枚举值 / 成员当前不产出（仅 typedef 命名类型支持）；普通变量（reg/wire/logic）的 dataType（如 logic[7:0]）当前未填充（无消费者，仅 typedef/inst/enum 变量/struct 变量填 dataType）；commentRegions 在 setSymbolsForFile 路径不再维护（注释高亮仍由 SVLexer 保证）。上述均为编译通过、尚待运行实测。
+  - **当前缺口**：**内联匿名** enum/struct（无 typedef，如 `enum {A,B} v;`）的枚举值 / 成员当前不产出（仅 typedef 命名类型支持）；普通变量（reg/wire/logic）的 dataType（如 logic[7:0]）当前未填充（无消费者，仅 typedef/inst/enum 变量/struct 变量填 dataType）；commentRegions 在 setSymbolsForFile 路径不再维护（注释高亮由 Tree-sitter（one_line_comment/block_comment）提供）。上述均为编译通过、尚待运行实测。
 - 支持解析的 SystemVerilog 符号包括但不限于：
   - `module` / `endmodule`
   - **有效模块判定**：仅当同时满足以下条件时才视为“有效模块”（用于补全、状态栏、getCurrentModuleScope 等）：
@@ -231,7 +239,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 - 具备注释感知能力
   - 通过符号数据库中的注释范围表，避免解析注释中的符号
 - **Struct 与注释**
-  - typedef/enum 类型与变量、struct 成员与变量均已由 Slang 产出（sym_typedef、sym_enum、sym_enum_var、sym_enum_value、sym_struct_member、sym_packed_struct_var、sym_unpacked_struct_var）。注释感知（commentRegions）当前未在 Slang 路径维护；注释内容仍由 SVLexer 识别为 Comment，高亮路径不受影响。
+  - typedef/enum 类型与变量、struct 成员与变量均已由 Slang 产出（sym_typedef、sym_enum、sym_enum_var、sym_enum_value、sym_struct_member、sym_packed_struct_var、sym_unpacked_struct_var）。注释感知（commentRegions）当前未在 Slang 路径维护；注释由 Tree-sitter 识别并高亮，高亮路径不受影响。
   - **Packed / Unpacked 区分**：struct **变量**已通过 Slang 的 canonical type 区分 packed/unpacked（sym_packed_struct_var / sym_unpacked_struct_var）。struct **类型名**符号（sym_packed_struct / sym_unpacked_struct）尚未单独产出，目前以 sym_typedef(dataType="struct") 表示，ns/nsp 与类型名跳转依赖此形式，行为待验证。
 
 【作用域树 (Scope Tree) — scope_tree.h】
@@ -429,7 +437,8 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 在 SymbolRelationshipEngine 中引入 beginUpdate() 与 endUpdate()，在
     endUpdate 之前不调用 invalidateCache()，批量提交后按需失效缓存。
 
-[x] 阶段 D — 语法高亮性能与正确性 (MyHighlighter)（已完成）
+[x] 阶段 D — 语法高亮性能与正确性 (MyHighlighter)（已完成；**后被 Route A / A2 取代**：高亮现由 live
+    tree-sitter（TSDocument::highlightSpans）驱动，SVLexer 已于 A4 删除。下述为历史记录。）
   - **Lexer 化重构**：完全移除 MyHighlighter 内的 QRegularExpression，改用专用词法分析器 SVLexer
     （sv_lexer.h/cpp、sv_token.h）。highlightBlock 仅调用 SVLexer::nextToken() 按 token 高亮，
     避免正则回溯与多遍匹配带来的主线程卡顿。
@@ -493,7 +502,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
   - 写锁保护：sym_list 的增量解析仍受 QMutex / QReadWriteLock 保护，防止多线程崩溃。
   - 符号解析：仅使用 Slang（SlangManager::extractSymbols / extractWorkspaceSymbols），写回经 sym_list::setSymbolsForFile。
     setContentIncremental / SVTreeSitterParser 符号路径为遗留代码（仅 Tree-sitter 验证按钮使用），SVSymbolParser 已移除。
-    语法高亮由 SVLexer 驱动；hasSignificantChanges 等改为简单字符串/词边界判断。
+    语法高亮由 Tree-sitter（TSDocument）驱动；hasSignificantChanges 等改为简单字符串/词边界判断。
 
 若发现新的冗余，可参考本节原则处理并更新本段说明。
 
@@ -524,7 +533,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
     不依赖 moduleScope，光标在子程序内仍可补全其局部符号。
   - **变量 dataType**：reg/wire/logic 等变量的 dataType（如 logic[7:0]）当前未填充（无消费者）；enum/struct
     变量已填 dataType = 类型别名，inst 填模块名，typedef 填 enum/struct 标记。
-  - **注释感知**：commentRegions 在 setSymbolsForFile 路径不再维护；注释高亮仍由 SVLexer 保证。
+  - **注释感知**：commentRegions 在 setSymbolsForFile 路径不再维护；注释高亮由 Tree-sitter（one_line_comment/block_comment）提供。
   - **单文件 elaboration**：extractSymbols 对单文件做 elaboration，跨文件的类型/package 引用可能解析失败，
     导致部分符号缺失（单文件 vs 全工程权衡）；工作区分析用 fromFiles 整体编译可缓解。
   - **编译依赖**：新增引用 slang 头（CompilationUnitSymbols / MemberSymbols / VariableSymbols / PortSymbols /
