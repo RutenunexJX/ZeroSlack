@@ -79,12 +79,16 @@ MainWindow::~MainWindow()
 void MainWindow::setupManagerConnections()
 {
     analysisScheduler->setDocumentModel(tabManager->getDocumentModel());
+    analysisScheduler->setProjectModel(workspaceManager->getProjectModel());
     analysisScheduler->setSymbolAnalyzer(symbolAnalyzer.get());
     analysisScheduler->setOpenFileContentProvider([this](const QString& fileName) {
         return tabManager ? tabManager->getPlainTextFromOpenFile(fileName) : QString();
     });
     analysisScheduler->setWorkspaceOpenProvider([this]() {
         return workspaceManager && workspaceManager->isWorkspaceOpen();
+    });
+    analysisScheduler->setWorkspaceSymbolCancelProvider([this]() {
+        return symbolAnalysisCancelled.load();
     });
     analysisScheduler->setRelationshipAnalysisCallback(
         [this](const QString& fileName, const QString& content) {
@@ -139,12 +143,17 @@ void MainWindow::setupManagerConnections()
                 }
             });
 
-    connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened,
-            this, [this](const QString& workspacePath) {
-                Q_UNUSED(workspacePath)
-                const ProjectSnapshot project = workspaceManager->projectSnapshot();
-                QStringList svFiles = project.systemVerilogFiles;
+    connect(workspaceManager.get(), &WorkspaceManager::fileChanged,
+            this, [this](const QString& filePath) {
+                if (analysisScheduler)
+                    analysisScheduler->handleExternalFileChanged(filePath, kFileChangeDebounceMs);
+            });
 
+    connect(analysisScheduler.get(), &AnalysisScheduler::workspaceSymbolAnalysisStarted,
+            this, [this](const ProjectSnapshot& project, int totalFiles) {
+                Q_UNUSED(totalFiles)
+                symbolAnalysisCancelled.store(false);
+                const QStringList svFiles = project.systemVerilogFiles;
                 showAnalysisProgress(svFiles);
 
                 QTimer::singleShot(10, this, [this, svFiles]() {
@@ -163,18 +172,29 @@ void MainWindow::setupManagerConnections()
                     }
                 });
             });
-    connect(workspaceManager.get(), &WorkspaceManager::fileChanged,
-            this, [this](const QString& filePath) {
-                if (analysisScheduler)
-                    analysisScheduler->handleExternalFileChanged(filePath, kFileChangeDebounceMs);
-            });
 
-    connect(workspaceManager.get(), &WorkspaceManager::filesScanned,
-            this, [this](const QStringList& svFiles) {
-                Q_UNUSED(svFiles)
-                symbolAnalysisCancelled.store(false);
-                symbolAnalyzer->startAnalyzeProjectAsync(workspaceManager->projectSnapshot(),
-                    [this]() { return symbolAnalysisCancelled.load(); });
+    connect(analysisScheduler.get(), &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+            this, [this](const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols) {
+                if (statusBar()) {
+                    statusBar()->showMessage(
+                        QString("符号分析完成: %1个文件, %2个符号 - 关系分析进行中...")
+                        .arg(filesAnalyzed).arg(totalSymbols),
+                        3000);
+                }
+                const QStringList svFiles = project.systemVerilogFiles;
+                if (progressDialog) {
+                    progressDialog->statusLabel->setText("阶段 2/2: 关系分析进行中...");
+                    progressDialog->currentFileLabel->setText("正在分析文件间的符号依赖关系...");
+                    progressDialog->progressBar->setFormat(QString("%v / %1 文件 (%p%)").arg(svFiles.size()));
+                    if (progressDialog->config.showDetails) {
+                        progressDialog->logProgress("🔗 开始关系分析阶段...");
+                        progressDialog->logProgress("🔍 分析模块实例化关系...");
+                        progressDialog->logProgress("🔍 分析变量赋值关系...");
+                        progressDialog->logProgress("🔍 分析任务/函数调用关系...");
+                    }
+                    progressDialog->update();
+                    progressDialog->repaint();
+                }
             });
 
     connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
@@ -229,33 +249,6 @@ void MainWindow::setupManagerConnections()
                     progressDialog->currentFileLabel->setText(
                         QString("符号分析: %1 / %2 — %3").arg(filesDone).arg(totalFiles).arg(shortName));
                 }
-            });
-
-    connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchAnalysisCompleted,
-            this, [this](int filesAnalyzed, int totalSymbols) {
-                if (statusBar()) {
-                    statusBar()->showMessage(
-                        QString("符号分析完成: %1个文件, %2个符号 - 关系分析进行中...")
-                        .arg(filesAnalyzed).arg(totalSymbols),
-                        3000);
-                }
-                const ProjectSnapshot project = workspaceManager->projectSnapshot();
-                QStringList svFiles = project.systemVerilogFiles;
-                if (progressDialog) {
-                    progressDialog->statusLabel->setText("阶段 2/2: 关系分析进行中...");
-                    progressDialog->currentFileLabel->setText("正在分析文件间的符号依赖关系...");
-                    progressDialog->progressBar->setFormat(QString("%v / %1 文件 (%p%)").arg(svFiles.size()));
-                    if (progressDialog->config.showDetails) {
-                        progressDialog->logProgress("🔗 开始关系分析阶段...");
-                        progressDialog->logProgress("🔍 分析模块实例化关系...");
-                        progressDialog->logProgress("🔍 分析变量赋值关系...");
-                        progressDialog->logProgress("🔍 分析任务/函数调用关系...");
-                    }
-                    progressDialog->update();
-                    progressDialog->repaint();
-                }
-                if (analysisScheduler && relationshipBuilder && !svFiles.isEmpty())
-                    analysisScheduler->requestWorkspaceRelationshipAnalysis(project);
             });
 
     navigationManager->connectToTabManager(tabManager.get());

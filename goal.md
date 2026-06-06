@@ -106,7 +106,7 @@ Feature/UI Layer
 
 目的：收束分析触发路径。
 
-当前状态：最小 AnalysisScheduler 已落地，订阅 `DocumentModel` opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断；workspace 批量关系分析 watcher / 取消 / 完成信号已收束到 scheduler，进度弹窗 UI 暂仍留在 `MainWindow`。
+当前状态：最小 AnalysisScheduler 已落地，订阅 `DocumentModel` opened/edited/saved 和 `ProjectModel` projectChanged，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖、workspace opened/rescanned/project config changed 后的符号分析触发，以及单文件关系分析显著变更判断；workspace 批量关系分析 watcher / 取消 / 完成信号已收束到 scheduler，符号分析完成后由 scheduler 接续启动 workspace 关系分析，进度弹窗 UI 暂仍留在 `MainWindow`。
 
 统一处理：
 
@@ -136,7 +136,7 @@ Feature/UI Layer
 
 目的：让 ZeroSlack 真正理解 SV 工程输入，而不是只扫描文件。
 
-当前状态：最小 ProjectModel 已落地，由 `WorkspaceManager` 持有，发布 `ProjectSnapshot` 并记录 workspace root、全部文件、SystemVerilog 文件集合、默认 include dirs、defines、可选 filelist/top module 和 ignored paths；`SymbolAnalyzer` 已提供 `analyzeProject` / `startAnalyzeProjectAsync` 入口，后续 SlangManager / AnalysisScheduler 应继续转向消费 ProjectSnapshot。
+当前状态：最小 ProjectModel 已落地，由 `WorkspaceManager` 持有，发布 `ProjectSnapshot` 并记录 workspace root、全部文件、SystemVerilog 文件集合、默认 include dirs、defines、可选 filelist/top module 和 ignored paths；`SymbolAnalyzer` 已提供 `analyzeProject` / `startAnalyzeProjectAsync` 入口，AnalysisScheduler 已开始直接订阅 ProjectModel projectChanged 并消费 ProjectSnapshot。
 
 最小版本包含：
 
@@ -154,7 +154,7 @@ Feature/UI Layer
 
 目的：让产品功能复用统一查询能力。
 
-当前状态：`DefinitionService` 最小入口已落地，内部通过 `SemanticIndex` 查询 definitions，并集中 Ctrl+Click / 跳转定义所需的本文件优先、module scope、struct member 类型过滤和跨文件目标选择规则；`CompletionService` 最小入口已落地，普通自动补全和 struct member 专用补全路径已开始经由 service，命令模式分支后续再迁；`RelationshipService` / `HierarchyService` 最小入口已落地，关系和实例层级查询已开始经由 service 边界；`NavigationManager` 已开始通过 `DefinitionService` / `SemanticIndex` 消费模块跳转和导航列表数据。后续 service 应继续按同样方式先包住现有能力，再逐步替换 UI 直连逻辑。
+当前状态：`DefinitionService` 最小入口已落地，内部通过 `SemanticIndex` 查询 definitions，并集中 Ctrl+Click / 跳转定义所需的本文件优先、module scope、struct member 类型过滤和跨文件目标选择规则；`CompletionService` 最小入口已落地，普通自动补全、struct member 专用补全和命令模式补全路径已开始经由 service；`RelationshipService` / `HierarchyService` 最小入口已落地，关系和实例层级查询已开始经由 service 边界；`NavigationManager` 已开始通过 `DefinitionService` / `SemanticIndex` 消费模块跳转和导航列表数据。后续 service 应继续按同样方式先包住现有能力，再逐步替换 UI 直连逻辑。
 
 逐步建立：
 

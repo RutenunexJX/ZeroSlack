@@ -756,56 +756,25 @@ void MyCodeEditor::onAutoCompleteTimer()
         highlightCommandText();
         QString commandInput = extractCommandInput().trimmed();
 
-        // 这里是原有的命令模式处理逻辑
-        CompletionManager* manager = CompletionManager::getInstance();
         int cursorPosition = cursor.position();
-        QString fileName = getFileName();
-        QString currentModule = currentModuleNameAt(cursorPosition);
+        CommandCompletionQuery query;
+        query.prefix = commandInput;
+        query.fileName = getFileName();
+        query.moduleName = currentModuleNameAt(cursorPosition);
+        query.documentText = document()->toPlainText();
+        query.symbolType = currentCommandType;
 
-        // 对于struct相关的命令，直接获取SymbolInfo列表以保留类型信息
-        QList<sym_list::SymbolInfo> filteredSymbols;
-        bool useSymbolInfoDirectly = (currentCommandType == sym_list::sym_packed_struct_var ||
-                                      currentCommandType == sym_list::sym_unpacked_struct_var ||
-                                      currentCommandType == sym_list::sym_packed_struct ||
-                                      currentCommandType == sym_list::sym_unpacked_struct);
-        
-        if (useSymbolInfoDirectly) {
-            // struct 相关命令(s/sp/ns/nsp)：严格作用域——仅在模块内补全，模块外不弹出
-            if (currentModule.isEmpty()) {
-                if (completer->popup()->isVisible()) {
-                    completer->popup()->hide();
-                }
-                return;
-            }
-            sym_list* symbolList = sym_list::getInstance();
-            symbolList->refreshStructTypedefEnumForFile(fileName, document()->toPlainText());
-            // 在模块内：聚合模块内 + include 文件 + import 的 package
-            filteredSymbols = manager->getModuleContextSymbolsByType(currentModule, fileName, currentCommandType, commandInput);
-        } else {
-            // 对于其他类型，使用原来的方法
-            QStringList symbolNames;
-            if (!currentModule.isEmpty()) {
-                symbolNames = manager->getModuleInternalVariablesByType(currentModule, currentCommandType, commandInput);
-            } else {
-                symbolNames = manager->getGlobalSymbolsByType(currentCommandType, commandInput);
-            }
-
-            // 转换为 SymbolInfo 列表
-            sym_list* symbolList = sym_list::getInstance();
-
-            for (const QString &symbolName : symbolNames) {
-                QList<sym_list::SymbolInfo> matchingSymbols = symbolList->findSymbolsByName(symbolName);
-                for (const sym_list::SymbolInfo &symbol : matchingSymbols) {
-                    bool typeOk = (symbol.symbolType == currentCommandType);
-                    if (currentCommandType == sym_list::sym_enum && !typeOk) {
-                        typeOk = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
-                    }
-                    if (typeOk && (currentModule.isEmpty() || symbol.moduleScope == currentModule)) {
-                        filteredSymbols.append(symbol);
-                        break;
-                    }
-                }
-            }
+        const QList<sym_list::SymbolInfo> filteredSymbols =
+            CompletionService::getInstance()->findCommandCompletionSymbols(query);
+        if (filteredSymbols.isEmpty()
+            && (currentCommandType == sym_list::sym_packed_struct_var
+                || currentCommandType == sym_list::sym_unpacked_struct_var
+                || currentCommandType == sym_list::sym_packed_struct
+                || currentCommandType == sym_list::sym_unpacked_struct)
+            && query.moduleName.isEmpty()) {
+            if (completer->popup()->isVisible())
+                completer->popup()->hide();
+            return;
         }
 
         completionModel->updateSymbolCompletions(filteredSymbols, commandInput, currentCommandType);
@@ -894,19 +863,13 @@ bool MyCodeEditor::isConsecutiveSpaces()
 
 QStringList MyCodeEditor::getCommandModeInternalVariables(const QString &prefix)
 {
-    CompletionManager* manager = CompletionManager::getInstance();
-
     QTextCursor cursor = textCursor();
-    int cursorPosition = cursor.position();
-    QString fileName = getFileName();
-
-    QString currentModule = currentModuleNameAt(cursorPosition);
-
-    if (!currentModule.isEmpty()) {
-        return manager->getModuleInternalVariablesByType(currentModule, currentCommandType, prefix);
-    } else {
-        return manager->getGlobalSymbolsByType(currentCommandType, prefix);
-    }
+    CommandCompletionQuery query;
+    query.prefix = prefix;
+    query.fileName = getFileName();
+    query.moduleName = currentModuleNameAt(cursor.position());
+    query.symbolType = currentCommandType;
+    return CompletionService::getInstance()->findCommandCompletions(query);
 }
 
 void MyCodeEditor::highlightCommandText()
@@ -1103,7 +1066,12 @@ QString MyCodeEditor::extractCommandInput()
 
 QStringList MyCodeEditor::getSymbolCompletions(sym_list::sym_type_e symbolType, const QString &prefix)
 {
-    return CompletionManager::getInstance()->getSymbolCompletions(symbolType, prefix);
+    CommandCompletionQuery query;
+    query.prefix = prefix;
+    query.fileName = getFileName();
+    query.moduleName = currentModuleNameAt(textCursor().position());
+    query.symbolType = symbolType;
+    return CompletionService::getInstance()->findCommandCompletions(query);
 }
 
 void MyCodeEditor::initAlternateModeCommands()

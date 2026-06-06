@@ -16,6 +16,14 @@ struct CompletionQuery {
     int cursorPosition = -1;
 };
 
+struct CommandCompletionQuery {
+    QString prefix;
+    QString fileName;
+    QString moduleName;
+    QString documentText;
+    sym_list::sym_type_e symbolType = sym_list::sym_user;
+};
+
 class CompletionService
 {
 public:
@@ -28,6 +36,8 @@ public:
 
     QStringList findCompletions(const CompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCompletionSymbols(const CompletionQuery& query) const;
+    QStringList findCommandCompletions(const CommandCompletionQuery& query) const;
+    QList<sym_list::SymbolInfo> findCommandCompletionSymbols(const CommandCompletionQuery& query) const;
     QString getStructTypeForVariable(const QString& variableName, const QString& moduleName) const;
     bool tryParseStructMemberContext(const QString& line,
                                      QString& outVariableName,

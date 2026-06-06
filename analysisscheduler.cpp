@@ -63,9 +63,39 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
             });
 }
 
+void AnalysisScheduler::setProjectModel(ProjectModel* model)
+{
+    if (projectModel == model)
+        return;
+    if (projectModel)
+        disconnect(projectModel, nullptr, this, nullptr);
+
+    projectModel = model;
+    if (!projectModel)
+        return;
+
+    connect(projectModel, &ProjectModel::projectChanged,
+            this, &AnalysisScheduler::onProjectChanged);
+    connect(projectModel, &ProjectModel::projectClosed, this, [this]() {
+        workspaceSymbolAnalysisActive = false;
+        activeWorkspaceProject = ProjectSnapshot();
+        cancelWorkspaceRelationshipAnalysis();
+    });
+}
+
 void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 {
+    if (symbolAnalyzer == analyzer)
+        return;
+    if (symbolAnalyzer)
+        disconnect(symbolAnalyzer, nullptr, this, nullptr);
+
     symbolAnalyzer = analyzer;
+    if (!symbolAnalyzer)
+        return;
+
+    connect(symbolAnalyzer, &SymbolAnalyzer::batchAnalysisCompleted,
+            this, &AnalysisScheduler::onWorkspaceSymbolAnalysisCompleted);
 }
 
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
@@ -76,6 +106,11 @@ void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const Q
 void AnalysisScheduler::setWorkspaceOpenProvider(std::function<bool()> provider)
 {
     workspaceOpenProvider = std::move(provider);
+}
+
+void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> provider)
+{
+    workspaceSymbolCancelProvider = std::move(provider);
 }
 
 void AnalysisScheduler::setRelationshipAnalysisCallback(
@@ -143,6 +178,17 @@ void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, con
 
     lastRelationshipAnalysisContent.insert(fileName, content);
     relationshipAnalysisCallback(fileName, content);
+}
+
+void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
+{
+    if (!project.isOpen() || project.systemVerilogFiles.isEmpty() || !symbolAnalyzer)
+        return;
+
+    activeWorkspaceProject = project;
+    workspaceSymbolAnalysisActive = true;
+    emit workspaceSymbolAnalysisStarted(project, project.systemVerilogFiles.size());
+    symbolAnalyzer->startAnalyzeProjectAsync(project, workspaceSymbolCancelProvider);
 }
 
 void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project)
@@ -226,6 +272,32 @@ void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
 void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
 {
     analyzeOpenDocumentNow(snapshot, true);
+}
+
+void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
+{
+    if (!project.isOpen()) {
+        workspaceSymbolAnalysisActive = false;
+        activeWorkspaceProject = ProjectSnapshot();
+        cancelWorkspaceRelationshipAnalysis();
+        return;
+    }
+
+    requestWorkspaceAnalysis(project);
+}
+
+void AnalysisScheduler::onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols)
+{
+    if (!workspaceSymbolAnalysisActive)
+        return;
+
+    workspaceSymbolAnalysisActive = false;
+    const ProjectSnapshot project = activeWorkspaceProject;
+    if (workspaceSymbolCancelProvider && workspaceSymbolCancelProvider())
+        return;
+
+    emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
+    requestWorkspaceRelationshipAnalysis(project);
 }
 
 void AnalysisScheduler::analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged)

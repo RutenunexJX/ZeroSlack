@@ -119,6 +119,56 @@ int main(int argc, char** argv) {
            "CompletionService struct symbols",
            memberSymbols.size());
 
+    CommandCompletionQuery commandQuery;
+    commandQuery.fileName = path;
+    commandQuery.moduleName = "top";
+    commandQuery.symbolType = sym_list::sym_logic;
+    commandQuery.prefix = "en";
+    expectList("CompletionService command logic",
+               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               {"enable"});
+
+    const QList<sym_list::SymbolInfo> commandLogicSymbols =
+        CompletionService::getInstance()->findCommandCompletionSymbols(commandQuery);
+    ++g_checks;
+    const bool commandLogicOk = commandLogicSymbols.size() == 1
+        && commandLogicSymbols.first().symbolName == QStringLiteral("enable")
+        && commandLogicSymbols.first().symbolType == sym_list::sym_logic
+        && commandLogicSymbols.first().moduleScope == QStringLiteral("top");
+    if (!commandLogicOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           commandLogicOk ? "PASS" : "FAIL",
+           "CompletionService command symbols",
+           commandLogicSymbols.size());
+
+    commandQuery.symbolType = sym_list::sym_packed_struct_var;
+    commandQuery.prefix = "pix";
+    commandQuery.documentText = content;
+    const QList<sym_list::SymbolInfo> packedStructVars =
+        CompletionService::getInstance()->findCommandCompletionSymbols(commandQuery);
+    ++g_checks;
+    const bool packedStructOk = packedStructVars.size() == 1
+        && packedStructVars.first().symbolName == QStringLiteral("pixel")
+        && packedStructVars.first().symbolType == sym_list::sym_packed_struct_var
+        && packedStructVars.first().moduleScope == QStringLiteral("top");
+    if (!packedStructOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           packedStructOk ? "PASS" : "FAIL",
+           "CompletionService command struct",
+           packedStructVars.size());
+
+    commandQuery.moduleName.clear();
+    ++g_checks;
+    const bool structGlobalHidden =
+        CompletionService::getInstance()->findCommandCompletionSymbols(commandQuery).isEmpty();
+    if (!structGlobalHidden)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           structGlobalHidden ? "PASS" : "FAIL",
+           "CompletionService command struct hidden");
+
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;
 }

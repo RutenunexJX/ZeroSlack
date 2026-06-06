@@ -72,6 +72,67 @@ QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
     return result;
 }
 
+QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const
+{
+    CompletionManager* manager = CompletionManager::getInstance();
+    if (!query.moduleName.isEmpty())
+        return manager->getModuleInternalVariablesByType(
+            query.moduleName,
+            query.symbolType,
+            query.prefix);
+
+    return manager->getGlobalSymbolsByType(query.symbolType, query.prefix);
+}
+
+QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
+    const CommandCompletionQuery& query) const
+{
+    CompletionManager* manager = CompletionManager::getInstance();
+
+    const bool useSymbolInfoDirectly =
+        query.symbolType == sym_list::sym_packed_struct_var
+        || query.symbolType == sym_list::sym_unpacked_struct_var
+        || query.symbolType == sym_list::sym_packed_struct
+        || query.symbolType == sym_list::sym_unpacked_struct;
+
+    if (useSymbolInfoDirectly) {
+        if (query.moduleName.isEmpty())
+            return {};
+
+        if (sym_list* symbolList = semanticIndex()->symbolDatabase())
+            symbolList->refreshStructTypedefEnumForFile(query.fileName, query.documentText);
+
+        return manager->getModuleContextSymbolsByType(
+            query.moduleName,
+            query.fileName,
+            query.symbolType,
+            query.prefix);
+    }
+
+    const QStringList symbolNames = findCommandCompletions(query);
+    QList<sym_list::SymbolInfo> result;
+    sym_list* symbolList = semanticIndex()->symbolDatabase();
+    if (!symbolList)
+        return result;
+
+    for (const QString& symbolName : symbolNames) {
+        const QList<sym_list::SymbolInfo> matchingSymbols = symbolList->findSymbolsByName(symbolName);
+        for (const sym_list::SymbolInfo& symbol : matchingSymbols) {
+            bool typeOk = symbol.symbolType == query.symbolType;
+            if (query.symbolType == sym_list::sym_enum && !typeOk)
+                typeOk = symbol.symbolType == sym_list::sym_typedef
+                         && symbol.dataType == QLatin1String("enum");
+
+            if (typeOk && (query.moduleName.isEmpty() || symbol.moduleScope == query.moduleName)) {
+                result.append(symbol);
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
 QString CompletionService::getStructTypeForVariable(const QString& variableName,
                                                     const QString& moduleName) const
 {
