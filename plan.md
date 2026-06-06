@@ -15,6 +15,10 @@
 - `smartrelationshipbuilder` 不再使用 `QRegularExpression`；clock/reset 只在 Slang timing-control 符号引用基础上做符号名分类。
 - GUI 自动化：已有 Qt offscreen 最小 smoke test，覆盖打开工作区、打开大文件、编辑换行/字符、移动光标、补全弹窗、Ctrl+Click 和导航窗格双击跳转。
 - 性能基线：已有 Qt offscreen 大文件测试，覆盖空白/换行编辑不启动不必要的符号分析或关系分析 debounce。
+- 多文件关系 fixture：已有 `test_sv/relationship_fixture`，覆盖 package/import、跨文件 module instantiation、call、assignment、condition read、clock/reset。
+- SemanticIndex facade：已有最小入口，内部暂包 `sym_list` 和现有服务，提供 symbols / definitions / completions / relationships / diagnostics 查询边界。
+- DocumentModel：已有最小入口，由 `TabManager` 持有并跟踪打开文档的 fileName、dirty/saved、textVersion、cursor 和 live module 名；GUI smoke 已覆盖打开和编辑事件。
+- AnalysisScheduler：已有最小入口，订阅 DocumentModel opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断。
 
 ## Next Major Minimum
 
@@ -36,7 +40,7 @@
   - 已有最小入口：空白/换行编辑后不触发不必要的 Slang / 关系重分析。
   - 待扩展：连续编辑、移动光标、补全触发没有可感知卡顿回归。
 - 关系分析真实样例验证：
-  - 在一个更接近真实工程的小型多文件 SV fixture 上验证 module instantiation、call、assignment、condition read、clock/reset。
+  - 已有一个更接近真实工程的小型多文件 SV fixture，验证 module instantiation、call、assignment、condition read、clock/reset。
   - clock/reset 符号名分类规则保守可解释；不为了猜测覆盖率引入新的文本正则。
 - 构建与回归入口稳定：
   - clean build 能生成 `demo` 和 6 个测试目标。
@@ -47,10 +51,13 @@
 
 1. 已完成 GUI 自动化能力选型和最小 smoke test。
 2. 已完成大文件编辑性能基线最小入口，采用测试内验证，不恢复长期 perflog。
-3. 当前优先项：增加多文件关系 fixture，覆盖真实工程里最容易误判的 clock/reset 和跨文件跳转。
-4. 下一阶段按 goal.md 搭底座：先做 SemanticIndex facade，再收束 AnalysisScheduler，之后补 ProjectModel / Query Services / snapshot。
-5. 修正 smoke/perf/fixture 暴露的问题。
-6. 最后更新 README、goal、版本号，并提交一个 release-candidate commit。
+3. 已完成多文件关系 fixture，覆盖真实工程里最容易误判的 clock/reset 和跨文件实例化。
+4. 已完成 SemanticIndex facade 最小入口；新增代码应优先通过 facade 读语义事实。
+5. 已完成 DocumentModel 最小入口；后续分析调度应优先订阅 DocumentModel 事件。
+6. 已完成 AnalysisScheduler 最小入口；后续可继续把 workspace 批量关系分析和更多 UI 触发点搬入 scheduler。
+7. 当前优先项：按 goal.md 继续搭底座，补 ProjectModel 最小版，之后补 Query Services / snapshot。
+8. 修正 smoke/perf/fixture 暴露的问题。
+9. 最后更新 README、goal、版本号，并提交一个 release-candidate commit。
 
 ## Definition Of Done
 

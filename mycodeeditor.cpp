@@ -313,7 +313,9 @@ bool MyCodeEditor::saveAsFile()
 
 void MyCodeEditor::setFileName(QString fileName)
 {
-    mFileName = fileName;
+    mFileName = fileName.isEmpty()
+        ? QString()
+        : QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
 QString MyCodeEditor::getFileName() const
@@ -324,6 +326,11 @@ QString MyCodeEditor::getFileName() const
 bool MyCodeEditor::checkSaved()
 {
     return isSaved;
+}
+
+QString MyCodeEditor::currentModuleName() const
+{
+    return currentModuleNameAt(textCursor().position());
 }
 
 void MyCodeEditor::initAutoComplete()
@@ -360,29 +367,6 @@ void MyCodeEditor::onTextChanged()
     updateSaveState();
 
     MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-    if (mainWindow && mainWindow->symbolAnalyzer &&
-        (!mainWindow->workspaceManager || !mainWindow->workspaceManager->isWorkspaceOpen())) {
-
-        QTextCursor cursor = textCursor();
-        QTextBlock currentBlock = cursor.block();
-        QString currentLineText = currentBlock.text();
-
-        static QStringList significantKeywords = {
-            "module", "endmodule", "reg", "wire", "logic",
-            "task", "endtask", "function", "endfunction"
-        };
-
-        bool hasSignificantKeyword = false;
-        for (const QString &keyword : significantKeywords) {
-            if (currentLineText.contains(QRegularExpression("\\b" + QRegularExpression::escape(keyword) + "\\b"))) {
-                hasSignificantKeyword = true;
-                break;
-            }
-        }
-
-        if (hasSignificantKeyword && !getFileName().isEmpty())
-            mainWindow->scheduleOpenFileAnalysis(getFileName(), 1000);
-    }
 
     // 关系分析去抖：连续输入时重置定时器；定时器到时再触发单文件关系分析，requestSingleFileRelationshipAnalysis 内部会取消未完成任务
     const bool skipRelationshipAnalysis = m_lastEditWasWhitespaceInsertion;

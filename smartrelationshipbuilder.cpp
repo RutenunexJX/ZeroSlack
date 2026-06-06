@@ -172,6 +172,7 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
         return;
 
     ensureRelationshipInfo(content, context);
+    QSet<QString> emitted;
     for (const ModuleInstantiationInfo& info : std::as_const(context.relationshipInfo.moduleInstantiations)) {
         // lineMin/lineMax are 0-based; info.lineNumber is 1-based
         if (lineMin >= 0 && (info.lineNumber - 1 < lineMin || info.lineNumber - 1 > lineMax))
@@ -189,6 +190,35 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
                 QString("Instance: %1 at line %2").arg(info.instanceName).arg(info.lineNumber),
                 90
             );
+            emitted.insert(QStringLiteral("%1:%2").arg(ownerModuleId).arg(moduleTypeId));
+        }
+    }
+
+    // Workspace-wide Slang symbol extraction can resolve cross-file instances even when
+    // the single-file relationship parse treats the module type as unknown.
+    for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
+        if (symbol.symbolType != sym_list::sym_inst || symbol.dataType.isEmpty())
+            continue;
+        if (lineMin >= 0 && (symbol.startLine - 1 < lineMin || symbol.startLine - 1 > lineMax))
+            continue;
+
+        int moduleTypeId = findSymbolIdByName(symbol.dataType, context);
+        int ownerModuleId = getContainingModuleId(symbol.startLine, context);
+        if (ownerModuleId == -1)
+            ownerModuleId = context.currentModuleId;
+        if (moduleTypeId != -1 && ownerModuleId != -1) {
+            const QString key = QStringLiteral("%1:%2").arg(ownerModuleId).arg(moduleTypeId);
+            if (emitted.contains(key))
+                continue;
+
+            addRelationshipWithContext(
+                ownerModuleId,
+                moduleTypeId,
+                SymbolRelationshipEngine::INSTANTIATES,
+                QString("Instance: %1 at line %2").arg(symbol.symbolName).arg(symbol.startLine),
+                90
+            );
+            emitted.insert(key);
         }
     }
 }

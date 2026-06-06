@@ -69,6 +69,8 @@ Feature/UI Layer
 
 目的：阻止新功能继续直接依赖 `sym_list`。
 
+当前状态：最小 facade 已落地，内部暂包 `sym_list` 和现有服务；后续新增语义查询代码应优先通过 facade。
+
 第一版可以内部调用现有 `sym_list`，但外部新增代码只通过正式接口读语义事实：
 
 - `getSymbols(file)`
@@ -88,6 +90,8 @@ Feature/UI Layer
 
 目的：把“打开文档的状态”从 `MyCodeEditor` 里抽出来，成为独立、可被调度层订阅的一层。
 
+当前状态：最小 DocumentModel 已落地，由 `TabManager` 持有，跟踪打开文档的 fileName、dirty/saved、textVersion、cursor 和 live module 名；`TSDocument` 所有权暂仍在 `MyCodeEditor`，后续可继续迁出。
+
 现状是 `MyCodeEditor` 直接持有 `TSDocument` 并自己管理文档状态，导致分析触发逻辑也被迫挂在编辑器上。最小版本包含：
 
 - 每个打开文档的文本版本号。
@@ -101,6 +105,8 @@ Feature/UI Layer
 ### 阶段 3：AnalysisScheduler
 
 目的：收束分析触发路径。
+
+当前状态：最小 AnalysisScheduler 已落地，订阅 `DocumentModel` opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断；workspace 批量关系分析 watcher / 进度 UI 暂仍留在 `MainWindow`。
 
 统一处理：
 

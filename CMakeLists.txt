@@ -46,9 +46,11 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 # =========================================================
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ 源文件 ---
+    analysisscheduler.cpp
     mainwindow.cpp
     completionmanager.cpp
     completionmodel.cpp
+    documentmodel.cpp
     tsdocument.cpp
     modemanager.cpp
     mycodeeditor.cpp
@@ -56,6 +58,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationmanager.cpp
     navigationwidget.cpp
     relationshipprogressdialog.cpp
+    semanticindex.cpp
     slangmanager.cpp
     smartrelationshipbuilder.cpp
     symbolanalyzer.cpp
@@ -65,11 +68,13 @@ set(ZEROSLACK_CORE_SOURCES
     workspacemanager.cpp
 
     # --- 头文件 (CMake不强求列出，但列出对IDE友好) ---
+    analysisscheduler.h
     mainwindow.h
     completionmanager.h
     scope_tree.h
     version.h
     completionmodel.h
+    documentmodel.h
     tsdocument.h
     modemanager.h
     mycodeeditor.h
@@ -77,6 +82,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationmanager.h
     navigationwidget.h
     relationshipprogressdialog.h
+    semanticindex.h
     slangmanager.h
     smartrelationshipbuilder.h
     symbolanalyzer.h

@@ -1,0 +1,67 @@
+#ifndef DOCUMENTMODEL_H
+#define DOCUMENTMODEL_H
+
+#include <QObject>
+#include <QHash>
+#include <QList>
+#include <QString>
+
+class MyCodeEditor;
+
+struct DocumentSnapshot {
+    QString documentId;
+    QString fileName;
+    int textVersion = 0;
+    bool dirty = false;
+    bool saved = true;
+    int cursorPosition = 0;
+    int cursorLine = 1;
+    int cursorColumn = 1;
+    QString currentModuleName;
+};
+
+class DocumentModel : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit DocumentModel(QObject* parent = nullptr);
+    ~DocumentModel() override;
+
+    void registerEditor(MyCodeEditor* editor);
+    void unregisterEditor(MyCodeEditor* editor);
+    void markSaved(MyCodeEditor* editor);
+    void refreshEditorState(MyCodeEditor* editor);
+
+    QList<DocumentSnapshot> openDocuments() const;
+    DocumentSnapshot documentForEditor(MyCodeEditor* editor) const;
+    DocumentSnapshot documentForFile(const QString& fileName) const;
+    QString documentText(const QString& documentId) const;
+
+signals:
+    void documentOpened(const DocumentSnapshot& snapshot);
+    void documentEdited(const DocumentSnapshot& snapshot);
+    void documentSaved(const DocumentSnapshot& snapshot);
+    void documentClosed(const QString& documentId, const QString& fileName);
+    void cursorChanged(const DocumentSnapshot& snapshot);
+
+private:
+    struct TrackedDocument {
+        DocumentSnapshot snapshot;
+        MyCodeEditor* editor = nullptr;
+    };
+
+    QHash<MyCodeEditor*, TrackedDocument> documentsByEditor;
+    QHash<QString, MyCodeEditor*> editorByDocumentId;
+    QHash<QString, MyCodeEditor*> editorByFileName;
+
+    QString documentIdForEditor(MyCodeEditor* editor) const;
+    QString normalizedFileName(const QString& fileName) const;
+    DocumentSnapshot makeSnapshot(MyCodeEditor* editor, const DocumentSnapshot* previous = nullptr) const;
+    void indexDocument(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
+    void removeIndexes(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
+};
+
+Q_DECLARE_METATYPE(DocumentSnapshot)
+
+#endif // DOCUMENTMODEL_H

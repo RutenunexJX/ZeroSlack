@@ -6,7 +6,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 开发。当前重点不是做完整 IDE，而是提供工程浏览、符号理解、补全、跳转和语法高亮等
 “静态 IDE”能力。
 
-当前版本：0.0.11/slang16
+当前版本：0.0.12/slang17
 当前分支：tree_sitter_and_slang
 版本显示：运行时显示在窗口标题和状态栏右下角，定义在 version.h。
 
@@ -52,6 +52,10 @@ mainwindow.cpp / mainwindow.h
 - 主窗口、菜单、工具栏、状态栏、工作区入口。
 - 符号分析、关系分析、导航和版本号显示的协调层。
 
+analysisscheduler.cpp / analysisscheduler.h
+- 分析触发调度入口。
+- 当前订阅 DocumentModel opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断；后台 watcher 和工作区批量关系进度 UI 暂仍在 MainWindow。
+
 mycodeeditor.cpp / mycodeeditor.h
 - 代码编辑器控件。
 - 持有每个文档自己的 TSDocument。
@@ -60,6 +64,10 @@ mycodeeditor.cpp / mycodeeditor.h
 tsdocument.cpp / tsdocument.h
 - 每文档 live tree-sitter 语法树。
 - 支持 UTF-16 文本、增量 edit、highlightSpans、enclosingModuleName。
+
+documentmodel.cpp / documentmodel.h
+- 打开文档状态模型。
+- 当前由 TabManager 持有，跟踪 fileName、dirty/saved、textVersion、cursor 和 live module 名，并发出 opened/edited/saved/closed/cursorChanged 事件；TSDocument 所有权暂仍保留在 MyCodeEditor。
 
 myhighlighter.cpp / myhighlighter.h
 - QSyntaxHighlighter 封装。
@@ -78,6 +86,10 @@ symbolanalyzer.cpp / symbolanalyzer.h
 syminfo.cpp / syminfo.h
 - 全局符号数据库 sym_list。
 - 保存符号、scope tree、关系分析所需的部分缓存。
+
+semanticindex.cpp / semanticindex.h
+- 语义查询 facade。
+- 当前内部暂包 sym_list 和现有服务，提供 symbols、definitions、completions、relationships、diagnostics 查询入口；后续新功能优先经由它读取语义事实。
 
 completionmanager.cpp / completionmanager.h
 - 补全逻辑。
@@ -262,11 +274,15 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 - 工作区重新扫描时会覆盖空符号文件的旧结果，并让后续 contentAffectsSymbols 判断有稳定基线。
 - 关系写回仍可继续观察和细化。
 
-下一大版本优先项
-- 扩展 GUI 自动化测试能力。
+slang17 已完成
+- GUI / 工作区可靠性版本最小底座已落地。
 - 已有最小 smoke test 覆盖：打开工作区、打开文件、输入换行/字符、上下移动、触发补全、Ctrl+Click 跳转、导航窗格双击跳转。
 - 已有大文件性能基线覆盖：空白/换行编辑不启动不必要的符号分析或关系分析 debounce。
-- 后续可继续补更细的失败诊断、更多真实工作区路径和跨文件关系 fixture。
+- 已有多文件关系 fixture 覆盖 package/import、跨文件实例化、调用、赋值、条件读取、clock/reset。
+- SemanticIndex facade 已补最小入口，新增语义查询代码应优先通过 facade。
+- DocumentModel 已补最小入口，由 TabManager 持有并跟踪打开文档状态。
+- AnalysisScheduler 已补最小入口，打开/保存/编辑去抖/外部文件变更/单文件关系分析显著变更判断已开始集中到 scheduler。
+- 后续可继续补更细的失败诊断、更多真实工作区路径和跨文件跳转 GUI 验证。
 
 已完成 P3
 - 已修正多 module 文件中部分关系误归属到首个 module 的问题。
@@ -274,12 +290,15 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 - smartrelationshipbuilder 不再使用 QRegularExpression；注释和字符串中的伪调用/伪赋值不再参与这些关系来源。
 - clock/reset 关系基于 Slang timing control 的符号引用和符号名分类，后续仍可按真实工程样例细化分类规则。
 
-下一大版本最低目标
-- 目标应是“GUI / 工作区可靠性版本”，而不是继续扩大架构重构范围。
+slang17 交付状态
+- 目标是“GUI / 工作区可靠性版本”，而不是继续扩大架构重构范围。
 - GUI 自动化烟测已补最小入口：打开工作区、打开大文件、编辑换行/字符、移动光标、触发补全、Ctrl+Click、导航窗格跳转。
 - 大文件性能基线已补最小入口：空白/换行编辑后不触发不必要的 Slang / 关系重分析；连续编辑和移动光标仍可继续扩展更细性能断言。
-- 至少增加一个更接近真实工程的多文件关系 fixture，验证跨文件跳转、实例化、调用、赋值、条件读取、clock/reset。
-- 完成标准见 goal.md 和 plan.md；新会话优先读取 readme.txt、plan.md 和 goal.md。
+- 已增加一个更接近真实工程的多文件关系 fixture，验证 package/import、跨文件实例化、调用、赋值、条件读取、clock/reset；跨文件 Ctrl+Click GUI 验证仍可继续补。
+- SemanticIndex facade 已补最小入口；新增语义查询代码应优先通过 facade。
+- DocumentModel 已补最小入口；分析触发已开始由 AnalysisScheduler 接管。
+- AnalysisScheduler 已补最小入口；下一步优先补 ProjectModel 最小版，或继续把 workspace 批量关系分析触发搬入 scheduler。
+- 版本号已更新到 0.0.12/slang17；完成标准见 goal.md 和 plan.md；新会话优先读取 readme.txt、plan.md 和 goal.md。
 
 
 ==========================================================================
@@ -292,11 +311,14 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 2. plan.md
 3. goal.md
 4. version.h
-5. mycodeeditor.cpp / mycodeeditor.h
-6. tsdocument.cpp / tsdocument.h
-7. slangmanager.cpp / slangmanager.h
-8. symbolanalyzer.cpp / symbolanalyzer.h
-9. completionmanager.cpp / completionmanager.h
+5. analysisscheduler.cpp / analysisscheduler.h
+6. semanticindex.cpp / semanticindex.h
+7. documentmodel.cpp / documentmodel.h
+8. mycodeeditor.cpp / mycodeeditor.h
+9. tsdocument.cpp / tsdocument.h
+10. slangmanager.cpp / slangmanager.h
+11. symbolanalyzer.cpp / symbolanalyzer.h
+12. completionmanager.cpp / completionmanager.h
 
 当前不要误会的点：
 - goal.md 是现阶段产品 / 架构最终骨架；后续实现默认按 ProjectModel / DocumentModel / AnalysisScheduler / SemanticIndex / Query Services 方向收敛。

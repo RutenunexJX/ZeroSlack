@@ -14,13 +14,12 @@ class ModeManager;
 class SymbolAnalyzer;
 class NavigationManager;
 class NavigationWidget;
+class AnalysisScheduler;
 
 class SymbolRelationshipEngine;
 class SlangManager;
 #include "smartrelationshipbuilder.h"
 #include <QFutureWatcher>
-#include <QHash>
-#include <QMap>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -41,6 +40,7 @@ public:
     std::unique_ptr<ModeManager> modeManager;
     std::unique_ptr<SymbolAnalyzer> symbolAnalyzer;
     std::unique_ptr<NavigationManager> navigationManager;
+    std::unique_ptr<AnalysisScheduler> analysisScheduler;
 
     std::unique_ptr<SymbolRelationshipEngine> relationshipEngine;
     std::unique_ptr<SlangManager> slangManager;
@@ -92,9 +92,8 @@ private:
 
     QFutureWatcher<QVector<RelationshipToAdd>>* relationshipSingleFileWatcher = nullptr;
     QString pendingRelationshipFileName;
-    /** 阶段 C：上次对该文件做关系分析时的内容，用于 hasSignificantChanges 去抖 */
-    QHash<QString, QString> lastRelationshipAnalysisContent;
     void onSingleFileRelationshipFinished();
+    void submitSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
 
     QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>* relationshipBatchWatcher = nullptr;
     void onBatchRelationshipFinished();
@@ -107,12 +106,7 @@ private:
     /** 阶段1（符号分析）取消标志，由进度对话框取消按钮设置；atomic 供后台线程安全读取 */
     std::atomic<bool> symbolAnalysisCancelled{false};
 
-    /** fileChanged 防抖：保存时 QFileSystemWatcher 常会触发两次，短时间内的重复只分析一次 */
-    QMap<QString, QTimer*> fileChangeDebounceTimers;
     static const int kFileChangeDebounceMs = 350;
-
-    /** 已打开标签的延后符号分析（按 fileName 去抖，超时后从 TabManager 取内容调用 analyzeFileContent） */
-    QMap<QString, QTimer*> openFileAnalysisTimers;
 
     /** 推迟 relationshipAdded 后的导航刷新，避免主线程在符号分析持写锁时读 sym_list 阻塞 */
     QTimer* relationshipRefreshDeferTimer = nullptr;

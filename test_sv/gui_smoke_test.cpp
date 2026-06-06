@@ -19,6 +19,7 @@
 
 #define private public
 #include "mainwindow.h"
+#include "documentmodel.h"
 #include "navigationwidget.h"
 #include "navigationmanager.h"
 #include "symbolanalyzer.h"
@@ -122,6 +123,8 @@ int main(int argc, char** argv)
     const QString symbolFixturePath = (argc > 2)
         ? QString::fromLocal8Bit(argv[2])
         : QDir::current().absoluteFilePath(QStringLiteral("test_sv/test_symbols.sv"));
+    const QString normalizedSymbolFixturePath =
+        QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(symbolFixturePath).absoluteFilePath()));
 
     expectBool("workspace fixture exists", QFileInfo(workspacePath).isDir(), true);
     expectBool("symbol fixture exists", QFileInfo(symbolFixturePath).isFile(), true);
@@ -154,6 +157,16 @@ int main(int argc, char** argv)
     MyCodeEditor* largeEditor = window.tabManager->getCurrentEditor();
     expectBool("large editor exists", largeEditor != nullptr, true);
     if (largeEditor) {
+        DocumentModel* documents = window.tabManager->getDocumentModel();
+        expectBool("document model exists", documents != nullptr, true);
+        const DocumentSnapshot beforeEditDoc = documents
+            ? documents->documentForFile(largeFile)
+            : DocumentSnapshot();
+        expectBool("document model tracks large file",
+                   beforeEditDoc.fileName == QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(largeFile).absoluteFilePath())),
+                   true);
+        expectBool("opened document starts saved", beforeEditDoc.saved, true);
+
         largeEditor->setFocus();
         QTextCursor cursor = largeEditor->textCursor();
         cursor.movePosition(QTextCursor::Start);
@@ -168,6 +181,13 @@ int main(int argc, char** argv)
 
         expectBool("large file edit applied",
                    largeEditor->toPlainText().size() >= beforeLength + 2, true);
+        const DocumentSnapshot afterEditDoc = documents
+            ? documents->documentForEditor(largeEditor)
+            : DocumentSnapshot();
+        expectBool("document model marks edit dirty", afterEditDoc.dirty, true);
+        expectBool("document model increments version",
+                   afterEditDoc.textVersion > beforeEditDoc.textVersion, true);
+        expectBool("document model tracks cursor line", afterEditDoc.cursorLine > 0, true);
         if (largeEditor->relationshipAnalysisDebounceTimer)
             largeEditor->relationshipAnalysisDebounceTimer->stop();
     }
@@ -276,7 +296,7 @@ int main(int argc, char** argv)
             expectBool("navigation double-click jumps to module",
                        waitUntil([&]() {
                            MyCodeEditor* current = window.tabManager->getCurrentEditor();
-                           return current && current->getFileName() == symbolFixturePath
+                           return current && current->getFileName() == normalizedSymbolFixturePath
                                   && current->textCursor().blockNumber() == 51;
                        }, 2000),
                        true);

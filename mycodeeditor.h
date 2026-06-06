@@ -30,6 +30,7 @@ public:
     void setFileName(QString fileName);
     QString getFileName() const;
     bool checkSaved();
+    QString currentModuleName() const;
 
     void showAutoComplete();
     void hideAutoComplete();

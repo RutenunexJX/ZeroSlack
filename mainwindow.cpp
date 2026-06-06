@@ -6,6 +6,7 @@
 #include "workspacemanager.h"
 #include "modemanager.h"
 #include "symbolanalyzer.h"
+#include "analysisscheduler.h"
 #include "navigationmanager.h"
 #include "navigationwidget.h"
 #include "symbolrelationshipengine.h"
@@ -21,9 +22,9 @@
 #include <QTextCursor>
 #include <QTextBlock>
 #include <QTextStream>
+#include <QFile>
 #include <QFileInfo>
 #include <QTimer>
-#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -39,6 +40,7 @@ MainWindow::MainWindow(QWidget *parent)
     modeManager = std::unique_ptr<ModeManager>(new ModeManager(ui->tabWidget, this));
     symbolAnalyzer = std::unique_ptr<SymbolAnalyzer>(new SymbolAnalyzer(this));
     navigationManager = std::unique_ptr<NavigationManager>(new NavigationManager(this));  // NEW
+    analysisScheduler = std::unique_ptr<AnalysisScheduler>(new AnalysisScheduler(this));
 
     setupRelationshipEngine();
     setupNavigationPane();
@@ -72,21 +74,27 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupManagerConnections()
 {
-    // 优化：打开文件时只分析新打开的文件，且延后到下一事件循环，避免卡顿
-    connect(tabManager.get(), &TabManager::tabCreated,
-            this, [this](MyCodeEditor* editor) {
-                if (!editor) return;
-                QString fileName = editor->getFileName();
-                QString content = editor->toPlainText();
-                // 延后执行，先让标签页显示出来，再在后台做符号/关系分析
-                QTimer::singleShot(0, this, [this, fileName, content]() {
-                    symbolAnalyzer->analyzeFileContent(fileName, content);
-                    MyCodeEditor* ed = tabManager->getCurrentEditor();
-                    if (ed && ed->getFileName() == fileName)
-                        ed->refreshScopeAndCurrentLineHighlight();
-                    if (!fileName.isEmpty())
-                        requestSingleFileRelationshipAnalysis(fileName, content);
-                });
+    analysisScheduler->setDocumentModel(tabManager->getDocumentModel());
+    analysisScheduler->setSymbolAnalyzer(symbolAnalyzer.get());
+    analysisScheduler->setOpenFileContentProvider([this](const QString& fileName) {
+        return tabManager ? tabManager->getPlainTextFromOpenFile(fileName) : QString();
+    });
+    analysisScheduler->setWorkspaceOpenProvider([this]() {
+        return workspaceManager && workspaceManager->isWorkspaceOpen();
+    });
+    analysisScheduler->setRelationshipAnalysisCallback(
+        [this](const QString& fileName, const QString& content) {
+            submitSingleFileRelationshipAnalysis(fileName, content);
+        });
+    connect(analysisScheduler.get(), &AnalysisScheduler::documentRefreshRequested,
+            this, [this](const QString& fileName) {
+                MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
+                if (editor && editor->getFileName() == fileName) {
+                    editor->refreshScopeAndCurrentLineHighlight();
+                    QTimer::singleShot(0, editor, [editor]() {
+                        editor->refreshScopeAndCurrentLineHighlight();
+                    });
+                }
             });
 
     connect(tabManager.get(), &TabManager::activeTabChanged,
@@ -99,26 +107,6 @@ void MainWindow::setupManagerConnections()
                 if (relationshipEngine) {
                     relationshipEngine->invalidateFileRelationships(fileName);
                 }
-            });
-
-    connect(tabManager.get(), &TabManager::fileSaved,
-            this, [this](const QString& fileName) {
-                MyCodeEditor* editor = tabManager->getCurrentEditor();
-                QString content = (editor && editor->getFileName() == fileName)
-                    ? editor->toPlainText() : QString();
-                if (!content.isEmpty() && !sym_list::getInstance()->contentAffectsSymbols(fileName, content)) {
-                    if (editor && editor->getFileName() == fileName)
-                        editor->refreshScopeAndCurrentLineHighlight();
-                    return;
-                }
-                // 仅重分析当前保存的文件，避免 analyzeOpenTabs 重分析所有标签导致卡顿
-                symbolAnalyzer->analyzeFileContent(fileName, content);
-                if (editor && editor->getFileName() == fileName) {
-                    editor->refreshScopeAndCurrentLineHighlight();
-                    QTimer::singleShot(0, editor, [editor]() { editor->refreshScopeAndCurrentLineHighlight(); });
-                }
-                if (editor && editor->getFileName() == fileName)
-                    requestSingleFileRelationshipAnalysis(fileName, editor->toPlainText());
             });
 
     connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened,
@@ -146,26 +134,8 @@ void MainWindow::setupManagerConnections()
             });
     connect(workspaceManager.get(), &WorkspaceManager::fileChanged,
             this, [this](const QString& filePath) {
-                if (fileChangeDebounceTimers.contains(filePath)) {
-                    QTimer* oldTimer = fileChangeDebounceTimers.take(filePath);
-                    oldTimer->stop();
-                    oldTimer->deleteLater();
-                }
-                QTimer* timer = new QTimer(this);
-                timer->setSingleShot(true);
-                connect(timer, &QTimer::timeout, this, [this, timer, filePath]() {
-                    fileChangeDebounceTimers.remove(filePath);
-                    timer->deleteLater();
-                    symbolAnalyzer->analyzeFile(filePath);
-                    QFile file(filePath);
-                    if (file.open(QIODevice::ReadOnly | QFile::Text)) {
-                        QString content = QTextStream(&file).readAll();
-                        file.close();
-                        requestSingleFileRelationshipAnalysis(filePath, content);
-                    }
-                });
-                fileChangeDebounceTimers[filePath] = timer;
-                timer->start(kFileChangeDebounceMs);
+                if (analysisScheduler)
+                    analysisScheduler->handleExternalFileChanged(filePath, kFileChangeDebounceMs);
             });
 
     connect(workspaceManager.get(), &WorkspaceManager::filesScanned,
@@ -647,17 +617,16 @@ void MainWindow::onRelationshipAnalysisError(const QString& fileName, const QStr
 
 void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content)
 {
+    if (analysisScheduler)
+        analysisScheduler->requestRelationshipAnalysis(fileName, content);
+}
+
+void MainWindow::submitSingleFileRelationshipAnalysis(const QString& fileName, const QString& content)
+{
     if (fileName.isEmpty() || !relationshipBuilder || !relationshipEngine)
         return;
     if (!relationshipSingleFileWatcher)
         return;
-    // 阶段 C：仅当结构/定义有显著变更时才触发关系重构，跳过仅注释/空白变更
-    if (symbolAnalyzer) {
-        QString lastContent = lastRelationshipAnalysisContent.value(fileName);
-        if (!lastContent.isNull() && !symbolAnalyzer->hasSignificantChanges(lastContent, content))
-            return;
-    }
-    lastRelationshipAnalysisContent.insert(fileName, content);
     // 避免快速连续 setFuture 导致崩溃：先等待当前任务结束再提交新任务（fileSaved + fileChanged + 去抖定时器可能同时触发）
     if (relationshipSingleFileWatcher->isRunning()) {
         QFuture<QVector<RelationshipToAdd>> oldFuture = relationshipSingleFileWatcher->future();
@@ -675,34 +644,14 @@ void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, 
 
 void MainWindow::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
 {
-    if (fileName.isEmpty() || !symbolAnalyzer || !tabManager)
-        return;
-    cancelScheduledOpenFileAnalysis(fileName);
-    QTimer* timer = new QTimer(this);
-    timer->setSingleShot(true);
-    timer->setInterval(delayMs);
-    connect(timer, &QTimer::timeout, this, [this, fileName, timer]() {
-        QString content = tabManager->getPlainTextFromOpenFile(fileName);
-        if (!content.isNull())
-            symbolAnalyzer->analyzeFileContentAsync(fileName, content);  // Slang off the UI thread
-        if (openFileAnalysisTimers.value(fileName) == timer)
-            openFileAnalysisTimers.remove(fileName);
-        timer->deleteLater();
-    });
-    openFileAnalysisTimers[fileName] = timer;
-    timer->start();
+    if (analysisScheduler)
+        analysisScheduler->scheduleOpenFileAnalysis(fileName, delayMs);
 }
 
 void MainWindow::cancelScheduledOpenFileAnalysis(const QString& fileName)
 {
-    auto it = openFileAnalysisTimers.find(fileName);
-    if (it != openFileAnalysisTimers.end()) {
-        if (it.value()) {
-            it.value()->stop();
-            it.value()->deleteLater();
-        }
-        openFileAnalysisTimers.erase(it);
-    }
+    if (analysisScheduler)
+        analysisScheduler->cancelScheduledOpenFileAnalysis(fileName);
 }
 
 void MainWindow::onSingleFileRelationshipFinished()

@@ -6,6 +6,8 @@
 #include <memory>
 #include "mycodeeditor.h"
 
+class DocumentModel;
+
 class TabManager : public QObject
 {
     Q_OBJECT
@@ -28,6 +30,7 @@ public:
     QString getPlainTextFromOpenFile(const QString& fileName) const;
     QStringList getAllOpenFileNames() const;
     QStringList getOpenSystemVerilogFiles() const;
+    DocumentModel* getDocumentModel() const;
 
     // Tab state management
     void updateTabTitle(MyCodeEditor* editor);
@@ -45,6 +48,7 @@ private slots:
 
 private:
     QTabWidget* tabWidget;
+    std::unique_ptr<DocumentModel> documentModel;
 
     // Helper methods
     std::unique_ptr<MyCodeEditor> createEditor();

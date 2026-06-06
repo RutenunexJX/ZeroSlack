@@ -1,11 +1,13 @@
 #include "tabmanager.h"
+#include "documentmodel.h"
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QFileInfo>
+#include <QDir>
 #include <QTextStream>
 
 TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
-    : QObject(parent), tabWidget(tabWidget)
+    : QObject(parent), tabWidget(tabWidget), documentModel(std::make_unique<DocumentModel>(this))
 {
     if (!tabWidget) {
         return;
@@ -27,6 +29,7 @@ void TabManager::createNewTab()
     std::unique_ptr<MyCodeEditor> newEditor = createEditor();
     MyCodeEditor* editorPtr = newEditor.get();
     tabWidget->addTab(newEditor.release(), "untitled");
+    documentModel->registerEditor(editorPtr);
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
     emit tabCreated(editorPtr);
 }
@@ -58,6 +61,7 @@ bool TabManager::openFileInTab(const QString& fileName)
     editorPtr->setFileName(fileToOpen);
     editorPtr->isSaved = true;
     tabWidget->addTab(codeEditor.release(), getDisplayName(fileToOpen));
+    documentModel->registerEditor(editorPtr);
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
     emit tabCreated(editorPtr);
     return true;
@@ -69,6 +73,7 @@ bool TabManager::saveCurrentTab()
     if (!codeEditor) return false;
 
     if (codeEditor->saveFile()) {
+        documentModel->markSaved(codeEditor);
         updateTabTitle(codeEditor);
         emit fileSaved(codeEditor->getFileName());
         return true;
@@ -82,6 +87,7 @@ bool TabManager::saveAsCurrentTab()
     if (!codeEditor) return false;
 
     if (codeEditor->saveAsFile()) {
+        documentModel->markSaved(codeEditor);
         updateTabTitle(codeEditor);
         emit fileSaved(codeEditor->getFileName());
         return true;
@@ -101,6 +107,7 @@ void TabManager::closeTab(int index)
         return; // User cancelled or save failed
     }
 
+    documentModel->unregisterEditor(codeEditor);
     tabWidget->removeTab(index);
     emit tabClosed(fileName);
 }
@@ -124,9 +131,16 @@ QString TabManager::getPlainTextFromCurrentTab() const
 
 QString TabManager::getPlainTextFromOpenFile(const QString& fileName) const
 {
+    const QString requestedPath = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
     for (int i = 0; i < tabWidget->count(); ++i) {
         MyCodeEditor *codeEditor = getEditorAt(i);
-        if (codeEditor && codeEditor->getFileName().endsWith(fileName)) {
+        if (!codeEditor)
+            continue;
+
+        const QString editorPath = QDir::cleanPath(
+            QDir::fromNativeSeparators(QFileInfo(codeEditor->getFileName()).absoluteFilePath()));
+        if (editorPath == requestedPath || codeEditor->getFileName().endsWith(fileName)) {
             return codeEditor->toPlainText();
         }
     }
@@ -160,6 +174,11 @@ QStringList TabManager::getOpenSystemVerilogFiles() const
         }
     }
     return svFiles;
+}
+
+DocumentModel* TabManager::getDocumentModel() const
+{
+    return documentModel.get();
 }
 
 void TabManager::updateTabTitle(MyCodeEditor* editor)
