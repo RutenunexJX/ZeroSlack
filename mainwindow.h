@@ -95,8 +95,8 @@ private:
     void onSingleFileRelationshipFinished();
     void submitSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
 
-    QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>* relationshipBatchWatcher = nullptr;
-    void onBatchRelationshipFinished();
+    void onWorkspaceRelationshipAnalysisFinished(
+        const QVector<QPair<QString, QVector<RelationshipToAdd>>>& allResults);
 
     RelationshipProgressDialog* progressDialog = nullptr;
     void setupProgressDialog();

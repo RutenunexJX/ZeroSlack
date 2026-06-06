@@ -2,6 +2,7 @@
 // public query methods and asserts the results. No GUI window is shown.
 #include "slangmanager.h"
 #include "completionmanager.h"
+#include "completionservice.h"
 #include "syminfo.h"
 #include <QApplication>
 #include <QFile>
@@ -86,6 +87,13 @@ int main(int argc, char** argv) {
         logicNames << s.symbolName;
     expectExcludes("top logic excludes fn-locals", logicNames,
                    /*mustNot*/ {"x", "add_one"}, /*mustHave*/ {"enable", "result"});
+
+    CompletionQuery query;
+    query.prefix = "en";
+    query.fileName = path;
+    query.moduleName = "top";
+    expectList("CompletionService module prefix", CompletionService::getInstance()->findCompletions(query),
+               {"enable"});
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

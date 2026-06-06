@@ -4,6 +4,7 @@
 
 #include "tabmanager.h"
 #include "workspacemanager.h"
+#include "projectmodel.h"
 #include "modemanager.h"
 #include "symbolanalyzer.h"
 #include "analysisscheduler.h"
@@ -62,6 +63,9 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    if (analysisScheduler) {
+        analysisScheduler->cancelWorkspaceRelationshipAnalysis();
+    }
     if (relationshipEngine) {
         relationshipEngine->clearAllRelationships();
     }
@@ -86,6 +90,32 @@ void MainWindow::setupManagerConnections()
         [this](const QString& fileName, const QString& content) {
             submitSingleFileRelationshipAnalysis(fileName, content);
         });
+    analysisScheduler->setWorkspaceRelationshipAnalysisCallback(
+        [this](const ProjectSnapshot& project) {
+            QVector<QPair<QString, QVector<RelationshipToAdd>>> out;
+            if (!relationshipBuilder)
+                return out;
+
+            relationshipBuilder->resetCancellation();
+            const QStringList svFiles = project.systemVerilogFiles;
+            out.reserve(svFiles.size());
+            sym_list* db = sym_list::getInstance();
+            for (const QString& filePath : svFiles) {
+                if (relationshipBuilder->isCancelled())
+                    break;
+                QFile file(filePath);
+                if (!file.open(QIODevice::ReadOnly | QFile::Text))
+                    continue;
+                const QString content = QTextStream(&file).readAll();
+                QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(filePath);
+                out.append({filePath, relationshipBuilder->computeRelationships(filePath, content, fs)});
+            }
+            return out;
+        });
+    analysisScheduler->setWorkspaceRelationshipCancelCallback([this]() {
+        if (relationshipBuilder)
+            relationshipBuilder->cancelAnalysis();
+    });
     connect(analysisScheduler.get(), &AnalysisScheduler::documentRefreshRequested,
             this, [this](const QString& fileName) {
                 MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
@@ -112,7 +142,8 @@ void MainWindow::setupManagerConnections()
     connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened,
             this, [this](const QString& workspacePath) {
                 Q_UNUSED(workspacePath)
-                QStringList svFiles = workspaceManager->getSystemVerilogFiles();
+                const ProjectSnapshot project = workspaceManager->projectSnapshot();
+                QStringList svFiles = project.systemVerilogFiles;
 
                 showAnalysisProgress(svFiles);
 
@@ -142,8 +173,24 @@ void MainWindow::setupManagerConnections()
             this, [this](const QStringList& svFiles) {
                 Q_UNUSED(svFiles)
                 symbolAnalysisCancelled.store(false);
-                symbolAnalyzer->startAnalyzeWorkspaceAsync(workspaceManager.get(),
+                symbolAnalyzer->startAnalyzeProjectAsync(workspaceManager->projectSnapshot(),
                     [this]() { return symbolAnalysisCancelled.load(); });
+            });
+
+    connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
+            this, [this](const ProjectSnapshot& project, int totalFiles) {
+                Q_UNUSED(project)
+                relationshipAnalysisTracker.totalFiles = totalFiles;
+                relationshipAnalysisTracker.processedFiles = 0;
+                relationshipAnalysisTracker.isActive = totalFiles > 0;
+            });
+
+    connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
+            this, &MainWindow::onWorkspaceRelationshipAnalysisFinished);
+
+    connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisCancelled,
+            this, [this]() {
+                relationshipAnalysisTracker.isActive = false;
             });
 
     connect(modeManager.get(), &ModeManager::modeChanged,
@@ -192,7 +239,8 @@ void MainWindow::setupManagerConnections()
                         .arg(filesAnalyzed).arg(totalSymbols),
                         3000);
                 }
-                QStringList svFiles = workspaceManager->getSystemVerilogFiles();
+                const ProjectSnapshot project = workspaceManager->projectSnapshot();
+                QStringList svFiles = project.systemVerilogFiles;
                 if (progressDialog) {
                     progressDialog->statusLabel->setText("阶段 2/2: 关系分析进行中...");
                     progressDialog->currentFileLabel->setText("正在分析文件间的符号依赖关系...");
@@ -206,30 +254,8 @@ void MainWindow::setupManagerConnections()
                     progressDialog->update();
                     progressDialog->repaint();
                 }
-                if (relationshipBuilder && !svFiles.isEmpty()) {
-                    relationshipAnalysisTracker.totalFiles = svFiles.size();
-                    relationshipAnalysisTracker.processedFiles = 0;
-                    relationshipAnalysisTracker.isActive = true;
-                    if (relationshipBatchWatcher && relationshipBatchWatcher->isRunning())
-                        relationshipBatchWatcher->cancel();
-                    QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> batchFuture =
-                        QtConcurrent::run([this, svFiles]() {
-                            QVector<QPair<QString, QVector<RelationshipToAdd>>> out;
-                            out.reserve(svFiles.size());
-                            sym_list* db = sym_list::getInstance();
-                            for (const QString& filePath : svFiles) {
-                                if (relationshipBuilder->isCancelled()) break;
-                                QFile file(filePath);
-                                if (!file.open(QIODevice::ReadOnly | QFile::Text)) continue;
-                                QString content = QTextStream(&file).readAll();
-                                file.close();
-                                QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(filePath);
-                                out.append({filePath, relationshipBuilder->computeRelationships(filePath, content, fs)});
-                            }
-                                return out;
-                        });
-                    relationshipBatchWatcher->setFuture(batchFuture);
-                }
+                if (analysisScheduler && relationshipBuilder && !svFiles.isEmpty())
+                    analysisScheduler->requestWorkspaceRelationshipAnalysis(project);
             });
 
     navigationManager->connectToTabManager(tabManager.get());
@@ -546,10 +572,6 @@ void MainWindow::setupRelationshipEngine()
     connect(relationshipSingleFileWatcher, &QFutureWatcher<QVector<RelationshipToAdd>>::finished,
             this, &MainWindow::onSingleFileRelationshipFinished);
 
-    relationshipBatchWatcher = new QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>(this);
-    connect(relationshipBatchWatcher, &QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>::finished,
-            this, &MainWindow::onBatchRelationshipFinished);
-
     connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipAdded,
             this, &MainWindow::onRelationshipAdded);
 
@@ -634,6 +656,7 @@ void MainWindow::submitSingleFileRelationshipAnalysis(const QString& fileName, c
         oldFuture.waitForFinished();
     }
     pendingRelationshipFileName = fileName;
+    relationshipBuilder->resetCancellation();
     QFuture<QVector<RelationshipToAdd>> future = QtConcurrent::run([this, fileName, content]() {
         sym_list* db = sym_list::getInstance();
         QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(fileName);
@@ -675,18 +698,20 @@ void MainWindow::onSingleFileRelationshipFinished()
     onRelationshipAnalysisCompleted(fileName, results.size());
 }
 
-void MainWindow::onBatchRelationshipFinished()
+void MainWindow::onWorkspaceRelationshipAnalysisFinished(
+    const QVector<QPair<QString, QVector<RelationshipToAdd>>>& allResults)
 {
-    if (!relationshipBatchWatcher || !relationshipEngine || !relationshipBuilder)
+    if (!relationshipEngine || !relationshipBuilder)
         return;
-    if (relationshipBatchWatcher->isCanceled())
-        return;
-    QVector<QPair<QString, QVector<RelationshipToAdd>>> allResults = relationshipBatchWatcher->result();
+
     relationshipEngine->beginUpdate();
     for (const auto& pair : allResults) {
         const QString& fileName = pair.first;
-        for (const RelationshipToAdd& r : pair.second)
+        for (const RelationshipToAdd& r : pair.second) {
+            if (r.fromId < 0 || r.toId < 0)
+                continue;
             relationshipEngine->addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
+        }
         if (progressDialog)
             progressDialog->updateProgress(fileName, pair.second.size());
         if (relationshipAnalysisTracker.isActive)
@@ -736,8 +761,8 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
     connect(progressDialog, &RelationshipProgressDialog::cancelled,
             this, [this]() {
                 symbolAnalysisCancelled.store(true);
-                if (relationshipBuilder) {
-                    relationshipBuilder->cancelAnalysis();
+                if (analysisScheduler) {
+                    analysisScheduler->cancelWorkspaceRelationshipAnalysis();
                 }
 
                 relationshipAnalysisTracker.isActive = false;

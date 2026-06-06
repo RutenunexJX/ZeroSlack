@@ -18,7 +18,9 @@
 - 多文件关系 fixture：已有 `test_sv/relationship_fixture`，覆盖 package/import、跨文件 module instantiation、call、assignment、condition read、clock/reset。
 - SemanticIndex facade：已有最小入口，内部暂包 `sym_list` 和现有服务，提供 symbols / definitions / completions / relationships / diagnostics 查询边界。
 - DocumentModel：已有最小入口，由 `TabManager` 持有并跟踪打开文档的 fileName、dirty/saved、textVersion、cursor 和 live module 名；GUI smoke 已覆盖打开和编辑事件。
-- AnalysisScheduler：已有最小入口，订阅 DocumentModel opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断。
+- AnalysisScheduler：已有最小入口，订阅 DocumentModel opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断；workspace 批量关系分析 watcher / 取消 / 完成信号也已收束到 scheduler。
+- ProjectModel：已有最小入口，由 `WorkspaceManager` 持有并发布 `ProjectSnapshot`，记录 workspace root、全部文件、SystemVerilog 文件集合、默认 include dirs、defines、可选 filelist/top module 和 ignored paths；workspace 符号分析已可直接消费 ProjectSnapshot。
+- Query Services：`DefinitionService` 最小入口已落地，Ctrl+Click / 跳转定义路径已开始通过 service 复用 `SemanticIndex` definitions 查询；`CompletionService` 最小入口已落地，普通自动补全路径已开始经由 service。
 
 ## Next Major Minimum
 
@@ -54,10 +56,12 @@
 3. 已完成多文件关系 fixture，覆盖真实工程里最容易误判的 clock/reset 和跨文件实例化。
 4. 已完成 SemanticIndex facade 最小入口；新增代码应优先通过 facade 读语义事实。
 5. 已完成 DocumentModel 最小入口；后续分析调度应优先订阅 DocumentModel 事件。
-6. 已完成 AnalysisScheduler 最小入口；后续可继续把 workspace 批量关系分析和更多 UI 触发点搬入 scheduler。
-7. 当前优先项：按 goal.md 继续搭底座，补 ProjectModel 最小版，之后补 Query Services / snapshot。
-8. 修正 smoke/perf/fixture 暴露的问题。
-9. 最后更新 README、goal、版本号，并提交一个 release-candidate commit。
+6. 已完成 AnalysisScheduler 最小入口；workspace 批量关系分析 watcher / 取消 / 完成信号已搬入 scheduler，进度 UI 暂仍在 MainWindow。
+7. 已完成 ProjectModel 最小入口；后续 SlangManager / AnalysisScheduler 应优先消费 ProjectSnapshot，而不是临时拼文件列表。
+8. 已完成 DefinitionService 和 CompletionService 最小入口；后续 Query Services 可继续补 RelationshipService / HierarchyService 边界。
+9. 当前优先项：补 RelationshipService 或 HierarchyService 最小边界，或继续把 workspace opened/rescanned 的更多触发点从 MainWindow 往 AnalysisScheduler 收束。
+10. 修正 smoke/perf/fixture 暴露的问题。
+11. 最后更新 README、goal、版本号，并提交一个 release-candidate commit。
 
 ## Definition Of Done
 

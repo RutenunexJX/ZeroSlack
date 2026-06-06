@@ -22,6 +22,7 @@
 #include "documentmodel.h"
 #include "navigationwidget.h"
 #include "navigationmanager.h"
+#include "analysisscheduler.h"
 #include "symbolanalyzer.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -100,12 +101,8 @@ static void drainRelationshipWork(MainWindow& window)
 {
     if (window.relationshipBuilder)
         window.relationshipBuilder->cancelAnalysis();
-    if (window.relationshipBatchWatcher && window.relationshipBatchWatcher->isRunning()) {
-        QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> future =
-            window.relationshipBatchWatcher->future();
-        window.relationshipBatchWatcher->cancel();
-        future.waitForFinished();
-    }
+    if (window.analysisScheduler)
+        window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     if (window.relationshipSingleFileWatcher && window.relationshipSingleFileWatcher->isRunning()) {
         QFuture<QVector<RelationshipToAdd>> future = window.relationshipSingleFileWatcher->future();
         window.relationshipSingleFileWatcher->cancel();
@@ -146,6 +143,18 @@ int main(int argc, char** argv)
     expectBool("open workspace", workspaceOpened, true);
     const QStringList svFiles = window.workspaceManager->getSystemVerilogFiles();
     expectBool("workspace has SystemVerilog files", !svFiles.isEmpty(), true);
+    const ProjectSnapshot project = window.workspaceManager->projectSnapshot();
+    const QString normalizedWorkspacePath =
+        QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(workspacePath).absoluteFilePath()));
+    expectBool("project model tracks workspace root",
+               project.workspaceRoot == normalizedWorkspacePath,
+               true);
+    expectBool("project model tracks SV files",
+               project.systemVerilogFiles.size() == svFiles.size(),
+               true);
+    expectBool("project model has default include root",
+               project.includeDirs.contains(normalizedWorkspacePath),
+               true);
 
     expectBool("workspace symbol analysis completes",
                waitUntil([&]() { return workspaceSymbolsDone; }, 60000), true);

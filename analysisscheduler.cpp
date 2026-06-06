@@ -3,7 +3,9 @@
 #include "symbolanalyzer.h"
 #include "syminfo.h"
 
+#include <QtConcurrent/QtConcurrent>
 #include <QFile>
+#include <QFuture>
 #include <QRegularExpression>
 #include <QTextStream>
 #include <QTimer>
@@ -12,10 +14,25 @@
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
 {
+    workspaceRelationshipWatcher =
+        new QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>(this);
+    connect(workspaceRelationshipWatcher,
+            &QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>::finished,
+            this,
+            [this]() {
+                if (!workspaceRelationshipWatcher)
+                    return;
+                if (workspaceRelationshipWatcher->isCanceled()) {
+                    emit workspaceRelationshipAnalysisCancelled();
+                    return;
+                }
+                emit workspaceRelationshipAnalysisFinished(workspaceRelationshipWatcher->result());
+            });
 }
 
 AnalysisScheduler::~AnalysisScheduler()
 {
+    cancelWorkspaceRelationshipAnalysis();
     for (QTimer* timer : openFileAnalysisTimers)
         timer->deleteLater();
     for (QTimer* timer : fileChangeDebounceTimers)
@@ -67,6 +84,17 @@ void AnalysisScheduler::setRelationshipAnalysisCallback(
     relationshipAnalysisCallback = std::move(callback);
 }
 
+void AnalysisScheduler::setWorkspaceRelationshipAnalysisCallback(
+    std::function<QVector<QPair<QString, QVector<RelationshipToAdd>>>(const ProjectSnapshot&)> callback)
+{
+    workspaceRelationshipAnalysisCallback = std::move(callback);
+}
+
+void AnalysisScheduler::setWorkspaceRelationshipCancelCallback(std::function<void()> callback)
+{
+    workspaceRelationshipCancelCallback = std::move(callback);
+}
+
 void AnalysisScheduler::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
 {
     if (fileName.isEmpty() || !symbolAnalyzer)
@@ -115,6 +143,40 @@ void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, con
 
     lastRelationshipAnalysisContent.insert(fileName, content);
     relationshipAnalysisCallback(fileName, content);
+}
+
+void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project)
+{
+    if (!project.isOpen()
+        || project.systemVerilogFiles.isEmpty()
+        || !workspaceRelationshipAnalysisCallback
+        || !workspaceRelationshipWatcher) {
+        return;
+    }
+
+    cancelWorkspaceRelationshipAnalysis();
+
+    emit workspaceRelationshipAnalysisStarted(project, project.systemVerilogFiles.size());
+
+    QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> future =
+        QtConcurrent::run([callback = workspaceRelationshipAnalysisCallback, project]() {
+            return callback(project);
+        });
+    workspaceRelationshipWatcher->setFuture(future);
+}
+
+void AnalysisScheduler::cancelWorkspaceRelationshipAnalysis()
+{
+    if (!workspaceRelationshipWatcher || !workspaceRelationshipWatcher->isRunning())
+        return;
+
+    if (workspaceRelationshipCancelCallback)
+        workspaceRelationshipCancelCallback();
+
+    QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> future =
+        workspaceRelationshipWatcher->future();
+    workspaceRelationshipWatcher->cancel();
+    future.waitForFinished();
 }
 
 void AnalysisScheduler::handleExternalFileChanged(const QString& fileName, int debounceMs)

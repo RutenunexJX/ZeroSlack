@@ -3,6 +3,8 @@
 #include "mainwindow.h"
 #include "completionmodel.h"
 #include "completionmanager.h"
+#include "completionservice.h"
+#include "definitionservice.h"
 
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -441,6 +443,14 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
 
     QTextCursor cursor = textCursor();
     int cursorPosition = cursor.position();
+    CompletionQuery query;
+    query.prefix = prefix;
+    query.fileName = getFileName();
+    query.moduleName = currentModuleNameAt(cursorPosition);
+    query.cursorLine = cursor.block().blockNumber() + 1;
+    query.cursorPosition = cursorPosition;
+    return CompletionService::getInstance()->findCompletions(query);
+
     QString fileName = getFileName();
 
     QString currentModule = currentModuleNameAt(cursorPosition);
@@ -1516,6 +1526,48 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
         return;
     }
 
+    DefinitionQuery query;
+    query.symbolName = symbolName;
+    query.fileName = getFileName();
+    query.moduleName = currentModuleNameAt(cursorPosition >= 0 ? cursorPosition : textCursor().position());
+
+    QString serviceVarName, serviceMemberPrefix;
+    if (cursorPosition >= 0) {
+        QTextBlock block = document()->findBlock(cursorPosition);
+        const int posInBlock = cursorPosition - block.position();
+        const QString lineUpToCursor = block.text().left(posInBlock).trimmed();
+        CompletionManager* manager = CompletionManager::getInstance();
+        bool parsed = manager->tryParseStructMemberContext(lineUpToCursor,
+                                                           serviceVarName,
+                                                           serviceMemberPrefix);
+        if (parsed && !serviceVarName.isEmpty()) {
+            query.structTypeNameForMember =
+                manager->getStructTypeForVariable(serviceVarName, query.moduleName);
+        }
+    }
+
+    const DefinitionResult result = DefinitionService::getInstance()->resolveDefinition(query);
+    if (!result.found)
+        return;
+
+    if (result.localFile) {
+        QTextCursor cursor = textCursor();
+        cursor.movePosition(QTextCursor::Start);
+        const int downLines = (result.symbol.startLine > 0) ? result.symbol.startLine - 1 : 0;
+        const int rightCols = (result.symbol.startColumn > 0) ? result.symbol.startColumn - 1 : 0;
+        cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, downLines);
+        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, rightCols);
+        setTextCursor(cursor);
+        centerCursor();
+        moveMouseToCursor();
+        return;
+    }
+
+    emit definitionJumpRequested(result.symbol.symbolName,
+                                 result.symbol.fileName,
+                                 result.symbol.startLine);
+    return;
+
     sym_list* symbolList = sym_list::getInstance();
     if (!symbolList) {
         return;
@@ -1635,6 +1687,8 @@ void MyCodeEditor::moveMouseToCursor()
 
 bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const QString& searchWord)
 {
+    return DefinitionService::getInstance()->isDefinition(symbol, searchWord);
+
     // 检查符号名称是否匹配
     if (symbol.symbolName != searchWord) {
         return false;
@@ -1733,6 +1787,22 @@ void MyCodeEditor::showSymbolTooltip(const QString& symbolName, const QPoint& po
 {
     if (symbolName.isEmpty()) return;
 
+    DefinitionQuery query;
+    query.symbolName = symbolName;
+    query.fileName = getFileName();
+    query.moduleName = currentModuleNameAt(textCursor().position());
+    const DefinitionResult result = DefinitionService::getInstance()->resolveDefinition(query);
+    if (!result.found)
+        return;
+
+    const QString serviceTooltipText = QString("瀹氫箟: %1 (%2)\n浣嶇疆: %3:%4")
+                                           .arg(result.symbol.symbolName)
+                                           .arg(getSymbolTypeString(result.symbol.symbolType))
+                                           .arg(QFileInfo(result.symbol.fileName).fileName())
+                                           .arg(result.symbol.startLine);
+    QToolTip::showText(mapToGlobal(position), serviceTooltipText, this);
+    return;
+
     sym_list* symbolList = sym_list::getInstance();
     if (!symbolList) return;
 
@@ -1783,6 +1853,12 @@ bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
     if (symbolName.isEmpty()) {
         return false;
     }
+
+    DefinitionQuery query;
+    query.symbolName = symbolName;
+    query.fileName = getFileName();
+    query.moduleName = currentModuleNameAt(textCursor().position());
+    return DefinitionService::getInstance()->canResolveDefinition(query);
 
     sym_list* symbolList = sym_list::getInstance();
     if (!symbolList) {

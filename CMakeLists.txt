@@ -50,6 +50,8 @@ set(ZEROSLACK_CORE_SOURCES
     mainwindow.cpp
     completionmanager.cpp
     completionmodel.cpp
+    completionservice.cpp
+    definitionservice.cpp
     documentmodel.cpp
     tsdocument.cpp
     modemanager.cpp
@@ -57,6 +59,7 @@ set(ZEROSLACK_CORE_SOURCES
     myhighlighter.cpp
     navigationmanager.cpp
     navigationwidget.cpp
+    projectmodel.cpp
     relationshipprogressdialog.cpp
     semanticindex.cpp
     slangmanager.cpp
@@ -74,6 +77,8 @@ set(ZEROSLACK_CORE_SOURCES
     scope_tree.h
     version.h
     completionmodel.h
+    completionservice.h
+    definitionservice.h
     documentmodel.h
     tsdocument.h
     modemanager.h
@@ -81,6 +86,7 @@ set(ZEROSLACK_CORE_SOURCES
     myhighlighter.h
     navigationmanager.h
     navigationwidget.h
+    projectmodel.h
     relationshipprogressdialog.h
     semanticindex.h
     slangmanager.h

@@ -591,6 +591,11 @@ void SmartRelationshipBuilder::cancelAnalysis()
     emit analysisCancelled();
 }
 
+void SmartRelationshipBuilder::resetCancellation()
+{
+    cancelled.store(false);
+}
+
 bool SmartRelationshipBuilder::checkCancellation(const QString& currentFile)
 {
     if (cancelled.load()) {

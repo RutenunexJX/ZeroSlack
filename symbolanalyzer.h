@@ -7,6 +7,7 @@
 #include <QList>
 #include <QVector>
 #include <functional>
+#include "projectmodel.h"
 #include "syminfo.h"
 
 class SlangManager;
@@ -36,8 +37,10 @@ public:
     void analyzeOpenTabs(TabManager* tabManager);
     /** 工作区批量符号分析；按批读取并分析以控制内存与 UI 响应。isCancelled 可选，返回 true 时中止。 */
     void analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
+    void analyzeProject(const ProjectSnapshot& project, std::function<bool()> isCancelled = nullptr);
     /** 阶段 A：在后台线程执行工作区符号分析，不阻塞 UI；进度通过 batchProgress 等信号回传。 */
     void startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
+    void startAnalyzeProjectAsync(const ProjectSnapshot& project, std::function<bool()> isCancelled = nullptr);
     void analyzeFile(const QString& filePath);
     /** 阶段 B：基于内容的解析，不创建 QWidget；直接对 QString 做正则解析，供工作区/单文件分析使用 */
     void analyzeFileContent(const QString& fileName, const QString& content);

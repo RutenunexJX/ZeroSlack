@@ -98,22 +98,28 @@ static WorkspaceAnalysisResult buildWorkspaceAnalysisResult(const QStringList& s
 void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled)
 {
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) return;
+    analyzeProject(workspaceManager->projectSnapshot(), std::move(isCancelled));
+}
 
-    emit analysisStarted(workspaceManager->getWorkspacePath());
+void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::function<bool()> isCancelled)
+{
+    if (!project.isOpen()) return;
 
-    QStringList svFiles = workspaceManager->getSystemVerilogFiles();
+    emit analysisStarted(project.workspaceRoot);
+
+    QStringList svFiles = project.systemVerilogFiles;
     const int totalFiles = svFiles.size();
     if (totalFiles == 0) {
         CompletionManager::getInstance()->forceRefreshSymbolCaches();
         emit batchAnalysisCompleted(0, 0);
-        emit analysisCompleted(workspaceManager->getWorkspacePath(), 0);
+        emit analysisCompleted(project.workspaceRoot, 0);
         return;
     }
 
     QList<sym_list::SymbolInfo> allSymbols = m_slangManager->extractWorkspaceSymbols(svFiles);
     if (isCancelled && isCancelled()) {
         emit batchAnalysisCompleted(0, 0);
-        emit analysisCompleted(workspaceManager->getWorkspacePath(), 0);
+        emit analysisCompleted(project.workspaceRoot, 0);
         return;
     }
 
@@ -128,18 +134,24 @@ void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::f
 
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
-    emit analysisCompleted(workspaceManager->getWorkspacePath(), result.totalSymbols);
+    emit analysisCompleted(project.workspaceRoot, result.totalSymbols);
 }
 
 void SymbolAnalyzer::startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled)
 {
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) return;
+    startAnalyzeProjectAsync(workspaceManager->projectSnapshot(), std::move(isCancelled));
+}
+
+void SymbolAnalyzer::startAnalyzeProjectAsync(const ProjectSnapshot& project, std::function<bool()> isCancelled)
+{
+    if (!project.isOpen()) return;
     if (workspaceAnalysisWatcher && workspaceAnalysisWatcher->isRunning()) {
         workspaceAnalysisWatcher->cancel();
     }
 
-    QStringList svFiles = workspaceManager->getSystemVerilogFiles();
-    QString workspacePath = workspaceManager->getWorkspacePath();
+    QStringList svFiles = project.systemVerilogFiles;
+    QString workspacePath = project.workspaceRoot;
     const int totalFiles = svFiles.size();
 
     emit analysisStarted(workspacePath);

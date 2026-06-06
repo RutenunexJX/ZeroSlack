@@ -50,6 +50,7 @@ public:
     void setConfidenceThreshold(int threshold) { confidenceThreshold = threshold; }
 
     void cancelAnalysis();
+    void resetCancellation();
     bool isCancelled() const { return cancelled; }
 
     void analyzeMultipleFiles(const QStringList& fileNames,

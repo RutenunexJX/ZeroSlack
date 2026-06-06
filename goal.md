@@ -106,7 +106,7 @@ Feature/UI Layer
 
 目的：收束分析触发路径。
 
-当前状态：最小 AnalysisScheduler 已落地，订阅 `DocumentModel` opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断；workspace 批量关系分析 watcher / 进度 UI 暂仍留在 `MainWindow`。
+当前状态：最小 AnalysisScheduler 已落地，订阅 `DocumentModel` opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断；workspace 批量关系分析 watcher / 取消 / 完成信号已收束到 scheduler，进度弹窗 UI 暂仍留在 `MainWindow`。
 
 统一处理：
 
@@ -136,6 +136,8 @@ Feature/UI Layer
 
 目的：让 ZeroSlack 真正理解 SV 工程输入，而不是只扫描文件。
 
+当前状态：最小 ProjectModel 已落地，由 `WorkspaceManager` 持有，发布 `ProjectSnapshot` 并记录 workspace root、全部文件、SystemVerilog 文件集合、默认 include dirs、defines、可选 filelist/top module 和 ignored paths；`SymbolAnalyzer` 已提供 `analyzeProject` / `startAnalyzeProjectAsync` 入口，后续 SlangManager / AnalysisScheduler 应继续转向消费 ProjectSnapshot。
+
 最小版本包含：
 
 - workspace root
@@ -151,6 +153,8 @@ Feature/UI Layer
 ### 阶段 5：Query Services
 
 目的：让产品功能复用统一查询能力。
+
+当前状态：`DefinitionService` 最小入口已落地，内部通过 `SemanticIndex` 查询 definitions，并集中 Ctrl+Click / 跳转定义所需的本文件优先、module scope、struct member 类型过滤和跨文件目标选择规则；`CompletionService` 最小入口已落地，普通自动补全路径已开始经由 service，命令模式和 struct member 专用分支后续再迁。后续 service 应继续按同样方式先包住现有能力，再逐步替换 UI 直连逻辑。
 
 逐步建立：
 
@@ -216,8 +220,8 @@ UI 只读 snapshot
 → SemanticIndex facade
 → DocumentModel
 → AnalysisScheduler
-→ ProjectModel
-→ Query Services
+→ ProjectModel（最小版已落地）
+→ Query Services（DefinitionService / CompletionService 最小版已落地）
 → SemanticIndex snapshot
 ```
 

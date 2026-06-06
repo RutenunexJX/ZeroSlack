@@ -16,6 +16,7 @@
 
 #define private public
 #include "mainwindow.h"
+#include "analysisscheduler.h"
 #include "mycodeeditor.h"
 #include "symbolanalyzer.h"
 #include "tabmanager.h"
@@ -71,12 +72,8 @@ static void drainRelationshipWork(MainWindow& window)
 {
     if (window.relationshipBuilder)
         window.relationshipBuilder->cancelAnalysis();
-    if (window.relationshipBatchWatcher && window.relationshipBatchWatcher->isRunning()) {
-        QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> future =
-            window.relationshipBatchWatcher->future();
-        window.relationshipBatchWatcher->cancel();
-        future.waitForFinished();
-    }
+    if (window.analysisScheduler)
+        window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     if (window.relationshipSingleFileWatcher && window.relationshipSingleFileWatcher->isRunning()) {
         QFuture<QVector<RelationshipToAdd>> future = window.relationshipSingleFileWatcher->future();
         window.relationshipSingleFileWatcher->cancel();

@@ -7,10 +7,13 @@
 
 WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
+    , projectModel(std::make_unique<ProjectModel>(this))
 {
     allFiles.reserve(500);
     svFiles.reserve(100);
 
+    connect(projectModel.get(), &ProjectModel::projectChanged,
+            this, &WorkspaceManager::projectChanged);
 }
 
 WorkspaceManager::~WorkspaceManager()
@@ -31,7 +34,8 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
         closeWorkspace();
     }
 
-    workspacePath = pathToOpen;
+    projectModel->setWorkspaceRoot(pathToOpen);
+    workspacePath = projectModel->workspaceRoot();
     scanDirectory(workspacePath);
     startFileWatching();
 
@@ -48,6 +52,7 @@ void WorkspaceManager::closeWorkspace()
     workspacePath.clear();
     allFiles.clear();
     svFiles.clear();
+    projectModel->closeProject();
 
     emit workspaceClosed();
 }
@@ -60,6 +65,16 @@ bool WorkspaceManager::isWorkspaceOpen() const
 QString WorkspaceManager::getWorkspacePath() const
 {
     return workspacePath;
+}
+
+ProjectModel* WorkspaceManager::getProjectModel() const
+{
+    return projectModel.get();
+}
+
+ProjectSnapshot WorkspaceManager::projectSnapshot() const
+{
+    return projectModel ? projectModel->snapshot() : ProjectSnapshot();
 }
 
 QStringList WorkspaceManager::getAllFiles() const
@@ -161,7 +176,9 @@ void WorkspaceManager::scanDirectory(const QString& path)
         allFiles.append(iterator.next());
     }
 
-    filterSystemVerilogFiles();
+    projectModel->setScannedFiles(allFiles);
+    allFiles = projectModel->allFiles();
+    svFiles = projectModel->systemVerilogFiles();
 }
 
 void WorkspaceManager::updateFileWatcher()

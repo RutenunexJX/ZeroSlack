@@ -2,10 +2,15 @@
 #define ANALYSISSCHEDULER_H
 
 #include "documentmodel.h"
+#include "projectmodel.h"
+#include "smartrelationshipbuilder.h"
 
+#include <QFutureWatcher>
 #include <QObject>
 #include <QMap>
+#include <QPair>
 #include <QString>
+#include <QVector>
 #include <functional>
 
 class SymbolAnalyzer;
@@ -24,14 +29,22 @@ public:
     void setOpenFileContentProvider(std::function<QString(const QString&)> provider);
     void setWorkspaceOpenProvider(std::function<bool()> provider);
     void setRelationshipAnalysisCallback(std::function<void(const QString&, const QString&)> callback);
+    void setWorkspaceRelationshipAnalysisCallback(
+        std::function<QVector<QPair<QString, QVector<RelationshipToAdd>>>(const ProjectSnapshot&)> callback);
+    void setWorkspaceRelationshipCancelCallback(std::function<void()> callback);
 
     void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
     void cancelScheduledOpenFileAnalysis(const QString& fileName);
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
+    void requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project);
+    void cancelWorkspaceRelationshipAnalysis();
     void handleExternalFileChanged(const QString& fileName, int debounceMs);
 
 signals:
     void documentRefreshRequested(const QString& fileName);
+    void workspaceRelationshipAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
+    void workspaceRelationshipAnalysisFinished(const QVector<QPair<QString, QVector<RelationshipToAdd>>>& results);
+    void workspaceRelationshipAnalysisCancelled();
 
 private:
     DocumentModel* documentModel = nullptr;
@@ -40,10 +53,14 @@ private:
     std::function<QString(const QString&)> openFileContentProvider;
     std::function<bool()> workspaceOpenProvider;
     std::function<void(const QString&, const QString&)> relationshipAnalysisCallback;
+    std::function<QVector<QPair<QString, QVector<RelationshipToAdd>>>(const ProjectSnapshot&)>
+        workspaceRelationshipAnalysisCallback;
+    std::function<void()> workspaceRelationshipCancelCallback;
 
     QMap<QString, QTimer*> openFileAnalysisTimers;
     QMap<QString, QTimer*> fileChangeDebounceTimers;
     QMap<QString, QString> lastRelationshipAnalysisContent;
+    QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>* workspaceRelationshipWatcher = nullptr;
 
     void onDocumentOpened(const DocumentSnapshot& snapshot);
     void onDocumentEdited(const DocumentSnapshot& snapshot);
