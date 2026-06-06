@@ -8,6 +8,8 @@
 
 当前架构主线已经收束到 Route A：
 
+当前版本：`0.0.14/slang19`。本轮重点是补齐 Query Services 最小边界，并让部分 UI 消费端开始通过服务 / facade 读取语义事实。
+
 - Tree-sitter：实时语法、高亮、增量文档、live module scope。
 - Slang：符号、语义、补全、跳转、scope tree、关系分析事实来源。
 - CTest：已覆盖 `ts_doc_test`、`completion_test`、`jump_test`、`relationship_test`、`gui_smoke_test`、`large_file_perf_test`。
@@ -20,7 +22,7 @@
 - DocumentModel：已有最小入口，由 `TabManager` 持有并跟踪打开文档的 fileName、dirty/saved、textVersion、cursor 和 live module 名；GUI smoke 已覆盖打开和编辑事件。
 - AnalysisScheduler：已有最小入口，订阅 DocumentModel opened/edited/saved，集中打开文件分析、保存分析、打开文件编辑去抖、外部文件变更去抖和单文件关系分析显著变更判断；workspace 批量关系分析 watcher / 取消 / 完成信号也已收束到 scheduler。
 - ProjectModel：已有最小入口，由 `WorkspaceManager` 持有并发布 `ProjectSnapshot`，记录 workspace root、全部文件、SystemVerilog 文件集合、默认 include dirs、defines、可选 filelist/top module 和 ignored paths；workspace 符号分析已可直接消费 ProjectSnapshot。
-- Query Services：`DefinitionService` 最小入口已落地，Ctrl+Click / 跳转定义路径已开始通过 service 复用 `SemanticIndex` definitions 查询；`CompletionService` 最小入口已落地，普通自动补全路径已开始经由 service。
+- Query Services：`DefinitionService` 最小入口已落地，Ctrl+Click / 跳转定义路径已开始通过 service 复用 `SemanticIndex` definitions 查询；`CompletionService` 最小入口已落地，普通自动补全和 struct member 专用补全路径已开始经由 service；`RelationshipService` / `HierarchyService` 最小入口已落地，关系和实例层级查询已开始经由 service 边界；`NavigationManager` 已开始通过 `DefinitionService` / `SemanticIndex` 消费模块跳转和导航列表数据。
 
 ## Next Major Minimum
 
@@ -58,8 +60,8 @@
 5. 已完成 DocumentModel 最小入口；后续分析调度应优先订阅 DocumentModel 事件。
 6. 已完成 AnalysisScheduler 最小入口；workspace 批量关系分析 watcher / 取消 / 完成信号已搬入 scheduler，进度 UI 暂仍在 MainWindow。
 7. 已完成 ProjectModel 最小入口；后续 SlangManager / AnalysisScheduler 应优先消费 ProjectSnapshot，而不是临时拼文件列表。
-8. 已完成 DefinitionService 和 CompletionService 最小入口；后续 Query Services 可继续补 RelationshipService / HierarchyService 边界。
-9. 当前优先项：补 RelationshipService 或 HierarchyService 最小边界，或继续把 workspace opened/rescanned 的更多触发点从 MainWindow 往 AnalysisScheduler 收束。
+8. 已完成 DefinitionService、CompletionService、RelationshipService 和 HierarchyService 最小入口；NavigationManager 和 struct member 补全路径已开始迁到 Query Services / SemanticIndex。
+9. 当前优先项：继续把 workspace opened/rescanned 的更多触发点从 MainWindow 往 AnalysisScheduler 收束，或继续迁移命令模式补全、关系浏览 UI、ReferenceService / DiagnosticService 等服务边界。
 10. 修正 smoke/perf/fixture 暴露的问题。
 11. 最后更新 README、goal、版本号，并提交一个 release-candidate commit。
 

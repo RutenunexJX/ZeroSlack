@@ -95,6 +95,30 @@ int main(int argc, char** argv) {
     expectList("CompletionService module prefix", CompletionService::getInstance()->findCompletions(query),
                {"enable"});
 
+    CompletionQuery memberQuery;
+    memberQuery.structTypeNameForMember = "pixel_t";
+    expectList("CompletionService struct members",
+               CompletionService::getInstance()->findCompletions(memberQuery),
+               {"red", "green", "blue"});
+
+    memberQuery.prefix = "bl";
+    const QList<sym_list::SymbolInfo> memberSymbols =
+        CompletionService::getInstance()->findCompletionSymbols(memberQuery);
+    expectList("CompletionService struct prefix",
+               CompletionService::getInstance()->findCompletions(memberQuery),
+               {"blue"});
+    ++g_checks;
+    const bool serviceSymbolOk = memberSymbols.size() == 1
+        && memberSymbols.first().symbolName == QStringLiteral("blue")
+        && memberSymbols.first().symbolType == sym_list::sym_struct_member
+        && memberSymbols.first().moduleScope == QStringLiteral("pixel_t");
+    if (!serviceSymbolOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           serviceSymbolOk ? "PASS" : "FAIL",
+           "CompletionService struct symbols",
+           memberSymbols.size());
+
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;
 }

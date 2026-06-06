@@ -3,6 +3,8 @@
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "semanticindex.h"
+#include "hierarchyservice.h"
+#include "relationshipservice.h"
 #include "symbolrelationshipengine.h"
 #include "syminfo.h"
 
@@ -85,6 +87,15 @@ static int countRel(const QVector<RelationshipToAdd>& rels,
             ++count;
     }
     return count;
+}
+
+static void applyRelationships(SymbolRelationshipEngine& engine,
+                               const QVector<RelationshipToAdd>& rels)
+{
+    engine.beginUpdate();
+    for (const auto& r : rels)
+        engine.addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
+    engine.endUpdate();
 }
 
 static void expectInt(const char* what, int got, int want)
@@ -194,6 +205,7 @@ static void runInlineRelationshipRegression(SlangManager& slang,
 
 static void runMultiFileRelationshipFixture(SlangManager& slang,
                                             sym_list* db,
+                                            SymbolRelationshipEngine& engine,
                                             SmartRelationshipBuilder& builder)
 {
     printf("\n-- multi-file relationship fixture --\n");
@@ -291,6 +303,79 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                hasRel(rels, topClkId, topId, SymbolRelationshipEngine::CLOCKS), true);
     expectBool("top reset by top_rst_n",
                hasRel(rels, topRstId, topId, SymbolRelationshipEngine::RESETS), true);
+
+    applyRelationships(engine, rels);
+    RelationshipService relationshipService(&index);
+
+    RelationshipQuery relationshipQuery;
+    relationshipQuery.symbolId = topId;
+    relationshipQuery.outgoing = true;
+    relationshipQuery.types = {
+        SymbolRelationshipEngine::INSTANTIATES,
+        SymbolRelationshipEngine::CALLS,
+        SymbolRelationshipEngine::READS_FROM,
+    };
+
+    const QList<RelationshipResult> serviceRels =
+        relationshipService.findRelationships(relationshipQuery);
+    bool serviceFoundStage = false;
+    bool serviceFoundTask = false;
+    bool serviceFoundRead = false;
+    for (const RelationshipResult& rel : serviceRels) {
+        serviceFoundStage = serviceFoundStage
+            || (rel.relationship.toId == stageId
+                && rel.relationship.type == SymbolRelationshipEngine::INSTANTIATES
+                && rel.toSymbol.symbolName == QStringLiteral("rel_stage"));
+        serviceFoundTask = serviceFoundTask
+            || (rel.relationship.toId == captureId
+                && rel.relationship.type == SymbolRelationshipEngine::CALLS
+                && rel.toSymbol.symbolName == QStringLiteral("capture_sample"));
+        serviceFoundRead = serviceFoundRead
+            || (rel.relationship.toId == reqValidId
+                && rel.relationship.type == SymbolRelationshipEngine::READS_FROM
+                && rel.toSymbol.symbolName == QStringLiteral("req_valid"));
+    }
+
+    expectBool("relationship service finds instantiation",
+               serviceFoundStage, true);
+    expectBool("relationship service finds call",
+               serviceFoundTask, true);
+    expectBool("relationship service finds condition read",
+               serviceFoundRead, true);
+
+    HierarchyService hierarchyService(&index);
+    HierarchyQuery hierarchyQuery;
+    hierarchyQuery.symbolId = topId;
+    hierarchyQuery.maxDepth = 1;
+    hierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+
+    const QList<HierarchyNode> hierarchy = hierarchyService.getHierarchy(hierarchyQuery);
+    bool hierarchyFoundRoot = false;
+    bool hierarchyFoundStage = false;
+    for (const HierarchyNode& node : hierarchy) {
+        hierarchyFoundRoot = hierarchyFoundRoot
+            || (node.depth == 0 && node.symbol.symbolId == topId);
+        hierarchyFoundStage = hierarchyFoundStage
+            || (node.depth == 1
+                && node.parentSymbolId == topId
+                && node.symbol.symbolId == stageId);
+    }
+    expectBool("hierarchy service includes root",
+               hierarchyFoundRoot, true);
+    expectBool("hierarchy service finds child instance",
+               hierarchyFoundStage, true);
+
+    HierarchyQuery parentQuery;
+    parentQuery.symbolId = stageId;
+    parentQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<HierarchyNode> parents = hierarchyService.getParents(parentQuery);
+    bool parentFoundTop = false;
+    for (const HierarchyNode& node : parents) {
+        parentFoundTop = parentFoundTop
+            || (node.symbol.symbolId == topId && node.parentSymbolId == stageId);
+    }
+    expectBool("hierarchy service finds parent instance",
+               parentFoundTop, true);
 }
 
 int main(int argc, char** argv)
@@ -301,10 +386,11 @@ int main(int argc, char** argv)
     auto* db = sym_list::getInstance();
 
     SymbolRelationshipEngine engine;
+    db->setRelationshipEngine(&engine);
     SmartRelationshipBuilder builder(&engine, db, &slang);
 
     runInlineRelationshipRegression(slang, db, builder);
-    runMultiFileRelationshipFixture(slang, db, builder);
+    runMultiFileRelationshipFixture(slang, db, engine, builder);
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

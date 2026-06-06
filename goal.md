@@ -154,7 +154,7 @@ Feature/UI Layer
 
 目的：让产品功能复用统一查询能力。
 
-当前状态：`DefinitionService` 最小入口已落地，内部通过 `SemanticIndex` 查询 definitions，并集中 Ctrl+Click / 跳转定义所需的本文件优先、module scope、struct member 类型过滤和跨文件目标选择规则；`CompletionService` 最小入口已落地，普通自动补全路径已开始经由 service，命令模式和 struct member 专用分支后续再迁。后续 service 应继续按同样方式先包住现有能力，再逐步替换 UI 直连逻辑。
+当前状态：`DefinitionService` 最小入口已落地，内部通过 `SemanticIndex` 查询 definitions，并集中 Ctrl+Click / 跳转定义所需的本文件优先、module scope、struct member 类型过滤和跨文件目标选择规则；`CompletionService` 最小入口已落地，普通自动补全和 struct member 专用补全路径已开始经由 service，命令模式分支后续再迁；`RelationshipService` / `HierarchyService` 最小入口已落地，关系和实例层级查询已开始经由 service 边界；`NavigationManager` 已开始通过 `DefinitionService` / `SemanticIndex` 消费模块跳转和导航列表数据。后续 service 应继续按同样方式先包住现有能力，再逐步替换 UI 直连逻辑。
 
 逐步建立：
 
@@ -221,7 +221,7 @@ UI 只读 snapshot
 → DocumentModel
 → AnalysisScheduler
 → ProjectModel（最小版已落地）
-→ Query Services（DefinitionService / CompletionService 最小版已落地）
+→ Query Services（DefinitionService / CompletionService / RelationshipService / HierarchyService 最小版已落地，部分 UI 消费端已开始迁移）
 → SemanticIndex snapshot
 ```
 

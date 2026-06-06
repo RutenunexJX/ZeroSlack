@@ -53,6 +53,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionservice.cpp
     definitionservice.cpp
     documentmodel.cpp
+    hierarchyservice.cpp
     tsdocument.cpp
     modemanager.cpp
     mycodeeditor.cpp
@@ -60,6 +61,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationmanager.cpp
     navigationwidget.cpp
     projectmodel.cpp
+    relationshipservice.cpp
     relationshipprogressdialog.cpp
     semanticindex.cpp
     slangmanager.cpp
@@ -80,6 +82,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionservice.h
     definitionservice.h
     documentmodel.h
+    hierarchyservice.h
     tsdocument.h
     modemanager.h
     mycodeeditor.h
@@ -87,6 +90,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationmanager.h
     navigationwidget.h
     projectmodel.h
+    relationshipservice.h
     relationshipprogressdialog.h
     semanticindex.h
     slangmanager.h

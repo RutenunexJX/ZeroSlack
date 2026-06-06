@@ -3,7 +3,8 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "symbolanalyzer.h"
-#include "completionmanager.h"
+#include "definitionservice.h"
+#include "semanticindex.h"
 #include <utility>
 #include <QSet>
 
@@ -215,16 +216,11 @@ void NavigationManager::navigateToModule(const QString& moduleName)
 {
     if (moduleName.isEmpty()) return;
 
-    // 查找模块定义的位置
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> modules = symbolList->findSymbolsByName(moduleName);
-
-    for (const sym_list::SymbolInfo& module : std::as_const(modules)) {
-        if (module.symbolType == sym_list::sym_module) {
-            navigateToSymbol(module);
-            break;
-        }
-    }
+    DefinitionQuery query;
+    query.symbolName = moduleName;
+    const DefinitionResult result = DefinitionService::getInstance()->resolveDefinition(query);
+    if (result.found && result.symbol.symbolType == sym_list::sym_module)
+        navigateToSymbol(result.symbol);
 }
 
 void NavigationManager::setSearchFilter(const QString& filter)
@@ -382,8 +378,8 @@ void NavigationManager::updateModuleHierarchyData()
 {
     moduleHierarchyCache.clear();
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> modules = symbolList->findSymbolsByType(sym_list::sym_module);
+    QList<sym_list::SymbolInfo> modules =
+        SemanticIndex::getInstance()->getSymbolsByType(sym_list::sym_module);
 
     // 构建模块层次结构
     // TODO: 实现模块实例化关系解析
@@ -417,8 +413,8 @@ void NavigationManager::updateModuleHierarchyDataForFile(const QString& fileName
 {
     if (fileName.isEmpty()) return;
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> modules = symbolList->findSymbolsByType(sym_list::sym_module);
+    QList<sym_list::SymbolInfo> modules =
+        SemanticIndex::getInstance()->getSymbolsByType(sym_list::sym_module);
 
     QStringList modulesInFile;
     for (const sym_list::SymbolInfo& module : std::as_const(modules)) {
@@ -443,8 +439,6 @@ void NavigationManager::updateModuleHierarchyDataForFile(const QString& fileName
 void NavigationManager::updateSymbolHierarchyData()
 {
     symbolsByTypeCache.clear();
-
-    sym_list* symbolList = sym_list::getInstance();
 
     // 大纲展示的符号类型（顺序由 NavigationWidget 的 orderedTypes 决定）
     static const QList<sym_list::sym_type_e> symbolTypes = {
@@ -474,8 +468,8 @@ void NavigationManager::updateSymbolHierarchyData()
 
     // 有当前文件则只取该文件符号，否则取全部
     QList<sym_list::SymbolInfo> symbols = currentFileName.isEmpty()
-        ? symbolList->getAllSymbols()
-        : symbolList->findSymbolsByFileName(currentFileName);
+        ? SemanticIndex::getInstance()->getSymbols()
+        : SemanticIndex::getInstance()->getSymbols(currentFileName);
 
     // task/function 名构成「子程序作用域」：其内部符号（形参 / 返回值 / 局部变量）的 moduleScope
     // 等于子程序名，应从大纲排除，避免函数内部变量混入模块级 逻辑/寄存器 等分组。

@@ -6,7 +6,7 @@ ZeroSlack 是一个面向 SystemVerilog 的轻量级代码编辑器 / 浏览器�
 开发。当前重点不是做完整 IDE，而是提供工程浏览、符号理解、补全、跳转和语法高亮等
 “静态 IDE”能力。
 
-当前版本：0.0.13/slang18
+当前版本：0.0.14/slang19
 当前分支：tree_sitter_and_slang
 版本显示：运行时显示在窗口标题和状态栏右下角，定义在 version.h。
 
@@ -286,18 +286,21 @@ GUI 相关能力仍需人工或 GUI 自动化验证：
 - 工作区重新扫描时会覆盖空符号文件的旧结果，并让后续 contentAffectsSymbols 判断有稳定基线。
 - 关系写回仍可继续观察和细化。
 
-slang18 已完成
+slang19 已完成
 - GUI / 工作区可靠性版本最小底座已落地。
 - 已有最小 smoke test 覆盖：打开工作区、打开文件、输入换行/字符、上下移动、触发补全、Ctrl+Click 跳转、导航窗格双击跳转。
 - 已有大文件性能基线覆盖：空白/换行编辑不启动不必要的符号分析或关系分析 debounce。
 - 已有多文件关系 fixture 覆盖 package/import、跨文件实例化、调用、赋值、条件读取、clock/reset。
 - SemanticIndex facade 已补最小入口，新增语义查询代码应优先通过 facade。
 - DefinitionService 已补最小入口，Ctrl+Click / 跳转定义路径已开始经由 service 复用 SemanticIndex definitions 查询。
-- CompletionService 已补最小入口，普通自动补全路径已开始从 MyCodeEditor 迁到 service 边界。
+- CompletionService 已补最小入口，普通自动补全和 struct member 专用补全路径已开始从 MyCodeEditor 迁到 service 边界。
+- RelationshipService 已补最小入口，关系查询路径已可经由 SemanticIndex relationships 边界读取并返回 from/to symbol 信息。
+- HierarchyService 已补最小入口，module/instance hierarchy 查询已可复用 RelationshipService 和 SemanticIndex 边界。
+- NavigationManager 已开始消费 Query Services / SemanticIndex：模块双击跳转经由 DefinitionService，模块/符号列表刷新经由 SemanticIndex facade。
 - DocumentModel 已补最小入口，由 TabManager 持有并跟踪打开文档状态。
 - AnalysisScheduler 已补最小入口，打开/保存/编辑去抖/外部文件变更/单文件关系分析显著变更判断已开始集中到 scheduler；workspace 批量关系分析 watcher / 取消 / 完成信号也已收束到 scheduler。
 - ProjectModel 已补最小入口，由 WorkspaceManager 持有并发布 ProjectSnapshot；workspace 符号分析已可使用 ProjectSnapshot 的工程输入。
-- 后续可继续补更细的失败诊断、更多真实工作区路径和跨文件跳转 GUI 验证。
+- 后续可继续把 workspace opened/rescanned 的更多触发点收进 AnalysisScheduler，或把导航/关系浏览 UI 的消费端迁到 Query Services。
 
 已完成 P3
 - 已修正多 module 文件中部分关系误归属到首个 module 的问题。
@@ -305,17 +308,19 @@ slang18 已完成
 - smartrelationshipbuilder 不再使用 QRegularExpression；注释和字符串中的伪调用/伪赋值不再参与这些关系来源。
 - clock/reset 关系基于 Slang timing control 的符号引用和符号名分类，后续仍可按真实工程样例细化分类规则。
 
-slang18 交付状态
-- 目标是“GUI / 工作区可靠性 + 架构底座收束版本”，而不是继续扩大 UI 功能范围。
+slang19 交付状态
+- 目标是“Query Services 边界补齐 + UI 消费端迁移起步版本”，在 slang18 的 GUI / 工作区可靠性底座上继续收束架构。
 - GUI 自动化烟测已补最小入口：打开工作区、打开大文件、编辑换行/字符、移动光标、触发补全、Ctrl+Click、导航窗格跳转。
 - 大文件性能基线已补最小入口：空白/换行编辑后不触发不必要的 Slang / 关系重分析；连续编辑和移动光标仍可继续扩展更细性能断言。
 - 已增加一个更接近真实工程的多文件关系 fixture，验证 package/import、跨文件实例化、调用、赋值、条件读取、clock/reset；跨文件 Ctrl+Click GUI 验证仍可继续补。
 - SemanticIndex facade 已补最小入口；新增语义查询代码应优先通过 facade。
 - DefinitionService 已补最小入口；Ctrl+Click / 跳转定义已开始从 MyCodeEditor 迁到 Query Services 边界。
-- CompletionService 已补最小入口；普通自动补全已开始从 MyCodeEditor 迁到 Query Services 边界，命令模式和 struct member 专用分支后续可继续迁。
+- CompletionService 已补最小入口；普通自动补全和 struct member 专用补全已开始从 MyCodeEditor 迁到 Query Services 边界，命令模式分支后续可继续迁。
+- RelationshipService / HierarchyService 已补最小入口；关系查询和实例层级查询已开始经由 Query Services 边界。
+- NavigationManager 已开始消费 Query Services / SemanticIndex：模块双击跳转经由 DefinitionService，模块/符号列表刷新经由 SemanticIndex facade。
 - DocumentModel 已补最小入口；分析触发已开始由 AnalysisScheduler 接管。
-- AnalysisScheduler 已补最小入口；ProjectModel 最小版也已落地；workspace 批量关系分析 watcher / 取消 / 完成信号已从 MainWindow 收束到 scheduler，进度 UI 暂仍留在 MainWindow。下一步优先补 RelationshipService / HierarchyService 最小边界，或继续把 workspace opened/rescanned 的更多触发点收进 scheduler。
-- 版本号已更新到 0.0.13/slang18；完成标准见 goal.md 和 plan.md；新会话优先读取 readme.txt、plan.md 和 goal.md。
+- AnalysisScheduler 已补最小入口；ProjectModel 最小版也已落地；workspace 批量关系分析 watcher / 取消 / 完成信号已从 MainWindow 收束到 scheduler，进度 UI 暂仍留在 MainWindow。下一步优先把 workspace opened/rescanned 的更多触发点收进 scheduler，或继续迁移命令模式补全、关系浏览 UI 等消费端。
+- 版本号已更新到 0.0.14/slang19；完成标准见 goal.md 和 plan.md；新会话优先读取 readme.txt、plan.md 和 goal.md。
 
 
 ==========================================================================

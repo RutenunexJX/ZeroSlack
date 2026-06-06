@@ -409,10 +409,10 @@ void MyCodeEditor::onTextChanged()
         if (charAtCursor == ' ') {
             QString lineBeforeSpace = lineUpToCursor.left(qMax(0, positionInLine - 1)).trimmed();
             QString varName, memberPrefix;
-            CompletionManager* mgr = CompletionManager::getInstance();
-            if (mgr->tryParseStructMemberContext(lineBeforeSpace, varName, memberPrefix)) {
+            CompletionService* completionService = CompletionService::getInstance();
+            if (completionService->tryParseStructMemberContext(lineBeforeSpace, varName, memberPrefix)) {
                 QString mod = currentModuleNameAt(cursor.position() - 1);
-                if (!mgr->getStructTypeForVariable(varName, mod).isEmpty()) {
+                if (!completionService->getStructTypeForVariable(varName, mod).isEmpty()) {
                     shouldContinueAutoComplete = true;
                 }
             }
@@ -439,8 +439,6 @@ void MyCodeEditor::hideAutoComplete()
 
 QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
 {
-    CompletionManager* manager = CompletionManager::getInstance();
-
     QTextCursor cursor = textCursor();
     int cursorPosition = cursor.position();
     CompletionQuery query;
@@ -450,21 +448,6 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
     query.cursorLine = cursor.block().blockNumber() + 1;
     query.cursorPosition = cursorPosition;
     return CompletionService::getInstance()->findCompletions(query);
-
-    QString fileName = getFileName();
-
-    QString currentModule = currentModuleNameAt(cursorPosition);
-
-    if (!currentModule.isEmpty()) {
-        // 在模块内：只返回模块内部变量
-        QStringList result = manager->getModuleInternalVariables(currentModule, prefix);
-
-        return result;
-    } else {
-        // 在模块外：返回模块声明和全局符号
-        QStringList result = manager->getGlobalSymbolCompletions(prefix);
-        return result;
-    }
 }
 
 bool MyCodeEditor::isInCommentArea()
@@ -845,23 +828,21 @@ void MyCodeEditor::onAutoCompleteTimer()
     // 结构体变量.成员 上下文：输入 . 或 空格 后显示成员补全（含模糊匹配，如 a1 匹配 abc123）
     QString lineForParse = lineUpToCursor.trimmed();
     QString varName, memberPrefix;
-    CompletionManager* manager = CompletionManager::getInstance();
-    if (manager->tryParseStructMemberContext(lineForParse, varName, memberPrefix)) {
+    CompletionService* completionService = CompletionService::getInstance();
+    if (completionService->tryParseStructMemberContext(lineForParse, varName, memberPrefix)) {
         QString currentModule = currentModuleNameAt(cursor.position());
-        QString structTypeName = manager->getStructTypeForVariable(varName, currentModule);
+        QString structTypeName = completionService->getStructTypeForVariable(varName, currentModule);
         if (!structTypeName.isEmpty()) {
-            QStringList memberNames = manager->getStructMemberCompletions(memberPrefix, structTypeName);
-            QList<sym_list::SymbolInfo> symbolInfoList;
-            sym_list* symbolList = sym_list::getInstance();
-            for (const QString& name : memberNames) {
-                QList<sym_list::SymbolInfo> syms = symbolList->findSymbolsByName(name);
-                for (const sym_list::SymbolInfo& s : syms) {
-                    if (s.symbolType == sym_list::sym_struct_member && s.moduleScope == structTypeName) {
-                        symbolInfoList.append(s);
-                        break;
-                    }
-                }
-            }
+            CompletionQuery query;
+            query.prefix = memberPrefix;
+            query.fileName = getFileName();
+            query.moduleName = currentModule;
+            query.structTypeNameForMember = structTypeName;
+            query.cursorLine = cursor.block().blockNumber() + 1;
+            query.cursorPosition = cursor.position();
+            QStringList memberNames = completionService->findCompletions(query);
+            QList<sym_list::SymbolInfo> symbolInfoList =
+                completionService->findCompletionSymbols(query);
             completionModel->updateCompletions(memberNames, symbolInfoList, memberPrefix, CompletionModel::SymbolCompletion);
             wordStartPos = currentBlock.position() + lineUpToCursor.lastIndexOf('.') + 1;
             showAutoComplete();

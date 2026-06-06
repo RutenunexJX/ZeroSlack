@@ -11,6 +11,7 @@ struct CompletionQuery {
     QString prefix;
     QString fileName;
     QString moduleName;
+    QString structTypeNameForMember;
     int cursorLine = -1;
     int cursorPosition = -1;
 };
@@ -26,6 +27,11 @@ public:
     void setSemanticIndex(SemanticIndex* semanticIndex);
 
     QStringList findCompletions(const CompletionQuery& query) const;
+    QList<sym_list::SymbolInfo> findCompletionSymbols(const CompletionQuery& query) const;
+    QString getStructTypeForVariable(const QString& variableName, const QString& moduleName) const;
+    bool tryParseStructMemberContext(const QString& line,
+                                     QString& outVariableName,
+                                     QString& outMemberPrefix) const;
 
 private:
     SemanticIndex* index = nullptr;
