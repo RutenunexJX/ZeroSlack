@@ -17,6 +17,7 @@ class NavigationWidget;
 class AnalysisScheduler;
 struct WorkspaceRelationshipAnalysisResult;
 class SemanticIndexSnapshot;
+class QComboBox;
 class QTreeWidget;
 
 class SymbolRelationshipEngine;
@@ -92,6 +93,21 @@ private:
     NavigationWidget* navigationWidget;
     QDockWidget* problemsDock = nullptr;
     QTreeWidget* problemsTree = nullptr;
+    QComboBox* problemsScopeCombo = nullptr;
+    QComboBox* problemsSeverityCombo = nullptr;
+    QDockWidget* referencesDock = nullptr;
+    QTreeWidget* referencesTree = nullptr;
+    QComboBox* referenceScopeCombo = nullptr;
+    QString currentReferenceSymbolName;
+    QString currentReferenceFileName;
+    QString currentReferenceModuleName;
+    QDockWidget* relationshipsDock = nullptr;
+    QTreeWidget* relationshipsTree = nullptr;
+    QComboBox* relationshipDirectionCombo = nullptr;
+    QComboBox* relationshipTypeCombo = nullptr;
+    QString currentRelationshipSymbolName;
+    QString currentRelationshipFileName;
+    QString currentRelationshipModuleName;
 
     struct RelationshipAnalysisTracker {
         int totalFiles = 0;
@@ -119,9 +135,19 @@ private:
 
     void setupNavigationPane();
     void setupProblemsPane();
+    void setupReferencesPane();
+    void setupRelationshipsPane();
     void updateProblemsPanel(const QString& fileName = QString());
     void connectNavigationSignals();
-    void navigateToFileAndLine(const QString& filePath, int lineNumber = -1);
+    void navigateToFileAndLine(const QString& filePath, int lineNumber = -1, int columnNumber = -1);
+    void showReferencesForSymbol(const QString& symbolName,
+                                 const QString& fileName,
+                                 const QString& moduleName);
+    void refreshReferencesPanel();
+    void showRelationshipsForSymbol(const QString& symbolName,
+                                    const QString& fileName,
+                                    const QString& moduleName);
+    void refreshRelationshipsPanel();
 
     void setupManagerConnections();
     void setupRelationshipEngine();

@@ -22,6 +22,7 @@
 #include <QDir>
 
 #include <QKeyEvent>
+#include <QMenu>
 #include <QTextCursor>
 #include <QApplication>
 #include <QRect>
@@ -34,6 +35,7 @@
 #include <QPen>
 #include <QBrush>
 #include <QRegularExpression>
+#include <memory>
 #include <utility>
 
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
@@ -204,7 +206,28 @@ void MyCodeEditor::resizeEvent(QResizeEvent *event)
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 {
-    event->ignore();
+    std::unique_ptr<QMenu> menu(createStandardContextMenu(event->pos()));
+    const QTextCursor cursorAtPos = cursorForPosition(event->pos());
+    const QString symbolName = getWordAtTextPosition(cursorAtPos.position());
+
+    menu->addSeparator();
+    QAction* findReferencesAction = menu->addAction(QStringLiteral("Find References"));
+    findReferencesAction->setEnabled(!symbolName.isEmpty() && !getFileName().isEmpty());
+    connect(findReferencesAction, &QAction::triggered, this, [this, symbolName, cursorAtPos]() {
+        emit referenceSearchRequested(symbolName,
+                                      getFileName(),
+                                      currentModuleNameAt(cursorAtPos.position()));
+    });
+
+    QAction* showRelationshipsAction = menu->addAction(QStringLiteral("Show Relationships"));
+    showRelationshipsAction->setEnabled(!symbolName.isEmpty() && !getFileName().isEmpty());
+    connect(showRelationshipsAction, &QAction::triggered, this, [this, symbolName, cursorAtPos]() {
+        emit relationshipBrowseRequested(symbolName,
+                                         getFileName(),
+                                         currentModuleNameAt(cursorAtPos.position()));
+    });
+
+    menu->exec(event->globalPos());
 }
 
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)

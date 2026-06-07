@@ -74,15 +74,15 @@ Tree-sitter + Slang 分工保持不变：
 - SearchService。
 - ModuleHierarchyGroup。
 - SymbolOutlineGroup。
-- Problems 面板最小 UI。
+- Problems / References / Relationships 面板第一版 UI。
 - GUI smoke / large file perf / relationship fixture 等 CTest 回归。
 
 仍未完成或仍是过渡形态：
 
 - SemanticIndexSnapshot 已接入后台生产和主线程世代切换，但仍需要继续减少 live sym_list 消费。
-- DiagnosticService 已有真实 Slang diagnostics 数据，并有 Problems 面板作为最小 UI 消费点。
-- ReferenceService 还缺 UI 消费点。
-- Relationship / hierarchy 浏览 UI 仍可继续收束到 services。
+- DiagnosticService 已有真实 Slang diagnostics 数据，Problems 面板已支持基础筛选和行/列跳转。
+- ReferenceService 已有 References dock 作为真实 UI 消费点。
+- RelationshipService 已有 Relationships dock 作为真实 UI 消费点；relationship / hierarchy 浏览仍可继续打磨分组、刷新和层级入口。
 - CompletionManager 大批只读符号查询、关系读取、scope names、cached file content
   已收束到 SemanticIndex / RelationshipService；仍有状态性过渡依赖。
 - MyCodeEditor 仍有少量旧直连点，但跳转定义和主要补全入口已开始经由 services。
@@ -140,14 +140,33 @@ UI / Services 只读 snapshot
 - SlangManager 提供 single-file / workspace diagnostics 提取。
 - Slang diagnostics 转为 SemanticDiagnostic，并随 SemanticIndexSnapshot 发布。
 - DiagnosticService 能查询真实 diagnostics。
-- MainWindow 提供底部 Problems 面板，显示 Severity / File / Line / Message。
-- Problems 条目双击可跳转文件和行。
+- MainWindow 提供底部 Problems 面板，显示 Severity / File / Line / Column / Message。
+- Problems 面板支持 current file / all files 和 severity 筛选。
+- Problems 条目双击可跳转文件、行和列。
 
 后续重点：
 
-- Problems 面板筛选、清空策略、当前文件 / workspace 模式。
+- Problems 面板清空策略、刷新节流和更完整跳转体验。
 - 将诊断刷新策略继续下沉到更清晰的 service / scheduler 边界。
 - 补更多真实 fixture 覆盖 include/import/宏展开相关 diagnostics。
+
+### 阶段 8：References / Relationships UI
+
+第一版已落地：
+
+- MainWindow 提供底部 References dock，编辑器右键 Find References 触发。
+- References dock 通过 ReferenceService 查询 incoming references。
+- References dock 支持 all files / current file 筛选。
+- MainWindow 提供底部 Relationships dock，编辑器右键 Show Relationships 触发。
+- Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships。
+- Relationships dock 支持 direction / type 筛选。
+- References / Relationships 条目双击可跳转文件、行和列。
+
+后续重点：
+
+- References 结果分组、workspace 维度筛选和快捷键入口。
+- Relationships 结果分组、刷新策略和层级浏览入口。
+- 继续让 UI 只读 snapshot-backed services，减少 live sym_list 消费。
 
 ## 完成标准
 
@@ -159,4 +178,4 @@ UI / Services 只读 snapshot
 - 现有补全、跳转、导航、关系分析、GUI smoke、大文件性能测试全部通过。
 - 至少一个真实多文件 SV fixture 覆盖 package/import、跨文件跳转、实例化、调用、赋值、
   条件读取、clock/reset。
-- 新会话只读 readme.txt、plan.md、goal.md、version.h 就能理解当前状态、下一步和最终骨架。
+- 新会话只读 readme.md、plan.md、goal.md、version.h 就能理解当前状态、下一步和最终骨架。

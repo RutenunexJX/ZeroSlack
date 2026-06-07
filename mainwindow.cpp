@@ -11,6 +11,8 @@
 #include "navigationmanager.h"
 #include "navigationwidget.h"
 #include "diagnosticservice.h"
+#include "referenceservice.h"
+#include "relationshipservice.h"
 #include "symbolrelationshipengine.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
@@ -29,9 +31,14 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QComboBox>
+#include <QDir>
+#include <QHBoxLayout>
 #include <QSet>
 #include <QTimer>
 #include <QTreeWidget>
+#include <QVBoxLayout>
+#include <QWidget>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -52,6 +59,8 @@ MainWindow::MainWindow(QWidget *parent)
     setupRelationshipEngine();
     setupNavigationPane();
     setupProblemsPane();
+    setupReferencesPane();
+    setupRelationshipsPane();
     setupManagerConnections();
     connectNavigationSignals();
 
@@ -430,10 +439,37 @@ void MainWindow::setupNavigationPane()
 
 void MainWindow::setupProblemsPane()
 {
+    auto* panel = new QWidget(this);
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(4);
+
+    auto* filtersLayout = new QHBoxLayout();
+    filtersLayout->setContentsMargins(0, 0, 0, 0);
+    filtersLayout->setSpacing(6);
+
+    problemsScopeCombo = new QComboBox(panel);
+    problemsScopeCombo->setObjectName(QStringLiteral("problemsScopeCombo"));
+    problemsScopeCombo->addItem(QStringLiteral("Current File"), 0);
+    problemsScopeCombo->addItem(QStringLiteral("All Files"), 1);
+    problemsScopeCombo->setToolTip(QStringLiteral("Problem scope"));
+    filtersLayout->addWidget(problemsScopeCombo);
+
+    problemsSeverityCombo = new QComboBox(panel);
+    problemsSeverityCombo->setObjectName(QStringLiteral("problemsSeverityCombo"));
+    problemsSeverityCombo->addItem(QStringLiteral("All Severities"), 0);
+    problemsSeverityCombo->addItem(QStringLiteral("Errors"), 1);
+    problemsSeverityCombo->addItem(QStringLiteral("Warnings"), 2);
+    problemsSeverityCombo->addItem(QStringLiteral("Info"), 3);
+    problemsSeverityCombo->setToolTip(QStringLiteral("Severity filter"));
+    filtersLayout->addWidget(problemsSeverityCombo);
+    filtersLayout->addStretch(1);
+    layout->addLayout(filtersLayout);
+
     problemsTree = new QTreeWidget(this);
     problemsTree->setObjectName(QStringLiteral("problemsTree"));
-    problemsTree->setColumnCount(4);
-    problemsTree->setHeaderLabels({"Severity", "File", "Line", "Message"});
+    problemsTree->setColumnCount(5);
+    problemsTree->setHeaderLabels({"Severity", "File", "Line", "Column", "Message"});
     problemsTree->setRootIsDecorated(false);
     problemsTree->setAlternatingRowColors(true);
     problemsTree->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -441,14 +477,21 @@ void MainWindow::setupProblemsPane()
     problemsTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     problemsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     problemsTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    problemsTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    layout->addWidget(problemsTree);
 
     problemsDock = new QDockWidget("Problems", this);
     problemsDock->setObjectName(QStringLiteral("problemsDock"));
-    problemsDock->setWidget(problemsTree);
+    problemsDock->setWidget(panel);
     problemsDock->setFeatures(QDockWidget::DockWidgetMovable |
                               QDockWidget::DockWidgetFloatable |
                               QDockWidget::DockWidgetClosable);
     addDockWidget(Qt::BottomDockWidgetArea, problemsDock);
+
+    connect(problemsScopeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int) { updateProblemsPanel(); });
+    connect(problemsSeverityCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int) { updateProblemsPanel(); });
 
     connect(problemsTree, &QTreeWidget::itemDoubleClicked,
             this, [this](QTreeWidgetItem* item, int) {
@@ -456,7 +499,8 @@ void MainWindow::setupProblemsPane()
                     return;
                 const QString fileName = item->data(0, Qt::UserRole).toString();
                 const int line = item->data(0, Qt::UserRole + 1).toInt();
-                navigateToFileAndLine(fileName, line);
+                const int column = item->data(0, Qt::UserRole + 2).toInt();
+                navigateToFileAndLine(fileName, line, column);
             });
 }
 
@@ -473,13 +517,207 @@ static QString diagnosticSeverityText(SemanticDiagnostic::Severity severity)
     }
 }
 
+static QString relationshipTypeText(SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("Contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("References");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("Instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("Calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("Inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("Implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("Assigns To");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("Reads From");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("Clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("Resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("Generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("Constrains");
+    }
+    return QStringLiteral("Relationship");
+}
+
+static QString normalizedUiFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+void MainWindow::setupReferencesPane()
+{
+    auto* panel = new QWidget(this);
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(4);
+
+    auto* filtersLayout = new QHBoxLayout();
+    filtersLayout->setContentsMargins(0, 0, 0, 0);
+    filtersLayout->setSpacing(6);
+
+    referenceScopeCombo = new QComboBox(panel);
+    referenceScopeCombo->setObjectName(QStringLiteral("referenceScopeCombo"));
+    referenceScopeCombo->addItem(QStringLiteral("All Files"), 0);
+    referenceScopeCombo->addItem(QStringLiteral("Current File"), 1);
+    referenceScopeCombo->setToolTip(QStringLiteral("Reference scope"));
+    filtersLayout->addWidget(referenceScopeCombo);
+    filtersLayout->addStretch(1);
+    layout->addLayout(filtersLayout);
+
+    referencesTree = new QTreeWidget(panel);
+    referencesTree->setObjectName(QStringLiteral("referencesTree"));
+    referencesTree->setColumnCount(4);
+    referencesTree->setHeaderLabels({"Symbol", "File", "Line", "Relationship"});
+    referencesTree->setRootIsDecorated(false);
+    referencesTree->setAlternatingRowColors(true);
+    referencesTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    referencesTree->header()->setStretchLastSection(true);
+    referencesTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    referencesTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    referencesTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    layout->addWidget(referencesTree);
+
+    referencesDock = new QDockWidget("References", this);
+    referencesDock->setObjectName(QStringLiteral("referencesDock"));
+    referencesDock->setWidget(panel);
+    referencesDock->setFeatures(QDockWidget::DockWidgetMovable |
+                                QDockWidget::DockWidgetFloatable |
+                                QDockWidget::DockWidgetClosable);
+    addDockWidget(Qt::BottomDockWidgetArea, referencesDock);
+    referencesDock->hide();
+
+    connect(referenceScopeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int) { refreshReferencesPanel(); });
+
+    connect(referencesTree, &QTreeWidget::itemDoubleClicked,
+            this, [this](QTreeWidgetItem* item, int) {
+                if (!item)
+                    return;
+                const QString fileName = item->data(0, Qt::UserRole).toString();
+                const int line = item->data(0, Qt::UserRole + 1).toInt();
+                const int column = item->data(0, Qt::UserRole + 2).toInt();
+                navigateToFileAndLine(fileName, line, column);
+            });
+}
+
+void MainWindow::setupRelationshipsPane()
+{
+    auto* panel = new QWidget(this);
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(4);
+
+    auto* filtersLayout = new QHBoxLayout();
+    filtersLayout->setContentsMargins(0, 0, 0, 0);
+    filtersLayout->setSpacing(6);
+
+    relationshipDirectionCombo = new QComboBox(panel);
+    relationshipDirectionCombo->setObjectName(QStringLiteral("relationshipDirectionCombo"));
+    relationshipDirectionCombo->addItem(QStringLiteral("All Directions"), 0);
+    relationshipDirectionCombo->addItem(QStringLiteral("Outgoing"), 1);
+    relationshipDirectionCombo->addItem(QStringLiteral("Incoming"), 2);
+    relationshipDirectionCombo->setToolTip(QStringLiteral("Relationship direction"));
+    filtersLayout->addWidget(relationshipDirectionCombo);
+
+    relationshipTypeCombo = new QComboBox(panel);
+    relationshipTypeCombo->setObjectName(QStringLiteral("relationshipTypeCombo"));
+    relationshipTypeCombo->addItem(QStringLiteral("All Types"), -1);
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::REFERENCES),
+                                   static_cast<int>(SymbolRelationshipEngine::REFERENCES));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::INSTANTIATES),
+                                   static_cast<int>(SymbolRelationshipEngine::INSTANTIATES));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::CALLS),
+                                   static_cast<int>(SymbolRelationshipEngine::CALLS));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::ASSIGNS_TO),
+                                   static_cast<int>(SymbolRelationshipEngine::ASSIGNS_TO));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::READS_FROM),
+                                   static_cast<int>(SymbolRelationshipEngine::READS_FROM));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::CLOCKS),
+                                   static_cast<int>(SymbolRelationshipEngine::CLOCKS));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::RESETS),
+                                   static_cast<int>(SymbolRelationshipEngine::RESETS));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::CONTAINS),
+                                   static_cast<int>(SymbolRelationshipEngine::CONTAINS));
+    relationshipTypeCombo->addItem(relationshipTypeText(SymbolRelationshipEngine::GENERATES),
+                                   static_cast<int>(SymbolRelationshipEngine::GENERATES));
+    relationshipTypeCombo->setToolTip(QStringLiteral("Relationship type"));
+    filtersLayout->addWidget(relationshipTypeCombo);
+    filtersLayout->addStretch(1);
+    layout->addLayout(filtersLayout);
+
+    relationshipsTree = new QTreeWidget(panel);
+    relationshipsTree->setObjectName(QStringLiteral("relationshipsTree"));
+    relationshipsTree->setColumnCount(5);
+    relationshipsTree->setHeaderLabels({"Direction", "Symbol", "File", "Line", "Relationship"});
+    relationshipsTree->setRootIsDecorated(false);
+    relationshipsTree->setAlternatingRowColors(true);
+    relationshipsTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    relationshipsTree->header()->setStretchLastSection(true);
+    relationshipsTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    relationshipsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    relationshipsTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    relationshipsTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    layout->addWidget(relationshipsTree);
+
+    relationshipsDock = new QDockWidget("Relationships", this);
+    relationshipsDock->setObjectName(QStringLiteral("relationshipsDock"));
+    relationshipsDock->setWidget(panel);
+    relationshipsDock->setFeatures(QDockWidget::DockWidgetMovable |
+                                   QDockWidget::DockWidgetFloatable |
+                                   QDockWidget::DockWidgetClosable);
+    addDockWidget(Qt::BottomDockWidgetArea, relationshipsDock);
+    relationshipsDock->hide();
+
+    connect(relationshipDirectionCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int) { refreshRelationshipsPanel(); });
+    connect(relationshipTypeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int) { refreshRelationshipsPanel(); });
+
+    connect(relationshipsTree, &QTreeWidget::itemDoubleClicked,
+            this, [this](QTreeWidgetItem* item, int) {
+                if (!item)
+                    return;
+                const QString fileName = item->data(0, Qt::UserRole).toString();
+                const int line = item->data(0, Qt::UserRole + 1).toInt();
+                const int column = item->data(0, Qt::UserRole + 2).toInt();
+                navigateToFileAndLine(fileName, line, column);
+            });
+}
+
 void MainWindow::updateProblemsPanel(const QString& fileName)
 {
     if (!problemsTree)
         return;
 
     DiagnosticQuery query;
-    query.fileName = fileName;
+    const bool currentFileOnly =
+        !problemsScopeCombo || problemsScopeCombo->currentData().toInt() == 0;
+    if (currentFileOnly) {
+        query.fileName = fileName;
+        if (query.fileName.isEmpty()) {
+            MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
+            if (editor)
+                query.fileName = editor->getFileName();
+        }
+    }
+
+    const int severityFilter =
+        problemsSeverityCombo ? problemsSeverityCombo->currentData().toInt() : 0;
+    query.includeErrors = severityFilter == 0 || severityFilter == 1;
+    query.includeWarnings = severityFilter == 0 || severityFilter == 2;
+    query.includeInfo = severityFilter == 0 || severityFilter == 3;
+
     const QList<DiagnosticResult> diagnostics =
         DiagnosticService::getInstance()->findDiagnostics(query);
 
@@ -490,17 +728,188 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
         item->setText(0, diagnosticSeverityText(diagnostic.severity));
         item->setText(1, QFileInfo(diagnostic.fileName).fileName());
         item->setText(2, QString::number(diagnostic.line));
-        item->setText(3, diagnostic.message);
+        item->setText(3, QString::number(diagnostic.column));
+        item->setText(4, diagnostic.message);
         item->setToolTip(1, diagnostic.fileName);
-        item->setToolTip(3, diagnostic.message);
+        item->setToolTip(4, diagnostic.message);
         item->setData(0, Qt::UserRole, diagnostic.fileName);
         item->setData(0, Qt::UserRole + 1, diagnostic.line);
+        item->setData(0, Qt::UserRole + 2, diagnostic.column);
     }
 
     if (problemsDock) {
         problemsDock->setWindowTitle(QStringLiteral("Problems (%1)").arg(diagnostics.size()));
         if (!diagnostics.isEmpty())
             problemsDock->show();
+    }
+}
+
+static QTreeWidgetItem* createRelationshipItem(QTreeWidget* tree,
+                                               const QString& direction,
+                                               const sym_list::SymbolInfo& symbol,
+                                               SymbolRelationshipEngine::RelationType type)
+{
+    auto* item = new QTreeWidgetItem(tree);
+    item->setText(0, direction);
+    item->setText(1, symbol.symbolName);
+    item->setText(2, QFileInfo(symbol.fileName).fileName());
+    item->setText(3, QString::number(symbol.startLine));
+    item->setText(4, relationshipTypeText(type));
+    item->setToolTip(2, symbol.fileName);
+    item->setData(0, Qt::UserRole, symbol.fileName);
+    item->setData(0, Qt::UserRole + 1, symbol.startLine);
+    item->setData(0, Qt::UserRole + 2, symbol.startColumn);
+    return item;
+}
+
+void MainWindow::showReferencesForSymbol(const QString& symbolName,
+                                         const QString& fileName,
+                                         const QString& moduleName)
+{
+    if (!referencesTree || symbolName.isEmpty())
+        return;
+
+    currentReferenceSymbolName = symbolName;
+    currentReferenceFileName = fileName;
+    currentReferenceModuleName = moduleName;
+    refreshReferencesPanel();
+}
+
+void MainWindow::refreshReferencesPanel()
+{
+    if (!referencesTree || currentReferenceSymbolName.isEmpty())
+        return;
+
+    ReferenceQuery query;
+    query.symbolName = currentReferenceSymbolName;
+    query.fileName = currentReferenceFileName;
+    query.moduleName = currentReferenceModuleName;
+
+    const QList<ReferenceResult> references =
+        ReferenceService::getInstance()->findReferences(query);
+
+    const bool currentFileOnly =
+        referenceScopeCombo && referenceScopeCombo->currentData().toInt() == 1;
+    const QString normalizedReferenceFile = normalizedUiFileName(currentReferenceFileName);
+
+    int visibleCount = 0;
+    referencesTree->clear();
+    for (const ReferenceResult& reference : references) {
+        const sym_list::SymbolInfo& source = reference.referencingSymbol;
+        if (currentFileOnly
+            && normalizedUiFileName(source.fileName) != normalizedReferenceFile) {
+            continue;
+        }
+        auto* item = new QTreeWidgetItem(referencesTree);
+        item->setText(0, source.symbolName);
+        item->setText(1, QFileInfo(source.fileName).fileName());
+        item->setText(2, QString::number(source.startLine));
+        item->setText(3, relationshipTypeText(reference.relationship.relationship.type));
+        item->setToolTip(1, source.fileName);
+        item->setData(0, Qt::UserRole, source.fileName);
+        item->setData(0, Qt::UserRole + 1, source.startLine);
+        item->setData(0, Qt::UserRole + 2, source.startColumn);
+        visibleCount++;
+    }
+
+    if (referencesDock) {
+        referencesDock->setWindowTitle(
+            QStringLiteral("References: %1 (%2)")
+                .arg(currentReferenceSymbolName)
+                .arg(visibleCount));
+        referencesDock->show();
+        referencesDock->raise();
+    }
+
+    if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Found %1 references for %2")
+                .arg(visibleCount)
+                .arg(currentReferenceSymbolName),
+            3000);
+    }
+}
+
+void MainWindow::showRelationshipsForSymbol(const QString& symbolName,
+                                            const QString& fileName,
+                                            const QString& moduleName)
+{
+    if (!relationshipsTree || symbolName.isEmpty())
+        return;
+
+    currentRelationshipSymbolName = symbolName;
+    currentRelationshipFileName = fileName;
+    currentRelationshipModuleName = moduleName;
+    refreshRelationshipsPanel();
+}
+
+void MainWindow::refreshRelationshipsPanel()
+{
+    if (!relationshipsTree || currentRelationshipSymbolName.isEmpty())
+        return;
+
+    RelationshipQuery query;
+    query.symbolName = currentRelationshipSymbolName;
+    query.fileName = currentRelationshipFileName;
+    query.moduleName = currentRelationshipModuleName;
+
+    const int typeFilter = relationshipTypeCombo
+        ? relationshipTypeCombo->currentData().toInt()
+        : -1;
+    if (typeFilter >= 0) {
+        query.types = {
+            static_cast<SymbolRelationshipEngine::RelationType>(typeFilter)
+        };
+    }
+
+    const int directionFilter = relationshipDirectionCombo
+        ? relationshipDirectionCombo->currentData().toInt()
+        : 0;
+
+    RelationshipService* service = RelationshipService::getInstance();
+    QList<RelationshipResult> outgoing;
+    QList<RelationshipResult> incoming;
+    if (directionFilter == 0 || directionFilter == 1)
+        outgoing = service->findOutgoingRelationships(query);
+    if (directionFilter == 0 || directionFilter == 2)
+        incoming = service->findIncomingRelationships(query);
+
+    relationshipsTree->clear();
+    for (const RelationshipResult& relationship : std::as_const(outgoing)) {
+        const sym_list::SymbolInfo& target = relationship.toSymbol;
+        if (target.symbolId < 0)
+            continue;
+        createRelationshipItem(relationshipsTree,
+                               QStringLiteral("Outgoing"),
+                               target,
+                               relationship.relationship.type);
+    }
+    for (const RelationshipResult& relationship : std::as_const(incoming)) {
+        const sym_list::SymbolInfo& source = relationship.fromSymbol;
+        if (source.symbolId < 0)
+            continue;
+        createRelationshipItem(relationshipsTree,
+                               QStringLiteral("Incoming"),
+                               source,
+                               relationship.relationship.type);
+    }
+
+    const int total = relationshipsTree->topLevelItemCount();
+    if (relationshipsDock) {
+        relationshipsDock->setWindowTitle(
+            QStringLiteral("Relationships: %1 (%2)")
+                .arg(currentRelationshipSymbolName)
+                .arg(total));
+        relationshipsDock->show();
+        relationshipsDock->raise();
+    }
+
+    if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Found %1 relationships for %2")
+                .arg(total)
+                .arg(currentRelationshipSymbolName),
+            3000);
     }
 }
 
@@ -519,6 +928,10 @@ void MainWindow::connectNavigationSignals()
                             this, [this](const QString&, const QString& file, int line) {
                                 navigateToFileAndLine(file, line);
                             });
+                    connect(editor, &MyCodeEditor::referenceSearchRequested,
+                            this, &MainWindow::showReferencesForSymbol);
+                    connect(editor, &MyCodeEditor::relationshipBrowseRequested,
+                            this, &MainWindow::showRelationshipsForSymbol);
                 }
             });
 
@@ -527,6 +940,8 @@ void MainWindow::connectNavigationSignals()
                 if (editor && navigationManager) {
                     navigationManager->onTabChanged(editor->getFileName());
                 }
+                if (problemsScopeCombo && problemsScopeCombo->currentData().toInt() == 0)
+                    updateProblemsPanel();
             });
 }
 
@@ -540,7 +955,7 @@ void MainWindow::onSymbolNavigationRequested(const sym_list::SymbolInfo& symbol)
     navigateToFileAndLine(symbol.fileName, symbol.startLine);
 }
 
-void MainWindow::navigateToFileAndLine(const QString& filePath, int lineNumber)
+void MainWindow::navigateToFileAndLine(const QString& filePath, int lineNumber, int columnNumber)
 {
     if (filePath.isEmpty()) return;
 
@@ -567,6 +982,11 @@ void MainWindow::navigateToFileAndLine(const QString& filePath, int lineNumber)
             cursor.movePosition(QTextCursor::Start);
             for (int i = 1; i < lineNumber; ++i) {
                 cursor.movePosition(QTextCursor::Down);
+            }
+            if (columnNumber > 1) {
+                cursor.movePosition(QTextCursor::Right,
+                                    QTextCursor::MoveAnchor,
+                                    columnNumber - 1);
             }
             currentEditor->setTextCursor(cursor);
             currentEditor->centerCursor();

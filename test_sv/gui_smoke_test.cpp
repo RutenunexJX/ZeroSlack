@@ -4,6 +4,7 @@
 // headless tests.
 #include <QApplication>
 #include <QCompleter>
+#include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <functional>
+#include <memory>
 
 #define private public
 #include "mainwindow.h"
@@ -25,6 +27,8 @@
 #include "navigationwidget.h"
 #include "navigationmanager.h"
 #include "analysisscheduler.h"
+#include "semanticindex.h"
+#include "semanticindexsnapshot.h"
 #include "symbolanalyzer.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -110,6 +114,178 @@ static void drainRelationshipWork(MainWindow& window)
             window.relationshipSingleFileWatcher->future();
         window.relationshipSingleFileWatcher->cancel();
         future.waitForFinished();
+    }
+}
+
+static void runReferenceDockRegression(MainWindow& window, const QString& fixturePath)
+{
+    printf("\n-- reference dock regression --\n");
+
+    sym_list::SymbolInfo referenced;
+    referenced.fileName = fixturePath;
+    referenced.symbolName = QStringLiteral("target_ref");
+    referenced.symbolType = sym_list::sym_logic;
+    referenced.startLine = 3;
+    referenced.startColumn = 9;
+    referenced.endLine = 3;
+    referenced.endColumn = 18;
+    referenced.position = 0;
+    referenced.length = 10;
+    referenced.symbolId = 9001;
+    referenced.moduleScope = QStringLiteral("ref_top");
+
+    sym_list::SymbolInfo referencing;
+    referencing.fileName = fixturePath;
+    referencing.symbolName = QStringLiteral("source_ref");
+    referencing.symbolType = sym_list::sym_assign;
+    referencing.startLine = 8;
+    referencing.startColumn = 3;
+    referencing.endLine = 8;
+    referencing.endColumn = 20;
+    referencing.position = 0;
+    referencing.length = 10;
+    referencing.symbolId = 9002;
+    referencing.moduleScope = QStringLiteral("ref_top");
+
+    sym_list::SymbolInfo externalReferencing;
+    externalReferencing.fileName = fixturePath + QStringLiteral(".refs.sv");
+    externalReferencing.symbolName = QStringLiteral("external_ref");
+    externalReferencing.symbolType = sym_list::sym_assign;
+    externalReferencing.startLine = 4;
+    externalReferencing.startColumn = 5;
+    externalReferencing.endLine = 4;
+    externalReferencing.endColumn = 22;
+    externalReferencing.position = 0;
+    externalReferencing.length = 12;
+    externalReferencing.symbolId = 9004;
+    externalReferencing.moduleScope = QStringLiteral("ref_external");
+
+    sym_list::SymbolInfo target;
+    target.fileName = fixturePath;
+    target.symbolName = QStringLiteral("target_sink");
+    target.symbolType = sym_list::sym_function;
+    target.startLine = 12;
+    target.startColumn = 12;
+    target.endLine = 12;
+    target.endColumn = 22;
+    target.position = 0;
+    target.length = 11;
+    target.symbolId = 9003;
+    target.moduleScope = QStringLiteral("ref_top");
+
+    SemanticRelationship incomingRelationship;
+    incomingRelationship.fromId = referencing.symbolId;
+    incomingRelationship.toId = referenced.symbolId;
+    incomingRelationship.type = SymbolRelationshipEngine::REFERENCES;
+
+    SemanticRelationship externalIncomingRelationship;
+    externalIncomingRelationship.fromId = externalReferencing.symbolId;
+    externalIncomingRelationship.toId = referenced.symbolId;
+    externalIncomingRelationship.type = SymbolRelationshipEngine::READS_FROM;
+
+    SemanticRelationship outgoingRelationship;
+    outgoingRelationship.fromId = referenced.symbolId;
+    outgoingRelationship.toId = target.symbolId;
+    outgoingRelationship.type = SymbolRelationshipEngine::CALLS;
+
+    SemanticIndex::getInstance()->setSnapshot(
+        std::make_shared<const SemanticIndexSnapshot>(
+            QList<sym_list::SymbolInfo>{referenced, referencing, externalReferencing, target},
+            QList<SemanticRelationship>{incomingRelationship,
+                                        externalIncomingRelationship,
+                                        outgoingRelationship}));
+
+    window.showReferencesForSymbol(QStringLiteral("target_ref"),
+                                   fixturePath,
+                                   QStringLiteral("ref_top"));
+
+    expectBool("references tree exists", window.referencesTree != nullptr, true);
+    expectBool("reference results rendered",
+               window.referencesTree && window.referencesTree->topLevelItemCount() == 2,
+               true);
+    expectBool("reference scope filter exists",
+               window.referenceScopeCombo != nullptr,
+               true);
+    if (window.referenceScopeCombo) {
+        window.referenceScopeCombo->setCurrentIndex(
+            window.referenceScopeCombo->findText(QStringLiteral("Current File")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("reference scope narrows to current file",
+                   window.referencesTree && window.referencesTree->topLevelItemCount() == 1,
+                   true);
+    }
+    if (window.referencesTree && window.referencesTree->topLevelItemCount() == 1) {
+        QTreeWidgetItem* item = window.referencesTree->topLevelItem(0);
+        expectBool("reference row uses source symbol",
+                   item->text(0) == QStringLiteral("source_ref"),
+                   true);
+        expectBool("reference row stores source line",
+                   item->data(0, Qt::UserRole + 1).toInt() == referencing.startLine,
+                   true);
+    }
+
+    window.showRelationshipsForSymbol(QStringLiteral("target_ref"),
+                                      fixturePath,
+                                      QStringLiteral("ref_top"));
+    expectBool("relationships tree exists", window.relationshipsTree != nullptr, true);
+    expectBool("relationship results rendered",
+               window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 3,
+               true);
+    if (window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 3) {
+        bool sawIncoming = false;
+        bool sawOutgoing = false;
+        bool sawExternal = false;
+        for (int i = 0; i < window.relationshipsTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* item = window.relationshipsTree->topLevelItem(i);
+            sawIncoming = sawIncoming
+                || (item->text(0) == QStringLiteral("Incoming")
+                    && item->text(1) == QStringLiteral("source_ref"));
+            sawOutgoing = sawOutgoing
+                || (item->text(0) == QStringLiteral("Outgoing")
+                    && item->text(1) == QStringLiteral("target_sink"));
+            sawExternal = sawExternal
+                || (item->text(0) == QStringLiteral("Incoming")
+                    && item->text(1) == QStringLiteral("external_ref"));
+        }
+        expectBool("incoming relationship row rendered", sawIncoming, true);
+        expectBool("outgoing relationship row rendered", sawOutgoing, true);
+        expectBool("external relationship row rendered", sawExternal, true);
+    }
+
+    expectBool("relationship direction filter exists",
+               window.relationshipDirectionCombo != nullptr,
+               true);
+    expectBool("relationship type filter exists",
+               window.relationshipTypeCombo != nullptr,
+               true);
+    if (window.relationshipDirectionCombo && window.relationshipTypeCombo) {
+        window.relationshipDirectionCombo->setCurrentIndex(
+            window.relationshipDirectionCombo->findText(QStringLiteral("Outgoing")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("outgoing filter narrows relationships",
+                   window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1,
+                   true);
+        if (window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1) {
+            QTreeWidgetItem* item = window.relationshipsTree->topLevelItem(0);
+            expectBool("outgoing filter keeps target",
+                       item->text(1) == QStringLiteral("target_sink"),
+                       true);
+        }
+
+        window.relationshipDirectionCombo->setCurrentIndex(
+            window.relationshipDirectionCombo->findText(QStringLiteral("All Directions")));
+        window.relationshipTypeCombo->setCurrentIndex(
+            window.relationshipTypeCombo->findText(QStringLiteral("References")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("type filter narrows relationships",
+                   window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1,
+                   true);
+        if (window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1) {
+            QTreeWidgetItem* item = window.relationshipsTree->topLevelItem(0);
+            expectBool("type filter keeps incoming source",
+                       item->text(1) == QStringLiteral("source_ref"),
+                       true);
+        }
     }
 }
 
@@ -460,6 +636,8 @@ int main(int argc, char** argv)
                        true);
         }
     }
+
+    runReferenceDockRegression(window, normalizedSymbolFixturePath);
 
     drainRelationshipWork(window);
 

@@ -91,10 +91,20 @@
 - SlangManager 新增 `extractDiagnostics` / `extractWorkspaceDiagnostics`。
 - SemanticDiagnostic 已从 Slang diagnostics 进入 SemanticIndexSnapshot。
 - DiagnosticService 已能查询真实 diagnostics。
-- MainWindow 新增底部 Problems dock，显示 Severity / File / Line / Message。
-- Problems 条目双击可跳转到对应文件和行。
+- MainWindow 新增底部 Problems dock，显示 Severity / File / Line / Column / Message。
+- Problems 面板支持 current file / all files 和 severity 筛选。
+- Problems 条目双击可跳转到对应文件、行和列。
 - relationship_test 覆盖 Slang diagnostics -> snapshot -> DiagnosticService。
 - gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic。
+
+### P7 References / Relationships UI
+
+- MainWindow 新增底部 References dock，编辑器右键 Find References 触发。
+- References dock 通过 ReferenceService 查询 incoming references，并支持 all files / current file 筛选。
+- MainWindow 新增底部 Relationships dock，编辑器右键 Show Relationships 触发。
+- Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships，并支持方向 / 类型筛选。
+- References / Relationships 条目双击可跳转到对应文件、行和列。
+- gui_smoke_test 覆盖 References / Relationships dock 的 service-backed UI 消费。
 
 ## 下一步建议
 
@@ -109,16 +119,17 @@
 
 建议小步推进，不要一次性重写 CompletionManager。
 
-### 2. 关系浏览 UI 迁到 services
+### 2. 继续打磨关系浏览 UI
 
-RelationshipService / HierarchyService 已有底层边界，后续可以继续把关系浏览 UI 的消费端迁过去。
+Relationships dock 已有第一版 service-backed UI。后续重点是结果分组、刷新策略、层级浏览入口，
+并继续把相关读取固定到 RelationshipService / HierarchyService。
 
-### 3. Reference / Problems UI
+### 3. Reference / Problems UI 打磨
 
-- ReferenceService 当前已能从 RelationshipService 查询 incoming references。
-- DiagnosticService 已消费 Slang diagnostics，Problems panel 已有最小 UI。
-- 后续可补 Problems panel 的筛选、清空策略、当前文件/全 workspace 模式和更完整跳转体验。
-- ReferenceService 仍缺真实 UI 消费点。
+- ReferenceService 已有 References dock 作为真实 UI 消费点，当前查询 incoming references。
+- DiagnosticService 已消费 Slang diagnostics，Problems panel 已支持基础筛选和行/列跳转。
+- 后续可补 References 结果分组、workspace 维度筛选、快捷键入口。
+- 后续可补 Problems panel 的清空策略、刷新节流和更完整诊断跳转体验。
 
 ### 4. SemanticIndexSnapshot 生产 / 切换闭环
 
