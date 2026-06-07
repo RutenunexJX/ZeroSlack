@@ -34,8 +34,8 @@
 
 - completion_test：14 checks, 0 failed。
 - jump_test：10 checks, 0 failed。
-- relationship_test：117 checks, 0 failed。
-- gui_smoke_test：91 checks, 0 failed。
+- relationship_test：125 checks, 0 failed。
+- gui_smoke_test：103 checks, 0 failed。
 - ctest：6/6 passed。
 - git diff --check：无错误。
 
@@ -97,6 +97,8 @@
 - Workspace / single-file relationship 后台已改为 snapshot-backed，避免读取过期 current snapshot。
 - SemanticIndex 新增 captureSnapshotPreservingDiagnostics，统一 base snapshot 生产并保留 diagnostics。
 - SemanticIndexSnapshot 新增 withAdditionalRelationships，统一 enriched snapshot relationship 合并和去重。
+- SemanticIndexSnapshot 新增 withReplacedDiagnostics，统一按文件替换 diagnostics 并保留其它文件 diagnostics。
+- SemanticIndex 新增 captureSnapshotReplacingDiagnostics，供 single-file/open-tab 分析发布保留生命周期的 snapshot。
 
 ### P6 Slang diagnostics / Problems UI
 
@@ -110,9 +112,13 @@
 - Problems 面板结果按 severity / file / line / column 稳定排序；All Files 分组显示数量。
 - Problems 空状态显示 No problems；非诊断节点双击不会触发空路径跳转。
 - Problems 面板改为消费 DiagnosticReport，排序、总数、file count 和 severity count 由 DiagnosticService 提供。
+- Problems 面板新增 Workspace Files scope；current/workspace/all files 过滤均经 DiagnosticService 查询。
+- DiagnosticReport 新增 DiagnosticFileGroup，Problems All Files / Workspace Files 文件分组由 service report 提供。
+- SymbolAnalyzer single-file/open-tab 分析只替换目标文件 diagnostics，保留其它文件 Problems。
+- Problems 面板在 workspace close 和 workspace symbol analysis start 时刷新，避免旧 diagnostics 视觉残留。
 - relationship_test 覆盖 Slang diagnostics -> snapshot -> DiagnosticService。
-- relationship_test 覆盖 DiagnosticReport 排序、severity 过滤、file/severity 计数。
-- gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic 和 all-files 分组。
+- relationship_test 覆盖 DiagnosticReport 排序、severity 过滤、file/severity 计数、fileGroups 和 workspace 过滤。
+- gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic、all-files 分组、Workspace Files scope、diagnostic 保留和 workspace close/reopen 清空。
 
 ### P7 References / Relationships UI
 
@@ -169,8 +175,8 @@ SemanticIndexSnapshot helper 生产 base/enriched snapshot，后续可继续减�
 - DiagnosticService 已消费 Slang diagnostics，Problems panel 已支持基础筛选和行/列跳转。
 - References 已有结果排序、结果分组、workspace files 筛选、type 筛选、快捷键入口和 service report；
   后续可补结果摘要、更多 workspace 维度和跨文件上下文。
-- Problems panel 已有刷新合并、稳定排序、空状态、all-files 分组和 service report；后续可补清空策略、
-  诊断生命周期和更多真实 fixture。
+- Problems panel 已有刷新合并、稳定排序、空状态、all-files/workspace 分组、service report、
+  诊断替换生命周期和 workspace close/reopen 清空；后续可补更多真实 fixture 和更清晰的 scheduler/service 边界。
 
 ### 4. SemanticIndexSnapshot 生产 / 切换闭环
 

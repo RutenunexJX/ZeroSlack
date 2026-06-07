@@ -36,7 +36,10 @@ SymbolAnalyzer::~SymbolAnalyzer()
     m_slangManager = nullptr;
 }
 
-static void publishCurrentSemanticSnapshot(QList<SemanticDiagnostic> diagnostics = {});
+static void publishCompleteSemanticSnapshot(QList<SemanticDiagnostic> diagnostics = {});
+static void publishSemanticSnapshotReplacingDiagnostics(
+    const QStringList& fileNames,
+    const QList<SemanticDiagnostic>& diagnostics);
 
 void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
 {
@@ -58,7 +61,7 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
         symbolsFromOpenFiles += list.size();
     }
 
-    publishCurrentSemanticSnapshot(diagnostics);
+    publishSemanticSnapshotReplacingDiagnostics(svFiles, diagnostics);
     emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
 }
 
@@ -81,10 +84,18 @@ static QString readTextFile(const QString& filePath)
     return stream.readAll();
 }
 
-static void publishCurrentSemanticSnapshot(QList<SemanticDiagnostic> diagnostics)
+static void publishCompleteSemanticSnapshot(QList<SemanticDiagnostic> diagnostics)
 {
     SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
         SemanticIndexSnapshot::fromSymbolDatabase(sym_list::getInstance(), std::move(diagnostics))));
+}
+
+static void publishSemanticSnapshotReplacingDiagnostics(
+    const QStringList& fileNames,
+    const QList<SemanticDiagnostic>& diagnostics)
+{
+    SemanticIndex::getInstance()->setSnapshot(
+        SemanticIndex::getInstance()->captureSnapshotReplacingDiagnostics(fileNames, diagnostics));
 }
 
 static WorkspaceAnalysisResult buildWorkspaceAnalysisResult(const QStringList& svFiles,
@@ -148,7 +159,7 @@ void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::functio
     }
 
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
-    publishCurrentSemanticSnapshot(result.diagnostics);
+    publishCompleteSemanticSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(project.workspaceRoot, result.totalSymbols);
 }
@@ -203,7 +214,7 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
     }
 
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
-    publishCurrentSemanticSnapshot(result.diagnostics);
+    publishCompleteSemanticSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(workspacePath, result.totalSymbols);
 }
@@ -226,7 +237,7 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
     QList<SemanticDiagnostic> diagnostics = m_slangManager->extractDiagnostics(filePath, content);
     sym_list* symbolList = sym_list::getInstance();
     symbolList->setSymbolsForFile(filePath, list, content);
-    publishCurrentSemanticSnapshot(diagnostics);
+    publishSemanticSnapshotReplacingDiagnostics({filePath}, diagnostics);
     emit analysisCompleted(filePath, list.size());
 }
 
@@ -250,7 +261,7 @@ void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& 
     QList<SemanticDiagnostic> diagnostics = m_slangManager->extractDiagnostics(fileName, content);
     sym_list* sym = sym_list::getInstance();
     sym->setSymbolsForFile(fileName, list, content);
-    publishCurrentSemanticSnapshot(diagnostics);
+    publishSemanticSnapshotReplacingDiagnostics({fileName}, diagnostics);
     emit analysisCompleted(fileName, list.size());
 }
 
@@ -270,7 +281,7 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
                 watcher->deleteLater();
                 // Write-back (DB + scope tree + caches) on the main thread.
                 sym_list::getInstance()->setSymbolsForFile(fileName, result.first, content);
-                publishCurrentSemanticSnapshot(result.second);
+                publishSemanticSnapshotReplacingDiagnostics({fileName}, result.second);
                 emit analysisCompleted(fileName, result.first.size());
             });
     watcher->setFuture(QtConcurrent::run([fileName, content]() {

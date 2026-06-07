@@ -378,7 +378,7 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 - cmake build 通过：relationship_test / gui_smoke_test。
 - 完整 ctest --output-on-failure：6/6 passed。
 - relationship_test.exe：114 checks, 0 failed。
-- gui_smoke_test（ctest -V）：91 checks, 0 failed。
+- gui_smoke_test（ctest -V）：103 checks, 0 failed。
 - git diff --check 通过。
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
 - 本轮 0.0.19/slang24 修改已包含在 0.0.20/slang25 交接提交中。
@@ -388,18 +388,26 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 
 - SemanticIndex 新增 captureSnapshotPreservingDiagnostics，统一从当前语义 facade 生产 base snapshot 并保留上一代 diagnostics。
 - SemanticIndexSnapshot 新增 withAdditionalRelationships，统一 enriched snapshot 的 relationship 合并和去重。
+- SemanticIndexSnapshot 新增 withReplacedDiagnostics，支持按文件替换 diagnostics 并保留其它文件诊断。
+- SemanticIndex 新增 captureSnapshotReplacingDiagnostics，统一单文件分析后的 snapshot capture 和 diagnostics 生命周期更新。
 - AnalysisScheduler 的 workspace relationship base snapshot 生产改走 SemanticIndex facade，不再直接从 live sym_list 组装 diagnostics。
 - MainWindow 的 single-file / workspace relationship 后台路径删除本地 relationship 去重合并逻辑，改为消费 snapshot helper。
-- relationship_test 新增 snapshot relationship merge 去重、新关系保留、capture snapshot 保留 diagnostics 的回归。
+- SymbolAnalyzer 的 single-file / open-tab 分析改为只替换目标文件 diagnostics，避免干净文件分析误清空其它文件 Problems。
+- Problems 面板新增 Workspace Files scope；Current File / Workspace Files / All Files 均通过 DiagnosticService 查询。
+- DiagnosticService / DiagnosticReport 新增 workspaceFilesOnly 过滤和 DiagnosticFileGroup，Problems 文件分组结果由 service report 提供。
+- MainWindow 的 Problems All Files / Workspace Files 分组改为渲染 DiagnosticReport::fileGroups，不再本地组装 file key / label / count。
+- Problems 面板在 workspace close 和 workspace symbol analysis start 时刷新，避免旧 diagnostics 视觉残留。
+- gui_smoke_test 增加 Problems diagnostic preservation、Workspace Files scope、workspace close/reopen 清空回归，并让 expectBool 即时 flush stdout。
+- relationship_test 新增 snapshot relationship merge 去重、新关系保留、capture snapshot 保留/替换 diagnostics、DiagnosticReport fileGroups / workspace 过滤回归。
 
 最近验证：
 - cmake build 通过：relationship_test / gui_smoke_test。
 - 完整 ctest --output-on-failure：6/6 passed。
-- relationship_test.exe：117 checks, 0 failed。
-- gui_smoke_test（ctest -V）：91 checks, 0 failed。
+- relationship_test.exe：125 checks, 0 failed。
+- gui_smoke_test（ctest -V）：103 checks, 0 failed。
 - git diff --check 通过。
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
-- 本轮 0.0.20/slang25 提交和上传前按用户要求未重复编译或测试；以上为代码改动后的最近一次验证记录。
+- 本轮提交和上传前按用户要求未重复编译或测试；以上为代码改动后的最近一次验证记录。
 
 
 ## 新会话交接文件
@@ -479,6 +487,14 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
   - SemanticIndex 新增 captureSnapshotPreservingDiagnostics。
   - SemanticIndexSnapshot 新增 withAdditionalRelationships。
   - AnalysisScheduler / MainWindow 的关系后台路径改为通过 snapshot/facade helper 生产 base/enriched snapshot。
+- 本轮继续打磨 Problems diagnostics 生命周期和 service report：
+  - SemanticIndexSnapshot 新增 withReplacedDiagnostics。
+  - SemanticIndex 新增 captureSnapshotReplacingDiagnostics。
+  - SymbolAnalyzer 的 single-file/open-tab 分析只替换目标文件 diagnostics，保留其它文件 diagnostics。
+  - DiagnosticService / DiagnosticReport 新增 workspaceFilesOnly 过滤和 DiagnosticFileGroup。
+  - Problems 面板新增 Workspace Files scope，并改为渲染 DiagnosticReport::fileGroups。
+  - Problems 面板在 workspace close 和 workspace symbol analysis start 时刷新清空旧状态。
+  - gui_smoke_test 覆盖外部 diagnostic 保留、Workspace Files 隐藏外部 diagnostic、All Files 恢复显示、workspace close/reopen 清空。
 
 最近验证：
 - cmake build 通过；新增 CMake 文件后重配置导致链接较慢，必要时先 -j4 后 -j1 续跑。
@@ -490,11 +506,11 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
     3. 需要完整回归时直接给 build/ctest 足够长 timeout；
     4. 不要在 120s/300s 超时之间反复重启同一个链接任务。
 - 完整 ctest --output-on-failure：6/6 passed。
-- relationship_test.exe：117 checks, 0 failed。
-- gui_smoke_test（ctest -V）：91 checks, 0 failed。
+- relationship_test.exe：125 checks, 0 failed。
+- gui_smoke_test（ctest -V）：103 checks, 0 failed。
 - git diff --check 通过。
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
-- 本轮 0.0.20/slang25 提交和上传前按用户要求未重复编译或测试；以上为代码改动后的最近一次验证记录。
+- 本轮提交和上传前按用户要求未重复编译或测试；以上为代码改动后的最近一次验证记录。
 
 下一步建议：
 1. 继续让 services / UI 只读 snapshot，减少 live sym_list 消费。

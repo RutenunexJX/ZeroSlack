@@ -247,6 +247,32 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
     return SemanticIndexSnapshot(m_symbols, merged, m_diagnostics, m_fileContents);
 }
 
+SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
+    const QStringList& fileNames,
+    const QList<SemanticDiagnostic>& diagnostics) const
+{
+    if (fileNames.isEmpty())
+        return SemanticIndexSnapshot(m_symbols, m_relationships, diagnostics, m_fileContents);
+
+    QSet<QString> targetFiles;
+    for (const QString& fileName : fileNames) {
+        const QString normalized = normalizedSnapshotFileName(fileName);
+        if (!normalized.isEmpty())
+            targetFiles.insert(normalized);
+    }
+
+    QList<SemanticDiagnostic> merged;
+    for (const SemanticDiagnostic& diagnostic : m_diagnostics) {
+        const QString normalized = normalizedSnapshotFileName(diagnostic.fileName);
+        if (!normalized.isEmpty() && targetFiles.contains(normalized))
+            continue;
+        merged.append(diagnostic);
+    }
+    merged.append(diagnostics);
+
+    return SemanticIndexSnapshot(m_symbols, m_relationships, merged, m_fileContents);
+}
+
 QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(int symbolId,
                                                                     bool outgoing) const
 {

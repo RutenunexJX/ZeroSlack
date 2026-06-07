@@ -6,10 +6,13 @@
 #include <QList>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 #include <memory>
 
 struct DiagnosticQuery {
     QString fileName;
+    QStringList workspaceFiles;
+    bool workspaceFilesOnly = false;
     bool includeInfo = true;
     bool includeWarnings = true;
     bool includeErrors = true;
@@ -19,8 +22,17 @@ struct DiagnosticResult {
     SemanticDiagnostic diagnostic;
 };
 
+struct DiagnosticFileGroup {
+    QString fileName;
+    QString fileKey;
+    QString displayName;
+    QList<DiagnosticResult> diagnostics;
+    int count = 0;
+};
+
 struct DiagnosticReport {
     QList<DiagnosticResult> diagnostics;
+    QList<DiagnosticFileGroup> fileGroups;
     int totalCount = 0;
     QMap<QString, int> fileCounts;
     QMap<SemanticDiagnostic::Severity, int> severityCounts;

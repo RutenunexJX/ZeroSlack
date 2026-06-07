@@ -66,6 +66,7 @@ Tree-sitter + Slang 分工保持不变：
 - SemanticIndex facade。
 - SemanticIndexSnapshot 生产 / 切换闭环的第一版。
 - SemanticIndex / SemanticIndexSnapshot 已提供 base snapshot capture 和 relationship merge helper。
+- SemanticIndex / SemanticIndexSnapshot 已提供 diagnostics replacement helper，用于 single-file/open-tab 分析保留其它文件 diagnostics。
 - DefinitionService。
 - CompletionService。
 - RelationshipService。
@@ -76,6 +77,7 @@ Tree-sitter + Slang 分工保持不变：
 - ModuleHierarchyGroup。
 - SymbolOutlineGroup。
 - Problems / References / Relationships 面板第一版 UI，并已开始改为消费 service report。
+- Problems 面板已支持 Current File / Workspace Files / All Files scope、service fileGroups、diagnostic replacement 生命周期和 workspace close/reopen 清空。
 - Relationships Tree 已开始消费 HierarchyReport；底部树刷新会保留展开/折叠状态。
 - 0.0.20/slang25 交接文档已同步；本轮提交和上传前按用户要求不再重复编译 / 测试。
 - GUI smoke / large file perf / relationship fixture 等 CTest 回归。
@@ -84,8 +86,8 @@ Tree-sitter + Slang 分工保持不变：
 
 - SemanticIndexSnapshot 已接入后台生产和主线程世代切换，但仍需要继续减少 live sym_list 消费。
 - base snapshot 生产和 relationship merge 已收束到 SemanticIndex / SemanticIndexSnapshot helper。
-- DiagnosticService 已有真实 Slang diagnostics 数据，Problems 面板已支持基础筛选、行/列跳转和
-  DiagnosticReport 驱动的排序/计数。
+- DiagnosticService 已有真实 Slang diagnostics 数据，Problems 面板已支持基础筛选、workspace scope、
+  行/列跳转、DiagnosticReport 驱动的排序/计数/fileGroups、diagnostic replacement 生命周期和 workspace close/reopen 清空。
 - ReferenceService 已有 References dock 作为真实 UI 消费点，并提供 ReferenceReport 驱动 scope/type
   过滤、排序和计数。
 - RelationshipService 已有 Relationships dock 作为真实 UI 消费点；relationship / hierarchy 浏览已支持双向树、
@@ -134,6 +136,7 @@ snapshot 类型和第一版生产 / 切换闭环已落地：
 - Workspace / single-file 关系后台基于 snapshot 计算关系，并按 base snapshot 世代发布 enriched snapshot。
 - base snapshot capture 由 SemanticIndex 统一保留上一代 diagnostics；enriched snapshot relationship 合并由
   SemanticIndexSnapshot 统一去重。
+- single-file/open-tab diagnostics replacement 由 SemanticIndex / SemanticIndexSnapshot helper 统一处理。
 
 最终目标仍是：
 
@@ -158,13 +161,16 @@ UI / Services 只读 snapshot
 - Problems 条目双击可跳转文件、行和列。
 - Problems 刷新已加 100ms 合并。
 - Problems 在 All Files 模式下按 file 分组，Current File 保持紧凑列表。
+- Problems 支持 Workspace Files scope，过滤逻辑由 DiagnosticService 提供。
 - Problems 结果按 severity / file / line / column 稳定排序。
 - Problems All Files 分组显示数量，并提供 No problems 空状态。
-- Problems 面板已改为消费 DiagnosticReport，排序、总数、file count 和 severity count 由 DiagnosticService 提供。
+- Problems 面板已改为消费 DiagnosticReport，排序、总数、file count、severity count 和 fileGroups 由 DiagnosticService 提供。
+- Problems 在 single-file/open-tab 分析时只替换目标文件 diagnostics，保留其它文件 diagnostics。
+- Problems 在 workspace close 和 workspace symbol analysis start 时刷新，避免旧 diagnostics 视觉残留。
 
 后续重点：
 
-- Problems 面板清空策略、诊断生命周期和更多真实 fixture。
+- 更多真实 fixture。
 - 将诊断刷新策略继续下沉到更清晰的 service / scheduler 边界。
 - 补更多真实 fixture 覆盖 include/import/宏展开相关 diagnostics。
 

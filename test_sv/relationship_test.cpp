@@ -374,6 +374,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               diagnosticReport.totalCount, 3);
     expectInt("diagnostic report file count",
               diagnosticReport.fileCounts.value(topPath), 2);
+    expectInt("diagnostic report file group count",
+              diagnosticReport.fileGroups.size(), 2);
+    bool diagnosticReportFoundTopGroup = false;
+    for (const DiagnosticFileGroup& group : diagnosticReport.fileGroups) {
+        if (group.fileKey == topPath) {
+            diagnosticReportFoundTopGroup =
+                group.count == 2
+                && group.diagnostics.size() == 2
+                && !group.displayName.isEmpty();
+        }
+    }
+    expectBool("diagnostic report groups file diagnostics",
+               diagnosticReportFoundTopGroup, true);
     expectInt("diagnostic report severity count",
               diagnosticReport.severityCounts.value(SemanticDiagnostic::Error), 1);
     expectBool("diagnostic report sorts errors first",
@@ -388,6 +401,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     errorOnlyDiagnosticQuery.includeErrors = true;
     expectInt("diagnostic report filters severity",
               diagnosticReportService.findDiagnosticReport(errorOnlyDiagnosticQuery).totalCount,
+              1);
+    DiagnosticQuery workspaceOnlyDiagnosticQuery;
+    workspaceOnlyDiagnosticQuery.workspaceFilesOnly = true;
+    workspaceOnlyDiagnosticQuery.workspaceFiles = {topPath};
+    expectInt("diagnostic report filters workspace files",
+              diagnosticReportService.findDiagnosticReport(workspaceOnlyDiagnosticQuery).totalCount,
+              2);
+    workspaceOnlyDiagnosticQuery.workspaceFiles = {stagePath};
+    expectInt("diagnostic report keeps workspace error file",
+              diagnosticReportService.findDiagnosticReport(workspaceOnlyDiagnosticQuery).totalCount,
               1);
 
     SearchService searchService(&index);
@@ -530,6 +553,25 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("semantic snapshot merge keeps new relationship",
                enrichedFoundTask, true);
+    SemanticDiagnostic replacementDiagnostic;
+    replacementDiagnostic.fileName = topPath;
+    replacementDiagnostic.line = 12;
+    replacementDiagnostic.column = 5;
+    replacementDiagnostic.message = QStringLiteral("replacement message");
+    replacementDiagnostic.severity = SemanticDiagnostic::Error;
+    const SemanticIndexSnapshot diagnosticReplacementSnapshot =
+        SemanticIndexSnapshot::fromSymbolDatabase(db, {
+            infoDiagnostic,
+            warningDiagnostic,
+            errorDiagnostic,
+        }).withReplacedDiagnostics({topPath}, {replacementDiagnostic});
+    expectInt("semantic snapshot replaces file diagnostics",
+              diagnosticReplacementSnapshot.getDiagnostics(topPath).size(), 1);
+    expectBool("semantic snapshot keeps other file diagnostics",
+               diagnosticReplacementSnapshot.getDiagnostics(stagePath).size() == 1
+                   && diagnosticReplacementSnapshot.getDiagnostics(stagePath).first().message
+                       == errorDiagnostic.message,
+               true);
     SemanticIndex captureIndex(db);
     const auto capturedSnapshot =
         captureIndex.captureSnapshotPreservingDiagnostics();
@@ -542,6 +584,20 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         captureIndex.captureSnapshotPreservingDiagnostics();
     expectInt("semantic index capture preserves diagnostics",
               recapturedSnapshot->diagnostics().size(), 1);
+    captureIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        recapturedSnapshot->getSymbols(),
+        recapturedSnapshot->relationships(),
+        QList<SemanticDiagnostic>{warningDiagnostic, errorDiagnostic},
+        recapturedSnapshot->fileContents()));
+    const auto replacedCaptureSnapshot =
+        captureIndex.captureSnapshotReplacingDiagnostics({topPath}, {replacementDiagnostic});
+    expectInt("semantic index capture replaces target diagnostics",
+              replacedCaptureSnapshot->getDiagnostics(topPath).size(), 1);
+    expectBool("semantic index capture preserves other diagnostics",
+               replacedCaptureSnapshot->getDiagnostics(stagePath).size() == 1
+                   && replacedCaptureSnapshot->getDiagnostics(stagePath).first().message
+                       == errorDiagnostic.message,
+               true);
     snapshotIndex.clearSnapshot();
     expectInt("semantic snapshot clear restores live index",
               snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);

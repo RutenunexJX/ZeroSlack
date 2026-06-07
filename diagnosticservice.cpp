@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QSet>
 #include <algorithm>
 
 std::unique_ptr<DiagnosticService> DiagnosticService::instance = nullptr;
@@ -44,11 +45,24 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
     const DiagnosticQuery& query) const
 {
     QList<DiagnosticResult> result;
+    QSet<QString> normalizedWorkspaceFiles;
+    if (query.workspaceFilesOnly) {
+        for (const QString& fileName : query.workspaceFiles) {
+            const QString normalized = normalizedFileName(fileName);
+            if (!normalized.isEmpty())
+                normalizedWorkspaceFiles.insert(normalized);
+        }
+    }
+
     const QList<SemanticDiagnostic> diagnostics =
         semanticIndex()->getDiagnostics(query.fileName);
     for (const SemanticDiagnostic& diagnostic : diagnostics) {
         if (!severityMatches(diagnostic.severity, query))
             continue;
+        if (query.workspaceFilesOnly
+            && !normalizedWorkspaceFiles.contains(normalizedFileName(diagnostic.fileName))) {
+            continue;
+        }
 
         DiagnosticResult item;
         item.diagnostic = diagnostic;
@@ -84,12 +98,28 @@ DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& 
     DiagnosticReport report;
     report.diagnostics = findDiagnostics(query);
     report.totalCount = report.diagnostics.size();
+    QMap<QString, int> fileGroupIndexes;
     for (const DiagnosticResult& result : report.diagnostics) {
         const SemanticDiagnostic& diagnostic = result.diagnostic;
         const QString normalized = normalizedFileName(diagnostic.fileName);
         const QString fileKey = normalized.isEmpty() ? diagnostic.fileName : normalized;
         report.fileCounts[fileKey]++;
         report.severityCounts[diagnostic.severity]++;
+
+        if (!fileGroupIndexes.contains(fileKey)) {
+            DiagnosticFileGroup group;
+            group.fileName = diagnostic.fileName;
+            group.fileKey = fileKey;
+            group.displayName = QFileInfo(diagnostic.fileName).fileName();
+            if (group.displayName.isEmpty())
+                group.displayName = diagnostic.fileName;
+            fileGroupIndexes.insert(fileKey, report.fileGroups.size());
+            report.fileGroups.append(group);
+        }
+
+        DiagnosticFileGroup& group = report.fileGroups[fileGroupIndexes.value(fileKey)];
+        group.diagnostics.append(result);
+        group.count++;
     }
     return report;
 }

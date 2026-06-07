@@ -45,6 +45,7 @@ static void expectBool(const char* what, bool got, bool want)
         ++g_fails;
     printf("[%s] %-48s got=%s want=%s\n",
            ok ? "PASS" : "FAIL", what, got ? "true" : "false", want ? "true" : "false");
+    fflush(stdout);
 }
 
 static bool waitUntil(const std::function<bool()>& predicate, int timeoutMs)
@@ -121,6 +122,33 @@ static int navigableItemCount(QTreeWidget* tree)
     for (int i = 0; i < tree->topLevelItemCount(); ++i)
         count += navigableItemCount(tree->topLevelItem(i));
     return count;
+}
+
+static bool hasNavigableFile(QTreeWidgetItem* item, const QString& fileName)
+{
+    if (!item)
+        return false;
+    const QString itemFileName = item->data(0, Qt::UserRole).toString();
+    if (!itemFileName.isEmpty()
+        && QFileInfo(itemFileName).absoluteFilePath() == QFileInfo(fileName).absoluteFilePath()) {
+        return true;
+    }
+    for (int i = 0; i < item->childCount(); ++i) {
+        if (hasNavigableFile(item->child(i), fileName))
+            return true;
+    }
+    return false;
+}
+
+static bool hasNavigableFile(QTreeWidget* tree, const QString& fileName)
+{
+    if (!tree)
+        return false;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        if (hasNavigableFile(tree->topLevelItem(i), fileName))
+            return true;
+    }
+    return false;
 }
 
 static QTreeWidgetItem* firstNavigableItem(QTreeWidgetItem* item)
@@ -726,6 +754,18 @@ int main(int argc, char** argv)
             "endmodule\n");
         diagnosticFile.close();
     }
+    const QString cleanDiagnosticPath =
+        diagnosticDir.filePath(QStringLiteral("clean_diag.sv"));
+    QFile cleanDiagnosticFile(cleanDiagnosticPath);
+    expectBool("clean diagnostic fixture writable",
+               cleanDiagnosticFile.open(QIODevice::WriteOnly | QIODevice::Text), true);
+    if (cleanDiagnosticFile.isOpen()) {
+        cleanDiagnosticFile.write(
+            "module clean_diag(input logic clk, output logic done);\n"
+            "  assign done = clk;\n"
+            "endmodule\n");
+        cleanDiagnosticFile.close();
+    }
 
     bool diagnosticFixtureAnalyzed = false;
     QObject::connect(window.symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
@@ -759,6 +799,44 @@ int main(int argc, char** argv)
                    window.problemsTree
                        && window.problemsTree->topLevelItemCount() > 0
                        && window.problemsTree->topLevelItem(0)->text(0).contains(QStringLiteral("(")),
+                   true);
+        window.problemsScopeCombo->setCurrentIndex(
+            window.problemsScopeCombo->findText(QStringLiteral("Current File")));
+    }
+
+    bool cleanDiagnosticFixtureAnalyzed = false;
+    QObject::connect(window.symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
+                     &window, [&](const QString& fileName, int) {
+                         if (QFileInfo(fileName).absoluteFilePath()
+                             == QFileInfo(cleanDiagnosticPath).absoluteFilePath()) {
+                             cleanDiagnosticFixtureAnalyzed = true;
+                         }
+                     });
+    expectBool("open clean diagnostic fixture",
+               window.tabManager->openFileInTab(cleanDiagnosticPath), true);
+    expectBool("clean diagnostic fixture analysis completes",
+               waitUntil([&]() { return cleanDiagnosticFixtureAnalyzed; }, 10000), true);
+    if (window.problemsScopeCombo) {
+        window.problemsScopeCombo->setCurrentIndex(
+            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+        expectBool("problems keep previous file diagnostic",
+                   waitUntil([&]() {
+                       return hasNavigableFile(window.problemsTree, diagnosticPath);
+                   }, 2000),
+                   true);
+        window.problemsScopeCombo->setCurrentIndex(
+            window.problemsScopeCombo->findText(QStringLiteral("Workspace Files")));
+        expectBool("problems workspace scope hides external diagnostic",
+                   waitUntil([&]() {
+                       return !hasNavigableFile(window.problemsTree, diagnosticPath);
+                   }, 2000),
+                   true);
+        window.problemsScopeCombo->setCurrentIndex(
+            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+        expectBool("problems all-files restores external diagnostic",
+                   waitUntil([&]() {
+                       return hasNavigableFile(window.problemsTree, diagnosticPath);
+                   }, 2000),
                    true);
         window.problemsScopeCombo->setCurrentIndex(
             window.problemsScopeCombo->findText(QStringLiteral("Current File")));
@@ -869,6 +947,53 @@ int main(int argc, char** argv)
     runReferenceDockRegression(window, normalizedSymbolFixturePath);
 
     drainRelationshipWork(window);
+
+    if (window.problemsScopeCombo) {
+        SemanticDiagnostic closeDiagnostic;
+        closeDiagnostic.fileName = normalizedSymbolFixturePath;
+        closeDiagnostic.line = 3;
+        closeDiagnostic.column = 1;
+        closeDiagnostic.message = QStringLiteral("workspace close probe");
+        closeDiagnostic.severity = SemanticDiagnostic::Error;
+        SemanticIndex::getInstance()->setSnapshot(
+            std::make_shared<const SemanticIndexSnapshot>(
+                QList<sym_list::SymbolInfo>{},
+                QList<SemanticRelationship>{},
+                QList<SemanticDiagnostic>{closeDiagnostic}));
+        window.problemsScopeCombo->setCurrentIndex(
+            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+        window.updateProblemsPanel();
+        expectBool("problems close probe visible",
+                   navigableItemCount(window.problemsTree) == 1,
+                   true);
+        window.workspaceManager->closeWorkspace();
+        expectBool("problems clear on workspace close",
+                   waitUntil([&]() {
+                       return navigableItemCount(window.problemsTree) == 0;
+                   }, 2000),
+                   true);
+        SemanticIndex::getInstance()->setSnapshot(
+            std::make_shared<const SemanticIndexSnapshot>(
+                QList<sym_list::SymbolInfo>{},
+                QList<SemanticRelationship>{},
+                QList<SemanticDiagnostic>{closeDiagnostic}));
+        window.updateProblemsPanel();
+        expectBool("problems reopen probe visible",
+                   navigableItemCount(window.problemsTree) == 1,
+                   true);
+        workspaceSymbolsDone = false;
+        expectBool("reopen workspace after close",
+                   window.workspaceManager->openWorkspace(workspacePath), true);
+        expectBool("problems clear on workspace analysis start",
+                   waitUntil([&]() {
+                       return navigableItemCount(window.problemsTree) == 0;
+                   }, 2000),
+                   true);
+        expectBool("reopened workspace analysis completes",
+                   waitUntil([&]() { return workspaceSymbolsDone; }, 60000),
+                   true);
+        drainRelationshipWork(window);
+    }
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

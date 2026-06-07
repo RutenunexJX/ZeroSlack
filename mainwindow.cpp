@@ -182,10 +182,16 @@ void MainWindow::setupManagerConnections()
                     analysisScheduler->handleExternalFileChanged(filePath, kFileChangeDebounceMs);
             });
 
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceClosed,
+            this, [this]() {
+                scheduleProblemsPanelUpdate();
+            });
+
     connect(analysisScheduler.get(), &AnalysisScheduler::workspaceSymbolAnalysisStarted,
             this, [this](const ProjectSnapshot& project, int totalFiles) {
                 Q_UNUSED(totalFiles)
                 symbolAnalysisCancelled.store(false);
+                scheduleProblemsPanelUpdate();
                 const QStringList svFiles = project.systemVerilogFiles;
                 showAnalysisProgress(svFiles);
 
@@ -434,7 +440,8 @@ void MainWindow::setupProblemsPane()
     problemsScopeCombo = new QComboBox(panel);
     problemsScopeCombo->setObjectName(QStringLiteral("problemsScopeCombo"));
     problemsScopeCombo->addItem(QStringLiteral("Current File"), 0);
-    problemsScopeCombo->addItem(QStringLiteral("All Files"), 1);
+    problemsScopeCombo->addItem(QStringLiteral("Workspace Files"), 1);
+    problemsScopeCombo->addItem(QStringLiteral("All Files"), 2);
     problemsScopeCombo->setToolTip(QStringLiteral("Problem scope"));
     filtersLayout->addWidget(problemsScopeCombo);
 
@@ -898,6 +905,8 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
     DiagnosticQuery query;
     const bool currentFileOnly =
         !problemsScopeCombo || problemsScopeCombo->currentData().toInt() == 0;
+    const bool workspaceFilesOnly =
+        problemsScopeCombo && problemsScopeCombo->currentData().toInt() == 1;
     if (currentFileOnly) {
         query.fileName = fileName;
         if (query.fileName.isEmpty()) {
@@ -906,6 +915,9 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
                 query.fileName = editor->getFileName();
         }
     }
+    query.workspaceFilesOnly = workspaceFilesOnly;
+    if (workspaceFilesOnly && workspaceManager)
+        query.workspaceFiles = workspaceManager->getSystemVerilogFiles();
 
     const int severityFilter =
         problemsSeverityCombo ? problemsSeverityCombo->currentData().toInt() : 0;
@@ -920,33 +932,26 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
     const bool hadExpandableItems = treeHasExpandableItems(problemsTree);
     const QSet<QString> expandedKeys = collectExpandedKeys(problemsTree);
     problemsTree->clear();
-    QMap<QString, QTreeWidgetItem*> fileGroups;
-    QMap<QString, QString> fileGroupLabels;
-    for (const DiagnosticResult& result : diagnostics) {
-        const SemanticDiagnostic& diagnostic = result.diagnostic;
-        if (currentFileOnly) {
+    if (currentFileOnly) {
+        for (const DiagnosticResult& result : diagnostics) {
+            const SemanticDiagnostic& diagnostic = result.diagnostic;
             createDiagnosticItem(problemsTree->invisibleRootItem(), diagnostic);
-        } else {
-            const QString fileKey = normalizedUiFileName(diagnostic.fileName).isEmpty()
-                ? diagnostic.fileName
-                : normalizedUiFileName(diagnostic.fileName);
-            QTreeWidgetItem* fileGroup = getOrCreateFileGroup(problemsTree,
-                                                              fileGroups,
-                                                              diagnostic.fileName);
-            createDiagnosticItem(fileGroup, diagnostic);
-            fileGroupLabels[fileKey] = QFileInfo(diagnostic.fileName).fileName();
         }
+    } else {
+        for (const DiagnosticFileGroup& group : report.fileGroups) {
+            auto* fileGroup = new QTreeWidgetItem(problemsTree);
+            fileGroup->setText(0, countLabel(group.displayName, group.count));
+            fileGroup->setText(1, group.fileName);
+            fileGroup->setToolTip(0, group.fileName);
+            fileGroup->setToolTip(1, group.fileName);
+            for (const DiagnosticResult& result : group.diagnostics)
+                createDiagnosticItem(fileGroup, result.diagnostic);
+        }
+        restoreTreeExpansion(problemsTree, hadExpandableItems, expandedKeys);
     }
     if (diagnostics.isEmpty()) {
         auto* emptyItem = new QTreeWidgetItem(problemsTree);
         emptyItem->setText(4, QStringLiteral("No problems"));
-    }
-    if (!currentFileOnly) {
-        for (auto it = fileGroups.begin(); it != fileGroups.end(); ++it) {
-            it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()),
-                                              report.fileCounts.value(it.key())));
-        }
-        restoreTreeExpansion(problemsTree, hadExpandableItems, expandedKeys);
     }
 
     if (problemsDock) {
