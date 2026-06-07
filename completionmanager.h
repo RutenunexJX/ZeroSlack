@@ -75,7 +75,6 @@ public:
 
     QString getCurrentModule(const QString& fileName, int cursorPosition);
 
-    /** 基于作用域树的补全：从光标所在作用域沿 parent 链收集符号（支持词法遮蔽） */
     QStringList getCompletions(const QString& prefix, const QString& cursorFile, int cursorLine);
 
     QStringList getModuleInternalVariables(const QString& moduleName, const QString& prefix);
@@ -90,13 +89,11 @@ public:
                                       const QString& prefix = "");
 
 
-    /** 获取模块内某类符号。useRelationshipFallback=false 时仅按行范围过滤（用于状态栏计数，避免含入全局/关系引擎结果） */
     QList<sym_list::SymbolInfo> getModuleInternalSymbolsByType(const QString& moduleName,
                                                               sym_list::sym_type_e symbolType,
                                                               const QString& prefix = "",
                                                               bool useRelationshipFallback = true);
 
-    /** 获取模块上下文中某类型符号（模块内 + include 文件 + import 的 package），用于 struct 等命令的严格作用域补全 */
     QList<sym_list::SymbolInfo> getModuleContextSymbolsByType(const QString& moduleName,
                                                               const QString& fileName,
                                                               sym_list::sym_type_e symbolType,

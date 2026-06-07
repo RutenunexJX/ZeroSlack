@@ -50,11 +50,10 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
     switch (role) {
     case Qt::DisplayRole:
         if (item.type == SymbolCompletion) {
-            // 处理特殊显示项
             if (item.text.contains("::")) {
-                return item.text; // 命令模式标题
+                return item.text;
             } else if (item.text.startsWith("[DEFAULT]")) {
-                return item.text; // 默认值选项
+                return item.text;
             } else {
                 // UPDATED: Show proper type information for symbols
                 return QString("%1 (%2)").arg(item.text, item.description);
@@ -76,9 +75,9 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
             return QColor(255, 255, 255);
         case SymbolCompletion:
             if (item.text.contains("::")) {
-                return QColor(100, 150, 200); // 蓝色背景用于标题
+                return QColor(100, 150, 200);
             } else if (item.text.startsWith("[DEFAULT]")) {
-                return QColor(200, 255, 200); // 绿色背景用于默认值
+                return QColor(200, 255, 200);
             }
             return QColor(240, 250, 240);
         case CommandCompletion:
@@ -95,9 +94,9 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
         switch (item.type) {
         case SymbolCompletion:
             if (item.text.contains("::")) {
-                return QColor(255, 255, 255); // 白色文字用于标题
+                return QColor(255, 255, 255);
             } else if (item.text.startsWith("[DEFAULT]")) {
-                return QColor(0, 100, 0); // 深绿色文字用于默认值
+                return QColor(0, 100, 0);
             }
             return QColor(0, 100, 0);
         case CommandCompletion:
@@ -252,16 +251,14 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
     beginResetModel();
     completions.clear();
 
-    // 添加标题项
     CompletionItem headerItem;
     headerItem.text = prefix.isEmpty() ? ":: ALTERNATE MODE - COMMAND INTERFACE ::"
                                       : QString(":: ALTERNATE MODE - Input: '%1' ::").arg(prefix);
     headerItem.type = CommandCompletion;
     headerItem.description = "Command Interface";
-    headerItem.score = 1000; // 最高优先级
+    headerItem.score = 1000;
     completions.append(headerItem);
 
-    // 添加匹配的命令
     int matchCount = 0;
     for (const QString &command : commands) {
         if (prefix.isEmpty() || command.startsWith(prefix, Qt::CaseInsensitive)) {
@@ -306,7 +303,6 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     beginResetModel();
     completions.clear();
 
-    // 确定符号类型的默认值和描述（这部分逻辑不变）
     QString defaultValue, typeDescription;
     switch (symbolType) {
     case sym_list::sym_reg:
@@ -375,7 +371,6 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         break;
     }
 
-    // 添加命令描述作为第一项（不变）
     CompletionItem descItem;
     descItem.text = QString(":: COMMAND MODE - %1 ::").arg(typeDescription);
     descItem.type = SymbolCompletion;
@@ -395,7 +390,6 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
 
     CompletionManager* manager = CompletionManager::getInstance();
 /*
-    // 一次性获取所有匹配的符号和分数（已排序）
     QVector<QPair<sym_list::SymbolInfo, int>> scoredMatches = manager->getScoredSymbolMatches(symbolType, prefix);
 
     int matchCount = 0;
@@ -405,18 +399,17 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         }
 
         CompletionItem item;
-        item.text = match.first.symbolName;           // 符号名称
+        item.text = match.first.symbolName;
         item.type = SymbolCompletion;
         item.symbolType = symbolType;
         item.description = typeDescription.split(' ')[0]; // "reg", "wire", etc.
         item.defaultValue = match.first.symbolName;
-        item.score = match.second;                    // 预计算的分数，无需重新计算
+        item.score = match.second;
 
         completions.append(item);
         matchCount++;
     }
 */
-    // 用于去重：记录已经添加的completion项（对于struct变量，使用变量名+类型名作为key）
     QSet<QString> addedItems;
     
     for (const sym_list::SymbolInfo& symbol : symbols) {
@@ -429,37 +422,31 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         item.symbolType = symbolType;
         item.description = typeDescription.split(' ')[0];
         
-        // 根据符号类型格式化显示文本
         if (symbolType == sym_list::sym_packed_struct_var || 
             symbolType == sym_list::sym_unpacked_struct_var) {
-            // struct变量：显示为 "xx(xx_struct)" 格式
-            QString structTypeName = symbol.moduleScope; // moduleScope存储了struct类型名
+            QString structTypeName = symbol.moduleScope;
             if (!structTypeName.isEmpty()) {
                 item.text = QString("%1(%2)").arg(symbol.symbolName).arg(structTypeName);
             } else {
                 item.text = symbol.symbolName;
             }
-            item.defaultValue = symbol.symbolName; // 默认值仍然是变量名
+            item.defaultValue = symbol.symbolName;
             
-            // 去重：使用变量名+类型名作为唯一标识
             QString uniqueKey = QString("%1:%2").arg(symbol.symbolName).arg(structTypeName);
             if (addedItems.contains(uniqueKey)) {
-                continue; // 跳过重复的
+                continue;
             }
             addedItems.insert(uniqueKey);
         } else if (symbolType == sym_list::sym_packed_struct || 
                    symbolType == sym_list::sym_unpacked_struct) {
-            // struct类型：直接显示类型名
             item.text = symbol.symbolName;
             item.defaultValue = symbol.symbolName;
 
-            // 去重：使用类型名作为唯一标识
             if (addedItems.contains(symbol.symbolName)) {
                 continue;
             }
             addedItems.insert(symbol.symbolName);
         } else if (symbolType == sym_list::sym_enum_value) {
-            // 枚举值：显示 "NAME(来源类型)"，括号内为枚举类型名
             item.text = symbol.symbolName;
             item.defaultValue = symbol.symbolName;
             item.description = symbol.dataType.isEmpty() ? QStringLiteral("enum") : symbol.dataType;
@@ -468,19 +455,15 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
             }
             addedItems.insert(symbol.symbolName);
         } else {
-            // 其他类型：正常显示
             item.text = symbol.symbolName;
             item.defaultValue = symbol.symbolName;
 
-            // 去重：使用符号名作为唯一标识
             if (addedItems.contains(symbol.symbolName)) {
                 continue;
             }
             addedItems.insert(symbol.symbolName);
         }
         
-        // 为传入的符号计算匹配分数（使用原始符号名进行匹配）
-        // 空 prefix 时给统一正分，避免全部为 0 导致排序/截断时漏掉部分项
         item.score = prefix.isEmpty()
             ? 100
             : manager->calculateMatchScore(symbol.symbolName, prefix);
@@ -492,7 +475,6 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     if (completions.size() > MaxCompletionItems) {
         completions = completions.mid(0, MaxCompletionItems);
     }
-    // 命令模式：最多展示 32 条，兼顾性能与可用性
     if (completions.size() > 32) {
         completions = completions.mid(0, 32);
     }

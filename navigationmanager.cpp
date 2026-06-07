@@ -1,4 +1,4 @@
-﻿#include "navigationmanager.h"
+#include "navigationmanager.h"
 #include "navigationwidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"

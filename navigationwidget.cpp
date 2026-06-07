@@ -60,7 +60,6 @@ void NavigationWidget::highlightSymbol(const QString& symbolName)
         symbolTreeWidget->setCurrentItem(item);
         symbolTreeWidget->scrollToItem(item);
 
-        // 展开父节点
         if (item->parent()) {
             item->parent()->setExpanded(true);
         }
@@ -74,7 +73,6 @@ void NavigationWidget::highlightModule(const QString& moduleName)
         moduleTreeWidget->setCurrentItem(item);
         moduleTreeWidget->scrollToItem(item);
 
-        // 展开父节点
         if (item->parent()) {
             item->parent()->setExpanded(true);
         }
@@ -101,7 +99,6 @@ void NavigationWidget::onSearchTextChanged(const QString& text)
     currentSearchFilter = text.trimmed();
     emit searchFilterChanged(currentSearchFilter);
 
-    // 立即应用过滤器
     applySearchFilter();
 }
 
@@ -111,7 +108,6 @@ void NavigationWidget::onFileTreeDoubleClicked(QTreeWidgetItem* item, int column
 
     if (!item) return;
 
-    // 获取完整文件路径
     QString filePath = item->data(0, Qt::UserRole).toString();
     if (!filePath.isEmpty()) {
         emit fileDoubleClicked(filePath);
@@ -126,7 +122,6 @@ void NavigationWidget::onModuleTreeDoubleClicked(QTreeWidgetItem* item, int colu
 
     QString moduleName = item->text(0);
     if (!moduleName.isEmpty() && !item->data(0, Qt::UserRole + 1).toBool()) {
-        // 确保不是文件节点（文件节点在UserRole+1中存储true）
         emit moduleDoubleClicked(moduleName);
     }
 }
@@ -143,22 +138,18 @@ void NavigationWidget::onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int colu
 }
 void NavigationWidget::setupUI()
 {
-    // 主布局
     mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(4, 4, 4, 4);
     mainLayout->setSpacing(4);
 
-    // 搜索框
     searchLineEdit = new QLineEdit(this);
-    searchLineEdit->setPlaceholderText("搜索文件、模块或符号...");
+    searchLineEdit->setPlaceholderText("Search files, modules, or symbols...");
     searchLineEdit->setClearButtonEnabled(true);
     mainLayout->addWidget(searchLineEdit);
 
-    // 标签页容器
     tabWidget = new QTabWidget(this);
     mainLayout->addWidget(tabWidget);
 
-    // 设置标签页
     setupFileTab();
     setupModuleTab();
     setupSymbolTab();
@@ -173,9 +164,8 @@ void NavigationWidget::setupFileTab()
     fileTabLayout->setContentsMargins(2, 2, 2, 2);
     fileTabLayout->setSpacing(2);
 
-    // 文件树控件
     fileTreeWidget = new QTreeWidget(fileTab);
-    fileTreeWidget->setHeaderLabel("SystemVerilog 文件");
+    fileTreeWidget->setHeaderLabel("SystemVerilog Files");
     fileTreeWidget->setAlternatingRowColors(true);
     fileTreeWidget->setRootIsDecorated(true);
     fileTreeWidget->setSortingEnabled(true);
@@ -184,7 +174,7 @@ void NavigationWidget::setupFileTab()
     fileTabLayout->addWidget(fileTreeWidget);
     fileTab->setLayout(fileTabLayout);
 
-    tabWidget->addTab(fileTab, "文件");
+    tabWidget->addTab(fileTab, "Files");
 }
 
 void NavigationWidget::setupModuleTab()
@@ -194,9 +184,8 @@ void NavigationWidget::setupModuleTab()
     moduleTabLayout->setContentsMargins(2, 2, 2, 2);
     moduleTabLayout->setSpacing(2);
 
-    // 模块树控件
     moduleTreeWidget = new QTreeWidget(moduleTab);
-    moduleTreeWidget->setHeaderLabel("模块层次结构");
+    moduleTreeWidget->setHeaderLabel("Module Hierarchy");
     moduleTreeWidget->setAlternatingRowColors(true);
     moduleTreeWidget->setRootIsDecorated(true);
     moduleTreeWidget->setSortingEnabled(true);
@@ -205,7 +194,7 @@ void NavigationWidget::setupModuleTab()
     moduleTabLayout->addWidget(moduleTreeWidget);
     moduleTab->setLayout(moduleTabLayout);
 
-    tabWidget->addTab(moduleTab, "模块");
+    tabWidget->addTab(moduleTab, "Module");
 }
 
 void NavigationWidget::setupSymbolTab()
@@ -215,9 +204,8 @@ void NavigationWidget::setupSymbolTab()
     symbolTabLayout->setContentsMargins(2, 2, 2, 2);
     symbolTabLayout->setSpacing(2);
 
-    // 符号树控件
     symbolTreeWidget = new QTreeWidget(symbolTab);
-    symbolTreeWidget->setHeaderLabel("符号");
+    symbolTreeWidget->setHeaderLabel("Symbols");
     symbolTreeWidget->setAlternatingRowColors(true);
     symbolTreeWidget->setRootIsDecorated(true);
     symbolTreeWidget->setSortingEnabled(true);
@@ -226,20 +214,17 @@ void NavigationWidget::setupSymbolTab()
     symbolTabLayout->addWidget(symbolTreeWidget);
     symbolTab->setLayout(symbolTabLayout);
 
-    tabWidget->addTab(symbolTab, "符号");
+    tabWidget->addTab(symbolTab, "Symbols");
 }
 
 void NavigationWidget::setupConnections()
 {
-    // 标签页切换
     connect(tabWidget, &QTabWidget::currentChanged,
             this, &NavigationWidget::onTabChanged);
 
-    // 搜索框
     connect(searchLineEdit, &QLineEdit::textChanged,
             this, &NavigationWidget::onSearchTextChanged);
 
-    // 树控件双击事件
     connect(fileTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onFileTreeDoubleClicked);
 
@@ -256,12 +241,11 @@ void NavigationWidget::populateFileTree()
 
     if (currentFileList.isEmpty()) {
         QTreeWidgetItem* emptyItem = new QTreeWidgetItem(fileTreeWidget);
-        emptyItem->setText(0, "没有找到 SystemVerilog 文件");
+        emptyItem->setText(0, "No SystemVerilog files found");
         emptyItem->setFlags(Qt::ItemIsEnabled);
         return;
     }
 
-    // 按目录结构组织文件
     QHash<QString, QTreeWidgetItem*> dirItems;
 
     for (const QString& filePath : std::as_const(currentFileList)) {
@@ -269,13 +253,11 @@ void NavigationWidget::populateFileTree()
         QString dirPath = fileInfo.absolutePath();
         QString fileName = fileInfo.fileName();
 
-        // 应用搜索过滤器
         if (!currentSearchFilter.isEmpty() &&
             !fileName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
             continue;
         }
 
-        // 获取或创建目录节点
         QTreeWidgetItem* dirItem = nullptr;
         if (dirItems.contains(dirPath)) {
             dirItem = dirItems[dirPath];
@@ -287,12 +269,10 @@ void NavigationWidget::populateFileTree()
             dirItems[dirPath] = dirItem;
         }
 
-        // 创建文件节点
         QTreeWidgetItem* fileItem = createFileItem(filePath);
         dirItem->addChild(fileItem);
     }
 
-    // 如果只有一个目录，自动展开
     if (fileTreeWidget->topLevelItemCount() == 1) {
         fileTreeWidget->topLevelItem(0)->setExpanded(true);
     }
@@ -306,7 +286,7 @@ void NavigationWidget::populateModuleTree()
 
     if (currentModuleHierarchy.isEmpty()) {
         QTreeWidgetItem* emptyItem = new QTreeWidgetItem(moduleTreeWidget);
-        emptyItem->setText(0, "没有找到模块");
+        emptyItem->setText(0, "No modules found");
         emptyItem->setFlags(Qt::ItemIsEnabled);
         return;
     }
@@ -347,7 +327,7 @@ void NavigationWidget::populateSymbolTree()
 
     if (currentSymbolHierarchy.isEmpty()) {
         QTreeWidgetItem* emptyItem = new QTreeWidgetItem(symbolTreeWidget);
-        emptyItem->setText(0, "没有找到符号");
+        emptyItem->setText(0, "No symbols found");
         emptyItem->setFlags(Qt::ItemIsEnabled);
         return;
     }
@@ -381,7 +361,6 @@ void NavigationWidget::populateSymbolTree()
 }
 void NavigationWidget::applySearchFilter()
 {
-    // 重新填充当前活动的树
     switch (getActiveTab()) {
     case FileTab:
         populateFileTree();
@@ -402,7 +381,7 @@ QTreeWidgetItem* NavigationWidget::createFileItem(const QString& filePath)
 
     item->setText(0, fileInfo.fileName());
     item->setIcon(0, getFileIcon(filePath));
-    item->setData(0, Qt::UserRole, filePath); // 存储完整路径
+    item->setData(0, Qt::UserRole, filePath);
     item->setToolTip(0, filePath);
 
     return item;
@@ -414,9 +393,9 @@ QTreeWidgetItem* NavigationWidget::createModuleItem(const QString& moduleName, c
 
     item->setText(0, moduleName);
     item->setIcon(0, getSymbolIcon(sym_list::sym_module));
-    item->setData(0, Qt::UserRole, fileName); // 存储文件路径
-    item->setData(0, Qt::UserRole + 1, false); // 标记为模块节点
-    item->setToolTip(0, QString("模块: %1\n文件: %2").arg(moduleName, QFileInfo(fileName).fileName()));
+    item->setData(0, Qt::UserRole, fileName);
+    item->setData(0, Qt::UserRole + 1, false);
+    item->setToolTip(0, QString("Module: %1\nFile: %2").arg(moduleName, QFileInfo(fileName).fileName()));
 
     return item;
 }
@@ -439,29 +418,29 @@ QTreeWidgetItem* NavigationWidget::createSymbolItem(const sym_list::SymbolInfo& 
 QString NavigationWidget::getSymbolTypeDisplayName(sym_list::sym_type_e symbolType)
 {
     switch (symbolType) {
-    case sym_list::sym_module: return "模块";
-    case sym_list::sym_reg: return "寄存器";
-    case sym_list::sym_wire: return "线网";
-    case sym_list::sym_logic: return "逻辑";
-    case sym_list::sym_task: return "任务";
-    case sym_list::sym_function: return "函数";
-    case sym_list::sym_parameter: return "参数";
-    case sym_list::sym_localparam: return "本地参数";
-    case sym_list::sym_port_input: return "输入端口";
-    case sym_list::sym_port_output: return "输出端口";
-    case sym_list::sym_port_inout: return "双向端口";
-    case sym_list::sym_port_ref: return "ref 端口";
-    case sym_list::sym_enum: return "枚举类型";
-    case sym_list::sym_inst: return "实例";
-    case sym_list::sym_packed_struct: return "Packed 结构体类型";
-    case sym_list::sym_unpacked_struct: return "Unpacked 结构体类型";
-    case sym_list::sym_packed_struct_var: return "Packed 结构体变量";
-    case sym_list::sym_unpacked_struct_var: return "Unpacked 结构体变量";
-    case sym_list::sym_struct_member: return "结构体成员";
-    case sym_list::sym_typedef: return "类型定义";
-    case sym_list::sym_enum_var: return "枚举变量";
-    case sym_list::sym_enum_value: return "枚举值";
-    default: return "符号";
+    case sym_list::sym_module: return "Module";
+    case sym_list::sym_reg: return "Register";
+    case sym_list::sym_wire: return "Wire";
+    case sym_list::sym_logic: return "Logic";
+    case sym_list::sym_task: return "Task";
+    case sym_list::sym_function: return "Function";
+    case sym_list::sym_parameter: return "Parameter";
+    case sym_list::sym_localparam: return "Local Parameter";
+    case sym_list::sym_port_input: return "Input Port";
+    case sym_list::sym_port_output: return "Output Port";
+    case sym_list::sym_port_inout: return "Inout Port";
+    case sym_list::sym_port_ref: return "Ref Port";
+    case sym_list::sym_enum: return "Enum Type";
+    case sym_list::sym_inst: return "Instance";
+    case sym_list::sym_packed_struct: return "Packed Struct Type";
+    case sym_list::sym_unpacked_struct: return "Unpacked Struct Type";
+    case sym_list::sym_packed_struct_var: return "Packed Struct Variable";
+    case sym_list::sym_unpacked_struct_var: return "Unpacked Struct Variable";
+    case sym_list::sym_struct_member: return "Struct Member";
+    case sym_list::sym_typedef: return "Typedef";
+    case sym_list::sym_enum_var: return "Enum Variable";
+    case sym_list::sym_enum_value: return "Enum Value";
+    default: return "Symbols";
     }
 }
 
@@ -519,7 +498,6 @@ void NavigationWidget::expandCurrentFileNodes()
 {
     if (currentHighlightedFile.isEmpty()) return;
 
-    // 在文件树中找到当前文件并展开其父节点
     for (int i = 0; i < fileTreeWidget->topLevelItemCount(); ++i) {
         QTreeWidgetItem* dirItem = fileTreeWidget->topLevelItem(i);
         for (int j = 0; j < dirItem->childCount(); ++j) {

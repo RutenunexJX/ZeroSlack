@@ -9,8 +9,6 @@
 #include <QPointer>
 
 /**
- * 作用域条带：在编辑器左侧用 QGraphicsView 绘制 module/logic 层级背景，
- * 与编辑器滚动同步，数据来自 sym_list。
  */
 class ScopeBandWidget : public QWidget
 {
@@ -24,7 +22,6 @@ public:
     void setEditor(MyCodeEditor* editor);
     MyCodeEditor* editor() const { return m_editor.data(); }
 
-    /** 根据当前编辑器与符号数据刷新条带 */
     void refresh();
 
 private slots:

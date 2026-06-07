@@ -131,7 +131,6 @@ public:
     void addSymbol(const SymbolInfo& symbol);
     QList<SymbolInfo> findSymbolsByFileName(const QString& fileName);
     QList<SymbolInfo> findSymbolsByName(const QString& symbolName);
-    /** 利用 symbolNameIndex 直接返回首个匹配的 symbolId，无则返回 -1，避免临时 QList<SymbolInfo> 分配 */
     int findSymbolIdByName(const QString& symbolName) const;
     QList<SymbolInfo> findSymbolsByType(sym_type_e symbolType);
     QList<SymbolInfo> getAllSymbols();
@@ -152,16 +151,12 @@ public:
     SymbolRelationshipEngine* getRelationshipEngine() const;
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
 
-    /** 作用域树：按文件维护，供补全按行查找作用域与词法遮蔽 */
     ScopeManager* getScopeManager() const;
 
-    /** 获取指定文件、行号所在的模块名（供跳转定义时优先同模块符号） */
     QString getCurrentModuleScope(const QString& fileName, int lineNumber);
 
-    /** 返回与分析一致的文件内容缓存（供当前模块判定等使用），无缓存则返回空 */
     QString getCachedFileContent(const QString& fileName) const;
 
-    /** 判断是否为合法模块名：非空且符合 SV 标识符规范 [a-zA-Z_][a-zA-Z0-9_]* */
     static bool isValidModuleName(const QString& name);
 
     QList<CommentRegion> commentRegions;
@@ -172,7 +167,6 @@ public:
 
     bool needsAnalysis(const QString& fileName, const QString& content);
 
-    /** 供外部判断：当前内容是否影响符号，若否（仅注释/空格等）可不触发分析 */
     bool contentAffectsSymbols(const QString& fileName, const QString& content);
 
     int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);

@@ -99,7 +99,7 @@ bool fillSymbolInfo(const slang::SourceManager* sm,
     return true;
 }
 
-// Emit one sym_enum_value per enumerator, keyed (moduleScope) by scopeKey — the type alias name
+// Emit one sym_enum_value per enumerator, keyed (moduleScope) by scopeKey - the type alias name
 // for typedef'd enums, or the variable name for inline anonymous enums. getEnumValueCompletions
 // matches sym_enum_value whose moduleScope == that key.
 void emitEnumValues(const slang::SourceManager* sm,
@@ -117,7 +117,7 @@ void emitEnumValues(const slang::SourceManager* sm,
     }
 }
 
-// Emit one sym_struct_member per field, keyed (moduleScope) by scopeKey — the type alias name for
+// Emit one sym_struct_member per field, keyed (moduleScope) by scopeKey - the type alias name for
 // typedef'd structs, or the variable name for inline anonymous structs. getStructMemberCompletions
 // matches sym_struct_member whose moduleScope == that key.
 void emitStructMembers(const slang::SourceManager* sm,
@@ -263,7 +263,7 @@ void collectSymbols(slang::ast::Compilation& compilation,
     const slang::ast::RootSymbol& root = compilation.getRoot();
 
     // (1) Module / interface / program definitions. root.visit() walks the elaborated instance
-    //     tree, NOT definitions, so definitions must be emitted explicitly here — one entry per
+    //     tree, NOT definitions, so definitions must be emitted explicitly here - one entry per
     //     definition, always present even for uninstantiated modules.
     for (const slang::ast::Symbol* defSym : compilation.getDefinitions()) {
         const auto* def = defSym ? defSym->as_if<DefinitionSymbol>() : nullptr;

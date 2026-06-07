@@ -198,7 +198,7 @@ QString TSDocument::enclosingModuleName(int charOffset) const
 
 namespace {
 // DFS the subtree of 'node'. When a node classifies to a highlight category, emit a span for the
-// WHOLE node (clipped to the block) and stop descending — this treats "module_keyword", numbers,
+// WHOLE node (clipped to the block) and stop descending - this treats "module_keyword", numbers,
 // comments, strings and anonymous keyword/operator tokens as highlight units. Otherwise (structural
 // / identifier nodes) recurse into children. Coordinates are converted to block-local chars.
 void collectSpans(TSNode node, uint32_t startByte, uint32_t endByte,
@@ -221,7 +221,7 @@ void collectSpans(TSNode node, uint32_t startByte, uint32_t endByte,
             if (span.length > 0)
                 out.append(span);
         }
-        return;  // highlight unit — don't descend
+        return;  // highlight unit - do not descend
     }
 
     const uint32_t childCount = ts_node_child_count(node);

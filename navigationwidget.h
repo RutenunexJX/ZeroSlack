@@ -29,21 +29,17 @@ public:
     explicit NavigationWidget(QWidget *parent = nullptr);
     ~NavigationWidget();
 
-    // 视图切换
     void setActiveTab(NavigationTab tab);
     NavigationTab getActiveTab() const;
 
-    // 数据更新接口
     void updateFileHierarchy(const QStringList& files);
     void updateModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy);
     void updateSymbolHierarchy(const QList<SymbolOutlineGroup>& symbolGroups);
 
-    // 高亮和选择
     void highlightFile(const QString& filePath);
     void highlightSymbol(const QString& symbolName);
     void highlightModule(const QString& moduleName);
 
-    // 搜索功能
     void setSearchText(const QString& text);
     QString getSearchText() const;
 
@@ -62,45 +58,37 @@ private slots:
     void onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int column);
 
 private:
-    // UI组件
     QVBoxLayout* mainLayout;
     QTabWidget* tabWidget;
     QLineEdit* searchLineEdit;
 
-    // 文件层次结构标签页
     QWidget* fileTab;
     QTreeWidget* fileTreeWidget;
     QVBoxLayout* fileTabLayout;
 
-    // 模块层次结构标签页
     QWidget* moduleTab;
     QTreeWidget* moduleTreeWidget;
     QVBoxLayout* moduleTabLayout;
 
-    // 符号层次结构标签页
     QWidget* symbolTab;
     QTreeWidget* symbolTreeWidget;
     QVBoxLayout* symbolTabLayout;
 
-    // 数据存储
     QStringList currentFileList;
     QList<ModuleHierarchyGroup> currentModuleHierarchy;
     QList<SymbolOutlineGroup> currentSymbolHierarchy;
     QHash<int, sym_list::SymbolInfo> symbolItemPayloads;
     int nextSymbolItemPayloadId = 1;
 
-    // 内部状态
     QString currentSearchFilter;
     QString currentHighlightedFile;
 
-    // 初始化方法
     void setupUI();
     void setupFileTab();
     void setupModuleTab();
     void setupSymbolTab();
     void setupConnections();
 
-    // 辅助方法
     void populateFileTree();
     void populateModuleTree();
     void populateSymbolTree();

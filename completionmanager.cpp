@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <utility>
 
-/// 补全列表最大条数，避免单次传入过多导致模型排序与弹窗卡顿（性能优化）
 std::unique_ptr<CompletionManager> CompletionManager::instance = nullptr;
 
 CompletionManager::CompletionManager()
@@ -89,7 +88,6 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByType(symbolType);
 
-    // 枚举类型 (ne)：显式 typedef enum + 隐式 sym_enum 合并
     if (symbolType == sym_list::sym_enum) {
         QSet<int> seenIds;
         for (const sym_list::SymbolInfo &s : symbols)
@@ -110,19 +108,19 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
         int score = 0;
 
         if (prefix.isEmpty()) {
-            score = 100; // 空前缀：显示所有符号
+            score = 100;
         } else {
             const QString lowerText = symbol.symbolName.toLower();
             const QString lowerPrefix = prefix.toLower();
 
             if (lowerText == lowerPrefix) {
-                score = 1000; // 精确匹配
+                score = 1000;
             } else if (lowerText.startsWith(lowerPrefix)) {
-                score = 800 + (100 - prefix.length()); // 前缀匹配
+                score = 800 + (100 - prefix.length());
             } else if (lowerText.contains(lowerPrefix)) {
-                score = 400 + (100 - symbol.symbolName.length()); // 包含匹配
+                score = 400 + (100 - symbol.symbolName.length());
             } else if (matchesAbbreviation(symbol.symbolName, prefix)) {
-                score = 200; // 缩写匹配
+                score = 200;
             }
         }
 
@@ -483,7 +481,6 @@ bool CompletionManager::isValidAbbreviationMatch(const QString &text, const QStr
         return false;
     }
 
-    // 转换为小写用于比较，但保留原始文本用于驼峰命名检测
     const QString lowerText = text.toLower();
     const QString lowerAbbrev = abbreviation.toLower();
 
@@ -498,13 +495,11 @@ bool CompletionManager::isValidAbbreviationMatch(const QString &text, const QStr
             abbrevPos++;
             textPos++;
         } else {
-            // 检查是否是分隔符（下划线、空格或驼峰命名边界）
             bool isSeparator = (text[textPos] == '_' || text[textPos] == ' ');
 
             if (textPos > 0) {
                 QChar prevChar = text[textPos - 1];
                 QChar currChar = text[textPos];
-                // 驼峰命名边界检测：小写字母后跟大写字母
                 if (prevChar.isLower() && currChar.isUpper()) {
                     isSeparator = true;
                 }
@@ -513,7 +508,7 @@ bool CompletionManager::isValidAbbreviationMatch(const QString &text, const QStr
             if (isSeparator && textPos + 1 < text.length()) {
                 QChar nextChar = lowerText[textPos + 1];
                 if (abbrevChar == nextChar) {
-                    textPos++; // 跳过分隔符
+                    textPos++;
                     continue;
                 }
             }
@@ -560,7 +555,7 @@ QList<int> CompletionManager::findAbbreviationPositions(const QString &text, con
             }
             if (isSeparator && textPos + 1 < text.length() && 
                 lowerAbbrev[abbrevPos] == lowerText[textPos + 1]) {
-                textPos++; // 跳过分隔符
+                textPos++;
                 continue;
             }
         }
@@ -604,19 +599,16 @@ void CompletionManager::initializeKeywords()
 
 QVector<QPair<QString, int>> CompletionManager::getScoredKeywordMatches(const QString& prefix)
 {
-    initializeKeywords(); // 确保关键字已初始化
+    initializeKeywords();
 
     QString cacheKey = buildKeywordCacheKey(prefix);
 
-    // 检查缓存
     if (keywordScoreCache.contains(cacheKey)) {
         return keywordScoreCache[cacheKey];
     }
 
-    // 计算匹配结果
     QVector<QPair<QString, int>> scoredMatches = calculateScoredMatches(svKeywords, prefix);
 
-    // 缓存结果
     keywordScoreCache[cacheKey] = scoredMatches;
 
     return scoredMatches;
@@ -699,7 +691,6 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::calculateScoredSymb
         }
     }
 
-    // 按分数排序
     std::sort(scoredMatches.begin(), scoredMatches.end(),
               [](const QPair<sym_list::SymbolInfo, int> &a, const QPair<sym_list::SymbolInfo, int> &b) {
                   if (a.second != b.second) {
@@ -1159,11 +1150,11 @@ QStringList CompletionManager::getBasicSymbolCompletions(const QString& prefix)
     QVector<QPair<QString, int>> scoredMatches = getScoredAllSymbolMatches(prefix);
 
     QStringList result;
-    result.reserve(10);  // 限制为10个
+    result.reserve(10);
 
     for (const auto &match : std::as_const(scoredMatches)) {
         result.append(match.first);
-        if (result.size() >= 10) break;  // 最多10个
+        if (result.size() >= 10) break;
     }
 
     return result;
@@ -1493,7 +1484,7 @@ QString CompletionManager::findModuleAtPosition(
         }
     }
 
-    return QString(); // 不在任何有效模块内
+    return QString();
 }
 
 int CompletionManager::findSymbolIdByName(const QString& symbolName)
@@ -1694,7 +1685,6 @@ QStringList CompletionManager::getModuleInternalVariablesByType(const QString& m
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         bool isCorrectModule = (symbol.moduleScope == moduleName);
         bool isCorrectType = (symbol.symbolType == symbolType);
-        // ne：模块内枚举类型 = sym_enum 或 sym_typedef(dataType enum)
         if (symbolType == sym_list::sym_enum && !isCorrectType) {
             isCorrectType = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
         }
@@ -1720,7 +1710,7 @@ int CompletionManager::getNextModulePosition(const QList<sym_list::SymbolInfo>& 
             return modules[i + 1].position;
         }
     }
-    return INT_MAX; // 如果是最后一个模块，返回最大值
+    return INT_MAX;
 }
 
 int CompletionManager::findEndModulePosition(
@@ -1771,7 +1761,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 🔧 FIX: 全局符号类型定义（含 sym_enum，ne 命令用）
     QList<sym_list::sym_type_e> globalSymbolTypes = {
         sym_list::sym_module,
         sym_list::sym_task,
@@ -1785,7 +1774,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
         sym_list::sym_enum
     };
 
-    // 🔧 FIX: 检查是否为全局符号类型（struct类型也是全局的）
     if (!globalSymbolTypes.contains(symbolType) && 
         symbolType != sym_list::sym_packed_struct && 
         symbolType != sym_list::sym_unpacked_struct) {
@@ -1796,30 +1784,23 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
     int totalSymbolsOfType = 0;
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        // 🔧 FIX: 统计指定类型的所有符号
         if (symbol.symbolType == symbolType) {
             totalSymbolsOfType++;
         }
 
-        // sym_enum：显式 typedef enum + 隐式 sym_enum
         bool typeMatches = (symbol.symbolType == symbolType);
         if (symbolType == sym_list::sym_enum && !typeMatches) {
             typeMatches = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
         }
 
-        // 🔧 FIX: 只返回指定类型的全局符号
         if (typeMatches) {
-            // 🔧 FIX: 全局符号应该没有 moduleScope 或者 moduleScope 为空
-            // 对于某些符号类型（如 module, interface），它们本身就是顶级声明
             bool isGlobalSymbol = false;
 
             if (symbolType == sym_list::sym_module ||
                 symbolType == sym_list::sym_interface ||
                 symbolType == sym_list::sym_package) {
-                // 这些类型本身就是全局的
                 isGlobalSymbol = true;
             } else {
-                // 其他类型需要检查是否在模块外部声明
                 isGlobalSymbol = symbol.moduleScope.isEmpty();
             }
 
@@ -2013,10 +1994,8 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 1) 模块内部符号（已含严格边界）
     results = getModuleInternalSymbolsByType(moduleName, symbolType, prefix);
 
-    // 获取当前模块符号及行范围，用于只解析模块体内的 include/import
     sym_list::SymbolInfo moduleSymbol;
     int moduleStartLine = 0;
     int moduleEndLineExclusive = INT_MAX;
@@ -2051,7 +2030,6 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
 
     QString baseDir = QFileInfo(fileName).absolutePath();
 
-    // 2) 模块体内 `include "..." 所在行
     static const QRegularExpression includeRegex("`include\\s+\"([^\"]+)\"");
     int lineNum = 1;
     int lineStart = 0;
@@ -2078,7 +2056,6 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
         lineStart = (lineEnd < fileContent.length()) ? lineEnd + 1 : fileContent.length();
     }
 
-    // 3) 模块体内 import pkg::*; 与 import pkg::sym;
     static const QRegularExpression importStarRegex("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*\\*\\s*;");
     static const QRegularExpression importSymRegex("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*;");
     lineNum = 1;
@@ -2138,7 +2115,6 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
     sym_list* symbolList = sym_list::getInstance();
     QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
 
-    // 支持struct类型和struct变量
     QList<sym_list::sym_type_e> globalSymbolTypes = {
         sym_list::sym_module,
         sym_list::sym_task,
@@ -2153,7 +2129,6 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
         sym_list::sym_unpacked_struct_var
     };
 
-    // 检查是否为支持的符号类型
     if (!globalSymbolTypes.contains(symbolType)) {
         return results;
     }
@@ -2167,20 +2142,15 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
                 symbolType == sym_list::sym_package ||
                 symbolType == sym_list::sym_packed_struct ||
                 symbolType == sym_list::sym_unpacked_struct) {
-                // 这些类型本身就是全局的
                 isGlobalSymbol = true;
             } else if (symbolType == sym_list::sym_packed_struct_var ||
                        symbolType == sym_list::sym_unpacked_struct_var) {
-                // struct变量：仅当 moduleScope 为空时才视为全局（真正在 package/$unit 等全局作用域定义）
-                // 避免模块内定义的 struct 变量泄漏到全局补全
                 isGlobalSymbol = symbol.moduleScope.isEmpty();
             } else {
-                // 其他类型需要检查是否在模块外部声明
                 isGlobalSymbol = symbol.moduleScope.isEmpty();
             }
 
             if (isGlobalSymbol) {
-                // 使用模糊匹配功能
                 if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
                     results.append(symbol);
                 }
@@ -2199,7 +2169,6 @@ QStringList CompletionManager::getEnumValueCompletions(const QString& prefix,
 
     for (const auto& symbol : symList->getAllSymbols()) {
         if (symbol.symbolType == sym_list::sym_enum_value) {
-            // 如果指定了枚举类型，只返回该类型的值
             if (!enumTypeName.isEmpty() && symbol.moduleScope != enumTypeName) {
                 continue;
             }
@@ -2215,7 +2184,6 @@ QStringList CompletionManager::getEnumValueCompletions(const QString& prefix,
     return results;
 }
 
-// 获取结构体成员补全
 QStringList CompletionManager::getStructMemberCompletions(const QString& prefix,
                                                          const QString& structTypeName)
 {
@@ -2224,7 +2192,6 @@ QStringList CompletionManager::getStructMemberCompletions(const QString& prefix,
 
     for (const auto& symbol : symList->getAllSymbols()) {
         if (symbol.symbolType == sym_list::sym_struct_member) {
-            // 如果指定了结构体类型，只返回该类型的成员
             if (!structTypeName.isEmpty() && symbol.moduleScope != structTypeName) {
                 continue;
             }

@@ -137,7 +137,7 @@ Slang 负责真实语义事实：
 
 不要 push，用户会自己 push。
 
-未跟踪文件中 `.claude/settings.local.json` 不要删除、不要加入提交。
+Claude 相关文件已删除；不要恢复 `.claude/` 或任何 Claude 本地配置文件。
 
 本轮新增未跟踪源码文件需要后续提交时包含：
 - modulehierarchymodel.h
@@ -150,6 +150,88 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复
 判断实际内容改动请优先看：
 
     git diff --name-only
+
+
+==========================================================================
+已踩坑问题清单 / 防复发规则
+==========================================================================
+
+以下问题已经在本项目会话中反复出现或造成误判，新会话接手时请优先检查：
+
+1. 构建环境 PATH 不完整会造成假性编译失败
+   - 直接调用 E:\QT6\Tools\CMake_64\bin\cmake.exe 或 g++.exe 时，如果没有把 Qt/MinGW bin
+     加入 PATH，g++ 可能在启动 cc1plus.exe 或链接阶段静默失败，看起来像源码编译失败。
+   - 正确构建前先设置：
+
+        $env:PATH='E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;E:\QT6\Tools\CMake_64\bin;' + $env:PATH
+
+   - 推荐构建命令：
+
+        E:\QT6\Tools\CMake_64\bin\cmake.exe --build build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug -- -j4
+
+   - 推荐测试命令：
+
+        E:\QT6\Tools\CMake_64\bin\ctest.exe --test-dir build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug --output-on-failure
+
+2. 不要把 git status 当成真实内容 diff
+   - 当前仓库在 Windows 上容易出现 index stat / CRLF 噪音，git status 会列出很多 M。
+   - 判断真实内容变化优先用：
+
+        git diff --name-only
+        git diff --stat
+        git diff --check
+
+   - 常见 warning：
+     unable to access C:\Users\14971/.config/git/ignore: Permission denied
+     LF will be replaced by CRLF
+     这些不是 diff --check 错误。
+
+3. 不要恢复 Claude 本地配置
+   - `.claude/` 相关文件已删除。
+   - 后续不要重新创建、恢复或提交任何 Claude 本地配置文件。
+
+4. 源码注释和 UI 文案必须保持英文 / ASCII
+   - 代码注释不要再写中文。
+   - UI 可见文字、状态栏、进度对话框、tooltip、日志文字全部保持英文。
+   - 源码、测试、.ui、CMake 文件应避免非 ASCII 字符，三份中文文档除外：
+     readme.txt / plan.md / goal.md。
+   - 清理后复扫建议：
+
+        Get-ChildItem -Path . -Recurse -File -Include *.cpp,*.h,*.hpp,*.c,*.cc,*.ui,*.qss,*.cmake,CMakeLists.txt -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -notmatch '\\(build|thirdparty|\.git|\.qtcreator|\.agents|\.codex)\\' -and $_.Name -notin @('readme.txt','plan.md','goal.md') } |
+          Select-String -Pattern '[^\x00-\x7F]'
+
+5. 注意编码显示误导
+   - PowerShell 默认显示可能把 UTF-8 中文内容显示成乱码。
+   - 读中文文档或旧中文源码时优先使用：
+
+        Get-Content -Encoding UTF8 -Path <file>
+
+   - 但源码侧的长期目标不是“正确显示中文”，而是避免中文/非 ASCII 再进入源码和 UI。
+
+6. 不要恢复已淘汰路径
+   - 不要恢复 SVLexer。
+   - 不要恢复旧 Tree-sitter symbol parser。
+   - 不要恢复 Tree-sitter 验证按钮。
+   - 不要恢复关系分析正则路径。
+   - 不要重新引入长期散落的 perflog 式性能探针。
+
+7. Query Services 收束要小步验证
+   - UI/editor 迁移到 DefinitionService / CompletionService / SearchService /
+     RelationshipService / HierarchyService 时，每次只迁一小段路径。
+   - 高风险点包括：
+     completion 命令模式作用域过滤、struct member 补全、jump 本文件优先、
+     Windows 路径规范化、NavigationWidget item payload。
+   - 每轮至少跑 git diff --check；涉及行为变更时跑对应 exe 或完整 ctest。
+
+8. 测试素材也要避免中文
+   - 过去 ts_doc_test 使用中文注释测试 UTF-16 offset，后续已改为 ASCII。
+   - 如需测试多字节字符，请优先用受控、明确的测试说明，并确认不会破坏“源码非 ASCII 复扫”规则；
+     当前默认是不在源码测试中使用非 ASCII。
+
+9. 文档可以中文，但不要用文档规则反推源码规则
+   - readme.txt / plan.md / goal.md 是中文交接文档，可以保留中文。
+   - 源码注释、UI 文案、测试字符串、CMake 注释仍按英文 / ASCII 执行。
 
 
 ==========================================================================

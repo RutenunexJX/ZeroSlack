@@ -88,20 +88,13 @@ void LogicScopeItem::setRect(const QRectF& rect)
 }
 
 /*
- * 使用示例：将 ModuleScopeItem / LogicScopeItem 加入 QGraphicsScene 并建立父子关系
  * ---
  * QGraphicsScene* scene = new QGraphicsScene(this);
  * QGraphicsView* view = new QGraphicsView(scene);
  *
- * ModuleScopeItem* moduleItem = new ModuleScopeItem();  // parent 可传 nullptr，稍后加入 scene
  * scene->addItem(moduleItem);
- * moduleItem->setRect(QRectF(0, 0, 200, 400));         // 按行高换算的矩形
  *
- * LogicScopeItem* logicItem = new LogicScopeItem(moduleItem);  // 父项为 moduleItem
  * logicItem->setPos(0, 0);
- * logicItem->setRect(QRectF(10, 50, 180, 80));         // 逻辑块在模块内的相对区域
- * moduleItem->updateLayout();                          // 根据子项更新 module 的 boundingRect
  *
  * view->setRenderHint(QPainter::Antialiasing);
- * view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);  // 与编辑器同步滚动时由外部控制
  */

@@ -31,7 +31,7 @@ struct HlSpan {
 // (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
 //
 // Text is parsed as UTF-16 (Qt's native QString encoding), so tree-sitter byte offsets map to
-// QString char indices as byte/2 — correct even with non-ASCII (e.g. Chinese comments), with no
+// QString char indices as byte/2 - correct even with non-ASCII (e.g. Chinese comments), with no
 // UTF-8<->UTF-16 offset bookkeeping. Assumes little-endian (Windows/x86); fine for this target.
 //
 // Threading: not thread-safe; lives with its editor on the UI thread. Each instance owns its own

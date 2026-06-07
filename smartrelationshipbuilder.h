@@ -12,7 +12,6 @@
 #include <QVector>
 #include <QSet>
 
-// 用于异步分析：在后台计算关系，在主线程应用
 struct RelationshipToAdd {
     int fromId;
     int toId;
@@ -80,7 +79,6 @@ private:
         int currentModuleId = -1;
         QHash<QString, int> localSymbolIds;
         QList<sym_list::SymbolInfo> fileSymbols;
-        /** 用于 computeRelationships 中不访问 DB */
         QHash<int, sym_list::sym_type_e> symbolIdToType;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;

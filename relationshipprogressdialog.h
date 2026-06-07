@@ -22,7 +22,6 @@ public:
     ~RelationshipProgressDialog();
 
     void startAnalysis(int totalFiles);
-    /** 阶段1（符号分析）时更新统计，避免显示“已分析: 0个文件”造成误解 */
     void setSymbolAnalysisProgress(int filesDone, int totalFiles);
     void updateProgress(const QString& fileName, int relationshipsFound);
     void finishAnalysis();

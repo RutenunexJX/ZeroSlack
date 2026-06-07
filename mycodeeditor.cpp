@@ -85,7 +85,6 @@ void MyCodeEditor::initConnection()
 void MyCodeEditor::initFont()
 {
     this->setFont(QFont("Consolas",14));
-    // 设置 Tab 宽度为 4 个字符
     int tabWidth = fontMetrics().horizontalAdvance(' ') * 4;
     setTabStopDistance(tabWidth);
 }
@@ -370,7 +369,6 @@ void MyCodeEditor::onTextChanged()
 
     MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
 
-    // 关系分析去抖：连续输入时重置定时器；定时器到时再触发单文件关系分析，requestSingleFileRelationshipAnalysis 内部会取消未完成任务
     const bool skipRelationshipAnalysis = m_lastEditWasWhitespaceInsertion;
     m_lastEditWasWhitespaceInsertion = false;
 
@@ -401,11 +399,9 @@ void MyCodeEditor::onTextChanged()
     } else {
         shouldContinueAutoComplete = (charAtCursor.isLetterOrNumber() ||
                                     charAtCursor == '_');
-        // 结构体变量后输入 . 则开始识别成员
         if (charAtCursor == '.') {
             shouldContinueAutoComplete = true;
         }
-        // 输入一半后输入空格：如 test_var.a1 后输入空格，在成员里模糊搜索并识别
         if (charAtCursor == ' ') {
             QString lineBeforeSpace = lineUpToCursor.left(qMax(0, positionInLine - 1)).trimmed();
             QString varName, memberPrefix;
@@ -505,12 +501,10 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Control && !ctrlPressed) {
         ctrlPressed = true;
 
-        // Ctrl 刚按下时：根据鼠标下符号是否可跳转，设置绿勾/红叉光标
         QPoint mousePos = mapFromGlobal(QCursor::pos());
         if (rect().contains(mousePos)) {
             clearHoveredSymbolHighlight();
 
-            // 优先检测是否在 `include "xxx"` 的路径字符串上
             int incStart = -1;
             int incEnd = -1;
             QString incPath;
@@ -521,7 +515,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                 highlightHoveredSymbol(incPath, incStart, incEnd);
                 viewport()->setCursor(createJumpableCursor());
             } else {
-                // 检查是否在 import 语句中的 package 名称上
                 QString pkgName;
                 int pkgStart = -1;
                 int pkgEnd = -1;
@@ -547,7 +540,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                             viewport()->setCursor(createNonJumpableCursor());
                         }
                     } else {
-                        // 没有符号，显示红叉表示无法跳转
                         hoveredWord.clear();
                         viewport()->setCursor(createNonJumpableCursor());
                     }
@@ -725,7 +717,6 @@ void MyCodeEditor::onAutoCompleteTimer()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
-    // 检查是否在同一行内，如果换行了则重置退出标志
     static int lastLineNumber = -1;
     int currentLineNumber = currentBlock.blockNumber();
     if (currentLineNumber != lastLineNumber) {
@@ -733,16 +724,12 @@ void MyCodeEditor::onAutoCompleteTimer()
         lastLineNumber = currentLineNumber;
     }
 
-    // 检查命令模式
     if (checkForCustomCommand(lineUpToCursor)) {
-        // 如果之前通过双空格退出过，则忽略命令模式
         if (commandModeExitedByDoubleSpace) {
             return;
         }
 
-        // 检测连续空格
         if (isConsecutiveSpaces()) {
-            // 第二个连续空格，退出自动补全并设置标志
             clearCommandHighlight();
             isInCustomCommandMode = false;
             commandModeExitedByDoubleSpace = true;
@@ -752,7 +739,6 @@ void MyCodeEditor::onAutoCompleteTimer()
             return;
         }
 
-        // 正常处理命令模式
         highlightCommandText();
         QString commandInput = extractCommandInput().trimmed();
 
@@ -782,10 +768,8 @@ void MyCodeEditor::onAutoCompleteTimer()
         return;
     }
 
-    // 不在命令模式时，重置退出标志
     commandModeExitedByDoubleSpace = false;
 
-    // 正常模式处理
     clearCommandHighlight();
     isInCustomCommandMode = false;
 
@@ -794,7 +778,6 @@ void MyCodeEditor::onAutoCompleteTimer()
         return;
     }
 
-    // 结构体变量.成员 上下文：输入 . 或 空格 后显示成员补全（含模糊匹配，如 a1 匹配 abc123）
     QString lineForParse = lineUpToCursor.trimmed();
     QString varName, memberPrefix;
     CompletionService* completionService = CompletionService::getInstance();
@@ -844,10 +827,9 @@ bool MyCodeEditor::isConsecutiveSpaces()
     QString lineText = currentBlock.text();
     int positionInLine = cursor.position() - currentBlock.position();
 
-    // 检查当前位置前两个字符是否都是空格
     if (positionInLine >= 2) {
         QString lastTwoChars = lineText.mid(positionInLine - 2, 2);
-        if (lastTwoChars == "  ") { // 两个连续空格
+        if (lastTwoChars == "  ") {
             return true;
         }
     }
@@ -994,20 +976,17 @@ void MyCodeEditor::initCustomCommands()
 
     customCommands << CustomCommand{"i ", sym_list::sym_interface, "interfaces", "interface"};
     customCommands << CustomCommand{"d ", sym_list::sym_def_define, "define macros", "`define"};
-    // lp 在前，避免 "lp " 被识别成 "p "
     customCommands << CustomCommand{"lp ", sym_list::sym_localparam, "local parameters", "localparam"};
     customCommands << CustomCommand{"p ", sym_list::sym_parameter, "parameters", "parameter"};
     customCommands << CustomCommand{"a ", sym_list::sym_always, "always blocks", "always"};
     customCommands << CustomCommand{"c ", sym_list::sym_assign, "continuous assigns", "assign"};
     customCommands << CustomCommand{"u ", sym_list::sym_typedef, "type definitions", "typedef"};
 
-    // 枚举：较长前缀在前，避免 "ee " / "ne " 被识别成 "e "
     customCommands << CustomCommand{"ee ", sym_list::sym_enum_value, "enum values", "enum_value"};
     customCommands << CustomCommand{"ne ", sym_list::sym_enum, "enum types", "enum"};
     customCommands << CustomCommand{"e ", sym_list::sym_enum_var, "enum variables", "enum_var"};
     customCommands << CustomCommand{"sm ", sym_list::sym_struct_member, "struct members", "member"};
     
-    // 结构体：较长前缀放前面，避免 "nsp " 被识别成 "sp "、"ns " 被识别成 "s "
     customCommands << CustomCommand{"nsp ", sym_list::sym_packed_struct, "packed struct types", "struct"};
     customCommands << CustomCommand{"ns ", sym_list::sym_unpacked_struct, "unpacked struct types", "struct"};
     customCommands << CustomCommand{"sp ", sym_list::sym_packed_struct_var, "packed struct variables", "struct"};
@@ -1044,7 +1023,6 @@ QString MyCodeEditor::extractCommandInput()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
-    // 使用当前命令前缀位置，保证 ns/nsp 与 s/sp 一致
     int prefixPos = currentCommandPrefix.isEmpty()
         ? -1
         : lineUpToCursor.lastIndexOf(currentCommandPrefix);
@@ -1156,7 +1134,6 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Control && ctrlPressed) {
         ctrlPressed = false;
-        // 松开 Ctrl：恢复为普通 I 型光标
         viewport()->setCursor(Qt::IBeamCursor);
         clearHoveredSymbolHighlight();
         hoveredWord.clear();
@@ -1181,15 +1158,12 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
-    // 检查是否是 Ctrl+左键点击
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
-        // 1) 优先判断是否点击在 `include` 的文件名上
         if (tryJumpToIncludeAtPosition(event->pos())) {
             event->accept();
             return;
         }
 
-        // 2) 检查是否点击在 import 语句中的 package 名称上
         QString pkgName;
         int pkgStart = -1;
         int pkgEnd = -1;
@@ -1199,7 +1173,6 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
             return;
         }
 
-        // 3) 否则走原有的符号跳转逻辑
         QString wordUnderCursor = getWordAtPosition(event->pos());
         if (!wordUnderCursor.isEmpty()) {
             QTextCursor cur = cursorForPosition(event->pos());
@@ -1209,34 +1182,29 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
         }
     }
 
-    // 调用基类处理其他鼠标事件
     QPlainTextEdit::mousePressEvent(event);
 }
 
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
-    // 检查是否按下 Ctrl 键
     bool isCtrlPressed = (event->modifiers() & Qt::ControlModifier);
 
     if (isCtrlPressed != ctrlPressed) {
         ctrlPressed = isCtrlPressed;
 
         if (ctrlPressed) {
-            // Ctrl 刚按下：根据当前鼠标位置更新高亮和光标
             clearHoveredSymbolHighlight();
 
             int incStart = -1;
             int incEnd = -1;
             QString incPath;
             if (getIncludeInfoAtPosition(event->pos(), incStart, incEnd, incPath)) {
-                // 在 `include "..."` 的路径上
                 hoveredWord = incPath;
                 hoveredWordStartPos = incStart;
                 hoveredWordEndPos = incEnd;
                 highlightHoveredSymbol(incPath, incStart, incEnd);
                 viewport()->setCursor(createJumpableCursor());
             } else {
-                // 检查是否在 import 语句中的 package 名称上
                 QString pkgName;
                 int pkgStart = -1;
                 int pkgEnd = -1;
@@ -1268,20 +1236,17 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
                 }
             }
         } else {
-            // 刚从按下 Ctrl 切换为未按：恢复普通 I 型光标并清除高亮
             viewport()->setCursor(Qt::IBeamCursor);
             clearHoveredSymbolHighlight();
             hoveredWord.clear();
         }
     } else if (ctrlPressed) {
-        // Ctrl 持续按下时，随鼠标移动更新高亮和光标
         int incStart = -1;
         int incEnd = -1;
         QString incPath;
         bool onInclude = getIncludeInfoAtPosition(event->pos(), incStart, incEnd, incPath);
 
         if (onInclude) {
-            // 鼠标在 include 路径上
             if (hoveredWord != incPath || hoveredWordStartPos != incStart || hoveredWordEndPos != incEnd) {
                 clearHoveredSymbolHighlight();
                 hoveredWord = incPath;
@@ -1291,14 +1256,12 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
             }
             viewport()->setCursor(createJumpableCursor());
         } else {
-            // 检查是否在 import 语句中的 package 名称上
             QString pkgName;
             int pkgStart = -1;
             int pkgEnd = -1;
             bool onImport = getPackageNameFromImport(event->pos(), pkgName, pkgStart, pkgEnd);
 
             if (onImport) {
-                // 鼠标在 import 语句的 package 名称上
                 if (hoveredWord != pkgName || hoveredWordStartPos != pkgStart || hoveredWordEndPos != pkgEnd) {
                     clearHoveredSymbolHighlight();
                     hoveredWord = pkgName;
@@ -1337,7 +1300,6 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 
 void MyCodeEditor::leaveEvent(QEvent *event)
 {
-    // 鼠标离开编辑器时清除高亮并恢复普通光标
     ctrlPressed = false;
     viewport()->setCursor(Qt::IBeamCursor);
     clearHoveredSymbolHighlight();
@@ -1357,7 +1319,6 @@ QString MyCodeEditor::getWordAtTextPosition(int position)
     QTextCursor cursor = textCursor();
     cursor.setPosition(position);
 
-    // 检查是否在单词中
     if (!cursor.atBlockEnd() && !cursor.atBlockStart()) {
         QChar currentChar = document()->characterAt(position);
         if (!currentChar.isLetterOrNumber() && currentChar != '_') {
@@ -1365,11 +1326,9 @@ QString MyCodeEditor::getWordAtTextPosition(int position)
         }
     }
 
-    // 选择当前单词
     cursor.select(QTextCursor::WordUnderCursor);
     QString word = cursor.selectedText();
 
-    // 验证是否是有效的 sv 标识符
     if (word.isEmpty() || (!word[0].isLetter() && word[0] != '_')) {
         return QString();
     }
@@ -1402,7 +1361,6 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
 
     int posInLine = cursor.position() - block.position();
 
-    // 查找 import 关键字
     int importPos = lineText.indexOf("import");
     if (importPos == -1) {
         return false;
@@ -1418,7 +1376,6 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
     int packageStartInLine = m.capturedStart(1);
     int packageEndInLine = packageStartInLine + matchedPackageName.length();
 
-    // 检查鼠标位置是否在 package 名称范围内
     if (posInLine < packageStartInLine || posInLine >= packageEndInLine) {
         return false;
     }
@@ -1431,7 +1388,6 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
 }
 
 
-// 定义类型优先级（用于跨文件跳转时同名符号排序，数值越小优先级越高）
 static int definitionTypePriority(sym_list::sym_type_e t)
 {
     switch (t) {
@@ -1443,7 +1399,7 @@ static int definitionTypePriority(sym_list::sym_type_e t)
     case sym_list::sym_port_inout:
     case sym_list::sym_port_ref:
     case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport: return 3;  // 端口优先于 reg/wire/logic
+    case sym_list::sym_port_interface_modport: return 3;
     case sym_list::sym_task:
     case sym_list::sym_function: return 4;
     case sym_list::sym_reg:
@@ -1456,7 +1412,7 @@ static int definitionTypePriority(sym_list::sym_type_e t)
     case sym_list::sym_localparam:
     case sym_list::sym_packed_struct:
     case sym_list::sym_unpacked_struct:
-    case sym_list::sym_typedef: return 6;  // 含 typedef enum 枚举类型
+    case sym_list::sym_typedef: return 6;
     case sym_list::sym_struct_member:
     case sym_list::sym_enum_value: return 7;
     default:                     return 10;
@@ -1529,24 +1485,19 @@ void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int
         return;
     }
 
-    // 创建高亮选择
     QTextEdit::ExtraSelection highlight;
     highlight.cursor = textCursor();
     highlight.cursor.setPosition(startPos);
     highlight.cursor.setPosition(endPos, QTextCursor::KeepAnchor);
 
-    // 设置高亮样式 - 蓝色下划线
     highlight.format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
     highlight.format.setUnderlineColor(QColor(0, 100, 200));
     highlight.format.setForeground(QColor(0, 100, 200));
 
-    // 标记这是定义跳转高亮 (使用唯一标识符)
     highlight.format.setProperty(QTextFormat::UserProperty + 1, 1001);
 
-    // 添加到额外选择中
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
-    // 移除之前的定义跳转高亮
     extraSelections.erase(
         std::remove_if(extraSelections.begin(), extraSelections.end(),
             [](const QTextEdit::ExtraSelection &selection) {
@@ -1561,7 +1512,6 @@ void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int
 
 void MyCodeEditor::clearHoveredSymbolHighlight()
 {
-    // 移除定义跳转高亮
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
     int removedCount = 0;
@@ -1628,54 +1578,45 @@ bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
 
 QCursor MyCodeEditor::createJumpableCursor()
 {
-    // 创建绿色对勾图标 - 使用更大的尺寸以便更清晰
     QPixmap pixmap(24, 24);
     pixmap.fill(Qt::transparent);
     
     QPainter painter(&pixmap);
     if (!painter.isActive()) {
-        // 如果绘制器未激活，返回默认光标
         return QCursor(Qt::PointingHandCursor);
     }
     
     painter.setRenderHint(QPainter::Antialiasing);
     
-    // 绘制绿色对勾 - 使用更粗的线条和更亮的绿色
-    QPen pen(QColor(0, 255, 0), 4); // 亮绿色，4像素宽
+    QPen pen(QColor(0, 255, 0), 4);
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
     painter.setPen(pen);
     
-    // 绘制对勾形状（两条线段组成V形对勾）
-    // 第一段：从左上到中间
     painter.drawLine(7, 12, 11, 16);
-    // 第二段：从中间到右下
     painter.drawLine(11, 16, 18, 6);
     
     painter.end();
     
-    return QCursor(pixmap, 12, 12); // 热点在中心
+    return QCursor(pixmap, 12, 12);
 }
 
 QCursor MyCodeEditor::createNonJumpableCursor()
 {
-    // 创建红色叉图标
     QPixmap pixmap(20, 20);
     pixmap.fill(Qt::transparent);
     
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
     
-    // 绘制红色叉
-    QPen pen(QColor(255, 0, 0), 3); // 红色，3像素宽
+    QPen pen(QColor(255, 0, 0), 3);
     pen.setCapStyle(Qt::RoundCap);
     painter.setPen(pen);
     
-    // 绘制X形状（两条对角线）
     painter.drawLine(5, 5, 15, 15);
     painter.drawLine(15, 5, 5, 15);
     
-    return QCursor(pixmap, 10, 10); // 热点在中心
+    return QCursor(pixmap, 10, 10);
 }
 
 bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPos, int &endPos, QString &includePath)
@@ -1689,13 +1630,11 @@ bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPo
 
     int posInLine = cursor.position() - block.position();
 
-    // 严格遵守 SystemVerilog 标准语法：只支持 `` `include "file" `` 形式
     int keywordPos = lineText.indexOf("`include");
     if (keywordPos == -1) {
         return false;
     }
 
-    // 找到 include 之后的第一个双引号
     int firstQuote = lineText.indexOf('"', keywordPos);
     if (firstQuote == -1) {
         return false;
@@ -1705,7 +1644,6 @@ bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPo
         return false;
     }
 
-    // 判断鼠标是否落在引号之间
     if (posInLine <= firstQuote || posInLine >= secondQuote) {
         return false;
     }
@@ -1715,7 +1653,6 @@ bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPo
         return false;
     }
 
-    // 计算文档中的绝对位置（不包含引号，只选中内容本身）
     startPos = block.position() + firstQuote + 1;
     endPos = block.position() + secondQuote;
 
@@ -1742,7 +1679,6 @@ bool MyCodeEditor::openIncludeFile(const QString& includePath)
 
     QString targetPath;
 
-    // 1) 先按当前文件所在目录的相对路径解析
     QString currentFile = getFileName();
     if (!currentFile.isEmpty()) {
         QFileInfo currentInfo(currentFile);
@@ -1752,17 +1688,14 @@ bool MyCodeEditor::openIncludeFile(const QString& includePath)
         }
     }
 
-    // 2) 如果还没找到，并且打开了 workspace，则在 workspace 里搜索
     if (targetPath.isEmpty()) {
         MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
         if (mainWindow && mainWindow->workspaceManager && mainWindow->workspaceManager->isWorkspaceOpen()) {
             QString workspaceRoot = mainWindow->workspaceManager->getWorkspacePath();
-            // 先尝试直接拼接
             QString candidate = QDir(workspaceRoot).absoluteFilePath(includePath);
             if (QFileInfo::exists(candidate)) {
                 targetPath = candidate;
             } else {
-                // 再在 workspace 所有文件中按文件名匹配一次
                 const QStringList allFiles = mainWindow->workspaceManager->getAllFiles();
                 QFileInfo incInfo(includePath);
                 QString incFileName = incInfo.fileName();

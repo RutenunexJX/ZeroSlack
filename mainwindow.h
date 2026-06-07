@@ -46,9 +46,7 @@ public:
     std::unique_ptr<SlangManager> slangManager;
     std::unique_ptr<SmartRelationshipBuilder> relationshipBuilder;
 
-    /** 请求对指定文件内容执行单文件关系分析（可被编辑器去抖后调用，内部会取消未完成任务） */
     void requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
-    /** 延后对已打开文件做符号分析（按 fileName 去抖，替代 SymbolAnalyzer 的 scheduleIncrementalAnalysis） */
     void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
     void cancelScheduledOpenFileAnalysis(const QString& fileName);
 
@@ -103,12 +101,10 @@ private:
     void showAnalysisProgress(const QStringList& files);
     void hideAnalysisProgress();
 
-    /** 阶段1（符号分析）取消标志，由进度对话框取消按钮设置；atomic 供后台线程安全读取 */
     std::atomic<bool> symbolAnalysisCancelled{false};
 
     static const int kFileChangeDebounceMs = 350;
 
-    /** 推迟 relationshipAdded 后的导航刷新，避免主线程在符号分析持写锁时读 sym_list 阻塞 */
     QTimer* relationshipRefreshDeferTimer = nullptr;
 
     void setupNavigationPane();

@@ -10,7 +10,7 @@ RelationshipProgressDialog::RelationshipProgressDialog(QWidget *parent)
     setupConnections();
 
     setModal(true);
-    setWindowTitle("符号关系分析进度");
+    setWindowTitle("Symbol Relationship Analysis Progress");
     setMinimumSize(500, 200);
     resize(600, 300);
 
@@ -39,7 +39,7 @@ void RelationshipProgressDialog::setupUI()
     mainLayout->setSpacing(10);
     mainLayout->setContentsMargins(15, 15, 15, 15);
 
-    statusLabel = new QLabel("准备开始分析SystemVerilog文件的符号关系...", this);
+    statusLabel = new QLabel("Preparing to analyze SystemVerilog symbol relationships...", this);
     statusLabel->setWordWrap(true);
     QFont statusFont = statusLabel->font();
     statusFont.setPointSize(statusFont.pointSize() + 1);
@@ -51,7 +51,7 @@ void RelationshipProgressDialog::setupUI()
     progressBar->setMinimum(0);
     progressBar->setMaximum(100);
     progressBar->setTextVisible(true);
-    progressBar->setFormat("%v / %m 文件 (%p%)");
+    progressBar->setFormat("%v / %m files (%p%)");
 
     speedLabel = new QLabel("", this);
     speedLabel->setMinimumWidth(100);
@@ -72,12 +72,12 @@ void RelationshipProgressDialog::setupUI()
     timeLayout->addWidget(estimatedLabel);
     mainLayout->addLayout(timeLayout);
 
-    statsLabel = new QLabel("已分析: 0个文件, 发现: 0个关系", this);
+    statsLabel = new QLabel("Analyzed: 0 files, Found: 0 relationships", this);
     fileStatsLabel = new QLabel("", this);
     mainLayout->addWidget(statsLabel);
     mainLayout->addWidget(fileStatsLabel);
 
-    detailsGroup = new QGroupBox("详细日志", this);
+    detailsGroup = new QGroupBox("Details", this);
     detailsGroup->setVisible(false);
 
     QVBoxLayout* detailsLayout = new QVBoxLayout(detailsGroup);
@@ -91,13 +91,13 @@ void RelationshipProgressDialog::setupUI()
 
     buttonLayout = new QHBoxLayout();
 
-    detailsButton = new QPushButton("显示详情", this);
+    detailsButton = new QPushButton("Show Details", this);
     detailsButton->setCheckable(true);
 
-    pauseButton = new QPushButton("暂停", this);
+    pauseButton = new QPushButton("Pause", this);
     pauseButton->setEnabled(false);
 
-    cancelButton = new QPushButton("取消", this);
+    cancelButton = new QPushButton("Cancel", this);
 
     buttonLayout->addWidget(detailsButton);
     buttonLayout->addStretch();
@@ -114,17 +114,17 @@ void RelationshipProgressDialog::setupConnections()
 
     connect(pauseButton, &QPushButton::clicked, this, [this]() {
         state.paused = !state.paused;
-        pauseButton->setText(state.paused ? "继续" : "暂停");
+        pauseButton->setText(state.paused ? "Resume" : "Pause");
 
         if (state.paused) {
-            logProgress("⏸️ 分析已暂停");
-            statusLabel->setText("分析已暂停 - 点击'继续'恢复分析");
+        logProgress("Analysis paused");
+            statusLabel->setText("Analysis paused - click Resume to continue");
             if (timeUpdateTimer && timeUpdateTimer->isActive()) {
                 timeUpdateTimer->stop();
             }
         } else {
-            logProgress("▶️ 分析继续");
-            statusLabel->setText("继续分析SystemVerilog文件...");
+            logProgress("Analysis resumed");
+            statusLabel->setText("Continuing SystemVerilog file analysis...");
             if (timeUpdateTimer && !timeUpdateTimer->isActive()) {
                 timeUpdateTimer->start();
             }
@@ -149,22 +149,22 @@ void RelationshipProgressDialog::startAnalysis(int totalFiles)
     state.totalFiles = totalFiles;
     state.cancelled = false;
     state.finished = false;
-        state.paused = false;
+    state.paused = false;
 
     progressBar->setMaximum(totalFiles);
     progressBar->setValue(0);
-    progressBar->setFormat(QString("准备中... (0 / %1 文件)").arg(totalFiles));
+    progressBar->setFormat(QString("Preparing... (0 / %1 files)").arg(totalFiles));
 
-    statusLabel->setText(QString("正在准备分析 %1 个SystemVerilog文件...").arg(totalFiles));
-    currentFileLabel->setText("阶段 1/2: 正在加载符号数据库，请稍候...");
+    statusLabel->setText(QString("Preparing to analyze %1 SystemVerilog files...").arg(totalFiles));
+    currentFileLabel->setText("Stage 1/2: Loading symbol database...");
     speedLabel->setText("");
     estimatedLabel->setText("");
 
     if (config.showDetails) {
         detailsText->clear();
-        logProgress(QString("🚀 开始分析 %1 个SV文件").arg(totalFiles));
-        logProgress("⏳ 阶段1: 正在加载符号数据库...");
-        logProgress("⏳ 阶段1: 初始化关系分析引擎...");
+        logProgress(QString("Starting analysis for %1 SV files").arg(totalFiles));
+        logProgress("Stage 1: Loading symbol database...");
+        logProgress("Stage 1: Initializing relationship analyzer...");
     }
 
     if (timeUpdateTimer) {
@@ -177,7 +177,7 @@ void RelationshipProgressDialog::startAnalysis(int totalFiles)
     }
 
     pauseButton->setEnabled(true);
-    cancelButton->setText("取消");
+    cancelButton->setText("Cancel");
 
     forceShow();
 
@@ -190,7 +190,7 @@ void RelationshipProgressDialog::startAnalysis(int totalFiles)
 void RelationshipProgressDialog::setSymbolAnalysisProgress(int filesDone, int totalFiles)
 {
     if (statsLabel && totalFiles > 0) {
-        statsLabel->setText(QString("阶段1: 已分析 %1/%2 个文件 (符号)").arg(filesDone).arg(totalFiles));
+        statsLabel->setText(QString("Stage 1: Analyzed %1/%2 files (symbols)").arg(filesDone).arg(totalFiles));
     }
 }
 
@@ -206,7 +206,7 @@ void RelationshipProgressDialog::updateProgress(const QString& fileName, int rel
     if (state.finished) {
         if (state.processedFiles < state.totalFiles) {
             state.finished = false;
-            statusLabel->setText("继续分析SystemVerilog文件...");
+            statusLabel->setText("Continuing SystemVerilog file analysis...");
         } else {
             return;
         }
@@ -240,7 +240,7 @@ void RelationshipProgressDialog::updateProgress(const QString& fileName, int rel
     }
 
     QString sizeStr = formatFileSize(fileSize);
-    QString currentText = QString("当前: %1 (%2个关系, %3)")
+    QString currentText = QString("Current: %1 (%2 relationships, %3)")
                          .arg(shortFileName)
                          .arg(relationshipsFound)
                          .arg(sizeStr);
@@ -249,11 +249,11 @@ void RelationshipProgressDialog::updateProgress(const QString& fileName, int rel
     updateStatistics();
 
     if (config.showDetails) {
-        QString logMessage = QString("✅ %1: %2个关系")
+        QString logMessage = QString("%1: %2 relationships")
                            .arg(shortFileName)
                            .arg(relationshipsFound);
         if (relationshipsFound > 100) {
-            logMessage += " 🔥";
+            logMessage += " (large)";
         }
         logProgress(logMessage);
     }
@@ -289,17 +289,17 @@ void RelationshipProgressDialog::finishAnalysis()
     }
 
     if (state.cancelled) {
-        statusLabel->setText("❌ 符号关系分析已取消");
-        logProgress("❌ 分析被用户取消");
+        statusLabel->setText("Symbol relationship analysis cancelled");
+        logProgress("Analysis cancelled by user");
     } else {
-        statusLabel->setText("✅ 符号关系分析完成!");
-        logProgress(QString("🎉 分析完成! 总计发现 %1 个关系").arg(state.totalRelationships));
+        statusLabel->setText("Symbol relationship analysis complete!");
+        logProgress(QString("Analysis complete! Found %1 relationships").arg(state.totalRelationships));
 
-        currentFileLabel->setText(QString("分析完成 - 总计 %1 个关系")
+        currentFileLabel->setText(QString("Analysis complete - %1 relationships total")
                                  .arg(state.totalRelationships));
     }
 
-    cancelButton->setText("关闭");
+    cancelButton->setText("Close");
     pauseButton->setEnabled(false);
 
     emit finished();
@@ -319,18 +319,18 @@ void RelationshipProgressDialog::showError(const QString& fileName, const QStrin
     state.totalErrors++;
 
     QString shortFileName = QFileInfo(fileName).fileName();
-    QString errorMsg = QString("❌ %1: %2").arg(shortFileName, error);
+    QString errorMsg = QString("%1: %2").arg(shortFileName, error);
 
     if (config.showDetails) {
         logProgress(errorMsg);
     }
 
-    fileStatsLabel->setText(QString("错误: %1个文件").arg(state.totalErrors));
+    fileStatsLabel->setText(QString("Errors: %1 files").arg(state.totalErrors));
 }
 
 void RelationshipProgressDialog::updateStatistics()
 {
-    statsLabel->setText(QString("已分析: %1/%2个文件, 发现: %3个关系")
+    statsLabel->setText(QString("Analyzed: %1/%2 files, Found: %3 relationships")
                        .arg(state.processedFiles)
                        .arg(state.totalFiles)
                        .arg(state.totalRelationships));
@@ -339,7 +339,7 @@ void RelationshipProgressDialog::updateStatistics()
     double avgRelations = state.processedFiles > 0 ?
         (double)state.totalRelationships / state.processedFiles : 0;
 
-    fileStatsLabel->setText(QString("总大小: %1, 平均关系数: %2")
+    fileStatsLabel->setText(QString("Total size: %1, Average relationships: %2")
                            .arg(totalSizeStr)
                            .arg(QString::number(avgRelations, 'f', 1)));
 }
@@ -367,7 +367,7 @@ void RelationshipProgressDialog::updateEstimatedTime()
 
     if (remainingFiles > 0) {
         qint64 estimatedRemaining = avgTimePerFile * remainingFiles / 1000;
-        estimatedLabel->setText(QString("预计剩余: %1").arg(formatTime(estimatedRemaining)));
+        estimatedLabel->setText(QString("Remaining: %1").arg(formatTime(estimatedRemaining)));
     } else {
         estimatedLabel->setText("");
     }
@@ -383,18 +383,18 @@ void RelationshipProgressDialog::onCancelClicked()
     state.cancelled = true;
     emit cancelled();
 
-    statusLabel->setText("正在取消分析...");
+    statusLabel->setText("Cancelling analysis...");
     cancelButton->setEnabled(false);
     pauseButton->setEnabled(false);
 
-    logProgress("🛑 用户请求取消分析");
+    logProgress("User requested cancellation");
 }
 
 void RelationshipProgressDialog::onDetailsToggled(bool show)
 {
     config.showDetails = show;
     detailsGroup->setVisible(show);
-    detailsButton->setText(show ? "隐藏详情" : "显示详情");
+    detailsButton->setText(show ? "Hide Details" : "Show Details");
 
     if (show) {
         int newHeight = height() + 150;
@@ -422,14 +422,14 @@ void RelationshipProgressDialog::logProgress(const QString& message)
 QString RelationshipProgressDialog::formatTime(qint64 seconds)
 {
     if (seconds < 60) {
-        return QString("%1秒").arg(seconds);
+        return QString("%1s").arg(seconds);
     } else if (seconds < 3600) {
-        return QString("%1分%2秒").arg(seconds / 60).arg(seconds % 60);
+        return QString("%1m %2s").arg(seconds / 60).arg(seconds % 60);
     } else {
         int hours = seconds / 3600;
         int minutes = (seconds % 3600) / 60;
         int secs = seconds % 60;
-        return QString("%1时%2分%3秒").arg(hours).arg(minutes).arg(secs);
+        return QString("%1h %2m %3s").arg(hours).arg(minutes).arg(secs);
     }
 }
 
@@ -447,9 +447,9 @@ QString RelationshipProgressDialog::formatFileSize(qint64 bytes)
 QString RelationshipProgressDialog::formatSpeed(double filesPerSecond)
 {
     if (filesPerSecond < 1.0) {
-        return QString("%1/分钟").arg(QString::number(filesPerSecond * 60, 'f', 1));
+        return QString("%1/min").arg(QString::number(filesPerSecond * 60, 'f', 1));
     } else {
-        return QString("%1/秒").arg(QString::number(filesPerSecond, 'f', 1));
+        return QString("%1/s").arg(QString::number(filesPerSecond, 'f', 1));
     }
 }
 

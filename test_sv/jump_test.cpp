@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
     expectBool("canJump(DATA_WIDTH) [module param]", ed.canJumpToDefinition("DATA_WIDTH"), true);
     expectBool("canJump(a) [only in adder] isolated",ed.canJumpToDefinition("a"),       false);
     expectBool("canJump(nonexistent)",               ed.canJumpToDefinition("nope_xyz"),false);
-    // Type-name-scoped symbols (current behavior — surfaces the moduleScope vs module filter):
+    // Type-name-scoped symbols (current behavior - surfaces the moduleScope vs module filter):
     expectBool("canJump(STATE_IDLE) [enum value]",   ed.canJumpToDefinition("STATE_IDLE"), true);
     expectBool("canJump(red) [struct member]",       ed.canJumpToDefinition("red"),     true);
 

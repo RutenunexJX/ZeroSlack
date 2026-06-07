@@ -285,7 +285,6 @@ bool SymbolAnalyzer::hasSignificantChanges(const QString& oldContent, const QStr
         QLatin1String("task"), QLatin1String("endtask"), QLatin1String("function"), QLatin1String("endfunction")
     };
 
-    // 收集「含结构关键字的行」的集合（去序、忽略空白）。
     auto significantLines = [&](const QString& content) {
         QStringList out;
         const QStringList lines = content.split(QLatin1Char('\n'));
@@ -304,10 +303,6 @@ bool SymbolAnalyzer::hasSignificantChanges(const QString& oldContent, const QStr
         return out;
     };
 
-    // 仅当「结构行集合」变化时才算显著变更。
-    // 修复：原实现按行号逐行比较，插入/删除一个换行会使后续所有行错位，而这些行多含 reg/wire/logic
-    // 等关键字，于是几乎任何编辑（哪怕只敲回车）都被误判为显著、触发关系分析。改为比较去序的结构行集合后，
-    // 插入空行 / 行号平移不再触发分析；只有真正增删/修改结构声明才触发。
     return significantLines(oldContent) != significantLines(newContent);
 }
 

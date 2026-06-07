@@ -34,17 +34,12 @@ public:
 
     void showAutoComplete();
     void hideAutoComplete();
-    /** 刷新作用域背景与当前行高亮（符号分析完成后由 MainWindow 调用） */
     void refreshScopeAndCurrentLineHighlight();
 
-    /** 将全局鼠标移动到当前光标位置（跳转后由本类或 MainWindow 调用） */
     void moveMouseToCursor();
 
-    /** 作用域条带用：块顶部的 Y 坐标（文档坐标系，与 contentOffset 一致） */
     qreal getBlockTopY(int blockNumber) const;
-    /** 作用域条带用：块高度 */
     qreal getBlockHeight(int blockNumber) const;
-    /** 作用域条带用：文档总高度（像素） */
     qreal getDocumentHeightPx() const;
 
     void clearAlternateModeBuffer();
@@ -59,7 +54,6 @@ private slots:
     void onTextChanged();
     void onAutoCompleteTimer();
     void onCompletionActivated(const QModelIndex &index);
-    /** 把文档编辑增量同步到 Tree-sitter 实时树（在高亮器重绘前先更新，故连接顺序须早于高亮器）。 */
     void onTsContentsChange(int position, int charsRemoved, int charsAdded);
 
 protected:
@@ -79,7 +73,6 @@ private:
     void initAutoComplete();
     int getLineNumberWidgetWidth();
 
-    /** 当前模块名（光标处）——由 live tree-sitter 即时求出，替代防抖的 Slang getCurrentModule(Scope)。 */
     QString currentModuleNameAt(int charPos) const;
     QString getWordUnderCursor();
     QStringList getCompletionSuggestions(const QString &prefix);
@@ -88,8 +81,6 @@ private:
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
 
-    // 实时语法层：每编辑器一份 live tree-sitter 树（高亮 + 后续实时 scope）。编辑器在 contentsChange
-    // 时增量更新它，再由 MyHighlighter 读取出 span 上色。
     TSDocument m_tsdoc;
     MyHighlighter *m_highlighter = nullptr;
 
@@ -99,7 +90,6 @@ private:
     QString currentWord;
     int wordStartPos;
 
-    // 关系分析去抖：连续输入时重置定时器，停止输入一段时间后再触发单文件关系分析
     QTimer *relationshipAnalysisDebounceTimer;
     static const int RelationshipAnalysisDebounceMs = 2000;
 

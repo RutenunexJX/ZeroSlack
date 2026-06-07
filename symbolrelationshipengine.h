@@ -54,9 +54,7 @@ public:
     QList<int> getInfluencedSymbols(int symbolId, int depth = 2) const;
     QList<int> getSymbolHierarchy(int rootSymbolId) const;
 
-    /** 批量提交开始：在 endUpdate 之前不调用 invalidateCache，避免 O(N^2) */
     void beginUpdate();
-    /** 批量提交结束：按需失效缓存一次 */
     void endUpdate();
     void buildFileRelationships(const QString& fileName);
     void invalidateFileRelationships(const QString& fileName);
@@ -75,7 +73,6 @@ signals:
     void relationshipsCleared();
 
 private slots:
-    /** 供非主线程调用 addRelationship 时在主线程发射 relationshipAdded，避免排队传递 RelationType */
     void emitRelationshipAddedQueued(int fromSymbolId, int toSymbolId, int typeAsInt);
 
 private:
@@ -104,7 +101,6 @@ private:
 
     mutable QHash<QPair<int, RelationType>, QList<int>> queryCache;
     mutable bool cacheValid = true;
-    /** 批量提交深度，>0 时不执行 per-item 的 invalidateCache* */
     int updateDepth = 0;
 
     void invalidateCache();
@@ -123,7 +119,6 @@ private:
 
 SymbolRelationshipEngine::RelationType stringToRelationshipType(const QString& typeStr);
 
-// 供跨线程/队列信号槽传递 RelationType 使用（配合 main 中 qRegisterMetaType）
 Q_DECLARE_METATYPE(SymbolRelationshipEngine::RelationType)
 
 #endif // SYMBOLRELATIONSHIPENGINE_H

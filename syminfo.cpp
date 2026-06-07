@@ -123,7 +123,6 @@ void sym_list::setRelationshipEngine(SymbolRelationshipEngine* engine)
 {
     relationshipEngine = engine;
 
-    // 如果已有符号数据，重建所有关系
     if (engine && !symbolDatabase.isEmpty()) {
         rebuildAllRelationships();
     }
@@ -199,9 +198,6 @@ void sym_list::analyzeModuleContainment(const QString& fileName)
 
                 int symbolIndex = symbolIdToIndex[symbol.symbolId];
                 if (symbolIndex < symbolDatabase.size()) {
-                    // moduleScope 现由 Slang 精确提供（含 task/function 子程序作用域、struct/enum 类型名）。
-                    // 不再按行范围粗暴覆盖（isSymbolInModule 只看 startLine，会把函数内部符号误判进模块、
-                    // 把 moduleScope 从子程序名改成模块名）。仅当 moduleScope 为空时才回退到所在模块名。
                     if (symbolDatabase[symbolIndex].moduleScope.isEmpty()) {
                         symbolDatabase[symbolIndex].moduleScope = module.symbolName;
                         symbolDatabase[symbolIndex].scopeLevel = 1;
@@ -234,7 +230,6 @@ QList<sym_list::SymbolInfo> sym_list::findSymbolsByName(const QString& symbolNam
 int sym_list::findSymbolIdByName(const QString& symbolName) const
 {
     if (s_holdingWriteLock) {
-        // 调用方已持写锁，不再加读锁，避免同一线程死锁
         if (symbolNameIndex.contains(symbolName)) {
             const QList<int>& indices = symbolNameIndex[symbolName];
             if (!indices.isEmpty() && indices.first() < symbolDatabase.size()) {
@@ -261,7 +256,7 @@ QStringList sym_list::getSymbolNamesByType(sym_type_e symbolType)
         return cachedSymbolNamesByType[symbolType];
     }
 
-    return QStringList(); // 空列表
+    return QStringList();
 }
 
 QSet<QString> sym_list::getUniqueSymbolNames()
@@ -854,12 +849,8 @@ int sym_list::findEndModuleLine(const QString &fileName, const SymbolInfo &modul
 
     QStringList lines = content.split('\n');
     int moduleDepth = 0;
-    // startLine 为 1-based（Slang/Tree-sitter 均如此），module 关键字位于 0-based 索引 startLine-1。
-    // 从该行开始扫描，确保计入本模块自身的 module 关键字（depth 1），否则首个 endmodule 会使 depth
-    // 变为 -1 而永远 != 0，导致返回 -1（光标在模块内却被判为「无模块」）。
     int scanStart = moduleSymbol.startLine - 1;
     if (scanStart < 0) scanStart = 0;
-    // 增量维护行首偏移，避免 O(lines^2) 导致大文件卡死
     int lineStartPos = 0;
     for (int j = 0; j < scanStart && j < lines.size(); ++j)
         lineStartPos += lines[j].length() + 1;

@@ -42,7 +42,6 @@ void ScopeBandWidget::connectEditor()
             this, &ScopeBandWidget::onEditorUpdateRequest, Qt::UniqueConnection);
     connect(m_editor->verticalScrollBar(), &QScrollBar::valueChanged,
             this, &ScopeBandWidget::onEditorScrollValueChanged, Qt::UniqueConnection);
-    // 行数变化时立即刷新条带，使 logic 绿块马上跟上；卡顿由 updateRequest 合并解决
     m_blockCountConnection = connect(m_editor, &QPlainTextEdit::blockCountChanged,
                                      this, [this](int) { refresh(); });
 }
@@ -61,11 +60,9 @@ void ScopeBandWidget::onEditorUpdateRequest(const QRect& rect, int dy)
 {
     Q_UNUSED(rect);
     if (dy != 0) {
-        // 仅滚动：只同步滚动条，不重建场景，避免频繁 refresh() 导致卡顿
         syncScrollFromEditor();
         return;
     }
-    // 内容/布局变化：合并多次 updateRequest 为一次 refresh，避免卡顿（行数变化由 blockCountChanged 立即刷新）
     if (!m_refreshScheduled) {
         m_refreshScheduled = true;
         QTimer::singleShot(0, this, [this]() {
