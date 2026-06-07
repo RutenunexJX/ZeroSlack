@@ -13,6 +13,7 @@
 #include "symbolrelationshipengine.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
+#include "searchservice.h"
 #include "syminfo.h"
 #include "version.h"
 #include <QtConcurrent/QtConcurrent>
@@ -103,7 +104,6 @@ void MainWindow::setupManagerConnections()
             relationshipBuilder->resetCancellation();
             const QStringList svFiles = project.systemVerilogFiles;
             out.reserve(svFiles.size());
-            sym_list* db = sym_list::getInstance();
             for (const QString& filePath : svFiles) {
                 if (relationshipBuilder->isCancelled())
                     break;
@@ -111,7 +111,13 @@ void MainWindow::setupManagerConnections()
                 if (!file.open(QIODevice::ReadOnly | QFile::Text))
                     continue;
                 const QString content = QTextStream(&file).readAll();
-                QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(filePath);
+                SearchQuery query;
+                query.fileName = filePath;
+                QList<sym_list::SymbolInfo> fs;
+                const QList<SearchResult> results = SearchService::getInstance()->findSymbols(query);
+                fs.reserve(results.size());
+                for (const SearchResult& result : results)
+                    fs.append(result.symbol);
                 out.append({filePath, relationshipBuilder->computeRelationships(filePath, content, fs)});
             }
             return out;
@@ -651,8 +657,13 @@ void MainWindow::submitSingleFileRelationshipAnalysis(const QString& fileName, c
     pendingRelationshipFileName = fileName;
     relationshipBuilder->resetCancellation();
     QFuture<QVector<RelationshipToAdd>> future = QtConcurrent::run([this, fileName, content]() {
-        sym_list* db = sym_list::getInstance();
-        QList<sym_list::SymbolInfo> fs = db->findSymbolsByFileName(fileName);
+        SearchQuery query;
+        query.fileName = fileName;
+        QList<sym_list::SymbolInfo> fs;
+        const QList<SearchResult> results = SearchService::getInstance()->findSymbols(query);
+        fs.reserve(results.size());
+        for (const SearchResult& result : results)
+            fs.append(result.symbol);
         return relationshipBuilder->computeRelationships(fileName, content, fs);
     });
     relationshipSingleFileWatcher->setFuture(future);

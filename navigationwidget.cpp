@@ -31,66 +31,17 @@ void NavigationWidget::updateFileHierarchy(const QStringList& files)
     populateFileTree();
 }
 
-void NavigationWidget::updateModuleHierarchy(const QHash<QString, QStringList>& modulesByFile)
+void NavigationWidget::updateModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy)
 {
-    currentModuleHierarchy = modulesByFile;
+    currentModuleHierarchy = hierarchy;
     populateModuleTree();
 }
 
-void NavigationWidget::updateSymbolHierarchy(const QHash<sym_list::sym_type_e, QStringList>& symbolsByType)
+void NavigationWidget::updateSymbolHierarchy(const QList<SymbolOutlineGroup>& symbolGroups)
 {
-    currentSymbolHierarchy = symbolsByType;
+    currentSymbolHierarchy = symbolGroups;
     populateSymbolTree();
 }
-
-void NavigationWidget::updateModuleHierarchyForFile(const QString& fileName, const QStringList& modules)
-{
-    currentModuleHierarchy[fileName] = modules;
-
-    // 查找已有文件节点（UserRole 存完整路径）
-    QTreeWidgetItem* fileItem = nullptr;
-    for (int i = 0; i < moduleTreeWidget->topLevelItemCount(); ++i) {
-        QTreeWidgetItem* top = moduleTreeWidget->topLevelItem(i);
-        if (top->data(0, Qt::UserRole).toString() == fileName) {
-            fileItem = top;
-            break;
-        }
-    }
-
-    if (!fileItem) {
-        // 无该文件节点则新建
-        fileItem = new QTreeWidgetItem(moduleTreeWidget);
-        fileItem->setText(0, QFileInfo(fileName).fileName());
-        fileItem->setIcon(0, getFileIcon(fileName));
-        fileItem->setData(0, Qt::UserRole, fileName);
-        fileItem->setData(0, Qt::UserRole + 1, true);
-        fileItem->setExpanded(true);
-    }
-
-    // 移除旧子节点
-    while (fileItem->childCount() > 0) {
-        delete fileItem->takeChild(0);
-    }
-
-    // 按当前搜索过滤添加模块子节点
-    for (const QString& moduleName : modules) {
-        if (!currentSearchFilter.isEmpty() &&
-            !moduleName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
-            continue;
-        }
-        QTreeWidgetItem* moduleItem = createModuleItem(moduleName, fileName);
-        fileItem->addChild(moduleItem);
-    }
-
-    // 若过滤后无子节点且列表为空，可隐藏或保留空节点；若模块列表为空则删除文件节点
-    if (modules.isEmpty() && fileItem->childCount() == 0) {
-        int idx = moduleTreeWidget->indexOfTopLevelItem(fileItem);
-        if (idx >= 0) {
-            delete moduleTreeWidget->takeTopLevelItem(idx);
-        }
-    }
-}
-
 void NavigationWidget::highlightFile(const QString& filePath)
 {
     currentHighlightedFile = filePath;
@@ -184,31 +135,12 @@ void NavigationWidget::onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int colu
 {
     Q_UNUSED(column)
 
-    if (!item || item->childCount() > 0) return; // 忽略父节点
+    if (!item || item->childCount() > 0) return;
 
-    QString symbolName = item->text(0);
-    sym_list::sym_type_e symbolType = static_cast<sym_list::sym_type_e>(
-        item->data(0, Qt::UserRole).toInt());
-
-    // 创建SymbolInfo对象用于导航
-    sym_list::SymbolInfo symbol;
-    symbol.symbolName = symbolName;
-    symbol.symbolType = symbolType;
-
-    // 尝试从symbol list中获取完整信息
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
-
-    for (const sym_list::SymbolInfo& foundSymbol : std::as_const(symbols)) {
-        if (foundSymbol.symbolType == symbolType) {
-            symbol = foundSymbol;
-            break;
-        }
-    }
-
-    emit symbolDoubleClicked(symbol);
+    const int payloadId = item->data(0, Qt::UserRole + 1).toInt();
+    if (symbolItemPayloads.contains(payloadId))
+        emit symbolDoubleClicked(symbolItemPayloads.value(payloadId));
 }
-
 void NavigationWidget::setupUI()
 {
     // 主布局
@@ -379,43 +311,39 @@ void NavigationWidget::populateModuleTree()
         return;
     }
 
-    // 按文件组织模块
-    for (auto it = currentModuleHierarchy.begin(); it != currentModuleHierarchy.end(); ++it) {
-        const QString& fileName = it.key();
-        const QStringList& modules = it.value();
+    for (const ModuleHierarchyGroup& group : std::as_const(currentModuleHierarchy)) {
+        if (group.childModules.isEmpty())
+            continue;
 
-        if (modules.isEmpty()) continue;
+        QTreeWidgetItem* rootItem = new QTreeWidgetItem(moduleTreeWidget);
+        const bool rootIsFile = group.rootKind == ModuleHierarchyRootKind::FileGroup;
+        rootItem->setText(0, group.rootDisplayName);
+        rootItem->setIcon(0, rootIsFile ? getFileIcon(group.rootName) : getSymbolIcon(sym_list::sym_module));
+        rootItem->setData(0, Qt::UserRole, group.rootName);
+        rootItem->setData(0, Qt::UserRole + 1, rootIsFile);
+        rootItem->setToolTip(0, group.rootToolTip);
+        rootItem->setExpanded(true);
 
-        // 创建文件节点（UserRole 存完整路径，便于局部更新时查找）
-        QTreeWidgetItem* fileItem = new QTreeWidgetItem(moduleTreeWidget);
-        fileItem->setText(0, QFileInfo(fileName).fileName());
-        fileItem->setIcon(0, getFileIcon(fileName));
-        fileItem->setData(0, Qt::UserRole, fileName);
-        fileItem->setData(0, Qt::UserRole + 1, true); // 标记为文件节点
-        fileItem->setExpanded(true);
-
-        // 添加模块子节点
-        for (const QString& moduleName : modules) {
-            // 应用搜索过滤器
-            if (!currentSearchFilter.isEmpty() &&
-                !moduleName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
+        for (const QString& moduleName : group.childModules) {
+            if (!currentSearchFilter.isEmpty()
+                && !moduleName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
                 continue;
             }
 
-            QTreeWidgetItem* moduleItem = createModuleItem(moduleName, fileName);
-            fileItem->addChild(moduleItem);
+            QTreeWidgetItem* moduleItem = createModuleItem(moduleName, group.rootName);
+            rootItem->addChild(moduleItem);
         }
 
-        // 如果文件节点没有子节点（被过滤掉了），则删除文件节点
-        if (fileItem->childCount() == 0) {
-            delete fileItem;
-        }
+        if (rootItem->childCount() == 0)
+            delete rootItem;
     }
 }
 
 void NavigationWidget::populateSymbolTree()
 {
     symbolTreeWidget->clear();
+    symbolItemPayloads.clear();
+    nextSymbolItemPayloadId = 1;
 
     if (currentSymbolHierarchy.isEmpty()) {
         QTreeWidgetItem* emptyItem = new QTreeWidgetItem(symbolTreeWidget);
@@ -424,69 +352,33 @@ void NavigationWidget::populateSymbolTree()
         return;
     }
 
-    // 按符号类型组织（顺序即大纲分组顺序）
-    static const QList<sym_list::sym_type_e> orderedTypes = {
-        sym_list::sym_module,
-        sym_list::sym_parameter,
-        sym_list::sym_localparam,
-        sym_list::sym_port_input,
-        sym_list::sym_port_output,
-        sym_list::sym_port_inout,
-        sym_list::sym_port_ref,
-        sym_list::sym_reg,
-        sym_list::sym_wire,
-        sym_list::sym_logic,
-        sym_list::sym_typedef,
-        sym_list::sym_enum,
-        sym_list::sym_enum_var,
-        sym_list::sym_enum_value,
-        sym_list::sym_packed_struct,
-        sym_list::sym_unpacked_struct,
-        sym_list::sym_packed_struct_var,
-        sym_list::sym_unpacked_struct_var,
-        sym_list::sym_struct_member,
-        sym_list::sym_task,
-        sym_list::sym_function,
-        sym_list::sym_inst
-    };
+    for (const SymbolOutlineGroup& group : std::as_const(currentSymbolHierarchy)) {
+        if (group.symbols.isEmpty()) continue;
 
-    for (sym_list::sym_type_e symbolType : orderedTypes) {
-        if (!currentSymbolHierarchy.contains(symbolType)) continue;
-
-        const QStringList& symbols = currentSymbolHierarchy[symbolType];
-        if (symbols.isEmpty()) continue;
-
-        // 创建类型节点
         QTreeWidgetItem* typeItem = new QTreeWidgetItem(symbolTreeWidget);
-        typeItem->setText(0, QString("%1 (%2)").arg(getSymbolTypeDisplayName(symbolType)).arg(symbols.size()));
-        typeItem->setIcon(0, getSymbolIcon(symbolType));
+        typeItem->setText(0, QString("%1 (%2)").arg(getSymbolTypeDisplayName(group.symbolType)).arg(group.symbols.size()));
+        typeItem->setIcon(0, getSymbolIcon(group.symbolType));
         typeItem->setExpanded(true);
         typeItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
 
-        // 添加符号子节点
         int addedCount = 0;
-        for (const QString& symbolName : symbols) {
-            // 应用搜索过滤器
-            if (!currentSearchFilter.isEmpty() &&
-                !symbolName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
+        for (const sym_list::SymbolInfo& symbol : group.symbols) {
+            if (!currentSearchFilter.isEmpty()
+                && !symbol.symbolName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
                 continue;
             }
 
-            QTreeWidgetItem* symbolItem = createSymbolItem(symbolName, symbolType);
+            QTreeWidgetItem* symbolItem = createSymbolItem(symbol);
             typeItem->addChild(symbolItem);
             addedCount++;
         }
 
-        // 更新类型节点的计数
-        typeItem->setText(0, QString("%1 (%2)").arg(getSymbolTypeDisplayName(symbolType)).arg(addedCount));
+        typeItem->setText(0, QString("%1 (%2)").arg(getSymbolTypeDisplayName(group.symbolType)).arg(addedCount));
 
-        // 如果类型节点没有子节点（被过滤掉了），则删除类型节点
-        if (typeItem->childCount() == 0) {
+        if (typeItem->childCount() == 0)
             delete typeItem;
-        }
     }
 }
-
 void NavigationWidget::applySearchFilter()
 {
     // 重新填充当前活动的树
@@ -529,14 +421,17 @@ QTreeWidgetItem* NavigationWidget::createModuleItem(const QString& moduleName, c
     return item;
 }
 
-QTreeWidgetItem* NavigationWidget::createSymbolItem(const QString& symbolName, sym_list::sym_type_e symbolType)
+QTreeWidgetItem* NavigationWidget::createSymbolItem(const sym_list::SymbolInfo& symbol)
 {
     QTreeWidgetItem* item = new QTreeWidgetItem();
+    const int payloadId = nextSymbolItemPayloadId++;
+    symbolItemPayloads.insert(payloadId, symbol);
 
-    item->setText(0, symbolName);
-    item->setIcon(0, getSymbolIcon(symbolType));
-    item->setData(0, Qt::UserRole, static_cast<int>(symbolType));
-    item->setToolTip(0, QString("%1: %2").arg(getSymbolTypeDisplayName(symbolType), symbolName));
+    item->setText(0, symbol.symbolName);
+    item->setIcon(0, getSymbolIcon(symbol.symbolType));
+    item->setData(0, Qt::UserRole, static_cast<int>(symbol.symbolType));
+    item->setData(0, Qt::UserRole + 1, payloadId);
+    item->setToolTip(0, QString("%1: %2").arg(getSymbolTypeDisplayName(symbol.symbolType), symbol.symbolName));
 
     return item;
 }

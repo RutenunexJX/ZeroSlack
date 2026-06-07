@@ -2,10 +2,21 @@
 
 #include "completionmanager.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QSet>
 #include <algorithm>
 
 std::unique_ptr<SemanticIndex> SemanticIndex::instance = nullptr;
+
+namespace {
+QString normalizedFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+}
 
 SemanticIndex* SemanticIndex::getInstance()
 {
@@ -34,7 +45,20 @@ sym_list* SemanticIndex::symbolDatabase() const
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) const
 {
     sym_list* db = symbolDatabase();
-    return fileName.isEmpty() ? db->getAllSymbols() : db->findSymbolsByFileName(fileName);
+    if (fileName.isEmpty())
+        return db->getAllSymbols();
+
+    QList<sym_list::SymbolInfo> symbols = db->findSymbolsByFileName(fileName);
+    if (!symbols.isEmpty())
+        return symbols;
+
+    const QString normalizedTarget = normalizedFileName(fileName);
+    const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        if (normalizedFileName(symbol.fileName) == normalizedTarget)
+            symbols.append(symbol);
+    }
+    return symbols;
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e type) const
@@ -118,11 +142,14 @@ QList<sym_list::SymbolInfo> SemanticIndex::sortedDefinitions(
     const SemanticQueryContext& context) const
 {
     QList<sym_list::SymbolInfo> sorted = symbols;
+    const QString normalizedContextFile = normalizedFileName(context.fileName);
     std::stable_sort(sorted.begin(), sorted.end(),
-                     [&context](const sym_list::SymbolInfo& a, const sym_list::SymbolInfo& b) {
-        auto score = [&context](const sym_list::SymbolInfo& s) {
+                     [&context, &normalizedContextFile](const sym_list::SymbolInfo& a,
+                                                        const sym_list::SymbolInfo& b) {
+        auto score = [&context, &normalizedContextFile](const sym_list::SymbolInfo& s) {
             int value = 0;
-            if (!context.fileName.isEmpty() && s.fileName == context.fileName)
+            if (!normalizedContextFile.isEmpty()
+                && normalizedFileName(s.fileName) == normalizedContextFile)
                 value += 100;
             if (!context.moduleName.isEmpty() && s.moduleScope == context.moduleName)
                 value += 50;

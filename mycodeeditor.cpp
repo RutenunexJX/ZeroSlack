@@ -821,22 +821,16 @@ void MyCodeEditor::onAutoCompleteTimer()
 
     QString prefix = getWordUnderCursor();
     if (prefix.length() >= 1) {
-        QStringList suggestions = getCompletionSuggestions(prefix);
-        QList<sym_list::SymbolInfo> symbolInfoList;
-        sym_list* symbolList = sym_list::getInstance();
+        CompletionQuery query;
+        query.prefix = prefix;
+        query.fileName = getFileName();
+        query.moduleName = currentModuleNameAt(cursor.position());
+        query.cursorLine = cursor.block().blockNumber() + 1;
+        query.cursorPosition = cursor.position();
 
-        for (const QString &suggestion : suggestions) {
-            QList<sym_list::SymbolInfo> matchingSymbols = symbolList->findSymbolsByName(suggestion);
-            if (!matchingSymbols.isEmpty()) {
-                symbolInfoList.append(matchingSymbols.first());
-            } else {
-                sym_list::SymbolInfo dummySymbol;
-                dummySymbol.symbolName = suggestion;
-                dummySymbol.symbolType = sym_list::sym_user;
-                symbolInfoList.append(dummySymbol);
-            }
-        }
-
+        QStringList suggestions = completionService->findCompletions(query);
+        QList<sym_list::SymbolInfo> symbolInfoList =
+            completionService->findCompletionSymbols(query);
         completionModel->updateCompletions(suggestions, symbolInfoList, prefix, CompletionModel::SymbolCompletion);
         showAutoComplete();
     }
@@ -1515,116 +1509,6 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
     emit definitionJumpRequested(result.symbol.symbolName,
                                  result.symbol.fileName,
                                  result.symbol.startLine);
-    return;
-
-    sym_list* symbolList = sym_list::getInstance();
-    if (!symbolList) {
-        return;
-    }
-
-    const QString currentFile = getFileName();
-    QString currentModuleName = currentModuleNameAt(cursorPosition >= 0 ? cursorPosition : textCursor().position());
-
-    QString structTypeNameForMember;
-    QString lineUpToCursor;
-    QString varName, memberPrefix;
-    if (cursorPosition >= 0) {
-        QTextBlock block = document()->findBlock(cursorPosition);
-        const int posInBlock = cursorPosition - block.position();
-        lineUpToCursor = block.text().left(posInBlock).trimmed();
-        CompletionManager* manager = CompletionManager::getInstance();
-        bool try1 = manager->tryParseStructMemberContext(lineUpToCursor, varName, memberPrefix);
-        if (try1 && !varName.isEmpty()) {
-            QString mod = currentModuleNameAt(cursorPosition);
-            structTypeNameForMember = manager->getStructTypeForVariable(varName, mod);
-        }
-    }
-    // 作用域限定：在模块内时只考虑当前模块的符号，避免跨模块跳转（如两个模块都有 clk_main 时只跳本模块）
-    auto inScope = [&currentModuleName](const sym_list::SymbolInfo& s) {
-        if (currentModuleName.isEmpty()) return true;
-        return s.moduleScope == currentModuleName;
-    };
-
-    auto filterStructMemberByType = [&structTypeNameForMember](const sym_list::SymbolInfo& symbol) {
-        if (structTypeNameForMember.isEmpty()) return false;
-        return symbol.symbolType == sym_list::sym_struct_member && symbol.moduleScope != structTypeNameForMember;
-    };
-
-    // ---------- Step 1: 本地搜索（仅当前文件），在模块内时仅当前模块符号 ----------
-    QList<sym_list::SymbolInfo> localSymbols = symbolList->findSymbolsByFileName(currentFile);
-    int sameNameCount = 0;
-    int memberSymbolCount = 0;
-    for (const sym_list::SymbolInfo& s : std::as_const(localSymbols)) {
-        if (s.symbolName != symbolName) continue;
-        sameNameCount++;
-        if (s.symbolType == sym_list::sym_struct_member) memberSymbolCount++;
-    }
-    sym_list::SymbolInfo localBest;
-    bool foundLocal = false;
-    int localBestPriority = 999;
-    int localCandidateCount = 0;
-    for (const sym_list::SymbolInfo& symbol : std::as_const(localSymbols)) {
-        if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
-            continue;
-        }
-        if (filterStructMemberByType(symbol)) continue;  // 结构体成员按“变量.成员”解析出的类型过滤
-        if (symbol.symbolType != sym_list::sym_struct_member && symbol.symbolType != sym_list::sym_enum_value && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤；成员符号的 moduleScope 是结构体名
-        localCandidateCount++;
-        int p = definitionTypePriority(symbol.symbolType);
-        if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
-            p -= 100;  // 同模块符号优先（端口/变量等）
-        }
-        if (p < localBestPriority) {
-            localBest = symbol;
-            localBestPriority = p;
-            foundLocal = true;
-        }
-    }
-    if (foundLocal) {
-        // 当前文件内跳转
-        QTextCursor cursor = textCursor();
-        cursor.movePosition(QTextCursor::Start);
-        // startLine/startColumn 为 1-based；下移 startLine-1 个块即落在定义所在行，右移 startColumn-1 落在名字处。
-        const int downLines = (localBest.startLine > 0) ? localBest.startLine - 1 : 0;
-        const int rightCols = (localBest.startColumn > 0) ? localBest.startColumn - 1 : 0;
-        cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, downLines);
-        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, rightCols);
-        setTextCursor(cursor);
-        centerCursor();
-        moveMouseToCursor();
-        return;
-    }
-
-    // ---------- Step 2: 全局搜索（跨文件，排除当前文件）；在模块内时仅考虑当前模块符号 ----------
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
-    sym_list::SymbolInfo globalBest;
-    bool foundGlobal = false;
-    int globalBestPriority = 999;
-    for (const sym_list::SymbolInfo& symbol : std::as_const(allSymbols)) {
-        if (symbol.symbolName != symbolName || !isSymbolDefinition(symbol, symbolName)) {
-            continue;
-        }
-        if (filterStructMemberByType(symbol)) continue;  // 结构体成员按“变量.成员”解析出的类型过滤
-        if (symbol.fileName == currentFile) {
-            continue; // Step 1 已覆盖，忽略当前文件
-        }
-        if (symbol.symbolType != sym_list::sym_struct_member && symbol.symbolType != sym_list::sym_enum_value && !inScope(symbol)) continue;  // 非成员符号才按模块作用域过滤
-        int p = definitionTypePriority(symbol.symbolType);
-        if (!currentModuleName.isEmpty() && symbol.moduleScope == currentModuleName) {
-            p -= 100;
-        }
-        if (p < globalBestPriority) {
-            globalBest = symbol;
-            globalBestPriority = p;
-            foundGlobal = true;
-        }
-    }
-
-    // ---------- Step 3: 跨文件时通过信号由 MainWindow 打开文件并跳转 ----------
-    if (foundGlobal) {
-        // startLine 为 1-based；navigateToFileAndLine 期望 1-based 行号，直接传，勿再 +1。
-        emit definitionJumpRequested(globalBest.symbolName, globalBest.fileName, globalBest.startLine);
-    }
 }
 
 void MyCodeEditor::moveMouseToCursor()
@@ -1637,42 +1521,6 @@ void MyCodeEditor::moveMouseToCursor()
 bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const QString& searchWord)
 {
     return DefinitionService::getInstance()->isDefinition(symbol, searchWord);
-
-    // 检查符号名称是否匹配
-    if (symbol.symbolName != searchWord) {
-        return false;
-    }
-
-    // 所有这些类型都被认为是定义（含端口、跨文件跳转的 module/interface/package/task/function、struct 类型）
-    switch (symbol.symbolType) {
-        case sym_list::sym_module:
-        case sym_list::sym_interface:
-        case sym_list::sym_package:
-        case sym_list::sym_task:
-        case sym_list::sym_function:
-        case sym_list::sym_port_input:
-        case sym_list::sym_port_output:
-        case sym_list::sym_port_inout:
-        case sym_list::sym_port_ref:
-        case sym_list::sym_port_interface:
-        case sym_list::sym_port_interface_modport:
-        case sym_list::sym_reg:
-        case sym_list::sym_wire:
-        case sym_list::sym_logic:
-        case sym_list::sym_parameter:
-        case sym_list::sym_localparam:
-        case sym_list::sym_packed_struct:
-        case sym_list::sym_unpacked_struct:
-        case sym_list::sym_packed_struct_var:
-        case sym_list::sym_unpacked_struct_var:
-        case sym_list::sym_struct_member:
-        case sym_list::sym_typedef:       // 枚举类型（typedef enum）
-        case sym_list::sym_enum_var:     // 枚举变量
-        case sym_list::sym_enum_value:   // 枚举值
-            return true;
-        default:
-            return false;
-    }
 }
 
 void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int endPos)
@@ -1744,44 +1592,12 @@ void MyCodeEditor::showSymbolTooltip(const QString& symbolName, const QPoint& po
     if (!result.found)
         return;
 
-    const QString serviceTooltipText = QString("瀹氫箟: %1 (%2)\n浣嶇疆: %3:%4")
-                                           .arg(result.symbol.symbolName)
-                                           .arg(getSymbolTypeString(result.symbol.symbolType))
-                                           .arg(QFileInfo(result.symbol.fileName).fileName())
-                                           .arg(result.symbol.startLine);
-    QToolTip::showText(mapToGlobal(position), serviceTooltipText, this);
-    return;
-
-    sym_list* symbolList = sym_list::getInstance();
-    if (!symbolList) return;
-
-    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
-    if (symbols.isEmpty()) return;
-
-    // 构建工具提示文本
-    QString tooltipText;
-    int definitionCount = 0;
-
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (isSymbolDefinition(symbol, symbolName)) {
-            definitionCount++;
-            if (definitionCount == 1) {
-                tooltipText = QString("定义: %1 (%2)\n位置: %3:%4")
-                             .arg(symbol.symbolName)
-                             .arg(getSymbolTypeString(symbol.symbolType))
-                             .arg(QFileInfo(symbol.fileName).fileName())
-                             .arg(symbol.startLine);  // startLine 已是 1-based
-            }
-        }
-    }
-
-    if (definitionCount > 1) {
-        tooltipText += QString("\n(+%1 个其他定义)").arg(definitionCount - 1);
-    }
-
-    if (!tooltipText.isEmpty()) {
-        QToolTip::showText(mapToGlobal(position), tooltipText, this);
-    }
+    const QString tooltipText = QString("Definition: %1 (%2)\nLocation: %3:%4")
+                                    .arg(result.symbol.symbolName)
+                                    .arg(getSymbolTypeString(result.symbol.symbolType))
+                                    .arg(QFileInfo(result.symbol.fileName).fileName())
+                                    .arg(result.symbol.startLine);
+    QToolTip::showText(mapToGlobal(position), tooltipText, this);
 }
 
 QString MyCodeEditor::getSymbolTypeString(sym_list::sym_type_e symbolType)
@@ -1808,42 +1624,6 @@ bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
     query.fileName = getFileName();
     query.moduleName = currentModuleNameAt(textCursor().position());
     return DefinitionService::getInstance()->canResolveDefinition(query);
-
-    sym_list* symbolList = sym_list::getInstance();
-    if (!symbolList) {
-        return false;
-    }
-
-    QString currentFile = getFileName();
-    QString currentModuleName = currentModuleNameAt(textCursor().position());
-
-    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(symbolName);
-    if (symbols.isEmpty()) {
-        return false;
-    }
-
-    // 在模块内时：仅当当前模块中存在该符号的定义才允许跳转（作用域限定）。
-    // 例外：枚举值/结构体成员的 moduleScope 是其「类型名」（供补全按类型过滤），不是模块名，
-    // 故这两类不按模块名限定，只要存在可跳转定义即可。
-    if (!currentModuleName.isEmpty()) {
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            const bool typeScoped = (symbol.symbolType == sym_list::sym_enum_value
-                                     || symbol.symbolType == sym_list::sym_struct_member);
-            if ((typeScoped || symbol.moduleScope == currentModuleName)
-                && isSymbolDefinition(symbol, symbolName)) {
-                return true;
-            }
-        }
-        return false;  // 当前模块无此符号，不显示可跳转
-    }
-
-    // 不在模块内：任意可跳转定义即可
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (isSymbolDefinition(symbol, symbolName)) {
-            return true;
-        }
-    }
-    return !symbols.isEmpty();
 }
 
 QCursor MyCodeEditor::createJumpableCursor()

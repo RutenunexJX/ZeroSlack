@@ -1,20 +1,24 @@
-#include "navigationmanager.h"
+﻿#include "navigationmanager.h"
 #include "navigationwidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "symbolanalyzer.h"
 #include "definitionservice.h"
+#include "hierarchyservice.h"
+#include "searchservice.h"
 #include "semanticindex.h"
+#include <algorithm>
 #include <utility>
+#include <QFileInfo>
 #include <QSet>
 
 NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
 {
-    // 预分配缓存空间以提高性能
+    // Reserve common cache sizes for the navigation views.
     cachedFileList.reserve(100);
     moduleHierarchyCache.reserve(50);
-    symbolsByTypeCache.reserve(10);
+    symbolOutlineCache.reserve(10);
 }
 
 NavigationManager::~NavigationManager()
@@ -36,7 +40,7 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
 {
     if (connectedTabManager == tabManager) return;
 
-    // 断开旧连接
+    // Drop connections from the previous manager.
     if (connectedTabManager) {
         disconnect(connectedTabManager, nullptr, this, nullptr);
     }
@@ -44,7 +48,7 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
     connectedTabManager = tabManager;
 
     if (connectedTabManager) {
-        // 连接TabManager信号
+        // Wire tab lifecycle events into navigation refreshes.
         connect(connectedTabManager, &TabManager::activeTabChanged,
                 this, [this](MyCodeEditor* editor) {
                     if (editor) {
@@ -55,7 +59,7 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
 
         connect(connectedTabManager, &TabManager::tabCreated,
                 this, [this](MyCodeEditor*) {
-                    // 当创建新标签页时，可能需要刷新文件层次结构
+                    // New tabs can change the file tree.
                     if (currentView == FileHierarchyView) {
                         refreshFileHierarchy();
                     }
@@ -63,7 +67,7 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
 
         connect(connectedTabManager, &TabManager::tabClosed,
                 this, [this](const QString&) {
-                    // 标签页关闭时刷新视图
+                    // Closed tabs can remove entries from the current view.
                     refreshCurrentView();
                 });
     }
@@ -73,7 +77,7 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 {
     if (connectedWorkspaceManager == workspaceManager) return;
 
-    // 断开旧连接
+    // Drop connections from the previous manager.
     if (connectedWorkspaceManager) {
         disconnect(connectedWorkspaceManager, nullptr, this, nullptr);
     }
@@ -81,7 +85,7 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
     connectedWorkspaceManager = workspaceManager;
 
     if (connectedWorkspaceManager) {
-        // 连接WorkspaceManager信号
+        // Wire workspace events into navigation refreshes.
         connect(connectedWorkspaceManager, &WorkspaceManager::workspaceOpened,
                 this, &NavigationManager::onWorkspaceChanged);
 
@@ -95,7 +99,7 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 
         connect(connectedWorkspaceManager, &WorkspaceManager::filesScanned,
                 this, [this](const QStringList&) {
-                    // 文件扫描完成后刷新所有视图
+                    // A rescan can affect every navigation view.
                     cachedFileList.clear();
                     moduleHierarchyCache.clear();
                     refreshCurrentView();
@@ -103,15 +107,12 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 
         connect(connectedWorkspaceManager, &WorkspaceManager::fileChanged,
                 this, [this](const QString& filePath) {
-                    // 文件变化时仅刷新该文件对应的子树（局部更新）
+                    // Module hierarchy depends on global relationship edges, so refresh it as a whole.
                     if (currentView == ModuleHierarchyView) {
-                        updateModuleHierarchyDataForFile(filePath);
-                        if (navigationWidget && moduleHierarchyCache.contains(filePath)) {
-                            navigationWidget->updateModuleHierarchyForFile(filePath, moduleHierarchyCache[filePath]);
-                        }
-                        emit dataRefreshed(ModuleHierarchyView);
+                        moduleHierarchyCache.clear();
+                        refreshModuleHierarchy();
                     } else if (currentView == SymbolHierarchyView && currentFileName == filePath) {
-                        symbolsByTypeCache.clear();
+                        symbolOutlineCache.clear();
                         refreshSymbolHierarchy();
                     }
                 });
@@ -122,7 +123,7 @@ void NavigationManager::connectToSymbolAnalyzer(SymbolAnalyzer* symbolAnalyzer)
 {
     if (connectedSymbolAnalyzer == symbolAnalyzer) return;
 
-    // 断开旧连接
+    // Drop connections from the previous analyzer.
     if (connectedSymbolAnalyzer) {
         disconnect(connectedSymbolAnalyzer, nullptr, this, nullptr);
     }
@@ -130,7 +131,7 @@ void NavigationManager::connectToSymbolAnalyzer(SymbolAnalyzer* symbolAnalyzer)
     connectedSymbolAnalyzer = symbolAnalyzer;
 
     if (connectedSymbolAnalyzer) {
-        // 连接SymbolAnalyzer信号
+        // Wire symbol analysis results into navigation refreshes.
         connect(connectedSymbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
                 this, &NavigationManager::onSymbolAnalysisCompleted);
 
@@ -138,9 +139,9 @@ void NavigationManager::connectToSymbolAnalyzer(SymbolAnalyzer* symbolAnalyzer)
                 this, [this](int filesAnalyzed, int totalSymbols) {
                     Q_UNUSED(filesAnalyzed)
                     Q_UNUSED(totalSymbols)
-                    // 批量分析完成后刷新模块和符号视图
+                    // Batch analysis can change module hierarchy and symbol outline data.
                     if (currentView == ModuleHierarchyView || currentView == SymbolHierarchyView) {
-                        symbolsByTypeCache.clear();
+                        symbolOutlineCache.clear();
                         moduleHierarchyCache.clear();
                         refreshCurrentView();
                     }
@@ -179,7 +180,7 @@ void NavigationManager::refreshSymbolHierarchy()
     updateSymbolHierarchyData();
 
     if (navigationWidget) {
-        navigationWidget->updateSymbolHierarchy(symbolsByTypeCache);
+        navigationWidget->updateSymbolHierarchy(symbolOutlineCache);
     }
 
     emit dataRefreshed(SymbolHierarchyView);
@@ -227,7 +228,7 @@ void NavigationManager::setSearchFilter(const QString& filter)
 {
     searchFilter = filter.trimmed();
 
-    // 重新应用过滤器
+    // Reapply the current search filter.
     refreshCurrentView();
 }
 
@@ -248,7 +249,7 @@ void NavigationManager::syncWithActiveEditor()
 {
     highlightCurrentFileInTree();
 
-    // 如果当前是符号视图，突出显示当前文件的符号
+    // Keep the symbol view aligned with the active editor.
     if (currentView == SymbolHierarchyView && !currentFileName.isEmpty()) {
         refreshSymbolHierarchy();
     }
@@ -264,10 +265,10 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 {
     currentWorkspacePath = workspacePath;
 
-    // 清除缓存并刷新所有视图
+    // Clear caches and refresh the active view.
     cachedFileList.clear();
     moduleHierarchyCache.clear();
-    symbolsByTypeCache.clear();
+    symbolOutlineCache.clear();
 
     refreshCurrentView();
 }
@@ -286,23 +287,20 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
 {
     Q_UNUSED(symbolCount)
 
-    // 局部更新：仅刷新受影响的文件对应子树，避免全量重绘
+    // Symbol analysis can update either the full module graph or the current symbol outline.
     switch (currentView) {
     case FileHierarchyView:
-        // 文件列表未变，不刷新
+        // The file list is unchanged.
         break;
     case ModuleHierarchyView: {
-        updateModuleHierarchyDataForFile(fileName);
-        if (navigationWidget && moduleHierarchyCache.contains(fileName)) {
-            navigationWidget->updateModuleHierarchyForFile(fileName, moduleHierarchyCache[fileName]);
-        }
-        emit dataRefreshed(ModuleHierarchyView);
+        moduleHierarchyCache.clear();
+        refreshModuleHierarchy();
         break;
     }
     case SymbolHierarchyView:
-        // 符号视图按当前文件展示，仅当分析的是当前文件时刷新
+        // The symbol view follows the current file.
         if (currentFileName == fileName) {
-            symbolsByTypeCache.clear();
+            symbolOutlineCache.clear();
             refreshSymbolHierarchy();
         }
         break;
@@ -316,7 +314,7 @@ void NavigationManager::setActiveView(NavigationView view)
     currentView = view;
     emit viewChanged(currentView);
 
-    // 刷新当前视图
+    // Refresh the newly active view.
     refreshCurrentView();
 }
 
@@ -339,7 +337,7 @@ void NavigationManager::setupConnections()
 {
     if (!navigationWidget) return;
 
-    // 连接NavigationWidget的信号
+    // Wire NavigationWidget signals.
     connect(navigationWidget, SIGNAL(fileDoubleClicked(QString)),
             this, SLOT(onFileTreeDoubleClicked(QString)));
 
@@ -358,17 +356,18 @@ void NavigationManager::setupConnections()
             });
 
     connect(navigationWidget, &NavigationWidget::searchFilterChanged,
-            this, &NavigationManager::setSearchFilter);}
+            this, &NavigationManager::setSearchFilter);
+}
 
 void NavigationManager::updateFileHierarchyData()
 {
     if (!cachedFileList.isEmpty() && !shouldRefreshCache()) {
-        return; // 使用缓存的数据
+        return; // Use cached data.
     }
 
     cachedFileList = getSystemVerilogFiles();
 
-    // 应用搜索过滤器
+    // Apply the search filter.
     if (!searchFilter.isEmpty()) {
         cachedFileList = filterFiles(cachedFileList, searchFilter);
     }
@@ -378,69 +377,157 @@ void NavigationManager::updateModuleHierarchyData()
 {
     moduleHierarchyCache.clear();
 
-    QList<sym_list::SymbolInfo> modules =
-        SemanticIndex::getInstance()->getSymbolsByType(sym_list::sym_module);
+    SearchQuery moduleQuery;
+    moduleQuery.types = {sym_list::sym_module};
 
-    // 构建模块层次结构
-    // TODO: 实现模块实例化关系解析
-    // 现在简单按文件分组
-    for (const sym_list::SymbolInfo& module : std::as_const(modules)) {
-        QString fileName = module.fileName;
-        if (!fileName.isEmpty()) {
-            moduleHierarchyCache[fileName].append(module.symbolName);
-        }
-    }
+    QList<sym_list::SymbolInfo> modules;
+    const QList<SearchResult> moduleResults =
+        SearchService::getInstance()->findSymbols(moduleQuery);
+    modules.reserve(moduleResults.size());
+    for (const SearchResult& result : moduleResults)
+        modules.append(result.symbol);
 
-    // 应用搜索过滤器
-    if (!searchFilter.isEmpty()) {
-        QHash<QString, QStringList> filteredCache;
-        for (auto it = moduleHierarchyCache.begin(); it != moduleHierarchyCache.end(); ++it) {
-            QStringList filteredModules;
-            for (const QString& moduleName : std::as_const(it.value())) {
-                if (moduleName.contains(searchFilter, Qt::CaseInsensitive)) {
-                    filteredModules.append(moduleName);
-                }
-            }
-            if (!filteredModules.isEmpty()) {
-                filteredCache[it.key()] = filteredModules;
-            }
-        }
-        moduleHierarchyCache = filteredCache;
-    }
+    moduleHierarchyCache = buildModuleInstantiationHierarchy(modules);
+    if (moduleHierarchyCache.isEmpty())
+        moduleHierarchyCache = buildModuleFileGroups(modules);
+    moduleHierarchyCache = filterModuleHierarchy(moduleHierarchyCache);
 }
 
-void NavigationManager::updateModuleHierarchyDataForFile(const QString& fileName)
+QList<ModuleHierarchyGroup> NavigationManager::buildModuleFileGroups(
+    const QList<sym_list::SymbolInfo>& modules) const
 {
-    if (fileName.isEmpty()) return;
+    QHash<QString, QStringList> groups;
+    for (const sym_list::SymbolInfo& module : modules) {
+        if (!module.fileName.isEmpty() && !module.symbolName.isEmpty())
+            groups[module.fileName].append(module.symbolName);
+    }
 
-    QList<sym_list::SymbolInfo> modules =
-        SemanticIndex::getInstance()->getSymbolsByType(sym_list::sym_module);
+    for (auto it = groups.begin(); it != groups.end(); ++it) {
+        it.value().removeDuplicates();
+        it.value().sort(Qt::CaseInsensitive);
+    }
 
-    QStringList modulesInFile;
-    for (const sym_list::SymbolInfo& module : std::as_const(modules)) {
-        if (module.fileName == fileName) {
-            modulesInFile.append(module.symbolName);
+    QList<ModuleHierarchyGroup> result;
+    result.reserve(groups.size());
+    for (auto it = groups.begin(); it != groups.end(); ++it) {
+        ModuleHierarchyGroup group;
+        group.rootKind = ModuleHierarchyRootKind::FileGroup;
+        group.rootName = it.key();
+        group.rootDisplayName = QFileInfo(it.key()).fileName();
+        group.rootToolTip = it.key();
+        group.childModules = it.value();
+        result.append(group);
+    }
+
+    std::sort(result.begin(), result.end(), [](const ModuleHierarchyGroup& a,
+                                               const ModuleHierarchyGroup& b) {
+        return QString::compare(a.rootDisplayName, b.rootDisplayName, Qt::CaseInsensitive) < 0;
+    });
+    return result;
+}
+
+QList<ModuleHierarchyGroup> NavigationManager::buildModuleInstantiationHierarchy(
+    const QList<sym_list::SymbolInfo>& modules) const
+{
+    QList<ModuleHierarchyGroup> hierarchy;
+    QSet<int> childModuleIds;
+    QHash<int, QStringList> childrenByParentId;
+
+    for (const sym_list::SymbolInfo& module : modules) {
+        if (module.symbolId < 0 || module.symbolName.isEmpty())
+            continue;
+
+        HierarchyQuery query;
+        query.symbolId = module.symbolId;
+        query.maxDepth = 1;
+        query.types = {SymbolRelationshipEngine::INSTANTIATES};
+
+        QStringList children;
+        const QList<HierarchyNode> childNodes = HierarchyService::getInstance()->getChildren(query);
+        for (const HierarchyNode& node : childNodes) {
+            if (node.symbol.symbolType != sym_list::sym_module || node.symbol.symbolName.isEmpty())
+                continue;
+            children.append(node.symbol.symbolName);
+            childModuleIds.insert(node.symbol.symbolId);
+        }
+
+        if (!children.isEmpty()) {
+            children.removeDuplicates();
+            children.sort(Qt::CaseInsensitive);
+            childrenByParentId.insert(module.symbolId, children);
         }
     }
 
-    if (!searchFilter.isEmpty()) {
-        QStringList filtered;
-        for (const QString& moduleName : std::as_const(modulesInFile)) {
-            if (moduleName.contains(searchFilter, Qt::CaseInsensitive)) {
-                filtered.append(moduleName);
-            }
+    for (const sym_list::SymbolInfo& module : modules) {
+        if (!childrenByParentId.contains(module.symbolId))
+            continue;
+        if (!childModuleIds.contains(module.symbolId)) {
+            ModuleHierarchyGroup group;
+            group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
+            group.rootName = module.symbolName;
+            group.rootDisplayName = module.symbolName;
+            group.rootToolTip = QString("Module: %1").arg(module.symbolName);
+            group.childModules = childrenByParentId.value(module.symbolId);
+            hierarchy.append(group);
         }
-        modulesInFile = filtered;
     }
 
-    moduleHierarchyCache[fileName] = modulesInFile;
+    if (!hierarchy.isEmpty()) {
+        std::sort(hierarchy.begin(), hierarchy.end(), [](const ModuleHierarchyGroup& a,
+                                                         const ModuleHierarchyGroup& b) {
+            return QString::compare(a.rootDisplayName, b.rootDisplayName, Qt::CaseInsensitive) < 0;
+        });
+        return hierarchy;
+    }
+
+    for (const sym_list::SymbolInfo& module : modules) {
+        if (childrenByParentId.contains(module.symbolId)) {
+            ModuleHierarchyGroup group;
+            group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
+            group.rootName = module.symbolName;
+            group.rootDisplayName = module.symbolName;
+            group.rootToolTip = QString("Module: %1").arg(module.symbolName);
+            group.childModules = childrenByParentId.value(module.symbolId);
+            hierarchy.append(group);
+        }
+    }
+    std::sort(hierarchy.begin(), hierarchy.end(), [](const ModuleHierarchyGroup& a,
+                                                     const ModuleHierarchyGroup& b) {
+        return QString::compare(a.rootDisplayName, b.rootDisplayName, Qt::CaseInsensitive) < 0;
+    });
+    return hierarchy;
+}
+
+QList<ModuleHierarchyGroup> NavigationManager::filterModuleHierarchy(
+    const QList<ModuleHierarchyGroup>& hierarchy) const
+{
+    if (searchFilter.isEmpty())
+        return hierarchy;
+
+    QList<ModuleHierarchyGroup> filtered;
+    for (const ModuleHierarchyGroup& group : hierarchy) {
+        const bool rootMatches = group.rootDisplayName.contains(searchFilter, Qt::CaseInsensitive)
+            || group.rootName.contains(searchFilter, Qt::CaseInsensitive);
+        QStringList children;
+        for (const QString& moduleName : group.childModules) {
+            if (rootMatches || moduleName.contains(searchFilter, Qt::CaseInsensitive))
+                children.append(moduleName);
+        }
+
+        if (rootMatches || !children.isEmpty()) {
+            ModuleHierarchyGroup filteredGroup = group;
+            filteredGroup.childModules = children;
+            filtered.append(filteredGroup);
+        }
+    }
+    return filtered;
 }
 
 void NavigationManager::updateSymbolHierarchyData()
 {
-    symbolsByTypeCache.clear();
+    symbolOutlineCache.clear();
 
-    // 大纲展示的符号类型（顺序由 NavigationWidget 的 orderedTypes 决定）
+    // Outline symbol types. Display order is carried by SymbolOutlineGroup order.
     static const QList<sym_list::sym_type_e> symbolTypes = {
         sym_list::sym_module,
         sym_list::sym_parameter,
@@ -466,48 +553,63 @@ void NavigationManager::updateSymbolHierarchyData()
         sym_list::sym_inst
     };
 
-    // 有当前文件则只取该文件符号，否则取全部
-    QList<sym_list::SymbolInfo> symbols = currentFileName.isEmpty()
-        ? SemanticIndex::getInstance()->getSymbols()
-        : SemanticIndex::getInstance()->getSymbols(currentFileName);
+    SearchQuery outlineQuery;
+    outlineQuery.fileName = currentFileName;
+    QList<sym_list::SymbolInfo> symbols;
+    const QList<SearchResult> searchResults =
+        SearchService::getInstance()->findSymbols(outlineQuery);
+    symbols.reserve(searchResults.size());
+    for (const SearchResult& result : searchResults)
+        symbols.append(result.symbol);
 
-    // task/function 名构成「子程序作用域」：其内部符号（形参 / 返回值 / 局部变量）的 moduleScope
-    // 等于子程序名，应从大纲排除，避免函数内部变量混入模块级 逻辑/寄存器 等分组。
+    // Exclude symbols whose moduleScope is a task/function name so local subroutine
+    // symbols do not leak into module-level outline groups.
     QSet<QString> subroutineScopes;
     for (const sym_list::SymbolInfo& s : std::as_const(symbols)) {
         if (s.symbolType == sym_list::sym_task || s.symbolType == sym_list::sym_function)
             subroutineScopes.insert(s.symbolName);
     }
 
-    QHash<sym_list::sym_type_e, QStringList> byType;
+    QHash<sym_list::sym_type_e, QList<sym_list::SymbolInfo>> byType;
     for (const sym_list::SymbolInfo& s : std::as_const(symbols)) {
         const bool isSubroutine = (s.symbolType == sym_list::sym_task
                                    || s.symbolType == sym_list::sym_function);
         if (!isSubroutine && subroutineScopes.contains(s.moduleScope))
-            continue;  // 子程序内部符号，不进大纲
-        byType[s.symbolType].append(s.symbolName);
+            continue;  // Subroutine-local symbol; skip the outline.
+        byType[s.symbolType].append(s);
     }
 
     for (sym_list::sym_type_e symbolType : symbolTypes) {
-        QStringList symbolNames = byType.value(symbolType);
-        if (symbolNames.isEmpty()) continue;
+        QList<sym_list::SymbolInfo> outlineSymbols = byType.value(symbolType);
+        if (outlineSymbols.isEmpty()) continue;
 
-        if (!searchFilter.isEmpty())
-            symbolNames = filterFiles(symbolNames, searchFilter);
+        if (!searchFilter.isEmpty()) {
+            QList<sym_list::SymbolInfo> filteredSymbols;
+            filteredSymbols.reserve(outlineSymbols.size());
+            for (const sym_list::SymbolInfo& symbol : std::as_const(outlineSymbols)) {
+                if (symbol.symbolName.contains(searchFilter, Qt::CaseInsensitive))
+                    filteredSymbols.append(symbol);
+            }
+            outlineSymbols = filteredSymbols;
+        }
 
-        if (!symbolNames.isEmpty())
-            symbolsByTypeCache[symbolType] = symbolNames;
+        if (!outlineSymbols.isEmpty()) {
+            SymbolOutlineGroup group;
+            group.symbolType = symbolType;
+            group.symbols = outlineSymbols;
+            symbolOutlineCache.append(group);
+        }
     }
 }
 
 bool NavigationManager::shouldRefreshCache() const
 {
-    // 如果有工作空间，检查是否需要刷新
+    // Workspace mode owns the file list.
     if (connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceOpen()) {
         return cachedFileList.isEmpty();
     }
 
-    // 如果没有工作空间，检查打开的标签页
+    // Without a workspace, derive the file list from open tabs.
     if (connectedTabManager) {
         QStringList openFiles = connectedTabManager->getOpenSystemVerilogFiles();
         return cachedFileList != openFiles;
@@ -518,12 +620,12 @@ bool NavigationManager::shouldRefreshCache() const
 
 QStringList NavigationManager::getSystemVerilogFiles() const
 {
-    // 优先使用工作空间文件
+    // Prefer workspace files.
     if (connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceOpen()) {
         return connectedWorkspaceManager->getSystemVerilogFiles();
     }
 
-    // 否则使用打开的标签页文件
+    // Otherwise use open tab files.
     if (connectedTabManager) {
         return connectedTabManager->getOpenSystemVerilogFiles();
     }

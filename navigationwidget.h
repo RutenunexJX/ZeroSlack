@@ -11,6 +11,8 @@
 #include <QTreeWidgetItem>
 #include <QStringList>
 #include <QHash>
+#include "modulehierarchymodel.h"
+#include "symboloutlinemodel.h"
 #include "syminfo.h"
 
 class NavigationWidget : public QWidget
@@ -33,11 +35,8 @@ public:
 
     // 数据更新接口
     void updateFileHierarchy(const QStringList& files);
-    void updateModuleHierarchy(const QHash<QString, QStringList>& modulesByFile);
-    void updateSymbolHierarchy(const QHash<sym_list::sym_type_e, QStringList>& symbolsByType);
-
-    /// 仅更新指定文件的模块子树（局部更新，避免全量重绘）
-    void updateModuleHierarchyForFile(const QString& fileName, const QStringList& modules);
+    void updateModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy);
+    void updateSymbolHierarchy(const QList<SymbolOutlineGroup>& symbolGroups);
 
     // 高亮和选择
     void highlightFile(const QString& filePath);
@@ -85,8 +84,10 @@ private:
 
     // 数据存储
     QStringList currentFileList;
-    QHash<QString, QStringList> currentModuleHierarchy;
-    QHash<sym_list::sym_type_e, QStringList> currentSymbolHierarchy;
+    QList<ModuleHierarchyGroup> currentModuleHierarchy;
+    QList<SymbolOutlineGroup> currentSymbolHierarchy;
+    QHash<int, sym_list::SymbolInfo> symbolItemPayloads;
+    int nextSymbolItemPayloadId = 1;
 
     // 内部状态
     QString currentSearchFilter;
@@ -106,7 +107,7 @@ private:
     void applySearchFilter();
     QTreeWidgetItem* createFileItem(const QString& filePath);
     QTreeWidgetItem* createModuleItem(const QString& moduleName, const QString& fileName);
-    QTreeWidgetItem* createSymbolItem(const QString& symbolName, sym_list::sym_type_e symbolType);
+    QTreeWidgetItem* createSymbolItem(const sym_list::SymbolInfo& symbol);
     QString getSymbolTypeDisplayName(sym_list::sym_type_e symbolType);
     QIcon getFileIcon(const QString& filePath);
     QIcon getSymbolIcon(sym_list::sym_type_e symbolType);

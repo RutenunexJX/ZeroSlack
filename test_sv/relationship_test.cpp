@@ -3,8 +3,11 @@
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "semanticindex.h"
+#include "diagnosticservice.h"
 #include "hierarchyservice.h"
+#include "referenceservice.h"
 #include "relationshipservice.h"
+#include "searchservice.h"
 #include "symbolrelationshipengine.h"
 #include "syminfo.h"
 
@@ -287,6 +290,58 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("semantic facade finds cross-file module",
                !facadeStageDefs.isEmpty() && facadeStageDefs.first().symbolId == stageId, true);
 
+    DiagnosticService diagnosticService(&index);
+    DiagnosticQuery diagnosticQuery;
+    diagnosticQuery.fileName = topPath;
+    expectBool("diagnostic service has no fixture diagnostics",
+               diagnosticService.findDiagnostics(diagnosticQuery).isEmpty(), true);
+    expectBool("diagnostic service reports no diagnostics",
+               diagnosticService.hasDiagnostics(diagnosticQuery), false);
+
+    SearchService searchService(&index);
+    SearchQuery moduleSearchQuery;
+    moduleSearchQuery.text = QStringLiteral("rel_");
+    moduleSearchQuery.types = {sym_list::sym_module};
+    const QList<SearchResult> moduleSearchResults =
+        searchService.findSymbols(moduleSearchQuery);
+    bool searchFoundTop = false;
+    bool searchFoundStage = false;
+    for (const SearchResult& result : moduleSearchResults) {
+        searchFoundTop = searchFoundTop || result.symbol.symbolId == topId;
+        searchFoundStage = searchFoundStage || result.symbol.symbolId == stageId;
+    }
+    expectBool("search service finds top module",
+               searchFoundTop, true);
+    expectBool("search service finds stage module",
+               searchFoundStage, true);
+
+    SearchQuery fileModuleSearchQuery = moduleSearchQuery;
+    fileModuleSearchQuery.fileName = topPath;
+    const QList<SearchResult> fileModuleSearchResults =
+        searchService.findSymbols(fileModuleSearchQuery);
+    bool fileSearchFoundTop = false;
+    bool fileSearchFoundStage = false;
+    for (const SearchResult& result : fileModuleSearchResults) {
+        fileSearchFoundTop = fileSearchFoundTop || result.symbol.symbolId == topId;
+        fileSearchFoundStage = fileSearchFoundStage || result.symbol.symbolId == stageId;
+    }
+    expectBool("search service filters file module",
+               fileSearchFoundTop, true);
+    expectBool("search service excludes other file module",
+               fileSearchFoundStage, false);
+
+    SearchQuery exactTaskSearchQuery;
+    exactTaskSearchQuery.text = QStringLiteral("capture_sample");
+    exactTaskSearchQuery.types = {sym_list::sym_task};
+    exactTaskSearchQuery.exactMatch = true;
+    exactTaskSearchQuery.maxResults = 1;
+    const QList<SearchResult> exactTaskResults =
+        searchService.findSymbols(exactTaskSearchQuery);
+    expectBool("search service exact task result",
+               exactTaskResults.size() == 1
+                   && exactTaskResults.first().symbol.symbolId == captureId,
+               true);
+
     QVector<RelationshipToAdd> rels = builder.computeRelationships(topPath,
                                                                     contents.value(topPath),
                                                                     topSymbols);
@@ -376,6 +431,53 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("hierarchy service finds parent instance",
                parentFoundTop, true);
+
+    ReferenceService referenceService(&index);
+
+    ReferenceQuery stageReferenceQuery;
+    stageReferenceQuery.symbolId = stageId;
+    stageReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<ReferenceResult> stageReferences =
+        referenceService.findReferences(stageReferenceQuery);
+    bool referenceFoundTopInstance = false;
+    for (const ReferenceResult& ref : stageReferences) {
+        referenceFoundTopInstance = referenceFoundTopInstance
+            || (ref.referencingSymbol.symbolId == topId
+                && ref.referencedSymbol.symbolId == stageId
+                && ref.relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES);
+    }
+    expectBool("reference service finds stage instantiation",
+               referenceFoundTopInstance, true);
+
+    ReferenceQuery reqValidReferenceQuery;
+    reqValidReferenceQuery.symbolId = reqValidId;
+    reqValidReferenceQuery.types = {SymbolRelationshipEngine::READS_FROM};
+    const QList<ReferenceResult> reqValidReferences =
+        referenceService.findReferences(reqValidReferenceQuery);
+    bool referenceFoundReqRead = false;
+    for (const ReferenceResult& ref : reqValidReferences) {
+        referenceFoundReqRead = referenceFoundReqRead
+            || (ref.referencingSymbol.symbolId == topId
+                && ref.referencedSymbol.symbolId == reqValidId
+                && ref.relationship.relationship.type == SymbolRelationshipEngine::READS_FROM);
+    }
+    expectBool("reference service finds condition read",
+               referenceFoundReqRead, true);
+
+    ReferenceQuery rspDataReferenceQuery;
+    rspDataReferenceQuery.symbolId = rspDataId;
+    rspDataReferenceQuery.types = {SymbolRelationshipEngine::ASSIGNS_TO};
+    const QList<ReferenceResult> rspDataReferences =
+        referenceService.findReferences(rspDataReferenceQuery);
+    bool referenceFoundRspWrite = false;
+    for (const ReferenceResult& ref : rspDataReferences) {
+        referenceFoundRspWrite = referenceFoundRspWrite
+            || (ref.referencingSymbol.symbolId == stageDataId
+                && ref.referencedSymbol.symbolId == rspDataId
+                && ref.relationship.relationship.type == SymbolRelationshipEngine::ASSIGNS_TO);
+    }
+    expectBool("reference service finds assignment write",
+               referenceFoundRspWrite, true);
 }
 
 int main(int argc, char** argv)

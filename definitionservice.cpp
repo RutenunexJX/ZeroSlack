@@ -1,8 +1,19 @@
 #include "definitionservice.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <algorithm>
 
 std::unique_ptr<DefinitionService> DefinitionService::instance = nullptr;
+
+namespace {
+QString normalizedDefinitionFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+}
 
 DefinitionService* DefinitionService::getInstance()
 {
@@ -37,10 +48,11 @@ DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& que
         return local;
 
     QList<sym_list::SymbolInfo> globalCandidates = semanticIndex()->findDefinitions(query.symbolName);
+    const QString queryFile = normalizedDefinitionFileName(query.fileName);
     globalCandidates.erase(
         std::remove_if(globalCandidates.begin(), globalCandidates.end(),
-                       [&query](const sym_list::SymbolInfo& symbol) {
-                           return symbol.fileName == query.fileName;
+                       [&queryFile](const sym_list::SymbolInfo& symbol) {
+                           return normalizedDefinitionFileName(symbol.fileName) == queryFile;
                        }),
         globalCandidates.end());
     return bestFromCandidates(globalCandidates, query, false);

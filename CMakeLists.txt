@@ -1,57 +1,56 @@
 cmake_minimum_required(VERSION 3.16)
 
-# 项目名称 (建议和你的 .pro 目标保持一致，这里暂定为 demo)
-# 注意：这里必须开启 C 语言支持，因为包含了 tree-sitter 的 .c 文件
+# Project target. C is enabled because tree-sitter includes .c sources.
 project(demo LANGUAGES C CXX)
 
 # =========================================================
-# 1. 标准设置 (为集成 Slang 做准备)
+# 1. Language Standards
 # =========================================================
-set(CMAKE_CXX_STANDARD 20)          # Slang 需要 C++20
+set(CMAKE_CXX_STANDARD 20)          # Required by Slang
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_C_STANDARD 99)            # Tree-sitter 使用 C99
+set(CMAKE_C_STANDARD 99)            # Used by tree-sitter
 
 include(CTest)
 
 # =========================================================
-# 2. Slang 集成配置 (Build System Only)
+# 2. Slang Integration
 # =========================================================
-# 禁用 Slang 的额外组件以加速构建并减少依赖
+# Disable optional Slang components to keep builds smaller and faster.
 set(SLANG_INCLUDE_TOOLS OFF CACHE BOOL "" FORCE)
 set(SLANG_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
 set(SLANG_INCLUDE_PYLIB OFF CACHE BOOL "" FORCE)
-# 关闭 mimalloc，避免与 Qt/CRT 全局分配器冲突导致启动崩溃
+# Disable mimalloc to avoid allocator conflicts with Qt/CRT on Windows.
 set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
 
-# 添加 Slang 子项目
-# 确保 thirdparty/slang 已经通过 git submodule 下载
+# Add Slang submodule.
 add_subdirectory(thirdparty/slang)
-# MinGW/GCC: 使用 COFF 大对象格式，避免 Compilation.cpp 等大翻译单元导致 "file too big"
+# MinGW/GCC: use large COFF objects for large Slang translation units.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(slang_slang PRIVATE -Wa,-mbig-obj)
 endif()
 
 # =========================================================
-# 3. Qt 6 配置
+# 3. Qt 6 Configuration
 # =========================================================
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# 查找 Qt6 组件 (对应原 .pro 的 QT += core gui widgets concurrent)
+# Match the old .pro modules: core gui widgets concurrent.
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 
 # =========================================================
-# 4. 源文件与资源
+# 4. Sources and Resources
 # =========================================================
 set(ZEROSLACK_CORE_SOURCES
-    # --- C++ 源文件 ---
+    # --- C++ sources ---
     analysisscheduler.cpp
     mainwindow.cpp
     completionmanager.cpp
     completionmodel.cpp
     completionservice.cpp
     definitionservice.cpp
+    diagnosticservice.cpp
     documentmodel.cpp
     hierarchyservice.cpp
     tsdocument.cpp
@@ -61,8 +60,10 @@ set(ZEROSLACK_CORE_SOURCES
     navigationmanager.cpp
     navigationwidget.cpp
     projectmodel.cpp
+    referenceservice.cpp
     relationshipservice.cpp
     relationshipprogressdialog.cpp
+    searchservice.cpp
     semanticindex.cpp
     slangmanager.cpp
     smartrelationshipbuilder.cpp
@@ -72,7 +73,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabmanager.cpp
     workspacemanager.cpp
 
-    # --- 头文件 (CMake不强求列出，但列出对IDE友好) ---
+    # --- Headers (not required by CMake, listed for IDEs) ---
     analysisscheduler.h
     mainwindow.h
     completionmanager.h
@@ -81,62 +82,67 @@ set(ZEROSLACK_CORE_SOURCES
     completionmodel.h
     completionservice.h
     definitionservice.h
+    diagnosticservice.h
     documentmodel.h
     hierarchyservice.h
     tsdocument.h
     modemanager.h
     mycodeeditor.h
     myhighlighter.h
+    modulehierarchymodel.h
     navigationmanager.h
     navigationwidget.h
     projectmodel.h
+    referenceservice.h
     relationshipservice.h
     relationshipprogressdialog.h
+    searchservice.h
     semanticindex.h
     slangmanager.h
     smartrelationshipbuilder.h
     symbolanalyzer.h
     symbolrelationshipengine.h
+    symboloutlinemodel.h
     syminfo.h
     tabmanager.h
     workspacemanager.h
 
-    # --- UI 界面文件 ---
+    # --- UI files ---
     mainwindow.ui
 
-    # --- 资源文件 ---
+    # --- Resource files ---
     code.qrc
     images.qrc
 
-    # --- Thirdparty C 源文件 (Tree-sitter) ---
+    # --- Third-party C sources (tree-sitter) ---
     thirdparty/tree_sitter/lib/src/lib.c
     thirdparty/tree_sitter_systemverilog/src/parser.c
 )
 
 # =========================================================
-# 5. 定义核心库与可执行目标
+# 5. Core Library and Executable
 # =========================================================
 add_library(zeroslack_core STATIC ${ZEROSLACK_CORE_SOURCES})
 
-# 对应 .pro 的 TARGET
+# Match the old .pro TARGET.
 add_executable(demo main.cpp)
 
-# 设置 Windows 应用程序属性 (防止出现黑色控制台窗口)
+# Build a Windows GUI app without a console window.
 if(WIN32)
     set_target_properties(demo PROPERTIES WIN32_EXECUTABLE ON)
 endif()
 
 # =========================================================
-# 6. 包含路径与链接库
+# 6. Include Paths and Libraries
 # =========================================================
-# 对应 .pro 的 INCLUDEPATH
+# Match the old .pro INCLUDEPATH.
 target_include_directories(zeroslack_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     thirdparty/tree_sitter/lib/include
     thirdparty/tree_sitter/lib/src
 )
 
-# 链接库：Qt6 + Slang
+# Link libraries: Qt6 and Slang.
 target_link_libraries(zeroslack_core PUBLIC
     Qt6::Core
     Qt6::Gui
@@ -148,23 +154,23 @@ target_link_libraries(zeroslack_core PUBLIC
 target_link_libraries(demo PRIVATE zeroslack_core)
 
 # =========================================================
-# 7. 编译器标志与宏定义
+# 7. Compiler Flags and Definitions
 # =========================================================
 
-# 针对 tree-sitter 的 C 文件忽略特定警告 (对应 QMAKE_CFLAGS += -Wno-unused-parameter)
+# Suppress selected warnings for tree-sitter C sources.
 set_source_files_properties(
     thirdparty/tree_sitter/lib/src/lib.c
     thirdparty/tree_sitter_systemverilog/src/parser.c
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter"
 )
 
-# MinGW 特定定义 (对应 win32-g++: DEFINES += ...)
+# MinGW-specific definitions.
 if(MINGW)
     target_compile_definitions(zeroslack_core PUBLIC __USE_MINGW_ANSI_STDIO=1)
 endif()
 
 # =========================================================
-# 8. 回归测试
+# 8. Regression Tests
 # =========================================================
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)

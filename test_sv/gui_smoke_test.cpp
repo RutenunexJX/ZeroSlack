@@ -110,9 +110,119 @@ static void drainRelationshipWork(MainWindow& window)
     }
 }
 
+static void runNavigationHierarchyModelRegression()
+{
+    printf("\n-- navigation hierarchy model regression --\n");
+
+    NavigationWidget widget;
+    widget.setActiveTab(NavigationWidget::ModuleTab);
+
+    ModuleHierarchyGroup fileGroup;
+    fileGroup.rootKind = ModuleHierarchyRootKind::FileGroup;
+    fileGroup.rootName = QStringLiteral("C:/fixture/relationship_top.sv");
+    fileGroup.rootDisplayName = QStringLiteral("relationship_top.sv");
+    fileGroup.rootToolTip = fileGroup.rootName;
+    fileGroup.childModules = {QStringLiteral("rel_top")};
+
+    ModuleHierarchyGroup moduleGroup;
+    moduleGroup.rootKind = ModuleHierarchyRootKind::ModuleRoot;
+    moduleGroup.rootName = QStringLiteral("rel_top");
+    moduleGroup.rootDisplayName = QStringLiteral("rel_top");
+    moduleGroup.rootToolTip = QStringLiteral("Module: rel_top");
+    moduleGroup.childModules = {QStringLiteral("rel_stage")};
+
+    widget.updateModuleHierarchy({fileGroup, moduleGroup});
+
+    QTreeWidget* moduleTree = nullptr;
+    QTreeWidgetItem* fileRoot = nullptr;
+    QTreeWidgetItem* moduleRoot = nullptr;
+    QTreeWidgetItem* childModule = nullptr;
+    const QList<QTreeWidget*> trees = widget.findChildren<QTreeWidget*>();
+    for (QTreeWidget* tree : trees) {
+        childModule = findItemByText(tree, QStringLiteral("rel_stage"));
+        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* top = tree->topLevelItem(i);
+            if (top->text(0) == QStringLiteral("relationship_top.sv"))
+                fileRoot = top;
+            if (top->text(0) == QStringLiteral("rel_top"))
+                moduleRoot = top;
+        }
+        if (fileRoot && moduleRoot && childModule) {
+            moduleTree = tree;
+            break;
+        }
+    }
+
+    expectBool("module hierarchy tree rendered", moduleTree != nullptr, true);
+    expectBool("file group root rendered", fileRoot != nullptr, true);
+    expectBool("module root rendered", moduleRoot != nullptr, true);
+    expectBool("module child rendered", childModule != nullptr, true);
+    if (!moduleTree || !fileRoot || !moduleRoot || !childModule)
+        return;
+
+    QSignalSpy moduleClicks(&widget, &NavigationWidget::moduleDoubleClicked);
+    widget.onModuleTreeDoubleClicked(fileRoot, 0);
+    expectBool("file group root does not navigate", moduleClicks.count() == 0, true);
+
+    widget.onModuleTreeDoubleClicked(moduleRoot, 0);
+    expectBool("module root navigates", moduleClicks.count() == 1, true);
+    expectBool("module root emits name",
+               moduleClicks.takeFirst().at(0).toString() == QStringLiteral("rel_top"),
+               true);
+
+    widget.onModuleTreeDoubleClicked(childModule, 0);
+    expectBool("module child navigates", moduleClicks.count() == 1, true);
+    expectBool("module child emits name",
+               moduleClicks.takeFirst().at(0).toString() == QStringLiteral("rel_stage"),
+               true);
+
+    widget.setActiveTab(NavigationWidget::SymbolTab);
+
+    sym_list::SymbolInfo outlineSymbol;
+    outlineSymbol.fileName = QStringLiteral("C:/fixture/relationship_top.sv");
+    outlineSymbol.symbolName = QStringLiteral("rel_top");
+    outlineSymbol.symbolType = sym_list::sym_module;
+    outlineSymbol.startLine = 42;
+    outlineSymbol.startColumn = 7;
+    outlineSymbol.symbolId = 1234;
+
+    SymbolOutlineGroup outlineGroup;
+    outlineGroup.symbolType = sym_list::sym_module;
+    outlineGroup.symbols = {outlineSymbol};
+    widget.updateSymbolHierarchy({outlineGroup});
+
+    QTreeWidgetItem* symbolItem = findItemByText(widget.symbolTreeWidget,
+                                                 QStringLiteral("rel_top"));
+
+    bool symbolClicked = false;
+    sym_list::SymbolInfo clickedSymbol;
+    QObject::connect(&widget, &NavigationWidget::symbolDoubleClicked,
+                     &widget, [&](const sym_list::SymbolInfo& symbol) {
+                         symbolClicked = true;
+                         clickedSymbol = symbol;
+                     });
+
+    expectBool("symbol outline item rendered", symbolItem != nullptr, true);
+    if (symbolItem)
+        widget.onSymbolTreeDoubleClicked(symbolItem, 0);
+    expectBool("symbol outline emits payload", symbolClicked, true);
+    expectBool("symbol outline preserves file",
+               clickedSymbol.fileName == outlineSymbol.fileName,
+               true);
+    expectBool("symbol outline preserves location",
+               clickedSymbol.startLine == outlineSymbol.startLine
+                   && clickedSymbol.startColumn == outlineSymbol.startColumn,
+               true);
+    expectBool("symbol outline preserves id",
+               clickedSymbol.symbolId == outlineSymbol.symbolId,
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+
+    runNavigationHierarchyModelRegression();
 
     const QString workspacePath = (argc > 1)
         ? QString::fromLocal8Bit(argv[1])

@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QHash>
 #include <memory>
+#include "modulehierarchymodel.h"
+#include "symboloutlinemodel.h"
 #include "syminfo.h"
 
 class NavigationWidget;
@@ -89,15 +91,17 @@ private:
 
     // Data caches
     QStringList cachedFileList;
-    QHash<QString, QStringList> moduleHierarchyCache;  // parent -> children
-    QHash<sym_list::sym_type_e, QStringList> symbolsByTypeCache;
+    QList<ModuleHierarchyGroup> moduleHierarchyCache;
+    QList<SymbolOutlineGroup> symbolOutlineCache;
 
     // Helper methods
     void setupConnections();
     void updateFileHierarchyData();
     void updateModuleHierarchyData();
-    void updateModuleHierarchyDataForFile(const QString& fileName);
     void updateSymbolHierarchyData();
+    QList<ModuleHierarchyGroup> buildModuleFileGroups(const QList<sym_list::SymbolInfo>& modules) const;
+    QList<ModuleHierarchyGroup> buildModuleInstantiationHierarchy(const QList<sym_list::SymbolInfo>& modules) const;
+    QList<ModuleHierarchyGroup> filterModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy) const;
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;
     QStringList filterFiles(const QStringList& files, const QString& filter) const;

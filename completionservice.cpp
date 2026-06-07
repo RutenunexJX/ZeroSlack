@@ -66,6 +66,14 @@ QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
             const QList<sym_list::SymbolInfo> fallback = db->findSymbolsByName(name);
             if (!fallback.isEmpty())
                 result.append(fallback.first());
+            appended = !fallback.isEmpty();
+        }
+
+        if (!appended) {
+            sym_list::SymbolInfo dummySymbol;
+            dummySymbol.symbolName = name;
+            dummySymbol.symbolType = sym_list::sym_user;
+            result.append(dummySymbol);
         }
     }
 
