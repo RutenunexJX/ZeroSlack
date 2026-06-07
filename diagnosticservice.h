@@ -4,6 +4,7 @@
 #include "semanticindex.h"
 
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <memory>
 
@@ -18,6 +19,13 @@ struct DiagnosticResult {
     SemanticDiagnostic diagnostic;
 };
 
+struct DiagnosticReport {
+    QList<DiagnosticResult> diagnostics;
+    int totalCount = 0;
+    QMap<QString, int> fileCounts;
+    QMap<SemanticDiagnostic::Severity, int> severityCounts;
+};
+
 class DiagnosticService
 {
 public:
@@ -29,6 +37,7 @@ public:
     void setSemanticIndex(SemanticIndex* semanticIndex);
 
     QList<DiagnosticResult> findDiagnostics(const DiagnosticQuery& query = {}) const;
+    DiagnosticReport findDiagnosticReport(const DiagnosticQuery& query = {}) const;
     bool hasDiagnostics(const DiagnosticQuery& query = {}) const;
 
 private:
@@ -38,6 +47,7 @@ private:
     SemanticIndex* semanticIndex() const;
     bool severityMatches(SemanticDiagnostic::Severity severity,
                          const DiagnosticQuery& query) const;
+    static QString normalizedFileName(const QString& fileName);
 };
 
 #endif // DIAGNOSTICSERVICE_H

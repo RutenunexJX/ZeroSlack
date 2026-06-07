@@ -1,6 +1,35 @@
 #include "referenceservice.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <QSet>
+#include <algorithm>
+
 std::unique_ptr<ReferenceService> ReferenceService::instance = nullptr;
+
+namespace {
+QString normalizedReferenceFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+bool referenceLocationLess(const sym_list::SymbolInfo& lhs,
+                           const sym_list::SymbolInfo& rhs)
+{
+    const int fileCompare = QString::compare(normalizedReferenceFileName(lhs.fileName),
+                                             normalizedReferenceFileName(rhs.fileName),
+                                             Qt::CaseInsensitive);
+    if (fileCompare != 0)
+        return fileCompare < 0;
+    if (lhs.startLine != rhs.startLine)
+        return lhs.startLine < rhs.startLine;
+    if (lhs.startColumn != rhs.startColumn)
+        return lhs.startColumn < rhs.startColumn;
+    return QString::compare(lhs.symbolName, rhs.symbolName, Qt::CaseInsensitive) < 0;
+}
+}
 
 ReferenceService* ReferenceService::getInstance()
 {
@@ -37,9 +66,38 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
     QList<ReferenceResult> result;
     const QList<RelationshipResult> relationships =
         relationshipService.findRelationships(relationshipQuery);
-    for (const RelationshipResult& rel : relationships)
-        result.append(toReferenceResult(rel));
+    for (const RelationshipResult& rel : relationships) {
+        ReferenceResult reference = toReferenceResult(rel);
+        if (!scopeMatches(query, reference.referencingSymbol))
+            continue;
+        result.append(reference);
+    }
+    std::sort(result.begin(), result.end(),
+              [](const ReferenceResult& lhs, const ReferenceResult& rhs) {
+                  if (lhs.relationship.relationship.type != rhs.relationship.relationship.type) {
+                      return static_cast<int>(lhs.relationship.relationship.type)
+                          < static_cast<int>(rhs.relationship.relationship.type);
+                  }
+                  return referenceLocationLess(lhs.referencingSymbol, rhs.referencingSymbol);
+              });
     return result;
+}
+
+ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& query) const
+{
+    ReferenceReport report;
+    report.references = findReferences(query);
+    report.totalCount = report.references.size();
+    for (const ReferenceResult& reference : report.references) {
+        const QString normalizedFile =
+            normalizedReferenceFileName(reference.referencingSymbol.fileName);
+        const QString fileKey = normalizedFile.isEmpty()
+            ? reference.referencingSymbol.fileName
+            : normalizedFile;
+        report.fileCounts[fileKey]++;
+        report.typeCounts[reference.relationship.relationship.type]++;
+    }
+    return report;
 }
 
 bool ReferenceService::hasReferences(const ReferenceQuery& query) const
@@ -79,6 +137,27 @@ QList<SymbolRelationshipEngine::RelationType> ReferenceService::effectiveTypes(
         SymbolRelationshipEngine::CLOCKS,
         SymbolRelationshipEngine::RESETS,
     };
+}
+
+bool ReferenceService::scopeMatches(const ReferenceQuery& query,
+                                    const sym_list::SymbolInfo& symbol) const
+{
+    const QString normalizedSource = normalizedReferenceFileName(symbol.fileName);
+    if (query.currentFileOnly) {
+        const QString normalizedCurrent = normalizedReferenceFileName(query.fileName);
+        if (normalizedSource != normalizedCurrent)
+            return false;
+    }
+
+    if (query.workspaceFilesOnly) {
+        QSet<QString> workspaceFiles;
+        for (const QString& file : query.workspaceFiles)
+            workspaceFiles.insert(normalizedReferenceFileName(file));
+        if (!workspaceFiles.contains(normalizedSource))
+            return false;
+    }
+
+    return true;
 }
 
 ReferenceResult ReferenceService::toReferenceResult(

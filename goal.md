@@ -74,15 +74,19 @@ Tree-sitter + Slang 分工保持不变：
 - SearchService。
 - ModuleHierarchyGroup。
 - SymbolOutlineGroup。
-- Problems / References / Relationships 面板第一版 UI。
+- Problems / References / Relationships 面板第一版 UI，并已开始改为消费 service report。
 - GUI smoke / large file perf / relationship fixture 等 CTest 回归。
 
 仍未完成或仍是过渡形态：
 
 - SemanticIndexSnapshot 已接入后台生产和主线程世代切换，但仍需要继续减少 live sym_list 消费。
-- DiagnosticService 已有真实 Slang diagnostics 数据，Problems 面板已支持基础筛选和行/列跳转。
-- ReferenceService 已有 References dock 作为真实 UI 消费点。
-- RelationshipService 已有 Relationships dock 作为真实 UI 消费点；relationship / hierarchy 浏览已支持双向树、递归去重、根节点和分组计数，后续仍可继续打磨刷新策略和类型策略。
+- DiagnosticService 已有真实 Slang diagnostics 数据，Problems 面板已支持基础筛选、行/列跳转和
+  DiagnosticReport 驱动的排序/计数。
+- ReferenceService 已有 References dock 作为真实 UI 消费点，并提供 ReferenceReport 驱动 scope/type
+  过滤、排序和计数。
+- RelationshipService 已有 Relationships dock 作为真实 UI 消费点；relationship / hierarchy 浏览已支持双向树、
+  递归去重、根节点和分组计数，Direct 视图已开始通过 RelationshipReport 下沉 incoming/outgoing 合并、
+  排序和计数；后续仍可继续打磨刷新策略和类型策略。
 - CompletionManager 大批只读符号查询、关系读取、scope names、cached file content
   已收束到 SemanticIndex / RelationshipService；仍有状态性过渡依赖。
 - MyCodeEditor 仍有少量旧直连点，但跳转定义和主要补全入口已开始经由 services。
@@ -109,7 +113,8 @@ Tree-sitter + Slang 分工保持不变：
 
 最小边界已补齐。RelationshipService 已扩展 related id / exact relationship 查询；
 HierarchyService / ReferenceService 的名称解析和 ID 反查已收束到 SemanticIndex。
-后续重点是消费端迁移和服务内部从 sym_list-backed 迁到 snapshot-backed。
+DiagnosticService / ReferenceService / RelationshipService 已开始提供 report API，承接底部面板的排序、
+过滤结果和摘要计数。后续重点是继续消费端迁移，并让服务内部从 sym_list-backed 迁到 snapshot-backed。
 
 ### 阶段 6：SemanticIndexSnapshot
 
@@ -147,6 +152,7 @@ UI / Services 只读 snapshot
 - Problems 在 All Files 模式下按 file 分组，Current File 保持紧凑列表。
 - Problems 结果按 severity / file / line / column 稳定排序。
 - Problems All Files 分组显示数量，并提供 No problems 空状态。
+- Problems 面板已改为消费 DiagnosticReport，排序、总数、file count 和 severity count 由 DiagnosticService 提供。
 
 后续重点：
 
@@ -164,12 +170,15 @@ UI / Services 只读 snapshot
 - References dock 支持 Reference type 筛选。
 - References 结果按 file -> relationship type -> result 分组。
 - References 结果按类型和位置稳定排序，file / relationship type 分组显示数量。
+- References 面板已改为消费 ReferenceReport，scope/type 过滤结果、排序、file/type 计数由 ReferenceService 提供。
 - 编辑器支持 Shift+F12 触发 Find References。
 - MainWindow 提供底部 Relationships dock，编辑器右键 Show Relationships 触发。
 - Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships。
 - Relationships dock 支持 direction / type 筛选。
 - Relationships Direct 视图按 direction -> relationship type -> result 分组。
 - Relationships Direct 视图按类型和位置稳定排序，direction / type 分组显示数量。
+- Relationships Direct 视图已改为消费 RelationshipReport，incoming/outgoing 合并、排序、方向/type 计数由
+  RelationshipService 提供。
 - Relationships Tree 视图接入 HierarchyService，支持 Depth 1..4 层级浏览。
 - HierarchyService 支持 Children / Parents / Both 方向查询，并通过路径去重防止递归循环。
 - Relationships Tree 支持 Root 节点、Incoming / Outgoing 分支、方向筛选和全部关系类型策略。

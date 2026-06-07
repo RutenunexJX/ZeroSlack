@@ -4,6 +4,7 @@
 #include "semanticindex.h"
 
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <memory>
 
@@ -22,6 +23,35 @@ struct RelationshipResult {
     sym_list::SymbolInfo toSymbol;
 };
 
+struct RelationshipBrowseQuery {
+    int symbolId = -1;
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+    bool includeOutgoing = true;
+    bool includeIncoming = true;
+    QList<SymbolRelationshipEngine::RelationType> types;
+};
+
+struct DirectedRelationshipResult {
+    enum Direction {
+        Outgoing,
+        Incoming
+    };
+
+    RelationshipResult relationship;
+    Direction direction = Outgoing;
+    sym_list::SymbolInfo peerSymbol;
+};
+
+struct RelationshipReport {
+    QList<DirectedRelationshipResult> relationships;
+    int totalCount = 0;
+    int outgoingCount = 0;
+    int incomingCount = 0;
+    QMap<SymbolRelationshipEngine::RelationType, int> typeCounts;
+};
+
 class RelationshipService
 {
 public:
@@ -35,6 +65,7 @@ public:
     QList<RelationshipResult> findRelationships(const RelationshipQuery& query) const;
     QList<RelationshipResult> findOutgoingRelationships(const RelationshipQuery& query) const;
     QList<RelationshipResult> findIncomingRelationships(const RelationshipQuery& query) const;
+    RelationshipReport findRelationshipReport(const RelationshipBrowseQuery& query) const;
     QList<int> findRelatedSymbolIds(const RelationshipQuery& query) const;
     bool hasRelationship(int fromSymbolId,
                          int toSymbolId,
@@ -47,6 +78,7 @@ private:
 
     SemanticIndex* semanticIndex() const;
     int resolveSymbolId(const RelationshipQuery& query) const;
+    int resolveSymbolId(const RelationshipBrowseQuery& query) const;
     bool typeMatches(SymbolRelationshipEngine::RelationType type,
                      const QList<SymbolRelationshipEngine::RelationType>& allowedTypes) const;
     RelationshipResult enrich(const SemanticRelationship& relationship) const;

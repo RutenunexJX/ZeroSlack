@@ -339,6 +339,57 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    true);
     }
 
+    SemanticDiagnostic infoDiagnostic;
+    infoDiagnostic.fileName = topPath;
+    infoDiagnostic.line = 9;
+    infoDiagnostic.column = 3;
+    infoDiagnostic.message = QStringLiteral("info message");
+    infoDiagnostic.severity = SemanticDiagnostic::Info;
+
+    SemanticDiagnostic warningDiagnostic;
+    warningDiagnostic.fileName = topPath;
+    warningDiagnostic.line = 2;
+    warningDiagnostic.column = 1;
+    warningDiagnostic.message = QStringLiteral("warning message");
+    warningDiagnostic.severity = SemanticDiagnostic::Warning;
+
+    SemanticDiagnostic errorDiagnostic;
+    errorDiagnostic.fileName = stagePath;
+    errorDiagnostic.line = 4;
+    errorDiagnostic.column = 7;
+    errorDiagnostic.message = QStringLiteral("error message");
+    errorDiagnostic.severity = SemanticDiagnostic::Error;
+
+    SemanticIndex diagnosticReportIndex(db);
+    diagnosticReportIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(db, {
+            infoDiagnostic,
+            warningDiagnostic,
+            errorDiagnostic,
+        })));
+    DiagnosticService diagnosticReportService(&diagnosticReportIndex);
+    const DiagnosticReport diagnosticReport =
+        diagnosticReportService.findDiagnosticReport();
+    expectInt("diagnostic report total count",
+              diagnosticReport.totalCount, 3);
+    expectInt("diagnostic report file count",
+              diagnosticReport.fileCounts.value(topPath), 2);
+    expectInt("diagnostic report severity count",
+              diagnosticReport.severityCounts.value(SemanticDiagnostic::Error), 1);
+    expectBool("diagnostic report sorts errors first",
+               !diagnosticReport.diagnostics.isEmpty()
+                   && diagnosticReport.diagnostics.first().diagnostic.severity
+                       == SemanticDiagnostic::Error,
+               true);
+
+    DiagnosticQuery errorOnlyDiagnosticQuery;
+    errorOnlyDiagnosticQuery.includeInfo = false;
+    errorOnlyDiagnosticQuery.includeWarnings = false;
+    errorOnlyDiagnosticQuery.includeErrors = true;
+    expectInt("diagnostic report filters severity",
+              diagnosticReportService.findDiagnosticReport(errorOnlyDiagnosticQuery).totalCount,
+              1);
+
     SearchService searchService(&index);
     SearchQuery moduleSearchQuery;
     moduleSearchQuery.text = QStringLiteral("rel_");
@@ -495,6 +546,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                serviceFoundTask, true);
     expectBool("relationship service finds condition read",
                serviceFoundRead, true);
+    expectBool("relationship service sorts first by type",
+               !serviceRels.isEmpty()
+                   && serviceRels.first().relationship.type
+                       == SymbolRelationshipEngine::INSTANTIATES,
+               true);
     RelationshipQuery relatedIdsQuery;
     relatedIdsQuery.symbolId = topId;
     relatedIdsQuery.outgoing = true;
@@ -511,6 +567,29 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                                                    topId,
                                                    SymbolRelationshipEngine::INSTANTIATES),
                false);
+    RelationshipBrowseQuery browseQuery;
+    browseQuery.symbolId = topId;
+    browseQuery.includeOutgoing = true;
+    browseQuery.includeIncoming = true;
+    browseQuery.types = {
+        SymbolRelationshipEngine::INSTANTIATES,
+        SymbolRelationshipEngine::CALLS,
+        SymbolRelationshipEngine::READS_FROM,
+    };
+    const RelationshipReport relationshipReport =
+        relationshipService.findRelationshipReport(browseQuery);
+    expectInt("relationship report total count",
+              relationshipReport.totalCount, serviceRels.size());
+    expectInt("relationship report outgoing count",
+              relationshipReport.outgoingCount, serviceRels.size());
+    expectInt("relationship report incoming count",
+              relationshipReport.incomingCount, 0);
+    expectInt("relationship report type count",
+              relationshipReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectBool("relationship report keeps peer symbol",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
+               true);
 
     HierarchyService hierarchyService(&index);
     HierarchyQuery hierarchyQuery;
@@ -612,6 +691,26 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("reference service finds stage instantiation",
                referenceFoundTopInstance, true);
+    const ReferenceReport stageReferenceReport =
+        referenceService.findReferenceReport(stageReferenceQuery);
+    expectInt("reference report total count",
+              stageReferenceReport.totalCount, 1);
+    expectInt("reference report file count",
+              stageReferenceReport.fileCounts.value(topPath), 1);
+    expectInt("reference report type count",
+              stageReferenceReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+
+    ReferenceQuery currentFileStageReferenceQuery = stageReferenceQuery;
+    currentFileStageReferenceQuery.fileName = stagePath;
+    currentFileStageReferenceQuery.currentFileOnly = true;
+    expectInt("reference report current file filter",
+              referenceService.findReferenceReport(currentFileStageReferenceQuery).totalCount, 0);
+
+    ReferenceQuery workspaceStageReferenceQuery = stageReferenceQuery;
+    workspaceStageReferenceQuery.workspaceFilesOnly = true;
+    workspaceStageReferenceQuery.workspaceFiles = {topPath};
+    expectInt("reference report workspace filter",
+              referenceService.findReferenceReport(workspaceStageReferenceQuery).totalCount, 1);
 
     ReferenceQuery reqValidReferenceQuery;
     reqValidReferenceQuery.symbolId = reqValidId;

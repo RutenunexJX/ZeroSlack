@@ -1,6 +1,25 @@
 #include "diagnosticservice.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <algorithm>
+
 std::unique_ptr<DiagnosticService> DiagnosticService::instance = nullptr;
+
+namespace {
+int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return 0;
+    case SemanticDiagnostic::Warning:
+        return 1;
+    case SemanticDiagnostic::Info:
+    default:
+        return 2;
+    }
+}
+}
 
 DiagnosticService* DiagnosticService::getInstance()
 {
@@ -35,7 +54,44 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
         item.diagnostic = diagnostic;
         result.append(item);
     }
+    std::sort(result.begin(), result.end(),
+              [](const DiagnosticResult& lhs, const DiagnosticResult& rhs) {
+                  const SemanticDiagnostic& left = lhs.diagnostic;
+                  const SemanticDiagnostic& right = rhs.diagnostic;
+                  const int severityCompare =
+                      diagnosticSeverityRank(left.severity)
+                      - diagnosticSeverityRank(right.severity);
+                  if (severityCompare != 0)
+                      return severityCompare < 0;
+
+                  const int fileCompare =
+                      QString::compare(DiagnosticService::normalizedFileName(left.fileName),
+                                       DiagnosticService::normalizedFileName(right.fileName),
+                                       Qt::CaseInsensitive);
+                  if (fileCompare != 0)
+                      return fileCompare < 0;
+                  if (left.line != right.line)
+                      return left.line < right.line;
+                  if (left.column != right.column)
+                      return left.column < right.column;
+                  return QString::compare(left.message, right.message, Qt::CaseInsensitive) < 0;
+              });
     return result;
+}
+
+DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& query) const
+{
+    DiagnosticReport report;
+    report.diagnostics = findDiagnostics(query);
+    report.totalCount = report.diagnostics.size();
+    for (const DiagnosticResult& result : report.diagnostics) {
+        const SemanticDiagnostic& diagnostic = result.diagnostic;
+        const QString normalized = normalizedFileName(diagnostic.fileName);
+        const QString fileKey = normalized.isEmpty() ? diagnostic.fileName : normalized;
+        report.fileCounts[fileKey]++;
+        report.severityCounts[diagnostic.severity]++;
+    }
+    return report;
 }
 
 bool DiagnosticService::hasDiagnostics(const DiagnosticQuery& query) const
@@ -60,4 +116,11 @@ bool DiagnosticService::severityMatches(SemanticDiagnostic::Severity severity,
         return query.includeErrors;
     }
     return false;
+}
+
+QString DiagnosticService::normalizedFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }

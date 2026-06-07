@@ -68,11 +68,15 @@ Slang 负责真实语义事实：
     module scope、struct member 类型过滤、跨文件目标选择。
   - CompletionService：普通补全、struct member 专用补全、命令模式补全已开始经由 service；
     普通补全的 SymbolInfo 详情也从 editor 迁入 service。
-  - RelationshipService：关系查询入口已扩展，支持 related symbol id 查询和精确 hasRelationship。
+  - RelationshipService：关系查询入口已扩展，支持 related symbol id 查询和精确 hasRelationship；
+    Direct 关系浏览的 incoming/outgoing 合并、稳定排序、方向计数和类型计数已通过
+    RelationshipReport / RelationshipBrowseQuery 下沉到 service。
   - HierarchyService：实例层级查询入口已落地，并改用 SemanticIndex 做 ID 反查。
   - ReferenceService：最小入口已落地，当前包装 RelationshipService 的 incoming reference 查询，
-    名称解析改走 SemanticIndex::findSymbolId；MainWindow 已有 References dock 作为真实 UI 消费点。
-  - DiagnosticService：当前委托 SemanticIndex::getDiagnostics，已消费 Slang diagnostics 并服务 Problems 面板。
+    名称解析改走 SemanticIndex::findSymbolId；MainWindow 已有 References dock 作为真实 UI 消费点；
+    current/workspace scope 过滤、稳定排序、file/type 计数已通过 ReferenceReport 下沉到 service。
+  - DiagnosticService：当前委托 SemanticIndex::getDiagnostics，已消费 Slang diagnostics 并服务 Problems 面板；
+    severity/file 排序、file/severity 计数已通过 DiagnosticReport 下沉到 service。
   - SearchService：symbol search 最小入口已落地，支持文本、文件、类型、exact、maxResults。
 
 - Navigation
@@ -87,6 +91,8 @@ Slang 负责真实语义事实：
   - Problems / References / Relationships 条目双击均可跳转到文件、行、列。
   - References dock 通过 ReferenceService 查询 incoming references，并支持 all files / current file 筛选。
   - Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships，并支持方向 / 类型筛选。
+  - Problems / References / Relationships 的结果排序、筛选结果集和摘要计数已主要下沉到
+    DiagnosticService / ReferenceService / RelationshipService report API；MainWindow 只负责树渲染和窗口协调。
 
 - Editor
   - MyCodeEditor 跳转定义 / tooltip / canJump 旧的不可达 sym_list 实现已删除，当前经由 DefinitionService。
@@ -412,6 +418,12 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
   - Relationships Tree 的 All Types 覆盖全部关系类型，不再隐式收窄到 Instantiates。
   - Relationships Direct / Tree、References、Problems 的结果排序和分组计数已增强。
   - Problems 空状态显示 No problems，组节点双击不会触发空路径跳转。
+- 本轮继续下沉底部面板结果职责：
+  - DiagnosticService 新增 DiagnosticReport，统一排序、总数、file count 和 severity count。
+  - ReferenceService 新增 ReferenceReport，统一 current/workspace scope 过滤、排序、file count 和 type count。
+  - RelationshipService 新增 RelationshipBrowseQuery / RelationshipReport，统一 Direct 视图 incoming/outgoing 合并、
+    排序、方向计数和 type count。
+  - MainWindow 删除 Problems / References / Relationships 本地排序逻辑，改为消费 service report 并只做树渲染。
 
 最近验证：
 - cmake build 通过；新增 CMake 文件后重配置导致链接较慢，必要时先 -j4 后 -j1 续跑。
@@ -423,15 +435,16 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
     3. 需要完整回归时直接给 build/ctest 足够长 timeout；
     4. 不要在 120s/300s 超时之间反复重启同一个链接任务。
 - 完整 ctest --output-on-failure：6/6 passed。
-- relationship_test.exe：87 checks, 0 failed。
+- relationship_test.exe：103 checks, 0 failed。
 - gui_smoke_test.exe：89 checks, 0 failed。
 - git diff --check 通过。
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
-- 本次文档提交和上传前按用户指令不再重复编译或测试；以上为代码改动后最近一次验证记录。
+- 本次提交和上传前按用户指令不再重复编译或测试；以上为代码改动后最近一次验证记录。
 
 下一步建议：
 1. 继续让 services / UI 只读 snapshot，减少 live sym_list 消费。
-2. 继续打磨 Relationships Tree：按层刷新、展开状态保持和更清晰的类型策略。
-3. 继续打磨 References dock：结果摘要、更多 workspace 维度和跨文件上下文。
+2. 继续把 MainWindow 中的分析/刷新策略下沉到 scheduler/services/model。
+3. 继续打磨 Relationships Tree：按层刷新、展开状态保持和更清晰的类型策略。
 4. 继续改进 Problems 面板诊断生命周期、清空策略和更多真实 fixture。
-5. 保持 6 项 CTest 全绿。
+5. 继续打磨 References dock：结果摘要、更多 workspace 维度和跨文件上下文。
+6. 保持 6 项 CTest 全绿。

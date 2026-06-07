@@ -601,94 +601,6 @@ static QString normalizedUiFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-static bool symbolLocationLess(const sym_list::SymbolInfo& lhs,
-                               const sym_list::SymbolInfo& rhs)
-{
-    const int fileCompare = QString::compare(normalizedUiFileName(lhs.fileName),
-                                             normalizedUiFileName(rhs.fileName),
-                                             Qt::CaseInsensitive);
-    if (fileCompare != 0)
-        return fileCompare < 0;
-    if (lhs.startLine != rhs.startLine)
-        return lhs.startLine < rhs.startLine;
-    if (lhs.startColumn != rhs.startColumn)
-        return lhs.startColumn < rhs.startColumn;
-    return QString::compare(lhs.symbolName, rhs.symbolName, Qt::CaseInsensitive) < 0;
-}
-
-static int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
-{
-    switch (severity) {
-    case SemanticDiagnostic::Error:
-        return 0;
-    case SemanticDiagnostic::Warning:
-        return 1;
-    case SemanticDiagnostic::Info:
-    default:
-        return 2;
-    }
-}
-
-static void sortDiagnosticResults(QList<DiagnosticResult>& diagnostics)
-{
-    std::sort(diagnostics.begin(), diagnostics.end(),
-              [](const DiagnosticResult& lhs, const DiagnosticResult& rhs) {
-                  const SemanticDiagnostic& left = lhs.diagnostic;
-                  const SemanticDiagnostic& right = rhs.diagnostic;
-                  const int severityCompare =
-                      diagnosticSeverityRank(left.severity) - diagnosticSeverityRank(right.severity);
-                  if (severityCompare != 0)
-                      return severityCompare < 0;
-
-                  const int fileCompare = QString::compare(normalizedUiFileName(left.fileName),
-                                                           normalizedUiFileName(right.fileName),
-                                                           Qt::CaseInsensitive);
-                  if (fileCompare != 0)
-                      return fileCompare < 0;
-                  if (left.line != right.line)
-                      return left.line < right.line;
-                  if (left.column != right.column)
-                      return left.column < right.column;
-                  return QString::compare(left.message, right.message, Qt::CaseInsensitive) < 0;
-              });
-}
-
-static void sortReferenceResults(QList<ReferenceResult>& references)
-{
-    std::sort(references.begin(), references.end(),
-              [](const ReferenceResult& lhs, const ReferenceResult& rhs) {
-                  const QString lhsType =
-                      relationshipTypeText(lhs.relationship.relationship.type);
-                  const QString rhsType =
-                      relationshipTypeText(rhs.relationship.relationship.type);
-                  const int typeCompare = QString::compare(lhsType, rhsType,
-                                                           Qt::CaseInsensitive);
-                  if (typeCompare != 0)
-                      return typeCompare < 0;
-                  return symbolLocationLess(lhs.referencingSymbol, rhs.referencingSymbol);
-              });
-}
-
-static void sortRelationshipResults(QList<RelationshipResult>& relationships,
-                                    bool outgoing)
-{
-    std::sort(relationships.begin(), relationships.end(),
-              [outgoing](const RelationshipResult& lhs, const RelationshipResult& rhs) {
-                  const QString lhsType = relationshipTypeText(lhs.relationship.type);
-                  const QString rhsType = relationshipTypeText(rhs.relationship.type);
-                  const int typeCompare = QString::compare(lhsType, rhsType,
-                                                           Qt::CaseInsensitive);
-                  if (typeCompare != 0)
-                      return typeCompare < 0;
-
-                  const sym_list::SymbolInfo& lhsSymbol =
-                      outgoing ? lhs.toSymbol : lhs.fromSymbol;
-                  const sym_list::SymbolInfo& rhsSymbol =
-                      outgoing ? rhs.toSymbol : rhs.fromSymbol;
-                  return symbolLocationLess(lhsSymbol, rhsSymbol);
-              });
-}
-
 static QString countLabel(const QString& text, int count)
 {
     return QStringLiteral("%1 (%2)").arg(text).arg(count);
@@ -917,13 +829,12 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
     query.includeWarnings = severityFilter == 0 || severityFilter == 2;
     query.includeInfo = severityFilter == 0 || severityFilter == 3;
 
-    QList<DiagnosticResult> diagnostics =
-        DiagnosticService::getInstance()->findDiagnostics(query);
-    sortDiagnosticResults(diagnostics);
+    const DiagnosticReport report =
+        DiagnosticService::getInstance()->findDiagnosticReport(query);
+    const QList<DiagnosticResult>& diagnostics = report.diagnostics;
 
     problemsTree->clear();
     QMap<QString, QTreeWidgetItem*> fileGroups;
-    QMap<QString, int> fileGroupCounts;
     QMap<QString, QString> fileGroupLabels;
     for (const DiagnosticResult& result : diagnostics) {
         const SemanticDiagnostic& diagnostic = result.diagnostic;
@@ -937,7 +848,6 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
                                                               fileGroups,
                                                               diagnostic.fileName);
             createDiagnosticItem(fileGroup, diagnostic);
-            fileGroupCounts[fileKey]++;
             fileGroupLabels[fileKey] = QFileInfo(diagnostic.fileName).fileName();
         }
     }
@@ -948,13 +858,13 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
     if (!currentFileOnly) {
         for (auto it = fileGroups.begin(); it != fileGroups.end(); ++it) {
             it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()),
-                                              fileGroupCounts.value(it.key())));
+                                              report.fileCounts.value(it.key())));
         }
         problemsTree->expandAll();
     }
 
     if (problemsDock) {
-        problemsDock->setWindowTitle(QStringLiteral("Problems (%1)").arg(diagnostics.size()));
+        problemsDock->setWindowTitle(QStringLiteral("Problems (%1)").arg(report.totalCount));
         if (!diagnostics.isEmpty() || problemsDock->isVisible())
             problemsDock->show();
     }
@@ -1105,22 +1015,17 @@ void MainWindow::refreshReferencesPanel()
         };
     }
 
-    QList<ReferenceResult> references =
-        ReferenceService::getInstance()->findReferences(query);
-    sortReferenceResults(references);
-
     const int scopeFilter = referenceScopeCombo
         ? referenceScopeCombo->currentData().toInt()
         : 0;
-    const bool workspaceFilesOnly = scopeFilter == 1;
-    const bool currentFileOnly = scopeFilter == 2;
-    const QString normalizedReferenceFile = normalizedUiFileName(currentReferenceFileName);
-    QSet<QString> workspaceFiles;
-    if (workspaceFilesOnly && workspaceManager) {
-        const QStringList files = workspaceManager->getSystemVerilogFiles();
-        for (const QString& file : files)
-            workspaceFiles.insert(normalizedUiFileName(file));
-    }
+    query.workspaceFilesOnly = scopeFilter == 1;
+    query.currentFileOnly = scopeFilter == 2;
+    if (query.workspaceFilesOnly && workspaceManager)
+        query.workspaceFiles = workspaceManager->getSystemVerilogFiles();
+
+    const ReferenceReport report =
+        ReferenceService::getInstance()->findReferenceReport(query);
+    const QList<ReferenceResult>& references = report.references;
 
     int visibleCount = 0;
     QMap<QString, QTreeWidgetItem*> fileGroups;
@@ -1133,12 +1038,6 @@ void MainWindow::refreshReferencesPanel()
     for (const ReferenceResult& reference : references) {
         const sym_list::SymbolInfo& source = reference.referencingSymbol;
         const QString normalizedSourceFile = normalizedUiFileName(source.fileName);
-        if (currentFileOnly
-            && normalizedSourceFile != normalizedReferenceFile) {
-            continue;
-        }
-        if (workspaceFilesOnly && !workspaceFiles.contains(normalizedSourceFile))
-            continue;
 
         const QString fileKey = normalizedSourceFile.isEmpty()
             ? source.fileName
@@ -1307,15 +1206,16 @@ void MainWindow::refreshRelationshipsPanel()
         ? relationshipDirectionCombo->currentData().toInt()
         : 0;
 
-    RelationshipService* service = RelationshipService::getInstance();
-    QList<RelationshipResult> outgoing;
-    QList<RelationshipResult> incoming;
-    if (directionFilter == 0 || directionFilter == 1)
-        outgoing = service->findOutgoingRelationships(query);
-    if (directionFilter == 0 || directionFilter == 2)
-        incoming = service->findIncomingRelationships(query);
-    sortRelationshipResults(outgoing, true);
-    sortRelationshipResults(incoming, false);
+    RelationshipBrowseQuery browseQuery;
+    browseQuery.symbolName = query.symbolName;
+    browseQuery.fileName = query.fileName;
+    browseQuery.moduleName = query.moduleName;
+    browseQuery.types = query.types;
+    browseQuery.includeOutgoing = directionFilter == 0 || directionFilter == 1;
+    browseQuery.includeIncoming = directionFilter == 0 || directionFilter == 2;
+
+    const RelationshipReport report =
+        RelationshipService::getInstance()->findRelationshipReport(browseQuery);
 
     int visibleCount = 0;
     QMap<QString, QTreeWidgetItem*> directionGroups;
@@ -1354,13 +1254,11 @@ void MainWindow::refreshRelationshipsPanel()
         visibleCount++;
     };
 
-    for (const RelationshipResult& relationship : std::as_const(outgoing)) {
-        const sym_list::SymbolInfo& target = relationship.toSymbol;
-        addRelationship(relationship, QStringLiteral("Outgoing"), target);
-    }
-    for (const RelationshipResult& relationship : std::as_const(incoming)) {
-        const sym_list::SymbolInfo& source = relationship.fromSymbol;
-        addRelationship(relationship, QStringLiteral("Incoming"), source);
+    for (const DirectedRelationshipResult& directed : report.relationships) {
+        const QString direction = directed.direction == DirectedRelationshipResult::Outgoing
+            ? QStringLiteral("Outgoing")
+            : QStringLiteral("Incoming");
+        addRelationship(directed.relationship, direction, directed.peerSymbol);
     }
     for (auto it = directionGroups.begin(); it != directionGroups.end(); ++it)
         it.value()->setText(0, countLabel(it.key(), directionGroupCounts.value(it.key())));

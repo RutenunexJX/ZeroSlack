@@ -1,6 +1,49 @@
 #include "relationshipservice.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <algorithm>
+
 std::unique_ptr<RelationshipService> RelationshipService::instance = nullptr;
+
+namespace {
+QString normalizedRelationshipFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+bool relationshipSymbolLess(const sym_list::SymbolInfo& lhs,
+                            const sym_list::SymbolInfo& rhs)
+{
+    const int fileCompare = QString::compare(normalizedRelationshipFileName(lhs.fileName),
+                                             normalizedRelationshipFileName(rhs.fileName),
+                                             Qt::CaseInsensitive);
+    if (fileCompare != 0)
+        return fileCompare < 0;
+    if (lhs.startLine != rhs.startLine)
+        return lhs.startLine < rhs.startLine;
+    if (lhs.startColumn != rhs.startColumn)
+        return lhs.startColumn < rhs.startColumn;
+    return QString::compare(lhs.symbolName, rhs.symbolName, Qt::CaseInsensitive) < 0;
+}
+
+void sortRelationshipResults(QList<RelationshipResult>& relationships, bool outgoing)
+{
+    std::sort(relationships.begin(), relationships.end(),
+              [outgoing](const RelationshipResult& lhs, const RelationshipResult& rhs) {
+                  if (lhs.relationship.type != rhs.relationship.type) {
+                      return static_cast<int>(lhs.relationship.type)
+                          < static_cast<int>(rhs.relationship.type);
+                  }
+
+                  const sym_list::SymbolInfo& lhsSymbol = outgoing ? lhs.toSymbol : lhs.fromSymbol;
+                  const sym_list::SymbolInfo& rhsSymbol = outgoing ? rhs.toSymbol : rhs.fromSymbol;
+                  return relationshipSymbolLess(lhsSymbol, rhsSymbol);
+              });
+}
+}
 
 RelationshipService* RelationshipService::getInstance()
 {
@@ -36,6 +79,7 @@ QList<RelationshipResult> RelationshipService::findRelationships(const Relations
             continue;
         result.append(enrich(rel));
     }
+    sortRelationshipResults(result, query.outgoing);
 
     return result;
 }
@@ -54,6 +98,56 @@ QList<RelationshipResult> RelationshipService::findIncomingRelationships(
     RelationshipQuery incomingQuery = query;
     incomingQuery.outgoing = false;
     return findRelationships(incomingQuery);
+}
+
+RelationshipReport RelationshipService::findRelationshipReport(
+    const RelationshipBrowseQuery& query) const
+{
+    RelationshipReport report;
+    const int id = resolveSymbolId(query);
+    if (id < 0)
+        return report;
+
+    auto appendRelationships = [&](const QList<RelationshipResult>& relationships,
+                                   DirectedRelationshipResult::Direction direction) {
+        for (const RelationshipResult& relationship : relationships) {
+            DirectedRelationshipResult directed;
+            directed.relationship = relationship;
+            directed.direction = direction;
+            directed.peerSymbol = direction == DirectedRelationshipResult::Outgoing
+                ? relationship.toSymbol
+                : relationship.fromSymbol;
+            if (directed.peerSymbol.symbolId < 0)
+                continue;
+            report.relationships.append(directed);
+            report.typeCounts[relationship.relationship.type]++;
+            if (direction == DirectedRelationshipResult::Outgoing)
+                report.outgoingCount++;
+            else
+                report.incomingCount++;
+        }
+    };
+
+    RelationshipQuery relationshipQuery;
+    relationshipQuery.symbolId = id;
+    relationshipQuery.symbolName = query.symbolName;
+    relationshipQuery.fileName = query.fileName;
+    relationshipQuery.moduleName = query.moduleName;
+    relationshipQuery.types = query.types;
+
+    if (query.includeOutgoing) {
+        relationshipQuery.outgoing = true;
+        appendRelationships(findRelationships(relationshipQuery),
+                            DirectedRelationshipResult::Outgoing);
+    }
+    if (query.includeIncoming) {
+        relationshipQuery.outgoing = false;
+        appendRelationships(findRelationships(relationshipQuery),
+                            DirectedRelationshipResult::Incoming);
+    }
+
+    report.totalCount = report.relationships.size();
+    return report;
 }
 
 QList<int> RelationshipService::findRelatedSymbolIds(const RelationshipQuery& query) const
@@ -103,6 +197,20 @@ SemanticIndex* RelationshipService::semanticIndex() const
 }
 
 int RelationshipService::resolveSymbolId(const RelationshipQuery& query) const
+{
+    if (query.symbolId >= 0)
+        return query.symbolId;
+    if (query.symbolName.isEmpty())
+        return -1;
+
+    SemanticQueryContext context;
+    context.fileName = query.fileName;
+    context.moduleName = query.moduleName;
+
+    return semanticIndex()->findSymbolId(query.symbolName, context);
+}
+
+int RelationshipService::resolveSymbolId(const RelationshipBrowseQuery& query) const
 {
     if (query.symbolId >= 0)
         return query.symbolId;
