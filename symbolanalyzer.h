@@ -8,6 +8,7 @@
 #include <QVector>
 #include <functional>
 #include "projectmodel.h"
+#include "semanticindex.h"
 #include "syminfo.h"
 
 class SlangManager;
@@ -22,6 +23,7 @@ struct WorkspaceFileAnalysis {
 
 struct WorkspaceAnalysisResult {
     QVector<WorkspaceFileAnalysis> files;
+    QList<SemanticDiagnostic> diagnostics;
     int totalSymbols = 0;
 };
 

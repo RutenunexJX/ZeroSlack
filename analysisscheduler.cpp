@@ -1,5 +1,6 @@
 #include "analysisscheduler.h"
 
+#include "semanticindex.h"
 #include "symbolanalyzer.h"
 #include "syminfo.h"
 
@@ -14,10 +15,9 @@
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
 {
-    workspaceRelationshipWatcher =
-        new QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>(this);
+    workspaceRelationshipWatcher = new QFutureWatcher<WorkspaceRelationshipAnalysisResult>(this);
     connect(workspaceRelationshipWatcher,
-            &QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>::finished,
+            &QFutureWatcher<WorkspaceRelationshipAnalysisResult>::finished,
             this,
             [this]() {
                 if (!workspaceRelationshipWatcher)
@@ -80,6 +80,7 @@ void AnalysisScheduler::setProjectModel(ProjectModel* model)
         workspaceSymbolAnalysisActive = false;
         activeWorkspaceProject = ProjectSnapshot();
         cancelWorkspaceRelationshipAnalysis();
+        SemanticIndex::getInstance()->clearSnapshot();
     });
 }
 
@@ -120,7 +121,9 @@ void AnalysisScheduler::setRelationshipAnalysisCallback(
 }
 
 void AnalysisScheduler::setWorkspaceRelationshipAnalysisCallback(
-    std::function<QVector<QPair<QString, QVector<RelationshipToAdd>>>(const ProjectSnapshot&)> callback)
+    std::function<WorkspaceRelationshipAnalysisResult(
+        const ProjectSnapshot&,
+        std::shared_ptr<const SemanticIndexSnapshot>)> callback)
 {
     workspaceRelationshipAnalysisCallback = std::move(callback);
 }
@@ -182,7 +185,11 @@ void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, con
 
 void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 {
-    if (!project.isOpen() || project.systemVerilogFiles.isEmpty() || !symbolAnalyzer)
+    if (!project.isOpen() || !symbolAnalyzer)
+        return;
+
+    SemanticIndex::getInstance()->clearSnapshot();
+    if (project.systemVerilogFiles.isEmpty())
         return;
 
     activeWorkspaceProject = project;
@@ -204,9 +211,16 @@ void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapsh
 
     emit workspaceRelationshipAnalysisStarted(project, project.systemVerilogFiles.size());
 
-    QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> future =
-        QtConcurrent::run([callback = workspaceRelationshipAnalysisCallback, project]() {
-            return callback(project);
+    const auto currentSnapshot = SemanticIndex::getInstance()->snapshot();
+    const QList<SemanticDiagnostic> currentDiagnostics =
+        currentSnapshot ? currentSnapshot->diagnostics() : QList<SemanticDiagnostic>();
+    const auto baseSnapshot = std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(sym_list::getInstance(), currentDiagnostics));
+    SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
+
+    QFuture<WorkspaceRelationshipAnalysisResult> future =
+        QtConcurrent::run([callback = workspaceRelationshipAnalysisCallback, project, baseSnapshot]() {
+            return callback(project, baseSnapshot);
         });
     workspaceRelationshipWatcher->setFuture(future);
 }
@@ -219,8 +233,7 @@ void AnalysisScheduler::cancelWorkspaceRelationshipAnalysis()
     if (workspaceRelationshipCancelCallback)
         workspaceRelationshipCancelCallback();
 
-    QFuture<QVector<QPair<QString, QVector<RelationshipToAdd>>>> future =
-        workspaceRelationshipWatcher->future();
+    QFuture<WorkspaceRelationshipAnalysisResult> future = workspaceRelationshipWatcher->future();
     workspaceRelationshipWatcher->cancel();
     future.waitForFinished();
 }
@@ -280,6 +293,7 @@ void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
         workspaceSymbolAnalysisActive = false;
         activeWorkspaceProject = ProjectSnapshot();
         cancelWorkspaceRelationshipAnalysis();
+        SemanticIndex::getInstance()->clearSnapshot();
         return;
     }
 

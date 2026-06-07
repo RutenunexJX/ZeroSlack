@@ -1,6 +1,7 @@
 #ifndef SLANGMANAGER_H
 #define SLANGMANAGER_H
 
+#include "semanticindex.h"
 #include "syminfo.h"
 #include <QString>
 #include <QStringList>
@@ -86,9 +87,15 @@ public:
     /// Returns empty list on parse/elaboration failure (exceptions caught).
     QList<sym_list::SymbolInfo> extractSymbols(const QString& fileName, const QString& content);
 
+    /// Single-file / hot-edit: parse content and return Slang diagnostics as semantic data.
+    QList<SemanticDiagnostic> extractDiagnostics(const QString& fileName, const QString& content);
+
     /// Workspace-wide: load all SV files (by path), compile together, extract all symbols.
     /// filePaths are read from disk inside this call. Returns empty list on failure.
     QList<sym_list::SymbolInfo> extractWorkspaceSymbols(const QStringList& filePaths);
+
+    /// Workspace-wide: load all SV files (by path), compile together, and return diagnostics.
+    QList<SemanticDiagnostic> extractWorkspaceDiagnostics(const QStringList& filePaths);
 };
 
 #endif // SLANGMANAGER_H

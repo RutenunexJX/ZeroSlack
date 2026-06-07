@@ -1,6 +1,6 @@
 # ZeroSlack Product / Architecture Goal
 
-当前版本：`0.0.17/slang22`
+当前版本：`0.0.18/slang23`
 
 本文记录 ZeroSlack 当前阶段的最终产品目标和架构骨架。后续功能和重构默认以此为准；
 除非遇到无法绕过的实现问题，否则不再为每个新功能重新选择架构方向。
@@ -64,25 +64,25 @@ Tree-sitter + Slang 分工保持不变：
 - DocumentModel 最小入口。
 - AnalysisScheduler 最小入口。
 - SemanticIndex facade。
-- SemanticIndexSnapshot 最小只读边界。
+- SemanticIndexSnapshot 生产 / 切换闭环的第一版。
 - DefinitionService。
 - CompletionService。
 - RelationshipService。
 - HierarchyService。
 - ReferenceService。
-- DiagnosticService。
+- DiagnosticService + Slang diagnostics。
 - SearchService。
 - ModuleHierarchyGroup。
 - SymbolOutlineGroup。
+- Problems 面板最小 UI。
 - GUI smoke / large file perf / relationship fixture 等 CTest 回归。
 
 仍未完成或仍是过渡形态：
 
-- SemanticIndexSnapshot 已有最小只读类型和 SemanticIndex 切换 API，但还没有后台生产 /
-  主线程原子切换闭环。
-- DiagnosticService 还没有真实 Slang diagnostics 数据。
+- SemanticIndexSnapshot 已接入后台生产和主线程世代切换，但仍需要继续减少 live sym_list 消费。
+- DiagnosticService 已有真实 Slang diagnostics 数据，并有 Problems 面板作为最小 UI 消费点。
 - ReferenceService 还缺 UI 消费点。
-- Relationship / hierarchy 浏览 UI 仍可继续迁到 services。
+- Relationship / hierarchy 浏览 UI 仍可继续收束到 services。
 - CompletionManager 大批只读符号查询、关系读取、scope names、cached file content
   已收束到 SemanticIndex / RelationshipService；仍有状态性过渡依赖。
 - MyCodeEditor 仍有少量旧直连点，但跳转定义和主要补全入口已开始经由 services。
@@ -113,22 +113,41 @@ HierarchyService / ReferenceService 的名称解析和 ID 反查已收束到 Sem
 
 ### 阶段 6：SemanticIndexSnapshot
 
-最小只读 snapshot 类型已落地：
+snapshot 类型和第一版生产 / 切换闭环已落地：
 
-- `SemanticIndexSnapshot` 保存 symbols / relationships / diagnostics。
+- `SemanticIndexSnapshot` 保存 symbols / relationships / diagnostics / cached file content / minimal scope names。
 - `SemanticIndex` 支持 `setSnapshot` / `clearSnapshot`。
-- snapshot 存在时，symbols / definitions / relationships / diagnostics 优先读 snapshot。
+- snapshot 存在时，symbols / definitions / relationships / diagnostics / cached file content /
+  scope symbol names 优先读 snapshot。
+- SymbolAnalyzer 在符号写回后发布 symbols-only snapshot。
+- Workspace / single-file 关系后台基于 snapshot 计算关系，并按 base snapshot 世代发布 enriched snapshot。
 
 最终目标仍是：
 
 ```text
 后台分析产出 SemanticIndexSnapshot
-主线程原子切换 currentSnapshot
+主线程按 base snapshot 世代切换 currentSnapshot
 UI / Services 只读 snapshot
 旧 snapshot 自动释放
 ```
 
-下一阶段重点是把 AnalysisScheduler / 后台分析接到 snapshot 生产和主线程原子切换。
+下一阶段重点是继续减少 live sym_list 消费，并扩大 snapshot-backed UI / service 覆盖。
+
+### 阶段 7：Diagnostics / Problems UI
+
+第一版已落地：
+
+- SlangManager 提供 single-file / workspace diagnostics 提取。
+- Slang diagnostics 转为 SemanticDiagnostic，并随 SemanticIndexSnapshot 发布。
+- DiagnosticService 能查询真实 diagnostics。
+- MainWindow 提供底部 Problems 面板，显示 Severity / File / Line / Message。
+- Problems 条目双击可跳转文件和行。
+
+后续重点：
+
+- Problems 面板筛选、清空策略、当前文件 / workspace 模式。
+- 将诊断刷新策略继续下沉到更清晰的 service / scheduler 边界。
+- 补更多真实 fixture 覆盖 include/import/宏展开相关 diagnostics。
 
 ## 完成标准
 

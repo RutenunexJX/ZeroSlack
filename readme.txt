@@ -2,7 +2,7 @@
 ZeroSlack README / Development Handoff
 ==========================================================================
 
-当前版本：0.0.17/slang22
+当前版本：0.0.18/slang23
 当前分支：tree_sitter_and_slang
 构建系统：Qt 6 + CMake + Ninja，demo.pro / qmake 不再维护。
 
@@ -96,7 +96,7 @@ Slang 负责真实语义事实：
 
 
 ==========================================================================
-本轮 0.0.17/slang22 已完成
+上一轮 0.0.17/slang22 已完成
 ==========================================================================
 
 - 新增 semanticindexsnapshot.cpp / semanticindexsnapshot.h。
@@ -180,7 +180,7 @@ Slang 负责真实语义事实：
 当前工作区注意事项
 ==========================================================================
 
-不要 push，用户会自己 push。
+本轮需要提交并 push 到 origin/tree_sitter_and_slang。
 
 Claude 相关文件已删除；不要恢复 `.claude/` 或任何 Claude 本地配置文件。
 
@@ -288,13 +288,62 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复
 2. 关系浏览 UI 继续迁到 RelationshipService / HierarchyService
    - 当前底层 service 已有，UI 消费侧还可继续收束。
 
-3. 补 ReferenceService / DiagnosticService 的真实 UI 消费点
+3. 继续补 ReferenceService 的真实 UI 消费点
    - ReferenceService 已有最小边界。
-   - DiagnosticService 当前返回空，后续可接 Slang diagnostics。
+   - DiagnosticService 已接入 Slang diagnostics，并有 Problems 面板作为最小 UI 消费点。
 
-4. 完成 SemanticIndexSnapshot 生产 / 切换闭环
-   - 最小只读 snapshot 类型和 SemanticIndex 切换 API 已落地。
-   - 下一阶段目标是后台分析真正产出 snapshot，主线程原子切换，UI/services 只读 snapshot。
+4. 继续加固 SemanticIndexSnapshot 生产 / 切换闭环
+   - 后台符号分析和关系分析已能产出 snapshot，主线程按 base snapshot 世代切换 current snapshot。
+   - Snapshot 当前保存 symbols / relationships / diagnostics / cached file content / minimal scope names。
+   - 后续重点是继续减少 live sym_list 消费，并把更多 UI/service 读路径固定到 snapshot。
+
+==========================================================================
+本轮 0.0.18/slang23 已完成
+==========================================================================
+
+- Workspace / single-file 后台分析已真实产出 SemanticIndexSnapshot。
+- MainWindow / AnalysisScheduler 在关系分析完成时按 base snapshot 世代发布 enriched snapshot，
+  避免迟到后台任务覆盖新活动文件的语义状态。
+- SymbolAnalyzer 在符号写回后立即发布 symbols-only snapshot，使 UI / services 始终能读到最新符号副本。
+- SemanticIndexSnapshot 扩展为保存：
+  - symbols。
+  - relationships。
+  - diagnostics。
+  - cached file content。
+  - minimal scope symbol names 查询所需信息。
+- SemanticIndex 在 snapshot 存在时优先读取：
+  - symbols / definitions / symbol id。
+  - relationships。
+  - diagnostics。
+  - cached file content。
+  - scope symbol names。
+- SmartRelationshipBuilder 支持 snapshot-backed 解析；workspace / single-file 关系后台不再通过 SearchService
+  读取可能过期的 current snapshot。
+- Slang diagnostics 已接入：
+  - SlangManager::extractDiagnostics。
+  - SlangManager::extractWorkspaceDiagnostics。
+  - SemanticDiagnostic。
+  - SemanticIndexSnapshot。
+  - DiagnosticService。
+- MainWindow 新增底部 Problems dock：
+  - 显示 Severity / File / Line / Message。
+  - 单文件分析完成和 workspace batch 完成后刷新。
+  - 双击诊断可跳转到对应文件和行。
+- relationship_test 新增：
+  - snapshot-only relationship builder 跨文件解析断言。
+  - snapshot cached file content / scope names 断言。
+  - Slang diagnostics -> snapshot -> DiagnosticService 断言。
+- gui_smoke_test 新增：
+  - single-file watcher result 类型更新。
+  - Problems 面板显示真实 Slang diagnostic 的 GUI 回归。
+
+最近验证：
+- Build 通过：demo / gui_smoke_test / relationship_test / completion_test / jump_test。
+- 完整 ctest --output-on-failure：6/6 passed。
+- relationship_test.exe：82 checks, 0 failed。
+- gui_smoke_test.exe：54 checks, 0 failed。
+- git diff --check 通过。
+- 源码 / 测试 / UI / CMake 非 ASCII 复扫为空，排除 readme.txt / plan.md / goal.md。
 
 
 ==========================================================================
@@ -330,8 +379,8 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复
 请先阅读 readme.txt、plan.md、goal.md、version.h，接手 ZeroSlack 当前状态。
 
 当前分支：tree_sitter_and_slang。
-当前版本：0.0.17/slang22。
-不要 push，我会自己 push。
+当前版本：0.0.18/slang23。
+最新提交已 push 到 origin/tree_sitter_and_slang。
 
 重要规则：
 - Claude 相关文件已删除，不要恢复 .claude/ 或任何 Claude 本地配置。
@@ -342,26 +391,25 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复
   LF will be replaced by CRLF。这些不是 diff --check 错误。
 
 最近完成：
-- Query Services / SemanticIndex 收束继续推进。
-- CompletionManager 大量只读符号查询、关系读取、scope names、cached file content
-  已迁到 SemanticIndex / RelationshipService。
-- RelationshipService 增加 related id 查询和精确 hasRelationship。
-- HierarchyService / ReferenceService 名称解析和 ID 反查改走 SemanticIndex。
-- SymbolRelationshipEngine 修复 outgoing/incoming 查询缓存方向问题。
-- 新增 semanticindexsnapshot.cpp / semanticindexsnapshot.h，落地最小只读 SemanticIndexSnapshot。
-- SemanticIndex 支持 setSnapshot / clearSnapshot，snapshot 存在时优先读 snapshot。
-- relationship_test 增加 SemanticIndexSnapshot、RelationshipService、cache direction 等断言。
+- SemanticIndexSnapshot 已接入 workspace / single-file 后台分析生产和主线程世代切换。
+- Snapshot 保存 symbols / relationships / diagnostics / cached file content / minimal scope names。
+- Slang diagnostics 已接入 SemanticDiagnostic / SemanticIndexSnapshot / DiagnosticService。
+- MainWindow 新增 Problems dock，显示 diagnostics，双击可跳转。
+- Workspace / single-file relationship 后台改为 snapshot-backed，避免旧 snapshot / live sym_list 读路径污染。
+- relationship_test 增加 snapshot-only builder、snapshot cached content / scope names、Slang diagnostics 断言。
+- gui_smoke_test 增加 Problems 面板显示真实 Slang diagnostic 的 GUI 回归。
 
 最近验证：
 - cmake build 通过；新增 CMake 文件后重配置导致链接较慢，必要时先 -j4 后 -j1 续跑。
 - 完整 ctest --output-on-failure：6/6 passed。
-- relationship_test.exe：74 checks, 0 failed。
+- relationship_test.exe：82 checks, 0 failed。
+- gui_smoke_test.exe：54 checks, 0 failed。
 - git diff --check 通过。
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.txt / plan.md / goal.md。
 
 下一步建议：
-1. 让后台分析真正产出 SemanticIndexSnapshot，并设计主线程原子切换 current snapshot。
-2. 继续让 services / UI 只读 snapshot，减少 live sym_list 消费。
-3. 开始接 Slang diagnostics 到 SemanticIndex / DiagnosticService。
-4. 继续把关系浏览 UI 收束到 RelationshipService / HierarchyService。
+1. 继续让 services / UI 只读 snapshot，减少 live sym_list 消费。
+2. 继续把关系浏览 UI 收束到 RelationshipService / HierarchyService。
+3. 改进 Problems 面板筛选、刷新策略和诊断跳转体验。
+4. 补 ReferenceService 的真实 UI 消费点。
 5. 保持 6 项 CTest 全绿。

@@ -15,6 +15,9 @@ class SymbolAnalyzer;
 class NavigationManager;
 class NavigationWidget;
 class AnalysisScheduler;
+struct WorkspaceRelationshipAnalysisResult;
+class SemanticIndexSnapshot;
+class QTreeWidget;
 
 class SymbolRelationshipEngine;
 class SlangManager;
@@ -24,6 +27,12 @@ class SlangManager;
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
+
+struct SingleFileRelationshipAnalysisResult {
+    QVector<RelationshipToAdd> relationships;
+    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
+    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -81,6 +90,8 @@ private:
 
     QDockWidget* navigationDock;
     NavigationWidget* navigationWidget;
+    QDockWidget* problemsDock = nullptr;
+    QTreeWidget* problemsTree = nullptr;
 
     struct RelationshipAnalysisTracker {
         int totalFiles = 0;
@@ -88,13 +99,12 @@ private:
         bool isActive = false;
     } relationshipAnalysisTracker;
 
-    QFutureWatcher<QVector<RelationshipToAdd>>* relationshipSingleFileWatcher = nullptr;
+    QFutureWatcher<SingleFileRelationshipAnalysisResult>* relationshipSingleFileWatcher = nullptr;
     QString pendingRelationshipFileName;
     void onSingleFileRelationshipFinished();
     void submitSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
 
-    void onWorkspaceRelationshipAnalysisFinished(
-        const QVector<QPair<QString, QVector<RelationshipToAdd>>>& allResults);
+    void onWorkspaceRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
 
     RelationshipProgressDialog* progressDialog = nullptr;
     void setupProgressDialog();
@@ -108,6 +118,8 @@ private:
     QTimer* relationshipRefreshDeferTimer = nullptr;
 
     void setupNavigationPane();
+    void setupProblemsPane();
+    void updateProblemsPanel(const QString& fileName = QString());
     void connectNavigationSignals();
     void navigateToFileAndLine(const QString& filePath, int lineNumber = -1);
 

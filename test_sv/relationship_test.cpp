@@ -311,6 +311,34 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("diagnostic service reports no diagnostics",
                diagnosticService.hasDiagnostics(diagnosticQuery), false);
 
+    const QString brokenPath = normalizedPath(fixtureDir.filePath(QStringLiteral("broken_diag.sv")));
+    const QString brokenContent = QStringLiteral(
+        "module broken_diag(input logic clk);\n"
+        "  logic bad;\n"
+        "  assign bad = ;\n"
+        "endmodule\n");
+    const QList<SemanticDiagnostic> brokenDiagnostics =
+        slang.extractDiagnostics(brokenPath, brokenContent);
+    SemanticIndex diagnosticIndex(db);
+    diagnosticIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(db, brokenDiagnostics)));
+    DiagnosticService brokenDiagnosticService(&diagnosticIndex);
+    DiagnosticQuery brokenDiagnosticQuery;
+    brokenDiagnosticQuery.fileName = brokenPath;
+    const QList<DiagnosticResult> brokenDiagnosticResults =
+        brokenDiagnosticService.findDiagnostics(brokenDiagnosticQuery);
+    expectBool("slang diagnostics flow into service",
+               !brokenDiagnosticResults.isEmpty(), true);
+    if (!brokenDiagnosticResults.isEmpty()) {
+        expectBool("slang diagnostic has file",
+                   brokenDiagnosticResults.first().diagnostic.fileName == brokenPath, true);
+        expectBool("slang diagnostic has message",
+                   !brokenDiagnosticResults.first().diagnostic.message.isEmpty(), true);
+        expectBool("slang diagnostic has severity",
+                   brokenDiagnosticResults.first().diagnostic.severity == SemanticDiagnostic::Error,
+                   true);
+    }
+
     SearchService searchService(&index);
     SearchQuery moduleSearchQuery;
     moduleSearchQuery.text = QStringLiteral("rel_");
@@ -372,6 +400,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("top reset by top_rst_n",
                hasRel(rels, topRstId, topId, SymbolRelationshipEngine::RESETS), true);
 
+    const auto symbolOnlySnapshot = std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(db));
+    SmartRelationshipBuilder snapshotBuilder(&engine, nullptr, &slang);
+    const QVector<RelationshipToAdd> snapshotBackedRels =
+        snapshotBuilder.computeRelationships(topPath,
+                                             contents.value(topPath),
+                                             symbolOnlySnapshot->getSymbols(topPath),
+                                             symbolOnlySnapshot.get());
+    expectBool("snapshot builder resolves cross-file stage",
+               hasRel(snapshotBackedRels, topId, stageId, SymbolRelationshipEngine::INSTANTIATES),
+               true);
+    expectBool("snapshot builder resolves local task",
+               hasRel(snapshotBackedRels, topId, captureId, SymbolRelationshipEngine::CALLS),
+               true);
+
     applyRelationships(engine, rels);
     engine.addRelationship(topId, stageId, SymbolRelationshipEngine::REFERENCES,
                            QStringLiteral("direction cache probe"));
@@ -396,6 +439,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotIndex.getSymbols(topPath).size() == topSymbols.size(), true);
     expectInt("semantic snapshot finds symbol id",
               snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
+    expectBool("semantic snapshot returns cached file content",
+               snapshotIndex.getCachedFileContent(topPath) == contents.value(topPath), true);
+    expectBool("semantic snapshot returns scope symbols",
+               snapshotIndex.getScopeSymbolNames(topPath, 20).contains(QStringLiteral("stage_data")),
+               true);
     const QList<SemanticRelationship> snapshotTopRelationships =
         snapshotIndex.getRelationships(topId, true);
     bool snapshotFoundStage = false;

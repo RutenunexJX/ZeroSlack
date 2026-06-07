@@ -12,6 +12,8 @@
 #include <QVector>
 #include <QSet>
 
+class SemanticIndexSnapshot;
+
 struct RelationshipToAdd {
     int fromId;
     int toId;
@@ -35,6 +37,9 @@ public:
 
     QVector<RelationshipToAdd> computeRelationships(const QString& fileName, const QString& content,
                                                     const QList<sym_list::SymbolInfo>& fileSymbols);
+    QVector<RelationshipToAdd> computeRelationships(const QString& fileName, const QString& content,
+                                                    const QList<sym_list::SymbolInfo>& fileSymbols,
+                                                    const SemanticIndexSnapshot* snapshot);
     void analyzeFileIncremental(const QString& fileName, const QString& content,
                                const QList<int>& changedLines);
 
@@ -82,11 +87,16 @@ private:
         QHash<int, sym_list::sym_type_e> symbolIdToType;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;
+        const SemanticIndexSnapshot* snapshot = nullptr;
     };
 
     void setupAnalysisContext(const QString& fileName, AnalysisContext& context);
     void setupAnalysisContextFromSymbols(const QString& fileName,
                                          const QList<sym_list::SymbolInfo>& fileSymbols,
+                                         AnalysisContext& context);
+    void setupAnalysisContextFromSymbols(const QString& fileName,
+                                         const QList<sym_list::SymbolInfo>& fileSymbols,
+                                         const SemanticIndexSnapshot* snapshot,
                                          AnalysisContext& context);
     void ensureRelationshipInfo(const QString& content, AnalysisContext& context);
 

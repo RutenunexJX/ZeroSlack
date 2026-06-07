@@ -1,4 +1,5 @@
 #include "smartrelationshipbuilder.h"
+#include "semanticindexsnapshot.h"
 #include <QApplication>
 #include <algorithm>
 #include <utility>
@@ -80,15 +81,24 @@ void SmartRelationshipBuilder::analyzeFile(const QString& fileName, const QStrin
 QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(const QString& fileName, const QString& content,
                                                                           const QList<sym_list::SymbolInfo>& fileSymbols)
 {
+    return computeRelationships(fileName, content, fileSymbols, nullptr);
+}
+
+QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
+    const QString& fileName,
+    const QString& content,
+    const QList<sym_list::SymbolInfo>& fileSymbols,
+    const SemanticIndexSnapshot* snapshot)
+{
     QVector<RelationshipToAdd> result;
     if (checkCancellation(fileName))
         return result;
-    if (!symbolDatabase)
+    if (!symbolDatabase && !snapshot)
         return result;
 
     try {
         AnalysisContext context;
-        setupAnalysisContextFromSymbols(fileName, fileSymbols, context);
+        setupAnalysisContextFromSymbols(fileName, fileSymbols, snapshot, context);
 
         collectResults = &result;
 
@@ -141,10 +151,20 @@ void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(const QString& fi
                                                               const QList<sym_list::SymbolInfo>& fileSymbols,
                                                               AnalysisContext& context)
 {
+    setupAnalysisContextFromSymbols(fileName, fileSymbols, nullptr, context);
+}
+
+void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(
+    const QString& fileName,
+    const QList<sym_list::SymbolInfo>& fileSymbols,
+    const SemanticIndexSnapshot* snapshot,
+    AnalysisContext& context)
+{
     context.currentFileName = fileName;
     context.fileSymbols = fileSymbols;
     context.localSymbolIds.clear();
     context.symbolIdToType.clear();
+    context.snapshot = snapshot;
 
     for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
@@ -305,8 +325,12 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
         sym_list::sym_type_e taskType = sym_list::sym_user;
         if (context.symbolIdToType.contains(taskId))
             taskType = context.symbolIdToType[taskId];
-        else
-            taskType = symbolDatabase->getSymbolById(taskId).symbolType;
+        else {
+            if (context.snapshot)
+                taskType = context.snapshot->getSymbolById(taskId).symbolType;
+            else if (symbolDatabase)
+                taskType = symbolDatabase->getSymbolById(taskId).symbolType;
+        }
 
         if (taskType != sym_list::sym_task && taskType != sym_list::sym_function)
             continue;
@@ -401,6 +425,15 @@ int SmartRelationshipBuilder::findSymbolIdByName(const QString& symbolName, cons
     if (context.localSymbolIds.contains(symbolName)) {
         return context.localSymbolIds[symbolName];
     }
+
+    if (context.snapshot) {
+        const int snapshotId = context.snapshot->findSymbolId(symbolName);
+        if (snapshotId >= 0)
+            return snapshotId;
+    }
+
+    if (!symbolDatabase)
+        return -1;
 
     int id = symbolDatabase->findSymbolIdByName(symbolName);
     if (id >= 0)

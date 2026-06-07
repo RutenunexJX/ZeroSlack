@@ -10,10 +10,12 @@
 #include "analysisscheduler.h"
 #include "navigationmanager.h"
 #include "navigationwidget.h"
+#include "diagnosticservice.h"
 #include "symbolrelationshipengine.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
-#include "searchservice.h"
+#include "semanticindex.h"
+#include "semanticindexsnapshot.h"
 #include "syminfo.h"
 #include "version.h"
 #include <QtConcurrent/QtConcurrent>
@@ -26,7 +28,10 @@
 #include <QTextStream>
 #include <QFile>
 #include <QFileInfo>
+#include <QHeaderView>
+#include <QSet>
 #include <QTimer>
+#include <QTreeWidget>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -46,6 +51,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupRelationshipEngine();
     setupNavigationPane();
+    setupProblemsPane();
     setupManagerConnections();
     connectNavigationSignals();
 
@@ -95,14 +101,26 @@ void MainWindow::setupManagerConnections()
             submitSingleFileRelationshipAnalysis(fileName, content);
         });
     analysisScheduler->setWorkspaceRelationshipAnalysisCallback(
-        [this](const ProjectSnapshot& project) {
-            QVector<QPair<QString, QVector<RelationshipToAdd>>> out;
+        [this](const ProjectSnapshot& project,
+               std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) {
+            WorkspaceRelationshipAnalysisResult result;
+            result.baseSnapshot = baseSnapshot;
+            result.semanticSnapshot = baseSnapshot;
             if (!relationshipBuilder)
-                return out;
+                return result;
 
             relationshipBuilder->resetCancellation();
             const QStringList svFiles = project.systemVerilogFiles;
-            out.reserve(svFiles.size());
+            result.fileRelationships.reserve(svFiles.size());
+            QList<SemanticRelationship> snapshotRelationships =
+                baseSnapshot ? baseSnapshot->relationships() : QList<SemanticRelationship>();
+            QSet<QString> seenRelationships;
+            for (const SemanticRelationship& relationship : std::as_const(snapshotRelationships)) {
+                seenRelationships.insert(QStringLiteral("%1:%2:%3")
+                                             .arg(relationship.fromId)
+                                             .arg(relationship.toId)
+                                             .arg(static_cast<int>(relationship.type)));
+            }
             for (const QString& filePath : svFiles) {
                 if (relationshipBuilder->isCancelled())
                     break;
@@ -110,16 +128,34 @@ void MainWindow::setupManagerConnections()
                 if (!file.open(QIODevice::ReadOnly | QFile::Text))
                     continue;
                 const QString content = QTextStream(&file).readAll();
-                SearchQuery query;
-                query.fileName = filePath;
-                QList<sym_list::SymbolInfo> fs;
-                const QList<SearchResult> results = SearchService::getInstance()->findSymbols(query);
-                fs.reserve(results.size());
-                for (const SearchResult& result : results)
-                    fs.append(result.symbol);
-                out.append({filePath, relationshipBuilder->computeRelationships(filePath, content, fs)});
+                const QList<sym_list::SymbolInfo> fs =
+                    baseSnapshot ? baseSnapshot->getSymbols(filePath) : QList<sym_list::SymbolInfo>();
+                const QVector<RelationshipToAdd> relationships =
+                    relationshipBuilder->computeRelationships(filePath, content, fs, baseSnapshot.get());
+                result.fileRelationships.append({filePath, relationships});
+                for (const RelationshipToAdd& relationship : relationships) {
+                    if (relationship.fromId < 0 || relationship.toId < 0)
+                        continue;
+                    const QString key = QStringLiteral("%1:%2:%3")
+                                            .arg(relationship.fromId)
+                                            .arg(relationship.toId)
+                                            .arg(static_cast<int>(relationship.type));
+                    if (seenRelationships.contains(key))
+                        continue;
+                    seenRelationships.insert(key);
+                    snapshotRelationships.append({relationship.fromId,
+                                                  relationship.toId,
+                                                  relationship.type});
+                }
             }
-            return out;
+            if (baseSnapshot) {
+                result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
+                    baseSnapshot->getSymbols(),
+                    snapshotRelationships,
+                    baseSnapshot->diagnostics(),
+                    baseSnapshot->fileContents());
+            }
+            return result;
         });
     analysisScheduler->setWorkspaceRelationshipCancelCallback([this]() {
         if (relationshipBuilder)
@@ -237,9 +273,15 @@ void MainWindow::setupManagerConnections()
     connect(symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
             this, [this](const QString& fileName, int symbolCount) {
                 Q_UNUSED(symbolCount)
+                updateProblemsPanel(fileName);
                 MyCodeEditor* editor = tabManager->getCurrentEditor();
                 if (!editor || editor->getFileName() != fileName) return;
                 editor->refreshScopeAndCurrentLineHighlight();
+            });
+
+    connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchAnalysisCompleted,
+            this, [this](int, int) {
+                updateProblemsPanel();
             });
 
     connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchProgress,
@@ -384,6 +426,82 @@ void MainWindow::setupNavigationPane()
     addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
 
     navigationManager->setNavigationWidget(navigationWidget);
+}
+
+void MainWindow::setupProblemsPane()
+{
+    problemsTree = new QTreeWidget(this);
+    problemsTree->setObjectName(QStringLiteral("problemsTree"));
+    problemsTree->setColumnCount(4);
+    problemsTree->setHeaderLabels({"Severity", "File", "Line", "Message"});
+    problemsTree->setRootIsDecorated(false);
+    problemsTree->setAlternatingRowColors(true);
+    problemsTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    problemsTree->header()->setStretchLastSection(true);
+    problemsTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    problemsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    problemsTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+
+    problemsDock = new QDockWidget("Problems", this);
+    problemsDock->setObjectName(QStringLiteral("problemsDock"));
+    problemsDock->setWidget(problemsTree);
+    problemsDock->setFeatures(QDockWidget::DockWidgetMovable |
+                              QDockWidget::DockWidgetFloatable |
+                              QDockWidget::DockWidgetClosable);
+    addDockWidget(Qt::BottomDockWidgetArea, problemsDock);
+
+    connect(problemsTree, &QTreeWidget::itemDoubleClicked,
+            this, [this](QTreeWidgetItem* item, int) {
+                if (!item)
+                    return;
+                const QString fileName = item->data(0, Qt::UserRole).toString();
+                const int line = item->data(0, Qt::UserRole + 1).toInt();
+                navigateToFileAndLine(fileName, line);
+            });
+}
+
+static QString diagnosticSeverityText(SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return QStringLiteral("Error");
+    case SemanticDiagnostic::Warning:
+        return QStringLiteral("Warning");
+    case SemanticDiagnostic::Info:
+    default:
+        return QStringLiteral("Info");
+    }
+}
+
+void MainWindow::updateProblemsPanel(const QString& fileName)
+{
+    if (!problemsTree)
+        return;
+
+    DiagnosticQuery query;
+    query.fileName = fileName;
+    const QList<DiagnosticResult> diagnostics =
+        DiagnosticService::getInstance()->findDiagnostics(query);
+
+    problemsTree->clear();
+    for (const DiagnosticResult& result : diagnostics) {
+        const SemanticDiagnostic& diagnostic = result.diagnostic;
+        auto* item = new QTreeWidgetItem(problemsTree);
+        item->setText(0, diagnosticSeverityText(diagnostic.severity));
+        item->setText(1, QFileInfo(diagnostic.fileName).fileName());
+        item->setText(2, QString::number(diagnostic.line));
+        item->setText(3, diagnostic.message);
+        item->setToolTip(1, diagnostic.fileName);
+        item->setToolTip(3, diagnostic.message);
+        item->setData(0, Qt::UserRole, diagnostic.fileName);
+        item->setData(0, Qt::UserRole + 1, diagnostic.line);
+    }
+
+    if (problemsDock) {
+        problemsDock->setWindowTitle(QStringLiteral("Problems (%1)").arg(diagnostics.size()));
+        if (!diagnostics.isEmpty())
+            problemsDock->show();
+    }
 }
 
 void MainWindow::connectNavigationSignals()
@@ -566,8 +684,8 @@ void MainWindow::setupRelationshipEngine()
     relationshipBuilder = std::make_unique<SmartRelationshipBuilder>(
         relationshipEngine.get(), symbolDatabase, slangManager.get(), this);
 
-    relationshipSingleFileWatcher = new QFutureWatcher<QVector<RelationshipToAdd>>(this);
-    connect(relationshipSingleFileWatcher, &QFutureWatcher<QVector<RelationshipToAdd>>::finished,
+    relationshipSingleFileWatcher = new QFutureWatcher<SingleFileRelationshipAnalysisResult>(this);
+    connect(relationshipSingleFileWatcher, &QFutureWatcher<SingleFileRelationshipAnalysisResult>::finished,
             this, &MainWindow::onSingleFileRelationshipFinished);
 
     connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipAdded,
@@ -648,21 +766,59 @@ void MainWindow::submitSingleFileRelationshipAnalysis(const QString& fileName, c
     if (!relationshipSingleFileWatcher)
         return;
     if (relationshipSingleFileWatcher->isRunning()) {
-        QFuture<QVector<RelationshipToAdd>> oldFuture = relationshipSingleFileWatcher->future();
+        QFuture<SingleFileRelationshipAnalysisResult> oldFuture =
+            relationshipSingleFileWatcher->future();
         relationshipSingleFileWatcher->cancel();
         oldFuture.waitForFinished();
     }
     pendingRelationshipFileName = fileName;
     relationshipBuilder->resetCancellation();
-    QFuture<QVector<RelationshipToAdd>> future = QtConcurrent::run([this, fileName, content]() {
-        SearchQuery query;
-        query.fileName = fileName;
-        QList<sym_list::SymbolInfo> fs;
-        const QList<SearchResult> results = SearchService::getInstance()->findSymbols(query);
-        fs.reserve(results.size());
-        for (const SearchResult& result : results)
-            fs.append(result.symbol);
-        return relationshipBuilder->computeRelationships(fileName, content, fs);
+    const auto currentSnapshot = SemanticIndex::getInstance()->snapshot();
+    const QList<SemanticDiagnostic> currentDiagnostics =
+        currentSnapshot ? currentSnapshot->diagnostics() : QList<SemanticDiagnostic>();
+    const auto baseSnapshot = std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(sym_list::getInstance(), currentDiagnostics));
+    SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
+    QFuture<SingleFileRelationshipAnalysisResult> future =
+        QtConcurrent::run([this, fileName, content, baseSnapshot]() {
+            SingleFileRelationshipAnalysisResult result;
+            result.baseSnapshot = baseSnapshot;
+            result.semanticSnapshot = baseSnapshot;
+            if (!baseSnapshot)
+                return result;
+
+            const QList<sym_list::SymbolInfo> fs = baseSnapshot->getSymbols(fileName);
+            result.relationships =
+                relationshipBuilder->computeRelationships(fileName, content, fs, baseSnapshot.get());
+
+            QList<SemanticRelationship> snapshotRelationships = baseSnapshot->relationships();
+            QSet<QString> seenRelationships;
+            for (const SemanticRelationship& relationship : std::as_const(snapshotRelationships)) {
+                seenRelationships.insert(QStringLiteral("%1:%2:%3")
+                                             .arg(relationship.fromId)
+                                             .arg(relationship.toId)
+                                             .arg(static_cast<int>(relationship.type)));
+            }
+            for (const RelationshipToAdd& relationship : std::as_const(result.relationships)) {
+                if (relationship.fromId < 0 || relationship.toId < 0)
+                    continue;
+                const QString key = QStringLiteral("%1:%2:%3")
+                                        .arg(relationship.fromId)
+                                        .arg(relationship.toId)
+                                        .arg(static_cast<int>(relationship.type));
+                if (seenRelationships.contains(key))
+                    continue;
+                seenRelationships.insert(key);
+                snapshotRelationships.append({relationship.fromId,
+                                              relationship.toId,
+                                              relationship.type});
+            }
+            result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
+                baseSnapshot->getSymbols(),
+                snapshotRelationships,
+                baseSnapshot->diagnostics(),
+                baseSnapshot->fileContents());
+        return result;
     });
     relationshipSingleFileWatcher->setFuture(future);
 }
@@ -689,25 +845,34 @@ void MainWindow::onSingleFileRelationshipFinished()
     }
     QString fileName = pendingRelationshipFileName;
     pendingRelationshipFileName.clear();
-    QVector<RelationshipToAdd> results = relationshipSingleFileWatcher->result();
+    const SingleFileRelationshipAnalysisResult result = relationshipSingleFileWatcher->result();
+    if (result.baseSnapshot && SemanticIndex::getInstance()->snapshot() != result.baseSnapshot)
+        return;
+
     relationshipEngine->beginUpdate();
-    for (const RelationshipToAdd& r : results) {
+    for (const RelationshipToAdd& r : result.relationships) {
         if (r.fromId < 0 || r.toId < 0)
             continue;
         relationshipEngine->addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
     }
     relationshipEngine->endUpdate();
-    onRelationshipAnalysisCompleted(fileName, results.size());
+    if (result.semanticSnapshot) {
+        SemanticIndex::getInstance()->setSnapshot(result.semanticSnapshot);
+        CompletionManager::getInstance()->refreshRelationshipData();
+    }
+    onRelationshipAnalysisCompleted(fileName, result.relationships.size());
 }
 
 void MainWindow::onWorkspaceRelationshipAnalysisFinished(
-    const QVector<QPair<QString, QVector<RelationshipToAdd>>>& allResults)
+    const WorkspaceRelationshipAnalysisResult& result)
 {
     if (!relationshipEngine || !relationshipBuilder)
         return;
+    if (result.baseSnapshot && SemanticIndex::getInstance()->snapshot() != result.baseSnapshot)
+        return;
 
     relationshipEngine->beginUpdate();
-    for (const auto& pair : allResults) {
+    for (const auto& pair : result.fileRelationships) {
         const QString& fileName = pair.first;
         for (const RelationshipToAdd& r : pair.second) {
             if (r.fromId < 0 || r.toId < 0)
@@ -720,6 +885,10 @@ void MainWindow::onWorkspaceRelationshipAnalysisFinished(
             relationshipAnalysisTracker.processedFiles++;
     }
     relationshipEngine->endUpdate();
+    if (result.semanticSnapshot) {
+        SemanticIndex::getInstance()->setSnapshot(result.semanticSnapshot);
+        CompletionManager::getInstance()->refreshRelationshipData();
+    }
     if (relationshipAnalysisTracker.isActive && relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
         relationshipAnalysisTracker.isActive = false;
         if (progressDialog) {

@@ -1,4 +1,6 @@
 #include "symbolanalyzer.h"
+#include "semanticindex.h"
+#include "semanticindexsnapshot.h"
 #include "slangmanager.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -9,6 +11,7 @@
 #include <QFileInfo>
 #include <QApplication>
 #include <QEventLoop>
+#include <memory>
 #include <utility>
 
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
@@ -33,6 +36,8 @@ SymbolAnalyzer::~SymbolAnalyzer()
     m_slangManager = nullptr;
 }
 
+static void publishCurrentSemanticSnapshot(QList<SemanticDiagnostic> diagnostics = {});
+
 void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
 {
     if (!tabManager) return;
@@ -42,15 +47,18 @@ void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
     sym_list* symbolList = sym_list::getInstance();
     QStringList svFiles = tabManager->getOpenSystemVerilogFiles();
     int symbolsFromOpenFiles = 0;
+    QList<SemanticDiagnostic> diagnostics;
 
     for (const QString& fileName : std::as_const(svFiles)) {
         QString content = tabManager->getPlainTextFromOpenFile(fileName);
         if (content.isNull()) continue;
         QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(fileName, content);
         symbolList->setSymbolsForFile(fileName, list, content);
+        diagnostics.append(m_slangManager->extractDiagnostics(fileName, content));
         symbolsFromOpenFiles += list.size();
     }
 
+    publishCurrentSemanticSnapshot(diagnostics);
     emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
 }
 
@@ -71,6 +79,12 @@ static QString readTextFile(const QString& filePath)
         return QString();
     QTextStream stream(&file);
     return stream.readAll();
+}
+
+static void publishCurrentSemanticSnapshot(QList<SemanticDiagnostic> diagnostics)
+{
+    SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(sym_list::getInstance(), std::move(diagnostics))));
 }
 
 static WorkspaceAnalysisResult buildWorkspaceAnalysisResult(const QStringList& svFiles,
@@ -124,6 +138,7 @@ void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::functio
     }
 
     WorkspaceAnalysisResult result = buildWorkspaceAnalysisResult(svFiles, allSymbols, isCancelled);
+    result.diagnostics = m_slangManager->extractWorkspaceDiagnostics(svFiles);
     sym_list* symbolList = sym_list::getInstance();
     int filesAnalyzed = 0;
     for (const WorkspaceFileAnalysis& fileResult : std::as_const(result.files)) {
@@ -133,6 +148,7 @@ void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::functio
     }
 
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
+    publishCurrentSemanticSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(project.workspaceRoot, result.totalSymbols);
 }
@@ -157,8 +173,10 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(const ProjectSnapshot& project, st
     emit analysisStarted(workspacePath);
 
     QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([this, svFiles, isCancelled]() {
-        QList<sym_list::SymbolInfo> result = m_slangManager->extractWorkspaceSymbols(svFiles);
-        return buildWorkspaceAnalysisResult(svFiles, result, isCancelled);
+        QList<sym_list::SymbolInfo> symbols = m_slangManager->extractWorkspaceSymbols(svFiles);
+        WorkspaceAnalysisResult result = buildWorkspaceAnalysisResult(svFiles, symbols, isCancelled);
+        result.diagnostics = m_slangManager->extractWorkspaceDiagnostics(svFiles);
+        return result;
     });
 
     workspaceAnalysisWatcher->setProperty("workspacePath", workspacePath);
@@ -185,6 +203,7 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
     }
 
     CompletionManager::getInstance()->forceRefreshSymbolCaches();
+    publishCurrentSemanticSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(workspacePath, result.totalSymbols);
 }
@@ -204,8 +223,10 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
     file.close();
 
     QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(filePath, content);
+    QList<SemanticDiagnostic> diagnostics = m_slangManager->extractDiagnostics(filePath, content);
     sym_list* symbolList = sym_list::getInstance();
     symbolList->setSymbolsForFile(filePath, list, content);
+    publishCurrentSemanticSnapshot(diagnostics);
     emit analysisCompleted(filePath, list.size());
 }
 
@@ -226,8 +247,10 @@ void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& 
 {
     if (fileName.isEmpty() || !isSystemVerilogFile(fileName)) return;
     QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(fileName, content);
+    QList<SemanticDiagnostic> diagnostics = m_slangManager->extractDiagnostics(fileName, content);
     sym_list* sym = sym_list::getInstance();
     sym->setSymbolsForFile(fileName, list, content);
+    publishCurrentSemanticSnapshot(diagnostics);
     emit analysisCompleted(fileName, list.size());
 }
 
@@ -237,18 +260,23 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
 
     // The expensive part is Slang parse + elaboration; run it off the UI thread. A fresh local
     // SlangManager keeps the background task self-contained (extractSymbols holds no shared state).
-    auto* watcher = new QFutureWatcher<QList<sym_list::SymbolInfo>>(this);
-    connect(watcher, &QFutureWatcher<QList<sym_list::SymbolInfo>>::finished, this,
+    auto* watcher =
+        new QFutureWatcher<QPair<QList<sym_list::SymbolInfo>, QList<SemanticDiagnostic>>>(this);
+    connect(watcher,
+            &QFutureWatcher<QPair<QList<sym_list::SymbolInfo>, QList<SemanticDiagnostic>>>::finished,
+            this,
             [this, fileName, content, watcher]() {
-                QList<sym_list::SymbolInfo> list = watcher->result();
+                const auto result = watcher->result();
                 watcher->deleteLater();
                 // Write-back (DB + scope tree + caches) on the main thread.
-                sym_list::getInstance()->setSymbolsForFile(fileName, list, content);
-                emit analysisCompleted(fileName, list.size());
+                sym_list::getInstance()->setSymbolsForFile(fileName, result.first, content);
+                publishCurrentSemanticSnapshot(result.second);
+                emit analysisCompleted(fileName, result.first.size());
             });
     watcher->setFuture(QtConcurrent::run([fileName, content]() {
         SlangManager local;
-        return local.extractSymbols(fileName, content);
+        return qMakePair(local.extractSymbols(fileName, content),
+                         local.extractDiagnostics(fileName, content));
     }));
 }
 

@@ -43,17 +43,21 @@ sym_list::SymbolInfo missingSnapshotSymbol()
 SemanticIndexSnapshot::SemanticIndexSnapshot(
     QList<sym_list::SymbolInfo> symbols,
     QList<SemanticRelationship> relationships,
-    QList<SemanticDiagnostic> diagnostics)
+    QList<SemanticDiagnostic> diagnostics,
+    QHash<QString, QString> fileContents)
     : m_symbols(std::move(symbols)),
       m_relationships(std::move(relationships)),
-      m_diagnostics(std::move(diagnostics))
+      m_diagnostics(std::move(diagnostics)),
+      m_fileContents(std::move(fileContents))
 {
 }
 
-SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(sym_list* symbolDatabase)
+SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
+    sym_list* symbolDatabase,
+    QList<SemanticDiagnostic> diagnostics)
 {
     if (!symbolDatabase)
-        return SemanticIndexSnapshot();
+        return SemanticIndexSnapshot({}, {}, std::move(diagnostics));
 
     const QList<sym_list::SymbolInfo> symbols = symbolDatabase->getAllSymbols();
     QList<SemanticRelationship> relationships;
@@ -84,7 +88,16 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(sym_list* symbol
         }
     }
 
-    return SemanticIndexSnapshot(symbols, relationships);
+    QHash<QString, QString> fileContents;
+    QSet<QString> seenFiles;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (symbol.fileName.isEmpty() || seenFiles.contains(symbol.fileName))
+            continue;
+        seenFiles.insert(symbol.fileName);
+        fileContents.insert(symbol.fileName, symbolDatabase->getCachedFileContent(symbol.fileName));
+    }
+
+    return SemanticIndexSnapshot(symbols, relationships, std::move(diagnostics), fileContents);
 }
 
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbols(const QString& fileName) const
@@ -150,6 +163,60 @@ int SemanticIndexSnapshot::findSymbolId(const QString& name,
     return symbols.first().symbolId;
 }
 
+QString SemanticIndexSnapshot::getCachedFileContent(const QString& fileName) const
+{
+    if (fileName.isEmpty())
+        return QString();
+
+    if (m_fileContents.contains(fileName))
+        return m_fileContents.value(fileName);
+
+    const QString normalizedTarget = normalizedSnapshotFileName(fileName);
+    for (auto it = m_fileContents.constBegin(); it != m_fileContents.constEnd(); ++it) {
+        if (normalizedSnapshotFileName(it.key()) == normalizedTarget)
+            return it.value();
+    }
+    return QString();
+}
+
+QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
+                                                       int cursorLine) const
+{
+    QStringList result;
+    if (fileName.isEmpty() || cursorLine < 0)
+        return result;
+
+    const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(fileName);
+    QString containingModule;
+    int containingModuleStart = -1;
+    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
+        if (symbol.symbolType != sym_list::sym_module)
+            continue;
+        if (symbol.startLine <= cursorLine
+            && (symbol.endLine <= 0 || symbol.endLine >= cursorLine)
+            && symbol.startLine > containingModuleStart) {
+            containingModule = symbol.symbolName;
+            containingModuleStart = symbol.startLine;
+        }
+    }
+
+    QSet<QString> seen;
+    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
+        bool inScope = symbol.moduleScope.isEmpty();
+        if (!containingModule.isEmpty()) {
+            inScope = inScope
+                || symbol.moduleScope == containingModule
+                || (symbol.startLine <= cursorLine
+                    && (symbol.endLine <= 0 || symbol.endLine >= cursorLine));
+        }
+        if (!inScope || symbol.symbolName.isEmpty() || seen.contains(symbol.symbolName))
+            continue;
+        seen.insert(symbol.symbolName);
+        result.append(symbol.symbolName);
+    }
+    return result;
+}
+
 QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(int symbolId,
                                                                     bool outgoing) const
 {
@@ -180,6 +247,21 @@ QList<SemanticDiagnostic> SemanticIndexSnapshot::getDiagnostics(const QString& f
         }
     }
     return result;
+}
+
+QList<SemanticRelationship> SemanticIndexSnapshot::relationships() const
+{
+    return m_relationships;
+}
+
+QList<SemanticDiagnostic> SemanticIndexSnapshot::diagnostics() const
+{
+    return m_diagnostics;
+}
+
+QHash<QString, QString> SemanticIndexSnapshot::fileContents() const
+{
+    return m_fileContents;
 }
 
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::sortedDefinitions(

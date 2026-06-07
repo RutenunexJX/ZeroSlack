@@ -3,6 +3,7 @@
 
 #include "documentmodel.h"
 #include "projectmodel.h"
+#include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
 
 #include <QFutureWatcher>
@@ -12,9 +13,16 @@
 #include <QString>
 #include <QVector>
 #include <functional>
+#include <memory>
 
 class SymbolAnalyzer;
 class QTimer;
+
+struct WorkspaceRelationshipAnalysisResult {
+    QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
+    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
+    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+};
 
 class AnalysisScheduler : public QObject
 {
@@ -32,7 +40,9 @@ public:
     void setWorkspaceSymbolCancelProvider(std::function<bool()> provider);
     void setRelationshipAnalysisCallback(std::function<void(const QString&, const QString&)> callback);
     void setWorkspaceRelationshipAnalysisCallback(
-        std::function<QVector<QPair<QString, QVector<RelationshipToAdd>>>(const ProjectSnapshot&)> callback);
+        std::function<WorkspaceRelationshipAnalysisResult(
+            const ProjectSnapshot&,
+            std::shared_ptr<const SemanticIndexSnapshot>)> callback);
     void setWorkspaceRelationshipCancelCallback(std::function<void()> callback);
 
     void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
@@ -48,7 +58,7 @@ signals:
     void workspaceSymbolAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
     void workspaceSymbolAnalysisFinished(const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols);
     void workspaceRelationshipAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
-    void workspaceRelationshipAnalysisFinished(const QVector<QPair<QString, QVector<RelationshipToAdd>>>& results);
+    void workspaceRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
     void workspaceRelationshipAnalysisCancelled();
 
 private:
@@ -60,14 +70,16 @@ private:
     std::function<bool()> workspaceOpenProvider;
     std::function<bool()> workspaceSymbolCancelProvider;
     std::function<void(const QString&, const QString&)> relationshipAnalysisCallback;
-    std::function<QVector<QPair<QString, QVector<RelationshipToAdd>>>(const ProjectSnapshot&)>
+    std::function<WorkspaceRelationshipAnalysisResult(
+        const ProjectSnapshot&,
+        std::shared_ptr<const SemanticIndexSnapshot>)>
         workspaceRelationshipAnalysisCallback;
     std::function<void()> workspaceRelationshipCancelCallback;
 
     QMap<QString, QTimer*> openFileAnalysisTimers;
     QMap<QString, QTimer*> fileChangeDebounceTimers;
     QMap<QString, QString> lastRelationshipAnalysisContent;
-    QFutureWatcher<QVector<QPair<QString, QVector<RelationshipToAdd>>>>* workspaceRelationshipWatcher = nullptr;
+    QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceRelationshipWatcher = nullptr;
     ProjectSnapshot activeWorkspaceProject;
     bool workspaceSymbolAnalysisActive = false;
 

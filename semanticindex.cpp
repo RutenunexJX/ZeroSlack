@@ -130,11 +130,17 @@ int SemanticIndex::findSymbolId(const QString& name,
 
 QString SemanticIndex::getCachedFileContent(const QString& fileName) const
 {
+    if (m_snapshot)
+        return m_snapshot->getCachedFileContent(fileName);
+
     return symbolDatabase()->getCachedFileContent(fileName);
 }
 
 QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int cursorLine) const
 {
+    if (m_snapshot)
+        return m_snapshot->getScopeSymbolNames(fileName, cursorLine);
+
     QStringList result;
     if (fileName.isEmpty() || cursorLine < 0)
         return result;

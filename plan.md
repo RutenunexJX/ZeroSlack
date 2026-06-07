@@ -1,6 +1,6 @@
 # ZeroSlack Next Plan
 
-当前版本：`0.0.17/slang22`
+当前版本：`0.0.18/slang23`
 当前分支：`tree_sitter_and_slang`
 
 本计划服务于 `goal.md` 中的产品 / 架构目标。后续实现默认继续向：
@@ -16,9 +16,10 @@
 - Tree-sitter：实时语法、高亮、增量文档、live module scope。
 - Slang：符号、类型、定义、跳转、补全、关系、诊断事实来源。
 - SemanticIndex：当前默认是 sym_list-backed facade，新增语义读取优先通过它。
-- SemanticIndexSnapshot：最小只读 snapshot 类型已落地，SemanticIndex 已支持 setSnapshot / clearSnapshot。
+- SemanticIndexSnapshot：已接入 workspace / single-file 后台分析生产和主线程世代切换。
+  Snapshot 当前保存 symbols / relationships / diagnostics / cached file content / minimal scope names。
 - Query Services：Definition / Completion / Relationship / Hierarchy / Reference /
-  Diagnostic / Search 最小边界已落地；RelationshipService 已扩展 related id / exact relationship 查询。
+  Diagnostic / Search 最小边界已落地；DiagnosticService 已能消费 Slang diagnostics。
 - Navigation UI：模块层级和符号 outline 已有显式 model，Widget 不再在双击时反查 sym_list。
 - Scheduler：workspace opened/rescanned/project config changed 已经通过 ProjectModel
   projectChanged 进入 AnalysisScheduler。
@@ -27,8 +28,8 @@
 
 - completion_test：14 checks, 0 failed。
 - jump_test：10 checks, 0 failed。
-- relationship_test：74 checks, 0 failed。
-- gui_smoke_test：46 checks, 0 failed。
+- relationship_test：82 checks, 0 failed。
+- gui_smoke_test：54 checks, 0 failed。
 - ctest：6/6 passed。
 - git diff --check：无错误。
 
@@ -81,7 +82,19 @@
 - Snapshot 支持 symbols / definitions / symbol id / relationships / diagnostics 查询。
 - SemanticIndex 支持 setSnapshot / clearSnapshot；snapshot 存在时优先读 snapshot。
 - relationship_test 覆盖 snapshot symbols / symbol id / relationships / clearSnapshot。
-- 后台分析产出 snapshot、主线程原子切换 current snapshot 尚未完成。
+- 后台分析已产出 snapshot，主线程按 base snapshot 世代切换 current snapshot。
+- Snapshot 已扩展 cached file content / minimal scope names 查询。
+- Workspace / single-file relationship 后台已改为 snapshot-backed，避免读取过期 current snapshot。
+
+### P6 Slang diagnostics / Problems UI
+
+- SlangManager 新增 `extractDiagnostics` / `extractWorkspaceDiagnostics`。
+- SemanticDiagnostic 已从 Slang diagnostics 进入 SemanticIndexSnapshot。
+- DiagnosticService 已能查询真实 diagnostics。
+- MainWindow 新增底部 Problems dock，显示 Severity / File / Line / Message。
+- Problems 条目双击可跳转到对应文件和行。
+- relationship_test 覆盖 Slang diagnostics -> snapshot -> DiagnosticService。
+- gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic。
 
 ## 下一步建议
 
@@ -100,11 +113,12 @@
 
 RelationshipService / HierarchyService 已有底层边界，后续可以继续把关系浏览 UI 的消费端迁过去。
 
-### 3. Reference / Diagnostic UI
+### 3. Reference / Problems UI
 
 - ReferenceService 当前已能从 RelationshipService 查询 incoming references。
-- DiagnosticService 当前委托 SemanticIndex::getDiagnostics，仍为空实现。
-- 后续可先补 Slang diagnostics 到 SemanticIndex，再挂 Problems panel。
+- DiagnosticService 已消费 Slang diagnostics，Problems panel 已有最小 UI。
+- 后续可补 Problems panel 的筛选、清空策略、当前文件/全 workspace 模式和更完整跳转体验。
+- ReferenceService 仍缺真实 UI 消费点。
 
 ### 4. SemanticIndexSnapshot 生产 / 切换闭环
 
@@ -112,13 +126,13 @@ RelationshipService / HierarchyService 已有底层边界，后续可以继续�
 
 ```text
 后台分析产出 SemanticIndexSnapshot
-主线程原子切换 currentSnapshot
+主线程按 base snapshot 世代切换 currentSnapshot
 UI / Services 只读 snapshot
 旧 snapshot 自动释放
 ```
 
-最小只读 snapshot 类型已落地；下一步重点不是再设计类型，而是让 AnalysisScheduler /
-后台分析真正产出 snapshot，并让主线程原子切换 current snapshot。
+基础闭环已落地；下一步重点是继续减少 live sym_list 消费，并把更多 UI / services
+读路径固定到 snapshot-backed 数据。
 
 ## Definition Of Done
 

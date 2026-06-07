@@ -6,8 +6,10 @@
 #include <QCompleter>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTreeWidget>
@@ -104,7 +106,8 @@ static void drainRelationshipWork(MainWindow& window)
     if (window.analysisScheduler)
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     if (window.relationshipSingleFileWatcher && window.relationshipSingleFileWatcher->isRunning()) {
-        QFuture<QVector<RelationshipToAdd>> future = window.relationshipSingleFileWatcher->future();
+        QFuture<SingleFileRelationshipAnalysisResult> future =
+            window.relationshipSingleFileWatcher->future();
         window.relationshipSingleFileWatcher->cancel();
         future.waitForFinished();
     }
@@ -322,6 +325,42 @@ int main(int argc, char** argv)
 
     expectBool("open symbol fixture", window.tabManager->openFileInTab(symbolFixturePath), true);
     expectBool("symbol fixture analysis completes",
+               waitUntil([&]() { return symbolFixtureAnalyzed; }, 10000), true);
+
+    QTemporaryDir diagnosticDir;
+    expectBool("diagnostic temp dir created", diagnosticDir.isValid(), true);
+    const QString diagnosticPath =
+        diagnosticDir.filePath(QStringLiteral("broken_diag.sv"));
+    QFile diagnosticFile(diagnosticPath);
+    expectBool("diagnostic fixture writable",
+               diagnosticFile.open(QIODevice::WriteOnly | QIODevice::Text), true);
+    if (diagnosticFile.isOpen()) {
+        diagnosticFile.write(
+            "module broken_diag(input logic clk);\n"
+            "  logic bad;\n"
+            "  assign bad = ;\n"
+            "endmodule\n");
+        diagnosticFile.close();
+    }
+
+    bool diagnosticFixtureAnalyzed = false;
+    QObject::connect(window.symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
+                     &window, [&](const QString& fileName, int) {
+                         if (QFileInfo(fileName).absoluteFilePath()
+                             == QFileInfo(diagnosticPath).absoluteFilePath()) {
+                             diagnosticFixtureAnalyzed = true;
+                         }
+                     });
+    expectBool("open diagnostic fixture", window.tabManager->openFileInTab(diagnosticPath), true);
+    expectBool("diagnostic fixture analysis completes",
+               waitUntil([&]() { return diagnosticFixtureAnalyzed; }, 10000), true);
+    expectBool("problems tree exists", window.problemsTree != nullptr, true);
+    expectBool("problems tree shows diagnostic",
+               window.problemsTree && window.problemsTree->topLevelItemCount() > 0,
+               true);
+
+    expectBool("reopen symbol fixture", window.tabManager->openFileInTab(symbolFixturePath), true);
+    expectBool("symbol fixture analysis remains complete",
                waitUntil([&]() { return symbolFixtureAnalyzed; }, 10000), true);
 
     MyCodeEditor* editor = window.tabManager->getCurrentEditor();
