@@ -1562,7 +1562,7 @@ void MainWindow::setupRelationshipEngine()
 {
     if (!relationshipEngine) return;
 
-    sym_list* symbolDatabase = sym_list::getInstance();
+    sym_list* symbolDatabase = SemanticIndex::getInstance()->symbolDatabase();
     symbolDatabase->setRelationshipEngine(relationshipEngine.get());
 
     slangManager = std::make_unique<SlangManager>();

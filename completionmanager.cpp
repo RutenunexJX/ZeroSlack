@@ -750,7 +750,7 @@ void CompletionManager::setRelationshipEngine(SymbolRelationshipEngine* engine)
 
     if (engine && !relationshipBuilder) {
         relationshipBuilder = std::make_unique<SmartRelationshipBuilder>(
-            engine, sym_list::getInstance(), m_slangManager, nullptr);
+            engine, SemanticIndex::getInstance()->symbolDatabase(), m_slangManager, nullptr);
     }
 
     relationshipCacheValid = false;

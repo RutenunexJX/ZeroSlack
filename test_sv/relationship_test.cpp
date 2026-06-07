@@ -302,6 +302,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QStringList scopeNames = index.getScopeSymbolNames(topPath, 20);
     expectBool("semantic facade returns scope symbols",
                scopeNames.contains(QStringLiteral("stage_data")), true);
+    const QStringList topLines = contents.value(topPath).split('\n');
+    int topEndModuleLine = -1;
+    for (int i = 0; i < topLines.size(); ++i) {
+        if (topLines.at(i).trimmed() == QStringLiteral("endmodule")) {
+            topEndModuleLine = i;
+            break;
+        }
+    }
+    expectBool("fixture top endmodule located", topEndModuleLine >= 0, true);
+    expectInt("semantic facade finds module end line",
+              index.findEndModuleLine(topPath, index.getSymbolById(topId)), topEndModuleLine);
 
     DiagnosticService diagnosticService(&index);
     DiagnosticQuery diagnosticQuery;
@@ -518,6 +529,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("semantic snapshot returns scope symbols",
                snapshotIndex.getScopeSymbolNames(topPath, 20).contains(QStringLiteral("stage_data")),
                true);
+    sym_list::SymbolInfo snapshotTopSymbol = snapshotIndex.getSymbolById(topId);
+    snapshotTopSymbol.endLine = 0;
+    expectInt("semantic snapshot finds module end line from cached content",
+              snapshotIndex.findEndModuleLine(topPath, snapshotTopSymbol), topEndModuleLine);
     const QList<SemanticRelationship> snapshotTopRelationships =
         snapshotIndex.getRelationships(topId, true);
     bool snapshotFoundStage = false;

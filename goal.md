@@ -67,6 +67,9 @@ Tree-sitter + Slang 分工保持不变：
 - SemanticIndexSnapshot 生产 / 切换闭环的第一版。
 - SemanticIndex / SemanticIndexSnapshot 已提供 base snapshot capture 和 relationship merge helper。
 - SemanticIndex / SemanticIndexSnapshot 已提供 diagnostics replacement helper，用于 single-file/open-tab 分析保留其它文件 diagnostics。
+- SemanticIndex 已提供 module end line、module name validity 和 contentAffectsSymbols 过渡 helper，
+  ScopeBandWidget / AnalysisScheduler / MainWindow / CompletionManager 已不再直接硬编码 sym_list::getInstance。
+- TSDocument 已提供 isCommentAt，MyCodeEditor 注释区补全抑制改走 Tree-sitter live syntax。
 - DefinitionService。
 - CompletionService。
 - RelationshipService。
@@ -96,7 +99,8 @@ Tree-sitter + Slang 分工保持不变：
   后续仍可继续打磨按层刷新策略和更细的类型策略。
 - CompletionManager 大批只读符号查询、关系读取、scope names、cached file content
   已收束到 SemanticIndex / RelationshipService；仍有状态性过渡依赖。
-- MyCodeEditor 仍有少量旧直连点，但跳转定义和主要补全入口已开始经由 services。
+- MyCodeEditor 注释判断、跳转定义和主要补全入口已开始经由 Tree-sitter live syntax / services；
+  仍有少量补全触发细节和状态性过渡依赖。
 
 ## 阶段路线
 
@@ -137,6 +141,8 @@ snapshot 类型和第一版生产 / 切换闭环已落地：
 - base snapshot capture 由 SemanticIndex 统一保留上一代 diagnostics；enriched snapshot relationship 合并由
   SemanticIndexSnapshot 统一去重。
 - single-file/open-tab diagnostics replacement 由 SemanticIndex / SemanticIndexSnapshot helper 统一处理。
+- module end line、module name validity 和 contentAffectsSymbols 过渡查询已进入 SemanticIndex；
+  snapshot 路径可通过 cached file content 查询 module end line。
 
 最终目标仍是：
 

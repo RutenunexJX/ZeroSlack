@@ -59,6 +59,8 @@ Slang 负责真实语义事实：
   - SemanticIndex 已支持 setSnapshot / clearSnapshot；有 snapshot 时 symbols / definitions /
     relationships / diagnostics 优先读 snapshot。
   - SemanticIndex 已新增 captureSnapshotPreservingDiagnostics，后台关系分析的 base snapshot 生产统一经由 facade。
+  - SemanticIndex 已新增 findEndModuleLine / contentAffectsSymbols 过渡入口，ScopeBandWidget 和
+    AnalysisScheduler 不再直接读取 live sym_list 单例。
   - 提供 symbols / definitions / completions / relationships / diagnostics 查询入口。
   - getSymbols(fileName) 已补路径规范化兜底，避免 Windows 路径格式差异导致本地查询失败。
   - getSymbolById / findSymbolId / cached file content / scope symbol names / struct refresh
@@ -100,6 +102,8 @@ Slang 负责真实语义事实：
 
 - Editor
   - MyCodeEditor 跳转定义 / tooltip / canJump 旧的不可达 sym_list 实现已删除，当前经由 DefinitionService。
+  - MyCodeEditor 注释区补全抑制改为读取 TSDocument::isCommentAt 的 Tree-sitter live syntax，
+    不再依赖 sym_list comment region。
   - 普通补全、struct member 补全、命令模式补全已开始经由 CompletionService。
   - CompletionManager 的只读符号查询、关系读取、scope symbol names、cached file content
     已大幅收束到 SemanticIndex / RelationshipService。
@@ -409,6 +413,27 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
 - 本轮提交和上传前按用户要求未重复编译或测试；以上为代码改动后的最近一次验证记录。
 
+## 本轮 0.0.20/slang25 追加完成
+
+- SemanticIndex 新增 isValidModuleName / findEndModuleLine / contentAffectsSymbols 过渡 facade。
+- ScopeBandWidget 改为通过 SemanticIndex 读取文件 symbols 和 module end line；snapshot 存在时可读
+  snapshot cached file content，不再直接调用 sym_list 单例。
+- AnalysisScheduler 的 skip-unchanged 判断改为通过 SemanticIndex::contentAffectsSymbols，不再直接读 sym_list 单例。
+- MainWindow::setupRelationshipEngine 和 CompletionManager::setRelationshipEngine 改为通过 SemanticIndex 获取
+  当前 symbol database，消费端不再硬编码 sym_list::getInstance。
+- TSDocument 新增 isCommentAt，基于 Tree-sitter one_line_comment / block_comment 节点判断注释区。
+- MyCodeEditor 的注释区自动补全抑制改为读取 TSDocument live syntax，不再依赖 sym_list comment region。
+- relationship_test 新增 SemanticIndex facade / snapshot module end line 回归。
+- ts_doc_test 新增 Tree-sitter comment query 回归。
+
+最近验证：
+- cmake build 通过：ts_doc_test / relationship_test / gui_smoke_test。
+- ctest -R "ts_doc_test|relationship_test|gui_smoke_test" --output-on-failure：3/3 passed。
+- 完整 ctest --output-on-failure：6/6 passed。
+- git diff --check 通过。
+- 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
+- 本轮提交和上传前按用户要求未重复编译或测试；以上为用户要求前的最近一次验证记录。
+
 
 ## 新会话交接文件
 
@@ -495,6 +520,11 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
   - Problems 面板新增 Workspace Files scope，并改为渲染 DiagnosticReport::fileGroups。
   - Problems 面板在 workspace close 和 workspace symbol analysis start 时刷新清空旧状态。
   - gui_smoke_test 覆盖外部 diagnostic 保留、Workspace Files 隐藏外部 diagnostic、All Files 恢复显示、workspace close/reopen 清空。
+- 本轮追加继续减少 live sym_list 消费：
+  - SemanticIndex 增加 module end line、module name validity 和 contentAffectsSymbols facade。
+  - ScopeBandWidget / AnalysisScheduler / MainWindow / CompletionManager 不再直接调用 sym_list::getInstance。
+  - TSDocument 增加 isCommentAt；MyCodeEditor 注释区补全抑制改走 Tree-sitter live syntax。
+  - relationship_test / ts_doc_test 增加对应回归。
 
 最近验证：
 - cmake build 通过；新增 CMake 文件后重配置导致链接较慢，必要时先 -j4 后 -j1 续跑。
@@ -506,6 +536,7 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
     3. 需要完整回归时直接给 build/ctest 足够长 timeout；
     4. 不要在 120s/300s 超时之间反复重启同一个链接任务。
 - 完整 ctest --output-on-failure：6/6 passed。
+- 本轮追加改动后，ts_doc_test / relationship_test / gui_smoke_test 对应 CTest 均通过。
 - relationship_test.exe：125 checks, 0 failed。
 - gui_smoke_test（ctest -V）：103 checks, 0 failed。
 - git diff --check 通过。

@@ -68,6 +68,10 @@ public:
                      const SemanticQueryContext& context = {}) const;
     QString getCachedFileContent(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
+    bool isValidModuleName(const QString& name) const;
+    int findEndModuleLine(const QString& fileName,
+                          const sym_list::SymbolInfo& moduleSymbol) const;
+    bool contentAffectsSymbols(const QString& fileName, const QString& content) const;
     void refreshStructTypedefEnumForFile(const QString& fileName, const QString& content);
 
     QList<sym_list::SymbolInfo> findDefinitions(const QString& name,

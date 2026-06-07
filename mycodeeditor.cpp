@@ -492,9 +492,9 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
 bool MyCodeEditor::isInCommentArea()
 {
     QTextCursor cursor = textCursor();
-    int position = cursor.position();
-    sym_list* symbolList = sym_list::getInstance();
-    return symbolList->isPositionInComment(position);
+    const int position = cursor.position();
+    return m_tsdoc.isCommentAt(position)
+        || (position > 0 && m_tsdoc.isCommentAt(position - 1));
 }
 
 void MyCodeEditor::onCompletionActivated(const QModelIndex &index)

@@ -16,6 +16,7 @@
 - Tree-sitter：实时语法、高亮、增量文档、live module scope。
 - Slang：符号、类型、定义、跳转、补全、关系、诊断事实来源。
 - SemanticIndex：当前默认是 sym_list-backed facade，新增语义读取优先通过它。
+  已新增 module end line、module name validity 和 contentAffectsSymbols 过渡入口，进一步减少消费端直连。
 - SemanticIndexSnapshot：已接入 workspace / single-file 后台分析生产和主线程世代切换。
   Snapshot 当前保存 symbols / relationships / diagnostics / cached file content / minimal scope names。
   base snapshot capture 和 enriched relationship merge 已有 SemanticIndex / SemanticIndexSnapshot helper。
@@ -25,7 +26,9 @@
   底部面板排序、筛选结果集、二级分组计数和 tree 计数继续从 MainWindow 下沉到 service。
 - Navigation UI：模块层级和符号 outline 已有显式 model，Widget 不再在双击时反查 sym_list。
 - Scheduler：workspace opened/rescanned/project config changed 已经通过 ProjectModel
-  projectChanged 进入 AnalysisScheduler。
+  projectChanged 进入 AnalysisScheduler；skip-unchanged 判断已改走 SemanticIndex facade。
+- Editor：注释区自动补全抑制已改走 TSDocument::isCommentAt 的 Tree-sitter live syntax，
+  不再依赖 sym_list comment region。
 - 本轮收口：Problems / References / Relationships 底部面板已补稳定排序、分组计数、Relationships Tree
   双向浏览，并继续下沉为 service report 驱动的薄 UI。
 - 本轮 0.0.20/slang25 收口：提交和上传前按用户要求不再重复编译 / 测试，沿用本轮最近一次全量验证结果。
@@ -38,6 +41,7 @@
 - gui_smoke_test：103 checks, 0 failed。
 - ctest：6/6 passed。
 - git diff --check：无错误。
+- 追加改动后，ts_doc_test / relationship_test / gui_smoke_test 对应 CTest 均通过。
 
 ## 已完成
 
@@ -99,6 +103,8 @@
 - SemanticIndexSnapshot 新增 withAdditionalRelationships，统一 enriched snapshot relationship 合并和去重。
 - SemanticIndexSnapshot 新增 withReplacedDiagnostics，统一按文件替换 diagnostics 并保留其它文件 diagnostics。
 - SemanticIndex 新增 captureSnapshotReplacingDiagnostics，供 single-file/open-tab 分析发布保留生命周期的 snapshot。
+- SemanticIndex 新增 isValidModuleName / findEndModuleLine / contentAffectsSymbols 过渡 facade。
+- relationship_test 覆盖 facade / snapshot 的 module end line 查询。
 
 ### P6 Slang diagnostics / Problems UI
 
@@ -152,10 +158,11 @@
 
 当前仍有少量直接 sym_list 读取：
 
-- `MyCodeEditor` 内的注释判断和补全触发细节。
+- `MyCodeEditor` 的注释判断已改走 Tree-sitter live syntax；剩余重点是补全触发细节和状态性依赖。
 - `CompletionManager` 大批只读符号查询和关系读取已迁到 SemanticIndex / RelationshipService；
   剩余主要是状态性过渡依赖和旧补全策略。
-- `MainWindow::setupRelationshipEngine()` 仍需要把 relationship engine 绑定到 sym_list，这是当前过渡期可接受的初始化点。
+- `MainWindow::setupRelationshipEngine()` 仍需要把 relationship engine 绑定到 live symbol database，
+  但调用方已改为通过 SemanticIndex 获取该数据库；这是当前过渡期可接受的初始化点。
 
 建议小步推进，不要一次性重写 CompletionManager。
 

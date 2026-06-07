@@ -2,7 +2,6 @@
 
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
-#include "syminfo.h"
 
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
@@ -320,7 +319,8 @@ void AnalysisScheduler::analyzeOpenDocumentNow(const DocumentSnapshot& snapshot,
     if (content.isEmpty())
         return;
 
-    if (skipUnchanged && !sym_list::getInstance()->contentAffectsSymbols(snapshot.fileName, content)) {
+    if (skipUnchanged
+        && !SemanticIndex::getInstance()->contentAffectsSymbols(snapshot.fileName, content)) {
         emit documentRefreshRequested(snapshot.fileName);
         return;
     }

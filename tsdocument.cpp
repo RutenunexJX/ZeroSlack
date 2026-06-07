@@ -143,6 +143,24 @@ const char* TSDocument::namedNodeTypeAt(int charOffset) const
     return t ? t : "";
 }
 
+bool TSDocument::isCommentAt(int charOffset) const
+{
+    if (charOffset < 0)
+        return false;
+
+    const uint32_t b = static_cast<uint32_t>(charOffset) * 2u;
+    TSNode node = ts_node_descendant_for_byte_range(ts_tree_root_node(m_tree), b, b);
+    while (!ts_node_is_null(node)) {
+        const char* t = ts_node_type(node);
+        if (t && (std::strcmp(t, "one_line_comment") == 0 ||
+                  std::strcmp(t, "block_comment") == 0)) {
+            return true;
+        }
+        node = ts_node_parent(node);
+    }
+    return false;
+}
+
 namespace {
 // Extract the declared name from a *_declaration node: try a "name" field, else find a "*_header"
 // child and take its name field or first simple_identifier.

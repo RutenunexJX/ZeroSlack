@@ -68,6 +68,9 @@ public:
     // Type name of the smallest named node at the given char offset (debug / scope helpers).
     const char* namedNodeTypeAt(int charOffset) const;
 
+    // True if the char offset is inside a Tree-sitter comment node.
+    bool isCommentAt(int charOffset) const;
+
     // Name of the nearest enclosing module / interface / program at the given char offset, derived
     // live from the parse tree (instant, error-tolerant). Empty if the offset is not inside one.
     // Replaces the Slang+regex getCurrentModuleScope for cursor-scope decisions.

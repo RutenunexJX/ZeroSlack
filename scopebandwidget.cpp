@@ -1,6 +1,6 @@
 #include "scopebandwidget.h"
 #include "mycodeeditor.h"
-#include "syminfo.h"
+#include "semanticindex.h"
 #include <QScrollBar>
 #include <QResizeEvent>
 #include <QTimer>
@@ -102,13 +102,8 @@ void ScopeBandWidget::refresh()
     m_scene->clear();
     m_scene->setSceneRect(0, 0, kBandWidth, docHeight);
 
-    sym_list* sym = sym_list::getInstance();
-    if (!sym) {
-        syncScrollFromEditor();
-        return;
-    }
-
-    QList<sym_list::SymbolInfo> allSymbols = sym->findSymbolsByFileName(fileName);
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    QList<sym_list::SymbolInfo> allSymbols = semanticIndex->getSymbols(fileName);
     QList<sym_list::SymbolInfo> modules;
     QList<sym_list::SymbolInfo> logics;
     for (const auto& s : allSymbols) {
@@ -120,8 +115,8 @@ void ScopeBandWidget::refresh()
     QVector<ModuleItemInfo> moduleInfos;
 
     for (const sym_list::SymbolInfo& mod : modules) {
-        if (!sym->isValidModuleName(mod.symbolName)) continue;
-        int endLine = sym->findEndModuleLine(fileName, mod);
+        if (!semanticIndex->isValidModuleName(mod.symbolName)) continue;
+        int endLine = semanticIndex->findEndModuleLine(fileName, mod);
         if (endLine < 0) continue;
 
         qreal top = m_editor->getBlockTopY(mod.startLine);

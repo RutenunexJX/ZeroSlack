@@ -6,6 +6,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
 #include <utility>
@@ -18,6 +19,56 @@ QString normalizedFileName(const QString& fileName)
     if (fileName.isEmpty())
         return QString();
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+QString stripCommentsFromLine(const QString& line, bool& inBlockComment)
+{
+    QString result;
+    result.reserve(line.size());
+    for (int i = 0; i < line.size(); ++i) {
+        if (inBlockComment) {
+            if (line.mid(i, 2) == QStringLiteral("*/")) {
+                inBlockComment = false;
+                ++i;
+            }
+            continue;
+        }
+
+        if (line.mid(i, 2) == QStringLiteral("//"))
+            break;
+        if (line.mid(i, 2) == QStringLiteral("/*")) {
+            inBlockComment = true;
+            ++i;
+            continue;
+        }
+        result.append(line.at(i));
+    }
+    return result;
+}
+
+int findEndModuleLineInContent(const QString& content,
+                               const sym_list::SymbolInfo& moduleSymbol)
+{
+    const QStringList lines = content.split('\n');
+    int moduleDepth = 0;
+    int scanStart = moduleSymbol.startLine - 1;
+    if (scanStart < 0)
+        scanStart = 0;
+
+    bool inBlockComment = false;
+    static const QRegularExpression moduleWord(QStringLiteral("\\bmodule\\b"));
+    static const QRegularExpression endmoduleWord(QStringLiteral("\\bendmodule\\b"));
+    for (int i = scanStart; i < lines.size(); ++i) {
+        const QString code = stripCommentsFromLine(lines.at(i), inBlockComment);
+        if (code.contains(moduleWord))
+            ++moduleDepth;
+        if (code.contains(endmoduleWord)) {
+            --moduleDepth;
+            if (moduleDepth == 0)
+                return i;
+        }
+    }
+    return -1;
 }
 }
 
@@ -185,6 +236,36 @@ QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int curs
         scope = scope->parent;
     }
     return result;
+}
+
+bool SemanticIndex::isValidModuleName(const QString& name) const
+{
+    return sym_list::isValidModuleName(name);
+}
+
+int SemanticIndex::findEndModuleLine(const QString& fileName,
+                                     const sym_list::SymbolInfo& moduleSymbol) const
+{
+    if (moduleSymbol.symbolType != sym_list::sym_module)
+        return -1;
+
+    if (moduleSymbol.endLine >= moduleSymbol.startLine && moduleSymbol.endLine > 0)
+        return moduleSymbol.endLine - 1;
+
+    const QString content = getCachedFileContent(fileName);
+    if (!content.isEmpty())
+        return findEndModuleLineInContent(content, moduleSymbol);
+
+    if (m_snapshot)
+        return -1;
+
+    return symbolDatabase()->findEndModuleLine(fileName, moduleSymbol);
+}
+
+bool SemanticIndex::contentAffectsSymbols(const QString& fileName,
+                                          const QString& content) const
+{
+    return symbolDatabase()->contentAffectsSymbols(fileName, content);
 }
 
 void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,

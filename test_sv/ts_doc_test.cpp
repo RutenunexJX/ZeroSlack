@@ -77,11 +77,13 @@ int main() {
     {
         int s = lineStartChar(src, 0); auto sp = doc.highlightSpans(s, lines[0].length());
         check("line0 comment -> Comment @0", hasCatAt(sp, HlCategory::Comment, 0));
+        check("comment query: line comment true", doc.isCommentAt(s + 3));
     }
     // line 1 "module top;": Keyword "module" at local 0 len 6.
     {
         int s = lineStartChar(src, 1); auto sp = doc.highlightSpans(s, lines[1].length());
         check("line1 'module' -> Keyword @0 len6", hasSpan(sp, HlCategory::Keyword, 0, 6));
+        check("comment query: code false", !doc.isCommentAt(s + 1));
     }
     // line 2 "  logic [7:0] data;": Keyword "logic" at local 2 len 5; some Number present.
     {
@@ -93,6 +95,7 @@ int main() {
     {
         int s = lineStartChar(src, 3); auto sp = doc.highlightSpans(s, lines[3].length());
         check("line3 trailing comment -> Comment @2", hasCatAt(sp, HlCategory::Comment, 2));
+        check("comment query: trailing comment true", doc.isCommentAt(s + 5));
     }
 
     // 5) Incremental applyEditChars must produce the same highlight as a full re-parse (validates
