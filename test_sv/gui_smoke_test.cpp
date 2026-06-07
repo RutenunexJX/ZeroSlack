@@ -466,6 +466,34 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
         }
         expectBool("relationship tree keeps incoming source",
                    sawIncomingTreeSource, true);
+        QTreeWidgetItem* rootItem = nullptr;
+        for (QTreeWidgetItem* item : incomingItems) {
+            if (item->text(0) == QStringLiteral("Root")
+                && item->text(1) == QStringLiteral("target_ref")) {
+                rootItem = item;
+                break;
+            }
+        }
+        expectBool("relationship tree root found for expansion state",
+                   rootItem != nullptr, true);
+        if (rootItem) {
+            rootItem->setExpanded(false);
+            window.refreshRelationshipsPanel();
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            QTreeWidgetItem* refreshedRoot = nullptr;
+            const QList<QTreeWidgetItem*> refreshedItems =
+                navigableItems(window.relationshipsTree);
+            for (QTreeWidgetItem* item : refreshedItems) {
+                if (item->text(0) == QStringLiteral("Root")
+                    && item->text(1) == QStringLiteral("target_ref")) {
+                    refreshedRoot = item;
+                    break;
+                }
+            }
+            expectBool("relationship tree preserves collapsed root",
+                       refreshedRoot && !refreshedRoot->isExpanded(),
+                       true);
+        }
     }
 }
 

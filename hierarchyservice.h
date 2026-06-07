@@ -4,6 +4,7 @@
 #include "relationshipservice.h"
 
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <memory>
 
@@ -31,10 +32,20 @@ struct HierarchyNode {
     SymbolRelationshipEngine::RelationType viaType = SymbolRelationshipEngine::CONTAINS;
 };
 
+struct HierarchyReport {
+    QList<HierarchyNode> nodes;
+    int totalCount = 0;
+    QMap<int, int> depthCounts;
+    QMap<HierarchyQuery::Direction, int> directionCounts;
+    QMap<HierarchyQuery::Direction, int> rootDirectionCounts;
+    QMap<SymbolRelationshipEngine::RelationType, int> typeCounts;
+};
+
 class HierarchyService
 {
 public:
     static HierarchyService* getInstance();
+    static QList<SymbolRelationshipEngine::RelationType> allRelationshipTypes();
 
     explicit HierarchyService(SemanticIndex* semanticIndex = nullptr);
     ~HierarchyService();
@@ -44,6 +55,7 @@ public:
     QList<HierarchyNode> getChildren(const HierarchyQuery& query) const;
     QList<HierarchyNode> getParents(const HierarchyQuery& query) const;
     QList<HierarchyNode> getHierarchy(const HierarchyQuery& query) const;
+    HierarchyReport getHierarchyReport(const HierarchyQuery& query) const;
 
 private:
     SemanticIndex* index = nullptr;

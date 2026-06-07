@@ -1,6 +1,6 @@
 # ZeroSlack README / Development Handoff
 
-当前版本：0.0.18/slang23
+当前版本：0.0.20/slang25
 当前分支：tree_sitter_and_slang
 构建系统：Qt 6 + CMake + Ninja，demo.pro / qmake 不再维护。
 
@@ -58,6 +58,7 @@ Slang 负责真实语义事实：
   - 已新增最小只读 SemanticIndexSnapshot，可保存 symbols / relationships / diagnostics。
   - SemanticIndex 已支持 setSnapshot / clearSnapshot；有 snapshot 时 symbols / definitions /
     relationships / diagnostics 优先读 snapshot。
+  - SemanticIndex 已新增 captureSnapshotPreservingDiagnostics，后台关系分析的 base snapshot 生产统一经由 facade。
   - 提供 symbols / definitions / completions / relationships / diagnostics 查询入口。
   - getSymbols(fileName) 已补路径规范化兜底，避免 Windows 路径格式差异导致本地查询失败。
   - getSymbolById / findSymbolId / cached file content / scope symbol names / struct refresh
@@ -70,11 +71,13 @@ Slang 负责真实语义事实：
     普通补全的 SymbolInfo 详情也从 editor 迁入 service。
   - RelationshipService：关系查询入口已扩展，支持 related symbol id 查询和精确 hasRelationship；
     Direct 关系浏览的 incoming/outgoing 合并、稳定排序、方向计数和类型计数已通过
-    RelationshipReport / RelationshipBrowseQuery 下沉到 service。
+    RelationshipReport / RelationshipBrowseQuery 下沉到 service；direction/type 嵌套计数也已由 report 提供。
   - HierarchyService：实例层级查询入口已落地，并改用 SemanticIndex 做 ID 反查。
+    HierarchyReport 已统一 Relationships Tree 的节点、depth count、direction count、
+    root direction count 和 type count；All Types 策略也下沉到 service。
   - ReferenceService：最小入口已落地，当前包装 RelationshipService 的 incoming reference 查询，
     名称解析改走 SemanticIndex::findSymbolId；MainWindow 已有 References dock 作为真实 UI 消费点；
-    current/workspace scope 过滤、稳定排序、file/type 计数已通过 ReferenceReport 下沉到 service。
+    current/workspace scope 过滤、稳定排序、file/type 计数和 file/type 嵌套计数已通过 ReferenceReport 下沉到 service。
   - DiagnosticService：当前委托 SemanticIndex::getDiagnostics，已消费 Slang diagnostics 并服务 Problems 面板；
     severity/file 排序、file/severity 计数已通过 DiagnosticReport 下沉到 service。
   - SearchService：symbol search 最小入口已落地，支持文本、文件、类型、exact、maxResults。
@@ -93,6 +96,7 @@ Slang 负责真实语义事实：
   - Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships，并支持方向 / 类型筛选。
   - Problems / References / Relationships 的结果排序、筛选结果集和摘要计数已主要下沉到
     DiagnosticService / ReferenceService / RelationshipService report API；MainWindow 只负责树渲染和窗口协调。
+  - Problems / References / Relationships 树刷新会保留已有展开/折叠状态；首次渲染仍默认展开。
 
 - Editor
   - MyCodeEditor 跳转定义 / tooltip / canJump 旧的不可达 sym_list 实现已删除，当前经由 DefinitionService。
@@ -356,6 +360,48 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 - 源码 / 测试 / UI / CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
 
 
+## 本轮 0.0.19/slang24 已完成
+
+- HierarchyService 新增 HierarchyReport，统一 Relationships Tree 所需的节点列表、总数、depth count、
+  direction count、root direction count 和 type count。
+- HierarchyService 新增 allRelationshipTypes，Relationships Tree 的 All Types 策略不再散落在 MainWindow。
+- ReferenceReport 新增 fileTypeCounts，References dock 的 file -> relationship type 分组计数由 ReferenceService 提供。
+- RelationshipReport 新增 directionCounts / directionTypeCounts，Relationships Direct 视图的 direction -> type
+  分组计数由 RelationshipService 提供。
+- MainWindow 的 References / Relationships Direct / Relationships Tree 改为消费更完整的 report count，
+  删除对应的本地二级分组计数逻辑。
+- Problems / References / Relationships 树刷新新增展开状态保持：首次渲染默认展开，后续刷新保留用户折叠/展开状态。
+- relationship_test 新增 HierarchyReport、ReferenceReport file/type、RelationshipReport direction/type 回归。
+- gui_smoke_test 新增 Relationships Tree 刷新后保留折叠 root 的 GUI 回归。
+
+最近验证：
+- cmake build 通过：relationship_test / gui_smoke_test。
+- 完整 ctest --output-on-failure：6/6 passed。
+- relationship_test.exe：114 checks, 0 failed。
+- gui_smoke_test（ctest -V）：91 checks, 0 failed。
+- git diff --check 通过。
+- 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
+- 本轮 0.0.19/slang24 修改已包含在 0.0.20/slang25 交接提交中。
+
+
+## 本轮 0.0.20/slang25 已完成
+
+- SemanticIndex 新增 captureSnapshotPreservingDiagnostics，统一从当前语义 facade 生产 base snapshot 并保留上一代 diagnostics。
+- SemanticIndexSnapshot 新增 withAdditionalRelationships，统一 enriched snapshot 的 relationship 合并和去重。
+- AnalysisScheduler 的 workspace relationship base snapshot 生产改走 SemanticIndex facade，不再直接从 live sym_list 组装 diagnostics。
+- MainWindow 的 single-file / workspace relationship 后台路径删除本地 relationship 去重合并逻辑，改为消费 snapshot helper。
+- relationship_test 新增 snapshot relationship merge 去重、新关系保留、capture snapshot 保留 diagnostics 的回归。
+
+最近验证：
+- cmake build 通过：relationship_test / gui_smoke_test。
+- 完整 ctest --output-on-failure：6/6 passed。
+- relationship_test.exe：117 checks, 0 failed。
+- gui_smoke_test（ctest -V）：91 checks, 0 failed。
+- git diff --check 通过。
+- 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
+- 本轮 0.0.20/slang25 提交和上传前按用户要求未重复编译或测试；以上为代码改动后的最近一次验证记录。
+
+
 ## 新会话交接文件
 
 新会话建议先读：
@@ -385,8 +431,8 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 请先阅读 readme.md、plan.md、goal.md、version.h，接手 ZeroSlack 当前状态。
 
 当前分支：tree_sitter_and_slang。
-当前版本：0.0.18/slang23。
-最新提交已 push 到 origin/tree_sitter_and_slang。
+当前版本：0.0.20/slang25。
+最新提交为本轮 0.0.20/slang25 交接提交，已 push 到 origin/tree_sitter_and_slang；具体哈希以 `git log -1 --oneline` 为准。
 
 重要规则：
 - Claude 相关文件已删除，不要恢复 .claude/ 或任何 Claude 本地配置。
@@ -424,6 +470,15 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
   - RelationshipService 新增 RelationshipBrowseQuery / RelationshipReport，统一 Direct 视图 incoming/outgoing 合并、
     排序、方向计数和 type count。
   - MainWindow 删除 Problems / References / Relationships 本地排序逻辑，改为消费 service report 并只做树渲染。
+- 本轮继续下沉 Relationships Tree 和二级分组计数职责：
+  - HierarchyService 新增 HierarchyReport 和 allRelationshipTypes。
+  - ReferenceReport 新增 fileTypeCounts。
+  - RelationshipReport 新增 directionCounts / directionTypeCounts。
+  - MainWindow 删除 References / Relationships 的本地二级分组计数，并保留底部树刷新前的展开/折叠状态。
+- 本轮继续收束 snapshot 生产和 relationship 合并职责：
+  - SemanticIndex 新增 captureSnapshotPreservingDiagnostics。
+  - SemanticIndexSnapshot 新增 withAdditionalRelationships。
+  - AnalysisScheduler / MainWindow 的关系后台路径改为通过 snapshot/facade helper 生产 base/enriched snapshot。
 
 最近验证：
 - cmake build 通过；新增 CMake 文件后重配置导致链接较慢，必要时先 -j4 后 -j1 续跑。
@@ -435,16 +490,16 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
     3. 需要完整回归时直接给 build/ctest 足够长 timeout；
     4. 不要在 120s/300s 超时之间反复重启同一个链接任务。
 - 完整 ctest --output-on-failure：6/6 passed。
-- relationship_test.exe：103 checks, 0 failed。
-- gui_smoke_test.exe：89 checks, 0 failed。
+- relationship_test.exe：117 checks, 0 failed。
+- gui_smoke_test（ctest -V）：91 checks, 0 failed。
 - git diff --check 通过。
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
-- 本次提交和上传前按用户指令不再重复编译或测试；以上为代码改动后最近一次验证记录。
+- 本轮 0.0.20/slang25 提交和上传前按用户要求未重复编译或测试；以上为代码改动后的最近一次验证记录。
 
 下一步建议：
 1. 继续让 services / UI 只读 snapshot，减少 live sym_list 消费。
 2. 继续把 MainWindow 中的分析/刷新策略下沉到 scheduler/services/model。
-3. 继续打磨 Relationships Tree：按层刷新、展开状态保持和更清晰的类型策略。
+3. 继续打磨 Relationships Tree：按层刷新和更细的类型策略。
 4. 继续改进 Problems 面板诊断生命周期、清空策略和更多真实 fixture。
 5. 继续打磨 References dock：结果摘要、更多 workspace 维度和跨文件上下文。
 6. 保持 6 项 CTest 全绿。

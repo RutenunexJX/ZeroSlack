@@ -44,6 +44,9 @@
 
 #include <algorithm>
 
+static QList<SemanticRelationship> toSemanticRelationships(
+    const QVector<RelationshipToAdd>& relationships);
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -125,15 +128,7 @@ void MainWindow::setupManagerConnections()
             relationshipBuilder->resetCancellation();
             const QStringList svFiles = project.systemVerilogFiles;
             result.fileRelationships.reserve(svFiles.size());
-            QList<SemanticRelationship> snapshotRelationships =
-                baseSnapshot ? baseSnapshot->relationships() : QList<SemanticRelationship>();
-            QSet<QString> seenRelationships;
-            for (const SemanticRelationship& relationship : std::as_const(snapshotRelationships)) {
-                seenRelationships.insert(QStringLiteral("%1:%2:%3")
-                                             .arg(relationship.fromId)
-                                             .arg(relationship.toId)
-                                             .arg(static_cast<int>(relationship.type)));
-            }
+            QList<SemanticRelationship> newRelationships;
             for (const QString& filePath : svFiles) {
                 if (relationshipBuilder->isCancelled())
                     break;
@@ -146,27 +141,11 @@ void MainWindow::setupManagerConnections()
                 const QVector<RelationshipToAdd> relationships =
                     relationshipBuilder->computeRelationships(filePath, content, fs, baseSnapshot.get());
                 result.fileRelationships.append({filePath, relationships});
-                for (const RelationshipToAdd& relationship : relationships) {
-                    if (relationship.fromId < 0 || relationship.toId < 0)
-                        continue;
-                    const QString key = QStringLiteral("%1:%2:%3")
-                                            .arg(relationship.fromId)
-                                            .arg(relationship.toId)
-                                            .arg(static_cast<int>(relationship.type));
-                    if (seenRelationships.contains(key))
-                        continue;
-                    seenRelationships.insert(key);
-                    snapshotRelationships.append({relationship.fromId,
-                                                  relationship.toId,
-                                                  relationship.type});
-                }
+                newRelationships.append(toSemanticRelationships(relationships));
             }
             if (baseSnapshot) {
                 result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
-                    baseSnapshot->getSymbols(),
-                    snapshotRelationships,
-                    baseSnapshot->diagnostics(),
-                    baseSnapshot->fileContents());
+                    baseSnapshot->withAdditionalRelationships(newRelationships));
             }
             return result;
         });
@@ -563,24 +542,6 @@ static QString relationshipTypeText(SymbolRelationshipEngine::RelationType type)
     return QStringLiteral("Relationship");
 }
 
-static QList<SymbolRelationshipEngine::RelationType> allTreeRelationshipTypes()
-{
-    return {
-        SymbolRelationshipEngine::CONTAINS,
-        SymbolRelationshipEngine::REFERENCES,
-        SymbolRelationshipEngine::INSTANTIATES,
-        SymbolRelationshipEngine::CALLS,
-        SymbolRelationshipEngine::INHERITS,
-        SymbolRelationshipEngine::IMPLEMENTS,
-        SymbolRelationshipEngine::ASSIGNS_TO,
-        SymbolRelationshipEngine::READS_FROM,
-        SymbolRelationshipEngine::CLOCKS,
-        SymbolRelationshipEngine::RESETS,
-        SymbolRelationshipEngine::GENERATES,
-        SymbolRelationshipEngine::CONSTRAINS,
-    };
-}
-
 static QString hierarchyDirectionText(HierarchyQuery::Direction direction)
 {
     switch (direction) {
@@ -606,11 +567,134 @@ static QString countLabel(const QString& text, int count)
     return QStringLiteral("%1 (%2)").arg(text).arg(count);
 }
 
+static QString stripCountSuffix(const QString& text)
+{
+    if (!text.endsWith(QLatin1Char(')')))
+        return text;
+    const int open = text.lastIndexOf(QStringLiteral(" ("));
+    if (open < 0)
+        return text;
+    for (int i = open + 2; i < text.size() - 1; ++i) {
+        if (!text.at(i).isDigit())
+            return text;
+    }
+    return text.left(open);
+}
+
+static QString expansionKeyForItem(QTreeWidgetItem* item)
+{
+    if (!item)
+        return QString();
+
+    QStringList pathParts;
+    for (QTreeWidgetItem* current = item; current; current = current->parent()) {
+        QStringList columns;
+        for (int column = 0; column < current->columnCount(); ++column) {
+            const QString text = stripCountSuffix(current->text(column));
+            if (!text.isEmpty())
+                columns.append(QStringLiteral("%1=%2").arg(column).arg(text));
+        }
+
+        const QString fileName = current->data(0, Qt::UserRole).toString();
+        if (!fileName.isEmpty()) {
+            const QString normalized = normalizedUiFileName(fileName);
+            columns.append(QStringLiteral("file=%1")
+                               .arg(normalized.isEmpty() ? fileName : normalized));
+            columns.append(QStringLiteral("line=%1")
+                               .arg(current->data(0, Qt::UserRole + 1).toInt()));
+            columns.append(QStringLiteral("column=%1")
+                               .arg(current->data(0, Qt::UserRole + 2).toInt()));
+        }
+
+        pathParts.prepend(columns.join(QLatin1Char('|')));
+    }
+    return pathParts.join(QLatin1Char('/'));
+}
+
+static bool treeHasExpandableItems(QTreeWidgetItem* item)
+{
+    if (!item)
+        return false;
+    for (int i = 0; i < item->childCount(); ++i) {
+        QTreeWidgetItem* child = item->child(i);
+        if (child->childCount() > 0 || treeHasExpandableItems(child))
+            return true;
+    }
+    return false;
+}
+
+static bool treeHasExpandableItems(QTreeWidget* tree)
+{
+    return tree && treeHasExpandableItems(tree->invisibleRootItem());
+}
+
+static void collectExpandedKeys(QTreeWidgetItem* item, QSet<QString>& keys)
+{
+    if (!item)
+        return;
+    for (int i = 0; i < item->childCount(); ++i) {
+        QTreeWidgetItem* child = item->child(i);
+        if (child->isExpanded())
+            keys.insert(expansionKeyForItem(child));
+        collectExpandedKeys(child, keys);
+    }
+}
+
+static QSet<QString> collectExpandedKeys(QTreeWidget* tree)
+{
+    QSet<QString> keys;
+    if (tree)
+        collectExpandedKeys(tree->invisibleRootItem(), keys);
+    return keys;
+}
+
+static int restoreExpandedKeys(QTreeWidgetItem* item, const QSet<QString>& keys)
+{
+    if (!item)
+        return 0;
+
+    int restored = 0;
+    for (int i = 0; i < item->childCount(); ++i) {
+        QTreeWidgetItem* child = item->child(i);
+        const bool expanded = keys.contains(expansionKeyForItem(child));
+        child->setExpanded(expanded);
+        if (expanded)
+            restored++;
+        restored += restoreExpandedKeys(child, keys);
+    }
+    return restored;
+}
+
+static void restoreTreeExpansion(QTreeWidget* tree,
+                                 bool hadExpandableItems,
+                                 const QSet<QString>& expandedKeys)
+{
+    if (!tree)
+        return;
+
+    const int restored = restoreExpandedKeys(tree->invisibleRootItem(), expandedKeys);
+    if (!hadExpandableItems || (!expandedKeys.isEmpty() && restored == 0))
+        tree->expandAll();
+}
+
 static QTreeWidgetItem* getOrCreateFileGroup(QTreeWidget* tree,
                                              QMap<QString, QTreeWidgetItem*>& groups,
                                              const QString& fileName);
 static QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
                                              const SemanticDiagnostic& diagnostic);
+
+static QList<SemanticRelationship> toSemanticRelationships(
+    const QVector<RelationshipToAdd>& relationships)
+{
+    QList<SemanticRelationship> result;
+    result.reserve(relationships.size());
+    for (const RelationshipToAdd& relationship : relationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0)
+            continue;
+        result.append({relationship.fromId, relationship.toId, relationship.type});
+    }
+    return result;
+}
 
 void MainWindow::setupReferencesPane()
 {
@@ -833,6 +917,8 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
         DiagnosticService::getInstance()->findDiagnosticReport(query);
     const QList<DiagnosticResult>& diagnostics = report.diagnostics;
 
+    const bool hadExpandableItems = treeHasExpandableItems(problemsTree);
+    const QSet<QString> expandedKeys = collectExpandedKeys(problemsTree);
     problemsTree->clear();
     QMap<QString, QTreeWidgetItem*> fileGroups;
     QMap<QString, QString> fileGroupLabels;
@@ -860,7 +946,7 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
             it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()),
                                               report.fileCounts.value(it.key())));
         }
-        problemsTree->expandAll();
+        restoreTreeExpansion(problemsTree, hadExpandableItems, expandedKeys);
     }
 
     if (problemsDock) {
@@ -1030,10 +1116,9 @@ void MainWindow::refreshReferencesPanel()
     int visibleCount = 0;
     QMap<QString, QTreeWidgetItem*> fileGroups;
     QMap<QString, QTreeWidgetItem*> typeGroups;
-    QMap<QString, int> fileGroupCounts;
-    QMap<QString, int> typeGroupCounts;
     QMap<QString, QString> fileGroupLabels;
-    QMap<QString, QString> typeGroupLabels;
+    const bool hadExpandableItems = treeHasExpandableItems(referencesTree);
+    const QSet<QString> expandedKeys = collectExpandedKeys(referencesTree);
     referencesTree->clear();
     for (const ReferenceResult& reference : references) {
         const sym_list::SymbolInfo& source = reference.referencingSymbol;
@@ -1053,18 +1138,18 @@ void MainWindow::refreshReferencesPanel()
             typeKey,
             3,
             typeText);
+        typeGroup->setText(
+            3,
+            countLabel(typeText,
+                       report.fileTypeCounts.value(fileKey)
+                           .value(reference.relationship.relationship.type)));
         createReferenceItem(typeGroup, reference);
-        fileGroupCounts[fileKey]++;
-        typeGroupCounts[typeKey]++;
         fileGroupLabels[fileKey] = QFileInfo(source.fileName).fileName();
-        typeGroupLabels[typeKey] = typeText;
         visibleCount++;
     }
     for (auto it = fileGroups.begin(); it != fileGroups.end(); ++it)
-        it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()), fileGroupCounts.value(it.key())));
-    for (auto it = typeGroups.begin(); it != typeGroups.end(); ++it)
-        it.value()->setText(3, countLabel(typeGroupLabels.value(it.key()), typeGroupCounts.value(it.key())));
-    referencesTree->expandAll();
+        it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()), report.fileCounts.value(it.key())));
+    restoreTreeExpansion(referencesTree, hadExpandableItems, expandedKeys);
 
     if (referencesDock) {
         referencesDock->setWindowTitle(
@@ -1127,7 +1212,7 @@ void MainWindow::refreshRelationshipsPanel()
             ? relationshipDepthCombo->currentData().toInt()
             : 2;
         hierarchyQuery.types = query.types.isEmpty()
-            ? allTreeRelationshipTypes()
+            ? HierarchyService::allRelationshipTypes()
             : query.types;
         const int directionFilter = relationshipDirectionCombo
             ? relationshipDirectionCombo->currentData().toInt()
@@ -1139,16 +1224,17 @@ void MainWindow::refreshRelationshipsPanel()
         else
             hierarchyQuery.direction = HierarchyQuery::Both;
 
-        const QList<HierarchyNode> nodes =
-            HierarchyService::getInstance()->getHierarchy(hierarchyQuery);
+        const HierarchyReport report =
+            HierarchyService::getInstance()->getHierarchyReport(hierarchyQuery);
 
+        const bool hadExpandableItems = treeHasExpandableItems(relationshipsTree);
+        const QSet<QString> expandedKeys = collectExpandedKeys(relationshipsTree);
         relationshipsTree->clear();
         QMap<int, QTreeWidgetItem*> itemByNodeId;
         QMap<QString, QTreeWidgetItem*> rootDirectionGroups;
-        QMap<QString, int> rootDirectionGroupCounts;
         QTreeWidgetItem* rootItem = nullptr;
         int visibleCount = 0;
-        for (const HierarchyNode& node : nodes) {
+        for (const HierarchyNode& node : report.nodes) {
             if (node.symbol.symbolId < 0)
                 continue;
 
@@ -1169,7 +1255,6 @@ void MainWindow::refreshRelationshipsPanel()
                                                directionText,
                                                0,
                                                directionText);
-                rootDirectionGroupCounts[directionText]++;
             }
 
             QTreeWidgetItem* item = createHierarchyItem(
@@ -1179,9 +1264,14 @@ void MainWindow::refreshRelationshipsPanel()
             itemByNodeId.insert(node.nodeId, item);
             visibleCount++;
         }
-        for (auto it = rootDirectionGroups.begin(); it != rootDirectionGroups.end(); ++it)
-            it.value()->setText(0, countLabel(it.key(), rootDirectionGroupCounts.value(it.key())));
-        relationshipsTree->expandAll();
+        for (auto it = rootDirectionGroups.begin(); it != rootDirectionGroups.end(); ++it) {
+            const HierarchyQuery::Direction direction = it.key() == QStringLiteral("Outgoing")
+                ? HierarchyQuery::Children
+                : HierarchyQuery::Parents;
+            it.value()->setText(0, countLabel(it.key(),
+                                              report.rootDirectionCounts.value(direction)));
+        }
+        restoreTreeExpansion(relationshipsTree, hadExpandableItems, expandedKeys);
 
         if (relationshipsDock) {
             relationshipsDock->setWindowTitle(
@@ -1220,11 +1310,11 @@ void MainWindow::refreshRelationshipsPanel()
     int visibleCount = 0;
     QMap<QString, QTreeWidgetItem*> directionGroups;
     QMap<QString, QTreeWidgetItem*> typeGroups;
-    QMap<QString, int> directionGroupCounts;
-    QMap<QString, int> typeGroupCounts;
-    QMap<QString, QString> typeGroupLabels;
+    const bool hadExpandableItems = treeHasExpandableItems(relationshipsTree);
+    const QSet<QString> expandedKeys = collectExpandedKeys(relationshipsTree);
     relationshipsTree->clear();
     auto addRelationship = [&](const RelationshipResult& relationship,
+                               DirectedRelationshipResult::Direction directionValue,
                                const QString& direction,
                                const sym_list::SymbolInfo& symbol) {
         if (symbol.symbolId < 0)
@@ -1236,6 +1326,8 @@ void MainWindow::refreshRelationshipsPanel()
             direction,
             0,
             direction);
+        directionGroup->setText(0, countLabel(direction,
+                                             report.directionCounts.value(directionValue)));
         const QString typeText = relationshipTypeText(relationship.relationship.type);
         const QString typeKey = direction + QLatin1Char(':') + typeText;
         QTreeWidgetItem* typeGroup = getOrCreateChildGroup(
@@ -1244,13 +1336,15 @@ void MainWindow::refreshRelationshipsPanel()
             typeKey,
             4,
             typeText);
+        typeGroup->setText(
+            4,
+            countLabel(typeText,
+                       report.directionTypeCounts.value(directionValue)
+                           .value(relationship.relationship.type)));
         createRelationshipItem(typeGroup,
                                direction,
                                symbol,
                                relationship.relationship.type);
-        directionGroupCounts[direction]++;
-        typeGroupCounts[typeKey]++;
-        typeGroupLabels[typeKey] = typeText;
         visibleCount++;
     };
 
@@ -1258,13 +1352,12 @@ void MainWindow::refreshRelationshipsPanel()
         const QString direction = directed.direction == DirectedRelationshipResult::Outgoing
             ? QStringLiteral("Outgoing")
             : QStringLiteral("Incoming");
-        addRelationship(directed.relationship, direction, directed.peerSymbol);
+        addRelationship(directed.relationship,
+                        directed.direction,
+                        direction,
+                        directed.peerSymbol);
     }
-    for (auto it = directionGroups.begin(); it != directionGroups.end(); ++it)
-        it.value()->setText(0, countLabel(it.key(), directionGroupCounts.value(it.key())));
-    for (auto it = typeGroups.begin(); it != typeGroups.end(); ++it)
-        it.value()->setText(4, countLabel(typeGroupLabels.value(it.key()), typeGroupCounts.value(it.key())));
-    relationshipsTree->expandAll();
+    restoreTreeExpansion(relationshipsTree, hadExpandableItems, expandedKeys);
 
     if (relationshipsDock) {
         relationshipsDock->setWindowTitle(
@@ -1564,11 +1657,8 @@ void MainWindow::submitSingleFileRelationshipAnalysis(const QString& fileName, c
     }
     pendingRelationshipFileName = fileName;
     relationshipBuilder->resetCancellation();
-    const auto currentSnapshot = SemanticIndex::getInstance()->snapshot();
-    const QList<SemanticDiagnostic> currentDiagnostics =
-        currentSnapshot ? currentSnapshot->diagnostics() : QList<SemanticDiagnostic>();
-    const auto baseSnapshot = std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolDatabase(sym_list::getInstance(), currentDiagnostics));
+    const auto baseSnapshot =
+        SemanticIndex::getInstance()->captureSnapshotPreservingDiagnostics();
     SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
     QFuture<SingleFileRelationshipAnalysisResult> future =
         QtConcurrent::run([this, fileName, content, baseSnapshot]() {
@@ -1582,33 +1672,9 @@ void MainWindow::submitSingleFileRelationshipAnalysis(const QString& fileName, c
             result.relationships =
                 relationshipBuilder->computeRelationships(fileName, content, fs, baseSnapshot.get());
 
-            QList<SemanticRelationship> snapshotRelationships = baseSnapshot->relationships();
-            QSet<QString> seenRelationships;
-            for (const SemanticRelationship& relationship : std::as_const(snapshotRelationships)) {
-                seenRelationships.insert(QStringLiteral("%1:%2:%3")
-                                             .arg(relationship.fromId)
-                                             .arg(relationship.toId)
-                                             .arg(static_cast<int>(relationship.type)));
-            }
-            for (const RelationshipToAdd& relationship : std::as_const(result.relationships)) {
-                if (relationship.fromId < 0 || relationship.toId < 0)
-                    continue;
-                const QString key = QStringLiteral("%1:%2:%3")
-                                        .arg(relationship.fromId)
-                                        .arg(relationship.toId)
-                                        .arg(static_cast<int>(relationship.type));
-                if (seenRelationships.contains(key))
-                    continue;
-                seenRelationships.insert(key);
-                snapshotRelationships.append({relationship.fromId,
-                                              relationship.toId,
-                                              relationship.type});
-            }
             result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
-                baseSnapshot->getSymbols(),
-                snapshotRelationships,
-                baseSnapshot->diagnostics(),
-                baseSnapshot->fileContents());
+                baseSnapshot->withAdditionalRelationships(
+                    toSemanticRelationships(result.relationships)));
         return result;
     });
     relationshipSingleFileWatcher->setFuture(future);

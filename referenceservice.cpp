@@ -96,6 +96,7 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
             : normalizedFile;
         report.fileCounts[fileKey]++;
         report.typeCounts[reference.relationship.relationship.type]++;
+        report.fileTypeCounts[fileKey][reference.relationship.relationship.type]++;
     }
     return report;
 }

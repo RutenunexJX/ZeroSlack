@@ -56,6 +56,7 @@ public:
     void setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot);
     void clearSnapshot();
     std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
+    std::shared_ptr<const SemanticIndexSnapshot> captureSnapshotPreservingDiagnostics() const;
 
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;

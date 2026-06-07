@@ -217,6 +217,36 @@ QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
     return result;
 }
 
+SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
+    const QList<SemanticRelationship>& relationships) const
+{
+    QList<SemanticRelationship> merged = m_relationships;
+    QSet<QString> seen;
+    for (const SemanticRelationship& relationship : std::as_const(merged)) {
+        if (relationship.fromId < 0 || relationship.toId < 0)
+            continue;
+        seen.insert(QStringLiteral("%1:%2:%3")
+                        .arg(relationship.fromId)
+                        .arg(relationship.toId)
+                        .arg(static_cast<int>(relationship.type)));
+    }
+
+    for (const SemanticRelationship& relationship : relationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0)
+            continue;
+        const QString key = QStringLiteral("%1:%2:%3")
+                                .arg(relationship.fromId)
+                                .arg(relationship.toId)
+                                .arg(static_cast<int>(relationship.type));
+        if (seen.contains(key))
+            continue;
+        seen.insert(key);
+        merged.append(relationship);
+    }
+
+    return SemanticIndexSnapshot(m_symbols, merged, m_diagnostics, m_fileContents);
+}
+
 QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(int symbolId,
                                                                     bool outgoing) const
 {

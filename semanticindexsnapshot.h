@@ -30,6 +30,8 @@ public:
                      const SemanticQueryContext& context = {}) const;
     QString getCachedFileContent(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
+    SemanticIndexSnapshot withAdditionalRelationships(
+        const QList<SemanticRelationship>& relationships) const;
 
     QList<SemanticRelationship> getRelationships(int symbolId, bool outgoing = true) const;
     QList<SemanticDiagnostic> getDiagnostics(const QString& fileName = QString()) const;

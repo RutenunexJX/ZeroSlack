@@ -49,7 +49,10 @@ struct RelationshipReport {
     int totalCount = 0;
     int outgoingCount = 0;
     int incomingCount = 0;
+    QMap<DirectedRelationshipResult::Direction, int> directionCounts;
     QMap<SymbolRelationshipEngine::RelationType, int> typeCounts;
+    QMap<DirectedRelationshipResult::Direction,
+         QMap<SymbolRelationshipEngine::RelationType, int>> directionTypeCounts;
 };
 
 class RelationshipService

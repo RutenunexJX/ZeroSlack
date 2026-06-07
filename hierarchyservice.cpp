@@ -31,6 +31,24 @@ HierarchyService* HierarchyService::getInstance()
     return instance.get();
 }
 
+QList<SymbolRelationshipEngine::RelationType> HierarchyService::allRelationshipTypes()
+{
+    return {
+        SymbolRelationshipEngine::CONTAINS,
+        SymbolRelationshipEngine::REFERENCES,
+        SymbolRelationshipEngine::INSTANTIATES,
+        SymbolRelationshipEngine::CALLS,
+        SymbolRelationshipEngine::INHERITS,
+        SymbolRelationshipEngine::IMPLEMENTS,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        SymbolRelationshipEngine::READS_FROM,
+        SymbolRelationshipEngine::CLOCKS,
+        SymbolRelationshipEngine::RESETS,
+        SymbolRelationshipEngine::GENERATES,
+        SymbolRelationshipEngine::CONSTRAINS,
+    };
+}
+
 HierarchyService::HierarchyService(SemanticIndex* semanticIndex)
     : index(semanticIndex ? semanticIndex : SemanticIndex::getInstance()),
       relationshipService(index)
@@ -176,6 +194,23 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     }
 
     return result;
+}
+
+HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query) const
+{
+    HierarchyReport report;
+    report.nodes = getHierarchy(query);
+    report.totalCount = report.nodes.size();
+    for (const HierarchyNode& node : report.nodes) {
+        report.depthCounts[node.depth]++;
+        if (node.depth <= 0)
+            continue;
+        report.directionCounts[node.direction]++;
+        report.typeCounts[node.viaType]++;
+        if (node.parentNodeId == 0)
+            report.rootDirectionCounts[node.direction]++;
+    }
+    return report;
 }
 
 SemanticIndex* HierarchyService::semanticIndex() const

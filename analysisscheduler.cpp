@@ -211,11 +211,8 @@ void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapsh
 
     emit workspaceRelationshipAnalysisStarted(project, project.systemVerilogFiles.size());
 
-    const auto currentSnapshot = SemanticIndex::getInstance()->snapshot();
-    const QList<SemanticDiagnostic> currentDiagnostics =
-        currentSnapshot ? currentSnapshot->diagnostics() : QList<SemanticDiagnostic>();
-    const auto baseSnapshot = std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolDatabase(sym_list::getInstance(), currentDiagnostics));
+    const auto baseSnapshot =
+        SemanticIndex::getInstance()->captureSnapshotPreservingDiagnostics();
     SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
 
     QFuture<WorkspaceRelationshipAnalysisResult> future =

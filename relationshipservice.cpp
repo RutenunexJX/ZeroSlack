@@ -121,6 +121,8 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 continue;
             report.relationships.append(directed);
             report.typeCounts[relationship.relationship.type]++;
+            report.directionCounts[direction]++;
+            report.directionTypeCounts[direction][relationship.relationship.type]++;
             if (direction == DirectedRelationshipResult::Outgoing)
                 report.outgoingCount++;
             else

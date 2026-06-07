@@ -31,6 +31,7 @@ struct ReferenceReport {
     int totalCount = 0;
     QMap<QString, int> fileCounts;
     QMap<SymbolRelationshipEngine::RelationType, int> typeCounts;
+    QMap<QString, QMap<SymbolRelationshipEngine::RelationType, int>> fileTypeCounts;
 };
 
 class ReferenceService

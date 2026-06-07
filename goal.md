@@ -1,6 +1,6 @@
 # ZeroSlack Product / Architecture Goal
 
-当前版本：`0.0.18/slang23`
+当前版本：`0.0.20/slang25`
 
 本文记录 ZeroSlack 当前阶段的最终产品目标和架构骨架。后续功能和重构默认以此为准；
 除非遇到无法绕过的实现问题，否则不再为每个新功能重新选择架构方向。
@@ -65,6 +65,7 @@ Tree-sitter + Slang 分工保持不变：
 - AnalysisScheduler 最小入口。
 - SemanticIndex facade。
 - SemanticIndexSnapshot 生产 / 切换闭环的第一版。
+- SemanticIndex / SemanticIndexSnapshot 已提供 base snapshot capture 和 relationship merge helper。
 - DefinitionService。
 - CompletionService。
 - RelationshipService。
@@ -75,18 +76,22 @@ Tree-sitter + Slang 分工保持不变：
 - ModuleHierarchyGroup。
 - SymbolOutlineGroup。
 - Problems / References / Relationships 面板第一版 UI，并已开始改为消费 service report。
+- Relationships Tree 已开始消费 HierarchyReport；底部树刷新会保留展开/折叠状态。
+- 0.0.20/slang25 交接文档已同步；本轮提交和上传前按用户要求不再重复编译 / 测试。
 - GUI smoke / large file perf / relationship fixture 等 CTest 回归。
 
 仍未完成或仍是过渡形态：
 
 - SemanticIndexSnapshot 已接入后台生产和主线程世代切换，但仍需要继续减少 live sym_list 消费。
+- base snapshot 生产和 relationship merge 已收束到 SemanticIndex / SemanticIndexSnapshot helper。
 - DiagnosticService 已有真实 Slang diagnostics 数据，Problems 面板已支持基础筛选、行/列跳转和
   DiagnosticReport 驱动的排序/计数。
 - ReferenceService 已有 References dock 作为真实 UI 消费点，并提供 ReferenceReport 驱动 scope/type
   过滤、排序和计数。
 - RelationshipService 已有 Relationships dock 作为真实 UI 消费点；relationship / hierarchy 浏览已支持双向树、
-  递归去重、根节点和分组计数，Direct 视图已开始通过 RelationshipReport 下沉 incoming/outgoing 合并、
-  排序和计数；后续仍可继续打磨刷新策略和类型策略。
+  递归去重、根节点、展开状态保持和分组计数，Direct 视图已通过 RelationshipReport 下沉 incoming/outgoing 合并、
+  排序、direction/type 计数；Tree 视图已通过 HierarchyReport 下沉节点和 depth/direction/root/type 计数；
+  后续仍可继续打磨按层刷新策略和更细的类型策略。
 - CompletionManager 大批只读符号查询、关系读取、scope names、cached file content
   已收束到 SemanticIndex / RelationshipService；仍有状态性过渡依赖。
 - MyCodeEditor 仍有少量旧直连点，但跳转定义和主要补全入口已开始经由 services。
@@ -114,7 +119,8 @@ Tree-sitter + Slang 分工保持不变：
 最小边界已补齐。RelationshipService 已扩展 related id / exact relationship 查询；
 HierarchyService / ReferenceService 的名称解析和 ID 反查已收束到 SemanticIndex。
 DiagnosticService / ReferenceService / RelationshipService 已开始提供 report API，承接底部面板的排序、
-过滤结果和摘要计数。后续重点是继续消费端迁移，并让服务内部从 sym_list-backed 迁到 snapshot-backed。
+过滤结果和摘要计数；HierarchyService 已开始提供 HierarchyReport，承接 Relationships Tree 的节点和计数。
+后续重点是继续消费端迁移，并让服务内部从 sym_list-backed 迁到 snapshot-backed。
 
 ### 阶段 6：SemanticIndexSnapshot
 
@@ -126,6 +132,8 @@ snapshot 类型和第一版生产 / 切换闭环已落地：
   scope symbol names 优先读 snapshot。
 - SymbolAnalyzer 在符号写回后发布 symbols-only snapshot。
 - Workspace / single-file 关系后台基于 snapshot 计算关系，并按 base snapshot 世代发布 enriched snapshot。
+- base snapshot capture 由 SemanticIndex 统一保留上一代 diagnostics；enriched snapshot relationship 合并由
+  SemanticIndexSnapshot 统一去重。
 
 最终目标仍是：
 
@@ -182,13 +190,15 @@ UI / Services 只读 snapshot
 - Relationships Tree 视图接入 HierarchyService，支持 Depth 1..4 层级浏览。
 - HierarchyService 支持 Children / Parents / Both 方向查询，并通过路径去重防止递归循环。
 - Relationships Tree 支持 Root 节点、Incoming / Outgoing 分支、方向筛选和全部关系类型策略。
+- Relationships Tree 消费 HierarchyReport，节点、depth/direction/root/type 计数和 All Types 策略由 HierarchyService 提供。
+- Problems / References / Relationships 树刷新保留用户展开/折叠状态。
 - 编辑器支持 Ctrl+Shift+R 触发 Show Relationships。
 - References / Relationships 条目双击可跳转文件、行和列。
 
 后续重点：
 
 - References 结果摘要、更多 workspace 维度和跨文件上下文。
-- Relationships 按层刷新、展开状态保持和更清晰的类型策略。
+- Relationships 按层刷新和更细的类型策略。
 - 继续让 UI 只读 snapshot-backed services，减少 live sym_list 消费。
 
 ## 完成标准

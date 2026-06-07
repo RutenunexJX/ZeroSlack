@@ -505,6 +505,43 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("semantic snapshot captures relationships",
                snapshotFoundStage, true);
+    SemanticRelationship duplicateStageRelationship;
+    duplicateStageRelationship.fromId = topId;
+    duplicateStageRelationship.toId = stageId;
+    duplicateStageRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
+    SemanticRelationship newTaskRelationship;
+    newTaskRelationship.fromId = stageId;
+    newTaskRelationship.toId = captureId;
+    newTaskRelationship.type = SymbolRelationshipEngine::CALLS;
+    const SemanticIndexSnapshot enrichedSnapshot =
+        snapshot->withAdditionalRelationships({
+            duplicateStageRelationship,
+            newTaskRelationship,
+        });
+    expectInt("semantic snapshot merge deduplicates relationship",
+              enrichedSnapshot.relationships().size(),
+              snapshot->relationships().size() + 1);
+    bool enrichedFoundTask = false;
+    for (const SemanticRelationship& relationship :
+         enrichedSnapshot.getRelationships(stageId, true)) {
+        enrichedFoundTask = enrichedFoundTask
+            || (relationship.toId == captureId
+                && relationship.type == SymbolRelationshipEngine::CALLS);
+    }
+    expectBool("semantic snapshot merge keeps new relationship",
+               enrichedFoundTask, true);
+    SemanticIndex captureIndex(db);
+    const auto capturedSnapshot =
+        captureIndex.captureSnapshotPreservingDiagnostics();
+    captureIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        capturedSnapshot->getSymbols(),
+        capturedSnapshot->relationships(),
+        QList<SemanticDiagnostic>{errorDiagnostic},
+        capturedSnapshot->fileContents()));
+    const auto recapturedSnapshot =
+        captureIndex.captureSnapshotPreservingDiagnostics();
+    expectInt("semantic index capture preserves diagnostics",
+              recapturedSnapshot->diagnostics().size(), 1);
     snapshotIndex.clearSnapshot();
     expectInt("semantic snapshot clear restores live index",
               snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
@@ -584,8 +621,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               relationshipReport.outgoingCount, serviceRels.size());
     expectInt("relationship report incoming count",
               relationshipReport.incomingCount, 0);
+    expectInt("relationship report direction map count",
+              relationshipReport.directionCounts.value(DirectedRelationshipResult::Outgoing),
+              serviceRels.size());
     expectInt("relationship report type count",
               relationshipReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectInt("relationship report direction type count",
+              relationshipReport.directionTypeCounts
+                  .value(DirectedRelationshipResult::Outgoing)
+                  .value(SymbolRelationshipEngine::INSTANTIATES),
+              1);
     expectBool("relationship report keeps peer symbol",
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
@@ -612,6 +657,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                hierarchyFoundRoot, true);
     expectBool("hierarchy service finds child instance",
                hierarchyFoundStage, true);
+    const HierarchyReport hierarchyReport =
+        hierarchyService.getHierarchyReport(hierarchyQuery);
+    expectInt("hierarchy report total count",
+              hierarchyReport.totalCount, hierarchy.size());
+    expectInt("hierarchy report depth count",
+              hierarchyReport.depthCounts.value(1), 1);
+    expectInt("hierarchy report direction count",
+              hierarchyReport.directionCounts.value(HierarchyQuery::Children), 1);
+    expectInt("hierarchy report root direction count",
+              hierarchyReport.rootDirectionCounts.value(HierarchyQuery::Children), 1);
+    expectInt("hierarchy report type count",
+              hierarchyReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectBool("hierarchy service exposes all tree types",
+               HierarchyService::allRelationshipTypes().contains(SymbolRelationshipEngine::READS_FROM),
+               true);
 
     HierarchyQuery parentQuery;
     parentQuery.symbolId = stageId;
@@ -674,6 +734,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                cycleSawOutgoingStage, true);
     expectBool("hierarchy service keeps incoming branch",
                cycleSawIncomingStage, true);
+    const HierarchyReport cycleReport =
+        hierarchyService.getHierarchyReport(cycleQuery);
+    expectInt("hierarchy report keeps outgoing root branch count",
+              cycleReport.rootDirectionCounts.value(HierarchyQuery::Children), 1);
+    expectInt("hierarchy report keeps incoming root branch count",
+              cycleReport.rootDirectionCounts.value(HierarchyQuery::Parents), 1);
 
     ReferenceService referenceService(&index);
 
@@ -699,6 +765,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               stageReferenceReport.fileCounts.value(topPath), 1);
     expectInt("reference report type count",
               stageReferenceReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectInt("reference report file type count",
+              stageReferenceReport.fileTypeCounts
+                  .value(topPath)
+                  .value(SymbolRelationshipEngine::INSTANTIATES),
+              1);
 
     ReferenceQuery currentFileStageReferenceQuery = stageReferenceQuery;
     currentFileStageReferenceQuery.fileName = stagePath;

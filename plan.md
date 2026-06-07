@@ -1,6 +1,6 @@
 # ZeroSlack Next Plan
 
-当前版本：`0.0.18/slang23`
+当前版本：`0.0.20/slang25`
 当前分支：`tree_sitter_and_slang`
 
 本计划服务于 `goal.md` 中的产品 / 架构目标。后续实现默认继续向：
@@ -18,22 +18,24 @@
 - SemanticIndex：当前默认是 sym_list-backed facade，新增语义读取优先通过它。
 - SemanticIndexSnapshot：已接入 workspace / single-file 后台分析生产和主线程世代切换。
   Snapshot 当前保存 symbols / relationships / diagnostics / cached file content / minimal scope names。
+  base snapshot capture 和 enriched relationship merge 已有 SemanticIndex / SemanticIndexSnapshot helper。
 - Query Services：Definition / Completion / Relationship / Hierarchy / Reference /
   Diagnostic / Search 最小边界已落地；DiagnosticService 已能消费 Slang diagnostics。
-  DiagnosticService / ReferenceService / RelationshipService 已提供 report API，底部面板排序、
-  筛选结果集和摘要计数继续从 MainWindow 下沉到 service。
+  DiagnosticService / ReferenceService / RelationshipService / HierarchyService 已提供 report API，
+  底部面板排序、筛选结果集、二级分组计数和 tree 计数继续从 MainWindow 下沉到 service。
 - Navigation UI：模块层级和符号 outline 已有显式 model，Widget 不再在双击时反查 sym_list。
 - Scheduler：workspace opened/rescanned/project config changed 已经通过 ProjectModel
   projectChanged 进入 AnalysisScheduler。
 - 本轮收口：Problems / References / Relationships 底部面板已补稳定排序、分组计数、Relationships Tree
   双向浏览，并继续下沉为 service report 驱动的薄 UI。
+- 本轮 0.0.20/slang25 收口：提交和上传前按用户要求不再重复编译 / 测试，沿用本轮最近一次全量验证结果。
 
 最近验证：
 
 - completion_test：14 checks, 0 failed。
 - jump_test：10 checks, 0 failed。
-- relationship_test：103 checks, 0 failed。
-- gui_smoke_test：89 checks, 0 failed。
+- relationship_test：117 checks, 0 failed。
+- gui_smoke_test：91 checks, 0 failed。
 - ctest：6/6 passed。
 - git diff --check：无错误。
 
@@ -73,6 +75,8 @@
 - ReferenceService / DiagnosticService / SearchService：最小边界已落地并有测试断言。
 - DiagnosticService / ReferenceService / RelationshipService 增加 report API，承接底部面板的排序、
   scope/type/severity 过滤结果和摘要计数。
+- HierarchyService 增加 HierarchyReport 和 allRelationshipTypes，承接 Relationships Tree 的节点、
+  depth/direction/root/type 计数和 All Types 策略。
 
 ### P4 Navigation 消费端迁移
 
@@ -91,6 +95,8 @@
 - 后台分析已产出 snapshot，主线程按 base snapshot 世代切换 current snapshot。
 - Snapshot 已扩展 cached file content / minimal scope names 查询。
 - Workspace / single-file relationship 后台已改为 snapshot-backed，避免读取过期 current snapshot。
+- SemanticIndex 新增 captureSnapshotPreservingDiagnostics，统一 base snapshot 生产并保留 diagnostics。
+- SemanticIndexSnapshot 新增 withAdditionalRelationships，统一 enriched snapshot relationship 合并和去重。
 
 ### P6 Slang diagnostics / Problems UI
 
@@ -125,10 +131,14 @@
 - References dock 改为消费 ReferenceReport，scope/type 过滤结果、排序、file/type 计数由 ReferenceService 提供。
 - Relationships Direct 视图改为消费 RelationshipReport，incoming/outgoing 合并、排序、方向/type 计数由
   RelationshipService 提供。
+- RelationshipReport 新增 directionCounts / directionTypeCounts，Direct 视图二级分组计数不再由 MainWindow 计算。
 - 编辑器新增 Ctrl+Shift+R 快捷键入口触发 Show Relationships。
 - References / Relationships 条目双击可跳转到对应文件、行和列。
 - relationship_test 覆盖 ReferenceReport / RelationshipReport 的排序、过滤和计数。
+- relationship_test 覆盖 HierarchyReport、ReferenceReport file/type、RelationshipReport direction/type 计数。
 - gui_smoke_test 覆盖 References / Relationships dock 的 service-backed UI 消费。
+- gui_smoke_test 覆盖 Relationships Tree 刷新后保留折叠 root。
+- Problems / References / Relationships 树刷新会保留已有展开/折叠状态，首次渲染仍默认展开。
 
 ## 下一步建议
 
@@ -145,9 +155,13 @@
 
 ### 2. 继续打磨关系浏览 UI
 
-Relationships dock 已有 Direct 分组、双向 Tree 层级浏览、递归去重和根节点 UX。
-后续重点是按层刷新、展开状态保持和更清晰的类型策略，并继续把相关读取固定到 RelationshipService /
-HierarchyService。
+Relationships dock 已有 Direct 分组、双向 Tree 层级浏览、递归去重、根节点 UX、展开状态保持、
+HierarchyReport 计数和服务侧 All Types 策略。
+后续重点是按层刷新和更细的类型策略，并继续把相关读取固定到 RelationshipService / HierarchyService。
+
+Snapshot 生产 / 切换闭环已继续收束：AnalysisScheduler / MainWindow 的关系后台路径通过 SemanticIndex /
+SemanticIndexSnapshot helper 生产 base/enriched snapshot，后续可继续减少 SymbolAnalyzer / CompletionManager 等
+过渡直连点。
 
 ### 3. Reference / Problems UI 打磨
 

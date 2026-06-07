@@ -60,6 +60,15 @@ std::shared_ptr<const SemanticIndexSnapshot> SemanticIndex::snapshot() const
     return m_snapshot;
 }
 
+std::shared_ptr<const SemanticIndexSnapshot>
+SemanticIndex::captureSnapshotPreservingDiagnostics() const
+{
+    const QList<SemanticDiagnostic> diagnostics =
+        m_snapshot ? m_snapshot->diagnostics() : QList<SemanticDiagnostic>();
+    return std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(symbolDatabase(), diagnostics));
+}
+
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) const
 {
     if (m_snapshot)
