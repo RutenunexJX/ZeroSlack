@@ -546,6 +546,56 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("hierarchy service finds parent instance",
                parentFoundTop, true);
 
+    HierarchyQuery parentTreeQuery;
+    parentTreeQuery.symbolId = stageId;
+    parentTreeQuery.maxDepth = 1;
+    parentTreeQuery.direction = HierarchyQuery::Parents;
+    parentTreeQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<HierarchyNode> parentTree =
+        hierarchyService.getHierarchy(parentTreeQuery);
+    bool parentTreeFoundRoot = false;
+    bool parentTreeFoundTop = false;
+    for (const HierarchyNode& node : parentTree) {
+        parentTreeFoundRoot = parentTreeFoundRoot
+            || (node.depth == 0 && node.symbol.symbolId == stageId);
+        parentTreeFoundTop = parentTreeFoundTop
+            || (node.depth == 1
+                && node.parentSymbolId == stageId
+                && node.symbol.symbolId == topId
+                && node.direction == HierarchyQuery::Parents);
+    }
+    expectBool("hierarchy service parent tree includes root",
+               parentTreeFoundRoot, true);
+    expectBool("hierarchy service parent tree finds incoming parent",
+               parentTreeFoundTop, true);
+
+    engine.addRelationship(stageId, topId, SymbolRelationshipEngine::INSTANTIATES,
+                           QStringLiteral("cycle guard probe"));
+    HierarchyQuery cycleQuery;
+    cycleQuery.symbolId = topId;
+    cycleQuery.maxDepth = 4;
+    cycleQuery.direction = HierarchyQuery::Both;
+    cycleQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<HierarchyNode> cycleTree = hierarchyService.getHierarchy(cycleQuery);
+    int cycleTopCount = 0;
+    bool cycleSawOutgoingStage = false;
+    bool cycleSawIncomingStage = false;
+    for (const HierarchyNode& node : cycleTree) {
+        if (node.symbol.symbolId == topId)
+            ++cycleTopCount;
+        cycleSawOutgoingStage = cycleSawOutgoingStage
+            || (node.symbol.symbolId == stageId
+                && node.direction == HierarchyQuery::Children);
+        cycleSawIncomingStage = cycleSawIncomingStage
+            || (node.symbol.symbolId == stageId
+                && node.direction == HierarchyQuery::Parents);
+    }
+    expectInt("hierarchy service keeps cycle root once", cycleTopCount, 1);
+    expectBool("hierarchy service keeps outgoing branch",
+               cycleSawOutgoingStage, true);
+    expectBool("hierarchy service keeps incoming branch",
+               cycleSawIncomingStage, true);
+
     ReferenceService referenceService(&index);
 
     ReferenceQuery stageReferenceQuery;

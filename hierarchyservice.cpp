@@ -1,8 +1,28 @@
 #include "hierarchyservice.h"
 
 #include <QSet>
+#include <algorithm>
 
 std::unique_ptr<HierarchyService> HierarchyService::instance = nullptr;
+
+static bool hierarchyNodeLess(const HierarchyNode& lhs, const HierarchyNode& rhs)
+{
+    if (lhs.viaType != rhs.viaType)
+        return static_cast<int>(lhs.viaType) < static_cast<int>(rhs.viaType);
+
+    const int fileCompare = QString::compare(lhs.symbol.fileName,
+                                             rhs.symbol.fileName,
+                                             Qt::CaseInsensitive);
+    if (fileCompare != 0)
+        return fileCompare < 0;
+    if (lhs.symbol.startLine != rhs.symbol.startLine)
+        return lhs.symbol.startLine < rhs.symbol.startLine;
+    if (lhs.symbol.startColumn != rhs.symbol.startColumn)
+        return lhs.symbol.startColumn < rhs.symbol.startColumn;
+    return QString::compare(lhs.symbol.symbolName,
+                            rhs.symbol.symbolName,
+                            Qt::CaseInsensitive) < 0;
+}
 
 HierarchyService* HierarchyService::getInstance()
 {
@@ -43,9 +63,11 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
         node.symbol = rel.toSymbol;
         node.depth = 1;
         node.parentSymbolId = rel.fromSymbol.symbolId;
+        node.direction = HierarchyQuery::Children;
         node.viaType = rel.relationship.type;
         result.append(node);
     }
+    std::sort(result.begin(), result.end(), hierarchyNodeLess);
     return result;
 }
 
@@ -67,9 +89,11 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
         node.symbol = rel.fromSymbol;
         node.depth = 1;
         node.parentSymbolId = rel.toSymbol.symbolId;
+        node.direction = HierarchyQuery::Parents;
         node.viaType = rel.relationship.type;
         result.append(node);
     }
+    std::sort(result.begin(), result.end(), hierarchyNodeLess);
     return result;
 }
 
@@ -81,33 +105,73 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
 
     const int maxDepth = query.maxDepth < 0 ? 0 : query.maxDepth;
     QList<HierarchyNode> result;
-    QList<HierarchyNode> queue;
-    QSet<int> visited;
+    struct WorkItem {
+        HierarchyNode node;
+        QSet<int> path;
+    };
+    QList<WorkItem> queue;
+    QSet<QString> emittedEdges;
+    int nextNodeId = 0;
 
     HierarchyNode root;
     root.symbol = semanticIndex()->getSymbolById(rootId);
     root.depth = 0;
     root.parentSymbolId = -1;
-    queue.append(root);
-    visited.insert(rootId);
+    root.nodeId = nextNodeId++;
+    root.parentNodeId = -1;
+    root.direction = query.direction;
+    WorkItem rootItem;
+    rootItem.node = root;
+    rootItem.path.insert(rootId);
+    queue.append(rootItem);
 
     while (!queue.isEmpty()) {
-        const HierarchyNode current = queue.takeFirst();
-        result.append(current);
+        const WorkItem current = queue.takeFirst();
+        result.append(current.node);
 
-        if (current.depth >= maxDepth)
+        if (current.node.depth >= maxDepth)
             continue;
 
+        auto appendNext = [&](QList<HierarchyNode> nextNodes,
+                              HierarchyQuery::Direction edgeDirection) {
+            for (HierarchyNode child : nextNodes) {
+                if (child.symbol.symbolId < 0)
+                    continue;
+                if (current.path.contains(child.symbol.symbolId))
+                    continue;
+
+                const QString edgeKey = QStringLiteral("%1:%2:%3:%4")
+                    .arg(current.node.nodeId)
+                    .arg(static_cast<int>(edgeDirection))
+                    .arg(static_cast<int>(child.viaType))
+                    .arg(child.symbol.symbolId);
+                if (emittedEdges.contains(edgeKey))
+                    continue;
+                emittedEdges.insert(edgeKey);
+
+                child.depth = current.node.depth + 1;
+                child.parentSymbolId = current.node.symbol.symbolId;
+                child.nodeId = nextNodeId++;
+                child.parentNodeId = current.node.nodeId;
+                child.direction = edgeDirection;
+
+                WorkItem childItem;
+                childItem.node = child;
+                childItem.path = current.path;
+                childItem.path.insert(child.symbol.symbolId);
+                queue.append(childItem);
+            }
+        };
+
         HierarchyQuery childQuery = query;
-        childQuery.symbolId = current.symbol.symbolId;
-        const QList<HierarchyNode> children = getChildren(childQuery);
-        for (HierarchyNode child : children) {
-            if (visited.contains(child.symbol.symbolId))
-                continue;
-            visited.insert(child.symbol.symbolId);
-            child.depth = current.depth + 1;
-            child.parentSymbolId = current.symbol.symbolId;
-            queue.append(child);
+        childQuery.symbolId = current.node.symbol.symbolId;
+        if (query.direction == HierarchyQuery::Children
+            || query.direction == HierarchyQuery::Both) {
+            appendNext(getChildren(childQuery), HierarchyQuery::Children);
+        }
+        if (query.direction == HierarchyQuery::Parents
+            || query.direction == HierarchyQuery::Both) {
+            appendNext(getParents(childQuery), HierarchyQuery::Parents);
         }
     }
 

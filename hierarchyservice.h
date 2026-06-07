@@ -13,6 +13,11 @@ struct HierarchyQuery {
     QString fileName;
     QString moduleName;
     int maxDepth = 1;
+    enum Direction {
+        Children,
+        Parents,
+        Both
+    } direction = Children;
     QList<SymbolRelationshipEngine::RelationType> types;
 };
 
@@ -20,6 +25,9 @@ struct HierarchyNode {
     sym_list::SymbolInfo symbol;
     int depth = 0;
     int parentSymbolId = -1;
+    int nodeId = -1;
+    int parentNodeId = -1;
+    HierarchyQuery::Direction direction = HierarchyQuery::Children;
     SymbolRelationshipEngine::RelationType viaType = SymbolRelationshipEngine::CONTAINS;
 };
 

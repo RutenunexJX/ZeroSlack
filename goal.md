@@ -82,7 +82,7 @@ Tree-sitter + Slang 分工保持不变：
 - SemanticIndexSnapshot 已接入后台生产和主线程世代切换，但仍需要继续减少 live sym_list 消费。
 - DiagnosticService 已有真实 Slang diagnostics 数据，Problems 面板已支持基础筛选和行/列跳转。
 - ReferenceService 已有 References dock 作为真实 UI 消费点。
-- RelationshipService 已有 Relationships dock 作为真实 UI 消费点；relationship / hierarchy 浏览仍可继续打磨分组、刷新和层级入口。
+- RelationshipService 已有 Relationships dock 作为真实 UI 消费点；relationship / hierarchy 浏览已支持双向树、递归去重、根节点和分组计数，后续仍可继续打磨刷新策略和类型策略。
 - CompletionManager 大批只读符号查询、关系读取、scope names、cached file content
   已收束到 SemanticIndex / RelationshipService；仍有状态性过渡依赖。
 - MyCodeEditor 仍有少量旧直连点，但跳转定义和主要补全入口已开始经由 services。
@@ -145,10 +145,12 @@ UI / Services 只读 snapshot
 - Problems 条目双击可跳转文件、行和列。
 - Problems 刷新已加 100ms 合并。
 - Problems 在 All Files 模式下按 file 分组，Current File 保持紧凑列表。
+- Problems 结果按 severity / file / line / column 稳定排序。
+- Problems All Files 分组显示数量，并提供 No problems 空状态。
 
 后续重点：
 
-- Problems 面板清空策略、诊断生命周期和更完整跳转体验。
+- Problems 面板清空策略、诊断生命周期和更多真实 fixture。
 - 将诊断刷新策略继续下沉到更清晰的 service / scheduler 边界。
 - 补更多真实 fixture 覆盖 include/import/宏展开相关 diagnostics。
 
@@ -161,19 +163,23 @@ UI / Services 只读 snapshot
 - References dock 支持 all files / workspace files / current file 筛选。
 - References dock 支持 Reference type 筛选。
 - References 结果按 file -> relationship type -> result 分组。
+- References 结果按类型和位置稳定排序，file / relationship type 分组显示数量。
 - 编辑器支持 Shift+F12 触发 Find References。
 - MainWindow 提供底部 Relationships dock，编辑器右键 Show Relationships 触发。
 - Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships。
 - Relationships dock 支持 direction / type 筛选。
 - Relationships Direct 视图按 direction -> relationship type -> result 分组。
+- Relationships Direct 视图按类型和位置稳定排序，direction / type 分组显示数量。
 - Relationships Tree 视图接入 HierarchyService，支持 Depth 1..4 层级浏览。
+- HierarchyService 支持 Children / Parents / Both 方向查询，并通过路径去重防止递归循环。
+- Relationships Tree 支持 Root 节点、Incoming / Outgoing 分支、方向筛选和全部关系类型策略。
 - 编辑器支持 Ctrl+Shift+R 触发 Show Relationships。
 - References / Relationships 条目双击可跳转文件、行和列。
 
 后续重点：
 
-- References 排序、结果摘要、更多 workspace 维度和跨文件上下文。
-- Relationships 双向树、递归去重、根节点 UX、按层刷新和更清晰的类型策略。
+- References 结果摘要、更多 workspace 维度和跨文件上下文。
+- Relationships 按层刷新、展开状态保持和更清晰的类型策略。
 - 继续让 UI 只读 snapshot-backed services，减少 live sym_list 消费。
 
 ## 完成标准

@@ -42,6 +42,8 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <algorithm>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -509,6 +511,8 @@ void MainWindow::setupProblemsPane()
                 if (!item)
                     return;
                 const QString fileName = item->data(0, Qt::UserRole).toString();
+                if (fileName.isEmpty())
+                    return;
                 const int line = item->data(0, Qt::UserRole + 1).toInt();
                 const int column = item->data(0, Qt::UserRole + 2).toInt();
                 navigateToFileAndLine(fileName, line, column);
@@ -559,11 +563,135 @@ static QString relationshipTypeText(SymbolRelationshipEngine::RelationType type)
     return QStringLiteral("Relationship");
 }
 
+static QList<SymbolRelationshipEngine::RelationType> allTreeRelationshipTypes()
+{
+    return {
+        SymbolRelationshipEngine::CONTAINS,
+        SymbolRelationshipEngine::REFERENCES,
+        SymbolRelationshipEngine::INSTANTIATES,
+        SymbolRelationshipEngine::CALLS,
+        SymbolRelationshipEngine::INHERITS,
+        SymbolRelationshipEngine::IMPLEMENTS,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        SymbolRelationshipEngine::READS_FROM,
+        SymbolRelationshipEngine::CLOCKS,
+        SymbolRelationshipEngine::RESETS,
+        SymbolRelationshipEngine::GENERATES,
+        SymbolRelationshipEngine::CONSTRAINS,
+    };
+}
+
+static QString hierarchyDirectionText(HierarchyQuery::Direction direction)
+{
+    switch (direction) {
+    case HierarchyQuery::Children:
+        return QStringLiteral("Outgoing");
+    case HierarchyQuery::Parents:
+        return QStringLiteral("Incoming");
+    case HierarchyQuery::Both:
+        break;
+    }
+    return QStringLiteral("Related");
+}
+
 static QString normalizedUiFileName(const QString& fileName)
 {
     if (fileName.isEmpty())
         return QString();
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+static bool symbolLocationLess(const sym_list::SymbolInfo& lhs,
+                               const sym_list::SymbolInfo& rhs)
+{
+    const int fileCompare = QString::compare(normalizedUiFileName(lhs.fileName),
+                                             normalizedUiFileName(rhs.fileName),
+                                             Qt::CaseInsensitive);
+    if (fileCompare != 0)
+        return fileCompare < 0;
+    if (lhs.startLine != rhs.startLine)
+        return lhs.startLine < rhs.startLine;
+    if (lhs.startColumn != rhs.startColumn)
+        return lhs.startColumn < rhs.startColumn;
+    return QString::compare(lhs.symbolName, rhs.symbolName, Qt::CaseInsensitive) < 0;
+}
+
+static int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return 0;
+    case SemanticDiagnostic::Warning:
+        return 1;
+    case SemanticDiagnostic::Info:
+    default:
+        return 2;
+    }
+}
+
+static void sortDiagnosticResults(QList<DiagnosticResult>& diagnostics)
+{
+    std::sort(diagnostics.begin(), diagnostics.end(),
+              [](const DiagnosticResult& lhs, const DiagnosticResult& rhs) {
+                  const SemanticDiagnostic& left = lhs.diagnostic;
+                  const SemanticDiagnostic& right = rhs.diagnostic;
+                  const int severityCompare =
+                      diagnosticSeverityRank(left.severity) - diagnosticSeverityRank(right.severity);
+                  if (severityCompare != 0)
+                      return severityCompare < 0;
+
+                  const int fileCompare = QString::compare(normalizedUiFileName(left.fileName),
+                                                           normalizedUiFileName(right.fileName),
+                                                           Qt::CaseInsensitive);
+                  if (fileCompare != 0)
+                      return fileCompare < 0;
+                  if (left.line != right.line)
+                      return left.line < right.line;
+                  if (left.column != right.column)
+                      return left.column < right.column;
+                  return QString::compare(left.message, right.message, Qt::CaseInsensitive) < 0;
+              });
+}
+
+static void sortReferenceResults(QList<ReferenceResult>& references)
+{
+    std::sort(references.begin(), references.end(),
+              [](const ReferenceResult& lhs, const ReferenceResult& rhs) {
+                  const QString lhsType =
+                      relationshipTypeText(lhs.relationship.relationship.type);
+                  const QString rhsType =
+                      relationshipTypeText(rhs.relationship.relationship.type);
+                  const int typeCompare = QString::compare(lhsType, rhsType,
+                                                           Qt::CaseInsensitive);
+                  if (typeCompare != 0)
+                      return typeCompare < 0;
+                  return symbolLocationLess(lhs.referencingSymbol, rhs.referencingSymbol);
+              });
+}
+
+static void sortRelationshipResults(QList<RelationshipResult>& relationships,
+                                    bool outgoing)
+{
+    std::sort(relationships.begin(), relationships.end(),
+              [outgoing](const RelationshipResult& lhs, const RelationshipResult& rhs) {
+                  const QString lhsType = relationshipTypeText(lhs.relationship.type);
+                  const QString rhsType = relationshipTypeText(rhs.relationship.type);
+                  const int typeCompare = QString::compare(lhsType, rhsType,
+                                                           Qt::CaseInsensitive);
+                  if (typeCompare != 0)
+                      return typeCompare < 0;
+
+                  const sym_list::SymbolInfo& lhsSymbol =
+                      outgoing ? lhs.toSymbol : lhs.fromSymbol;
+                  const sym_list::SymbolInfo& rhsSymbol =
+                      outgoing ? rhs.toSymbol : rhs.fromSymbol;
+                  return symbolLocationLess(lhsSymbol, rhsSymbol);
+              });
+}
+
+static QString countLabel(const QString& text, int count)
+{
+    return QStringLiteral("%1 (%2)").arg(text).arg(count);
 }
 
 static QTreeWidgetItem* getOrCreateFileGroup(QTreeWidget* tree,
@@ -748,8 +876,6 @@ void MainWindow::setupRelationshipsPane()
             this, [this](int) {
                 const bool treeMode = relationshipViewCombo
                     && relationshipViewCombo->currentData().toInt() == 1;
-                if (relationshipDirectionCombo)
-                    relationshipDirectionCombo->setEnabled(!treeMode);
                 if (relationshipDepthCombo)
                     relationshipDepthCombo->setEnabled(treeMode);
                 refreshRelationshipsPanel();
@@ -791,28 +917,45 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
     query.includeWarnings = severityFilter == 0 || severityFilter == 2;
     query.includeInfo = severityFilter == 0 || severityFilter == 3;
 
-    const QList<DiagnosticResult> diagnostics =
+    QList<DiagnosticResult> diagnostics =
         DiagnosticService::getInstance()->findDiagnostics(query);
+    sortDiagnosticResults(diagnostics);
 
     problemsTree->clear();
     QMap<QString, QTreeWidgetItem*> fileGroups;
+    QMap<QString, int> fileGroupCounts;
+    QMap<QString, QString> fileGroupLabels;
     for (const DiagnosticResult& result : diagnostics) {
         const SemanticDiagnostic& diagnostic = result.diagnostic;
         if (currentFileOnly) {
             createDiagnosticItem(problemsTree->invisibleRootItem(), diagnostic);
         } else {
+            const QString fileKey = normalizedUiFileName(diagnostic.fileName).isEmpty()
+                ? diagnostic.fileName
+                : normalizedUiFileName(diagnostic.fileName);
             QTreeWidgetItem* fileGroup = getOrCreateFileGroup(problemsTree,
                                                               fileGroups,
                                                               diagnostic.fileName);
             createDiagnosticItem(fileGroup, diagnostic);
+            fileGroupCounts[fileKey]++;
+            fileGroupLabels[fileKey] = QFileInfo(diagnostic.fileName).fileName();
         }
     }
-    if (!currentFileOnly)
+    if (diagnostics.isEmpty()) {
+        auto* emptyItem = new QTreeWidgetItem(problemsTree);
+        emptyItem->setText(4, QStringLiteral("No problems"));
+    }
+    if (!currentFileOnly) {
+        for (auto it = fileGroups.begin(); it != fileGroups.end(); ++it) {
+            it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()),
+                                              fileGroupCounts.value(it.key())));
+        }
         problemsTree->expandAll();
+    }
 
     if (problemsDock) {
         problemsDock->setWindowTitle(QStringLiteral("Problems (%1)").arg(diagnostics.size()));
-        if (!diagnostics.isEmpty())
+        if (!diagnostics.isEmpty() || problemsDock->isVisible())
             problemsDock->show();
     }
 }
@@ -962,8 +1105,9 @@ void MainWindow::refreshReferencesPanel()
         };
     }
 
-    const QList<ReferenceResult> references =
+    QList<ReferenceResult> references =
         ReferenceService::getInstance()->findReferences(query);
+    sortReferenceResults(references);
 
     const int scopeFilter = referenceScopeCombo
         ? referenceScopeCombo->currentData().toInt()
@@ -981,6 +1125,10 @@ void MainWindow::refreshReferencesPanel()
     int visibleCount = 0;
     QMap<QString, QTreeWidgetItem*> fileGroups;
     QMap<QString, QTreeWidgetItem*> typeGroups;
+    QMap<QString, int> fileGroupCounts;
+    QMap<QString, int> typeGroupCounts;
+    QMap<QString, QString> fileGroupLabels;
+    QMap<QString, QString> typeGroupLabels;
     referencesTree->clear();
     for (const ReferenceResult& reference : references) {
         const sym_list::SymbolInfo& source = reference.referencingSymbol;
@@ -992,19 +1140,31 @@ void MainWindow::refreshReferencesPanel()
         if (workspaceFilesOnly && !workspaceFiles.contains(normalizedSourceFile))
             continue;
 
+        const QString fileKey = normalizedSourceFile.isEmpty()
+            ? source.fileName
+            : normalizedSourceFile;
         QTreeWidgetItem* fileGroup = getOrCreateFileGroup(referencesTree,
                                                           fileGroups,
                                                           source.fileName);
         const QString typeText = relationshipTypeText(reference.relationship.relationship.type);
+        const QString typeKey = fileKey + QLatin1Char(':') + typeText;
         QTreeWidgetItem* typeGroup = getOrCreateChildGroup(
             fileGroup,
             typeGroups,
-            normalizedSourceFile + QLatin1Char(':') + typeText,
+            typeKey,
             3,
             typeText);
         createReferenceItem(typeGroup, reference);
+        fileGroupCounts[fileKey]++;
+        typeGroupCounts[typeKey]++;
+        fileGroupLabels[fileKey] = QFileInfo(source.fileName).fileName();
+        typeGroupLabels[typeKey] = typeText;
         visibleCount++;
     }
+    for (auto it = fileGroups.begin(); it != fileGroups.end(); ++it)
+        it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()), fileGroupCounts.value(it.key())));
+    for (auto it = typeGroups.begin(); it != typeGroups.end(); ++it)
+        it.value()->setText(3, countLabel(typeGroupLabels.value(it.key()), typeGroupCounts.value(it.key())));
     referencesTree->expandAll();
 
     if (referencesDock) {
@@ -1068,30 +1228,60 @@ void MainWindow::refreshRelationshipsPanel()
             ? relationshipDepthCombo->currentData().toInt()
             : 2;
         hierarchyQuery.types = query.types.isEmpty()
-            ? QList<SymbolRelationshipEngine::RelationType>{SymbolRelationshipEngine::INSTANTIATES}
+            ? allTreeRelationshipTypes()
             : query.types;
+        const int directionFilter = relationshipDirectionCombo
+            ? relationshipDirectionCombo->currentData().toInt()
+            : 0;
+        if (directionFilter == 1)
+            hierarchyQuery.direction = HierarchyQuery::Children;
+        else if (directionFilter == 2)
+            hierarchyQuery.direction = HierarchyQuery::Parents;
+        else
+            hierarchyQuery.direction = HierarchyQuery::Both;
 
         const QList<HierarchyNode> nodes =
             HierarchyService::getInstance()->getHierarchy(hierarchyQuery);
 
         relationshipsTree->clear();
-        QMap<int, QTreeWidgetItem*> itemById;
+        QMap<int, QTreeWidgetItem*> itemByNodeId;
+        QMap<QString, QTreeWidgetItem*> rootDirectionGroups;
+        QMap<QString, int> rootDirectionGroupCounts;
+        QTreeWidgetItem* rootItem = nullptr;
         int visibleCount = 0;
         for (const HierarchyNode& node : nodes) {
             if (node.symbol.symbolId < 0)
                 continue;
 
             QTreeWidgetItem* parent = relationshipsTree->invisibleRootItem();
-            if (node.parentSymbolId >= 0 && itemById.contains(node.parentSymbolId))
-                parent = itemById.value(node.parentSymbolId);
+            if (node.depth == 0) {
+                rootItem = createHierarchyItem(parent, node, QStringLiteral("Root"));
+                itemByNodeId.insert(node.nodeId, rootItem);
+                visibleCount++;
+                continue;
+            }
+
+            if (node.parentNodeId >= 0 && itemByNodeId.contains(node.parentNodeId))
+                parent = itemByNodeId.value(node.parentNodeId);
+            if (node.parentNodeId == 0 && rootItem) {
+                const QString directionText = hierarchyDirectionText(node.direction);
+                parent = getOrCreateChildGroup(rootItem,
+                                               rootDirectionGroups,
+                                               directionText,
+                                               0,
+                                               directionText);
+                rootDirectionGroupCounts[directionText]++;
+            }
 
             QTreeWidgetItem* item = createHierarchyItem(
                 parent,
                 node,
-                node.depth == 0 ? QStringLiteral("Root") : QStringLiteral("Child"));
-            itemById.insert(node.symbol.symbolId, item);
+                hierarchyDirectionText(node.direction));
+            itemByNodeId.insert(node.nodeId, item);
             visibleCount++;
         }
+        for (auto it = rootDirectionGroups.begin(); it != rootDirectionGroups.end(); ++it)
+            it.value()->setText(0, countLabel(it.key(), rootDirectionGroupCounts.value(it.key())));
         relationshipsTree->expandAll();
 
         if (relationshipsDock) {
@@ -1124,10 +1314,15 @@ void MainWindow::refreshRelationshipsPanel()
         outgoing = service->findOutgoingRelationships(query);
     if (directionFilter == 0 || directionFilter == 2)
         incoming = service->findIncomingRelationships(query);
+    sortRelationshipResults(outgoing, true);
+    sortRelationshipResults(incoming, false);
 
     int visibleCount = 0;
     QMap<QString, QTreeWidgetItem*> directionGroups;
     QMap<QString, QTreeWidgetItem*> typeGroups;
+    QMap<QString, int> directionGroupCounts;
+    QMap<QString, int> typeGroupCounts;
+    QMap<QString, QString> typeGroupLabels;
     relationshipsTree->clear();
     auto addRelationship = [&](const RelationshipResult& relationship,
                                const QString& direction,
@@ -1142,16 +1337,20 @@ void MainWindow::refreshRelationshipsPanel()
             0,
             direction);
         const QString typeText = relationshipTypeText(relationship.relationship.type);
+        const QString typeKey = direction + QLatin1Char(':') + typeText;
         QTreeWidgetItem* typeGroup = getOrCreateChildGroup(
             directionGroup,
             typeGroups,
-            direction + QLatin1Char(':') + typeText,
+            typeKey,
             4,
             typeText);
         createRelationshipItem(typeGroup,
                                direction,
                                symbol,
                                relationship.relationship.type);
+        directionGroupCounts[direction]++;
+        typeGroupCounts[typeKey]++;
+        typeGroupLabels[typeKey] = typeText;
         visibleCount++;
     };
 
@@ -1163,6 +1362,10 @@ void MainWindow::refreshRelationshipsPanel()
         const sym_list::SymbolInfo& source = relationship.fromSymbol;
         addRelationship(relationship, QStringLiteral("Incoming"), source);
     }
+    for (auto it = directionGroups.begin(); it != directionGroups.end(); ++it)
+        it.value()->setText(0, countLabel(it.key(), directionGroupCounts.value(it.key())));
+    for (auto it = typeGroups.begin(); it != typeGroups.end(); ++it)
+        it.value()->setText(4, countLabel(typeGroupLabels.value(it.key()), typeGroupCounts.value(it.key())));
     relationshipsTree->expandAll();
 
     if (relationshipsDock) {

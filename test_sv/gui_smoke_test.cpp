@@ -433,17 +433,39 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
         expectBool("relationship tree mode renders hierarchy",
                    navigableItemCount(window.relationshipsTree) == 2,
                    true);
+        bool sawTreeRoot = false;
         bool sawTreeChild = false;
         const QList<QTreeWidgetItem*> items = navigableItems(window.relationshipsTree);
         for (QTreeWidgetItem* item : items) {
+            sawTreeRoot = sawTreeRoot
+                || (item->text(0) == QStringLiteral("Root")
+                    && item->text(1) == QStringLiteral("target_ref"));
             sawTreeChild = sawTreeChild
-                || (item->text(0) == QStringLiteral("Child")
+                || (item->text(0) == QStringLiteral("Outgoing")
                     && item->text(1) == QStringLiteral("target_sink"));
         }
+        expectBool("relationship tree mode keeps root", sawTreeRoot, true);
         expectBool("relationship tree mode keeps child target", sawTreeChild, true);
-        expectBool("relationship tree disables direction filter",
-                   !window.relationshipDirectionCombo->isEnabled(),
+        expectBool("relationship tree keeps direction filter enabled",
+                   window.relationshipDirectionCombo->isEnabled(),
                    true);
+        window.relationshipDirectionCombo->setCurrentIndex(
+            window.relationshipDirectionCombo->findText(QStringLiteral("Incoming")));
+        window.relationshipTypeCombo->setCurrentIndex(
+            window.relationshipTypeCombo->findText(QStringLiteral("Reads From")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("relationship tree incoming filter renders hierarchy",
+                   navigableItemCount(window.relationshipsTree) == 2,
+                   true);
+        bool sawIncomingTreeSource = false;
+        const QList<QTreeWidgetItem*> incomingItems = navigableItems(window.relationshipsTree);
+        for (QTreeWidgetItem* item : incomingItems) {
+            sawIncomingTreeSource = sawIncomingTreeSource
+                || (item->text(0) == QStringLiteral("Incoming")
+                    && item->text(1) == QStringLiteral("external_ref"));
+        }
+        expectBool("relationship tree keeps incoming source",
+                   sawIncomingTreeSource, true);
     }
 }
 
@@ -692,7 +714,7 @@ int main(int argc, char** argv)
     expectBool("problems tree shows diagnostic",
                waitUntil([&]() {
                    return window.problemsTree
-                          && window.problemsTree->topLevelItemCount() > 0;
+                          && navigableItemCount(window.problemsTree) > 0;
                }, 2000),
                true);
     if (window.problemsScopeCombo) {
@@ -704,6 +726,11 @@ int main(int argc, char** argv)
                               && window.problemsTree->topLevelItemCount() > 0
                               && window.problemsTree->topLevelItem(0)->childCount() > 0;
                    }, 2000),
+                   true);
+        expectBool("problems all-files group shows count",
+                   window.problemsTree
+                       && window.problemsTree->topLevelItemCount() > 0
+                       && window.problemsTree->topLevelItem(0)->text(0).contains(QStringLiteral("(")),
                    true);
         window.problemsScopeCombo->setCurrentIndex(
             window.problemsScopeCombo->findText(QStringLiteral("Current File")));

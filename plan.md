@@ -23,13 +23,14 @@
 - Navigation UI：模块层级和符号 outline 已有显式 model，Widget 不再在双击时反查 sym_list。
 - Scheduler：workspace opened/rescanned/project config changed 已经通过 ProjectModel
   projectChanged 进入 AnalysisScheduler。
+- 本轮收口：Problems / References / Relationships 底部面板已补稳定排序、分组计数和 Relationships Tree 双向浏览。
 
 最近验证：
 
 - completion_test：14 checks, 0 failed。
 - jump_test：10 checks, 0 failed。
-- relationship_test：82 checks, 0 failed。
-- gui_smoke_test：54 checks, 0 failed。
+- relationship_test：87 checks, 0 failed。
+- gui_smoke_test：89 checks, 0 failed。
 - ctest：6/6 passed。
 - git diff --check：无错误。
 
@@ -95,6 +96,8 @@
 - Problems 面板支持 current file / all files 和 severity 筛选。
 - Problems 条目双击可跳转到对应文件、行和列。
 - Problems 面板刷新已加 100ms 合并；All Files 模式按 file 分组，Current File 保持紧凑列表。
+- Problems 面板结果按 severity / file / line / column 稳定排序；All Files 分组显示数量。
+- Problems 空状态显示 No problems；非诊断节点双击不会触发空路径跳转。
 - relationship_test 覆盖 Slang diagnostics -> snapshot -> DiagnosticService。
 - gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic 和 all-files 分组。
 
@@ -107,7 +110,11 @@
 - MainWindow 新增底部 Relationships dock，编辑器右键 Show Relationships 触发。
 - Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships，并支持方向 / 类型筛选。
 - Relationships dock Direct 视图按 direction -> relationship type -> result 分组。
+- Relationships dock Direct 视图结果按类型和位置稳定排序，direction / type 分组显示数量。
 - Relationships dock 新增 Tree 视图，接入 HierarchyService，支持 Depth 1..4 层级浏览。
+- HierarchyService 支持 Children / Parents / Both 方向查询，并通过路径去重防止递归循环。
+- Relationships Tree 支持 Root 节点、Incoming / Outgoing 分支、方向筛选和全部关系类型策略。
+- References dock 结果按类型和位置稳定排序，file / relationship type 分组显示数量。
 - 编辑器新增 Ctrl+Shift+R 快捷键入口触发 Show Relationships。
 - References / Relationships 条目双击可跳转到对应文件、行和列。
 - gui_smoke_test 覆盖 References / Relationships dock 的 service-backed UI 消费。
@@ -127,17 +134,18 @@
 
 ### 2. 继续打磨关系浏览 UI
 
-Relationships dock 已有 Direct 分组和 Tree 层级浏览入口。后续重点是双向树、递归去重、
-根节点 UX、按层刷新和更清晰的类型策略，并继续把相关读取固定到 RelationshipService /
+Relationships dock 已有 Direct 分组、双向 Tree 层级浏览、递归去重和根节点 UX。
+后续重点是按层刷新、展开状态保持和更清晰的类型策略，并继续把相关读取固定到 RelationshipService /
 HierarchyService。
 
 ### 3. Reference / Problems UI 打磨
 
 - ReferenceService 已有 References dock 作为真实 UI 消费点，当前查询 incoming references。
 - DiagnosticService 已消费 Slang diagnostics，Problems panel 已支持基础筛选和行/列跳转。
-- References 已有结果分组、workspace files 筛选、type 筛选和快捷键入口；后续可补排序、
+- References 已有结果排序、结果分组、workspace files 筛选、type 筛选和快捷键入口；后续可补
   结果摘要、更多 workspace 维度和跨文件上下文。
-- Problems panel 已有刷新合并和 all-files 分组；后续可补清空策略、诊断生命周期和更完整跳转体验。
+- Problems panel 已有刷新合并、稳定排序、空状态和 all-files 分组；后续可补清空策略、
+  诊断生命周期和更多真实 fixture。
 
 ### 4. SemanticIndexSnapshot 生产 / 切换闭环
 
