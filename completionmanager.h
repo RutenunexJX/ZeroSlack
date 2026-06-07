@@ -169,6 +169,11 @@ private:
     void updateAllSymbolsCache();
     QStringList getAllSymbolNamesFromDatabase();
 
+    QList<sym_list::SymbolInfo> getAllSemanticSymbols() const;
+    QList<sym_list::SymbolInfo> getSemanticSymbolsByType(sym_list::sym_type_e symbolType) const;
+    QList<sym_list::SymbolInfo> findSemanticDefinitions(const QString& symbolName) const;
+    sym_list::SymbolInfo getSemanticSymbolById(int symbolId) const;
+
     bool shouldSkipCacheRefresh();
 
     QStringList getSymbolNamesFromIds(const QList<int>& symbolIds);

@@ -1,11 +1,14 @@
 #include "semanticindex.h"
 
 #include "completionmanager.h"
+#include "scope_tree.h"
+#include "semanticindexsnapshot.h"
 
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
 #include <algorithm>
+#include <utility>
 
 std::unique_ptr<SemanticIndex> SemanticIndex::instance = nullptr;
 
@@ -42,8 +45,26 @@ sym_list* SemanticIndex::symbolDatabase() const
     return m_symbolDatabase ? m_symbolDatabase : sym_list::getInstance();
 }
 
+void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot)
+{
+    m_snapshot = std::move(snapshot);
+}
+
+void SemanticIndex::clearSnapshot()
+{
+    m_snapshot.reset();
+}
+
+std::shared_ptr<const SemanticIndexSnapshot> SemanticIndex::snapshot() const
+{
+    return m_snapshot;
+}
+
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) const
 {
+    if (m_snapshot)
+        return m_snapshot->getSymbols(fileName);
+
     sym_list* db = symbolDatabase();
     if (fileName.isEmpty())
         return db->getAllSymbols();
@@ -63,7 +84,84 @@ QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) c
 
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e type) const
 {
+    if (m_snapshot)
+        return m_snapshot->getSymbolsByType(type);
+
     return symbolDatabase()->findSymbolsByType(type);
+}
+
+sym_list::SymbolInfo SemanticIndex::getSymbolById(int symbolId) const
+{
+    if (m_snapshot)
+        return m_snapshot->getSymbolById(symbolId);
+
+    if (symbolId < 0) {
+        sym_list::SymbolInfo missing;
+        missing.symbolId = -1;
+        return missing;
+    }
+
+    sym_list::SymbolInfo symbol = symbolDatabase()->getSymbolById(symbolId);
+    if (symbol.symbolId != -1)
+        return symbol;
+
+    const QList<sym_list::SymbolInfo> allSymbols = getSymbols();
+    for (const sym_list::SymbolInfo& candidate : allSymbols) {
+        if (candidate.symbolId == symbolId)
+            return candidate;
+    }
+
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    return missing;
+}
+
+int SemanticIndex::findSymbolId(const QString& name,
+                                const SemanticQueryContext& context) const
+{
+    if (m_snapshot)
+        return m_snapshot->findSymbolId(name, context);
+
+    const QList<sym_list::SymbolInfo> symbols = findDefinitions(name, context);
+    if (symbols.isEmpty())
+        return -1;
+    return symbols.first().symbolId;
+}
+
+QString SemanticIndex::getCachedFileContent(const QString& fileName) const
+{
+    return symbolDatabase()->getCachedFileContent(fileName);
+}
+
+QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int cursorLine) const
+{
+    QStringList result;
+    if (fileName.isEmpty() || cursorLine < 0)
+        return result;
+
+    ScopeManager* scopeManager = symbolDatabase()->getScopeManager();
+    if (!scopeManager)
+        return result;
+
+    ScopeNode* scope = scopeManager->findScopeAt(fileName, cursorLine);
+    QSet<QString> seen;
+    while (scope) {
+        for (auto it = scope->symbols.constBegin(); it != scope->symbols.constEnd(); ++it) {
+            const QString& name = it.key();
+            if (seen.contains(name))
+                continue;
+            seen.insert(name);
+            result.append(name);
+        }
+        scope = scope->parent;
+    }
+    return result;
+}
+
+void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,
+                                                    const QString& content)
+{
+    symbolDatabase()->refreshStructTypedefEnumForFile(fileName, content);
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
@@ -72,6 +170,9 @@ QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
 {
     if (name.isEmpty())
         return {};
+
+    if (m_snapshot)
+        return m_snapshot->findDefinitions(name, context);
 
     QList<sym_list::SymbolInfo> symbols = symbolDatabase()->findSymbolsByName(name);
     if (symbols.isEmpty())
@@ -91,6 +192,9 @@ QStringList SemanticIndex::findCompletions(const SemanticQueryContext& context) 
 
 QList<SemanticRelationship> SemanticIndex::getRelationships(int symbolId, bool outgoing) const
 {
+    if (m_snapshot)
+        return m_snapshot->getRelationships(symbolId, outgoing);
+
     QList<SemanticRelationship> result;
     if (symbolId < 0)
         return result;
@@ -133,6 +237,9 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(const QString& scope
 
 QList<SemanticDiagnostic> SemanticIndex::getDiagnostics(const QString& fileName) const
 {
+    if (m_snapshot)
+        return m_snapshot->getDiagnostics(fileName);
+
     Q_UNUSED(fileName)
     return {};
 }

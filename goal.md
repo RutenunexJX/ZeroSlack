@@ -1,6 +1,6 @@
 # ZeroSlack Product / Architecture Goal
 
-当前版本：`0.0.16/slang21`
+当前版本：`0.0.17/slang22`
 
 本文记录 ZeroSlack 当前阶段的最终产品目标和架构骨架。后续功能和重构默认以此为准；
 除非遇到无法绕过的实现问题，否则不再为每个新功能重新选择架构方向。
@@ -64,6 +64,7 @@ Tree-sitter + Slang 分工保持不变：
 - DocumentModel 最小入口。
 - AnalysisScheduler 最小入口。
 - SemanticIndex facade。
+- SemanticIndexSnapshot 最小只读边界。
 - DefinitionService。
 - CompletionService。
 - RelationshipService。
@@ -77,11 +78,13 @@ Tree-sitter + Slang 分工保持不变：
 
 仍未完成或仍是过渡形态：
 
-- SemanticIndexSnapshot 还未开始。
+- SemanticIndexSnapshot 已有最小只读类型和 SemanticIndex 切换 API，但还没有后台生产 /
+  主线程原子切换闭环。
 - DiagnosticService 还没有真实 Slang diagnostics 数据。
 - ReferenceService 还缺 UI 消费点。
 - Relationship / hierarchy 浏览 UI 仍可继续迁到 services。
-- CompletionManager 内部仍大量直接依赖 sym_list。
+- CompletionManager 大批只读符号查询、关系读取、scope names、cached file content
+  已收束到 SemanticIndex / RelationshipService；仍有状态性过渡依赖。
 - MyCodeEditor 仍有少量旧直连点，但跳转定义和主要补全入口已开始经由 services。
 
 ## 阶段路线
@@ -104,11 +107,19 @@ Tree-sitter + Slang 分工保持不变：
 
 ### 阶段 5：Query Services
 
-最小边界已补齐。后续重点是消费端迁移和服务内部从 sym_list-backed 迁到 snapshot-backed。
+最小边界已补齐。RelationshipService 已扩展 related id / exact relationship 查询；
+HierarchyService / ReferenceService 的名称解析和 ID 反查已收束到 SemanticIndex。
+后续重点是消费端迁移和服务内部从 sym_list-backed 迁到 snapshot-backed。
 
 ### 阶段 6：SemanticIndexSnapshot
 
-最终目标：
+最小只读 snapshot 类型已落地：
+
+- `SemanticIndexSnapshot` 保存 symbols / relationships / diagnostics。
+- `SemanticIndex` 支持 `setSnapshot` / `clearSnapshot`。
+- snapshot 存在时，symbols / definitions / relationships / diagnostics 优先读 snapshot。
+
+最终目标仍是：
 
 ```text
 后台分析产出 SemanticIndexSnapshot
@@ -117,7 +128,7 @@ UI / Services 只读 snapshot
 旧 snapshot 自动释放
 ```
 
-这是下一阶段最值得开始设计的大块。
+下一阶段重点是把 AnalysisScheduler / 后台分析接到 snapshot 生产和主线程原子切换。
 
 ## 完成标准
 

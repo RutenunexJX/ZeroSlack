@@ -9,6 +9,7 @@
 #include "relationshipservice.h"
 #include "searchservice.h"
 #include "symbolrelationshipengine.h"
+#include "semanticindexsnapshot.h"
 #include "syminfo.h"
 
 #include <QApplication>
@@ -18,6 +19,7 @@
 #include <QHash>
 #include <QString>
 #include <cstdio>
+#include <memory>
 
 static int g_checks = 0;
 static int g_fails = 0;
@@ -289,6 +291,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                index.getSymbols(topPath).size() == topSymbols.size(), true);
     expectBool("semantic facade finds cross-file module",
                !facadeStageDefs.isEmpty() && facadeStageDefs.first().symbolId == stageId, true);
+    expectBool("semantic facade gets symbol by id",
+               index.getSymbolById(topId).symbolName == QStringLiteral("rel_top"), true);
+    expectInt("semantic facade finds symbol id",
+              index.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
+    expectInt("semantic facade returns missing symbol id",
+              index.findSymbolId(QStringLiteral("missing_symbol"), queryContext), -1);
+    expectBool("semantic facade returns cached file content",
+               index.getCachedFileContent(topPath) == contents.value(topPath), true);
+    const QStringList scopeNames = index.getScopeSymbolNames(topPath, 20);
+    expectBool("semantic facade returns scope symbols",
+               scopeNames.contains(QStringLiteral("stage_data")), true);
 
     DiagnosticService diagnosticService(&index);
     DiagnosticQuery diagnosticQuery;
@@ -360,6 +373,43 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                hasRel(rels, topRstId, topId, SymbolRelationshipEngine::RESETS), true);
 
     applyRelationships(engine, rels);
+    engine.addRelationship(topId, stageId, SymbolRelationshipEngine::REFERENCES,
+                           QStringLiteral("direction cache probe"));
+    engine.addRelationship(reqValidId, topId, SymbolRelationshipEngine::REFERENCES,
+                           QStringLiteral("direction cache probe"));
+    const QList<int> outgoingReferenceIds =
+        engine.getRelatedSymbols(topId, SymbolRelationshipEngine::REFERENCES, true);
+    const QList<int> incomingReferenceIds =
+        engine.getRelatedSymbols(topId, SymbolRelationshipEngine::REFERENCES, false);
+    expectBool("relationship cache keeps outgoing direction",
+               outgoingReferenceIds.contains(stageId), true);
+    expectBool("relationship cache keeps incoming direction",
+               incomingReferenceIds.contains(reqValidId), true);
+    expectBool("relationship cache separates incoming direction",
+               incomingReferenceIds.contains(stageId), false);
+
+    SemanticIndex snapshotIndex(db);
+    const auto snapshot = std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(db));
+    snapshotIndex.setSnapshot(snapshot);
+    expectBool("semantic snapshot returns top symbols",
+               snapshotIndex.getSymbols(topPath).size() == topSymbols.size(), true);
+    expectInt("semantic snapshot finds symbol id",
+              snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
+    const QList<SemanticRelationship> snapshotTopRelationships =
+        snapshotIndex.getRelationships(topId, true);
+    bool snapshotFoundStage = false;
+    for (const SemanticRelationship& relationship : snapshotTopRelationships) {
+        snapshotFoundStage = snapshotFoundStage
+            || (relationship.toId == stageId
+                && relationship.type == SymbolRelationshipEngine::INSTANTIATES);
+    }
+    expectBool("semantic snapshot captures relationships",
+               snapshotFoundStage, true);
+    snapshotIndex.clearSnapshot();
+    expectInt("semantic snapshot clear restores live index",
+              snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
+
     RelationshipService relationshipService(&index);
 
     RelationshipQuery relationshipQuery;
@@ -397,6 +447,22 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                serviceFoundTask, true);
     expectBool("relationship service finds condition read",
                serviceFoundRead, true);
+    RelationshipQuery relatedIdsQuery;
+    relatedIdsQuery.symbolId = topId;
+    relatedIdsQuery.outgoing = true;
+    relatedIdsQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    expectBool("relationship service returns related ids",
+               relationshipService.findRelatedSymbolIds(relatedIdsQuery).contains(stageId), true);
+    expectBool("relationship service exact relationship",
+               relationshipService.hasRelationship(topId,
+                                                   stageId,
+                                                   SymbolRelationshipEngine::INSTANTIATES),
+               true);
+    expectBool("relationship service rejects reversed relationship",
+               relationshipService.hasRelationship(stageId,
+                                                   topId,
+                                                   SymbolRelationshipEngine::INSTANTIATES),
+               false);
 
     HierarchyService hierarchyService(&index);
     HierarchyQuery hierarchyQuery;

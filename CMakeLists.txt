@@ -65,6 +65,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipprogressdialog.cpp
     searchservice.cpp
     semanticindex.cpp
+    semanticindexsnapshot.cpp
     slangmanager.cpp
     smartrelationshipbuilder.cpp
     symbolanalyzer.cpp
@@ -98,6 +99,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipprogressdialog.h
     searchservice.h
     semanticindex.h
+    semanticindexsnapshot.h
     slangmanager.h
     smartrelationshipbuilder.h
     symbolanalyzer.h

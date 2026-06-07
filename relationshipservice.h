@@ -35,6 +35,10 @@ public:
     QList<RelationshipResult> findRelationships(const RelationshipQuery& query) const;
     QList<RelationshipResult> findOutgoingRelationships(const RelationshipQuery& query) const;
     QList<RelationshipResult> findIncomingRelationships(const RelationshipQuery& query) const;
+    QList<int> findRelatedSymbolIds(const RelationshipQuery& query) const;
+    bool hasRelationship(int fromSymbolId,
+                         int toSymbolId,
+                         SymbolRelationshipEngine::RelationType type) const;
     bool hasRelationships(const RelationshipQuery& query) const;
 
 private:

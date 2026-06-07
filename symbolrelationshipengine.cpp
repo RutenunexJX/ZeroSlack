@@ -135,7 +135,10 @@ void SymbolRelationshipEngine::clearAllRelationships()
 
 QList<int> SymbolRelationshipEngine::getRelatedSymbols(int symbolId, RelationType type, bool outgoing) const
 {
-    QPair<int, RelationType> cacheKey(symbolId, type);
+    const QString cacheKey = QStringLiteral("%1:%2:%3")
+                                 .arg(symbolId)
+                                 .arg(static_cast<int>(type))
+                                 .arg(outgoing ? 1 : 0);
     if (cacheValid && queryCache.contains(cacheKey)) {
         return queryCache[cacheKey];
     }
@@ -402,30 +405,16 @@ void SymbolRelationshipEngine::invalidateCache()
 
 void SymbolRelationshipEngine::invalidateCacheForRelationship(int fromId, int toId, RelationType type)
 {
-    queryCache.remove(qMakePair(fromId, type));
-    queryCache.remove(qMakePair(toId, type));
+    Q_UNUSED(fromId)
+    Q_UNUSED(toId)
+    Q_UNUSED(type)
+    invalidateCache();
 }
 
 void SymbolRelationshipEngine::invalidateCacheForSymbol(int symbolId)
 {
-    if (!relationshipGraph.contains(symbolId)) return;
-
-    const RelationshipNode& node = relationshipGraph[symbolId];
-
-    QMutableHashIterator<QPair<int, RelationType>, QList<int>> it(queryCache);
-    while (it.hasNext()) {
-        it.next();
-        if (it.key().first == symbolId) {
-            it.remove();
-        }
-    }
-
-    for (const RelationshipEdge& edge : node.outgoingEdges) {
-        queryCache.remove(qMakePair(edge.targetId, edge.type));
-    }
-    for (const RelationshipEdge& edge : node.incomingEdges) {
-        queryCache.remove(qMakePair(edge.targetId, edge.type));
-    }
+    Q_UNUSED(symbolId)
+    invalidateCache();
 }
 
 void SymbolRelationshipEngine::addToTypeIndex(int fromId, int toId, RelationType type)

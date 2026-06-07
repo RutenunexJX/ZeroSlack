@@ -85,7 +85,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     QSet<int> visited;
 
     HierarchyNode root;
-    root.symbol = semanticIndex()->symbolDatabase()->getSymbolById(rootId);
+    root.symbol = semanticIndex()->getSymbolById(rootId);
     root.depth = 0;
     root.parentSymbolId = -1;
     queue.append(root);
@@ -129,9 +129,7 @@ int HierarchyService::resolveSymbolId(const HierarchyQuery& query) const
     SemanticQueryContext context;
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
-    const QList<sym_list::SymbolInfo> defs =
-        semanticIndex()->findDefinitions(query.symbolName, context);
-    return defs.isEmpty() ? -1 : defs.first().symbolId;
+    return semanticIndex()->findSymbolId(query.symbolName, context);
 }
 
 QList<SymbolRelationshipEngine::RelationType> HierarchyService::effectiveTypes(

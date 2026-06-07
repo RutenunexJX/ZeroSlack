@@ -1,6 +1,6 @@
 # ZeroSlack Next Plan
 
-当前版本：`0.0.16/slang21`
+当前版本：`0.0.17/slang22`
 当前分支：`tree_sitter_and_slang`
 
 本计划服务于 `goal.md` 中的产品 / 架构目标。后续实现默认继续向：
@@ -15,9 +15,10 @@
 
 - Tree-sitter：实时语法、高亮、增量文档、live module scope。
 - Slang：符号、类型、定义、跳转、补全、关系、诊断事实来源。
-- SemanticIndex：当前是 sym_list-backed facade，新增语义读取优先通过它。
+- SemanticIndex：当前默认是 sym_list-backed facade，新增语义读取优先通过它。
+- SemanticIndexSnapshot：最小只读 snapshot 类型已落地，SemanticIndex 已支持 setSnapshot / clearSnapshot。
 - Query Services：Definition / Completion / Relationship / Hierarchy / Reference /
-  Diagnostic / Search 最小边界已落地。
+  Diagnostic / Search 最小边界已落地；RelationshipService 已扩展 related id / exact relationship 查询。
 - Navigation UI：模块层级和符号 outline 已有显式 model，Widget 不再在双击时反查 sym_list。
 - Scheduler：workspace opened/rescanned/project config changed 已经通过 ProjectModel
   projectChanged 进入 AnalysisScheduler。
@@ -26,7 +27,7 @@
 
 - completion_test：14 checks, 0 failed。
 - jump_test：10 checks, 0 failed。
-- relationship_test：59 checks, 0 failed。
+- relationship_test：74 checks, 0 failed。
 - gui_smoke_test：46 checks, 0 failed。
 - ctest：6/6 passed。
 - git diff --check：无错误。
@@ -61,7 +62,9 @@
 
 - DefinitionService：MyCodeEditor 跳转定义主要路径已迁入。
 - CompletionService：普通补全、struct member 补全、命令模式补全已开始迁入。
-- RelationshipService / HierarchyService：关系和层级查询最小边界已落地。
+- RelationshipService / HierarchyService：关系和层级查询边界已落地。
+- RelationshipService 增加 findRelatedSymbolIds / hasRelationship。
+- HierarchyService / ReferenceService 名称解析和 ID 反查改走 SemanticIndex。
 - ReferenceService / DiagnosticService / SearchService：最小边界已落地并有测试断言。
 
 ### P4 Navigation 消费端迁移
@@ -71,6 +74,15 @@
 - NavigationManager 消费 DefinitionService / HierarchyService / SearchService / SemanticIndex。
 - NavigationWidget 不再在符号双击时反查 sym_list / service，而是使用 item payload。
 
+### P5 SemanticIndexSnapshot 最小边界
+
+- 新增 `semanticindexsnapshot.cpp / semanticindexsnapshot.h`。
+- Snapshot 保存 symbols / relationships / diagnostics 的只读副本。
+- Snapshot 支持 symbols / definitions / symbol id / relationships / diagnostics 查询。
+- SemanticIndex 支持 setSnapshot / clearSnapshot；snapshot 存在时优先读 snapshot。
+- relationship_test 覆盖 snapshot symbols / symbol id / relationships / clearSnapshot。
+- 后台分析产出 snapshot、主线程原子切换 current snapshot 尚未完成。
+
 ## 下一步建议
 
 ### 1. 继续迁移 editor / UI 消费端
@@ -78,7 +90,8 @@
 当前仍有少量直接 sym_list 读取：
 
 - `MyCodeEditor` 内的注释判断和补全触发细节。
-- `CompletionManager` 内部大量旧逻辑。
+- `CompletionManager` 大批只读符号查询和关系读取已迁到 SemanticIndex / RelationshipService；
+  剩余主要是状态性过渡依赖和旧补全策略。
 - `MainWindow::setupRelationshipEngine()` 仍需要把 relationship engine 绑定到 sym_list，这是当前过渡期可接受的初始化点。
 
 建议小步推进，不要一次性重写 CompletionManager。
@@ -93,7 +106,7 @@ RelationshipService / HierarchyService 已有底层边界，后续可以继续�
 - DiagnosticService 当前委托 SemanticIndex::getDiagnostics，仍为空实现。
 - 后续可先补 Slang diagnostics 到 SemanticIndex，再挂 Problems panel。
 
-### 4. SemanticIndexSnapshot 设计
+### 4. SemanticIndexSnapshot 生产 / 切换闭环
 
 下一块较大的架构工作：
 
@@ -104,7 +117,8 @@ UI / Services 只读 snapshot
 旧 snapshot 自动释放
 ```
 
-短期可以继续保持 sym_list-backed facade，但新增代码要避免绕过 SemanticIndex / services。
+最小只读 snapshot 类型已落地；下一步重点不是再设计类型，而是让 AnalysisScheduler /
+后台分析真正产出 snapshot，并让主线程原子切换 current snapshot。
 
 ## Definition Of Done
 
@@ -114,7 +128,7 @@ UI / Services 只读 snapshot
 - `git diff --check` 无错误。
 - 不恢复 SVLexer、旧 Tree-sitter parser、Tree-sitter 验证按钮或关系分析正则路径。
 - 不引入长期散落 perflog。
-- `.claude/settings.local.json` 不删除、不 stage。
+- 不恢复 `.claude/` 或任何 Claude 本地配置。
 
 ## Useful Commands
 

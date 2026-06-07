@@ -56,6 +56,42 @@ QList<RelationshipResult> RelationshipService::findIncomingRelationships(
     return findRelationships(incomingQuery);
 }
 
+QList<int> RelationshipService::findRelatedSymbolIds(const RelationshipQuery& query) const
+{
+    QList<int> result;
+    const QList<RelationshipResult> relationships = findRelationships(query);
+    for (const RelationshipResult& relationship : relationships) {
+        result.append(query.outgoing
+                          ? relationship.relationship.toId
+                          : relationship.relationship.fromId);
+    }
+    return result;
+}
+
+bool RelationshipService::hasRelationship(
+    int fromSymbolId,
+    int toSymbolId,
+    SymbolRelationshipEngine::RelationType type) const
+{
+    if (fromSymbolId < 0 || toSymbolId < 0)
+        return false;
+
+    RelationshipQuery query;
+    query.symbolId = fromSymbolId;
+    query.outgoing = true;
+    query.types = {type};
+
+    const QList<RelationshipResult> relationships = findRelationships(query);
+    for (const RelationshipResult& relationship : relationships) {
+        if (relationship.relationship.fromId == fromSymbolId
+            && relationship.relationship.toId == toSymbolId
+            && relationship.relationship.type == type) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool RelationshipService::hasRelationships(const RelationshipQuery& query) const
 {
     return !findRelationships(query).isEmpty();
@@ -77,9 +113,7 @@ int RelationshipService::resolveSymbolId(const RelationshipQuery& query) const
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
 
-    const QList<sym_list::SymbolInfo> defs =
-        semanticIndex()->findDefinitions(query.symbolName, context);
-    return defs.isEmpty() ? -1 : defs.first().symbolId;
+    return semanticIndex()->findSymbolId(query.symbolName, context);
 }
 
 bool RelationshipService::typeMatches(
@@ -94,11 +128,8 @@ RelationshipResult RelationshipService::enrich(const SemanticRelationship& relat
     RelationshipResult result;
     result.relationship = relationship;
 
-    sym_list* db = semanticIndex()->symbolDatabase();
-    if (db) {
-        result.fromSymbol = db->getSymbolById(relationship.fromId);
-        result.toSymbol = db->getSymbolById(relationship.toId);
-    }
+    result.fromSymbol = semanticIndex()->getSymbolById(relationship.fromId);
+    result.toSymbol = semanticIndex()->getSymbolById(relationship.toId);
 
     return result;
 }

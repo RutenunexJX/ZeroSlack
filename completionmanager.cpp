@@ -1,4 +1,6 @@
 #include "completionmanager.h"
+#include "relationshipservice.h"
+#include "semanticindex.h"
 #include "symbolrelationshipengine.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
@@ -37,6 +39,28 @@ CompletionManager* CompletionManager::getInstance()
         instance = std::unique_ptr<CompletionManager>(new CompletionManager());
     }
     return instance.get();
+}
+
+QList<sym_list::SymbolInfo> CompletionManager::getAllSemanticSymbols() const
+{
+    return SemanticIndex::getInstance()->getSymbols();
+}
+
+QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsByType(
+    sym_list::sym_type_e symbolType) const
+{
+    return SemanticIndex::getInstance()->getSymbolsByType(symbolType);
+}
+
+QList<sym_list::SymbolInfo> CompletionManager::findSemanticDefinitions(
+    const QString& symbolName) const
+{
+    return SemanticIndex::getInstance()->findDefinitions(symbolName);
+}
+
+sym_list::SymbolInfo CompletionManager::getSemanticSymbolById(int symbolId) const
+{
+    return SemanticIndex::getInstance()->getSymbolById(symbolId);
 }
 
 QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const QString& prefix)
@@ -85,14 +109,13 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
         return symbolScoreCache[cacheKey];
     }
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByType(symbolType);
+    QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(symbolType);
 
     if (symbolType == sym_list::sym_enum) {
         QSet<int> seenIds;
         for (const sym_list::SymbolInfo &s : symbols)
             seenIds.insert(s.symbolId);
-        QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+        QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
         for (const sym_list::SymbolInfo &s : allSymbols) {
             if (s.symbolType == sym_list::sym_typedef && s.dataType == QLatin1String("enum") && !seenIds.contains(s.symbolId)) {
                 seenIds.insert(s.symbolId);
@@ -166,8 +189,12 @@ void CompletionManager::updateAllSymbolsCache()
 {
     if (allSymbolsCacheValid) return;
 
-    sym_list* symbolList = sym_list::getInstance();
-    QSet<QString> uniqueNames = symbolList->getUniqueSymbolNames();
+    QSet<QString> uniqueNames;
+    const QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        if (!symbol.symbolName.isEmpty())
+            uniqueNames.insert(symbol.symbolName);
+    }
 
     cachedAllSymbolNames = QStringList(uniqueNames.begin(), uniqueNames.end());
     cachedAllSymbolNames.sort();
@@ -180,15 +207,18 @@ void CompletionManager::updateAllSymbolsCache()
 
 void CompletionManager::precomputeFrequentCompletions()
 {
-    sym_list* symbolList = sym_list::getInstance();
-
     QList<sym_list::sym_type_e> commonTypes = {
         sym_list::sym_reg, sym_list::sym_wire, sym_list::sym_logic,
         sym_list::sym_module, sym_list::sym_task, sym_list::sym_function
     };
 
     for (sym_list::sym_type_e symbolType : commonTypes) {
-        QStringList names = symbolList->getSymbolNamesByType(symbolType);
+        QStringList names;
+        const QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(symbolType);
+        for (const sym_list::SymbolInfo& symbol : symbols) {
+            if (!symbol.symbolName.isEmpty())
+                names.append(symbol.symbolName);
+        }
         precomputedCompletions[symbolType] = names;
     }
 
@@ -215,8 +245,7 @@ bool CompletionManager::shouldSkipCacheRefresh()
 {
     if (!smartCachingEnabled) return false;
 
-    sym_list* symbolList = sym_list::getInstance();
-    int currentSize = symbolList->getAllSymbols().size();
+    int currentSize = getAllSemanticSymbols().size();
     QString currentHash = calculateSymbolDatabaseHash();
 
     bool sizeUnchanged = (currentSize == lastSymbolDatabaseSize);
@@ -234,8 +263,7 @@ bool CompletionManager::shouldSkipCacheRefresh()
 
 QString CompletionManager::calculateSymbolDatabaseHash()
 {
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     QString hashInput = QString::number(allSymbols.size());
 
@@ -357,8 +385,7 @@ void CompletionManager::invalidateSymbolCaches()
     invalidateCommandModeCache();
 
     if (smartCachingEnabled) {
-        sym_list* symbolList = sym_list::getInstance();
-        int currentSize = symbolList->getAllSymbols().size();
+        int currentSize = getAllSemanticSymbols().size();
 
         if (abs(currentSize - lastSymbolDatabaseSize) > cacheInvalidationThreshold) {
             precomputedCompletions.clear();
@@ -374,8 +401,7 @@ void CompletionManager::invalidateSymbolCaches()
 
 void CompletionManager::updateSymbolCaches()
 {
-    sym_list* symbolList = sym_list::getInstance();
-    int currentSize = symbolList->getAllSymbols().size();
+    int currentSize = getAllSemanticSymbols().size();
 
     bool shouldUpdate = (currentSize != lastSymbolDatabaseSize) || symbolTypeCache.isEmpty();
 
@@ -383,12 +409,12 @@ void CompletionManager::updateSymbolCaches()
         invalidateSymbolCaches();
         lastSymbolDatabaseSize = currentSize;
 
-        symbolTypeCache[sym_list::sym_reg] = symbolList->findSymbolsByType(sym_list::sym_reg);
-        symbolTypeCache[sym_list::sym_wire] = symbolList->findSymbolsByType(sym_list::sym_wire);
-        symbolTypeCache[sym_list::sym_logic] = symbolList->findSymbolsByType(sym_list::sym_logic);
-        symbolTypeCache[sym_list::sym_module] = symbolList->findSymbolsByType(sym_list::sym_module);
-        symbolTypeCache[sym_list::sym_task] = symbolList->findSymbolsByType(sym_list::sym_task);
-        symbolTypeCache[sym_list::sym_function] = symbolList->findSymbolsByType(sym_list::sym_function);
+        symbolTypeCache[sym_list::sym_reg] = getSemanticSymbolsByType(sym_list::sym_reg);
+        symbolTypeCache[sym_list::sym_wire] = getSemanticSymbolsByType(sym_list::sym_wire);
+        symbolTypeCache[sym_list::sym_logic] = getSemanticSymbolsByType(sym_list::sym_logic);
+        symbolTypeCache[sym_list::sym_module] = getSemanticSymbolsByType(sym_list::sym_module);
+        symbolTypeCache[sym_list::sym_task] = getSemanticSymbolsByType(sym_list::sym_task);
+        symbolTypeCache[sym_list::sym_function] = getSemanticSymbolsByType(sym_list::sym_function);
 
         allSymbolsCacheValid = false;
     }
@@ -710,8 +736,7 @@ void CompletionManager::invalidateKeywordCaches()
 
 bool CompletionManager::isSymbolCacheValid()
 {
-    sym_list* symbolList = sym_list::getInstance();
-    return lastSymbolDatabaseSize == symbolList->getAllSymbols().size();
+    return lastSymbolDatabaseSize == getAllSemanticSymbols().size();
 }
 
 void CompletionManager::setSlangManager(SlangManager* slangManager)
@@ -787,8 +812,8 @@ QString CompletionManager::extractStructTypeFromContext(const QString &context)
     if (m.hasMatch()) {
         QString varName = m.captured(1);
 
-        sym_list* symList = sym_list::getInstance();
-        for (const auto &symbol : symList->getAllSymbols()) {
+        const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+        for (const auto &symbol : symbols) {
             if (symbol.symbolName == varName &&
                 (symbol.symbolType == sym_list::sym_packed_struct_var ||
                  symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
@@ -1014,8 +1039,6 @@ QString CompletionManager::getStructTypeForVariable(const QString& varName,
                                                    const QString& currentModule)
 {
     QString result;
-    sym_list* symList = sym_list::getInstance();
-
     if (!currentModule.isEmpty()) {
         QList<sym_list::SymbolInfo> moduleSymbols =
             getModuleInternalSymbolsByType(currentModule, sym_list::sym_packed_struct_var, "");
@@ -1031,7 +1054,8 @@ QString CompletionManager::getStructTypeForVariable(const QString& varName,
     }
 
     if (result.isEmpty()) {
-        for (const auto& symbol : symList->getAllSymbols()) {
+        const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+        for (const auto& symbol : symbols) {
             if (symbol.symbolName == varName &&
                 (symbol.symbolType == sym_list::sym_packed_struct_var ||
                  symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
@@ -1063,8 +1087,6 @@ bool CompletionManager::tryParseStructMemberContext(const QString &line,
 QString CompletionManager::getEnumTypeForVariable(const QString& varName,
                                                  const QString& currentModule)
 {
-    sym_list* symList = sym_list::getInstance();
-
     if (!currentModule.isEmpty()) {
         QList<sym_list::SymbolInfo> moduleSymbols =
             getModuleInternalSymbolsByType(currentModule, sym_list::sym_enum_var, "");
@@ -1076,7 +1098,8 @@ QString CompletionManager::getEnumTypeForVariable(const QString& varName,
         }
     }
 
-    for (const auto& symbol : symList->getAllSymbols()) {
+    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    for (const auto& symbol : symbols) {
         if (symbol.symbolName == varName &&
             symbol.symbolType == sym_list::sym_enum_var) {
             return symbol.moduleScope;
@@ -1095,9 +1118,8 @@ QStringList CompletionManager::getModulePortCompletions(const QString& prefix,
         return results;
     }
 
-    sym_list* symList = sym_list::getInstance();
-
-    for (const auto& symbol : symList->getAllSymbols()) {
+    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    for (const auto& symbol : symbols) {
         if (symbol.symbolType == sym_list::sym_module &&
             symbol.symbolName == moduleTypeName) {
 
@@ -1175,7 +1197,11 @@ QStringList CompletionManager::getModuleChildrenCompletions(const QString& modul
 
     int moduleId = findSymbolIdByName(moduleName);
     if (moduleId != -1) {
-        QList<int> childrenIds = relationshipEngine->getModuleChildren(moduleId);
+        RelationshipQuery query;
+        query.symbolId = moduleId;
+        query.outgoing = true;
+        query.types = {SymbolRelationshipEngine::CONTAINS};
+        QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
 
         QStringList childrenNames = getSymbolNamesFromIds(childrenIds);
 
@@ -1206,8 +1232,17 @@ QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbol
 
     int symbolId = findSymbolIdByName(symbolName);
     if (symbolId != -1) {
-        QList<int> referencedIds = relationshipEngine->getSymbolDependencies(symbolId);
-        QList<int> referencingIds = relationshipEngine->getSymbolReferences(symbolId);
+        RelationshipQuery referencedQuery;
+        referencedQuery.symbolId = symbolId;
+        referencedQuery.outgoing = true;
+        referencedQuery.types = {SymbolRelationshipEngine::REFERENCES};
+        QList<int> referencedIds =
+            RelationshipService::getInstance()->findRelatedSymbolIds(referencedQuery);
+
+        RelationshipQuery referencingQuery = referencedQuery;
+        referencingQuery.outgoing = false;
+        QList<int> referencingIds =
+            RelationshipService::getInstance()->findRelatedSymbolIds(referencingQuery);
 
         QSet<int> allRelatedIds;
         for (int id : referencedIds) allRelatedIds.insert(id);
@@ -1236,7 +1271,11 @@ QStringList CompletionManager::getSymbolReferencesCompletions(const QString& sym
 
     int symbolId = findSymbolIdByName(symbolName);
     if (symbolId != -1) {
-        QList<int> referencingIds = relationshipEngine->getSymbolReferences(symbolId);
+        RelationshipQuery query;
+        query.symbolId = symbolId;
+        query.outgoing = false;
+        query.types = {SymbolRelationshipEngine::REFERENCES};
+        QList<int> referencingIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
         QStringList referencingNames = getSymbolNamesFromIds(referencingIds);
 
         for (const QString& refName : referencingNames) {
@@ -1262,12 +1301,14 @@ QStringList CompletionManager::getClockDomainCompletions(const QString& prefix)
 
     QStringList results;
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        QList<int> clockedModules = relationshipEngine->getRelatedSymbols(
-            symbol.symbolId, SymbolRelationshipEngine::CLOCKS, true);
+        RelationshipQuery query;
+        query.symbolId = symbol.symbolId;
+        query.outgoing = true;
+        query.types = {SymbolRelationshipEngine::CLOCKS};
+        QList<int> clockedModules = RelationshipService::getInstance()->findRelatedSymbolIds(query);
 
         if (!clockedModules.isEmpty()) {
             QString symbolName = symbol.symbolName;
@@ -1294,12 +1335,14 @@ QStringList CompletionManager::getResetSignalCompletions(const QString& prefix)
 
     QStringList results;
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        QList<int> resetModules = relationshipEngine->getRelatedSymbols(
-            symbol.symbolId, SymbolRelationshipEngine::RESETS, true);
+        RelationshipQuery query;
+        query.symbolId = symbol.symbolId;
+        query.outgoing = true;
+        query.types = {SymbolRelationshipEngine::RESETS};
+        QList<int> resetModules = RelationshipService::getInstance()->findRelatedSymbolIds(query);
 
         if (!resetModules.isEmpty()) {
             QString symbolName = symbol.symbolName;
@@ -1325,9 +1368,8 @@ QStringList CompletionManager::getVariableCompletionsInScope(const QString& modu
 
     QStringList moduleChildren = getModuleChildrenCompletions(moduleName, prefix);
 
-    sym_list* symbolList = sym_list::getInstance();
     for (const QString& childName : moduleChildren) {
-        QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(childName);
+        QList<sym_list::SymbolInfo> symbols = findSemanticDefinitions(childName);
         for (const sym_list::SymbolInfo& symbol : symbols) {
             if (symbol.symbolType == variableType) {
                 results.append(symbol.symbolName);
@@ -1381,8 +1423,7 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
         return QString();
     }
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(fileName);
+    QList<sym_list::SymbolInfo> fileSymbols = SemanticIndex::getInstance()->getSymbols(fileName);
 
     QList<sym_list::SymbolInfo> modules;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
@@ -1400,7 +1441,7 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
                   return a.position < b.position;
               });
 
-    QString content = symbolList->getCachedFileContent(fileName);
+    QString content = SemanticIndex::getInstance()->getCachedFileContent(fileName);
     QString currentModuleName = findModuleAtPosition(modules, cursorPosition, fileName, content);
 
     return currentModuleName;
@@ -1411,19 +1452,11 @@ QStringList CompletionManager::getCompletions(const QString& prefix, const QStri
     QStringList result;
     if (cursorFile.isEmpty()) return result;
 
-    ScopeManager* scopeMgr = sym_list::getInstance()->getScopeManager();
-    ScopeNode* scope = scopeMgr->findScopeAt(cursorFile, cursorLine);
-    QSet<QString> seen;
-    while (scope) {
-        for (auto it = scope->symbols.constBegin(); it != scope->symbols.constEnd(); ++it) {
-            const QString& name = it.key();
-            if (seen.contains(name)) continue;
-            if (prefix.isEmpty() || matchesAbbreviation(name, prefix)) {
-                seen.insert(name);
-                result.append(name);
-            }
-        }
-        scope = scope->parent;
+    const QStringList scopeNames =
+        SemanticIndex::getInstance()->getScopeSymbolNames(cursorFile, cursorLine);
+    for (const QString& name : scopeNames) {
+        if (prefix.isEmpty() || matchesAbbreviation(name, prefix))
+            result.append(name);
     }
     result.sort(Qt::CaseInsensitive);
     return result;
@@ -1434,9 +1467,8 @@ QStringList CompletionManager::getSymbolNamesFromIds(const QList<int>& symbolIds
     QStringList names;
     names.reserve(symbolIds.size());
 
-    sym_list* symbolList = sym_list::getInstance();
     for (int symbolId : symbolIds) {
-        sym_list::SymbolInfo symbol = symbolList->getSymbolById(symbolId);
+        sym_list::SymbolInfo symbol = getSemanticSymbolById(symbolId);
         if (symbol.symbolId != -1) {
             names.append(symbol.symbolName);
         }
@@ -1489,7 +1521,7 @@ QString CompletionManager::findModuleAtPosition(
 
 int CompletionManager::findSymbolIdByName(const QString& symbolName)
 {
-    return sym_list::getInstance()->findSymbolIdByName(symbolName);
+    return SemanticIndex::getInstance()->findSymbolId(symbolName);
 }
 
 void CompletionManager::updateRelationshipCaches()
@@ -1497,8 +1529,7 @@ void CompletionManager::updateRelationshipCaches()
     if (relationshipCacheValid || !relationshipEngine)
         return;
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         if (!symbol.moduleScope.isEmpty()) {
@@ -1514,10 +1545,8 @@ QStringList CompletionManager::filterCompletionsByContext(const QStringList& com
 {
     if (context == "assignment") {
         QStringList filtered;
-        sym_list* symbolList = sym_list::getInstance();
-
         for (const QString& completion : completions) {
-            QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByName(completion);
+            QList<sym_list::SymbolInfo> symbols = findSemanticDefinitions(completion);
             for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
                 if (symbol.symbolType == sym_list::sym_reg ||
                     symbol.symbolType == sym_list::sym_wire ||
@@ -1557,17 +1586,18 @@ int CompletionManager::calculateRelationshipScore(const QString& symbol, const Q
     int contextId = findSymbolIdByName(currentContext);
 
     if (symbolId != -1 && contextId != -1) {
-        if (relationshipEngine->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CONTAINS)) {
+        RelationshipService* relationships = RelationshipService::getInstance();
+        if (relationships->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CONTAINS)) {
             return 40;
         }
 
-        if (relationshipEngine->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::REFERENCES) ||
-            relationshipEngine->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::REFERENCES)) {
+        if (relationships->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::REFERENCES) ||
+            relationships->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::REFERENCES)) {
             return 30;
         }
 
-        if (relationshipEngine->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::CALLS) ||
-            relationshipEngine->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CALLS)) {
+        if (relationships->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::CALLS) ||
+            relationships->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CALLS)) {
             return 25;
         }
     }
@@ -1602,8 +1632,7 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
     }
 
     QStringList results;
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         if (symbol.moduleScope == moduleName &&
@@ -1617,9 +1646,13 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
     if (results.isEmpty() && relationshipEngine) {
         int moduleId = findSymbolIdByName(moduleName);
         if (moduleId != -1) {
-            QList<int> childrenIds = relationshipEngine->getModuleChildren(moduleId);
+            RelationshipQuery query;
+            query.symbolId = moduleId;
+            query.outgoing = true;
+            query.types = {SymbolRelationshipEngine::CONTAINS};
+            QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
             for (int childId : childrenIds) {
-                sym_list::SymbolInfo symbol = symbolList->getSymbolById(childId);
+                sym_list::SymbolInfo symbol = getSemanticSymbolById(childId);
                 if (symbol.symbolId != -1 && isInternalVariableType(symbol.symbolType)) {
                     if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix))
                         results.append(symbol.symbolName);
@@ -1645,8 +1678,6 @@ bool CompletionManager::isInternalVariableType(sym_list::sym_type_e symbolType)
 QStringList CompletionManager::getGlobalSymbolCompletions(const QString& prefix)
 {
     QStringList results;
-    sym_list* symbolList = sym_list::getInstance();
-
     QList<sym_list::sym_type_e> globalTypes = {
         sym_list::sym_module,
         sym_list::sym_task,
@@ -1656,7 +1687,7 @@ QStringList CompletionManager::getGlobalSymbolCompletions(const QString& prefix)
     };
 
     for (sym_list::sym_type_e type : globalTypes) {
-        QList<sym_list::SymbolInfo> symbols = symbolList->findSymbolsByType(type);
+        QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(type);
 
         for (const sym_list::SymbolInfo& symbol : symbols) {
             if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix))
@@ -1673,13 +1704,11 @@ QStringList CompletionManager::getModuleInternalVariablesByType(const QString& m
                                                                sym_list::sym_type_e symbolType,
                                                                const QString& prefix) {
     QStringList results;
-    sym_list* symbolList = sym_list::getInstance();
-
     if (moduleName.isEmpty()) {
         return results;
     }
 
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     int matchedCount = 0;
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
@@ -1758,8 +1787,7 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
                                                      const QString& prefix)
 {
     QStringList results;
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     QList<sym_list::sym_type_e> globalSymbolTypes = {
         sym_list::sym_module,
@@ -1780,14 +1808,7 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
         return results;
     }
 
-    int foundCount = 0;
-    int totalSymbolsOfType = 0;
-
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (symbol.symbolType == symbolType) {
-            totalSymbolsOfType++;
-        }
-
         bool typeMatches = (symbol.symbolType == symbolType);
         if (symbolType == sym_list::sym_enum && !typeMatches) {
             typeMatches = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
@@ -1807,7 +1828,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
             if (isGlobalSymbol) {
                 if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
                     results.append(symbol.symbolName);
-                    foundCount++;
                 }
             }
         }
@@ -1894,9 +1914,7 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     }
 
     QList<sym_list::SymbolInfo> results;
-    sym_list* symbolList = sym_list::getInstance();
-
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
@@ -1961,10 +1979,14 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     if (useRelationshipFallback && results.isEmpty() && relationshipEngine) {
         int moduleId = findSymbolIdByName(moduleName);
         if (moduleId != -1) {
-            QList<int> childrenIds = relationshipEngine->getModuleChildren(moduleId);
+            RelationshipQuery query;
+            query.symbolId = moduleId;
+            query.outgoing = true;
+            query.types = {SymbolRelationshipEngine::CONTAINS};
+            QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
 
             for (int childId : childrenIds) {
-                sym_list::SymbolInfo symbol = symbolList->getSymbolById(childId);
+                sym_list::SymbolInfo symbol = getSemanticSymbolById(childId);
                 if (symbol.symbolId != -1 &&
                     isSymbolTypeMatchCommand(symbol.symbolType, symbolType)) {
 
@@ -1991,8 +2013,7 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
         return results;
     }
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     results = getModuleInternalSymbolsByType(moduleName, symbolType, prefix);
 
@@ -2042,7 +2063,8 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
             if (m.hasMatch()) {
                 QString incPath = m.captured(1).trimmed();
                 QString absPath = QDir(baseDir).absoluteFilePath(incPath);
-                QList<sym_list::SymbolInfo> incSymbols = symbolList->findSymbolsByFileName(absPath);
+                QList<sym_list::SymbolInfo> incSymbols =
+                    SemanticIndex::getInstance()->getSymbols(absPath);
                 for (const sym_list::SymbolInfo& s : incSymbols) {
                     if (!isSymbolTypeMatchCommand(s.symbolType, symbolType)) continue;
                     if (!prefix.isEmpty() && !matchesAbbreviation(s.symbolName, prefix)) continue;
@@ -2112,8 +2134,7 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
                                                                            const QString& prefix)
 {
     QList<sym_list::SymbolInfo> results;
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
 
     QList<sym_list::sym_type_e> globalSymbolTypes = {
         sym_list::sym_module,
@@ -2165,9 +2186,9 @@ QStringList CompletionManager::getEnumValueCompletions(const QString& prefix,
                                                       const QString& enumTypeName)
 {
     QStringList results;
-    sym_list* symList = sym_list::getInstance();
 
-    for (const auto& symbol : symList->getAllSymbols()) {
+    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    for (const auto& symbol : symbols) {
         if (symbol.symbolType == sym_list::sym_enum_value) {
             if (!enumTypeName.isEmpty() && symbol.moduleScope != enumTypeName) {
                 continue;
@@ -2188,9 +2209,9 @@ QStringList CompletionManager::getStructMemberCompletions(const QString& prefix,
                                                          const QString& structTypeName)
 {
     QStringList results;
-    sym_list* symList = sym_list::getInstance();
 
-    for (const auto& symbol : symList->getAllSymbols()) {
+    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    for (const auto& symbol : symbols) {
         if (symbol.symbolType == sym_list::sym_struct_member) {
             if (!structTypeName.isEmpty() && symbol.moduleScope != structTypeName) {
                 continue;

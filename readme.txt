@@ -2,7 +2,7 @@
 ZeroSlack README / Development Handoff
 ==========================================================================
 
-当前版本：0.0.16/slang21
+当前版本：0.0.17/slang22
 当前分支：tree_sitter_and_slang
 构建系统：Qt 6 + CMake + Ninja，demo.pro / qmake 不再维护。
 
@@ -58,18 +58,24 @@ Slang 负责真实语义事实：
   - 进度 UI 暂仍在 MainWindow。
 
 - SemanticIndex
-  - 当前仍是 sym_list-backed facade。
+  - 当前仍以 sym_list-backed facade 为默认 live 数据源。
+  - 已新增最小只读 SemanticIndexSnapshot，可保存 symbols / relationships / diagnostics。
+  - SemanticIndex 已支持 setSnapshot / clearSnapshot；有 snapshot 时 symbols / definitions /
+    relationships / diagnostics 优先读 snapshot。
   - 提供 symbols / definitions / completions / relationships / diagnostics 查询入口。
   - getSymbols(fileName) 已补路径规范化兜底，避免 Windows 路径格式差异导致本地查询失败。
+  - getSymbolById / findSymbolId / cached file content / scope symbol names / struct refresh
+    已作为过渡 facade 暴露，减少消费端直接读 sym_list。
 
 - Query Services
   - DefinitionService：Ctrl+Click / jump definition 主要路径已迁入 service；集中处理本文件优先、
     module scope、struct member 类型过滤、跨文件目标选择。
   - CompletionService：普通补全、struct member 专用补全、命令模式补全已开始经由 service；
     普通补全的 SymbolInfo 详情也从 editor 迁入 service。
-  - RelationshipService：关系查询最小入口已落地。
-  - HierarchyService：实例层级查询最小入口已落地。
-  - ReferenceService：最小入口已落地，当前包装 RelationshipService 的 incoming reference 查询。
+  - RelationshipService：关系查询入口已扩展，支持 related symbol id 查询和精确 hasRelationship。
+  - HierarchyService：实例层级查询入口已落地，并改用 SemanticIndex 做 ID 反查。
+  - ReferenceService：最小入口已落地，当前包装 RelationshipService 的 incoming reference 查询，
+    名称解析改走 SemanticIndex::findSymbolId。
   - DiagnosticService：最小入口已落地，当前委托 SemanticIndex::getDiagnostics，暂为空结果。
   - SearchService：symbol search 最小入口已落地，支持文本、文件、类型、exact、maxResults。
 
@@ -83,11 +89,49 @@ Slang 负责真实语义事实：
 - Editor
   - MyCodeEditor 跳转定义 / tooltip / canJump 旧的不可达 sym_list 实现已删除，当前经由 DefinitionService。
   - 普通补全、struct member 补全、命令模式补全已开始经由 CompletionService。
-  - 仍有少量 editor 内部路径直接读 sym_list，主要集中在注释判断、补全触发细节和旧 CompletionManager 协作点。
+  - CompletionManager 的只读符号查询、关系读取、scope symbol names、cached file content
+    已大幅收束到 SemanticIndex / RelationshipService。
+  - 仍有少量旧直连点，主要集中在 relationship builder 初始化、Scope/文档状态过渡适配、
+    MainWindow 分析协调和编辑器触发细节。
 
 
 ==========================================================================
-本轮 0.0.16/slang21 已完成
+本轮 0.0.17/slang22 已完成
+==========================================================================
+
+- 新增 semanticindexsnapshot.cpp / semanticindexsnapshot.h。
+- 新增最小只读 SemanticIndexSnapshot：
+  - 保存 symbols / relationships / diagnostics 的只读副本。
+  - 支持 getSymbols / getSymbolsByType / getSymbolById / findDefinitions / findSymbolId /
+    getRelationships / getDiagnostics。
+  - 支持从当前 sym_list + relationship engine 构造快照。
+- SemanticIndex 增加 setSnapshot / clearSnapshot / snapshot。
+- SemanticIndex 在 snapshot 存在时优先从 snapshot 读取 symbols / definitions / relationships / diagnostics。
+- SemanticIndex 增加 getSymbolById / findSymbolId / getCachedFileContent /
+  getScopeSymbolNames / refreshStructTypedefEnumForFile 过渡入口。
+- CompletionManager 的大批只读符号查询迁到 SemanticIndex：
+  - all symbols cache / type cache / symbol id lookup。
+  - struct / enum / global / module internal completion 查询。
+  - cached file content 和 scope symbol names。
+- CompletionManager 的关系读取迁到 RelationshipService：
+  - module children。
+  - related symbols / references。
+  - clock/reset relationship completion。
+  - relationship score。
+- RelationshipService 增加 findRelatedSymbolIds 和精确 hasRelationship。
+- HierarchyService / ReferenceService 的名称解析和 ID 反查改走 SemanticIndex。
+- SymbolRelationshipEngine 修复查询缓存方向性问题：
+  - cache key 现在区分 outgoing / incoming。
+  - 单条/单符号关系变更时清空关系查询缓存，避免方向复用旧结果。
+- relationship_test 增加：
+  - SemanticIndex getSymbolById / findSymbolId / cached content / scope symbols 断言。
+  - RelationshipService related ids / exact relationship 断言。
+  - SymbolRelationshipEngine outgoing/incoming cache direction 断言。
+  - SemanticIndexSnapshot symbols / symbol id / relationships / clearSnapshot 断言。
+
+
+==========================================================================
+上一轮 0.0.16/slang21 已完成
 ==========================================================================
 
 - CMakeLists.txt 注释清理为 ASCII，避免终端/patch 乱码影响。
@@ -120,10 +164,11 @@ Slang 负责真实语义事实：
 
 - completion_test.exe：14 checks, 0 failed。
 - jump_test.exe：10 checks, 0 failed。
-- relationship_test.exe：59 checks, 0 failed。
+- relationship_test.exe：74 checks, 0 failed。
 - gui_smoke_test.exe：46 checks, 0 failed。
 - 完整 ctest --output-on-failure：6/6 passed。
 - git diff --check：无错误。
+- 源码 / 测试 / UI / CMake 非 ASCII 复扫为空，排除 readme.txt / plan.md / goal.md。
 
 常见 warning：
 - git 会提示 unable to access C:\Users\14971/.config/git/ignore: Permission denied。
@@ -140,11 +185,7 @@ Slang 负责真实语义事实：
 Claude 相关文件已删除；不要恢复 `.claude/` 或任何 Claude 本地配置文件。
 
 本轮新增未跟踪源码文件需要后续提交时包含：
-- modulehierarchymodel.h
-- symboloutlinemodel.h
-- referenceservice.cpp / referenceservice.h
-- diagnosticservice.cpp / diagnosticservice.h
-- searchservice.cpp / searchservice.h
+- semanticindexsnapshot.cpp / semanticindexsnapshot.h
 
 git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复/编码写回后 index stat 噪音；
 判断实际内容改动请优先看：
@@ -241,8 +282,8 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复
 优先级建议：
 
 1. 继续迁移 UI / editor 消费端到 Query Services
-   - MyCodeEditor 仍有少量 sym_list 直连点。
-   - CompletionManager 内部仍大量直接读 sym_list，这是较大块，适合分阶段处理。
+   - MyCodeEditor 仍有少量旧触发细节。
+   - CompletionManager 大块只读查询已迁到 services / SemanticIndex；后续继续清理状态性依赖。
 
 2. 关系浏览 UI 继续迁到 RelationshipService / HierarchyService
    - 当前底层 service 已有，UI 消费侧还可继续收束。
@@ -251,9 +292,9 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复
    - ReferenceService 已有最小边界。
    - DiagnosticService 当前返回空，后续可接 Slang diagnostics。
 
-4. 开始设计 SemanticIndexSnapshot
-   - 当前 SemanticIndex 仍是 sym_list-backed facade。
-   - 下一阶段目标是后台分析产出只读 snapshot，主线程原子切换，UI 只读 snapshot。
+4. 完成 SemanticIndexSnapshot 生产 / 切换闭环
+   - 最小只读 snapshot 类型和 SemanticIndex 切换 API 已落地。
+   - 下一阶段目标是后台分析真正产出 snapshot，主线程原子切换，UI/services 只读 snapshot。
 
 
 ==========================================================================
@@ -267,13 +308,60 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是前面恢复
 3. goal.md
 4. version.h
 5. semanticindex.cpp / semanticindex.h
-6. definitionservice.cpp / definitionservice.h
-7. completionservice.cpp / completionservice.h
-8. referenceservice.cpp / referenceservice.h
-9. diagnosticservice.cpp / diagnosticservice.h
-10. searchservice.cpp / searchservice.h
-11. navigationmanager.cpp / navigationmanager.h
-12. navigationwidget.cpp / navigationwidget.h
-13. mycodeeditor.cpp / mycodeeditor.h
-14. analysisscheduler.cpp / analysisscheduler.h
-15. projectmodel.cpp / projectmodel.h
+6. semanticindexsnapshot.cpp / semanticindexsnapshot.h
+7. relationshipservice.cpp / relationshipservice.h
+8. completionmanager.cpp / completionmanager.h
+9. completionservice.cpp / completionservice.h
+10. definitionservice.cpp / definitionservice.h
+11. referenceservice.cpp / referenceservice.h
+12. diagnosticservice.cpp / diagnosticservice.h
+13. searchservice.cpp / searchservice.h
+14. navigationmanager.cpp / navigationmanager.h
+15. navigationwidget.cpp / navigationwidget.h
+16. mycodeeditor.cpp / mycodeeditor.h
+17. analysisscheduler.cpp / analysisscheduler.h
+18. projectmodel.cpp / projectmodel.h
+
+
+==========================================================================
+新对话开场白
+==========================================================================
+
+请先阅读 readme.txt、plan.md、goal.md、version.h，接手 ZeroSlack 当前状态。
+
+当前分支：tree_sitter_and_slang。
+当前版本：0.0.17/slang22。
+不要 push，我会自己 push。
+
+重要规则：
+- Claude 相关文件已删除，不要恢复 .claude/ 或任何 Claude 本地配置。
+- 源码注释、测试字符串、CMake 注释、UI 可见文案要求英文 / ASCII。
+- readme.txt / plan.md / goal.md 是中文交接文档，可以保留中文。
+- git status 可能有 stat/CRLF 噪声，实际内容变更优先看 git diff --name-only。
+- 常见 warning：unable to access C:\Users\14971/.config/git/ignore: Permission denied；
+  LF will be replaced by CRLF。这些不是 diff --check 错误。
+
+最近完成：
+- Query Services / SemanticIndex 收束继续推进。
+- CompletionManager 大量只读符号查询、关系读取、scope names、cached file content
+  已迁到 SemanticIndex / RelationshipService。
+- RelationshipService 增加 related id 查询和精确 hasRelationship。
+- HierarchyService / ReferenceService 名称解析和 ID 反查改走 SemanticIndex。
+- SymbolRelationshipEngine 修复 outgoing/incoming 查询缓存方向问题。
+- 新增 semanticindexsnapshot.cpp / semanticindexsnapshot.h，落地最小只读 SemanticIndexSnapshot。
+- SemanticIndex 支持 setSnapshot / clearSnapshot，snapshot 存在时优先读 snapshot。
+- relationship_test 增加 SemanticIndexSnapshot、RelationshipService、cache direction 等断言。
+
+最近验证：
+- cmake build 通过；新增 CMake 文件后重配置导致链接较慢，必要时先 -j4 后 -j1 续跑。
+- 完整 ctest --output-on-failure：6/6 passed。
+- relationship_test.exe：74 checks, 0 failed。
+- git diff --check 通过。
+- 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.txt / plan.md / goal.md。
+
+下一步建议：
+1. 让后台分析真正产出 SemanticIndexSnapshot，并设计主线程原子切换 current snapshot。
+2. 继续让 services / UI 只读 snapshot，减少 live sym_list 消费。
+3. 开始接 Slang diagnostics 到 SemanticIndex / DiagnosticService。
+4. 继续把关系浏览 UI 收束到 RelationshipService / HierarchyService。
+5. 保持 6 项 CTest 全绿。

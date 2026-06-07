@@ -62,9 +62,7 @@ int ReferenceService::resolveSymbolId(const ReferenceQuery& query) const
     SemanticQueryContext context;
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
-    const QList<sym_list::SymbolInfo> defs =
-        semanticIndex()->findDefinitions(query.symbolName, context);
-    return defs.isEmpty() ? -1 : defs.first().symbolId;
+    return semanticIndex()->findSymbolId(query.symbolName, context);
 }
 
 QList<SymbolRelationshipEngine::RelationType> ReferenceService::effectiveTypes(

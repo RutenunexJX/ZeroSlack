@@ -99,7 +99,7 @@ private:
     QHash<RelationType, QList<QPair<int, int>>> relationshipsByType;
     QHash<QString, QSet<int>> symbolsByFile;
 
-    mutable QHash<QPair<int, RelationType>, QList<int>> queryCache;
+    mutable QHash<QString, QList<int>> queryCache;
     mutable bool cacheValid = true;
     int updateDepth = 0;
 

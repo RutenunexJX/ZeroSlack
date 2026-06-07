@@ -9,6 +9,8 @@
 #include <QStringList>
 #include <memory>
 
+class SemanticIndexSnapshot;
+
 struct SemanticQueryContext {
     QString fileName;
     QString moduleName;
@@ -51,9 +53,18 @@ public:
 
     void setSymbolDatabase(sym_list* symbolDatabase);
     sym_list* symbolDatabase() const;
+    void setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot);
+    void clearSnapshot();
+    std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
 
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
+    sym_list::SymbolInfo getSymbolById(int symbolId) const;
+    int findSymbolId(const QString& name,
+                     const SemanticQueryContext& context = {}) const;
+    QString getCachedFileContent(const QString& fileName) const;
+    QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
+    void refreshStructTypedefEnumForFile(const QString& fileName, const QString& content);
 
     QList<sym_list::SymbolInfo> findDefinitions(const QString& name,
                                                 const SemanticQueryContext& context = {}) const;
@@ -67,6 +78,7 @@ public:
 
 private:
     sym_list* m_symbolDatabase = nullptr;
+    std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
     static std::unique_ptr<SemanticIndex> instance;
 
     QList<sym_list::SymbolInfo> sortedDefinitions(const QList<sym_list::SymbolInfo>& symbols,

@@ -43,7 +43,6 @@ QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
 {
     const QStringList completions = findCompletions(query);
     QList<sym_list::SymbolInfo> result;
-    sym_list* db = semanticIndex()->symbolDatabase();
 
     for (const QString& name : completions) {
         const QList<sym_list::SymbolInfo> candidates =
@@ -60,13 +59,6 @@ QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
             result.append(symbol);
             appended = true;
             break;
-        }
-
-        if (!appended && db && query.structTypeNameForMember.isEmpty()) {
-            const QList<sym_list::SymbolInfo> fallback = db->findSymbolsByName(name);
-            if (!fallback.isEmpty())
-                result.append(fallback.first());
-            appended = !fallback.isEmpty();
         }
 
         if (!appended) {
@@ -107,8 +99,7 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
         if (query.moduleName.isEmpty())
             return {};
 
-        if (sym_list* symbolList = semanticIndex()->symbolDatabase())
-            symbolList->refreshStructTypedefEnumForFile(query.fileName, query.documentText);
+        semanticIndex()->refreshStructTypedefEnumForFile(query.fileName, query.documentText);
 
         return manager->getModuleContextSymbolsByType(
             query.moduleName,
@@ -119,12 +110,10 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
 
     const QStringList symbolNames = findCommandCompletions(query);
     QList<sym_list::SymbolInfo> result;
-    sym_list* symbolList = semanticIndex()->symbolDatabase();
-    if (!symbolList)
-        return result;
 
     for (const QString& symbolName : symbolNames) {
-        const QList<sym_list::SymbolInfo> matchingSymbols = symbolList->findSymbolsByName(symbolName);
+        const QList<sym_list::SymbolInfo> matchingSymbols =
+            semanticIndex()->findDefinitions(symbolName);
         for (const sym_list::SymbolInfo& symbol : matchingSymbols) {
             bool typeOk = symbol.symbolType == query.symbolType;
             if (query.symbolType == sym_list::sym_enum && !typeOk)
