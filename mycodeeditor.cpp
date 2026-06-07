@@ -213,21 +213,41 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
     menu->addSeparator();
     QAction* findReferencesAction = menu->addAction(QStringLiteral("Find References"));
     findReferencesAction->setEnabled(!symbolName.isEmpty() && !getFileName().isEmpty());
-    connect(findReferencesAction, &QAction::triggered, this, [this, symbolName, cursorAtPos]() {
-        emit referenceSearchRequested(symbolName,
-                                      getFileName(),
-                                      currentModuleNameAt(cursorAtPos.position()));
+    connect(findReferencesAction, &QAction::triggered, this, [this, cursorAtPos]() {
+        emitReferenceSearchForCursor(cursorAtPos);
     });
 
     QAction* showRelationshipsAction = menu->addAction(QStringLiteral("Show Relationships"));
     showRelationshipsAction->setEnabled(!symbolName.isEmpty() && !getFileName().isEmpty());
-    connect(showRelationshipsAction, &QAction::triggered, this, [this, symbolName, cursorAtPos]() {
-        emit relationshipBrowseRequested(symbolName,
-                                         getFileName(),
-                                         currentModuleNameAt(cursorAtPos.position()));
+    connect(showRelationshipsAction, &QAction::triggered, this, [this, cursorAtPos]() {
+        emitRelationshipBrowseForCursor(cursorAtPos);
     });
 
     menu->exec(event->globalPos());
+}
+
+bool MyCodeEditor::emitReferenceSearchForCursor(const QTextCursor& cursor)
+{
+    const QString symbolName = getWordAtTextPosition(cursor.position());
+    if (symbolName.isEmpty() || getFileName().isEmpty())
+        return false;
+
+    emit referenceSearchRequested(symbolName,
+                                  getFileName(),
+                                  currentModuleNameAt(cursor.position()));
+    return true;
+}
+
+bool MyCodeEditor::emitRelationshipBrowseForCursor(const QTextCursor& cursor)
+{
+    const QString symbolName = getWordAtTextPosition(cursor.position());
+    if (symbolName.isEmpty() || getFileName().isEmpty())
+        return false;
+
+    emit relationshipBrowseRequested(symbolName,
+                                     getFileName(),
+                                     currentModuleNameAt(cursor.position()));
+    return true;
 }
 
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
@@ -574,6 +594,21 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
     if (mainWindow && mainWindow->modeManager) {
         isInAlternateMode = (mainWindow->modeManager->getCurrentMode() == ModeManager::AlternateMode);
+    }
+
+    if (event->key() == Qt::Key_F12
+        && (event->modifiers() & Qt::ShiftModifier)) {
+        emitReferenceSearchForCursor(textCursor());
+        event->accept();
+        return;
+    }
+
+    if (event->key() == Qt::Key_R
+        && (event->modifiers() & Qt::ControlModifier)
+        && (event->modifiers() & Qt::ShiftModifier)) {
+        emitRelationshipBrowseForCursor(textCursor());
+        event->accept();
+        return;
     }
 
     if (event->key() == Qt::Key_Shift) {

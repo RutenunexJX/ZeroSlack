@@ -94,15 +94,21 @@
 - MainWindow 新增底部 Problems dock，显示 Severity / File / Line / Column / Message。
 - Problems 面板支持 current file / all files 和 severity 筛选。
 - Problems 条目双击可跳转到对应文件、行和列。
+- Problems 面板刷新已加 100ms 合并；All Files 模式按 file 分组，Current File 保持紧凑列表。
 - relationship_test 覆盖 Slang diagnostics -> snapshot -> DiagnosticService。
-- gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic。
+- gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic 和 all-files 分组。
 
 ### P7 References / Relationships UI
 
 - MainWindow 新增底部 References dock，编辑器右键 Find References 触发。
-- References dock 通过 ReferenceService 查询 incoming references，并支持 all files / current file 筛选。
+- References dock 通过 ReferenceService 查询 incoming references，并支持 all files / workspace files / current file 筛选。
+- References dock 支持 Reference type 筛选，并按 file -> relationship type -> result 分组。
+- 编辑器新增 Shift+F12 快捷键入口触发 Find References。
 - MainWindow 新增底部 Relationships dock，编辑器右键 Show Relationships 触发。
 - Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships，并支持方向 / 类型筛选。
+- Relationships dock Direct 视图按 direction -> relationship type -> result 分组。
+- Relationships dock 新增 Tree 视图，接入 HierarchyService，支持 Depth 1..4 层级浏览。
+- 编辑器新增 Ctrl+Shift+R 快捷键入口触发 Show Relationships。
 - References / Relationships 条目双击可跳转到对应文件、行和列。
 - gui_smoke_test 覆盖 References / Relationships dock 的 service-backed UI 消费。
 
@@ -121,15 +127,17 @@
 
 ### 2. 继续打磨关系浏览 UI
 
-Relationships dock 已有第一版 service-backed UI。后续重点是结果分组、刷新策略、层级浏览入口，
-并继续把相关读取固定到 RelationshipService / HierarchyService。
+Relationships dock 已有 Direct 分组和 Tree 层级浏览入口。后续重点是双向树、递归去重、
+根节点 UX、按层刷新和更清晰的类型策略，并继续把相关读取固定到 RelationshipService /
+HierarchyService。
 
 ### 3. Reference / Problems UI 打磨
 
 - ReferenceService 已有 References dock 作为真实 UI 消费点，当前查询 incoming references。
 - DiagnosticService 已消费 Slang diagnostics，Problems panel 已支持基础筛选和行/列跳转。
-- 后续可补 References 结果分组、workspace 维度筛选、快捷键入口。
-- 后续可补 Problems panel 的清空策略、刷新节流和更完整诊断跳转体验。
+- References 已有结果分组、workspace files 筛选、type 筛选和快捷键入口；后续可补排序、
+  结果摘要、更多 workspace 维度和跨文件上下文。
+- Problems panel 已有刷新合并和 all-files 分组；后续可补清空策略、诊断生命周期和更完整跳转体验。
 
 ### 4. SemanticIndexSnapshot 生产 / 切换闭环
 

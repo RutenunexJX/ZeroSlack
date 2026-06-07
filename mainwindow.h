@@ -95,16 +95,21 @@ private:
     QTreeWidget* problemsTree = nullptr;
     QComboBox* problemsScopeCombo = nullptr;
     QComboBox* problemsSeverityCombo = nullptr;
+    QTimer* problemsRefreshTimer = nullptr;
+    QString pendingProblemsFileName;
     QDockWidget* referencesDock = nullptr;
     QTreeWidget* referencesTree = nullptr;
     QComboBox* referenceScopeCombo = nullptr;
+    QComboBox* referenceTypeCombo = nullptr;
     QString currentReferenceSymbolName;
     QString currentReferenceFileName;
     QString currentReferenceModuleName;
     QDockWidget* relationshipsDock = nullptr;
     QTreeWidget* relationshipsTree = nullptr;
+    QComboBox* relationshipViewCombo = nullptr;
     QComboBox* relationshipDirectionCombo = nullptr;
     QComboBox* relationshipTypeCombo = nullptr;
+    QComboBox* relationshipDepthCombo = nullptr;
     QString currentRelationshipSymbolName;
     QString currentRelationshipFileName;
     QString currentRelationshipModuleName;
@@ -138,6 +143,7 @@ private:
     void setupReferencesPane();
     void setupRelationshipsPane();
     void updateProblemsPanel(const QString& fileName = QString());
+    void scheduleProblemsPanelUpdate(const QString& fileName = QString());
     void connectNavigationSignals();
     void navigateToFileAndLine(const QString& filePath, int lineNumber = -1, int columnNumber = -1);
     void showReferencesForSymbol(const QString& symbolName,

@@ -75,7 +75,8 @@ static void drainRelationshipWork(MainWindow& window)
     if (window.analysisScheduler)
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     if (window.relationshipSingleFileWatcher && window.relationshipSingleFileWatcher->isRunning()) {
-        QFuture<QVector<RelationshipToAdd>> future = window.relationshipSingleFileWatcher->future();
+        QFuture<SingleFileRelationshipAnalysisResult> future =
+            window.relationshipSingleFileWatcher->future();
         window.relationshipSingleFileWatcher->cancel();
         future.waitForFinished();
     }

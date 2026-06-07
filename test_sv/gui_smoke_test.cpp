@@ -103,6 +103,70 @@ static QTreeWidgetItem* findItemByText(QTreeWidget* tree, const QString& text)
     return nullptr;
 }
 
+static int navigableItemCount(QTreeWidgetItem* item)
+{
+    if (!item)
+        return 0;
+    int count = item->data(0, Qt::UserRole).toString().isEmpty() ? 0 : 1;
+    for (int i = 0; i < item->childCount(); ++i)
+        count += navigableItemCount(item->child(i));
+    return count;
+}
+
+static int navigableItemCount(QTreeWidget* tree)
+{
+    if (!tree)
+        return 0;
+    int count = 0;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+        count += navigableItemCount(tree->topLevelItem(i));
+    return count;
+}
+
+static QTreeWidgetItem* firstNavigableItem(QTreeWidgetItem* item)
+{
+    if (!item)
+        return nullptr;
+    if (!item->data(0, Qt::UserRole).toString().isEmpty())
+        return item;
+    for (int i = 0; i < item->childCount(); ++i) {
+        if (QTreeWidgetItem* found = firstNavigableItem(item->child(i)))
+            return found;
+    }
+    return nullptr;
+}
+
+static QTreeWidgetItem* firstNavigableItem(QTreeWidget* tree)
+{
+    if (!tree)
+        return nullptr;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        if (QTreeWidgetItem* found = firstNavigableItem(tree->topLevelItem(i)))
+            return found;
+    }
+    return nullptr;
+}
+
+static void collectNavigableItems(QTreeWidgetItem* item, QList<QTreeWidgetItem*>& out)
+{
+    if (!item)
+        return;
+    if (!item->data(0, Qt::UserRole).toString().isEmpty())
+        out.append(item);
+    for (int i = 0; i < item->childCount(); ++i)
+        collectNavigableItems(item->child(i), out);
+}
+
+static QList<QTreeWidgetItem*> navigableItems(QTreeWidget* tree)
+{
+    QList<QTreeWidgetItem*> out;
+    if (!tree)
+        return out;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+        collectNavigableItems(tree->topLevelItem(i), out);
+    return out;
+}
+
 static void drainRelationshipWork(MainWindow& window)
 {
     if (window.relationshipBuilder)
@@ -201,26 +265,90 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
 
     expectBool("references tree exists", window.referencesTree != nullptr, true);
     expectBool("reference results rendered",
-               window.referencesTree && window.referencesTree->topLevelItemCount() == 2,
+               navigableItemCount(window.referencesTree) == 2,
                true);
     expectBool("reference scope filter exists",
                window.referenceScopeCombo != nullptr,
                true);
+    expectBool("reference type filter exists",
+               window.referenceTypeCombo != nullptr,
+               true);
+    if (window.referenceScopeCombo) {
+        window.referenceScopeCombo->setCurrentIndex(
+            window.referenceScopeCombo->findText(QStringLiteral("Workspace Files")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("reference workspace scope hides non-workspace files",
+                   navigableItemCount(window.referencesTree) == 0,
+                   true);
+    }
     if (window.referenceScopeCombo) {
         window.referenceScopeCombo->setCurrentIndex(
             window.referenceScopeCombo->findText(QStringLiteral("Current File")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("reference scope narrows to current file",
-                   window.referencesTree && window.referencesTree->topLevelItemCount() == 1,
+                   navigableItemCount(window.referencesTree) == 1,
                    true);
     }
-    if (window.referencesTree && window.referencesTree->topLevelItemCount() == 1) {
-        QTreeWidgetItem* item = window.referencesTree->topLevelItem(0);
+    if (window.referencesTree && navigableItemCount(window.referencesTree) == 1) {
+        QTreeWidgetItem* item = firstNavigableItem(window.referencesTree);
         expectBool("reference row uses source symbol",
-                   item->text(0) == QStringLiteral("source_ref"),
+                   item && item->text(0) == QStringLiteral("source_ref"),
                    true);
         expectBool("reference row stores source line",
-                   item->data(0, Qt::UserRole + 1).toInt() == referencing.startLine,
+                   item && item->data(0, Qt::UserRole + 1).toInt() == referencing.startLine,
+                   true);
+    }
+    if (window.referenceScopeCombo && window.referenceTypeCombo) {
+        window.referenceScopeCombo->setCurrentIndex(
+            window.referenceScopeCombo->findText(QStringLiteral("All Files")));
+        window.referenceTypeCombo->setCurrentIndex(
+            window.referenceTypeCombo->findText(QStringLiteral("Reads From")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("reference type filter narrows results",
+                   navigableItemCount(window.referencesTree) == 1,
+                   true);
+        QTreeWidgetItem* item = firstNavigableItem(window.referencesTree);
+        expectBool("reference type filter keeps external source",
+                   item && item->text(0) == QStringLiteral("external_ref"),
+                   true);
+        window.referenceTypeCombo->setCurrentIndex(
+            window.referenceTypeCombo->findText(QStringLiteral("All Types")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+
+    MyCodeEditor shortcutEditor;
+    shortcutEditor.setFileName(fixturePath);
+    shortcutEditor.setPlainText(
+        "module ref_top;\n"
+        "  logic target_ref;\n"
+        "endmodule\n");
+    const int targetOffset = shortcutEditor.toPlainText().indexOf(QStringLiteral("target_ref")) + 2;
+    QTextCursor shortcutCursor(shortcutEditor.document());
+    shortcutCursor.setPosition(targetOffset);
+    shortcutEditor.setTextCursor(shortcutCursor);
+    QSignalSpy referenceShortcutSpy(&shortcutEditor,
+                                    &MyCodeEditor::referenceSearchRequested);
+    QSignalSpy relationshipShortcutSpy(&shortcutEditor,
+                                       &MyCodeEditor::relationshipBrowseRequested);
+    QTest::keyClick(&shortcutEditor, Qt::Key_F12, Qt::ShiftModifier);
+    expectBool("find references shortcut emits request",
+               referenceShortcutSpy.count() == 1,
+               true);
+    if (referenceShortcutSpy.count() == 1) {
+        const QList<QVariant> args = referenceShortcutSpy.takeFirst();
+        expectBool("find references shortcut emits symbol",
+                   args.at(0).toString() == QStringLiteral("target_ref"),
+                   true);
+    }
+    QTest::keyClick(&shortcutEditor, Qt::Key_R,
+                    Qt::ControlModifier | Qt::ShiftModifier);
+    expectBool("show relationships shortcut emits request",
+               relationshipShortcutSpy.count() == 1,
+               true);
+    if (relationshipShortcutSpy.count() == 1) {
+        const QList<QVariant> args = relationshipShortcutSpy.takeFirst();
+        expectBool("show relationships shortcut emits symbol",
+                   args.at(0).toString() == QStringLiteral("target_ref"),
                    true);
     }
 
@@ -229,14 +357,14 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                                       QStringLiteral("ref_top"));
     expectBool("relationships tree exists", window.relationshipsTree != nullptr, true);
     expectBool("relationship results rendered",
-               window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 3,
+               navigableItemCount(window.relationshipsTree) == 3,
                true);
-    if (window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 3) {
+    if (window.relationshipsTree && navigableItemCount(window.relationshipsTree) == 3) {
         bool sawIncoming = false;
         bool sawOutgoing = false;
         bool sawExternal = false;
-        for (int i = 0; i < window.relationshipsTree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem* item = window.relationshipsTree->topLevelItem(i);
+        const QList<QTreeWidgetItem*> items = navigableItems(window.relationshipsTree);
+        for (QTreeWidgetItem* item : items) {
             sawIncoming = sawIncoming
                 || (item->text(0) == QStringLiteral("Incoming")
                     && item->text(1) == QStringLiteral("source_ref"));
@@ -258,17 +386,23 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     expectBool("relationship type filter exists",
                window.relationshipTypeCombo != nullptr,
                true);
+    expectBool("relationship view filter exists",
+               window.relationshipViewCombo != nullptr,
+               true);
+    expectBool("relationship depth filter exists",
+               window.relationshipDepthCombo != nullptr,
+               true);
     if (window.relationshipDirectionCombo && window.relationshipTypeCombo) {
         window.relationshipDirectionCombo->setCurrentIndex(
             window.relationshipDirectionCombo->findText(QStringLiteral("Outgoing")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("outgoing filter narrows relationships",
-                   window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1,
+                   navigableItemCount(window.relationshipsTree) == 1,
                    true);
-        if (window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1) {
-            QTreeWidgetItem* item = window.relationshipsTree->topLevelItem(0);
+        if (window.relationshipsTree && navigableItemCount(window.relationshipsTree) == 1) {
+            QTreeWidgetItem* item = firstNavigableItem(window.relationshipsTree);
             expectBool("outgoing filter keeps target",
-                       item->text(1) == QStringLiteral("target_sink"),
+                       item && item->text(1) == QStringLiteral("target_sink"),
                        true);
         }
 
@@ -278,14 +412,38 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
             window.relationshipTypeCombo->findText(QStringLiteral("References")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("type filter narrows relationships",
-                   window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1,
+                   navigableItemCount(window.relationshipsTree) == 1,
                    true);
-        if (window.relationshipsTree && window.relationshipsTree->topLevelItemCount() == 1) {
-            QTreeWidgetItem* item = window.relationshipsTree->topLevelItem(0);
+        if (window.relationshipsTree && navigableItemCount(window.relationshipsTree) == 1) {
+            QTreeWidgetItem* item = firstNavigableItem(window.relationshipsTree);
             expectBool("type filter keeps incoming source",
-                       item->text(1) == QStringLiteral("source_ref"),
+                       item && item->text(1) == QStringLiteral("source_ref"),
                        true);
         }
+    }
+    if (window.relationshipViewCombo && window.relationshipTypeCombo
+        && window.relationshipDepthCombo) {
+        window.relationshipTypeCombo->setCurrentIndex(
+            window.relationshipTypeCombo->findText(QStringLiteral("Calls")));
+        window.relationshipDepthCombo->setCurrentIndex(
+            window.relationshipDepthCombo->findText(QStringLiteral("Depth 2")));
+        window.relationshipViewCombo->setCurrentIndex(
+            window.relationshipViewCombo->findText(QStringLiteral("Tree")));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("relationship tree mode renders hierarchy",
+                   navigableItemCount(window.relationshipsTree) == 2,
+                   true);
+        bool sawTreeChild = false;
+        const QList<QTreeWidgetItem*> items = navigableItems(window.relationshipsTree);
+        for (QTreeWidgetItem* item : items) {
+            sawTreeChild = sawTreeChild
+                || (item->text(0) == QStringLiteral("Child")
+                    && item->text(1) == QStringLiteral("target_sink"));
+        }
+        expectBool("relationship tree mode keeps child target", sawTreeChild, true);
+        expectBool("relationship tree disables direction filter",
+                   !window.relationshipDirectionCombo->isEnabled(),
+                   true);
     }
 }
 
@@ -532,8 +690,24 @@ int main(int argc, char** argv)
                waitUntil([&]() { return diagnosticFixtureAnalyzed; }, 10000), true);
     expectBool("problems tree exists", window.problemsTree != nullptr, true);
     expectBool("problems tree shows diagnostic",
-               window.problemsTree && window.problemsTree->topLevelItemCount() > 0,
+               waitUntil([&]() {
+                   return window.problemsTree
+                          && window.problemsTree->topLevelItemCount() > 0;
+               }, 2000),
                true);
+    if (window.problemsScopeCombo) {
+        window.problemsScopeCombo->setCurrentIndex(
+            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+        expectBool("problems all-files groups diagnostics",
+                   waitUntil([&]() {
+                       return window.problemsTree
+                              && window.problemsTree->topLevelItemCount() > 0
+                              && window.problemsTree->topLevelItem(0)->childCount() > 0;
+                   }, 2000),
+                   true);
+        window.problemsScopeCombo->setCurrentIndex(
+            window.problemsScopeCombo->findText(QStringLiteral("Current File")));
+    }
 
     expectBool("reopen symbol fixture", window.tabManager->openFileInTab(symbolFixturePath), true);
     expectBool("symbol fixture analysis remains complete",

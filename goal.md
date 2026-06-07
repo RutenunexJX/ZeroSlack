@@ -135,7 +135,7 @@ UI / Services 只读 snapshot
 
 ### 阶段 7：Diagnostics / Problems UI
 
-第一版已落地：
+第一版和基础打磨已落地：
 
 - SlangManager 提供 single-file / workspace diagnostics 提取。
 - Slang diagnostics 转为 SemanticDiagnostic，并随 SemanticIndexSnapshot 发布。
@@ -143,29 +143,37 @@ UI / Services 只读 snapshot
 - MainWindow 提供底部 Problems 面板，显示 Severity / File / Line / Column / Message。
 - Problems 面板支持 current file / all files 和 severity 筛选。
 - Problems 条目双击可跳转文件、行和列。
+- Problems 刷新已加 100ms 合并。
+- Problems 在 All Files 模式下按 file 分组，Current File 保持紧凑列表。
 
 后续重点：
 
-- Problems 面板清空策略、刷新节流和更完整跳转体验。
+- Problems 面板清空策略、诊断生命周期和更完整跳转体验。
 - 将诊断刷新策略继续下沉到更清晰的 service / scheduler 边界。
 - 补更多真实 fixture 覆盖 include/import/宏展开相关 diagnostics。
 
 ### 阶段 8：References / Relationships UI
 
-第一版已落地：
+第一版和基础浏览打磨已落地：
 
 - MainWindow 提供底部 References dock，编辑器右键 Find References 触发。
 - References dock 通过 ReferenceService 查询 incoming references。
-- References dock 支持 all files / current file 筛选。
+- References dock 支持 all files / workspace files / current file 筛选。
+- References dock 支持 Reference type 筛选。
+- References 结果按 file -> relationship type -> result 分组。
+- 编辑器支持 Shift+F12 触发 Find References。
 - MainWindow 提供底部 Relationships dock，编辑器右键 Show Relationships 触发。
 - Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships。
 - Relationships dock 支持 direction / type 筛选。
+- Relationships Direct 视图按 direction -> relationship type -> result 分组。
+- Relationships Tree 视图接入 HierarchyService，支持 Depth 1..4 层级浏览。
+- 编辑器支持 Ctrl+Shift+R 触发 Show Relationships。
 - References / Relationships 条目双击可跳转文件、行和列。
 
 后续重点：
 
-- References 结果分组、workspace 维度筛选和快捷键入口。
-- Relationships 结果分组、刷新策略和层级浏览入口。
+- References 排序、结果摘要、更多 workspace 维度和跨文件上下文。
+- Relationships 双向树、递归去重、根节点 UX、按层刷新和更清晰的类型策略。
 - 继续让 UI 只读 snapshot-backed services，减少 live sym_list 消费。
 
 ## 完成标准

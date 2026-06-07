@@ -400,6 +400,12 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 - Workspace / single-file relationship 后台改为 snapshot-backed，避免旧 snapshot / live sym_list 读路径污染。
 - relationship_test 增加 snapshot-only builder、snapshot cached content / scope names、Slang diagnostics 断言。
 - gui_smoke_test 增加 Problems / References / Relationships dock 的 GUI 回归。
+- References dock 已增强为 file -> relationship type -> result 两级分组，新增 Workspace Files 和 Reference type 筛选。
+- Relationships dock 已增强为 Direct / Tree 视图：Direct 按 direction -> relationship type -> result 分组；
+  Tree 通过 HierarchyService 浏览层级并支持 Depth 1..4。
+- Problems dock 在 All Files 模式下按 file 分组，Current File 保持紧凑列表，刷新加 100ms 合并。
+- 编辑器新增快捷键入口：Shift+F12 Find References，Ctrl+Shift+R Show Relationships。
+- large_file_perf_test 已跟随 single-file relationship watcher 的新 result 类型修正。
 
 最近验证：
 - cmake build 通过；新增 CMake 文件后重配置导致链接较慢，必要时先 -j4 后 -j1 续跑。
@@ -412,13 +418,14 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
     4. 不要在 120s/300s 超时之间反复重启同一个链接任务。
 - 完整 ctest --output-on-failure：6/6 passed。
 - relationship_test.exe：82 checks, 0 failed。
-- gui_smoke_test.exe：71 checks, 0 failed。
+- gui_smoke_test.exe：85 checks, 0 failed。
 - git diff --check 通过。
 - 源码/测试/UI/CMake 非 ASCII 复扫为空，排除 readme.md / plan.md / goal.md。
+- 本次文档提交和上传前按用户指令不再重复编译或测试；以上为代码改动后最近一次验证记录。
 
 下一步建议：
 1. 继续让 services / UI 只读 snapshot，减少 live sym_list 消费。
-2. 继续打磨 Relationships dock：分组、刷新策略、层级浏览入口。
-3. 继续打磨 References dock：结果分组、workspace 维度筛选、快捷键入口。
-4. 继续改进 Problems 面板刷新策略和诊断跳转体验。
+2. 继续打磨 Relationships Tree：双向树、递归去重、根节点 UX、按层刷新和更清晰的类型策略。
+3. 继续打磨 References dock：排序、结果摘要、更多 workspace 维度和跨文件上下文。
+4. 继续改进 Problems 面板清空策略、诊断生命周期和跳转体验。
 5. 保持 6 项 CTest 全绿。

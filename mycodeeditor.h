@@ -74,6 +74,8 @@ private:
     int getLineNumberWidgetWidth();
 
     QString currentModuleNameAt(int charPos) const;
+    bool emitReferenceSearchForCursor(const QTextCursor& cursor);
+    bool emitRelationshipBrowseForCursor(const QTextCursor& cursor);
     QString getWordUnderCursor();
     QStringList getCompletionSuggestions(const QString &prefix);
     bool isInCommentArea();
