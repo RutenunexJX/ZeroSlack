@@ -117,7 +117,6 @@ private:
 
     void initCustomCommands();
     bool checkForCustomCommand(const QString &text);
-    QStringList getSymbolCompletions(sym_list::sym_type_e symbolType, const QString &prefix);
     QString extractCommandInput();
 
     void highlightCommandText();
@@ -145,7 +144,6 @@ private:
     void jumpToDefinition(const QString& symbolName, int cursorPosition = -1);
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
     void clearHoveredSymbolHighlight();
-    bool isSymbolDefinition(const sym_list::SymbolInfo& symbol, const QString& searchWord);
     bool canJumpToDefinition(const QString& symbolName);
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();

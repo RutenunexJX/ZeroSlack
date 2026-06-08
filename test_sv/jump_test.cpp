@@ -15,6 +15,7 @@
 #include "slangmanager.h"
 #include "syminfo.h"
 #include "completionmodel.h"
+#include "definitionservice.h"
 // Test-only: reach the editor's private jump methods. Non-virtual, so ABI is unaffected and the
 // calls bind to the real symbols in the already-compiled mycodeeditor.cpp.obj. Qt headers are
 // included above (under normal access) so the macro only affects mycodeeditor.h.
@@ -79,6 +80,47 @@ int main(int argc, char** argv) {
     // Type-name-scoped symbols (current behavior - surfaces the moduleScope vs module filter):
     expectBool("canJump(STATE_IDLE) [enum value]",   ed.canJumpToDefinition("STATE_IDLE"), true);
     expectBool("canJump(red) [struct member]",       ed.canJumpToDefinition("red"),     true);
+
+    const QString syntheticFile =
+        QFileInfo(path).dir().filePath(QStringLiteral("definition_service_member_context.sv"));
+    QList<sym_list::SymbolInfo> syntheticSymbols;
+    sym_list::SymbolInfo otherRed;
+    otherRed.fileName = syntheticFile;
+    otherRed.symbolName = QStringLiteral("red");
+    otherRed.symbolType = sym_list::sym_struct_member;
+    otherRed.moduleScope = QStringLiteral("other_t");
+    otherRed.startLine = 7;
+    otherRed.startColumn = 9;
+    syntheticSymbols.append(otherRed);
+
+    sym_list::SymbolInfo pixelRed = otherRed;
+    pixelRed.moduleScope = QStringLiteral("pixel_t");
+    pixelRed.startLine = 11;
+    syntheticSymbols.append(pixelRed);
+
+    sym_list::SymbolInfo pixelVar;
+    pixelVar.fileName = syntheticFile;
+    pixelVar.symbolName = QStringLiteral("pixel");
+    pixelVar.symbolType = sym_list::sym_packed_struct_var;
+    pixelVar.dataType = QStringLiteral("pixel_t");
+    pixelVar.startLine = 20;
+    pixelVar.startColumn = 5;
+    syntheticSymbols.append(pixelVar);
+    sym_list::getInstance()->setSymbolsForFile(syntheticFile, syntheticSymbols);
+
+    DefinitionQuery memberQuery;
+    memberQuery.symbolName = QStringLiteral("red");
+    memberQuery.fileName = syntheticFile;
+    memberQuery.linePrefixBeforeCursor = QStringLiteral("pixel.red");
+    const DefinitionResult memberResult =
+        DefinitionService::getInstance()->resolveDefinition(memberQuery);
+    ++g_checks;
+    bool memberOk = memberResult.found
+        && memberResult.symbol.moduleScope == QStringLiteral("pixel_t")
+        && memberResult.symbol.startLine == pixelRed.startLine;
+    if (!memberOk) ++g_fails;
+    printf("[%s] DefinitionService resolves pixel.red member context to pixel_t.red\n",
+           memberOk ? "PASS" : "FAIL");
 
     // Local jump landing: jumpToDefinition moves the caret to the definition.
     sym_list::SymbolInfo counter;

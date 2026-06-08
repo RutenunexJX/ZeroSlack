@@ -24,9 +24,11 @@ Implemented and in active use:
 - CTest targets: `ts_doc_test`, `completion_test`, `jump_test`, `relationship_test`, `gui_smoke_test`, `large_file_perf_test`
 - ProjectModel and DocumentModel minimal boundaries
 - AnalysisScheduler for major analysis triggers, relationship work, diagnostics refresh requests, and relationship data refresh requests
+- AnalysisProgressCoordinator for workspace analysis progress dialog policy and cancel state
 - SemanticIndex facade over current semantic data
 - SemanticIndexSnapshot for symbols, relationships, diagnostics, cached file content, and scope names
 - Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
+- DefinitionService owns struct-member definition context resolution from editor line-prefix context
 - Problems / References / Relationships panels backed by service reports for sorting, grouping, filtering, and counts
 - Real multi-file relationship fixture coverage for instantiation, calls, reads, writes, diagnostics filtering, workspace/current-file filtering, and timing relationships
 
@@ -41,12 +43,23 @@ Still transitional:
 
 Latest handoff work:
 
-- `analysisscheduler.cpp` / `analysisscheduler.h`
-  - Moves relationship result application, stale snapshot checks, workspace relationship progress totals, and diagnostics refresh debounce into AnalysisScheduler.
+- `analysisprogresscoordinator.cpp` / `analysisprogresscoordinator.h`
+  - Adds a focused coordinator for workspace analysis progress dialog lifetime,
+    cancel state, progress status messages, progress log text, and errors.
 - `mainwindow.cpp` / `mainwindow.h`
-  - Removes direct relationship engine writeback, workspace relationship progress counting, and Problems refresh debounce state.
-- `test_sv/relationship_test.cpp`
-  - Verifies scheduler-applied relationships, workspace progress totals, debounced diagnostics refresh, and real ReferenceReport timing shape for `rel_top`.
+  - Removes direct `RelationshipProgressDialog` ownership, progress helper
+    methods, progress signal formatting, and the local cancel flag.
+- `CMakeLists.txt`
+  - Adds the coordinator to `zeroslack_core`.
+- `definitionservice.cpp` / `definitionservice.h`
+  - Lets DefinitionService resolve `var.member` line-prefix context into the
+    struct type before selecting a definition.
+- `mycodeeditor.cpp` / `mycodeeditor.h`
+  - Removes the direct CompletionManager dependency from definition jumps and
+    removes unused semantic wrapper helpers.
+- `test_sv/jump_test.cpp`
+  - Verifies DefinitionService chooses the right same-name struct member from
+    `pixel.red` context.
 - `readme.md`
   - Compacted English / ASCII handoff.
 - `plan.md`
@@ -54,17 +67,19 @@ Latest handoff work:
 - `goal.md`
   - Compacted English / ASCII architecture goal.
 
-Expected real diff before commit: scheduler/MainWindow relationship lifecycle changes, `test_sv/relationship_test.cpp`, and handoff docs.
+Expected real diff before commit: progress coordinator extraction,
+`MainWindow` progress-dialog cleanup, definition context service move,
+`jump_test`, CMake, and handoff docs.
 
 ## Next Small Increments
 
 Choose one:
 
-1. Add one more real fixture assertion for Problems / References / Relationships.
-2. Move one clean MainWindow refresh/progress policy decision into AnalysisScheduler.
-3. Move one UI/editor semantic read behind SemanticIndex or a Query Service.
-4. Add one focused snapshot-backed service regression.
-5. Improve report/service tests for edge filters without changing UI behavior.
+1. Move another UI/editor semantic read behind SemanticIndex or a Query Service.
+2. Add one focused snapshot-backed service regression.
+3. Improve report/service tests for edge filters without changing UI behavior.
+4. Move another small MainWindow coordination responsibility into a focused coordinator.
+5. Thin another `MainWindow` refresh path without changing UI behavior.
 
 Avoid:
 

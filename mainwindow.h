@@ -1,13 +1,12 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include "relationshipprogressdialog.h"
 #include "mycodeeditor.h"
 #include <QMainWindow>
-#include <atomic>
 #include <QDockWidget>
 #include <memory>
 
+class AnalysisProgressCoordinator;
 class TabManager;
 class WorkspaceManager;
 class ModeManager;
@@ -45,6 +44,7 @@ public:
     std::unique_ptr<SymbolAnalyzer> symbolAnalyzer;
     std::unique_ptr<NavigationManager> navigationManager;
     std::unique_ptr<AnalysisScheduler> analysisScheduler;
+    std::unique_ptr<AnalysisProgressCoordinator> analysisProgressCoordinator;
 
     std::unique_ptr<SymbolRelationshipEngine> relationshipEngine;
     std::unique_ptr<SlangManager> slangManager;
@@ -107,13 +107,6 @@ private:
     void onSingleFileRelationshipFinished(const SingleFileRelationshipAnalysisResult& result);
 
     void onWorkspaceRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
-
-    RelationshipProgressDialog* progressDialog = nullptr;
-    void setupProgressDialog();
-    void showAnalysisProgress(const QStringList& files);
-    void hideAnalysisProgress();
-
-    std::atomic<bool> symbolAnalysisCancelled{false};
 
     static const int kFileChangeDebounceMs = 350;
 

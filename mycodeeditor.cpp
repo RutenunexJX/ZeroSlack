@@ -2,7 +2,6 @@
 #include "myhighlighter.h"
 #include "mainwindow.h"
 #include "completionmodel.h"
-#include "completionmanager.h"
 #include "completionservice.h"
 #include "definitionservice.h"
 
@@ -1094,16 +1093,6 @@ QString MyCodeEditor::extractCommandInput()
     return QString();
 }
 
-QStringList MyCodeEditor::getSymbolCompletions(sym_list::sym_type_e symbolType, const QString &prefix)
-{
-    CommandCompletionQuery query;
-    query.prefix = prefix;
-    query.fileName = getFileName();
-    query.moduleName = currentModuleNameAt(textCursor().position());
-    query.symbolType = symbolType;
-    return CompletionService::getInstance()->findCommandCompletions(query);
-}
-
 void MyCodeEditor::initAlternateModeCommands()
 {
     alternateModeCommands.clear();
@@ -1446,37 +1435,6 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
 }
 
 
-static int definitionTypePriority(sym_list::sym_type_e t)
-{
-    switch (t) {
-    case sym_list::sym_module:   return 0;
-    case sym_list::sym_interface: return 1;
-    case sym_list::sym_package:  return 2;
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport: return 3;
-    case sym_list::sym_task:
-    case sym_list::sym_function: return 4;
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_enum_var: return 5;
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_typedef: return 6;
-    case sym_list::sym_struct_member:
-    case sym_list::sym_enum_value: return 7;
-    default:                     return 10;
-    }
-}
-
 void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPosition)
 {
     if (symbolName.isEmpty()) {
@@ -1488,19 +1446,10 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
     query.fileName = getFileName();
     query.moduleName = currentModuleNameAt(cursorPosition >= 0 ? cursorPosition : textCursor().position());
 
-    QString serviceVarName, serviceMemberPrefix;
     if (cursorPosition >= 0) {
         QTextBlock block = document()->findBlock(cursorPosition);
         const int posInBlock = cursorPosition - block.position();
-        const QString lineUpToCursor = block.text().left(posInBlock).trimmed();
-        CompletionManager* manager = CompletionManager::getInstance();
-        bool parsed = manager->tryParseStructMemberContext(lineUpToCursor,
-                                                           serviceVarName,
-                                                           serviceMemberPrefix);
-        if (parsed && !serviceVarName.isEmpty()) {
-            query.structTypeNameForMember =
-                manager->getStructTypeForVariable(serviceVarName, query.moduleName);
-        }
+        query.linePrefixBeforeCursor = block.text().left(posInBlock);
     }
 
     const DefinitionResult result = DefinitionService::getInstance()->resolveDefinition(query);
@@ -1530,11 +1479,6 @@ void MyCodeEditor::moveMouseToCursor()
     if (viewport() && viewport()->isVisible()) {
         QCursor::setPos(viewport()->mapToGlobal(cursorRect().center()));
     }
-}
-
-bool MyCodeEditor::isSymbolDefinition(const sym_list::SymbolInfo& symbol, const QString& searchWord)
-{
-    return DefinitionService::getInstance()->isDefinition(symbol, searchWord);
 }
 
 void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int endPos)

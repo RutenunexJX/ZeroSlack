@@ -40,23 +40,38 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step moved relationship result application out of `MainWindow`.
+The latest development step moved workspace analysis progress UI policy out of
+`MainWindow` and moved struct-member definition context into `DefinitionService`.
 
-- `AnalysisScheduler` now applies single-file and workspace relationship results to `SymbolRelationshipEngine`.
-- `AnalysisScheduler` now owns stale base-snapshot checks before publishing enriched snapshots.
-- `AnalysisScheduler` now reports workspace relationship progress with processed/total counts.
-- `AnalysisScheduler` now debounces diagnostics refresh requests before the UI redraws Problems.
-- `MainWindow` no longer owns relationship engine writeback, workspace relationship progress counting, or Problems refresh debounce.
-- `relationship_test` verifies scheduler-applied relationships, workspace progress totals, and ReferenceReport timing shape for `rel_top`.
+- Added `AnalysisProgressCoordinator`.
+- `AnalysisProgressCoordinator` now owns `RelationshipProgressDialog` lifetime,
+  workspace analysis cancel state, symbol-analysis progress updates,
+  relationship-analysis progress updates, progress log/status text, and progress
+  error display.
+- `MainWindow` no longer owns `RelationshipProgressDialog`, progress-dialog helper
+  methods, or the workspace symbol-analysis cancel flag.
+- `MainWindow` now wires progress status messages and keeps higher-level
+  relationship cache refresh behavior.
+- `DefinitionService` now accepts line-prefix context and resolves `var.member`
+  struct type context internally before selecting a definition.
+- `MyCodeEditor` no longer calls `CompletionManager` directly for
+  struct-member definition jumps and no longer keeps unused semantic wrapper
+  helpers.
+- `jump_test` verifies `DefinitionService` resolves `pixel.red` to the
+  `pixel_t.red` member when same-name members exist.
 
-This thins `MainWindow` and makes relationship analysis lifecycle ownership more coherent.
+This thins `MainWindow`, gives progress UI a focused coordinator boundary, and
+keeps editor definition navigation behind a query-service boundary.
 
 ## Latest Validation
 
 Validation passed after the latest code/test step:
 
-- `cmake --build ... --target relationship_test`
-- `ctest -R "relationship_test" --output-on-failure`
+- `cmake --build ... --target gui_smoke_test`
+- `ctest -R "gui_smoke_test" --output-on-failure`
+- `cmake --build ... --target jump_test`
+- `ctest -R "jump_test" --output-on-failure`
+- rebuilt all CTest executables after shared core changes
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
 - source/test/UI/CMake non-ASCII scan: empty
@@ -67,6 +82,7 @@ Validation passed after the latest code/test step:
 - `ProjectModel` publishes `ProjectSnapshot` with workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` tracks open documents, dirty/saved state, text versions, cursor state, and live module scope.
 - `AnalysisScheduler` owns analysis trigger timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and relationship data refresh requests.
+- `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `SemanticIndex` is the semantic facade. It still wraps live `sym_list` in places, but services and UI should read through the facade.
 - `SemanticIndexSnapshot` stores read-only symbols, relationships, diagnostics, cached file content, and minimal scope names. Background analysis can publish base/enriched snapshots.
 - Query services exist for definition, completion, relationship, hierarchy, reference, diagnostics, and search.

@@ -31,6 +31,9 @@ DocumentModel
 AnalysisScheduler
   Owns analysis timing: Slang runs, relationship runs, cancellation, debounce, refresh requests, lifecycle.
 
+AnalysisProgressCoordinator
+  Owns workspace analysis progress dialog state, progress text, errors, and cancel state.
+
 SemanticIndex
   Owns semantic facts: symbols, definitions, relationships, references, diagnostics, cached content.
 
@@ -65,6 +68,7 @@ Already present:
 - DocumentModel minimal boundary
 - AnalysisScheduler for major analysis and refresh timing
 - AnalysisScheduler applies relationship analysis results, publishes enriched snapshots, reports workspace relationship progress totals, and debounces diagnostics refresh requests
+- AnalysisProgressCoordinator for workspace analysis progress UI policy and cancel state
 - SemanticIndex facade
 - SemanticIndexSnapshot production/switching helpers
 - DefinitionService
@@ -78,6 +82,7 @@ Already present:
 - References panel backed by ReferenceService reports
 - Relationships Direct and Tree views backed by RelationshipService / HierarchyService reports
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
+- DefinitionService resolves struct-member definition context from editor line-prefix context
 
 Recent test coverage includes real fixture assertions for:
 
@@ -90,12 +95,13 @@ Recent test coverage includes real fixture assertions for:
 - incoming relationship browsing,
 - incoming timing relationships (`CLOCKS` / `RESETS`),
 - incoming timing reference report shape.
+- DefinitionService same-name struct member selection from `var.member` context.
 
 ## Remaining Gaps
 
 - Continue reducing live `sym_list` consumers.
 - Continue making services snapshot-backed where possible.
-- Continue thinning MainWindow analysis/progress/refresh policy.
+- Continue thinning MainWindow analysis/refresh/coordination policy.
 - Continue tightening Problems / References / Relationships real fixture coverage.
 - Continue moving editor/completion semantic decisions behind services and facades.
 

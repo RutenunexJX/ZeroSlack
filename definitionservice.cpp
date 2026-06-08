@@ -1,5 +1,7 @@
 #include "definitionservice.h"
 
+#include "completionservice.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <algorithm>
@@ -40,22 +42,25 @@ DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& que
     if (query.symbolName.isEmpty())
         return empty;
 
+    const DefinitionQuery resolvedQuery = withResolvedMemberContext(query);
+
     DefinitionResult local = bestFromCandidates(
-        semanticIndex()->getSymbols(query.fileName),
-        query,
+        semanticIndex()->getSymbols(resolvedQuery.fileName),
+        resolvedQuery,
         true);
     if (local.found)
         return local;
 
-    QList<sym_list::SymbolInfo> globalCandidates = semanticIndex()->findDefinitions(query.symbolName);
-    const QString queryFile = normalizedDefinitionFileName(query.fileName);
+    QList<sym_list::SymbolInfo> globalCandidates =
+        semanticIndex()->findDefinitions(resolvedQuery.symbolName);
+    const QString queryFile = normalizedDefinitionFileName(resolvedQuery.fileName);
     globalCandidates.erase(
         std::remove_if(globalCandidates.begin(), globalCandidates.end(),
                        [&queryFile](const sym_list::SymbolInfo& symbol) {
                            return normalizedDefinitionFileName(symbol.fileName) == queryFile;
                        }),
         globalCandidates.end());
-    return bestFromCandidates(globalCandidates, query, false);
+    return bestFromCandidates(globalCandidates, resolvedQuery, false);
 }
 
 QList<sym_list::SymbolInfo> DefinitionService::findDefinitions(const DefinitionQuery& query) const
@@ -143,6 +148,33 @@ int DefinitionService::definitionTypePriority(sym_list::sym_type_e type) const
     case sym_list::sym_enum_value: return 7;
     default: return 10;
     }
+}
+
+DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQuery& query) const
+{
+    if (!query.structTypeNameForMember.isEmpty()
+        || query.linePrefixBeforeCursor.isEmpty()) {
+        return query;
+    }
+
+    DefinitionQuery resolved = query;
+    QString variableName;
+    QString memberPrefix;
+    if (!CompletionService::getInstance()->tryParseStructMemberContext(
+            query.linePrefixBeforeCursor.trimmed(),
+            variableName,
+            memberPrefix)) {
+        return resolved;
+    }
+
+    if (variableName.isEmpty())
+        return resolved;
+
+    resolved.structTypeNameForMember =
+        CompletionService::getInstance()->getStructTypeForVariable(
+            variableName,
+            query.moduleName);
+    return resolved;
 }
 
 bool DefinitionService::inScope(const sym_list::SymbolInfo& symbol,
