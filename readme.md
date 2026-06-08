@@ -926,9 +926,8 @@ Known current state:
 - Workspace: E:\ZeroSlack\ZeroSlack
 - Branch: tree_sitter_and_slang
 - Version: 0.0.20/slang25
-- Latest commit: 6b16c3b Push report grouping into services
-- The working tree intentionally keeps uncommitted changes from the previous rounds; use git diff --name-only as truth.
-- Expected diff includes: analysisscheduler.cpp, analysisscheduler.h, goal.md, mainwindow.cpp, mainwindow.h, plan.md, readme.md, referenceservice.cpp, referenceservice.h, relationshipservice.cpp, relationshipservice.h, test_sv/gui_smoke_test.cpp, test_sv/large_file_perf_test.cpp, test_sv/relationship_test.cpp.
+- Latest commit: use git log -1 --oneline.
+- The handoff changes were committed and pushed; git diff --name-only should be empty except for local warning noise.
 
 Rules:
 - Use Qt 6 + CMake + Ninja only.
@@ -946,3 +945,15 @@ Latest completed continuation:
 
 Continue toward goal.md with another small, verifiable step: keep thinning MainWindow progress/refresh policy, or add the next real Problems / Relationships fixture.
 ```
+
+## Session 2026-06-08 post-push handoff
+
+- User requested commit and push.
+- Committed and pushed the scheduler refresh / real-fixture handoff changes.
+- Updated this opener after push so a new session expects a clean diff and reads the latest commit from git log.
+- Validation immediately before commit:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard: no demo.pro, no *.pro, no *.pri, .claude absent.
+- Next best step: continue from a clean tree with another small Problems / Relationships fixture or a clean MainWindow progress UI boundary extraction.

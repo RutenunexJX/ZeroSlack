@@ -357,3 +357,15 @@ UI / Services 只读 snapshot
   - Full ctest --output-on-failure: 6/6 passed.
   - Focused ctest for relationship_test: passed.
 - Next goal step: in a fresh session, continue with another focused Problems / Relationships real fixture or extract one remaining clean MainWindow progress UI boundary into AnalysisScheduler.
+
+## Session 2026-06-08 post-push handoff note
+
+- User requested commit and push after the continuation 10 handoff.
+- The accumulated scheduler refresh and real fixture changes were committed and pushed.
+- readme.md's opener now expects a clean tree and tells the next session to use git log for the latest commit.
+- Validation immediately before commit:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
+- Next goal step: continue from a clean tree with another focused Problems / Relationships fixture or a clean MainWindow progress UI boundary extraction.

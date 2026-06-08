@@ -433,3 +433,15 @@ $env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;E:\QT6\Too
 - Latest commit at session start: 6b16c3b Push report grouping into services.
 - No commit or push was requested; keep the current diff uncommitted.
 - Next step: start a fresh session from readme.md's updated opener, then continue either small real Problems / Relationships fixtures or a clean MainWindow progress UI boundary extraction.
+
+## Session 2026-06-08 post-push handoff
+
+- User requested commit and push after the continuation 10 handoff.
+- The accumulated scheduler refresh and real fixture changes were committed and pushed.
+- readme.md's opener now tells the next session to read the latest commit via git log and expect an empty git diff --name-only.
+- Validation immediately before commit:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
+- Next step: continue from a clean tree with another focused Problems / Relationships fixture or a clean MainWindow progress UI boundary extraction.
