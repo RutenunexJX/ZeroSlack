@@ -417,6 +417,18 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               topOnlyDiagnosticReport.totalCount, 2);
     expectInt("diagnostic report current file group count",
               topOnlyDiagnosticReport.fileGroups.size(), 1);
+    expectBool("diagnostic report current file grouped diagnostics",
+               topOnlyDiagnosticReport.fileGroups.size() == 1
+                   && topOnlyDiagnosticReport.fileGroups.first().fileKey == topPath
+                   && topOnlyDiagnosticReport.fileGroups.first().count == 2
+                   && topOnlyDiagnosticReport.fileGroups.first().diagnostics.size() == 2
+                   && topOnlyDiagnosticReport.fileGroups.first()
+                           .diagnostics.first()
+                           .diagnostic.fileName == topPath
+                   && topOnlyDiagnosticReport.fileGroups.first()
+                           .diagnostics.last()
+                           .diagnostic.fileName == topPath,
+               true);
 
     DiagnosticQuery errorOnlyDiagnosticQuery;
     errorOnlyDiagnosticQuery.includeInfo = false;
@@ -552,6 +564,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotIndex.getSymbols(topPath).size() == topSymbols.size(), true);
     expectInt("semantic snapshot finds symbol id",
               snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
+    SearchService snapshotSearchService(&snapshotIndex);
+    const QList<SearchResult> snapshotSearchResults =
+        snapshotSearchService.findSymbols(moduleSearchQuery);
+    bool snapshotSearchFoundTop = false;
+    bool snapshotSearchFoundStage = false;
+    for (const SearchResult& result : snapshotSearchResults) {
+        snapshotSearchFoundTop = snapshotSearchFoundTop || result.symbol.symbolId == topId;
+        snapshotSearchFoundStage = snapshotSearchFoundStage || result.symbol.symbolId == stageId;
+    }
+    expectBool("snapshot search service finds top module",
+               snapshotSearchFoundTop, true);
+    expectBool("snapshot search service finds stage module",
+               snapshotSearchFoundStage, true);
     expectBool("semantic snapshot returns cached file content",
                snapshotIndex.getCachedFileContent(topPath) == contents.value(topPath), true);
     expectBool("semantic snapshot returns scope symbols",
@@ -571,6 +596,38 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("semantic snapshot captures relationships",
                snapshotFoundStage, true);
+    RelationshipService snapshotRelationshipService(&snapshotIndex);
+    RelationshipQuery snapshotRelationshipQuery;
+    snapshotRelationshipQuery.symbolId = topId;
+    snapshotRelationshipQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<RelationshipResult> snapshotRelationshipResults =
+        snapshotRelationshipService.findOutgoingRelationships(snapshotRelationshipQuery);
+    bool snapshotRelationshipFoundStage = false;
+    for (const RelationshipResult& relationship : snapshotRelationshipResults) {
+        snapshotRelationshipFoundStage = snapshotRelationshipFoundStage
+            || (relationship.relationship.fromId == topId
+                && relationship.relationship.toId == stageId
+                && relationship.fromSymbol.symbolId == topId
+                && relationship.toSymbol.symbolId == stageId);
+    }
+    expectBool("snapshot relationship service finds stage instantiation",
+               snapshotRelationshipFoundStage, true);
+    ReferenceService snapshotReferenceService(&snapshotIndex);
+    ReferenceQuery snapshotReferenceQuery;
+    snapshotReferenceQuery.symbolId = stageId;
+    snapshotReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<ReferenceResult> snapshotReferenceResults =
+        snapshotReferenceService.findReferences(snapshotReferenceQuery);
+    bool snapshotReferenceFoundTop = false;
+    for (const ReferenceResult& reference : snapshotReferenceResults) {
+        snapshotReferenceFoundTop = snapshotReferenceFoundTop
+            || (reference.relationship.relationship.fromId == topId
+                && reference.relationship.relationship.toId == stageId
+                && reference.referencingSymbol.symbolId == topId
+                && reference.referencedSymbol.symbolId == stageId);
+    }
+    expectBool("snapshot reference service finds stage instantiation",
+               snapshotReferenceFoundTop, true);
     SemanticRelationship duplicateStageRelationship;
     duplicateStageRelationship.fromId = topId;
     duplicateStageRelationship.toId = stageId;
@@ -1025,6 +1082,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !incomingStageReport.relationships.isEmpty()
                    && incomingStageReport.relationships.first().peerSymbol.symbolId == topId,
                true);
+    expectBool("relationship report incoming grouped peer symbol",
+               !incomingStageReport.directionGroups.isEmpty()
+                   && !incomingStageReport.directionGroups.first().typeGroups.isEmpty()
+                   && !incomingStageReport.directionGroups.first()
+                           .typeGroups.first()
+                           .relationships.isEmpty()
+                   && incomingStageReport.directionGroups.first()
+                           .typeGroups.first()
+                           .relationships.first()
+                           .direction == DirectedRelationshipResult::Incoming
+                   && incomingStageReport.directionGroups.first()
+                           .typeGroups.first()
+                           .relationships.first()
+                           .peerSymbol.symbolId == topId,
+               true);
 
     HierarchyService hierarchyService(&index);
     HierarchyQuery hierarchyQuery;
@@ -1059,6 +1131,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               hierarchyReport.rootDirectionCounts.value(HierarchyQuery::Children), 1);
     expectInt("hierarchy report type count",
               hierarchyReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    bool hierarchyReportHasStageChild = false;
+    for (const HierarchyNode& node : hierarchyReport.nodes) {
+        hierarchyReportHasStageChild = hierarchyReportHasStageChild
+            || (node.depth == 1
+                && node.parentSymbolId == topId
+                && node.symbol.symbolId == stageId
+                && node.direction == HierarchyQuery::Children
+                && node.viaType == SymbolRelationshipEngine::INSTANTIATES);
+    }
+    expectBool("hierarchy report keeps child row identity",
+               hierarchyReportHasStageChild, true);
     expectBool("hierarchy service exposes all tree types",
                HierarchyService::allRelationshipTypes().contains(SymbolRelationshipEngine::READS_FROM),
                true);
@@ -1178,6 +1261,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : stageReferenceReport.fileGroups.first().typeGroups.first().references.size(),
               1);
+    expectBool("reference report grouped symbols",
+               !stageReferenceReport.fileGroups.isEmpty()
+                   && !stageReferenceReport.fileGroups.first().typeGroups.isEmpty()
+                   && !stageReferenceReport.fileGroups.first()
+                           .typeGroups.first()
+                           .references.isEmpty()
+                   && stageReferenceReport.fileGroups.first()
+                           .typeGroups.first()
+                           .references.first()
+                           .referencingSymbol.symbolId == topId
+                   && stageReferenceReport.fileGroups.first()
+                           .typeGroups.first()
+                           .references.first()
+                           .referencedSymbol.symbolId == stageId,
+               true);
 
     ReferenceQuery currentFileStageReferenceQuery = stageReferenceQuery;
     currentFileStageReferenceQuery.fileName = stagePath;

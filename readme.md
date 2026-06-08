@@ -40,44 +40,35 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step moved struct-variable type lookup, struct-member
-completion reads, and command-mode struct symbol reads behind `SemanticIndex`,
-making the affected services snapshot-aware.
+The latest development step strengthened real fixture coverage for service
+report rows and snapshot-backed service reads.
 
-- `SemanticIndex::getStructTypeForVariable()` now resolves packed and unpacked
-  struct variables, preferring the current module and falling back to global
-  matches.
-- `SemanticIndex::getStructMembers()` now provides sorted struct-member symbols
-  from either the live database or a snapshot.
-- `SemanticIndex::getModuleContextSymbolsByType()` now provides module-context
-  command symbols through the facade, including module-range filtering,
-  include/import expansion, and relationship fallback.
-- `CompletionService::getStructTypeForVariable()` now reads through
-  `SemanticIndex` instead of calling `CompletionManager` directly.
-- `CompletionService` now serves struct-member completions and completion
-  symbols from `SemanticIndex`, preserving the existing fuzzy prefix behavior.
-- `CompletionService::findCommandCompletionSymbols()` now serves packed/unpacked
-  struct type and variable symbol results from `SemanticIndex`.
-- `DefinitionService` now resolves `var.member` struct context through its
-  injected `SemanticIndex`, so snapshot-backed definition services do not depend
-  on the global completion singleton for semantic lookup.
-- `completion_test` adds snapshot-only struct-variable type assertions for
-  module preference, fallback, unpacked struct variables, member completions,
-  fuzzy member filtering, returned member symbols, and command-mode struct
-  symbol results.
-- `jump_test` adds a snapshot-only same-name struct-member assertion proving
-  `DefinitionService` resolves `snap_pixel.red` to `snap_pixel_t.red`.
+- `relationship_test` now verifies that the grouped reference row for the
+  `rel_top` -> `rel_stage` instantiation keeps the exact referencing and
+  referenced symbols, not just the aggregate counts.
+- `relationship_test` now also verifies that the grouped incoming
+  `RelationshipReport` row for `rel_stage` keeps the incoming direction and the
+  concrete `rel_top` peer symbol.
+- `relationship_test` now verifies that the current-file filtered
+  `DiagnosticReport` group keeps only the requested file's diagnostics.
+- `relationship_test` now verifies that `HierarchyReport` keeps the real
+  child row identity for the `rel_top` -> `rel_stage` instantiation.
+- `relationship_test` now verifies that `SearchService` can find real module
+  symbols through a snapshot-backed `SemanticIndex`.
+- `relationship_test` now verifies that `RelationshipService` can read and
+  enrich real instantiation relationships through a snapshot-backed
+  `SemanticIndex`.
+- `relationship_test` now verifies that `ReferenceService` can read real
+  instantiation references through a snapshot-backed `SemanticIndex`.
 
-This moves another semantic read behind the facade and strengthens
-snapshot-backed service coverage without changing UI behavior.
+This is a test-only service coverage increment with no UI behavior change.
 
 ## Latest Validation
 
 Validation passed after the latest code/test step:
 
-- `cmake --build ... --target completion_test`
-- `ctest -R "completion_test" --output-on-failure`
-- rebuilt all CTest executables after shared core changes
+- `cmake --build ... --target relationship_test`
+- `ctest -R "relationship_test" --output-on-failure`
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
 - changed/new source/test/UI/CMake/handoff non-ASCII scan: empty

@@ -93,9 +93,19 @@ Recent test coverage includes real fixture assertions for:
 - assignment writes,
 - current-file and workspace-file reference filtering,
 - diagnostic file filtering,
+- DiagnosticReport current-file grouped diagnostic identity.
 - incoming relationship browsing,
 - incoming timing relationships (`CLOCKS` / `RESETS`),
 - incoming timing reference report shape.
+- ReferenceReport grouped row symbol identity for real instantiation results.
+- RelationshipReport grouped incoming row direction and peer identity for real
+  instantiation results.
+- HierarchyReport child row identity for real instantiation results.
+- Snapshot-backed SearchService real module symbol lookup.
+- Snapshot-backed RelationshipService real instantiation lookup with enriched
+  endpoint symbols.
+- Snapshot-backed ReferenceService real instantiation lookup with converted
+  referencing/referenced symbols.
 - DefinitionService same-name struct member selection from `var.member` context.
 - Snapshot-backed struct-variable type lookup, struct-member completion,
   command-mode struct symbols, and same-name struct-member selection.

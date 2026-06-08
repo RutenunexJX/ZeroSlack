@@ -45,30 +45,30 @@ Still transitional:
 
 Latest handoff work:
 
-- `semanticindex.cpp` / `semanticindex.h`
-  - Adds snapshot-backed packed/unpacked struct-variable type lookup and
-    struct-member symbol reads.
-  - Adds module-context command symbol reads with module-range filtering,
-    include/import expansion, and relationship fallback.
-- `completionservice.cpp`
-  - Routes struct-variable type lookup and struct-member completions through
-    SemanticIndex.
-  - Routes packed/unpacked struct type and variable command-symbol results
-    through SemanticIndex.
-- `definitionservice.cpp`
-  - Resolves struct-member context through the service's injected SemanticIndex.
-- `test_sv/completion_test.cpp`
-  - Adds snapshot-only struct-variable type and struct-member completion
-    coverage.
-  - Adds snapshot-only command-mode struct symbol coverage.
-- `test_sv/jump_test.cpp`
-  - Adds snapshot-only same-name struct-member definition coverage.
+- `test_sv/relationship_test.cpp`
+  - Adds a real fixture assertion that the grouped `ReferenceReport` row for
+    the `rel_top` -> `rel_stage` instantiation carries the concrete referencing
+    and referenced symbols.
+  - Adds a real fixture assertion that the grouped incoming `RelationshipReport`
+    row for `rel_stage` carries the incoming direction and concrete `rel_top`
+    peer symbol.
+  - Adds a diagnostic report assertion that the current-file filtered group
+    carries only diagnostics from the requested file.
+  - Adds a hierarchy report assertion that the child node row keeps the
+    `rel_top` parent, `rel_stage` child, direction, and relationship type.
+  - Adds a snapshot-backed `SearchService` assertion for real module symbols
+    through `SemanticIndexSnapshot`.
+  - Adds a snapshot-backed `RelationshipService` assertion for real
+    instantiation relationships and enriched endpoint symbols.
+  - Adds a snapshot-backed `ReferenceService` assertion for real instantiation
+    references and converted referencing/referenced symbols.
 - `readme.md`, `plan.md`, `goal.md`
   - Updated compact handoff state.
 
-Expected real diff before commit: SemanticIndex struct lookup/member reads and
-module-context command symbol reads, CompletionService/DefinitionService
-routing, snapshot-backed completion/jump tests, and handoff docs.
+Expected real diff before commit: focused `relationship_test` grouped report
+assertions for diagnostics, relationships, references, and hierarchy;
+snapshot-backed SearchService, RelationshipService, and ReferenceService
+coverage; and handoff docs.
 
 ## Next Small Increments
 
