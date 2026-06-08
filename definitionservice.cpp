@@ -171,9 +171,7 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
         return resolved;
 
     resolved.structTypeNameForMember =
-        CompletionService::getInstance()->getStructTypeForVariable(
-            variableName,
-            query.moduleName);
+        semanticIndex()->getStructTypeForVariable(variableName, query.moduleName);
     return resolved;
 }
 

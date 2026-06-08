@@ -40,41 +40,47 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step moved workspace analysis progress UI policy out of
-`MainWindow` and moved struct-member definition context into `DefinitionService`.
+The latest development step moved struct-variable type lookup, struct-member
+completion reads, and command-mode struct symbol reads behind `SemanticIndex`,
+making the affected services snapshot-aware.
 
-- Added `AnalysisProgressCoordinator`.
-- `AnalysisProgressCoordinator` now owns `RelationshipProgressDialog` lifetime,
-  workspace analysis cancel state, symbol-analysis progress updates,
-  relationship-analysis progress updates, progress log/status text, and progress
-  error display.
-- `MainWindow` no longer owns `RelationshipProgressDialog`, progress-dialog helper
-  methods, or the workspace symbol-analysis cancel flag.
-- `MainWindow` now wires progress status messages and keeps higher-level
-  relationship cache refresh behavior.
-- `DefinitionService` now accepts line-prefix context and resolves `var.member`
-  struct type context internally before selecting a definition.
-- `MyCodeEditor` no longer calls `CompletionManager` directly for
-  struct-member definition jumps and no longer keeps unused semantic wrapper
-  helpers.
-- `jump_test` verifies `DefinitionService` resolves `pixel.red` to the
-  `pixel_t.red` member when same-name members exist.
+- `SemanticIndex::getStructTypeForVariable()` now resolves packed and unpacked
+  struct variables, preferring the current module and falling back to global
+  matches.
+- `SemanticIndex::getStructMembers()` now provides sorted struct-member symbols
+  from either the live database or a snapshot.
+- `SemanticIndex::getModuleContextSymbolsByType()` now provides module-context
+  command symbols through the facade, including module-range filtering,
+  include/import expansion, and relationship fallback.
+- `CompletionService::getStructTypeForVariable()` now reads through
+  `SemanticIndex` instead of calling `CompletionManager` directly.
+- `CompletionService` now serves struct-member completions and completion
+  symbols from `SemanticIndex`, preserving the existing fuzzy prefix behavior.
+- `CompletionService::findCommandCompletionSymbols()` now serves packed/unpacked
+  struct type and variable symbol results from `SemanticIndex`.
+- `DefinitionService` now resolves `var.member` struct context through its
+  injected `SemanticIndex`, so snapshot-backed definition services do not depend
+  on the global completion singleton for semantic lookup.
+- `completion_test` adds snapshot-only struct-variable type assertions for
+  module preference, fallback, unpacked struct variables, member completions,
+  fuzzy member filtering, returned member symbols, and command-mode struct
+  symbol results.
+- `jump_test` adds a snapshot-only same-name struct-member assertion proving
+  `DefinitionService` resolves `snap_pixel.red` to `snap_pixel_t.red`.
 
-This thins `MainWindow`, gives progress UI a focused coordinator boundary, and
-keeps editor definition navigation behind a query-service boundary.
+This moves another semantic read behind the facade and strengthens
+snapshot-backed service coverage without changing UI behavior.
 
 ## Latest Validation
 
 Validation passed after the latest code/test step:
 
-- `cmake --build ... --target gui_smoke_test`
-- `ctest -R "gui_smoke_test" --output-on-failure`
-- `cmake --build ... --target jump_test`
-- `ctest -R "jump_test" --output-on-failure`
+- `cmake --build ... --target completion_test`
+- `ctest -R "completion_test" --output-on-failure`
 - rebuilt all CTest executables after shared core changes
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
-- source/test/UI/CMake non-ASCII scan: empty
+- changed/new source/test/UI/CMake/handoff non-ASCII scan: empty
 - forbidden-file guard: no `demo.pro`, no `*.pro`, no `*.pri`, `.claude` absent
 
 ## Current Architecture Summary
@@ -85,6 +91,9 @@ Validation passed after the latest code/test step:
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `SemanticIndex` is the semantic facade. It still wraps live `sym_list` in places, but services and UI should read through the facade.
 - `SemanticIndexSnapshot` stores read-only symbols, relationships, diagnostics, cached file content, and minimal scope names. Background analysis can publish base/enriched snapshots.
+- `SemanticIndex` also owns struct-variable type lookup and struct-member symbol
+  reads for services that need `var.member` context, member completion, or
+  command-mode struct symbol results.
 - Query services exist for definition, completion, relationship, hierarchy, reference, diagnostics, and search.
 - Problems / References / Relationships panels consume service reports for sorting, filtering, counts, grouping, and result shape.
 - `MainWindow` is being thinned. It should coordinate UI, not own analysis policy or semantic query policy.

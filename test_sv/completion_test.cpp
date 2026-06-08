@@ -3,6 +3,7 @@
 #include "slangmanager.h"
 #include "completionmanager.h"
 #include "completionservice.h"
+#include "semanticindexsnapshot.h"
 #include "syminfo.h"
 #include <QApplication>
 #include <QFile>
@@ -45,6 +46,28 @@ static void expectExcludes(const char* what, const QStringList& got, const QStri
     if (!ok) ++g_fails;
     printf("[%s] %-34s got=[%s]\n", ok ? "PASS" : "FAIL", what,
            got.join(",").toLocal8Bit().constData());
+}
+
+static sym_list::SymbolInfo makeSymbol(const QString& name,
+                                       sym_list::sym_type_e type,
+                                       const QString& moduleScope,
+                                       const QString& dataType,
+                                       int symbolId)
+{
+    sym_list::SymbolInfo symbol;
+    symbol.fileName = QStringLiteral("snapshot_only.sv");
+    symbol.symbolName = name;
+    symbol.symbolType = type;
+    symbol.moduleScope = moduleScope;
+    symbol.dataType = dataType;
+    symbol.startLine = symbolId;
+    symbol.startColumn = 1;
+    symbol.endLine = symbolId;
+    symbol.endColumn = 1;
+    symbol.position = 0;
+    symbol.length = name.size();
+    symbol.symbolId = symbolId;
+    return symbol;
 }
 
 int main(int argc, char** argv) {
@@ -168,6 +191,104 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            structGlobalHidden ? "PASS" : "FAIL",
            "CompletionService command struct hidden");
+
+    QList<sym_list::SymbolInfo> snapshotSymbols;
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_top"),
+                                      sym_list::sym_module,
+                                      QString(),
+                                      QString(),
+                                      4000));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_pixel"),
+                                      sym_list::sym_packed_struct_var,
+                                      QString(),
+                                      QStringLiteral("global_pixel_t"),
+                                      5001));
+    snapshotSymbols.last().fileName = QStringLiteral("other_snapshot.sv");
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_pixel"),
+                                      sym_list::sym_packed_struct_var,
+                                      QStringLiteral("snap_top"),
+                                      QStringLiteral("snap_pixel_t"),
+                                      5002));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_pair"),
+                                      sym_list::sym_unpacked_struct_var,
+                                      QStringLiteral("snap_top"),
+                                      QStringLiteral("snap_pair_t"),
+                                      5003));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("red"),
+                                      sym_list::sym_struct_member,
+                                      QStringLiteral("other_t"),
+                                      QString(),
+                                      5004));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("red"),
+                                      sym_list::sym_struct_member,
+                                      QStringLiteral("snap_pixel_t"),
+                                      QString(),
+                                      5005));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("green"),
+                                      sym_list::sym_struct_member,
+                                      QStringLiteral("snap_pixel_t"),
+                                      QString(),
+                                      5006));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("blue"),
+                                      sym_list::sym_struct_member,
+                                      QStringLiteral("snap_pixel_t"),
+                                      QString(),
+                                      5007));
+    SemanticIndex snapshotIndex;
+    snapshotIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(snapshotSymbols));
+    CompletionService snapshotCompletionService(&snapshotIndex);
+    expectEq("snapshot struct prefers module",
+             snapshotCompletionService.getStructTypeForVariable("snap_pixel", "snap_top"),
+             "snap_pixel_t");
+    expectEq("snapshot struct fallback",
+             snapshotCompletionService.getStructTypeForVariable("snap_pixel", "other_top"),
+             "global_pixel_t");
+    expectEq("snapshot unpacked struct var",
+             snapshotCompletionService.getStructTypeForVariable("snap_pair", "snap_top"),
+             "snap_pair_t");
+    CompletionQuery snapshotMemberQuery;
+    snapshotMemberQuery.structTypeNameForMember = QStringLiteral("snap_pixel_t");
+    expectList("snapshot struct members",
+               snapshotCompletionService.findCompletions(snapshotMemberQuery),
+               {"red", "green", "blue"});
+    snapshotMemberQuery.prefix = QStringLiteral("bl");
+    const QList<sym_list::SymbolInfo> snapshotMemberSymbols =
+        snapshotCompletionService.findCompletionSymbols(snapshotMemberQuery);
+    expectList("snapshot struct member prefix",
+               snapshotCompletionService.findCompletions(snapshotMemberQuery),
+               {"blue"});
+    ++g_checks;
+    const bool snapshotMemberSymbolOk = snapshotMemberSymbols.size() == 1
+        && snapshotMemberSymbols.first().symbolName == QStringLiteral("blue")
+        && snapshotMemberSymbols.first().symbolType == sym_list::sym_struct_member
+        && snapshotMemberSymbols.first().moduleScope == QStringLiteral("snap_pixel_t");
+    if (!snapshotMemberSymbolOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotMemberSymbolOk ? "PASS" : "FAIL",
+           "snapshot struct member symbols",
+           snapshotMemberSymbols.size());
+
+    CommandCompletionQuery snapshotCommandQuery;
+    snapshotCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotCommandQuery.moduleName = QStringLiteral("snap_top");
+    snapshotCommandQuery.documentText = QStringLiteral("module snap_top;\nendmodule\n");
+    snapshotCommandQuery.symbolType = sym_list::sym_packed_struct_var;
+    snapshotCommandQuery.prefix = QStringLiteral("snap");
+    const QList<sym_list::SymbolInfo> snapshotCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbols(snapshotCommandQuery);
+    ++g_checks;
+    const bool snapshotCommandOk = snapshotCommandSymbols.size() == 1
+        && snapshotCommandSymbols.first().symbolName == QStringLiteral("snap_pixel")
+        && snapshotCommandSymbols.first().symbolType == sym_list::sym_packed_struct_var
+        && snapshotCommandSymbols.first().moduleScope == QStringLiteral("snap_top")
+        && snapshotCommandSymbols.first().dataType == QStringLiteral("snap_pixel_t");
+    if (!snapshotCommandOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotCommandOk ? "PASS" : "FAIL",
+           "snapshot command struct symbols",
+           snapshotCommandSymbols.size());
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

@@ -71,6 +71,15 @@ public:
                      const SemanticQueryContext& context = {}) const;
     QString getCachedFileContent(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
+    QString getStructTypeForVariable(const QString& variableName,
+                                     const QString& moduleName = QString()) const;
+    QList<sym_list::SymbolInfo> getStructMembers(
+        const QString& structTypeName = QString()) const;
+    QList<sym_list::SymbolInfo> getModuleContextSymbolsByType(
+        const QString& moduleName,
+        const QString& fileName,
+        sym_list::sym_type_e symbolType,
+        const QString& prefix = QString()) const;
     bool isValidModuleName(const QString& name) const;
     int findEndModuleLine(const QString& fileName,
                           const sym_list::SymbolInfo& moduleSymbol) const;

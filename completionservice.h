@@ -48,6 +48,9 @@ private:
     static std::unique_ptr<CompletionService> instance;
 
     SemanticIndex* semanticIndex() const;
+    QList<sym_list::SymbolInfo> findStructMemberSymbols(
+        const CompletionQuery& query) const;
+    bool completionNameMatches(const QString& name, const QString& prefix) const;
 };
 
 #endif // COMPLETIONSERVICE_H

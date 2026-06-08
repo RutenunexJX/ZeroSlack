@@ -69,7 +69,8 @@ Already present:
 - AnalysisScheduler for major analysis and refresh timing
 - AnalysisScheduler applies relationship analysis results, publishes enriched snapshots, reports workspace relationship progress totals, and debounces diagnostics refresh requests
 - AnalysisProgressCoordinator for workspace analysis progress UI policy and cancel state
-- SemanticIndex facade
+- SemanticIndex facade, including struct-variable type lookup, struct-member
+  reads, and module-context command symbol reads
 - SemanticIndexSnapshot production/switching helpers
 - DefinitionService
 - CompletionService
@@ -82,7 +83,7 @@ Already present:
 - References panel backed by ReferenceService reports
 - Relationships Direct and Tree views backed by RelationshipService / HierarchyService reports
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
-- DefinitionService resolves struct-member definition context from editor line-prefix context
+- DefinitionService resolves struct-member definition context from editor line-prefix context through its injected SemanticIndex
 
 Recent test coverage includes real fixture assertions for:
 
@@ -96,6 +97,8 @@ Recent test coverage includes real fixture assertions for:
 - incoming timing relationships (`CLOCKS` / `RESETS`),
 - incoming timing reference report shape.
 - DefinitionService same-name struct member selection from `var.member` context.
+- Snapshot-backed struct-variable type lookup, struct-member completion,
+  command-mode struct symbols, and same-name struct-member selection.
 
 ## Remaining Gaps
 

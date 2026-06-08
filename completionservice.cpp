@@ -2,6 +2,9 @@
 
 #include "completionmanager.h"
 
+#include <QSet>
+#include <algorithm>
+
 std::unique_ptr<CompletionService> CompletionService::instance = nullptr;
 
 CompletionService* CompletionService::getInstance()
@@ -26,8 +29,20 @@ void CompletionService::setSemanticIndex(SemanticIndex* semanticIndex)
 QStringList CompletionService::findCompletions(const CompletionQuery& query) const
 {
     CompletionManager* manager = CompletionManager::getInstance();
-    if (!query.structTypeNameForMember.isEmpty())
-        return manager->getStructMemberCompletions(query.prefix, query.structTypeNameForMember);
+    if (!query.structTypeNameForMember.isEmpty()) {
+        QStringList result;
+        QSet<QString> seen;
+        const QList<sym_list::SymbolInfo> members = findStructMemberSymbols(query);
+        for (const sym_list::SymbolInfo& member : members) {
+            const QString key = member.symbolName.toCaseFolded();
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            result.append(member.symbolName);
+        }
+        result.sort(Qt::CaseInsensitive);
+        return result;
+    }
 
     if (query.prefix.isEmpty())
         return {};
@@ -41,6 +56,9 @@ QStringList CompletionService::findCompletions(const CompletionQuery& query) con
 QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
     const CompletionQuery& query) const
 {
+    if (!query.structTypeNameForMember.isEmpty())
+        return findStructMemberSymbols(query);
+
     const QStringList completions = findCompletions(query);
     QList<sym_list::SymbolInfo> result;
 
@@ -87,8 +105,6 @@ QStringList CompletionService::findCommandCompletions(const CommandCompletionQue
 QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
     const CommandCompletionQuery& query) const
 {
-    CompletionManager* manager = CompletionManager::getInstance();
-
     const bool useSymbolInfoDirectly =
         query.symbolType == sym_list::sym_packed_struct_var
         || query.symbolType == sym_list::sym_unpacked_struct_var
@@ -101,7 +117,7 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
 
         semanticIndex()->refreshStructTypedefEnumForFile(query.fileName, query.documentText);
 
-        return manager->getModuleContextSymbolsByType(
+        return semanticIndex()->getModuleContextSymbolsByType(
             query.moduleName,
             query.fileName,
             query.symbolType,
@@ -133,7 +149,7 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
 QString CompletionService::getStructTypeForVariable(const QString& variableName,
                                                     const QString& moduleName) const
 {
-    return CompletionManager::getInstance()->getStructTypeForVariable(variableName, moduleName);
+    return semanticIndex()->getStructTypeForVariable(variableName, moduleName);
 }
 
 bool CompletionService::tryParseStructMemberContext(const QString& line,
@@ -149,4 +165,46 @@ bool CompletionService::tryParseStructMemberContext(const QString& line,
 SemanticIndex* CompletionService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
+}
+
+QList<sym_list::SymbolInfo> CompletionService::findStructMemberSymbols(
+    const CompletionQuery& query) const
+{
+    QList<sym_list::SymbolInfo> result;
+    QSet<QString> seenNames;
+    const QList<sym_list::SymbolInfo> members =
+        semanticIndex()->getStructMembers(query.structTypeNameForMember);
+    for (const sym_list::SymbolInfo& member : members) {
+        if (!completionNameMatches(member.symbolName, query.prefix))
+            continue;
+        const QString key = member.symbolName.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(member);
+    }
+    return result;
+}
+
+bool CompletionService::completionNameMatches(const QString& name,
+                                              const QString& prefix) const
+{
+    if (prefix.isEmpty())
+        return true;
+    if (name.isEmpty())
+        return false;
+
+    const QString lowerName = name.toLower();
+    const QString lowerPrefix = prefix.toLower();
+    if (lowerName.startsWith(lowerPrefix))
+        return true;
+
+    int namePos = 0;
+    int prefixPos = 0;
+    while (prefixPos < lowerPrefix.length() && namePos < lowerName.length()) {
+        if (lowerPrefix.at(prefixPos) == lowerName.at(namePos))
+            ++prefixPos;
+        ++namePos;
+    }
+    return prefixPos == lowerPrefix.length();
 }

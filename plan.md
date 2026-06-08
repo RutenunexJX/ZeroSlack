@@ -28,7 +28,9 @@ Implemented and in active use:
 - SemanticIndex facade over current semantic data
 - SemanticIndexSnapshot for symbols, relationships, diagnostics, cached file content, and scope names
 - Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
-- DefinitionService owns struct-member definition context resolution from editor line-prefix context
+- SemanticIndex owns struct-variable type lookup, struct-member symbol reads, and
+  module-context command symbol reads
+- DefinitionService owns struct-member definition context resolution from editor line-prefix context and uses its injected SemanticIndex for the semantic lookup
 - Problems / References / Relationships panels backed by service reports for sorting, grouping, filtering, and counts
 - Real multi-file relationship fixture coverage for instantiation, calls, reads, writes, diagnostics filtering, workspace/current-file filtering, and timing relationships
 
@@ -43,33 +45,30 @@ Still transitional:
 
 Latest handoff work:
 
-- `analysisprogresscoordinator.cpp` / `analysisprogresscoordinator.h`
-  - Adds a focused coordinator for workspace analysis progress dialog lifetime,
-    cancel state, progress status messages, progress log text, and errors.
-- `mainwindow.cpp` / `mainwindow.h`
-  - Removes direct `RelationshipProgressDialog` ownership, progress helper
-    methods, progress signal formatting, and the local cancel flag.
-- `CMakeLists.txt`
-  - Adds the coordinator to `zeroslack_core`.
-- `definitionservice.cpp` / `definitionservice.h`
-  - Lets DefinitionService resolve `var.member` line-prefix context into the
-    struct type before selecting a definition.
-- `mycodeeditor.cpp` / `mycodeeditor.h`
-  - Removes the direct CompletionManager dependency from definition jumps and
-    removes unused semantic wrapper helpers.
+- `semanticindex.cpp` / `semanticindex.h`
+  - Adds snapshot-backed packed/unpacked struct-variable type lookup and
+    struct-member symbol reads.
+  - Adds module-context command symbol reads with module-range filtering,
+    include/import expansion, and relationship fallback.
+- `completionservice.cpp`
+  - Routes struct-variable type lookup and struct-member completions through
+    SemanticIndex.
+  - Routes packed/unpacked struct type and variable command-symbol results
+    through SemanticIndex.
+- `definitionservice.cpp`
+  - Resolves struct-member context through the service's injected SemanticIndex.
+- `test_sv/completion_test.cpp`
+  - Adds snapshot-only struct-variable type and struct-member completion
+    coverage.
+  - Adds snapshot-only command-mode struct symbol coverage.
 - `test_sv/jump_test.cpp`
-  - Verifies DefinitionService chooses the right same-name struct member from
-    `pixel.red` context.
-- `readme.md`
-  - Compacted English / ASCII handoff.
-- `plan.md`
-  - Compacted English / ASCII plan.
-- `goal.md`
-  - Compacted English / ASCII architecture goal.
+  - Adds snapshot-only same-name struct-member definition coverage.
+- `readme.md`, `plan.md`, `goal.md`
+  - Updated compact handoff state.
 
-Expected real diff before commit: progress coordinator extraction,
-`MainWindow` progress-dialog cleanup, definition context service move,
-`jump_test`, CMake, and handoff docs.
+Expected real diff before commit: SemanticIndex struct lookup/member reads and
+module-context command symbol reads, CompletionService/DefinitionService
+routing, snapshot-backed completion/jump tests, and handoff docs.
 
 ## Next Small Increments
 

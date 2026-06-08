@@ -6,10 +6,13 @@
 #include "smartrelationshipbuilder.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 std::unique_ptr<SemanticIndex> SemanticIndex::instance = nullptr;
@@ -70,6 +73,39 @@ int findEndModuleLineInContent(const QString& content,
         }
     }
     return -1;
+}
+
+bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
+                              sym_list::sym_type_e commandType,
+                              const QString& dataType = QString())
+{
+    if (symbolType == commandType)
+        return true;
+    return commandType == sym_list::sym_enum
+        && symbolType == sym_list::sym_typedef
+        && dataType == QLatin1String("enum");
+}
+
+bool semanticCompletionNameMatches(const QString& name, const QString& prefix)
+{
+    if (prefix.isEmpty())
+        return true;
+    if (name.isEmpty())
+        return false;
+
+    const QString lowerName = name.toLower();
+    const QString lowerPrefix = prefix.toLower();
+    if (lowerName.startsWith(lowerPrefix))
+        return true;
+
+    int namePos = 0;
+    int prefixPos = 0;
+    while (prefixPos < lowerPrefix.length() && namePos < lowerName.length()) {
+        if (lowerPrefix.at(prefixPos) == lowerName.at(namePos))
+            ++prefixPos;
+        ++namePos;
+    }
+    return prefixPos == lowerPrefix.length();
 }
 }
 
@@ -236,6 +272,226 @@ QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int curs
         }
         scope = scope->parent;
     }
+    return result;
+}
+
+QString SemanticIndex::getStructTypeForVariable(const QString& variableName,
+                                                const QString& moduleName) const
+{
+    if (variableName.isEmpty())
+        return QString();
+
+    QList<sym_list::SymbolInfo> structVariables =
+        getSymbolsByType(sym_list::sym_packed_struct_var);
+    structVariables.append(getSymbolsByType(sym_list::sym_unpacked_struct_var));
+
+    if (!moduleName.isEmpty()) {
+        for (const sym_list::SymbolInfo& symbol : std::as_const(structVariables)) {
+            if (symbol.symbolName == variableName
+                && symbol.moduleScope == moduleName
+                && !symbol.dataType.isEmpty()) {
+                return symbol.dataType;
+            }
+        }
+    }
+
+    for (const sym_list::SymbolInfo& symbol : std::as_const(structVariables)) {
+        if (symbol.symbolName == variableName && !symbol.dataType.isEmpty())
+            return symbol.dataType;
+    }
+
+    return QString();
+}
+
+QList<sym_list::SymbolInfo> SemanticIndex::getStructMembers(
+    const QString& structTypeName) const
+{
+    QList<sym_list::SymbolInfo> result;
+    const QList<sym_list::SymbolInfo> members =
+        getSymbolsByType(sym_list::sym_struct_member);
+    for (const sym_list::SymbolInfo& symbol : members) {
+        if (!structTypeName.isEmpty() && symbol.moduleScope != structTypeName)
+            continue;
+        result.append(symbol);
+    }
+
+    std::stable_sort(result.begin(), result.end(),
+                     [](const sym_list::SymbolInfo& a,
+                        const sym_list::SymbolInfo& b) {
+        const int nameCompare = QString::compare(a.symbolName,
+                                                 b.symbolName,
+                                                 Qt::CaseInsensitive);
+        if (nameCompare != 0)
+            return nameCompare < 0;
+        if (a.fileName != b.fileName)
+            return a.fileName < b.fileName;
+        if (a.startLine != b.startLine)
+            return a.startLine < b.startLine;
+        return a.symbolId < b.symbolId;
+    });
+    return result;
+}
+
+QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
+    const QString& moduleName,
+    const QString& fileName,
+    sym_list::sym_type_e symbolType,
+    const QString& prefix) const
+{
+    QList<sym_list::SymbolInfo> result;
+    if (moduleName.isEmpty() || fileName.isEmpty())
+        return result;
+
+    const QString normalizedTargetFile = normalizedFileName(fileName);
+    const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(fileName);
+    sym_list::SymbolInfo moduleSymbol;
+    bool foundModule = false;
+    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
+        if (symbol.symbolType == sym_list::sym_module
+            && symbol.symbolName == moduleName
+            && normalizedFileName(symbol.fileName) == normalizedTargetFile) {
+            moduleSymbol = symbol;
+            foundModule = true;
+            break;
+        }
+    }
+    if (!foundModule)
+        return result;
+
+    int moduleEndLineExclusive = std::numeric_limits<int>::max();
+    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
+        if (symbol.symbolType != sym_list::sym_module)
+            continue;
+        if (symbol.symbolId == moduleSymbol.symbolId)
+            continue;
+        if (symbol.startLine > moduleSymbol.startLine
+            && symbol.startLine < moduleEndLineExclusive) {
+            moduleEndLineExclusive = symbol.startLine;
+        }
+    }
+
+    auto inModuleRange = [&moduleSymbol, moduleEndLineExclusive](
+                             const sym_list::SymbolInfo& symbol) {
+        return symbol.fileName == moduleSymbol.fileName
+            && symbol.startLine > moduleSymbol.startLine
+            && symbol.startLine < moduleEndLineExclusive;
+    };
+
+    QSet<int> seenIds;
+    auto appendSymbol = [&](const sym_list::SymbolInfo& symbol) {
+        if (!commandSymbolTypeMatches(symbol.symbolType, symbolType, symbol.dataType))
+            return;
+        if (!semanticCompletionNameMatches(symbol.symbolName, prefix))
+            return;
+        if (seenIds.contains(symbol.symbolId))
+            return;
+        seenIds.insert(symbol.symbolId);
+        result.append(symbol);
+    };
+
+    const QList<sym_list::SymbolInfo> allSymbols = getSymbols();
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        bool isCorrectModule = false;
+        if (symbolType == sym_list::sym_packed_struct
+            || symbolType == sym_list::sym_unpacked_struct
+            || symbolType == sym_list::sym_packed_struct_var
+            || symbolType == sym_list::sym_unpacked_struct_var) {
+            isCorrectModule = inModuleRange(symbol);
+        } else {
+            isCorrectModule = symbol.moduleScope == moduleName;
+        }
+        if (isCorrectModule)
+            appendSymbol(symbol);
+    }
+
+    QString fileContent = getCachedFileContent(fileName);
+    if (fileContent.isEmpty()) {
+        QFile file(fileName);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+            fileContent = QString::fromUtf8(file.readAll());
+    }
+
+    if (!fileContent.isEmpty()) {
+        const QString baseDir = QFileInfo(fileName).absolutePath();
+        static const QRegularExpression includeRegex(
+            QStringLiteral("`include\\s+\"([^\"]+)\""));
+        static const QRegularExpression importStarRegex(
+            QStringLiteral("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*\\*\\s*;"));
+        static const QRegularExpression importSymbolRegex(
+            QStringLiteral("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*;"));
+
+        QSet<QString> starPackages;
+        QHash<QString, QSet<QString>> importedSymbolsByPackage;
+        const QStringList lines = fileContent.split('\n');
+        for (int i = 0; i < lines.size(); ++i) {
+            const int lineNumber = i + 1;
+            if (lineNumber < moduleSymbol.startLine
+                || lineNumber >= moduleEndLineExclusive) {
+                continue;
+            }
+
+            const QString line = lines.at(i);
+            const QRegularExpressionMatch includeMatch = includeRegex.match(line);
+            if (includeMatch.hasMatch()) {
+                const QString includePath = includeMatch.captured(1).trimmed();
+                const QString absoluteIncludePath =
+                    QDir(baseDir).absoluteFilePath(includePath);
+                const QList<sym_list::SymbolInfo> includeSymbols =
+                    getSymbols(absoluteIncludePath);
+                for (const sym_list::SymbolInfo& symbol : includeSymbols)
+                    appendSymbol(symbol);
+            }
+
+            const QRegularExpressionMatch starMatch = importStarRegex.match(line);
+            if (starMatch.hasMatch()) {
+                starPackages.insert(starMatch.captured(1).trimmed());
+                continue;
+            }
+
+            const QRegularExpressionMatch symbolMatch = importSymbolRegex.match(line);
+            if (symbolMatch.hasMatch()) {
+                importedSymbolsByPackage[symbolMatch.captured(1).trimmed()].insert(
+                    symbolMatch.captured(2).trimmed());
+            }
+        }
+
+        for (const sym_list::SymbolInfo& symbol : allSymbols) {
+            bool imported = starPackages.contains(symbol.moduleScope);
+            if (!imported) {
+                auto it = importedSymbolsByPackage.constFind(symbol.moduleScope);
+                imported = it != importedSymbolsByPackage.constEnd()
+                    && it->contains(symbol.symbolName);
+            }
+            if (imported)
+                appendSymbol(symbol);
+        }
+    }
+
+    if (result.isEmpty()) {
+        const int moduleId = findSymbolId(moduleName);
+        const QList<SemanticRelationship> relationships =
+            getRelationships(moduleId, true);
+        for (const SemanticRelationship& relationship : relationships) {
+            if (relationship.type != SymbolRelationshipEngine::CONTAINS)
+                continue;
+            appendSymbol(getSymbolById(relationship.toId));
+        }
+    }
+
+    std::stable_sort(result.begin(), result.end(),
+                     [](const sym_list::SymbolInfo& a,
+                        const sym_list::SymbolInfo& b) {
+        const int nameCompare = QString::compare(a.symbolName,
+                                                 b.symbolName,
+                                                 Qt::CaseInsensitive);
+        if (nameCompare != 0)
+            return nameCompare < 0;
+        if (a.startLine != b.startLine)
+            return a.startLine < b.startLine;
+        if (a.fileName != b.fileName)
+            return a.fileName < b.fileName;
+        return a.symbolId < b.symbolId;
+    });
     return result;
 }
 

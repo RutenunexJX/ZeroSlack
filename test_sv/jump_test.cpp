@@ -16,6 +16,7 @@
 #include "syminfo.h"
 #include "completionmodel.h"
 #include "definitionservice.h"
+#include "semanticindexsnapshot.h"
 // Test-only: reach the editor's private jump methods. Non-virtual, so ABI is unaffected and the
 // calls bind to the real symbols in the already-compiled mycodeeditor.cpp.obj. Qt headers are
 // included above (under normal access) so the macro only affects mycodeeditor.h.
@@ -121,6 +122,51 @@ int main(int argc, char** argv) {
     if (!memberOk) ++g_fails;
     printf("[%s] DefinitionService resolves pixel.red member context to pixel_t.red\n",
            memberOk ? "PASS" : "FAIL");
+
+    QList<sym_list::SymbolInfo> snapshotDefinitionSymbols;
+    sym_list::SymbolInfo snapshotOtherRed = otherRed;
+    snapshotOtherRed.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotOtherRed.symbolId = 6101;
+    snapshotOtherRed.startLine = 1;
+    snapshotOtherRed.moduleScope = QStringLiteral("other_t");
+    snapshotDefinitionSymbols.append(snapshotOtherRed);
+
+    sym_list::SymbolInfo snapshotPixelRed = otherRed;
+    snapshotPixelRed.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotPixelRed.symbolId = 6102;
+    snapshotPixelRed.startLine = 2;
+    snapshotPixelRed.moduleScope = QStringLiteral("snap_pixel_t");
+    snapshotDefinitionSymbols.append(snapshotPixelRed);
+
+    sym_list::SymbolInfo snapshotPixelVar = pixelVar;
+    snapshotPixelVar.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotPixelVar.symbolName = QStringLiteral("snap_pixel");
+    snapshotPixelVar.symbolId = 6103;
+    snapshotPixelVar.startLine = 3;
+    snapshotPixelVar.moduleScope = QStringLiteral("snap_top");
+    snapshotPixelVar.dataType = QStringLiteral("snap_pixel_t");
+    snapshotDefinitionSymbols.append(snapshotPixelVar);
+
+    SemanticIndex snapshotIndex;
+    snapshotIndex.setSnapshot(
+        std::make_shared<SemanticIndexSnapshot>(snapshotDefinitionSymbols));
+    DefinitionService snapshotDefinitionService(&snapshotIndex);
+    DefinitionQuery snapshotMemberQuery;
+    snapshotMemberQuery.symbolName = QStringLiteral("red");
+    snapshotMemberQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotMemberQuery.moduleName = QStringLiteral("snap_top");
+    snapshotMemberQuery.linePrefixBeforeCursor =
+        QStringLiteral("assign out = snap_pixel.red");
+    const DefinitionResult snapshotMemberResult =
+        snapshotDefinitionService.resolveDefinition(snapshotMemberQuery);
+    ++g_checks;
+    const bool snapshotMemberOk = snapshotMemberResult.found
+        && snapshotMemberResult.symbol.symbolId == snapshotPixelRed.symbolId
+        && snapshotMemberResult.symbol.moduleScope == QStringLiteral("snap_pixel_t");
+    if (!snapshotMemberOk)
+        ++g_fails;
+    printf("[%s] DefinitionService resolves snapshot struct-member context\n",
+           snapshotMemberOk ? "PASS" : "FAIL");
 
     // Local jump landing: jumpToDefinition moves the caret to the definition.
     sym_list::SymbolInfo counter;
