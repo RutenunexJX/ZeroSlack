@@ -645,7 +645,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic snapshot clear restores live index",
               snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
 
+    engine.clearAllRelationships();
+    expectBool("scheduler test starts from empty relationship engine",
+               engine.hasRelationship(topId,
+                                      stageId,
+                                      SymbolRelationshipEngine::INSTANTIATES),
+               false);
+
     AnalysisScheduler scheduler;
+    scheduler.setRelationshipEngine(&engine);
     scheduler.setRelationshipBuilder(&builder);
     SingleFileRelationshipAnalysisResult singleFileSchedulerResult;
     bool singleFileSchedulerFinished = false;
@@ -687,19 +695,29 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("scheduler single-file snapshot merges relationships",
                singleFileSchedulerFoundStageRelationship, true);
+    expectBool("scheduler single-file applies relationships",
+               engine.hasRelationship(topId,
+                                      stageId,
+                                      SymbolRelationshipEngine::INSTANTIATES),
+               true);
 
     ProjectModel diagnosticProject;
     scheduler.setProjectModel(&diagnosticProject);
     int diagnosticsRefreshRequests = 0;
+    QEventLoop diagnosticsRefreshLoop;
     QObject::connect(&scheduler,
                      &AnalysisScheduler::diagnosticsRefreshRequested,
-                     &diagnosticProject,
+                     &diagnosticsRefreshLoop,
                      [&](const QString& fileName) {
-                         if (fileName.isEmpty())
+                         if (fileName.isEmpty()) {
                              ++diagnosticsRefreshRequests;
+                             diagnosticsRefreshLoop.quit();
+                         }
                      });
     diagnosticProject.setWorkspaceRoot(fixtureDir.absolutePath());
     diagnosticProject.closeProject();
+    QTimer::singleShot(1000, &diagnosticsRefreshLoop, &QEventLoop::quit);
+    diagnosticsRefreshLoop.exec();
     expectBool("scheduler requests diagnostics refresh on project close",
                diagnosticsRefreshRequests > 0, true);
 
@@ -750,7 +768,25 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     schedulerProject.systemVerilogFiles = paths;
     WorkspaceRelationshipAnalysisResult schedulerResult;
     bool schedulerFinished = false;
+    bool schedulerWorkspaceProgress = false;
+    int schedulerLastProcessedFiles = 0;
+    int schedulerProgressTotalFiles = 0;
     QEventLoop schedulerLoop;
+    QObject::connect(&scheduler,
+                     &AnalysisScheduler::workspaceRelationshipAnalysisProgress,
+                     &schedulerLoop,
+                     [&](const QString& fileName,
+                         int relationshipsFound,
+                         int processedFiles,
+                         int totalFiles) {
+                         Q_UNUSED(relationshipsFound)
+                         schedulerWorkspaceProgress = schedulerWorkspaceProgress
+                             || (paths.contains(fileName)
+                                 && processedFiles > 0
+                                 && totalFiles == paths.size());
+                         schedulerLastProcessedFiles = processedFiles;
+                         schedulerProgressTotalFiles = totalFiles;
+                     });
     QObject::connect(&scheduler,
                      &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
                      &schedulerLoop,
@@ -764,6 +800,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     schedulerLoop.exec();
     expectBool("scheduler workspace relationship finishes",
                schedulerFinished, true);
+    expectBool("scheduler workspace reports progress",
+               schedulerWorkspaceProgress, true);
+    expectInt("scheduler workspace progress reaches total",
+              schedulerLastProcessedFiles, static_cast<int>(paths.size()));
+    expectInt("scheduler workspace progress total",
+              schedulerProgressTotalFiles, static_cast<int>(paths.size()));
+    expectInt("scheduler workspace result total files",
+              schedulerResult.totalFiles, static_cast<int>(paths.size()));
     bool schedulerFoundStageRelationship = false;
     if (schedulerResult.semanticSnapshot) {
         const QList<SemanticRelationship> schedulerTopRelationships =
@@ -776,6 +820,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("scheduler workspace snapshot merges relationships",
                schedulerFoundStageRelationship, true);
+    expectBool("scheduler workspace applies timing relationship",
+               engine.hasRelationship(topClkId,
+                                      topId,
+                                      SymbolRelationshipEngine::CLOCKS),
+               true);
 
     RelationshipService relationshipService(&index);
 
@@ -1179,6 +1228,82 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("reference report condition read subject symbol",
                reqValidReferenceReport.subjectSymbol.symbolName == QStringLiteral("req_valid"),
                true);
+
+    ReferenceQuery topTimingReferenceQuery;
+    topTimingReferenceQuery.symbolId = topId;
+    topTimingReferenceQuery.types = {SymbolRelationshipEngine::CLOCKS};
+    const ReferenceReport topClockReferenceReport =
+        referenceService.findReferenceReport(topTimingReferenceQuery);
+    expectInt("reference report clock total",
+              topClockReferenceReport.totalCount, 1);
+    expectInt("reference report clock type count",
+              topClockReferenceReport.typeCounts.value(SymbolRelationshipEngine::CLOCKS), 1);
+    expectInt("reference report clock file count",
+              topClockReferenceReport.fileCounts.value(topPath), 1);
+    expectInt("reference report clock grouped count",
+              topClockReferenceReport.fileGroups.isEmpty()
+                  || topClockReferenceReport.fileGroups.first().typeGroups.isEmpty()
+                  ? 0
+                  : topClockReferenceReport.fileGroups.first().typeGroups.first().references.size(),
+              1);
+    expectBool("reference report clock subject symbol",
+               topClockReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_top"),
+               true);
+    expectBool("reference report clock referencing symbol",
+               !topClockReferenceReport.references.isEmpty()
+                   && topClockReferenceReport.references.first().referencingSymbol.symbolId == topClkId,
+               true);
+
+    topTimingReferenceQuery.types = {SymbolRelationshipEngine::RESETS};
+    const ReferenceReport topResetReferenceReport =
+        referenceService.findReferenceReport(topTimingReferenceQuery);
+    expectInt("reference report reset total",
+              topResetReferenceReport.totalCount, 1);
+    expectInt("reference report reset type count",
+              topResetReferenceReport.typeCounts.value(SymbolRelationshipEngine::RESETS), 1);
+    expectInt("reference report reset file count",
+              topResetReferenceReport.fileCounts.value(topPath), 1);
+    expectInt("reference report reset grouped count",
+              topResetReferenceReport.fileGroups.isEmpty()
+                  || topResetReferenceReport.fileGroups.first().typeGroups.isEmpty()
+                  ? 0
+                  : topResetReferenceReport.fileGroups.first().typeGroups.first().references.size(),
+              1);
+    expectBool("reference report reset subject symbol",
+               topResetReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_top"),
+               true);
+    expectBool("reference report reset referencing symbol",
+               !topResetReferenceReport.references.isEmpty()
+                   && topResetReferenceReport.references.first().referencingSymbol.symbolId == topRstId,
+               true);
+
+    topTimingReferenceQuery.types.clear();
+    const ReferenceReport topDefaultReferenceReport =
+        referenceService.findReferenceReport(topTimingReferenceQuery);
+    expectBool("reference report default includes timing total",
+               topDefaultReferenceReport.totalCount >= 2, true);
+    expectInt("reference report default clock count",
+              topDefaultReferenceReport.typeCounts.value(SymbolRelationshipEngine::CLOCKS), 1);
+    expectInt("reference report default reset count",
+              topDefaultReferenceReport.typeCounts.value(SymbolRelationshipEngine::RESETS), 1);
+    expectBool("reference report default includes timing file count",
+               topDefaultReferenceReport.fileCounts.value(topPath) >= 2, true);
+    bool defaultHasClockGroup = false;
+    bool defaultHasResetGroup = false;
+    for (const ReferenceFileGroup& fileGroup : topDefaultReferenceReport.fileGroups) {
+        if (fileGroup.fileKey != topPath)
+            continue;
+        for (const ReferenceTypeGroup& typeGroup : fileGroup.typeGroups) {
+            defaultHasClockGroup = defaultHasClockGroup
+                || typeGroup.type == SymbolRelationshipEngine::CLOCKS;
+            defaultHasResetGroup = defaultHasResetGroup
+                || typeGroup.type == SymbolRelationshipEngine::RESETS;
+        }
+    }
+    expectBool("reference report default clock group",
+               defaultHasClockGroup, true);
+    expectBool("reference report default reset group",
+               defaultHasResetGroup, true);
 
     ReferenceQuery rspDataReferenceQuery;
     rspDataReferenceQuery.symbolId = rspDataId;

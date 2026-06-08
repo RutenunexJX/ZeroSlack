@@ -87,8 +87,6 @@ private:
     QTreeWidget* problemsTree = nullptr;
     QComboBox* problemsScopeCombo = nullptr;
     QComboBox* problemsSeverityCombo = nullptr;
-    QTimer* problemsRefreshTimer = nullptr;
-    QString pendingProblemsFileName;
     QDockWidget* referencesDock = nullptr;
     QTreeWidget* referencesTree = nullptr;
     QComboBox* referenceScopeCombo = nullptr;
@@ -105,12 +103,6 @@ private:
     QString currentRelationshipSymbolName;
     QString currentRelationshipFileName;
     QString currentRelationshipModuleName;
-
-    struct RelationshipAnalysisTracker {
-        int totalFiles = 0;
-        int processedFiles = 0;
-        bool isActive = false;
-    } relationshipAnalysisTracker;
 
     void onSingleFileRelationshipFinished(const SingleFileRelationshipAnalysisResult& result);
 
@@ -130,7 +122,6 @@ private:
     void setupReferencesPane();
     void setupRelationshipsPane();
     void updateProblemsPanel(const QString& fileName = QString());
-    void scheduleProblemsPanelUpdate(const QString& fileName = QString());
     void connectNavigationSignals();
     void navigateToFileAndLine(const QString& filePath, int lineNumber = -1, int columnNumber = -1);
     void showReferencesForSymbol(const QString& symbolName,

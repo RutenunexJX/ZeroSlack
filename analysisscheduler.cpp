@@ -30,6 +30,15 @@ QList<SemanticRelationship> toSemanticRelationships(
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
 {
+    diagnosticsRefreshTimer = new QTimer(this);
+    diagnosticsRefreshTimer->setSingleShot(true);
+    diagnosticsRefreshTimer->setInterval(100);
+    connect(diagnosticsRefreshTimer, &QTimer::timeout, this, [this]() {
+        const QString fileName = pendingDiagnosticsRefreshFileName;
+        pendingDiagnosticsRefreshFileName.clear();
+        emit diagnosticsRefreshRequested(fileName);
+    });
+
     relationshipRefreshTimer = new QTimer(this);
     relationshipRefreshTimer->setSingleShot(true);
     relationshipRefreshTimer->setInterval(400);
@@ -49,6 +58,8 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
                     return;
                 const SingleFileRelationshipAnalysisResult result =
                     singleFileRelationshipWatcher->result();
+                if (!applySingleFileRelationshipResult(result))
+                    return;
                 emit relationshipAnalysisProgress(
                     result.fileName, result.relationships.size());
                 emit relationshipAnalysisFinished(result);
@@ -67,8 +78,20 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
                 }
                 const WorkspaceRelationshipAnalysisResult result =
                     workspaceRelationshipWatcher->result();
-                for (const auto& pair : result.fileRelationships)
+                if (!applyWorkspaceRelationshipResult(result))
+                    return;
+                const int totalFiles = result.totalFiles > 0
+                    ? result.totalFiles
+                    : result.fileRelationships.size();
+                int processedFiles = 0;
+                for (const auto& pair : result.fileRelationships) {
+                    ++processedFiles;
                     emit relationshipAnalysisProgress(pair.first, pair.second.size());
+                    emit workspaceRelationshipAnalysisProgress(pair.first,
+                                                               pair.second.size(),
+                                                               processedFiles,
+                                                               totalFiles);
+                }
                 emit workspaceRelationshipAnalysisFinished(result);
             });
 }
@@ -125,7 +148,7 @@ void AnalysisScheduler::setProjectModel(ProjectModel* model)
         activeWorkspaceProject = ProjectSnapshot();
         cancelWorkspaceRelationshipAnalysis();
         SemanticIndex::getInstance()->clearSnapshot();
-        emit diagnosticsRefreshRequested(QString());
+        scheduleDiagnosticsRefresh(QString());
     });
 }
 
@@ -142,13 +165,13 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 
     connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
             this, [this](const QString& fileName, int) {
-                emit diagnosticsRefreshRequested(fileName);
+                scheduleDiagnosticsRefresh(fileName);
             });
     connect(symbolAnalyzer,
             &SymbolAnalyzer::batchAnalysisCompleted,
             this,
             [this](int filesAnalyzed, int totalSymbols) {
-                emit diagnosticsRefreshRequested(QString());
+                scheduleDiagnosticsRefresh(QString());
                 onWorkspaceSymbolAnalysisCompleted(filesAnalyzed, totalSymbols);
             });
 }
@@ -315,7 +338,7 @@ void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 
     activeWorkspaceProject = project;
     workspaceSymbolAnalysisActive = true;
-    emit diagnosticsRefreshRequested(QString());
+    scheduleDiagnosticsRefresh(QString());
     emit workspaceSymbolAnalysisStarted(project, project.systemVerilogFiles.size());
     symbolAnalyzer->startAnalyzeProjectAsync(project, workspaceSymbolCancelProvider);
 }
@@ -413,7 +436,7 @@ void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
         activeWorkspaceProject = ProjectSnapshot();
         cancelWorkspaceRelationshipAnalysis();
         SemanticIndex::getInstance()->clearSnapshot();
-        emit diagnosticsRefreshRequested(QString());
+        scheduleDiagnosticsRefresh(QString());
         return;
     }
 
@@ -454,10 +477,73 @@ void AnalysisScheduler::analyzeOpenDocumentNow(const DocumentSnapshot& snapshot,
     requestRelationshipAnalysis(snapshot.fileName, content);
 }
 
+void AnalysisScheduler::scheduleDiagnosticsRefresh(const QString& fileName)
+{
+    pendingDiagnosticsRefreshFileName = fileName;
+    if (diagnosticsRefreshTimer)
+        diagnosticsRefreshTimer->start();
+}
+
 void AnalysisScheduler::scheduleRelationshipDataRefresh()
 {
     if (relationshipRefreshTimer)
         relationshipRefreshTimer->start();
+}
+
+bool AnalysisScheduler::applySingleFileRelationshipResult(
+    const SingleFileRelationshipAnalysisResult& result)
+{
+    if (!relationshipEngine || !relationshipBuilder)
+        return false;
+
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    if (result.baseSnapshot && semanticIndex->snapshot() != result.baseSnapshot)
+        return false;
+
+    relationshipEngine->beginUpdate();
+    for (const RelationshipToAdd& relationship : result.relationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0)
+            continue;
+        relationshipEngine->addRelationship(relationship.fromId,
+                                            relationship.toId,
+                                            relationship.type,
+                                            relationship.context,
+                                            relationship.confidence);
+    }
+    relationshipEngine->endUpdate();
+
+    if (result.semanticSnapshot)
+        semanticIndex->setSnapshot(result.semanticSnapshot);
+    return true;
+}
+
+bool AnalysisScheduler::applyWorkspaceRelationshipResult(
+    const WorkspaceRelationshipAnalysisResult& result)
+{
+    if (!relationshipEngine || !relationshipBuilder)
+        return false;
+
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    if (result.baseSnapshot && semanticIndex->snapshot() != result.baseSnapshot)
+        return false;
+
+    relationshipEngine->beginUpdate();
+    for (const auto& pair : result.fileRelationships) {
+        for (const RelationshipToAdd& relationship : pair.second) {
+            if (relationship.fromId < 0 || relationship.toId < 0)
+                continue;
+            relationshipEngine->addRelationship(relationship.fromId,
+                                                relationship.toId,
+                                                relationship.type,
+                                                relationship.context,
+                                                relationship.confidence);
+        }
+    }
+    relationshipEngine->endUpdate();
+
+    if (result.semanticSnapshot)
+        semanticIndex->setSnapshot(result.semanticSnapshot);
+    return true;
 }
 
 SingleFileRelationshipAnalysisResult AnalysisScheduler::analyzeSingleFileRelationships(
@@ -490,6 +576,7 @@ WorkspaceRelationshipAnalysisResult AnalysisScheduler::analyzeWorkspaceRelations
     WorkspaceRelationshipAnalysisResult result;
     result.baseSnapshot = baseSnapshot;
     result.semanticSnapshot = baseSnapshot;
+    result.totalFiles = project.systemVerilogFiles.size();
     if (!relationshipBuilder)
         return result;
 

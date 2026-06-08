@@ -23,6 +23,7 @@ struct WorkspaceRelationshipAnalysisResult {
     QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
     std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+    int totalFiles = 0;
 };
 
 struct SingleFileRelationshipAnalysisResult {
@@ -70,6 +71,10 @@ signals:
     void relationshipAnalysisCancelled();
     void relationshipAnalysisFinished(const SingleFileRelationshipAnalysisResult& result);
     void workspaceRelationshipAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
+    void workspaceRelationshipAnalysisProgress(const QString& fileName,
+                                               int relationshipsFound,
+                                               int processedFiles,
+                                               int totalFiles);
     void workspaceRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
     void workspaceRelationshipAnalysisCancelled();
 
@@ -87,6 +92,8 @@ private:
     QMap<QString, QTimer*> openFileAnalysisTimers;
     QMap<QString, QTimer*> fileChangeDebounceTimers;
     QMap<QString, QString> lastRelationshipAnalysisContent;
+    QString pendingDiagnosticsRefreshFileName;
+    QTimer* diagnosticsRefreshTimer = nullptr;
     QTimer* relationshipRefreshTimer = nullptr;
     QFutureWatcher<SingleFileRelationshipAnalysisResult>* singleFileRelationshipWatcher = nullptr;
     QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceRelationshipWatcher = nullptr;
@@ -99,7 +106,10 @@ private:
     void onProjectChanged(const ProjectSnapshot& project);
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged);
+    void scheduleDiagnosticsRefresh(const QString& fileName);
     void scheduleRelationshipDataRefresh();
+    bool applySingleFileRelationshipResult(const SingleFileRelationshipAnalysisResult& result);
+    bool applyWorkspaceRelationshipResult(const WorkspaceRelationshipAnalysisResult& result);
     SingleFileRelationshipAnalysisResult analyzeSingleFileRelationships(
         const QString& fileName,
         const QString& content,

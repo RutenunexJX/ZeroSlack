@@ -40,19 +40,16 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step strengthened real fixture coverage in `test_sv/relationship_test.cpp`.
+The latest development step moved relationship result application out of `MainWindow`.
 
-RelationshipReport now checks incoming timing relationships for the real `rel_top` fixture:
+- `AnalysisScheduler` now applies single-file and workspace relationship results to `SymbolRelationshipEngine`.
+- `AnalysisScheduler` now owns stale base-snapshot checks before publishing enriched snapshots.
+- `AnalysisScheduler` now reports workspace relationship progress with processed/total counts.
+- `AnalysisScheduler` now debounces diagnostics refresh requests before the UI redraws Problems.
+- `MainWindow` no longer owns relationship engine writeback, workspace relationship progress counting, or Problems refresh debounce.
+- `relationship_test` verifies scheduler-applied relationships, workspace progress totals, and ReferenceReport timing shape for `rel_top`.
 
-- `CLOCKS` from `top_clk` to `rel_top`
-- `RESETS` from `top_rst_n` to `rel_top`
-- total count
-- incoming count
-- per-type counts
-- type group count
-- peer symbols
-
-This extends service report coverage so RelationshipService owns filtering, counts, and grouped report shape for timing relationships too.
+This thins `MainWindow` and makes relationship analysis lifecycle ownership more coherent.
 
 ## Latest Validation
 

@@ -132,7 +132,7 @@ void MainWindow::setupManagerConnections()
             });
     connect(analysisScheduler.get(), &AnalysisScheduler::diagnosticsRefreshRequested,
             this, [this](const QString& fileName) {
-                scheduleProblemsPanelUpdate(fileName);
+                updateProblemsPanel(fileName);
             });
 
     connect(tabManager.get(), &TabManager::activeTabChanged,
@@ -204,18 +204,14 @@ void MainWindow::setupManagerConnections()
     connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
             this, [this](const ProjectSnapshot& project, int totalFiles) {
                 Q_UNUSED(project)
-                relationshipAnalysisTracker.totalFiles = totalFiles;
-                relationshipAnalysisTracker.processedFiles = 0;
-                relationshipAnalysisTracker.isActive = totalFiles > 0;
+                Q_UNUSED(totalFiles)
             });
 
     connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
             this, &MainWindow::onWorkspaceRelationshipAnalysisFinished);
 
     connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisCancelled,
-            this, [this]() {
-                relationshipAnalysisTracker.isActive = false;
-            });
+            this, []() {});
 
     connect(analysisScheduler.get(), &AnalysisScheduler::relationshipAnalysisProgress,
             this, [this](const QString& fileName, int relationshipsFound) {
@@ -229,42 +225,6 @@ void MainWindow::setupManagerConnections()
                     }
                 }
 
-                if (relationshipAnalysisTracker.isActive) {
-                    relationshipAnalysisTracker.processedFiles++;
-
-                    if (progressDialog) {
-                        progressDialog->statusLabel->setText(
-                            QString("Stage 2/2: Relationship analysis running (%1/%2)")
-                            .arg(relationshipAnalysisTracker.processedFiles)
-                            .arg(relationshipAnalysisTracker.totalFiles));
-                    }
-
-                    if (relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
-                        relationshipAnalysisTracker.isActive = false;
-
-                        if (progressDialog) {
-                            progressDialog->statusLabel->setText("All analysis complete!");
-                            if (progressDialog->config.showDetails) {
-                                progressDialog->logProgress("Relationship analysis complete!");
-                                progressDialog->logProgress(QString("Processed %1 files")
-                                    .arg(relationshipAnalysisTracker.totalFiles));
-                            }
-                        }
-
-                        QTimer::singleShot(200, this, [this]() {
-                            if (progressDialog)
-                                progressDialog->finishAnalysis();
-
-                            if (statusBar()) {
-                                statusBar()->showMessage(
-                                    QString("Relationship analysis complete: %1 files")
-                                    .arg(relationshipAnalysisTracker.totalFiles),
-                                    5000);
-                            }
-                        });
-                    }
-                }
-
                 const QString shortName = QFileInfo(fileName).fileName();
                 if (statusBar()) {
                     statusBar()->showMessage(
@@ -274,31 +234,26 @@ void MainWindow::setupManagerConnections()
                 }
             });
 
+    connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisProgress,
+            this, [this](const QString&, int, int processedFiles, int totalFiles) {
+                if (progressDialog) {
+                    progressDialog->statusLabel->setText(
+                        QString("Stage 2/2: Relationship analysis running (%1/%2)")
+                        .arg(processedFiles)
+                        .arg(totalFiles));
+                }
+            });
+
     connect(analysisScheduler.get(), &AnalysisScheduler::relationshipAnalysisError,
             this, [this](const QString& fileName, const QString& error) {
                 if (progressDialog && progressDialog->isVisible())
                     progressDialog->showError(fileName, error);
-
-                if (relationshipAnalysisTracker.isActive) {
-                    relationshipAnalysisTracker.processedFiles++;
-
-                    if (relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
-                        relationshipAnalysisTracker.isActive = false;
-
-                        QTimer::singleShot(200, this, [this]() {
-                            if (progressDialog)
-                                progressDialog->finishAnalysis();
-                        });
-                    }
-                }
 
                 onRelationshipAnalysisError(fileName, error);
             });
 
     connect(analysisScheduler.get(), &AnalysisScheduler::relationshipAnalysisCancelled,
             this, [this]() {
-                relationshipAnalysisTracker.isActive = false;
-
                 if (progressDialog)
                     progressDialog->finishAnalysis();
 
@@ -422,19 +377,10 @@ void MainWindow::setupProblemsPane()
                               QDockWidget::DockWidgetClosable);
     addDockWidget(Qt::BottomDockWidgetArea, problemsDock);
 
-    problemsRefreshTimer = new QTimer(this);
-    problemsRefreshTimer->setSingleShot(true);
-    problemsRefreshTimer->setInterval(100);
-    connect(problemsRefreshTimer, &QTimer::timeout, this, [this]() {
-        const QString fileName = pendingProblemsFileName;
-        pendingProblemsFileName.clear();
-        updateProblemsPanel(fileName);
-    });
-
     connect(problemsScopeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, [this](int) { scheduleProblemsPanelUpdate(); });
+            this, [this](int) { updateProblemsPanel(); });
     connect(problemsSeverityCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, [this](int) { scheduleProblemsPanelUpdate(); });
+            this, [this](int) { updateProblemsPanel(); });
 
     connect(problemsTree, &QTreeWidget::itemDoubleClicked,
             this, [this](QTreeWidgetItem* item, int) {
@@ -889,16 +835,6 @@ void MainWindow::updateProblemsPanel(const QString& fileName)
     }
 }
 
-void MainWindow::scheduleProblemsPanelUpdate(const QString& fileName)
-{
-    pendingProblemsFileName = fileName;
-    if (problemsRefreshTimer) {
-        problemsRefreshTimer->start();
-        return;
-    }
-    updateProblemsPanel(fileName);
-}
-
 static QTreeWidgetItem* getOrCreateChildGroup(QTreeWidgetItem* parent,
                                               QMap<QString, QTreeWidgetItem*>& groups,
                                               const QString& key,
@@ -1280,7 +1216,7 @@ void MainWindow::connectNavigationSignals()
                     navigationManager->onTabChanged(editor->getFileName());
                 }
                 if (problemsScopeCombo && problemsScopeCombo->currentData().toInt() == 0)
-                    scheduleProblemsPanelUpdate();
+                    updateProblemsPanel();
             });
 }
 
@@ -1486,70 +1422,31 @@ void MainWindow::cancelScheduledOpenFileAnalysis(const QString& fileName)
 void MainWindow::onSingleFileRelationshipFinished(
     const SingleFileRelationshipAnalysisResult& result)
 {
-    if (!relationshipEngine || !relationshipBuilder)
-        return;
-
-    if (result.baseSnapshot && SemanticIndex::getInstance()->snapshot() != result.baseSnapshot)
-        return;
-
-    relationshipEngine->beginUpdate();
-    for (const RelationshipToAdd& r : result.relationships) {
-        if (r.fromId < 0 || r.toId < 0)
-            continue;
-        relationshipEngine->addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
-    }
-    relationshipEngine->endUpdate();
-    if (result.semanticSnapshot) {
-        SemanticIndex::getInstance()->setSnapshot(result.semanticSnapshot);
-        CompletionManager::getInstance()->refreshRelationshipData();
-    }
     onRelationshipAnalysisCompleted(result.fileName, result.relationships.size());
 }
 
 void MainWindow::onWorkspaceRelationshipAnalysisFinished(
     const WorkspaceRelationshipAnalysisResult& result)
 {
-    if (!relationshipEngine || !relationshipBuilder)
-        return;
-    if (result.baseSnapshot && SemanticIndex::getInstance()->snapshot() != result.baseSnapshot)
-        return;
-
-    relationshipEngine->beginUpdate();
-    for (const auto& pair : result.fileRelationships) {
-        const QString& fileName = pair.first;
-        for (const RelationshipToAdd& r : pair.second) {
-            if (r.fromId < 0 || r.toId < 0)
-                continue;
-            relationshipEngine->addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
+    CompletionManager::getInstance()->refreshRelationshipData();
+    const int totalFiles = result.totalFiles > 0
+        ? result.totalFiles
+        : result.fileRelationships.size();
+    if (progressDialog) {
+        progressDialog->statusLabel->setText("All analysis complete!");
+        if (progressDialog->config.showDetails) {
+            progressDialog->logProgress("Relationship analysis complete!");
+            progressDialog->logProgress(QString("Processed %1 files").arg(totalFiles));
         }
-        Q_UNUSED(fileName)
     }
-    relationshipEngine->endUpdate();
-    if (result.semanticSnapshot) {
-        SemanticIndex::getInstance()->setSnapshot(result.semanticSnapshot);
-        CompletionManager::getInstance()->refreshRelationshipData();
-    }
-    if (relationshipAnalysisTracker.isActive
-        && relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
-        relationshipAnalysisTracker.isActive = false;
-        if (progressDialog) {
-            progressDialog->statusLabel->setText("All analysis complete!");
-            if (progressDialog->config.showDetails) {
-                progressDialog->logProgress("Relationship analysis complete!");
-                progressDialog->logProgress(QString("Processed %1 files")
-                    .arg(relationshipAnalysisTracker.totalFiles));
-            }
-        }
-        QTimer::singleShot(200, this, [this]() {
-            if (progressDialog)
-                progressDialog->finishAnalysis();
-            if (statusBar())
-                statusBar()->showMessage(
-                    QString("Relationship analysis complete: %1 files")
-                    .arg(relationshipAnalysisTracker.totalFiles),
-                    5000);
-        });
-    }
+    QTimer::singleShot(200, this, [this, totalFiles]() {
+        if (progressDialog)
+            progressDialog->finishAnalysis();
+        if (statusBar())
+            statusBar()->showMessage(
+                QString("Relationship analysis complete: %1 files").arg(totalFiles),
+                5000);
+    });
 }
 
 void MainWindow::showAnalysisProgress(const QStringList& files)
@@ -1573,8 +1470,6 @@ void MainWindow::showAnalysisProgress(const QStringList& files)
                 if (analysisScheduler) {
                     analysisScheduler->cancelWorkspaceRelationshipAnalysis();
                 }
-
-                relationshipAnalysisTracker.isActive = false;
 
                 if (statusBar()) {
                     statusBar()->showMessage("Analysis cancelled", 3000);

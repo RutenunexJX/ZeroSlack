@@ -64,6 +64,7 @@ Already present:
 - ProjectModel minimal boundary
 - DocumentModel minimal boundary
 - AnalysisScheduler for major analysis and refresh timing
+- AnalysisScheduler applies relationship analysis results, publishes enriched snapshots, reports workspace relationship progress totals, and debounces diagnostics refresh requests
 - SemanticIndex facade
 - SemanticIndexSnapshot production/switching helpers
 - DefinitionService
@@ -87,7 +88,8 @@ Recent test coverage includes real fixture assertions for:
 - current-file and workspace-file reference filtering,
 - diagnostic file filtering,
 - incoming relationship browsing,
-- incoming timing relationships (`CLOCKS` / `RESETS`).
+- incoming timing relationships (`CLOCKS` / `RESETS`),
+- incoming timing reference report shape.
 
 ## Remaining Gaps
 

@@ -39,10 +39,14 @@ Still transitional:
 
 ## Current Handoff Work
 
-Latest committed handoff work:
+Latest handoff work:
 
+- `analysisscheduler.cpp` / `analysisscheduler.h`
+  - Moves relationship result application, stale snapshot checks, workspace relationship progress totals, and diagnostics refresh debounce into AnalysisScheduler.
+- `mainwindow.cpp` / `mainwindow.h`
+  - Removes direct relationship engine writeback, workspace relationship progress counting, and Problems refresh debounce state.
 - `test_sv/relationship_test.cpp`
-  - Adds real RelationshipReport coverage for incoming `CLOCKS` and `RESETS` timing relationships on `rel_top`.
+  - Verifies scheduler-applied relationships, workspace progress totals, debounced diagnostics refresh, and real ReferenceReport timing shape for `rel_top`.
 - `readme.md`
   - Compacted English / ASCII handoff.
 - `plan.md`
@@ -50,7 +54,7 @@ Latest committed handoff work:
 - `goal.md`
   - Compacted English / ASCII architecture goal.
 
-Expected real diff after the handoff commit/push: empty, except local warning noise.
+Expected real diff before commit: scheduler/MainWindow relationship lifecycle changes, `test_sv/relationship_test.cpp`, and handoff docs.
 
 ## Next Small Increments
 
