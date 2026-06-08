@@ -1,447 +1,110 @@
-# ZeroSlack Next Plan
+# ZeroSlack Development Plan
 
-当前版本：`0.0.20/slang25`
-当前分支：`tree_sitter_and_slang`
+This file is the short execution plan. It intentionally avoids long session history. Use `readme.md` for handoff state and `goal.md` for stable product/architecture goals.
 
-本计划服务于 `goal.md` 中的产品 / 架构目标。后续实现默认继续向：
+## Current Direction
 
-`ProjectModel / DocumentModel / AnalysisScheduler / SemanticIndex / Query Services`
+Keep moving ZeroSlack toward:
 
-收敛。除非遇到无法绕过的实现问题，不再为每个功能重新选择架构方向。
+- `ProjectModel`
+- `DocumentModel`
+- `AnalysisScheduler`
+- `SemanticIndex`
+- `SemanticIndexSnapshot`
+- Query Services
+- snapshot-backed UI/service reads
+- thinner `MainWindow`
+
+Tree-sitter remains the live syntax/editing layer. Slang remains the semantic fact source.
 
 ## Current Status
 
-主线仍是 Route A：
-
-- Tree-sitter：实时语法、高亮、增量文档、live module scope。
-- Slang：符号、类型、定义、跳转、补全、关系、诊断事实来源。
-- SemanticIndex：当前默认是 sym_list-backed facade，新增语义读取优先通过它。
-  已新增 module end line、module name validity 和 contentAffectsSymbols 过渡入口，进一步减少消费端直连。
-- SemanticIndexSnapshot：已接入 workspace / single-file 后台分析生产和主线程世代切换。
-  Snapshot 当前保存 symbols / relationships / diagnostics / cached file content / minimal scope names。
-  base snapshot capture 和 enriched relationship merge 已有 SemanticIndex / SemanticIndexSnapshot helper。
-- Query Services：Definition / Completion / Relationship / Hierarchy / Reference /
-  Diagnostic / Search 最小边界已落地；DiagnosticService 已能消费 Slang diagnostics。
-  DiagnosticService / ReferenceService / RelationshipService / HierarchyService 已提供 report API，
-  底部面板排序、筛选结果集、二级分组计数和 tree 计数继续从 MainWindow 下沉到 service。
-- Navigation UI：模块层级和符号 outline 已有显式 model，Widget 不再在双击时反查 sym_list。
-- Scheduler：workspace opened/rescanned/project config changed 已经通过 ProjectModel
-  projectChanged 进入 AnalysisScheduler；skip-unchanged 判断已改走 SemanticIndex facade。
-- Editor：注释区自动补全抑制已改走 TSDocument::isCommentAt 的 Tree-sitter live syntax，
-  不再依赖 sym_list comment region。
-- 本轮收口：Problems / References / Relationships 底部面板已补稳定排序、分组计数、Relationships Tree
-  双向浏览，并继续下沉为 service report 驱动的薄 UI。
-- 本轮 0.0.20/slang25 收口：提交和上传前按用户要求不再重复编译 / 测试，沿用本轮最近一次全量验证结果。
-
-最近验证：
-
-- completion_test：14 checks, 0 failed。
-- jump_test：10 checks, 0 failed。
-- relationship_test：125 checks, 0 failed。
-- gui_smoke_test：103 checks, 0 failed。
-- ctest：6/6 passed。
-- git diff --check：无错误。
-- 追加改动后，ts_doc_test / relationship_test / gui_smoke_test 对应 CTest 均通过。
-
-## 已完成
-
-### P0 回归底座
-
-- `ts_doc_test`
-- `completion_test`
-- `jump_test`
-- `relationship_test`
-- `gui_smoke_test`
-- `large_file_perf_test`
-
-全部接入 CTest。
-
-### P1 Tree-sitter / Slang 分工
-
-- Tree-sitter 保留为实时语法、高亮、live scope。
-- Slang 作为真实符号和语义来源。
-- 旧 SVLexer、旧 Tree-sitter symbol parser、Tree-sitter 验证按钮不恢复。
-
-### P2 Project / Document / Scheduler
-
-- ProjectModel 最小入口已落地。
-- DocumentModel 最小入口已落地。
-- AnalysisScheduler 已接管主要分析触发点。
-- workspace 符号分析完成后由 scheduler 接续启动 workspace 关系分析。
-
-### P3 Query Services
-
-- DefinitionService：MyCodeEditor 跳转定义主要路径已迁入。
-- CompletionService：普通补全、struct member 补全、命令模式补全已开始迁入。
-- RelationshipService / HierarchyService：关系和层级查询边界已落地。
-- RelationshipService 增加 findRelatedSymbolIds / hasRelationship。
-- HierarchyService / ReferenceService 名称解析和 ID 反查改走 SemanticIndex。
-- ReferenceService / DiagnosticService / SearchService：最小边界已落地并有测试断言。
-- DiagnosticService / ReferenceService / RelationshipService 增加 report API，承接底部面板的排序、
-  scope/type/severity 过滤结果和摘要计数。
-- HierarchyService 增加 HierarchyReport 和 allRelationshipTypes，承接 Relationships Tree 的节点、
-  depth/direction/root/type 计数和 All Types 策略。
-
-### P4 Navigation 消费端迁移
-
-- ModuleHierarchyGroup：模块层级 UI 显式模型。
-- SymbolOutlineGroup：符号 outline UI 显式模型。
-- NavigationManager 消费 DefinitionService / HierarchyService / SearchService / SemanticIndex。
-- NavigationWidget 不再在符号双击时反查 sym_list / service，而是使用 item payload。
-
-### P5 SemanticIndexSnapshot 最小边界
-
-- 新增 `semanticindexsnapshot.cpp / semanticindexsnapshot.h`。
-- Snapshot 保存 symbols / relationships / diagnostics 的只读副本。
-- Snapshot 支持 symbols / definitions / symbol id / relationships / diagnostics 查询。
-- SemanticIndex 支持 setSnapshot / clearSnapshot；snapshot 存在时优先读 snapshot。
-- relationship_test 覆盖 snapshot symbols / symbol id / relationships / clearSnapshot。
-- 后台分析已产出 snapshot，主线程按 base snapshot 世代切换 current snapshot。
-- Snapshot 已扩展 cached file content / minimal scope names 查询。
-- Workspace / single-file relationship 后台已改为 snapshot-backed，避免读取过期 current snapshot。
-- SemanticIndex 新增 captureSnapshotPreservingDiagnostics，统一 base snapshot 生产并保留 diagnostics。
-- SemanticIndexSnapshot 新增 withAdditionalRelationships，统一 enriched snapshot relationship 合并和去重。
-- SemanticIndexSnapshot 新增 withReplacedDiagnostics，统一按文件替换 diagnostics 并保留其它文件 diagnostics。
-- SemanticIndex 新增 captureSnapshotReplacingDiagnostics，供 single-file/open-tab 分析发布保留生命周期的 snapshot。
-- SemanticIndex 新增 isValidModuleName / findEndModuleLine / contentAffectsSymbols 过渡 facade。
-- relationship_test 覆盖 facade / snapshot 的 module end line 查询。
-
-### P6 Slang diagnostics / Problems UI
-
-- SlangManager 新增 `extractDiagnostics` / `extractWorkspaceDiagnostics`。
-- SemanticDiagnostic 已从 Slang diagnostics 进入 SemanticIndexSnapshot。
-- DiagnosticService 已能查询真实 diagnostics。
-- MainWindow 新增底部 Problems dock，显示 Severity / File / Line / Column / Message。
-- Problems 面板支持 current file / all files 和 severity 筛选。
-- Problems 条目双击可跳转到对应文件、行和列。
-- Problems 面板刷新已加 100ms 合并；All Files 模式按 file 分组，Current File 保持紧凑列表。
-- Problems 面板结果按 severity / file / line / column 稳定排序；All Files 分组显示数量。
-- Problems 空状态显示 No problems；非诊断节点双击不会触发空路径跳转。
-- Problems 面板改为消费 DiagnosticReport，排序、总数、file count 和 severity count 由 DiagnosticService 提供。
-- Problems 面板新增 Workspace Files scope；current/workspace/all files 过滤均经 DiagnosticService 查询。
-- DiagnosticReport 新增 DiagnosticFileGroup，Problems All Files / Workspace Files 文件分组由 service report 提供。
-- SymbolAnalyzer single-file/open-tab 分析只替换目标文件 diagnostics，保留其它文件 Problems。
-- Problems 面板在 workspace close 和 workspace symbol analysis start 时刷新，避免旧 diagnostics 视觉残留。
-- relationship_test 覆盖 Slang diagnostics -> snapshot -> DiagnosticService。
-- relationship_test 覆盖 DiagnosticReport 排序、severity 过滤、file/severity 计数、fileGroups 和 workspace 过滤。
-- gui_smoke_test 覆盖 Problems 面板显示真实 Slang diagnostic、all-files 分组、Workspace Files scope、diagnostic 保留和 workspace close/reopen 清空。
-
-### P7 References / Relationships UI
-
-- MainWindow 新增底部 References dock，编辑器右键 Find References 触发。
-- References dock 通过 ReferenceService 查询 incoming references，并支持 all files / workspace files / current file 筛选。
-- References dock 支持 Reference type 筛选，并按 file -> relationship type -> result 分组。
-- 编辑器新增 Shift+F12 快捷键入口触发 Find References。
-- MainWindow 新增底部 Relationships dock，编辑器右键 Show Relationships 触发。
-- Relationships dock 通过 RelationshipService 查询 incoming / outgoing relationships，并支持方向 / 类型筛选。
-- Relationships dock Direct 视图按 direction -> relationship type -> result 分组。
-- Relationships dock Direct 视图结果按类型和位置稳定排序，direction / type 分组显示数量。
-- Relationships dock 新增 Tree 视图，接入 HierarchyService，支持 Depth 1..4 层级浏览。
-- HierarchyService 支持 Children / Parents / Both 方向查询，并通过路径去重防止递归循环。
-- Relationships Tree 支持 Root 节点、Incoming / Outgoing 分支、方向筛选和全部关系类型策略。
-- References dock 结果按类型和位置稳定排序，file / relationship type 分组显示数量。
-- References dock 改为消费 ReferenceReport，scope/type 过滤结果、排序、file/type 计数由 ReferenceService 提供。
-- Relationships Direct 视图改为消费 RelationshipReport，incoming/outgoing 合并、排序、方向/type 计数由
-  RelationshipService 提供。
-- RelationshipReport 新增 directionCounts / directionTypeCounts，Direct 视图二级分组计数不再由 MainWindow 计算。
-- 编辑器新增 Ctrl+Shift+R 快捷键入口触发 Show Relationships。
-- References / Relationships 条目双击可跳转到对应文件、行和列。
-- relationship_test 覆盖 ReferenceReport / RelationshipReport 的排序、过滤和计数。
-- relationship_test 覆盖 HierarchyReport、ReferenceReport file/type、RelationshipReport direction/type 计数。
-- gui_smoke_test 覆盖 References / Relationships dock 的 service-backed UI 消费。
-- gui_smoke_test 覆盖 Relationships Tree 刷新后保留折叠 root。
-- Problems / References / Relationships 树刷新会保留已有展开/折叠状态，首次渲染仍默认展开。
-
-## 下一步建议
-
-### 1. 继续迁移 editor / UI 消费端
-
-当前仍有少量直接 sym_list 读取：
-
-- `MyCodeEditor` 的注释判断已改走 Tree-sitter live syntax；剩余重点是补全触发细节和状态性依赖。
-- `CompletionManager` 大批只读符号查询和关系读取已迁到 SemanticIndex / RelationshipService；
-  剩余主要是状态性过渡依赖和旧补全策略。
-- `MainWindow::setupRelationshipEngine()` 仍需要把 relationship engine 绑定到 live symbol database，
-  但调用方已改为通过 SemanticIndex 获取该数据库；这是当前过渡期可接受的初始化点。
-
-建议小步推进，不要一次性重写 CompletionManager。
-
-### 2. 继续打磨关系浏览 UI
-
-Relationships dock 已有 Direct 分组、双向 Tree 层级浏览、递归去重、根节点 UX、展开状态保持、
-HierarchyReport 计数和服务侧 All Types 策略。
-后续重点是按层刷新和更细的类型策略，并继续把相关读取固定到 RelationshipService / HierarchyService。
-
-Snapshot 生产 / 切换闭环已继续收束：AnalysisScheduler / MainWindow 的关系后台路径通过 SemanticIndex /
-SemanticIndexSnapshot helper 生产 base/enriched snapshot，后续可继续减少 SymbolAnalyzer / CompletionManager 等
-过渡直连点。
-
-### 3. Reference / Problems UI 打磨
-
-- ReferenceService 已有 References dock 作为真实 UI 消费点，当前查询 incoming references。
-- DiagnosticService 已消费 Slang diagnostics，Problems panel 已支持基础筛选和行/列跳转。
-- References 已有结果排序、结果分组、workspace files 筛选、type 筛选、快捷键入口和 service report；
-  后续可补结果摘要、更多 workspace 维度和跨文件上下文。
-- Problems panel 已有刷新合并、稳定排序、空状态、all-files/workspace 分组、service report、
-  诊断替换生命周期和 workspace close/reopen 清空；后续可补更多真实 fixture 和更清晰的 scheduler/service 边界。
-
-### 4. SemanticIndexSnapshot 生产 / 切换闭环
-
-下一块较大的架构工作：
-
-```text
-后台分析产出 SemanticIndexSnapshot
-主线程按 base snapshot 世代切换 currentSnapshot
-UI / Services 只读 snapshot
-旧 snapshot 自动释放
-```
-
-基础闭环已落地；下一步重点是继续减少 live sym_list 消费，并把更多 UI / services
-读路径固定到 snapshot-backed 数据。
-
-## Definition Of Done
-
-每轮较大改动至少保持：
-
-- `ctest --output-on-failure` 6/6 passed。
-- `git diff --check` 无错误。
-- 不恢复 `demo.pro`、任何 `*.pro` / `*.pri` 或 qmake 路径。
-- 不恢复 SVLexer、旧 Tree-sitter parser、Tree-sitter 验证按钮或关系分析正则路径。
-- 不引入长期散落 perflog。
-- 不恢复 `.claude/` 或任何 Claude 本地配置。
-
-## Useful Commands
-
-```powershell
-$env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;E:\QT6\Tools\CMake_64\bin;E:\QT6\Tools\Ninja;$env:PATH"
-
-& "E:\QT6\Tools\CMake_64\bin\cmake.exe" --build "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug" --target demo gui_smoke_test relationship_test completion_test jump_test
-
-& "E:\QT6\Tools\CMake_64\bin\ctest.exe" --test-dir "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug" --output-on-failure
-```
-
-## Session 2026-06-08 update
-
-- Completed a small SemanticIndex facade step: relationship engine attachment and SmartRelationshipBuilder creation now live behind SemanticIndex helpers.
-- MainWindow and CompletionManager no longer request the live sym_list database directly for relationship builder wiring.
-- Added relationship_test coverage for the facade relationship-engine attachment and builder creation path.
-- Verification passed:
-  - cmake build targets: relationship_test, completion_test, gui_smoke_test.
-  - ctest -R "relationship_test|completion_test|gui_smoke_test" --output-on-failure: 3/3 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty.
-  - forbidden-file guard found no *.pro/*.pri files in the working tree and .claude is absent.
-- Existing staged demo.pro deletion was present before this session and remains untouched.
-- Next step: keep shrinking live sym_list exposure from completion/editor/service transition points, then broaden to scheduler/MainWindow policy extraction when a clean slice appears.
-
-## Session 2026-06-08 continuation
-
-- CompletionManager semantic reads were further centralized behind private helpers:
-  - file symbols
-  - cached file content
-  - scope symbol names
-  - symbol id lookup
-  - module-name validity
-- Module-context completion now prefers SemanticIndex cached content before disk fallback when scanning include/import context.
-- Verification passed:
-  - cmake build targets: completion_test, gui_smoke_test.
-  - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
-- Continue with small completion/service boundary moves; avoid a broad CompletionManager rewrite.
-
-## Session 2026-06-08 continuation 2
-
-- CompletionManager type-specific helpers now use SemanticIndex typed queries where available:
-  - enum variable lookup
-  - module lookup for module-port completions
-  - enum value completions
-  - struct member completions
-- Verification passed:
-  - cmake build targets: completion_test, gui_smoke_test.
-  - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
-- Keep future CompletionManager changes narrow and testable; prefer service/facade reads over full-symbol scans when the query shape is already known.
-
-## Session 2026-06-08 continuation 3
-
-- CompletionManager command/type-specific reads now use a private typed SemanticIndex helper where the desired query shape is known.
-  - Preserves typedef enum compatibility without scanning every symbol.
-  - Narrows module-internal variables, struct variable lookup, module-context symbol lookup, global type completions, and SymbolInfo-returning global completion helpers.
-- ReferenceService now owns structured References grouping:
-  - ReferenceReport includes fileGroups -> typeGroups -> references.
-  - Existing total/file/type/fileType counts remain available.
-  - MainWindow refreshReferencesPanel now renders the report tree directly instead of rebuilding file/type grouping and counts.
-- RelationshipService now owns structured Relationships Direct grouping:
-  - RelationshipReport includes directionGroups -> typeGroups -> relationships.
-  - Existing total/direction/type/directionType counts remain available.
-  - MainWindow refreshRelationshipsPanel now renders the report tree directly instead of rebuilding direction/type grouping and counts.
-- relationship_test now covers the new ReferenceReport and RelationshipReport grouped shapes.
-- Verification passed:
-  - cmake build targets: relationship_test, completion_test, gui_smoke_test.
-  - ctest -R "relationship_test|completion_test|gui_smoke_test" --output-on-failure: 3/3 passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
-  - forbidden-file guard found no *.pro/*.pri files in the working tree and .claude is absent.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 8998b8a Tighten SemanticIndex completion boundaries.
-- Next step: continue with small service/report/model boundary moves, especially remaining MainWindow refresh policy and real Problems/References/Relationships fixtures.
-
-## Session 2026-06-08 continuation 4
-
-- ReferenceReport / RelationshipReport now carry the resolved subject symbol id and subject symbol so UI consumers can use service-resolved report context.
-- MainWindow References / Relationships Direct titles and status messages now use the report subject when available.
-- Removed the unused MainWindow file-group helper left after References grouping moved into ReferenceService.
-- AnalysisScheduler now owns workspace relationship batch analysis:
-  - MainWindow injects SmartRelationshipBuilder with setRelationshipBuilder.
-  - Scheduler traverses ProjectSnapshot files, reads content, uses the base SemanticIndexSnapshot, merges relationships into an enriched snapshot, and handles cancellation through the builder.
-- relationship_test now drives AnalysisScheduler::requestWorkspaceRelationshipAnalysis on the real multi-file fixture and checks the enriched snapshot contains the top -> stage instantiation.
-- Verification passed:
-  - cmake build targets: relationship_test, gui_smoke_test.
-  - ctest -R "relationship_test|gui_smoke_test" --output-on-failure: 2/2 passed.
-  - ctest -R "relationship_test" --output-on-failure after adding scheduler fixture: passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
-  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 6b16c3b Push report grouping into services.
-- No commit or push was requested; keep the current diff uncommitted.
-- Next step: continue moving progress/refresh policy out of MainWindow, or add the next real Problems/References/Relationships fixture with focused CTest coverage.
-
-## Session 2026-06-08 continuation 5
-
-- AnalysisScheduler now also owns single-file relationship background analysis:
-  - shared setRelationshipBuilder entry for single-file and workspace relationship analysis.
-  - single-file watcher and previous-task cancellation live in scheduler.
-  - base snapshot capture, relationship computation, and enriched snapshot merge live in scheduler.
-- MainWindow now handles AnalysisScheduler::relationshipAnalysisFinished only as a UI/engine completion consumer.
-- MainWindow no longer owns relationshipSingleFileWatcher, pendingRelationshipFileName, or the local QtConcurrent single-file relationship task.
-- gui_smoke_test and large_file_perf_test drain relationship work through AnalysisScheduler.
-- relationship_test covers scheduler single-file relationship analysis with the real multi-file fixture and verifies the enriched snapshot contains the cross-file instantiation.
-- Verification passed:
-  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
-  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
-  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 6b16c3b Push report grouping into services.
-- No commit or push was requested; keep the current diff uncommitted.
-- Next step: continue extracting relationship progress completion and refresh timing policy from MainWindow, or add the next focused Problems/References/Relationships real fixture.
-
-## Session 2026-06-08 continuation 6
-
-- AnalysisScheduler now owns the relationship progress/error/cancel signal boundary:
-  - added relationshipAnalysisProgress.
-  - added relationshipAnalysisError.
-  - added relationshipAnalysisCancelled.
-  - emits result-based progress before single-file and workspace relationship finished signals.
-- MainWindow now subscribes to scheduler relationship progress/error/cancel signals instead of SmartRelationshipBuilder signals.
-- setupManagerConnections no longer duplicates relationship engine relationshipAdded / relationshipsCleared wiring.
-- Workspace relationship finished handling is reduced to applying relationships and snapshots; progress counting is driven by scheduler progress events.
-- relationship_test checks scheduler single-file progress forwarding with the real multi-file fixture.
-- Verification passed:
-  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
-  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
-  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 6b16c3b Push report grouping into services.
-- No commit or push was requested; keep the current diff uncommitted.
-- Next step: continue extracting bottom-panel refresh scheduling from MainWindow, or add the next focused Problems/References/Relationships real fixture.
-
-## Session 2026-06-08 continuation 7
-
-- AnalysisScheduler now owns Problems diagnostics refresh request timing:
-  - emits diagnosticsRefreshRequested(fileName).
-  - requests refresh after single-file analysis completion.
-  - requests refresh after workspace batch completion.
-  - requests refresh when workspace symbol analysis starts.
-  - requests refresh when the project closes or a closed project snapshot arrives.
-- MainWindow now consumes AnalysisScheduler::diagnosticsRefreshRequested and keeps only Problems debounce/tree rendering.
-- Removed MainWindow direct Problems refresh scheduling from workspaceClosed, workspaceSymbolAnalysisStarted, and SymbolAnalyzer::batchAnalysisCompleted.
-- MainWindow still handles SymbolAnalyzer::analysisCompleted for editor scope/current-line refresh only.
-- relationship_test checks scheduler project-close diagnostics refresh.
-- Verification passed:
-  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
-  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
-  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 6b16c3b Push report grouping into services.
-- No commit or push was requested; keep the current diff uncommitted.
-- Next step: continue extracting References/Relationships refresh scheduling from MainWindow, or add the next focused Problems/References/Relationships real fixture.
-
-## Session 2026-06-08 continuation 8
-
-- AnalysisScheduler now owns relationship data refresh timing from SymbolRelationshipEngine:
-  - setRelationshipEngine binds relationshipAdded and relationshipsCleared.
-  - relationshipDataInvalidated is emitted immediately when relationship data changes.
-  - relationshipDataRefreshRequested is coalesced with a 400ms timer for additions.
-  - relationshipDataRefreshRequested is emitted immediately when relationships are cleared.
-- MainWindow consumes scheduler signals for completion cache invalidation and Navigation refresh.
-- MainWindow no longer connects directly to relationshipAdded / relationshipsCleared and no longer owns relationshipRefreshDeferTimer.
-- relationship_test covers scheduler invalidation, coalesced relationship refresh, and clear refresh.
-- Verification passed:
-  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
-  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
-  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 6b16c3b Push report grouping into services.
-- No commit or push was requested; keep the current diff uncommitted.
-- Next step: continue shrinking MainWindow progress UI policy if there is a clean scheduler-owned signal boundary, or add another real Problems / References / Relationships fixture.
-
-## Session 2026-06-08 continuation 9
-
-- Added one more real fixture assertion for ReferenceService current-file filtering.
-- relationship_test now verifies currentFileOnly keeps the matching real fixture file for the rel_stage instantiation reference, in addition to the existing non-matching-file check.
-- Verification passed:
-  - cmake build target: relationship_test.
-  - ctest -R "relationship_test" --output-on-failure: passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 6b16c3b Push report grouping into services.
-- No commit or push was requested; keep the current diff uncommitted.
-- Next step: continue with another small real fixture for Problems / Relationships, or move another clean MainWindow progress UI boundary into AnalysisScheduler.
-
-## Session 2026-06-08 continuation 10
-
-- Final handoff point requested because context is compressing.
-- Added two focused real fixture assertions in relationship_test:
-  - DiagnosticReport direct fileName filtering keeps the two topPath diagnostics and one file group.
-  - RelationshipReport incoming-only browsing for rel_stage finds the top -> stage instantiation and keeps top as peer symbol.
-- Verification passed:
-  - cmake build target: relationship_test.
-  - ctest -R "relationship_test" --output-on-failure: passed.
-  - Full ctest --output-on-failure: 6/6 passed.
-- Current branch: tree_sitter_and_slang.
-- Current version: 0.0.20/slang25.
-- Latest commit at session start: 6b16c3b Push report grouping into services.
-- No commit or push was requested; keep the current diff uncommitted.
-- Next step: start a fresh session from readme.md's updated opener, then continue either small real Problems / Relationships fixtures or a clean MainWindow progress UI boundary extraction.
-
-## Session 2026-06-08 post-push handoff
-
-- User requested commit and push after the continuation 10 handoff.
-- The accumulated scheduler refresh and real fixture changes were committed and pushed.
-- readme.md's opener now tells the next session to read the latest commit via git log and expect an empty git diff --name-only.
-- Validation immediately before commit:
-  - Full ctest --output-on-failure: 6/6 passed.
-  - git diff --check passed.
-  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
-  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
-- Next step: continue from a clean tree with another focused Problems / Relationships fixture or a clean MainWindow progress UI boundary extraction.
+Implemented and in active use:
+
+- CTest targets: `ts_doc_test`, `completion_test`, `jump_test`, `relationship_test`, `gui_smoke_test`, `large_file_perf_test`
+- ProjectModel and DocumentModel minimal boundaries
+- AnalysisScheduler for major analysis triggers, relationship work, diagnostics refresh requests, and relationship data refresh requests
+- SemanticIndex facade over current semantic data
+- SemanticIndexSnapshot for symbols, relationships, diagnostics, cached file content, and scope names
+- Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
+- Problems / References / Relationships panels backed by service reports for sorting, grouping, filtering, and counts
+- Real multi-file relationship fixture coverage for instantiation, calls, reads, writes, diagnostics filtering, workspace/current-file filtering, and timing relationships
+
+Still transitional:
+
+- Some live `sym_list` consumption remains behind facade/service boundaries.
+- MainWindow still owns UI rendering and some coordination logic.
+- Completion/editor paths still have stateful legacy pieces.
+- More snapshot-backed service coverage is needed.
+
+## Current Handoff Work
+
+Latest committed handoff work:
+
+- `test_sv/relationship_test.cpp`
+  - Adds real RelationshipReport coverage for incoming `CLOCKS` and `RESETS` timing relationships on `rel_top`.
+- `readme.md`
+  - Compacted English / ASCII handoff.
+- `plan.md`
+  - Compacted English / ASCII plan.
+- `goal.md`
+  - Compacted English / ASCII architecture goal.
+
+Expected real diff after the handoff commit/push: empty, except local warning noise.
+
+## Next Small Increments
+
+Choose one:
+
+1. Add one more real fixture assertion for Problems / References / Relationships.
+2. Move one clean MainWindow refresh/progress policy decision into AnalysisScheduler.
+3. Move one UI/editor semantic read behind SemanticIndex or a Query Service.
+4. Add one focused snapshot-backed service regression.
+5. Improve report/service tests for edge filters without changing UI behavior.
+
+Avoid:
+
+- broad rewrites,
+- unrelated cleanup,
+- qmake files,
+- `.claude`,
+- old Tree-sitter symbol parser,
+- regex relationship analysis,
+- long-lived perflog.
+
+## Validation Policy
+
+For docs-only cleanup:
+
+- `git diff --check`
+- source/test/UI/CMake non-ASCII scan
+- forbidden-file guard
+
+For code/test changes:
+
+- build the affected target,
+- run the focused CTest,
+- run full `ctest --output-on-failure` when shared behavior or service reports are touched,
+- run `git diff --check`,
+- run the non-ASCII scan,
+- run the forbidden-file guard.
+
+## Handoff Policy
+
+Do not append every session forever. Keep this file current and compact.
+
+Stop and hand off when:
+
+- one coherent increment is validated,
+- context is getting large,
+- the next step is broad or risky,
+- validation is blocked,
+- or the user asks to stop.
+
+At handoff, record only:
+
+- current diff,
+- latest completed work,
+- latest validation,
+- next best step,
+- any rule changes.

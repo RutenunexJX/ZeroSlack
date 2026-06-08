@@ -885,6 +885,68 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
                true);
 
+    RelationshipBrowseQuery callsOnlyBrowseQuery;
+    callsOnlyBrowseQuery.symbolId = topId;
+    callsOnlyBrowseQuery.includeOutgoing = true;
+    callsOnlyBrowseQuery.includeIncoming = false;
+    callsOnlyBrowseQuery.types = {SymbolRelationshipEngine::CALLS};
+    const RelationshipReport callsOnlyReport =
+        relationshipService.findRelationshipReport(callsOnlyBrowseQuery);
+    expectInt("relationship report calls-only total",
+              callsOnlyReport.totalCount, 1);
+    expectInt("relationship report calls-only outgoing count",
+              callsOnlyReport.outgoingCount, 1);
+    expectInt("relationship report calls-only type count",
+              callsOnlyReport.typeCounts.value(SymbolRelationshipEngine::CALLS), 1);
+    expectInt("relationship report calls-only grouped count",
+              callsOnlyReport.directionGroups.isEmpty()
+                  || callsOnlyReport.directionGroups.first().typeGroups.isEmpty()
+                  ? 0
+                  : callsOnlyReport.directionGroups.first().typeGroups.first().relationships.size(),
+              1);
+    expectBool("relationship report calls-only peer symbol",
+               !callsOnlyReport.relationships.isEmpty()
+                   && callsOnlyReport.relationships.first().peerSymbol.symbolId == captureId,
+               true);
+
+    RelationshipBrowseQuery timingBrowseQuery;
+    timingBrowseQuery.symbolId = topId;
+    timingBrowseQuery.includeOutgoing = false;
+    timingBrowseQuery.includeIncoming = true;
+    timingBrowseQuery.types = {
+        SymbolRelationshipEngine::CLOCKS,
+        SymbolRelationshipEngine::RESETS,
+    };
+    const RelationshipReport timingReport =
+        relationshipService.findRelationshipReport(timingBrowseQuery);
+    expectInt("relationship report timing total",
+              timingReport.totalCount, 2);
+    expectInt("relationship report timing incoming count",
+              timingReport.incomingCount, 2);
+    expectInt("relationship report timing clock count",
+              timingReport.typeCounts.value(SymbolRelationshipEngine::CLOCKS), 1);
+    expectInt("relationship report timing reset count",
+              timingReport.typeCounts.value(SymbolRelationshipEngine::RESETS), 1);
+    expectInt("relationship report timing type group count",
+              timingReport.directionGroups.isEmpty()
+                  ? 0
+                  : timingReport.directionGroups.first().typeGroups.size(),
+              2);
+    bool timingReportHasClockPeer = false;
+    bool timingReportHasResetPeer = false;
+    for (const DirectedRelationshipResult& relationship : timingReport.relationships) {
+        timingReportHasClockPeer = timingReportHasClockPeer
+            || (relationship.relationship.relationship.type == SymbolRelationshipEngine::CLOCKS
+                && relationship.peerSymbol.symbolId == topClkId);
+        timingReportHasResetPeer = timingReportHasResetPeer
+            || (relationship.relationship.relationship.type == SymbolRelationshipEngine::RESETS
+                && relationship.peerSymbol.symbolId == topRstId);
+    }
+    expectBool("relationship report timing clock peer",
+               timingReportHasClockPeer, true);
+    expectBool("relationship report timing reset peer",
+               timingReportHasResetPeer, true);
+
     RelationshipBrowseQuery incomingStageBrowseQuery;
     incomingStageBrowseQuery.symbolId = stageId;
     incomingStageBrowseQuery.includeOutgoing = false;
@@ -901,6 +963,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? -1
                   : incomingStageReport.directionGroups.first().direction,
               DirectedRelationshipResult::Incoming);
+    expectInt("relationship report incoming-only type count",
+              incomingStageReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES),
+              1);
+    expectInt("relationship report incoming-only type group",
+              incomingStageReport.directionGroups.isEmpty()
+                  || incomingStageReport.directionGroups.first().typeGroups.isEmpty()
+                  ? -1
+                  : incomingStageReport.directionGroups.first().typeGroups.first().type,
+              SymbolRelationshipEngine::INSTANTIATES);
     expectBool("relationship report incoming peer symbol",
                !incomingStageReport.relationships.isEmpty()
                    && incomingStageReport.relationships.first().peerSymbol.symbolId == topId,
@@ -1073,6 +1144,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     workspaceStageReferenceQuery.workspaceFiles = {topPath};
     expectInt("reference report workspace filter",
               referenceService.findReferenceReport(workspaceStageReferenceQuery).totalCount, 1);
+    workspaceStageReferenceQuery.workspaceFiles = {stagePath};
+    expectInt("reference report workspace filter hides other file",
+              referenceService.findReferenceReport(workspaceStageReferenceQuery).totalCount, 0);
 
     ReferenceQuery reqValidReferenceQuery;
     reqValidReferenceQuery.symbolId = reqValidId;
@@ -1088,6 +1162,23 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("reference service finds condition read",
                referenceFoundReqRead, true);
+    const ReferenceReport reqValidReferenceReport =
+        referenceService.findReferenceReport(reqValidReferenceQuery);
+    expectInt("reference report condition read total",
+              reqValidReferenceReport.totalCount, 1);
+    expectInt("reference report condition read type count",
+              reqValidReferenceReport.typeCounts.value(SymbolRelationshipEngine::READS_FROM), 1);
+    expectInt("reference report condition read file count",
+              reqValidReferenceReport.fileCounts.value(topPath), 1);
+    expectInt("reference report condition read grouped count",
+              reqValidReferenceReport.fileGroups.isEmpty()
+                  || reqValidReferenceReport.fileGroups.first().typeGroups.isEmpty()
+                  ? 0
+                  : reqValidReferenceReport.fileGroups.first().typeGroups.first().references.size(),
+              1);
+    expectBool("reference report condition read subject symbol",
+               reqValidReferenceReport.subjectSymbol.symbolName == QStringLiteral("req_valid"),
+               true);
 
     ReferenceQuery rspDataReferenceQuery;
     rspDataReferenceQuery.symbolId = rspDataId;
@@ -1103,6 +1194,23 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("reference service finds assignment write",
                referenceFoundRspWrite, true);
+    const ReferenceReport rspDataReferenceReport =
+        referenceService.findReferenceReport(rspDataReferenceQuery);
+    expectInt("reference report assignment write total",
+              rspDataReferenceReport.totalCount, 1);
+    expectInt("reference report assignment write type count",
+              rspDataReferenceReport.typeCounts.value(SymbolRelationshipEngine::ASSIGNS_TO), 1);
+    expectInt("reference report assignment write file count",
+              rspDataReferenceReport.fileCounts.value(topPath), 1);
+    expectInt("reference report assignment write grouped count",
+              rspDataReferenceReport.fileGroups.isEmpty()
+                  || rspDataReferenceReport.fileGroups.first().typeGroups.isEmpty()
+                  ? 0
+                  : rspDataReferenceReport.fileGroups.first().typeGroups.first().references.size(),
+              1);
+    expectBool("reference report assignment write subject symbol",
+               rspDataReferenceReport.subjectSymbol.symbolName == QStringLiteral("rsp_data"),
+               true);
 }
 
 int main(int argc, char** argv)
