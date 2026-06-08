@@ -259,3 +259,29 @@ $env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;E:\QT6\Too
   - cmake build targets: completion_test, gui_smoke_test.
   - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
 - Keep future CompletionManager changes narrow and testable; prefer service/facade reads over full-symbol scans when the query shape is already known.
+
+## Session 2026-06-08 continuation 3
+
+- CompletionManager command/type-specific reads now use a private typed SemanticIndex helper where the desired query shape is known.
+  - Preserves typedef enum compatibility without scanning every symbol.
+  - Narrows module-internal variables, struct variable lookup, module-context symbol lookup, global type completions, and SymbolInfo-returning global completion helpers.
+- ReferenceService now owns structured References grouping:
+  - ReferenceReport includes fileGroups -> typeGroups -> references.
+  - Existing total/file/type/fileType counts remain available.
+  - MainWindow refreshReferencesPanel now renders the report tree directly instead of rebuilding file/type grouping and counts.
+- RelationshipService now owns structured Relationships Direct grouping:
+  - RelationshipReport includes directionGroups -> typeGroups -> relationships.
+  - Existing total/direction/type/directionType counts remain available.
+  - MainWindow refreshRelationshipsPanel now renders the report tree directly instead of rebuilding direction/type grouping and counts.
+- relationship_test now covers the new ReferenceReport and RelationshipReport grouped shapes.
+- Verification passed:
+  - cmake build targets: relationship_test, completion_test, gui_smoke_test.
+  - ctest -R "relationship_test|completion_test|gui_smoke_test" --output-on-failure: 3/3 passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no *.pro/*.pri files in the working tree and .claude is absent.
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25.
+- Latest commit at session start: 8998b8a Tighten SemanticIndex completion boundaries.
+- Next step: continue with small service/report/model boundary moves, especially remaining MainWindow refresh policy and real Problems/References/Relationships fixtures.

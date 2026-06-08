@@ -52,6 +52,28 @@ QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsByType(
     return SemanticIndex::getInstance()->getSymbolsByType(symbolType);
 }
 
+QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsForCommandType(
+    sym_list::sym_type_e symbolType) const
+{
+    QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(symbolType);
+    if (symbolType != sym_list::sym_enum)
+        return symbols;
+
+    QSet<int> seenIds;
+    for (const sym_list::SymbolInfo& symbol : std::as_const(symbols))
+        seenIds.insert(symbol.symbolId);
+
+    const QList<sym_list::SymbolInfo> typedefs =
+        getSemanticSymbolsByType(sym_list::sym_typedef);
+    for (const sym_list::SymbolInfo& symbol : typedefs) {
+        if (symbol.dataType != QLatin1String("enum") || seenIds.contains(symbol.symbolId))
+            continue;
+        seenIds.insert(symbol.symbolId);
+        symbols.append(symbol);
+    }
+    return symbols;
+}
+
 QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsForFile(
     const QString& fileName) const
 {
@@ -137,20 +159,7 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
         return symbolScoreCache[cacheKey];
     }
 
-    QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(symbolType);
-
-    if (symbolType == sym_list::sym_enum) {
-        QSet<int> seenIds;
-        for (const sym_list::SymbolInfo &s : symbols)
-            seenIds.insert(s.symbolId);
-        QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
-        for (const sym_list::SymbolInfo &s : allSymbols) {
-            if (s.symbolType == sym_list::sym_typedef && s.dataType == QLatin1String("enum") && !seenIds.contains(s.symbolId)) {
-                seenIds.insert(s.symbolId);
-                symbols.append(s);
-            }
-        }
-    }
+    QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsForCommandType(symbolType);
 
     QVector<QPair<sym_list::SymbolInfo, int>> scoredMatches;
     scoredMatches.reserve(qMin(symbols.size(), 30));
@@ -840,11 +849,11 @@ QString CompletionManager::extractStructTypeFromContext(const QString &context)
     if (m.hasMatch()) {
         QString varName = m.captured(1);
 
-        const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+        QList<sym_list::SymbolInfo> symbols =
+            getSemanticSymbolsByType(sym_list::sym_packed_struct_var);
+        symbols.append(getSemanticSymbolsByType(sym_list::sym_unpacked_struct_var));
         for (const auto &symbol : symbols) {
-            if (symbol.symbolName == varName &&
-                (symbol.symbolType == sym_list::sym_packed_struct_var ||
-                 symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
+            if (symbol.symbolName == varName) {
                 if (!symbol.dataType.isEmpty())
                     return symbol.dataType;
             }
@@ -1082,11 +1091,11 @@ QString CompletionManager::getStructTypeForVariable(const QString& varName,
     }
 
     if (result.isEmpty()) {
-        const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+        QList<sym_list::SymbolInfo> symbols =
+            getSemanticSymbolsByType(sym_list::sym_packed_struct_var);
+        symbols.append(getSemanticSymbolsByType(sym_list::sym_unpacked_struct_var));
         for (const auto& symbol : symbols) {
-            if (symbol.symbolName == varName &&
-                (symbol.symbolType == sym_list::sym_packed_struct_var ||
-                 symbol.symbolType == sym_list::sym_unpacked_struct_var)) {
+            if (symbol.symbolName == varName) {
                 if (!symbol.dataType.isEmpty()) {
                     result = symbol.dataType;
                     break;
@@ -1657,9 +1666,14 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
     }
 
     QStringList results;
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
+    QList<sym_list::SymbolInfo> internalSymbols =
+        getSemanticSymbolsByType(sym_list::sym_reg);
+    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_wire));
+    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_logic));
+    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_localparam));
+    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_parameter));
 
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+    for (const sym_list::SymbolInfo& symbol : internalSymbols) {
         if (symbol.moduleScope == moduleName &&
             isInternalVariableType(symbol.symbolType)) {
 
@@ -1733,15 +1747,17 @@ QStringList CompletionManager::getModuleInternalVariablesByType(const QString& m
         return results;
     }
 
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        getSemanticSymbolsForCommandType(symbolType);
 
     int matchedCount = 0;
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+    for (const sym_list::SymbolInfo& symbol : symbols) {
         bool isCorrectModule = (symbol.moduleScope == moduleName);
         bool isCorrectType = (symbol.symbolType == symbolType);
-        if (symbolType == sym_list::sym_enum && !isCorrectType) {
-            isCorrectType = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
-        }
+        if (symbolType == sym_list::sym_enum && !isCorrectType)
+            isCorrectType =
+                (symbol.symbolType == sym_list::sym_typedef
+                 && symbol.dataType == QLatin1String("enum"));
         bool matchesPrefix = (prefix.isEmpty() ||
                              matchesAbbreviation(symbol.symbolName, prefix));
 
@@ -1812,7 +1828,8 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
                                                      const QString& prefix)
 {
     QStringList results;
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        getSemanticSymbolsForCommandType(symbolType);
 
     QList<sym_list::sym_type_e> globalSymbolTypes = {
         sym_list::sym_module,
@@ -1833,7 +1850,7 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
         return results;
     }
 
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+    for (const sym_list::SymbolInfo& symbol : symbols) {
         bool typeMatches = (symbol.symbolType == symbolType);
         if (symbolType == sym_list::sym_enum && !typeMatches) {
             typeMatches = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
@@ -1939,11 +1956,14 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     }
 
     QList<sym_list::SymbolInfo> results;
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> moduleSymbols =
+        getSemanticSymbolsByType(sym_list::sym_module);
+    const QList<sym_list::SymbolInfo> symbols =
+        getSemanticSymbolsForCommandType(symbolType);
 
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
-    for (const sym_list::SymbolInfo& sym : allSymbols) {
+    for (const sym_list::SymbolInfo& sym : moduleSymbols) {
         if (sym.symbolType == sym_list::sym_module && sym.symbolName == moduleName) {
             moduleSymbol = sym;
             foundModule = true;
@@ -1954,7 +1974,9 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     int moduleEndLineExclusive = INT_MAX;
     if (foundModule) {
         QList<sym_list::SymbolInfo> fileModules;
-        for (const sym_list::SymbolInfo& sym : allSymbols) {
+        const QList<sym_list::SymbolInfo> fileSymbols =
+            getSemanticSymbolsForFile(moduleSymbol.fileName);
+        for (const sym_list::SymbolInfo& sym : fileSymbols) {
             if (sym.symbolType == sym_list::sym_module && sym.fileName == moduleSymbol.fileName) {
                 fileModules.append(sym);
             }
@@ -1971,8 +1993,13 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
         }
     }
 
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+    for (const sym_list::SymbolInfo& symbol : symbols) {
         bool isCorrectType = isSymbolTypeMatchCommand(symbol.symbolType, symbolType);
+        if (symbolType == sym_list::sym_enum && !isCorrectType) {
+            isCorrectType =
+                (symbol.symbolType == sym_list::sym_typedef
+                 && symbol.dataType == QLatin1String("enum"));
+        }
         bool isCorrectModule = false;
 
         if (symbolType == sym_list::sym_packed_struct ||
@@ -2038,21 +2065,21 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
         return results;
     }
 
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
-
     results = getModuleInternalSymbolsByType(moduleName, symbolType, prefix);
 
     sym_list::SymbolInfo moduleSymbol;
     int moduleStartLine = 0;
     int moduleEndLineExclusive = INT_MAX;
-    for (const sym_list::SymbolInfo& sym : allSymbols) {
+    const QList<sym_list::SymbolInfo> fileSymbols =
+        getSemanticSymbolsForFile(fileName);
+    for (const sym_list::SymbolInfo& sym : fileSymbols) {
         if (sym.symbolType == sym_list::sym_module && sym.symbolName == moduleName && sym.fileName == fileName) {
             moduleSymbol = sym;
             moduleStartLine = sym.startLine;
             break;
         }
     }
-    for (const sym_list::SymbolInfo& sym : allSymbols) {
+    for (const sym_list::SymbolInfo& sym : fileSymbols) {
         if (sym.symbolType != sym_list::sym_module || sym.fileName != fileName) continue;
         if (sym.symbolId == moduleSymbol.symbolId) continue;
         if (sym.startLine > moduleStartLine) {
@@ -2130,8 +2157,16 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
         lineNum++;
         lineStart = (lineEnd < fileContent.length()) ? lineEnd + 1 : fileContent.length();
     }
-    for (const sym_list::SymbolInfo& s : allSymbols) {
-        if (!isSymbolTypeMatchCommand(s.symbolType, symbolType)) continue;
+    const QList<sym_list::SymbolInfo> symbols =
+        getSemanticSymbolsForCommandType(symbolType);
+    for (const sym_list::SymbolInfo& s : symbols) {
+        bool typeMatches = isSymbolTypeMatchCommand(s.symbolType, symbolType);
+        if (symbolType == sym_list::sym_enum && !typeMatches) {
+            typeMatches =
+                (s.symbolType == sym_list::sym_typedef
+                 && s.dataType == QLatin1String("enum"));
+        }
+        if (!typeMatches) continue;
         if (!prefix.isEmpty() && !matchesAbbreviation(s.symbolName, prefix)) continue;
         bool addFromPackage = false;
         if (packagesStar.contains(s.moduleScope)) {
@@ -2160,7 +2195,8 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
                                                                            const QString& prefix)
 {
     QList<sym_list::SymbolInfo> results;
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        getSemanticSymbolsForCommandType(symbolType);
 
     QList<sym_list::sym_type_e> globalSymbolTypes = {
         sym_list::sym_module,
@@ -2180,8 +2216,14 @@ QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_l
         return results;
     }
 
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (symbol.symbolType == symbolType) {
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        bool typeMatches = symbol.symbolType == symbolType;
+        if (symbolType == sym_list::sym_enum && !typeMatches) {
+            typeMatches =
+                (symbol.symbolType == sym_list::sym_typedef
+                 && symbol.dataType == QLatin1String("enum"));
+        }
+        if (typeMatches) {
             bool isGlobalSymbol = false;
 
             if (symbolType == sym_list::sym_module ||

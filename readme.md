@@ -594,3 +594,58 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
   - cmake build targets: completion_test, gui_smoke_test.
   - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
 - Next best step: stop expanding CompletionManager unless the next slice can be covered by existing completion_test/gui_smoke_test or a very small targeted assertion.
+
+## Session 2026-06-08 continuation 3
+
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 8998b8a Tighten SemanticIndex completion boundaries.
+- Completed three focused increments:
+  - CompletionManager now uses a private typed semantic query helper for command/type-specific completion paths, including typedef enum compatibility, module-internal variables, struct variables, module-context symbols, and global type completions.
+  - ReferenceService now provides structured ReferenceReport fileGroups -> typeGroups -> references, and MainWindow renders References from that report instead of rebuilding file/type groups locally.
+  - RelationshipService now provides structured RelationshipReport directionGroups -> typeGroups -> relationships, and MainWindow renders Relationships Direct from that report instead of rebuilding direction/type groups locally.
+- This keeps completion reads narrower and pushes References / Relationships tree grouping further into services while preserving existing UI behavior.
+- Verification passed:
+  - cmake build targets: relationship_test, completion_test, gui_smoke_test.
+  - ctest -R "relationship_test|completion_test|gui_smoke_test" --output-on-failure: 3/3 passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard: no *.pro/*.pri files in the working tree, .claude absent.
+- git diff --name-only before handoff:
+  - completionmanager.cpp
+  - completionmanager.h
+  - mainwindow.cpp
+  - referenceservice.cpp
+  - referenceservice.h
+  - relationshipservice.cpp
+  - relationshipservice.h
+  - test_sv/relationship_test.cpp
+  - readme.md
+  - plan.md
+  - goal.md
+- Next best step: continue moving remaining MainWindow refresh policy into scheduler/services, or add the next real Problems/References/Relationships fixture if it can be covered by relationship_test/gui_smoke_test without broad UI churn.
+
+## 新会话开场白
+
+请先阅读 readme.md、plan.md、goal.md、version.h，接手 ZeroSlack 当前状态。
+
+当前分支：tree_sitter_and_slang。
+当前版本：0.0.20/slang25。
+最新提交：请以 `git log -1 --oneline` 为准；本轮目标提交会在 8998b8a 之后。
+
+重要规则：
+- 只使用 Qt 6 + CMake + Ninja；不要恢复 demo.pro、任何 *.pro、任何 *.pri 或 qmake。
+- 不要恢复 .claude/ 或任何 Claude 本地配置。
+- 源码注释、测试字符串、CMake 注释、UI 可见文案必须是英文 / ASCII；readme.md / plan.md / goal.md 可保留中文。
+- git status 可能有 Windows index stat / CRLF 噪声，真实内容变更优先看 git diff --name-only。
+
+本轮最近完成：
+- CompletionManager 的更多 command/type 补全路径改为通过 typed SemanticIndex 查询，减少全量 symbol 扫描。
+- ReferenceService / RelationshipService report 增加结构化分组，MainWindow 的 References / Relationships Direct 树只渲染 service report。
+- 完整 ctest 6/6、git diff --check、非 ASCII 扫描和禁止文件 guard 均通过。
+
+下一步建议：
+- 继续把 MainWindow 中的刷新/分析策略下沉到 scheduler/services/model。
+- 继续补 Problems / References / Relationships 的真实 fixture 和结果摘要。
+- 继续让 UI / services 只读 SemanticIndex / snapshot / Query Services。

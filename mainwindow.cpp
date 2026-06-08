@@ -1116,51 +1116,33 @@ void MainWindow::refreshReferencesPanel()
 
     const ReferenceReport report =
         ReferenceService::getInstance()->findReferenceReport(query);
-    const QList<ReferenceResult>& references = report.references;
 
-    int visibleCount = 0;
-    QMap<QString, QTreeWidgetItem*> fileGroups;
-    QMap<QString, QTreeWidgetItem*> typeGroups;
-    QMap<QString, QString> fileGroupLabels;
     const bool hadExpandableItems = treeHasExpandableItems(referencesTree);
     const QSet<QString> expandedKeys = collectExpandedKeys(referencesTree);
     referencesTree->clear();
-    for (const ReferenceResult& reference : references) {
-        const sym_list::SymbolInfo& source = reference.referencingSymbol;
-        const QString normalizedSourceFile = normalizedUiFileName(source.fileName);
+    for (const ReferenceFileGroup& fileGroupReport : report.fileGroups) {
+        auto* fileGroup = new QTreeWidgetItem(referencesTree);
+        fileGroup->setText(0, countLabel(fileGroupReport.displayName,
+                                         fileGroupReport.count));
+        fileGroup->setText(1, fileGroupReport.fileName);
+        fileGroup->setToolTip(0, fileGroupReport.fileName);
+        fileGroup->setToolTip(1, fileGroupReport.fileName);
 
-        const QString fileKey = normalizedSourceFile.isEmpty()
-            ? source.fileName
-            : normalizedSourceFile;
-        QTreeWidgetItem* fileGroup = getOrCreateFileGroup(referencesTree,
-                                                          fileGroups,
-                                                          source.fileName);
-        const QString typeText = relationshipTypeText(reference.relationship.relationship.type);
-        const QString typeKey = fileKey + QLatin1Char(':') + typeText;
-        QTreeWidgetItem* typeGroup = getOrCreateChildGroup(
-            fileGroup,
-            typeGroups,
-            typeKey,
-            3,
-            typeText);
-        typeGroup->setText(
-            3,
-            countLabel(typeText,
-                       report.fileTypeCounts.value(fileKey)
-                           .value(reference.relationship.relationship.type)));
-        createReferenceItem(typeGroup, reference);
-        fileGroupLabels[fileKey] = QFileInfo(source.fileName).fileName();
-        visibleCount++;
+        for (const ReferenceTypeGroup& typeGroupReport : fileGroupReport.typeGroups) {
+            auto* typeGroup = new QTreeWidgetItem(fileGroup);
+            const QString typeText = relationshipTypeText(typeGroupReport.type);
+            typeGroup->setText(3, countLabel(typeText, typeGroupReport.count));
+            for (const ReferenceResult& reference : typeGroupReport.references)
+                createReferenceItem(typeGroup, reference);
+        }
     }
-    for (auto it = fileGroups.begin(); it != fileGroups.end(); ++it)
-        it.value()->setText(0, countLabel(fileGroupLabels.value(it.key()), report.fileCounts.value(it.key())));
     restoreTreeExpansion(referencesTree, hadExpandableItems, expandedKeys);
 
     if (referencesDock) {
         referencesDock->setWindowTitle(
             QStringLiteral("References: %1 (%2)")
                 .arg(currentReferenceSymbolName)
-                .arg(visibleCount));
+                .arg(report.totalCount));
         referencesDock->show();
         referencesDock->raise();
     }
@@ -1168,7 +1150,7 @@ void MainWindow::refreshReferencesPanel()
     if (statusBar()) {
         statusBar()->showMessage(
             QStringLiteral("Found %1 references for %2")
-                .arg(visibleCount)
+                .arg(report.totalCount)
                 .arg(currentReferenceSymbolName),
             3000);
     }
@@ -1312,55 +1294,28 @@ void MainWindow::refreshRelationshipsPanel()
     const RelationshipReport report =
         RelationshipService::getInstance()->findRelationshipReport(browseQuery);
 
-    int visibleCount = 0;
-    QMap<QString, QTreeWidgetItem*> directionGroups;
-    QMap<QString, QTreeWidgetItem*> typeGroups;
     const bool hadExpandableItems = treeHasExpandableItems(relationshipsTree);
     const QSet<QString> expandedKeys = collectExpandedKeys(relationshipsTree);
     relationshipsTree->clear();
-    auto addRelationship = [&](const RelationshipResult& relationship,
-                               DirectedRelationshipResult::Direction directionValue,
-                               const QString& direction,
-                               const sym_list::SymbolInfo& symbol) {
-        if (symbol.symbolId < 0)
-            return;
-
-        QTreeWidgetItem* directionGroup = getOrCreateChildGroup(
-            relationshipsTree->invisibleRootItem(),
-            directionGroups,
-            direction,
-            0,
-            direction);
-        directionGroup->setText(0, countLabel(direction,
-                                             report.directionCounts.value(directionValue)));
-        const QString typeText = relationshipTypeText(relationship.relationship.type);
-        const QString typeKey = direction + QLatin1Char(':') + typeText;
-        QTreeWidgetItem* typeGroup = getOrCreateChildGroup(
-            directionGroup,
-            typeGroups,
-            typeKey,
-            4,
-            typeText);
-        typeGroup->setText(
-            4,
-            countLabel(typeText,
-                       report.directionTypeCounts.value(directionValue)
-                           .value(relationship.relationship.type)));
-        createRelationshipItem(typeGroup,
-                               direction,
-                               symbol,
-                               relationship.relationship.type);
-        visibleCount++;
-    };
-
-    for (const DirectedRelationshipResult& directed : report.relationships) {
-        const QString direction = directed.direction == DirectedRelationshipResult::Outgoing
+    for (const RelationshipDirectionGroup& directionGroupReport : report.directionGroups) {
+        const QString direction = directionGroupReport.direction == DirectedRelationshipResult::Outgoing
             ? QStringLiteral("Outgoing")
             : QStringLiteral("Incoming");
-        addRelationship(directed.relationship,
-                        directed.direction,
-                        direction,
-                        directed.peerSymbol);
+        auto* directionGroup = new QTreeWidgetItem(relationshipsTree);
+        directionGroup->setText(0, countLabel(direction, directionGroupReport.count));
+
+        for (const RelationshipTypeGroup& typeGroupReport : directionGroupReport.typeGroups) {
+            auto* typeGroup = new QTreeWidgetItem(directionGroup);
+            const QString typeText = relationshipTypeText(typeGroupReport.type);
+            typeGroup->setText(4, countLabel(typeText, typeGroupReport.count));
+
+            for (const DirectedRelationshipResult& directed : typeGroupReport.relationships) {
+                createRelationshipItem(typeGroup,
+                                       direction,
+                                       directed.peerSymbol,
+                                       directed.relationship.relationship.type);
+            }
+        }
     }
     restoreTreeExpansion(relationshipsTree, hadExpandableItems, expandedKeys);
 
@@ -1368,7 +1323,7 @@ void MainWindow::refreshRelationshipsPanel()
         relationshipsDock->setWindowTitle(
             QStringLiteral("Relationships: %1 (%2)")
                 .arg(currentRelationshipSymbolName)
-                .arg(visibleCount));
+                .arg(report.totalCount));
         relationshipsDock->show();
         relationshipsDock->raise();
     }
@@ -1376,7 +1331,7 @@ void MainWindow::refreshRelationshipsPanel()
     if (statusBar()) {
         statusBar()->showMessage(
             QStringLiteral("Found %1 relationships for %2")
-                .arg(visibleCount)
+                .arg(report.totalCount)
                 .arg(currentRelationshipSymbolName),
             3000);
     }

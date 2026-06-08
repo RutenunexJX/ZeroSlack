@@ -44,8 +44,21 @@ struct DirectedRelationshipResult {
     sym_list::SymbolInfo peerSymbol;
 };
 
+struct RelationshipTypeGroup {
+    SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
+    QList<DirectedRelationshipResult> relationships;
+    int count = 0;
+};
+
+struct RelationshipDirectionGroup {
+    DirectedRelationshipResult::Direction direction = DirectedRelationshipResult::Outgoing;
+    QList<RelationshipTypeGroup> typeGroups;
+    int count = 0;
+};
+
 struct RelationshipReport {
     QList<DirectedRelationshipResult> relationships;
+    QList<RelationshipDirectionGroup> directionGroups;
     int totalCount = 0;
     int outgoingCount = 0;
     int incomingCount = 0;

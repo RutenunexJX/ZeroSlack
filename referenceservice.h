@@ -26,8 +26,23 @@ struct ReferenceResult {
     sym_list::SymbolInfo referencedSymbol;
 };
 
+struct ReferenceTypeGroup {
+    SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
+    QList<ReferenceResult> references;
+    int count = 0;
+};
+
+struct ReferenceFileGroup {
+    QString fileName;
+    QString fileKey;
+    QString displayName;
+    QList<ReferenceTypeGroup> typeGroups;
+    int count = 0;
+};
+
 struct ReferenceReport {
     QList<ReferenceResult> references;
+    QList<ReferenceFileGroup> fileGroups;
     int totalCount = 0;
     QMap<QString, int> fileCounts;
     QMap<SymbolRelationshipEngine::RelationType, int> typeCounts;

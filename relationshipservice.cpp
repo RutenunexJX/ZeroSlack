@@ -108,6 +108,10 @@ RelationshipReport RelationshipService::findRelationshipReport(
     if (id < 0)
         return report;
 
+    QMap<DirectedRelationshipResult::Direction, int> directionGroupIndexes;
+    QMap<DirectedRelationshipResult::Direction,
+         QMap<SymbolRelationshipEngine::RelationType, int>> typeGroupIndexes;
+
     auto appendRelationships = [&](const QList<RelationshipResult>& relationships,
                                    DirectedRelationshipResult::Direction direction) {
         for (const RelationshipResult& relationship : relationships) {
@@ -123,6 +127,31 @@ RelationshipReport RelationshipService::findRelationshipReport(
             report.typeCounts[relationship.relationship.type]++;
             report.directionCounts[direction]++;
             report.directionTypeCounts[direction][relationship.relationship.type]++;
+            if (!directionGroupIndexes.contains(direction)) {
+                RelationshipDirectionGroup directionGroup;
+                directionGroup.direction = direction;
+                directionGroupIndexes.insert(direction, report.directionGroups.size());
+                report.directionGroups.append(directionGroup);
+            }
+
+            RelationshipDirectionGroup& directionGroup =
+                report.directionGroups[directionGroupIndexes.value(direction)];
+            directionGroup.count++;
+
+            const SymbolRelationshipEngine::RelationType type =
+                relationship.relationship.type;
+            if (!typeGroupIndexes[direction].contains(type)) {
+                RelationshipTypeGroup typeGroup;
+                typeGroup.type = type;
+                typeGroupIndexes[direction].insert(type,
+                                                   directionGroup.typeGroups.size());
+                directionGroup.typeGroups.append(typeGroup);
+            }
+
+            RelationshipTypeGroup& typeGroup =
+                directionGroup.typeGroups[typeGroupIndexes[direction].value(type)];
+            typeGroup.relationships.append(directed);
+            typeGroup.count++;
             if (direction == DirectedRelationshipResult::Outgoing)
                 report.outgoingCount++;
             else

@@ -718,6 +718,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   .value(DirectedRelationshipResult::Outgoing)
                   .value(SymbolRelationshipEngine::INSTANTIATES),
               1);
+    expectInt("relationship report direction group count",
+              relationshipReport.directionGroups.size(), 1);
+    expectInt("relationship report type group count",
+              relationshipReport.directionGroups.isEmpty()
+                  ? 0
+                  : relationshipReport.directionGroups.first().typeGroups.size(),
+              relationshipReport.typeCounts.size());
+    expectInt("relationship report grouped total count",
+              relationshipReport.directionGroups.isEmpty()
+                  || relationshipReport.directionGroups.first().typeGroups.isEmpty()
+                  ? 0
+                  : relationshipReport.directionGroups.first().count,
+              serviceRels.size());
     expectBool("relationship report keeps peer symbol",
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
@@ -856,6 +869,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               stageReferenceReport.fileTypeCounts
                   .value(topPath)
                   .value(SymbolRelationshipEngine::INSTANTIATES),
+              1);
+    expectInt("reference report file group count",
+              stageReferenceReport.fileGroups.size(), 1);
+    expectInt("reference report type group count",
+              stageReferenceReport.fileGroups.isEmpty()
+                  ? 0
+                  : stageReferenceReport.fileGroups.first().typeGroups.size(),
+              1);
+    expectInt("reference report grouped result count",
+              stageReferenceReport.fileGroups.isEmpty()
+                  || stageReferenceReport.fileGroups.first().typeGroups.isEmpty()
+                  ? 0
+                  : stageReferenceReport.fileGroups.first().typeGroups.first().references.size(),
               1);
 
     ReferenceQuery currentFileStageReferenceQuery = stageReferenceQuery;

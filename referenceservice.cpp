@@ -88,15 +88,46 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
     ReferenceReport report;
     report.references = findReferences(query);
     report.totalCount = report.references.size();
+    QMap<QString, int> fileGroupIndexes;
+    QMap<QString, QMap<SymbolRelationshipEngine::RelationType, int>> typeGroupIndexes;
     for (const ReferenceResult& reference : report.references) {
         const QString normalizedFile =
             normalizedReferenceFileName(reference.referencingSymbol.fileName);
         const QString fileKey = normalizedFile.isEmpty()
             ? reference.referencingSymbol.fileName
             : normalizedFile;
+        const SymbolRelationshipEngine::RelationType type =
+            reference.relationship.relationship.type;
         report.fileCounts[fileKey]++;
-        report.typeCounts[reference.relationship.relationship.type]++;
-        report.fileTypeCounts[fileKey][reference.relationship.relationship.type]++;
+        report.typeCounts[type]++;
+        report.fileTypeCounts[fileKey][type]++;
+
+        if (!fileGroupIndexes.contains(fileKey)) {
+            ReferenceFileGroup fileGroup;
+            fileGroup.fileName = reference.referencingSymbol.fileName;
+            fileGroup.fileKey = fileKey;
+            fileGroup.displayName = QFileInfo(reference.referencingSymbol.fileName).fileName();
+            if (fileGroup.displayName.isEmpty())
+                fileGroup.displayName = reference.referencingSymbol.fileName;
+            fileGroupIndexes.insert(fileKey, report.fileGroups.size());
+            report.fileGroups.append(fileGroup);
+        }
+
+        ReferenceFileGroup& fileGroup =
+            report.fileGroups[fileGroupIndexes.value(fileKey)];
+        fileGroup.count++;
+
+        if (!typeGroupIndexes[fileKey].contains(type)) {
+            ReferenceTypeGroup typeGroup;
+            typeGroup.type = type;
+            typeGroupIndexes[fileKey].insert(type, fileGroup.typeGroups.size());
+            fileGroup.typeGroups.append(typeGroup);
+        }
+
+        ReferenceTypeGroup& typeGroup =
+            fileGroup.typeGroups[typeGroupIndexes[fileKey].value(type)];
+        typeGroup.references.append(reference);
+        typeGroup.count++;
     }
     return report;
 }

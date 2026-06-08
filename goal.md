@@ -246,3 +246,17 @@ UI / Services 只读 snapshot
 - CompletionManager now uses SemanticIndex typed queries for several type-specific completion helpers instead of scanning all symbols.
 - This is another small step toward UI/editor reads going through narrower snapshot-backed query shapes.
 - Focused verification passed for completion_test and gui_smoke_test.
+
+## Session 2026-06-08 continuation 3 note
+
+- CompletionManager now uses narrower typed SemanticIndex reads for additional command/type-specific paths instead of local full-symbol scans where the requested type is already known.
+- ReferenceService and RelationshipService now provide structured report groups for the bottom docks.
+- MainWindow References and Relationships Direct refresh paths now render service-provided groups instead of owning file/type or direction/type grouping policy.
+- This advances the goal that MainWindow coordinates windows while services own query results, grouping, counts, and stable report shape.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test, completion_test, and gui_smoke_test: 3/3 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no *.pro/*.pri files and .claude is absent.
+- Next goal step: continue moving refresh/analysis policy out of MainWindow, add real Problems/References/Relationships fixtures, and keep UI/service reads behind SemanticIndex, snapshots, and Query Services.
