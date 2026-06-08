@@ -86,6 +86,10 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
 ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& query) const
 {
     ReferenceReport report;
+    const int id = resolveSymbolId(query);
+    report.subjectSymbolId = id;
+    if (id >= 0)
+        report.subjectSymbol = semanticIndex()->getSymbolById(id);
     report.references = findReferences(query);
     report.totalCount = report.references.size();
     QMap<QString, int> fileGroupIndexes;

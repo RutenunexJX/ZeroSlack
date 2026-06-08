@@ -21,14 +21,12 @@
 #include "semanticindexsnapshot.h"
 #include "syminfo.h"
 #include "version.h"
-#include <QtConcurrent/QtConcurrent>
 #include <QLabel>
 #include <QStatusBar>
 
 #include <QMessageBox>
 #include <QTextCursor>
 #include <QTextBlock>
-#include <QTextStream>
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
@@ -43,9 +41,6 @@
 #include <QWidget>
 
 #include <algorithm>
-
-static QList<SemanticRelationship> toSemanticRelationships(
-    const QVector<RelationshipToAdd>& relationships);
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -112,47 +107,19 @@ void MainWindow::setupManagerConnections()
     analysisScheduler->setWorkspaceSymbolCancelProvider([this]() {
         return symbolAnalysisCancelled.load();
     });
-    analysisScheduler->setRelationshipAnalysisCallback(
-        [this](const QString& fileName, const QString& content) {
-            submitSingleFileRelationshipAnalysis(fileName, content);
-        });
-    analysisScheduler->setWorkspaceRelationshipAnalysisCallback(
-        [this](const ProjectSnapshot& project,
-               std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) {
-            WorkspaceRelationshipAnalysisResult result;
-            result.baseSnapshot = baseSnapshot;
-            result.semanticSnapshot = baseSnapshot;
-            if (!relationshipBuilder)
-                return result;
-
-            relationshipBuilder->resetCancellation();
-            const QStringList svFiles = project.systemVerilogFiles;
-            result.fileRelationships.reserve(svFiles.size());
-            QList<SemanticRelationship> newRelationships;
-            for (const QString& filePath : svFiles) {
-                if (relationshipBuilder->isCancelled())
-                    break;
-                QFile file(filePath);
-                if (!file.open(QIODevice::ReadOnly | QFile::Text))
-                    continue;
-                const QString content = QTextStream(&file).readAll();
-                const QList<sym_list::SymbolInfo> fs =
-                    baseSnapshot ? baseSnapshot->getSymbols(filePath) : QList<sym_list::SymbolInfo>();
-                const QVector<RelationshipToAdd> relationships =
-                    relationshipBuilder->computeRelationships(filePath, content, fs, baseSnapshot.get());
-                result.fileRelationships.append({filePath, relationships});
-                newRelationships.append(toSemanticRelationships(relationships));
-            }
-            if (baseSnapshot) {
-                result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
-                    baseSnapshot->withAdditionalRelationships(newRelationships));
-            }
-            return result;
-        });
-    analysisScheduler->setWorkspaceRelationshipCancelCallback([this]() {
-        if (relationshipBuilder)
-            relationshipBuilder->cancelAnalysis();
-    });
+    analysisScheduler->setRelationshipEngine(relationshipEngine.get());
+    analysisScheduler->setRelationshipBuilder(relationshipBuilder.get());
+    connect(analysisScheduler.get(), &AnalysisScheduler::relationshipDataInvalidated,
+            this, []() {
+                CompletionManager::getInstance()->invalidateRelationshipCaches();
+            });
+    connect(analysisScheduler.get(), &AnalysisScheduler::relationshipDataRefreshRequested,
+            this, [this]() {
+                if (navigationManager)
+                    navigationManager->refreshCurrentView();
+            });
+    connect(analysisScheduler.get(), &AnalysisScheduler::relationshipAnalysisFinished,
+            this, &MainWindow::onSingleFileRelationshipFinished);
     connect(analysisScheduler.get(), &AnalysisScheduler::documentRefreshRequested,
             this, [this](const QString& fileName) {
                 MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
@@ -162,6 +129,10 @@ void MainWindow::setupManagerConnections()
                         editor->refreshScopeAndCurrentLineHighlight();
                     });
                 }
+            });
+    connect(analysisScheduler.get(), &AnalysisScheduler::diagnosticsRefreshRequested,
+            this, [this](const QString& fileName) {
+                scheduleProblemsPanelUpdate(fileName);
             });
 
     connect(tabManager.get(), &TabManager::activeTabChanged,
@@ -182,16 +153,10 @@ void MainWindow::setupManagerConnections()
                     analysisScheduler->handleExternalFileChanged(filePath, kFileChangeDebounceMs);
             });
 
-    connect(workspaceManager.get(), &WorkspaceManager::workspaceClosed,
-            this, [this]() {
-                scheduleProblemsPanelUpdate();
-            });
-
     connect(analysisScheduler.get(), &AnalysisScheduler::workspaceSymbolAnalysisStarted,
             this, [this](const ProjectSnapshot& project, int totalFiles) {
                 Q_UNUSED(totalFiles)
                 symbolAnalysisCancelled.store(false);
-                scheduleProblemsPanelUpdate();
                 const QStringList svFiles = project.systemVerilogFiles;
                 showAnalysisProgress(svFiles);
 
@@ -252,63 +217,12 @@ void MainWindow::setupManagerConnections()
                 relationshipAnalysisTracker.isActive = false;
             });
 
-    connect(modeManager.get(), &ModeManager::modeChanged,
-            this,[]{});
-
-    connect(modeManager.get(), &ModeManager::navigationToggleRequested,
-                this, [this]() {
-                    if (navigationDock) {
-                        if (navigationDock->isVisible()) {
-                            navigationDock->hide();
-                        } else {
-                            navigationDock->show();
-                            navigationDock->raise();
-                            navigationDock->activateWindow();
-                        }
-                    }
-                });
-
-    connect(symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
-            this, [this](const QString& fileName, int symbolCount) {
-                Q_UNUSED(symbolCount)
-                scheduleProblemsPanelUpdate(fileName);
-                MyCodeEditor* editor = tabManager->getCurrentEditor();
-                if (!editor || editor->getFileName() != fileName) return;
-                editor->refreshScopeAndCurrentLineHighlight();
-            });
-
-    connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchAnalysisCompleted,
-            this, [this](int, int) {
-                scheduleProblemsPanelUpdate();
-            });
-
-    connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchProgress,
-            this, [this](int filesDone, int totalFiles, const QString& currentFileName) {
-                if (progressDialog && totalFiles > 0) {
-                    progressDialog->progressBar->setValue(filesDone);
-                    progressDialog->progressBar->setMaximum(totalFiles);
-                    progressDialog->setSymbolAnalysisProgress(filesDone, totalFiles);
-                    QString shortName = QFileInfo(currentFileName).fileName();
-                    if (shortName.length() > 45)
-                        shortName = "..." + shortName.right(42);
-                    progressDialog->currentFileLabel->setText(
-                        QString("Symbol analysis: %1 / %2 - %3").arg(filesDone).arg(totalFiles).arg(shortName));
-                }
-            });
-
-    navigationManager->connectToTabManager(tabManager.get());
-    navigationManager->connectToWorkspaceManager(workspaceManager.get());
-    navigationManager->connectToSymbolAnalyzer(symbolAnalyzer.get());
-
-    if (!relationshipBuilder)
-        return;
-
-    connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCompleted,
+    connect(analysisScheduler.get(), &AnalysisScheduler::relationshipAnalysisProgress,
             this, [this](const QString& fileName, int relationshipsFound) {
                 if (progressDialog) {
                     progressDialog->updateProgress(fileName, relationshipsFound);
 
-                    QString shortName = QFileInfo(fileName).fileName();
+                    const QString shortName = QFileInfo(fileName).fileName();
                     if (progressDialog->config.showDetails) {
                         progressDialog->logProgress(
                             QString("%1: found %2 relationships").arg(shortName).arg(relationshipsFound));
@@ -338,9 +252,8 @@ void MainWindow::setupManagerConnections()
                         }
 
                         QTimer::singleShot(200, this, [this]() {
-                            if (progressDialog) {
+                            if (progressDialog)
                                 progressDialog->finishAnalysis();
-                            }
 
                             if (statusBar()) {
                                 statusBar()->showMessage(
@@ -352,7 +265,7 @@ void MainWindow::setupManagerConnections()
                     }
                 }
 
-                QString shortName = QFileInfo(fileName).fileName();
+                const QString shortName = QFileInfo(fileName).fileName();
                 if (statusBar()) {
                     statusBar()->showMessage(
                         QString("Relationship analysis: %1 (%2 relationships)")
@@ -361,13 +274,10 @@ void MainWindow::setupManagerConnections()
                 }
             });
 
-    connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisError,
+    connect(analysisScheduler.get(), &AnalysisScheduler::relationshipAnalysisError,
             this, [this](const QString& fileName, const QString& error) {
-                Q_UNUSED(fileName)
-                Q_UNUSED(error)
-                if (progressDialog && progressDialog->isVisible()) {
+                if (progressDialog && progressDialog->isVisible())
                     progressDialog->showError(fileName, error);
-                }
 
                 if (relationshipAnalysisTracker.isActive) {
                     relationshipAnalysisTracker.processedFiles++;
@@ -376,34 +286,68 @@ void MainWindow::setupManagerConnections()
                         relationshipAnalysisTracker.isActive = false;
 
                         QTimer::singleShot(200, this, [this]() {
-                            if (progressDialog) {
+                            if (progressDialog)
                                 progressDialog->finishAnalysis();
-                            }
                         });
                     }
                 }
+
+                onRelationshipAnalysisError(fileName, error);
             });
 
-    connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCancelled,
+    connect(analysisScheduler.get(), &AnalysisScheduler::relationshipAnalysisCancelled,
             this, [this]() {
                 relationshipAnalysisTracker.isActive = false;
 
-                if (progressDialog) {
+                if (progressDialog)
                     progressDialog->finishAnalysis();
-                }
 
-                if (statusBar()) {
+                if (statusBar())
                     statusBar()->showMessage("Relationship analysis cancelled", 3000);
+            });
+
+    connect(modeManager.get(), &ModeManager::modeChanged,
+            this,[]{});
+
+    connect(modeManager.get(), &ModeManager::navigationToggleRequested,
+                this, [this]() {
+                    if (navigationDock) {
+                        if (navigationDock->isVisible()) {
+                            navigationDock->hide();
+                        } else {
+                            navigationDock->show();
+                            navigationDock->raise();
+                            navigationDock->activateWindow();
+                        }
+                    }
+                });
+
+    connect(symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
+            this, [this](const QString& fileName, int symbolCount) {
+                Q_UNUSED(symbolCount)
+                MyCodeEditor* editor = tabManager->getCurrentEditor();
+                if (!editor || editor->getFileName() != fileName) return;
+                editor->refreshScopeAndCurrentLineHighlight();
+            });
+
+    connect(symbolAnalyzer.get(), &SymbolAnalyzer::batchProgress,
+            this, [this](int filesDone, int totalFiles, const QString& currentFileName) {
+                if (progressDialog && totalFiles > 0) {
+                    progressDialog->progressBar->setValue(filesDone);
+                    progressDialog->progressBar->setMaximum(totalFiles);
+                    progressDialog->setSymbolAnalysisProgress(filesDone, totalFiles);
+                    QString shortName = QFileInfo(currentFileName).fileName();
+                    if (shortName.length() > 45)
+                        shortName = "..." + shortName.right(42);
+                    progressDialog->currentFileLabel->setText(
+                        QString("Symbol analysis: %1 / %2 - %3").arg(filesDone).arg(totalFiles).arg(shortName));
                 }
             });
 
-    if (relationshipEngine) {
-        connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipAdded,
-                this, &MainWindow::onRelationshipAdded);
+    navigationManager->connectToTabManager(tabManager.get());
+    navigationManager->connectToWorkspaceManager(workspaceManager.get());
+    navigationManager->connectToSymbolAnalyzer(symbolAnalyzer.get());
 
-        connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipsCleared,
-                this, &MainWindow::onRelationshipsCleared);
-    }
 }
 
 
@@ -684,24 +628,8 @@ static void restoreTreeExpansion(QTreeWidget* tree,
         tree->expandAll();
 }
 
-static QTreeWidgetItem* getOrCreateFileGroup(QTreeWidget* tree,
-                                             QMap<QString, QTreeWidgetItem*>& groups,
-                                             const QString& fileName);
 static QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
                                              const SemanticDiagnostic& diagnostic);
-
-static QList<SemanticRelationship> toSemanticRelationships(
-    const QVector<RelationshipToAdd>& relationships)
-{
-    QList<SemanticRelationship> result;
-    result.reserve(relationships.size());
-    for (const RelationshipToAdd& relationship : relationships) {
-        if (relationship.fromId < 0 || relationship.toId < 0)
-            continue;
-        result.append({relationship.fromId, relationship.toId, relationship.type});
-    }
-    return result;
-}
 
 void MainWindow::setupReferencesPane()
 {
@@ -971,25 +899,6 @@ void MainWindow::scheduleProblemsPanelUpdate(const QString& fileName)
     updateProblemsPanel(fileName);
 }
 
-static QTreeWidgetItem* getOrCreateFileGroup(QTreeWidget* tree,
-                                             QMap<QString, QTreeWidgetItem*>& groups,
-                                             const QString& fileName)
-{
-    const QString normalized = normalizedUiFileName(fileName);
-    const QString key = normalized.isEmpty() ? fileName : normalized;
-    if (groups.contains(key))
-        return groups.value(key);
-
-    auto* group = new QTreeWidgetItem(tree);
-    group->setText(0, QFileInfo(fileName).fileName());
-    group->setText(1, fileName);
-    group->setToolTip(0, fileName);
-    group->setToolTip(1, fileName);
-    group->setFirstColumnSpanned(false);
-    groups.insert(key, group);
-    return group;
-}
-
 static QTreeWidgetItem* getOrCreateChildGroup(QTreeWidgetItem* parent,
                                               QMap<QString, QTreeWidgetItem*>& groups,
                                               const QString& key,
@@ -1116,6 +1025,9 @@ void MainWindow::refreshReferencesPanel()
 
     const ReferenceReport report =
         ReferenceService::getInstance()->findReferenceReport(query);
+    const QString subjectName = report.subjectSymbol.symbolName.isEmpty()
+        ? currentReferenceSymbolName
+        : report.subjectSymbol.symbolName;
 
     const bool hadExpandableItems = treeHasExpandableItems(referencesTree);
     const QSet<QString> expandedKeys = collectExpandedKeys(referencesTree);
@@ -1141,7 +1053,7 @@ void MainWindow::refreshReferencesPanel()
     if (referencesDock) {
         referencesDock->setWindowTitle(
             QStringLiteral("References: %1 (%2)")
-                .arg(currentReferenceSymbolName)
+                .arg(subjectName)
                 .arg(report.totalCount));
         referencesDock->show();
         referencesDock->raise();
@@ -1151,7 +1063,7 @@ void MainWindow::refreshReferencesPanel()
         statusBar()->showMessage(
             QStringLiteral("Found %1 references for %2")
                 .arg(report.totalCount)
-                .arg(currentReferenceSymbolName),
+                .arg(subjectName),
             3000);
     }
 }
@@ -1293,6 +1205,9 @@ void MainWindow::refreshRelationshipsPanel()
 
     const RelationshipReport report =
         RelationshipService::getInstance()->findRelationshipReport(browseQuery);
+    const QString subjectName = report.subjectSymbol.symbolName.isEmpty()
+        ? currentRelationshipSymbolName
+        : report.subjectSymbol.symbolName;
 
     const bool hadExpandableItems = treeHasExpandableItems(relationshipsTree);
     const QSet<QString> expandedKeys = collectExpandedKeys(relationshipsTree);
@@ -1322,7 +1237,7 @@ void MainWindow::refreshRelationshipsPanel()
     if (relationshipsDock) {
         relationshipsDock->setWindowTitle(
             QStringLiteral("Relationships: %1 (%2)")
-                .arg(currentRelationshipSymbolName)
+                .arg(subjectName)
                 .arg(report.totalCount));
         relationshipsDock->show();
         relationshipsDock->raise();
@@ -1332,7 +1247,7 @@ void MainWindow::refreshRelationshipsPanel()
         statusBar()->showMessage(
             QStringLiteral("Found %1 relationships for %2")
                 .arg(report.totalCount)
-                .arg(currentRelationshipSymbolName),
+                .arg(subjectName),
             3000);
     }
 }
@@ -1528,53 +1443,6 @@ void MainWindow::setupRelationshipEngine()
     relationshipBuilder = semanticIndex->createRelationshipBuilder(
         relationshipEngine.get(), slangManager.get(), this);
 
-    relationshipSingleFileWatcher = new QFutureWatcher<SingleFileRelationshipAnalysisResult>(this);
-    connect(relationshipSingleFileWatcher, &QFutureWatcher<SingleFileRelationshipAnalysisResult>::finished,
-            this, &MainWindow::onSingleFileRelationshipFinished);
-
-    connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipAdded,
-            this, &MainWindow::onRelationshipAdded);
-
-    connect(relationshipEngine.get(), &SymbolRelationshipEngine::relationshipsCleared,
-            this, &MainWindow::onRelationshipsCleared);
-
-    connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisCompleted,
-            this, &MainWindow::onRelationshipAnalysisCompleted);
-
-    connect(relationshipBuilder.get(), &SmartRelationshipBuilder::analysisError,
-            this, &MainWindow::onRelationshipAnalysisError);
-}
-
-void MainWindow::onRelationshipAdded(int fromSymbolId, int toSymbolId,
-                                    /*SymbolRelationshipEngine::RelationType*/int type)
-{
-    Q_UNUSED(fromSymbolId)
-    Q_UNUSED(toSymbolId)
-    Q_UNUSED(type)
-
-    CompletionManager::getInstance()->invalidateRelationshipCaches();
-
-    if (navigationManager) {
-        if (!relationshipRefreshDeferTimer) {
-            relationshipRefreshDeferTimer = new QTimer(this);
-            relationshipRefreshDeferTimer->setSingleShot(true);
-            connect(relationshipRefreshDeferTimer, &QTimer::timeout, this, [this]() {
-                if (navigationManager)
-                    navigationManager->refreshCurrentView();
-                relationshipRefreshDeferTimer = nullptr;
-            });
-        }
-        relationshipRefreshDeferTimer->start(400);
-    }
-}
-
-void MainWindow::onRelationshipsCleared()
-{
-    CompletionManager::getInstance()->invalidateRelationshipCaches();
-
-    if (navigationManager) {
-        navigationManager->refreshCurrentView();
-    }
 }
 
 void MainWindow::onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound)
@@ -1603,43 +1471,6 @@ void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, 
         analysisScheduler->requestRelationshipAnalysis(fileName, content);
 }
 
-void MainWindow::submitSingleFileRelationshipAnalysis(const QString& fileName, const QString& content)
-{
-    if (fileName.isEmpty() || !relationshipBuilder || !relationshipEngine)
-        return;
-    if (!relationshipSingleFileWatcher)
-        return;
-    if (relationshipSingleFileWatcher->isRunning()) {
-        QFuture<SingleFileRelationshipAnalysisResult> oldFuture =
-            relationshipSingleFileWatcher->future();
-        relationshipSingleFileWatcher->cancel();
-        oldFuture.waitForFinished();
-    }
-    pendingRelationshipFileName = fileName;
-    relationshipBuilder->resetCancellation();
-    const auto baseSnapshot =
-        SemanticIndex::getInstance()->captureSnapshotPreservingDiagnostics();
-    SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
-    QFuture<SingleFileRelationshipAnalysisResult> future =
-        QtConcurrent::run([this, fileName, content, baseSnapshot]() {
-            SingleFileRelationshipAnalysisResult result;
-            result.baseSnapshot = baseSnapshot;
-            result.semanticSnapshot = baseSnapshot;
-            if (!baseSnapshot)
-                return result;
-
-            const QList<sym_list::SymbolInfo> fs = baseSnapshot->getSymbols(fileName);
-            result.relationships =
-                relationshipBuilder->computeRelationships(fileName, content, fs, baseSnapshot.get());
-
-            result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
-                baseSnapshot->withAdditionalRelationships(
-                    toSemanticRelationships(result.relationships)));
-        return result;
-    });
-    relationshipSingleFileWatcher->setFuture(future);
-}
-
 void MainWindow::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
 {
     if (analysisScheduler)
@@ -1652,17 +1483,12 @@ void MainWindow::cancelScheduledOpenFileAnalysis(const QString& fileName)
         analysisScheduler->cancelScheduledOpenFileAnalysis(fileName);
 }
 
-void MainWindow::onSingleFileRelationshipFinished()
+void MainWindow::onSingleFileRelationshipFinished(
+    const SingleFileRelationshipAnalysisResult& result)
 {
-    if (!relationshipSingleFileWatcher || !relationshipEngine || !relationshipBuilder)
+    if (!relationshipEngine || !relationshipBuilder)
         return;
-    if (relationshipSingleFileWatcher->isCanceled()) {
-        pendingRelationshipFileName.clear();
-        return;
-    }
-    QString fileName = pendingRelationshipFileName;
-    pendingRelationshipFileName.clear();
-    const SingleFileRelationshipAnalysisResult result = relationshipSingleFileWatcher->result();
+
     if (result.baseSnapshot && SemanticIndex::getInstance()->snapshot() != result.baseSnapshot)
         return;
 
@@ -1677,7 +1503,7 @@ void MainWindow::onSingleFileRelationshipFinished()
         SemanticIndex::getInstance()->setSnapshot(result.semanticSnapshot);
         CompletionManager::getInstance()->refreshRelationshipData();
     }
-    onRelationshipAnalysisCompleted(fileName, result.relationships.size());
+    onRelationshipAnalysisCompleted(result.fileName, result.relationships.size());
 }
 
 void MainWindow::onWorkspaceRelationshipAnalysisFinished(
@@ -1696,17 +1522,15 @@ void MainWindow::onWorkspaceRelationshipAnalysisFinished(
                 continue;
             relationshipEngine->addRelationship(r.fromId, r.toId, r.type, r.context, r.confidence);
         }
-        if (progressDialog)
-            progressDialog->updateProgress(fileName, pair.second.size());
-        if (relationshipAnalysisTracker.isActive)
-            relationshipAnalysisTracker.processedFiles++;
+        Q_UNUSED(fileName)
     }
     relationshipEngine->endUpdate();
     if (result.semanticSnapshot) {
         SemanticIndex::getInstance()->setSnapshot(result.semanticSnapshot);
         CompletionManager::getInstance()->refreshRelationshipData();
     }
-    if (relationshipAnalysisTracker.isActive && relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
+    if (relationshipAnalysisTracker.isActive
+        && relationshipAnalysisTracker.processedFiles >= relationshipAnalysisTracker.totalFiles) {
         relationshipAnalysisTracker.isActive = false;
         if (progressDialog) {
             progressDialog->statusLabel->setText("All analysis complete!");

@@ -626,26 +626,323 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
   - goal.md
 - Next best step: continue moving remaining MainWindow refresh policy into scheduler/services, or add the next real Problems/References/Relationships fixture if it can be covered by relationship_test/gui_smoke_test without broad UI churn.
 
+## Session 2026-06-08 continuation 4
+
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 6b16c3b Push report grouping into services.
+- Existing readme.md handoff-opener edit was present at session start and was preserved.
+- Completed three focused increments:
+  - ReferenceReport and RelationshipReport now expose the resolved subject symbol id and subject symbol.
+  - MainWindow References / Relationships Direct titles and status messages consume the service report subject, and the unused local file-group helper left from earlier grouping migration was removed.
+  - Workspace relationship batch analysis moved from a long MainWindow callback into AnalysisScheduler; MainWindow now only injects the SmartRelationshipBuilder, while scheduler owns project-file traversal, base snapshot use, relationship merge, and cancellation.
+- relationship_test now covers the scheduler workspace relationship path against the real multi-file relationship fixture and checks the enriched snapshot contains the cross-file instantiation relationship.
+- Verification passed:
+  - cmake build targets: relationship_test, gui_smoke_test.
+  - ctest -R "relationship_test|gui_smoke_test" --output-on-failure: 2/2 passed.
+  - ctest -R "relationship_test" --output-on-failure after adding scheduler fixture: passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard: no demo.pro, no *.pro, no *.pri, .claude absent.
+- git diff --name-only before handoff:
+  - analysisscheduler.cpp
+  - analysisscheduler.h
+  - mainwindow.cpp
+  - readme.md
+  - referenceservice.cpp
+  - referenceservice.h
+  - relationshipservice.cpp
+  - relationshipservice.h
+  - test_sv/relationship_test.cpp
+- No commit or push was requested; leave these changes uncommitted for the next session.
+- Next best step: continue extracting remaining MainWindow refresh/progress policy into scheduler/services, or add the next Problems/References/Relationships real fixture if it can stay inside relationship_test/gui_smoke_test coverage.
+
+## Session 2026-06-08 continuation 5
+
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 6b16c3b Push report grouping into services.
+- Continued thinning MainWindow analysis ownership:
+  - AnalysisScheduler now owns single-file relationship background analysis.
+  - Scheduler manages the single-file watcher, previous-task cancellation, base snapshot capture, relationship computation, and enriched snapshot merge.
+  - MainWindow now subscribes to AnalysisScheduler::relationshipAnalysisFinished and only applies finished relationships to the engine and UI status flow.
+  - AnalysisScheduler exposes a shared setRelationshipBuilder entry for single-file and workspace relationship analysis.
+  - MainWindow no longer includes QtConcurrent or owns relationshipSingleFileWatcher / pendingRelationshipFileName.
+- gui_smoke_test and large_file_perf_test drain helpers now cancel relationship work through AnalysisScheduler instead of reaching into MainWindow's old watcher.
+- relationship_test now covers AnalysisScheduler::requestRelationshipAnalysis with the real multi-file fixture and checks the enriched snapshot contains the top -> stage instantiation.
+- Verification passed:
+  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
+  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard: no demo.pro, no *.pro, no *.pri, .claude absent.
+- git diff --name-only before handoff:
+  - analysisscheduler.cpp
+  - analysisscheduler.h
+  - goal.md
+  - mainwindow.cpp
+  - mainwindow.h
+  - plan.md
+  - readme.md
+  - referenceservice.cpp
+  - referenceservice.h
+  - relationshipservice.cpp
+  - relationshipservice.h
+  - test_sv/gui_smoke_test.cpp
+  - test_sv/large_file_perf_test.cpp
+  - test_sv/relationship_test.cpp
+- No commit or push was requested; keep these changes uncommitted.
+- Next best step: continue moving remaining progress/refresh policy out of MainWindow, especially relationship progress completion and bottom-panel refresh timing, or add the next Problems/References/Relationships real fixture.
+
+## Session 2026-06-08 continuation 6
+
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 6b16c3b Push report grouping into services.
+- Continued thinning MainWindow relationship progress ownership:
+  - AnalysisScheduler now exposes relationshipAnalysisProgress, relationshipAnalysisError, and relationshipAnalysisCancelled signals.
+  - Scheduler owns the SmartRelationshipBuilder progress/error/cancel boundary and emits result-based progress before single-file/workspace finished signals.
+  - MainWindow no longer connects directly to SmartRelationshipBuilder analysisCompleted / analysisError / analysisCancelled.
+  - setupManagerConnections no longer duplicates relationship engine signal wiring that already belongs to setupRelationshipEngine.
+  - Workspace finished handling now applies relationships and snapshots; progress counting is driven by scheduler progress events.
+- relationship_test now checks that AnalysisScheduler forwards single-file relationship progress for the real multi-file fixture.
+- Verification passed:
+  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
+  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard: no demo.pro, no *.pro, no *.pri, .claude absent.
+- git diff --name-only before handoff:
+  - analysisscheduler.cpp
+  - analysisscheduler.h
+  - goal.md
+  - mainwindow.cpp
+  - mainwindow.h
+  - plan.md
+  - readme.md
+  - referenceservice.cpp
+  - referenceservice.h
+  - relationshipservice.cpp
+  - relationshipservice.h
+  - test_sv/gui_smoke_test.cpp
+  - test_sv/large_file_perf_test.cpp
+  - test_sv/relationship_test.cpp
+- No commit or push was requested; keep these changes uncommitted.
+- Next best step: continue shrinking MainWindow refresh timing policy, especially bottom dock refresh scheduling, or add the next focused Problems/References/Relationships real fixture.
+
+## Session 2026-06-08 continuation 7
+
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 6b16c3b Push report grouping into services.
+- Continued moving Problems refresh timing policy toward AnalysisScheduler:
+  - AnalysisScheduler now emits diagnosticsRefreshRequested(fileName).
+  - Scheduler emits diagnostics refresh requests for single-file analysis completion, workspace batch completion, workspace analysis start, project close, and closed project snapshots.
+  - MainWindow now subscribes to AnalysisScheduler::diagnosticsRefreshRequested and keeps only the 100ms UI debounce/tree rendering.
+  - MainWindow no longer directly schedules Problems refresh from WorkspaceManager::workspaceClosed, workspaceSymbolAnalysisStarted, or SymbolAnalyzer::batchAnalysisCompleted.
+  - MainWindow still listens to SymbolAnalyzer::analysisCompleted only for editor scope/highlight refresh.
+- relationship_test now checks that scheduler requests diagnostics refresh on project close.
+- Verification passed:
+  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
+  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard: no demo.pro, no *.pro, no *.pri, .claude absent.
+- git diff --name-only before handoff:
+  - analysisscheduler.cpp
+  - analysisscheduler.h
+  - goal.md
+  - mainwindow.cpp
+  - mainwindow.h
+  - plan.md
+  - readme.md
+  - referenceservice.cpp
+  - referenceservice.h
+  - relationshipservice.cpp
+  - relationshipservice.h
+  - test_sv/gui_smoke_test.cpp
+  - test_sv/large_file_perf_test.cpp
+  - test_sv/relationship_test.cpp
+- No commit or push was requested; keep these changes uncommitted.
+- Next best step: continue shrinking remaining MainWindow bottom-panel refresh coordination, especially References/Relationships refresh timing, or add the next Problems/References/Relationships real fixture.
+
 ## 新会话开场白
 
-请先阅读 readme.md、plan.md、goal.md、version.h，接手 ZeroSlack 当前状态。
+```text
+/goal 请使用 zeroslack-handoff-dev skill 接手 ZeroSlack，并进入持续迭代开发模式。
 
-当前分支：tree_sitter_and_slang。
-当前版本：0.0.20/slang25。
-最新提交：请以 `git log -1 --oneline` 为准；本轮目标提交会在 8998b8a 之后。
+请先阅读 readme.md、plan.md、goal.md、version.h，然后检查：
+- git log -1 --oneline
+- git branch --show-current
+- git diff --name-only
+- git status -sb
+
+当前已知状态：
+- 工作目录：E:\ZeroSlack\ZeroSlack
+- 当前分支：tree_sitter_and_slang
+- 当前版本：0.0.20/slang25
+- 最新提交：6b16c3b Push report grouping into services
+- 当前工作区保留上一轮未提交变更；以 git diff --name-only 为准
+- 当前 diff 应包含：analysisscheduler.cpp、analysisscheduler.h、goal.md、mainwindow.cpp、mainwindow.h、plan.md、readme.md、referenceservice.cpp、referenceservice.h、relationshipservice.cpp、relationshipservice.h、test_sv/gui_smoke_test.cpp、test_sv/large_file_perf_test.cpp、test_sv/relationship_test.cpp
+- demo.pro / *.pro / *.pri 已删除，不要恢复
+- .claude 不存在，不要恢复任何 Claude 本地配置
 
 重要规则：
-- 只使用 Qt 6 + CMake + Ninja；不要恢复 demo.pro、任何 *.pro、任何 *.pri 或 qmake。
+- 只使用 Qt 6 + CMake + Ninja，不使用 qmake。
+- 不要恢复 demo.pro、任何 *.pro、任何 *.pri。
 - 不要恢复 .claude/ 或任何 Claude 本地配置。
-- 源码注释、测试字符串、CMake 注释、UI 可见文案必须是英文 / ASCII；readme.md / plan.md / goal.md 可保留中文。
+- 不要恢复 SVLexer、旧 Tree-sitter symbol parser、Tree-sitter verify button、regex relationship analysis、长期 perflog。
+- 源码注释、测试字符串、CMake 注释、UI 可见文案必须是英文 / ASCII。
+- readme.md / plan.md / goal.md 是中文交接文档，可以保留中文。
 - git status 可能有 Windows index stat / CRLF 噪声，真实内容变更优先看 git diff --name-only。
 
-本轮最近完成：
-- CompletionManager 的更多 command/type 补全路径改为通过 typed SemanticIndex 查询，减少全量 symbol 扫描。
-- ReferenceService / RelationshipService report 增加结构化分组，MainWindow 的 References / Relationships Direct 树只渲染 service report。
-- 完整 ctest 6/6、git diff --check、非 ASCII 扫描和禁止文件 guard 均通过。
+上一轮最新完成：
+- AnalysisScheduler 新增 diagnosticsRefreshRequested(fileName)，承接 single-file/batch diagnostics refresh、workspace analysis start 和 project close 的 Problems 刷新请求。
+- MainWindow 改为订阅 AnalysisScheduler::diagnosticsRefreshRequested；窗口只保留 Problems 100ms UI debounce 和树渲染。
+- MainWindow 不再从 WorkspaceManager::workspaceClosed、workspaceSymbolAnalysisStarted 或 SymbolAnalyzer::batchAnalysisCompleted 直接调度 Problems 刷新。
+- relationship_test 增加 scheduler project close diagnostics refresh 请求断言。
+- 验证通过：relationship_test/gui_smoke_test/large_file_perf_test 目标构建，focused CTest 3/3，完整 ctest 6/6，git diff --check，非 ASCII 扫描，禁用文件 guard。
+- AnalysisScheduler 新增 relationshipAnalysisProgress / relationshipAnalysisError / relationshipAnalysisCancelled，统一承接 SmartRelationshipBuilder progress/error/cancel 边界。
+- MainWindow 不再直接连接 SmartRelationshipBuilder analysisCompleted / analysisError / analysisCancelled；relationship progress 由 scheduler result-based progress 事件驱动。
+- 删除 setupManagerConnections 中与 setupRelationshipEngine 重复的 relationship engine 信号连接。
+- relationship_test 增加真实 fixture 覆盖 AnalysisScheduler single-file relationship progress 转发。
+- 验证通过：relationship_test/gui_smoke_test/large_file_perf_test 目标构建，focused CTest 3/3，完整 ctest 6/6，git diff --check，非 ASCII 扫描，禁用文件 guard。
+- AnalysisScheduler 接管 single-file relationship 后台分析、取消旧任务、base snapshot capture、relationship compute 和 enriched snapshot merge。
+- MainWindow 删除 single-file relationship watcher / QtConcurrent 路径，只消费 AnalysisScheduler::relationshipAnalysisFinished 并负责 UI/engine 收尾。
+- gui_smoke_test / large_file_perf_test 改为通过 AnalysisScheduler drain relationship work。
+- relationship_test 增加真实 fixture 覆盖 AnalysisScheduler::requestRelationshipAnalysis 产生 enriched snapshot。
+- 验证通过：relationship_test/gui_smoke_test/large_file_perf_test 目标构建，focused CTest 3/3，完整 ctest 6/6，git diff --check，非 ASCII 扫描，禁用文件 guard。
+- ReferenceReport / RelationshipReport 新增已解析 subject symbol id 和 subject symbol，MainWindow References / Relationships Direct 标题和状态消息改为消费 service report subject。
+- 删除 MainWindow 中 References 分组下沉后遗留的未使用 file-group helper。
+- Workspace relationship 批量分析从 MainWindow 长回调下沉到 AnalysisScheduler；MainWindow 只注入 SmartRelationshipBuilder。
+- relationship_test 增加真实 fixture 覆盖 AnalysisScheduler::requestWorkspaceRelationshipAnalysis 产生 enriched snapshot。
+- 验证通过：relationship_test/gui_smoke_test 目标构建，focused CTest 2/2，完整 ctest 6/6，git diff --check，非 ASCII 扫描，禁用文件 guard。
 
-下一步建议：
-- 继续把 MainWindow 中的刷新/分析策略下沉到 scheduler/services/model。
-- 继续补 Problems / References / Relationships 的真实 fixture 和结果摘要。
-- 继续让 UI / services 只读 SemanticIndex / snapshot / Query Services。
+本次任务：
+请继续向 goal.md 的最终目标推进，优先选择高价值、小范围、可验证的迭代：
+- 减少 live sym_list 消费，让 UI / services 更多只读 SemanticIndex / snapshot / Query Services。
+- 继续薄化 MainWindow，把分析/刷新策略下沉到 scheduler/services/model。
+- 继续打磨 Problems / References / Relationships，尤其真实 fixture、结果摘要、scheduler/service 边界。
+- 保持现有 CTest 回归绿色。
+
+请不要只完成一次开发-测试循环就停止。请在同一会话中持续迭代，直到你判断已经到达适合切换新会话的交接点，例如：
+- 已完成多个连贯小步并通过合适验证；
+- 上下文接近变长，需要交接；
+- 下一步需要用户决策；
+- 验证被环境问题阻塞；
+- 或已经形成清晰的 commit/handoff 边界。
+
+到达交接点时：
+1. 更新 readme.md、plan.md、goal.md，写清楚本轮完成、验证结果、禁用文件检查、当前分支/版本、下一步建议。
+2. 运行或记录本轮合适的验证；如果用户明确要求提交前不再编译/测试，则遵守并写入交接。
+3. 检查 git diff --name-only，确认没有恢复 demo.pro / *.pro / *.pri / .claude。
+4. 如果用户明确要求提交并 push，则提交并 push 到 origin/tree_sitter_and_slang；否则保留未提交变更并说明。
+5. 最后给出下一轮新会话开场白，保持本段 `/goal` 形式。
+```
+
+## Session 2026-06-08 continuation 9
+
+- Added one more real fixture assertion for ReferenceService current-file filtering.
+- relationship_test now checks that currentFileOnly both hides non-matching files and keeps the matching real fixture file for the rel_stage instantiation reference.
+- Verification passed:
+  - cmake build target: relationship_test.
+  - ctest -R "relationship_test" --output-on-failure: passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 6b16c3b Push report grouping into services.
+- No commit or push was requested; keep these changes uncommitted.
+- Next best step: continue with another small real fixture for Problems / Relationships, or move another clean MainWindow progress UI boundary into AnalysisScheduler.
+
+## Session 2026-06-08 continuation 10
+
+- Final handoff point requested because context is compressing.
+- Added two focused real fixture assertions in relationship_test:
+  - DiagnosticReport now verifies direct fileName filtering keeps the two diagnostics for topPath and produces one file group.
+  - RelationshipReport now verifies incoming-only browsing for rel_stage finds the top -> stage instantiation and keeps top as the peer symbol.
+- Verification passed:
+  - cmake build target: relationship_test.
+  - ctest -R "relationship_test" --output-on-failure: passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 6b16c3b Push report grouping into services.
+- No commit or push was requested; keep these changes uncommitted.
+- Next best step: start a fresh session from the updated opener below, then either continue adding small real Problems / Relationships fixtures or move one remaining MainWindow progress UI boundary into AnalysisScheduler.
+
+## Session 2026-06-08 continuation 8
+
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 6b16c3b Push report grouping into services.
+- Continued moving References / Relationships refresh policy toward AnalysisScheduler:
+  - AnalysisScheduler now binds SymbolRelationshipEngine through setRelationshipEngine.
+  - Scheduler emits relationshipDataInvalidated immediately when relationship data changes.
+  - Scheduler owns the 400ms coalesced relationshipDataRefreshRequested timer for relationship additions.
+  - Scheduler requests an immediate relationship data refresh when relationships are cleared.
+  - MainWindow no longer connects directly to SymbolRelationshipEngine::relationshipAdded or relationshipsCleared.
+  - MainWindow no longer owns relationshipRefreshDeferTimer; it only invalidates completion caches and refreshes Navigation when scheduler asks.
+- relationship_test now checks scheduler relationship data invalidation, coalesced refresh on additions, and immediate refresh on clear.
+- Verification passed:
+  - cmake build targets: relationship_test, gui_smoke_test, large_file_perf_test.
+  - ctest -R "relationship_test|gui_smoke_test|large_file_perf_test" --output-on-failure: 3/3 passed.
+  - Full ctest --output-on-failure: 6/6 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard: no demo.pro, no *.pro, no *.pri, .claude absent.
+- git diff --name-only before handoff:
+  - analysisscheduler.cpp
+  - analysisscheduler.h
+  - goal.md
+  - mainwindow.cpp
+  - mainwindow.h
+  - plan.md
+  - readme.md
+  - referenceservice.cpp
+  - referenceservice.h
+  - relationshipservice.cpp
+  - relationshipservice.h
+  - test_sv/gui_smoke_test.cpp
+  - test_sv/large_file_perf_test.cpp
+  - test_sv/relationship_test.cpp
+- No commit or push was requested; keep these changes uncommitted.
+- Next best step: continue extracting remaining MainWindow progress UI policy if a clean scheduler signal exists, or add another real Problems / References / Relationships fixture.
+
+## Updated new-session opener
+
+```text
+/goal Please use the zeroslack-handoff-dev skill to take over ZeroSlack and continue iterative development.
+First read readme.md, plan.md, goal.md, and version.h, then inspect:
+- git log -1 --oneline
+- git branch --show-current
+- git diff --name-only
+- git status -sb
+
+Known current state:
+- Workspace: E:\ZeroSlack\ZeroSlack
+- Branch: tree_sitter_and_slang
+- Version: 0.0.20/slang25
+- Latest commit: 6b16c3b Push report grouping into services
+- The working tree intentionally keeps uncommitted changes from the previous rounds; use git diff --name-only as truth.
+- Expected diff includes: analysisscheduler.cpp, analysisscheduler.h, goal.md, mainwindow.cpp, mainwindow.h, plan.md, readme.md, referenceservice.cpp, referenceservice.h, relationshipservice.cpp, relationshipservice.h, test_sv/gui_smoke_test.cpp, test_sv/large_file_perf_test.cpp, test_sv/relationship_test.cpp.
+
+Rules:
+- Use Qt 6 + CMake + Ninja only.
+- Do not restore demo.pro, *.pro, *.pri, qmake, .claude, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived perflog.
+- Keep source/test/UI/CMake text English / ASCII; readme.md / plan.md / goal.md may remain Chinese.
+- Prefer git diff --name-only over git status noise.
+
+Latest completed continuation:
+- AnalysisScheduler now owns relationship data invalidation and refresh request timing from SymbolRelationshipEngine.
+- MainWindow no longer connects directly to relationshipAdded / relationshipsCleared and no longer owns relationshipRefreshDeferTimer.
+- relationship_test covers immediate invalidation, coalesced refresh on additions, and immediate refresh on clear.
+- relationship_test also checks that ReferenceService currentFileOnly keeps the matching real fixture file for the rel_stage instantiation reference.
+- relationship_test now also checks DiagnosticReport direct file filtering and RelationshipReport incoming-only browsing against the real fixture.
+- Validation passed: target builds, focused CTest, full CTest 6/6, git diff --check, non-ASCII scan, forbidden-file guard.
+
+Continue toward goal.md with another small, verifiable step: keep thinning MainWindow progress/refresh policy, or add the next real Problems / Relationships fixture.
+```

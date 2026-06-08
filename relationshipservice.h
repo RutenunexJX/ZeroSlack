@@ -57,6 +57,8 @@ struct RelationshipDirectionGroup {
 };
 
 struct RelationshipReport {
+    int subjectSymbolId = -1;
+    sym_list::SymbolInfo subjectSymbol = {};
     QList<DirectedRelationshipResult> relationships;
     QList<RelationshipDirectionGroup> directionGroups;
     int totalCount = 0;

@@ -16,10 +16,18 @@
 #include <memory>
 
 class SymbolAnalyzer;
+class SymbolRelationshipEngine;
 class QTimer;
 
 struct WorkspaceRelationshipAnalysisResult {
     QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
+    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
+    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+};
+
+struct SingleFileRelationshipAnalysisResult {
+    QString fileName;
+    QVector<RelationshipToAdd> relationships;
     std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
 };
@@ -38,16 +46,13 @@ public:
     void setOpenFileContentProvider(std::function<QString(const QString&)> provider);
     void setWorkspaceOpenProvider(std::function<bool()> provider);
     void setWorkspaceSymbolCancelProvider(std::function<bool()> provider);
-    void setRelationshipAnalysisCallback(std::function<void(const QString&, const QString&)> callback);
-    void setWorkspaceRelationshipAnalysisCallback(
-        std::function<WorkspaceRelationshipAnalysisResult(
-            const ProjectSnapshot&,
-            std::shared_ptr<const SemanticIndexSnapshot>)> callback);
-    void setWorkspaceRelationshipCancelCallback(std::function<void()> callback);
+    void setRelationshipEngine(SymbolRelationshipEngine* engine);
+    void setRelationshipBuilder(SmartRelationshipBuilder* builder);
 
     void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
     void cancelScheduledOpenFileAnalysis(const QString& fileName);
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
+    void cancelRelationshipAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
     void requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceRelationshipAnalysis();
@@ -55,8 +60,15 @@ public:
 
 signals:
     void documentRefreshRequested(const QString& fileName);
+    void diagnosticsRefreshRequested(const QString& fileName);
+    void relationshipDataInvalidated();
+    void relationshipDataRefreshRequested();
     void workspaceSymbolAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
     void workspaceSymbolAnalysisFinished(const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols);
+    void relationshipAnalysisProgress(const QString& fileName, int relationshipsFound);
+    void relationshipAnalysisError(const QString& fileName, const QString& error);
+    void relationshipAnalysisCancelled();
+    void relationshipAnalysisFinished(const SingleFileRelationshipAnalysisResult& result);
     void workspaceRelationshipAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
     void workspaceRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
     void workspaceRelationshipAnalysisCancelled();
@@ -69,16 +81,14 @@ private:
     std::function<QString(const QString&)> openFileContentProvider;
     std::function<bool()> workspaceOpenProvider;
     std::function<bool()> workspaceSymbolCancelProvider;
-    std::function<void(const QString&, const QString&)> relationshipAnalysisCallback;
-    std::function<WorkspaceRelationshipAnalysisResult(
-        const ProjectSnapshot&,
-        std::shared_ptr<const SemanticIndexSnapshot>)>
-        workspaceRelationshipAnalysisCallback;
-    std::function<void()> workspaceRelationshipCancelCallback;
+    SymbolRelationshipEngine* relationshipEngine = nullptr;
+    SmartRelationshipBuilder* relationshipBuilder = nullptr;
 
     QMap<QString, QTimer*> openFileAnalysisTimers;
     QMap<QString, QTimer*> fileChangeDebounceTimers;
     QMap<QString, QString> lastRelationshipAnalysisContent;
+    QTimer* relationshipRefreshTimer = nullptr;
+    QFutureWatcher<SingleFileRelationshipAnalysisResult>* singleFileRelationshipWatcher = nullptr;
     QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceRelationshipWatcher = nullptr;
     ProjectSnapshot activeWorkspaceProject;
     bool workspaceSymbolAnalysisActive = false;
@@ -89,6 +99,14 @@ private:
     void onProjectChanged(const ProjectSnapshot& project);
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged);
+    void scheduleRelationshipDataRefresh();
+    SingleFileRelationshipAnalysisResult analyzeSingleFileRelationships(
+        const QString& fileName,
+        const QString& content,
+        std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const;
+    WorkspaceRelationshipAnalysisResult analyzeWorkspaceRelationships(
+        const ProjectSnapshot& project,
+        std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const;
 
     QString contentForOpenFile(const QString& fileName) const;
     bool isWorkspaceOpen() const;

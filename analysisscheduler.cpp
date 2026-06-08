@@ -1,6 +1,7 @@
 #include "analysisscheduler.h"
 
 #include "semanticindex.h"
+#include "symbolrelationshipengine.h"
 #include "symbolanalyzer.h"
 
 #include <QtConcurrent/QtConcurrent>
@@ -11,9 +12,48 @@
 #include <QTimer>
 #include <utility>
 
+namespace {
+QList<SemanticRelationship> toSemanticRelationships(
+    const QVector<RelationshipToAdd>& relationships)
+{
+    QList<SemanticRelationship> result;
+    result.reserve(relationships.size());
+    for (const RelationshipToAdd& relationship : relationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0)
+            continue;
+        result.append({relationship.fromId, relationship.toId, relationship.type});
+    }
+    return result;
+}
+}
+
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
 {
+    relationshipRefreshTimer = new QTimer(this);
+    relationshipRefreshTimer->setSingleShot(true);
+    relationshipRefreshTimer->setInterval(400);
+    connect(relationshipRefreshTimer, &QTimer::timeout, this, [this]() {
+        emit relationshipDataRefreshRequested();
+    });
+
+    singleFileRelationshipWatcher =
+        new QFutureWatcher<SingleFileRelationshipAnalysisResult>(this);
+    connect(singleFileRelationshipWatcher,
+            &QFutureWatcher<SingleFileRelationshipAnalysisResult>::finished,
+            this,
+            [this]() {
+                if (!singleFileRelationshipWatcher)
+                    return;
+                if (singleFileRelationshipWatcher->isCanceled())
+                    return;
+                const SingleFileRelationshipAnalysisResult result =
+                    singleFileRelationshipWatcher->result();
+                emit relationshipAnalysisProgress(
+                    result.fileName, result.relationships.size());
+                emit relationshipAnalysisFinished(result);
+            });
+
     workspaceRelationshipWatcher = new QFutureWatcher<WorkspaceRelationshipAnalysisResult>(this);
     connect(workspaceRelationshipWatcher,
             &QFutureWatcher<WorkspaceRelationshipAnalysisResult>::finished,
@@ -25,12 +65,17 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
                     emit workspaceRelationshipAnalysisCancelled();
                     return;
                 }
-                emit workspaceRelationshipAnalysisFinished(workspaceRelationshipWatcher->result());
+                const WorkspaceRelationshipAnalysisResult result =
+                    workspaceRelationshipWatcher->result();
+                for (const auto& pair : result.fileRelationships)
+                    emit relationshipAnalysisProgress(pair.first, pair.second.size());
+                emit workspaceRelationshipAnalysisFinished(result);
             });
 }
 
 AnalysisScheduler::~AnalysisScheduler()
 {
+    cancelRelationshipAnalysis();
     cancelWorkspaceRelationshipAnalysis();
     for (QTimer* timer : openFileAnalysisTimers)
         timer->deleteLater();
@@ -80,6 +125,7 @@ void AnalysisScheduler::setProjectModel(ProjectModel* model)
         activeWorkspaceProject = ProjectSnapshot();
         cancelWorkspaceRelationshipAnalysis();
         SemanticIndex::getInstance()->clearSnapshot();
+        emit diagnosticsRefreshRequested(QString());
     });
 }
 
@@ -94,8 +140,17 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
     if (!symbolAnalyzer)
         return;
 
-    connect(symbolAnalyzer, &SymbolAnalyzer::batchAnalysisCompleted,
-            this, &AnalysisScheduler::onWorkspaceSymbolAnalysisCompleted);
+    connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
+            this, [this](const QString& fileName, int) {
+                emit diagnosticsRefreshRequested(fileName);
+            });
+    connect(symbolAnalyzer,
+            &SymbolAnalyzer::batchAnalysisCompleted,
+            this,
+            [this](int filesAnalyzed, int totalSymbols) {
+                emit diagnosticsRefreshRequested(QString());
+                onWorkspaceSymbolAnalysisCompleted(filesAnalyzed, totalSymbols);
+            });
 }
 
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
@@ -113,23 +168,61 @@ void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> p
     workspaceSymbolCancelProvider = std::move(provider);
 }
 
-void AnalysisScheduler::setRelationshipAnalysisCallback(
-    std::function<void(const QString&, const QString&)> callback)
+void AnalysisScheduler::setRelationshipEngine(SymbolRelationshipEngine* engine)
 {
-    relationshipAnalysisCallback = std::move(callback);
+    if (relationshipEngine == engine)
+        return;
+    if (relationshipEngine)
+        disconnect(relationshipEngine, nullptr, this, nullptr);
+
+    relationshipEngine = engine;
+    if (!relationshipEngine) {
+        if (relationshipRefreshTimer)
+            relationshipRefreshTimer->stop();
+        return;
+    }
+
+    connect(relationshipEngine,
+            &SymbolRelationshipEngine::relationshipAdded,
+            this,
+            [this](int, int, SymbolRelationshipEngine::RelationType) {
+                emit relationshipDataInvalidated();
+                scheduleRelationshipDataRefresh();
+            });
+    connect(relationshipEngine,
+            &SymbolRelationshipEngine::relationshipsCleared,
+            this,
+            [this]() {
+                if (relationshipRefreshTimer)
+                    relationshipRefreshTimer->stop();
+                emit relationshipDataInvalidated();
+                emit relationshipDataRefreshRequested();
+            });
 }
 
-void AnalysisScheduler::setWorkspaceRelationshipAnalysisCallback(
-    std::function<WorkspaceRelationshipAnalysisResult(
-        const ProjectSnapshot&,
-        std::shared_ptr<const SemanticIndexSnapshot>)> callback)
+void AnalysisScheduler::setRelationshipBuilder(SmartRelationshipBuilder* builder)
 {
-    workspaceRelationshipAnalysisCallback = std::move(callback);
-}
+    if (relationshipBuilder == builder)
+        return;
+    if (relationshipBuilder)
+        disconnect(relationshipBuilder, nullptr, this, nullptr);
 
-void AnalysisScheduler::setWorkspaceRelationshipCancelCallback(std::function<void()> callback)
-{
-    workspaceRelationshipCancelCallback = std::move(callback);
+    relationshipBuilder = builder;
+    if (!relationshipBuilder)
+        return;
+
+    connect(relationshipBuilder,
+            &SmartRelationshipBuilder::analysisError,
+            this,
+            [this](const QString& fileName, const QString& error) {
+                emit relationshipAnalysisError(fileName, error);
+            });
+    connect(relationshipBuilder,
+            &SmartRelationshipBuilder::analysisCancelled,
+            this,
+            [this]() {
+                emit relationshipAnalysisCancelled();
+            });
 }
 
 void AnalysisScheduler::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
@@ -169,8 +262,12 @@ void AnalysisScheduler::cancelScheduledOpenFileAnalysis(const QString& fileName)
 
 void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, const QString& content)
 {
-    if (fileName.isEmpty() || content.isEmpty() || !relationshipAnalysisCallback)
+    if (fileName.isEmpty()
+        || content.isEmpty()
+        || !relationshipBuilder
+        || !singleFileRelationshipWatcher) {
         return;
+    }
 
     if (symbolAnalyzer) {
         const QString lastContent = lastRelationshipAnalysisContent.value(fileName);
@@ -179,7 +276,32 @@ void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, con
     }
 
     lastRelationshipAnalysisContent.insert(fileName, content);
-    relationshipAnalysisCallback(fileName, content);
+    cancelRelationshipAnalysis();
+
+    relationshipBuilder->resetCancellation();
+    const auto baseSnapshot =
+        SemanticIndex::getInstance()->captureSnapshotPreservingDiagnostics();
+    SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
+
+    QFuture<SingleFileRelationshipAnalysisResult> future =
+        QtConcurrent::run([this, fileName, content, baseSnapshot]() {
+            return analyzeSingleFileRelationships(fileName, content, baseSnapshot);
+        });
+    singleFileRelationshipWatcher->setFuture(future);
+}
+
+void AnalysisScheduler::cancelRelationshipAnalysis()
+{
+    if (!singleFileRelationshipWatcher || !singleFileRelationshipWatcher->isRunning())
+        return;
+
+    if (relationshipBuilder)
+        relationshipBuilder->cancelAnalysis();
+
+    QFuture<SingleFileRelationshipAnalysisResult> future =
+        singleFileRelationshipWatcher->future();
+    singleFileRelationshipWatcher->cancel();
+    future.waitForFinished();
 }
 
 void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
@@ -193,6 +315,7 @@ void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 
     activeWorkspaceProject = project;
     workspaceSymbolAnalysisActive = true;
+    emit diagnosticsRefreshRequested(QString());
     emit workspaceSymbolAnalysisStarted(project, project.systemVerilogFiles.size());
     symbolAnalyzer->startAnalyzeProjectAsync(project, workspaceSymbolCancelProvider);
 }
@@ -201,7 +324,7 @@ void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapsh
 {
     if (!project.isOpen()
         || project.systemVerilogFiles.isEmpty()
-        || !workspaceRelationshipAnalysisCallback
+        || !relationshipBuilder
         || !workspaceRelationshipWatcher) {
         return;
     }
@@ -215,8 +338,8 @@ void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapsh
     SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
 
     QFuture<WorkspaceRelationshipAnalysisResult> future =
-        QtConcurrent::run([callback = workspaceRelationshipAnalysisCallback, project, baseSnapshot]() {
-            return callback(project, baseSnapshot);
+        QtConcurrent::run([this, project, baseSnapshot]() {
+            return analyzeWorkspaceRelationships(project, baseSnapshot);
         });
     workspaceRelationshipWatcher->setFuture(future);
 }
@@ -226,8 +349,8 @@ void AnalysisScheduler::cancelWorkspaceRelationshipAnalysis()
     if (!workspaceRelationshipWatcher || !workspaceRelationshipWatcher->isRunning())
         return;
 
-    if (workspaceRelationshipCancelCallback)
-        workspaceRelationshipCancelCallback();
+    if (relationshipBuilder)
+        relationshipBuilder->cancelAnalysis();
 
     QFuture<WorkspaceRelationshipAnalysisResult> future = workspaceRelationshipWatcher->future();
     workspaceRelationshipWatcher->cancel();
@@ -290,6 +413,7 @@ void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
         activeWorkspaceProject = ProjectSnapshot();
         cancelWorkspaceRelationshipAnalysis();
         SemanticIndex::getInstance()->clearSnapshot();
+        emit diagnosticsRefreshRequested(QString());
         return;
     }
 
@@ -328,6 +452,71 @@ void AnalysisScheduler::analyzeOpenDocumentNow(const DocumentSnapshot& snapshot,
     symbolAnalyzer->analyzeFileContent(snapshot.fileName, content);
     emit documentRefreshRequested(snapshot.fileName);
     requestRelationshipAnalysis(snapshot.fileName, content);
+}
+
+void AnalysisScheduler::scheduleRelationshipDataRefresh()
+{
+    if (relationshipRefreshTimer)
+        relationshipRefreshTimer->start();
+}
+
+SingleFileRelationshipAnalysisResult AnalysisScheduler::analyzeSingleFileRelationships(
+    const QString& fileName,
+    const QString& content,
+    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const
+{
+    SingleFileRelationshipAnalysisResult result;
+    result.fileName = fileName;
+    result.baseSnapshot = baseSnapshot;
+    result.semanticSnapshot = baseSnapshot;
+    if (!relationshipBuilder || !baseSnapshot)
+        return result;
+
+    const QList<sym_list::SymbolInfo> fileSymbols = baseSnapshot->getSymbols(fileName);
+    result.relationships =
+        relationshipBuilder->computeRelationships(
+            fileName, content, fileSymbols, baseSnapshot.get());
+
+    result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
+        baseSnapshot->withAdditionalRelationships(
+            toSemanticRelationships(result.relationships)));
+    return result;
+}
+
+WorkspaceRelationshipAnalysisResult AnalysisScheduler::analyzeWorkspaceRelationships(
+    const ProjectSnapshot& project,
+    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const
+{
+    WorkspaceRelationshipAnalysisResult result;
+    result.baseSnapshot = baseSnapshot;
+    result.semanticSnapshot = baseSnapshot;
+    if (!relationshipBuilder)
+        return result;
+
+    relationshipBuilder->resetCancellation();
+    const QStringList svFiles = project.systemVerilogFiles;
+    result.fileRelationships.reserve(svFiles.size());
+    QList<SemanticRelationship> newRelationships;
+    for (const QString& filePath : svFiles) {
+        if (relationshipBuilder->isCancelled())
+            break;
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const QString content = QTextStream(&file).readAll();
+        const QList<sym_list::SymbolInfo> fileSymbols =
+            baseSnapshot ? baseSnapshot->getSymbols(filePath) : QList<sym_list::SymbolInfo>();
+        const QVector<RelationshipToAdd> relationships =
+            relationshipBuilder->computeRelationships(
+                filePath, content, fileSymbols, baseSnapshot.get());
+        result.fileRelationships.append({filePath, relationships});
+        newRelationships.append(toSemanticRelationships(relationships));
+    }
+    if (baseSnapshot) {
+        result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
+            baseSnapshot->withAdditionalRelationships(newRelationships));
+    }
+    return result;
 }
 
 QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const

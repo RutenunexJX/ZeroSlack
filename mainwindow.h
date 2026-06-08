@@ -15,6 +15,7 @@ class SymbolAnalyzer;
 class NavigationManager;
 class NavigationWidget;
 class AnalysisScheduler;
+struct SingleFileRelationshipAnalysisResult;
 struct WorkspaceRelationshipAnalysisResult;
 class SemanticIndexSnapshot;
 class QComboBox;
@@ -23,17 +24,10 @@ class QTreeWidget;
 class SymbolRelationshipEngine;
 class SlangManager;
 #include "smartrelationshipbuilder.h"
-#include <QFutureWatcher>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
-
-struct SingleFileRelationshipAnalysisResult {
-    QVector<RelationshipToAdd> relationships;
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
-    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
-};
 
 class MainWindow : public QMainWindow
 {
@@ -80,8 +74,6 @@ private slots:
     void onNavigationRequested(const QString& filePath, int lineNumber);
     void onSymbolNavigationRequested(const sym_list::SymbolInfo& symbol);
 
-    void onRelationshipAdded(int fromSymbolId, int toSymbolId, int /*SymbolRelationshipEngine::RelationType*/ type);
-    void onRelationshipsCleared();
     void onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound);
     void onRelationshipAnalysisError(const QString& fileName, const QString& error);
 
@@ -120,10 +112,7 @@ private:
         bool isActive = false;
     } relationshipAnalysisTracker;
 
-    QFutureWatcher<SingleFileRelationshipAnalysisResult>* relationshipSingleFileWatcher = nullptr;
-    QString pendingRelationshipFileName;
-    void onSingleFileRelationshipFinished();
-    void submitSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
+    void onSingleFileRelationshipFinished(const SingleFileRelationshipAnalysisResult& result);
 
     void onWorkspaceRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
 
@@ -135,8 +124,6 @@ private:
     std::atomic<bool> symbolAnalysisCancelled{false};
 
     static const int kFileChangeDebounceMs = 350;
-
-    QTimer* relationshipRefreshDeferTimer = nullptr;
 
     void setupNavigationPane();
     void setupProblemsPane();

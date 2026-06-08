@@ -105,8 +105,10 @@ RelationshipReport RelationshipService::findRelationshipReport(
 {
     RelationshipReport report;
     const int id = resolveSymbolId(query);
+    report.subjectSymbolId = id;
     if (id < 0)
         return report;
+    report.subjectSymbol = semanticIndex()->getSymbolById(id);
 
     QMap<DirectedRelationshipResult::Direction, int> directionGroupIndexes;
     QMap<DirectedRelationshipResult::Direction,

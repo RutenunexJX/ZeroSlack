@@ -2,6 +2,7 @@
 // file attaches line-derived relationships to the containing module, not always the first module.
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
+#include "analysisscheduler.h"
 #include "semanticindex.h"
 #include "diagnosticservice.h"
 #include "hierarchyservice.h"
@@ -14,10 +15,12 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QString>
+#include <QTimer>
 #include <cstdio>
 #include <memory>
 
@@ -406,6 +409,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == SemanticDiagnostic::Error,
                true);
 
+    DiagnosticQuery topOnlyDiagnosticQuery;
+    topOnlyDiagnosticQuery.fileName = topPath;
+    const DiagnosticReport topOnlyDiagnosticReport =
+        diagnosticReportService.findDiagnosticReport(topOnlyDiagnosticQuery);
+    expectInt("diagnostic report filters current file",
+              topOnlyDiagnosticReport.totalCount, 2);
+    expectInt("diagnostic report current file group count",
+              topOnlyDiagnosticReport.fileGroups.size(), 1);
+
     DiagnosticQuery errorOnlyDiagnosticQuery;
     errorOnlyDiagnosticQuery.includeInfo = false;
     errorOnlyDiagnosticQuery.includeWarnings = false;
@@ -633,6 +645,138 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic snapshot clear restores live index",
               snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
 
+    AnalysisScheduler scheduler;
+    scheduler.setRelationshipBuilder(&builder);
+    SingleFileRelationshipAnalysisResult singleFileSchedulerResult;
+    bool singleFileSchedulerFinished = false;
+    bool singleFileSchedulerProgress = false;
+    QEventLoop singleFileSchedulerLoop;
+    QObject::connect(&scheduler,
+                     &AnalysisScheduler::relationshipAnalysisProgress,
+                     &singleFileSchedulerLoop,
+                     [&](const QString& fileName, int relationshipsFound) {
+                         singleFileSchedulerProgress = singleFileSchedulerProgress
+                             || (fileName == topPath && relationshipsFound >= 0);
+                     });
+    QObject::connect(&scheduler,
+                     &AnalysisScheduler::relationshipAnalysisFinished,
+                     &singleFileSchedulerLoop,
+                     [&](const SingleFileRelationshipAnalysisResult& result) {
+                         singleFileSchedulerResult = result;
+                         singleFileSchedulerFinished = true;
+                         singleFileSchedulerLoop.quit();
+                     });
+    QTimer::singleShot(5000, &singleFileSchedulerLoop, &QEventLoop::quit);
+    scheduler.requestRelationshipAnalysis(topPath, contents.value(topPath));
+    singleFileSchedulerLoop.exec();
+    QApplication::processEvents();
+    expectBool("scheduler single-file relationship finishes",
+               singleFileSchedulerFinished, true);
+    expectBool("scheduler forwards single-file relationship progress",
+               singleFileSchedulerProgress, true);
+    bool singleFileSchedulerFoundStageRelationship = false;
+    if (singleFileSchedulerResult.semanticSnapshot) {
+        const QList<SemanticRelationship> schedulerTopRelationships =
+            singleFileSchedulerResult.semanticSnapshot->getRelationships(topId, true);
+        for (const SemanticRelationship& relationship : schedulerTopRelationships) {
+            singleFileSchedulerFoundStageRelationship =
+                singleFileSchedulerFoundStageRelationship
+                || (relationship.toId == stageId
+                    && relationship.type == SymbolRelationshipEngine::INSTANTIATES);
+        }
+    }
+    expectBool("scheduler single-file snapshot merges relationships",
+               singleFileSchedulerFoundStageRelationship, true);
+
+    ProjectModel diagnosticProject;
+    scheduler.setProjectModel(&diagnosticProject);
+    int diagnosticsRefreshRequests = 0;
+    QObject::connect(&scheduler,
+                     &AnalysisScheduler::diagnosticsRefreshRequested,
+                     &diagnosticProject,
+                     [&](const QString& fileName) {
+                         if (fileName.isEmpty())
+                             ++diagnosticsRefreshRequests;
+                     });
+    diagnosticProject.setWorkspaceRoot(fixtureDir.absolutePath());
+    diagnosticProject.closeProject();
+    expectBool("scheduler requests diagnostics refresh on project close",
+               diagnosticsRefreshRequests > 0, true);
+
+    AnalysisScheduler refreshScheduler;
+    SymbolRelationshipEngine refreshEngine;
+    refreshScheduler.setRelationshipEngine(&refreshEngine);
+    int relationshipInvalidations = 0;
+    int relationshipRefreshes = 0;
+    QEventLoop relationshipRefreshLoop;
+    QObject::connect(&refreshScheduler,
+                     &AnalysisScheduler::relationshipDataInvalidated,
+                     &relationshipRefreshLoop,
+                     [&]() {
+                         ++relationshipInvalidations;
+                     });
+    QObject::connect(&refreshScheduler,
+                     &AnalysisScheduler::relationshipDataRefreshRequested,
+                     &relationshipRefreshLoop,
+                     [&]() {
+                         ++relationshipRefreshes;
+                         relationshipRefreshLoop.quit();
+                     });
+    refreshEngine.addRelationship(1001,
+                                  1002,
+                                  SymbolRelationshipEngine::INSTANTIATES,
+                                  QStringLiteral("fixture"),
+                                  100);
+    refreshEngine.addRelationship(1001,
+                                  1003,
+                                  SymbolRelationshipEngine::CALLS,
+                                  QStringLiteral("fixture"),
+                                  100);
+    QTimer::singleShot(1500, &relationshipRefreshLoop, &QEventLoop::quit);
+    relationshipRefreshLoop.exec();
+    expectInt("scheduler invalidates relationship data on additions",
+              relationshipInvalidations, 2);
+    expectInt("scheduler coalesces relationship refresh requests",
+              relationshipRefreshes, 1);
+    relationshipRefreshes = 0;
+    refreshEngine.clearAllRelationships();
+    QApplication::processEvents();
+    expectInt("scheduler refreshes relationship data on clear",
+              relationshipRefreshes, 1);
+
+    ProjectSnapshot schedulerProject;
+    schedulerProject.workspaceRoot = fixtureDir.absolutePath();
+    schedulerProject.allFiles = paths;
+    schedulerProject.systemVerilogFiles = paths;
+    WorkspaceRelationshipAnalysisResult schedulerResult;
+    bool schedulerFinished = false;
+    QEventLoop schedulerLoop;
+    QObject::connect(&scheduler,
+                     &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
+                     &schedulerLoop,
+                     [&](const WorkspaceRelationshipAnalysisResult& result) {
+                         schedulerResult = result;
+                         schedulerFinished = true;
+                         schedulerLoop.quit();
+                     });
+    QTimer::singleShot(5000, &schedulerLoop, &QEventLoop::quit);
+    scheduler.requestWorkspaceRelationshipAnalysis(schedulerProject);
+    schedulerLoop.exec();
+    expectBool("scheduler workspace relationship finishes",
+               schedulerFinished, true);
+    bool schedulerFoundStageRelationship = false;
+    if (schedulerResult.semanticSnapshot) {
+        const QList<SemanticRelationship> schedulerTopRelationships =
+            schedulerResult.semanticSnapshot->getRelationships(topId, true);
+        for (const SemanticRelationship& relationship : schedulerTopRelationships) {
+            schedulerFoundStageRelationship = schedulerFoundStageRelationship
+                || (relationship.toId == stageId
+                    && relationship.type == SymbolRelationshipEngine::INSTANTIATES);
+        }
+    }
+    expectBool("scheduler workspace snapshot merges relationships",
+               schedulerFoundStageRelationship, true);
+
     RelationshipService relationshipService(&index);
 
     RelationshipQuery relationshipQuery;
@@ -702,6 +846,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     };
     const RelationshipReport relationshipReport =
         relationshipService.findRelationshipReport(browseQuery);
+    expectInt("relationship report subject id",
+              relationshipReport.subjectSymbolId, topId);
+    expectBool("relationship report subject symbol",
+               relationshipReport.subjectSymbol.symbolName == QStringLiteral("rel_top"),
+               true);
     expectInt("relationship report total count",
               relationshipReport.totalCount, serviceRels.size());
     expectInt("relationship report outgoing count",
@@ -734,6 +883,27 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("relationship report keeps peer symbol",
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
+               true);
+
+    RelationshipBrowseQuery incomingStageBrowseQuery;
+    incomingStageBrowseQuery.symbolId = stageId;
+    incomingStageBrowseQuery.includeOutgoing = false;
+    incomingStageBrowseQuery.includeIncoming = true;
+    incomingStageBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const RelationshipReport incomingStageReport =
+        relationshipService.findRelationshipReport(incomingStageBrowseQuery);
+    expectInt("relationship report incoming-only total",
+              incomingStageReport.totalCount, 1);
+    expectInt("relationship report incoming-only count",
+              incomingStageReport.incomingCount, 1);
+    expectInt("relationship report incoming-only direction group",
+              incomingStageReport.directionGroups.isEmpty()
+                  ? -1
+                  : incomingStageReport.directionGroups.first().direction,
+              DirectedRelationshipResult::Incoming);
+    expectBool("relationship report incoming peer symbol",
+               !incomingStageReport.relationships.isEmpty()
+                   && incomingStageReport.relationships.first().peerSymbol.symbolId == topId,
                true);
 
     HierarchyService hierarchyService(&index);
@@ -859,6 +1029,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                referenceFoundTopInstance, true);
     const ReferenceReport stageReferenceReport =
         referenceService.findReferenceReport(stageReferenceQuery);
+    expectInt("reference report subject id",
+              stageReferenceReport.subjectSymbolId, stageId);
+    expectBool("reference report subject symbol",
+               stageReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_stage"),
+               true);
     expectInt("reference report total count",
               stageReferenceReport.totalCount, 1);
     expectInt("reference report file count",
@@ -889,6 +1064,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     currentFileStageReferenceQuery.currentFileOnly = true;
     expectInt("reference report current file filter",
               referenceService.findReferenceReport(currentFileStageReferenceQuery).totalCount, 0);
+    currentFileStageReferenceQuery.fileName = topPath;
+    expectInt("reference report current file keeps matching file",
+              referenceService.findReferenceReport(currentFileStageReferenceQuery).totalCount, 1);
 
     ReferenceQuery workspaceStageReferenceQuery = stageReferenceQuery;
     workspaceStageReferenceQuery.workspaceFilesOnly = true;

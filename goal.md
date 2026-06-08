@@ -260,3 +260,100 @@ UI / Services 只读 snapshot
   - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
   - forbidden-file guard found no *.pro/*.pri files and .claude is absent.
 - Next goal step: continue moving refresh/analysis policy out of MainWindow, add real Problems/References/Relationships fixtures, and keep UI/service reads behind SemanticIndex, snapshots, and Query Services.
+
+## Session 2026-06-08 continuation 4 note
+
+- ReferenceService and RelationshipService reports now expose the resolved subject symbol for their result sets.
+- MainWindow consumes that report subject for References / Relationships Direct titles and status messages, keeping more result context in services.
+- Workspace relationship batch analysis moved from MainWindow into AnalysisScheduler:
+  - scheduler owns ProjectSnapshot traversal, base snapshot reads, relationship computation, enriched snapshot merge, and builder cancellation.
+  - MainWindow only wires the builder and remains responsible for UI/progress coordination.
+- relationship_test covers the scheduler workspace relationship path with the real multi-file fixture and verifies the enriched snapshot contains the cross-file instantiation.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test and gui_smoke_test: 2/2 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
+- Next goal step: continue thinning MainWindow progress/refresh policy and keep UI/service reads behind SemanticIndex, snapshots, and Query Services.
+
+## Session 2026-06-08 continuation 5 note
+
+- AnalysisScheduler now owns both workspace and single-file relationship background analysis boundaries.
+- The single-file path moved out of MainWindow:
+  - scheduler owns the watcher, cancellation of older single-file work, base snapshot capture, relationship computation, and enriched snapshot merge.
+  - MainWindow consumes AnalysisScheduler::relationshipAnalysisFinished and keeps only engine/UI completion handling.
+- This advances the goal that MainWindow coordinates windows while AnalysisScheduler owns analysis task policy.
+- relationship_test covers the scheduler single-file path with the real multi-file fixture and verifies the enriched snapshot contains the cross-file instantiation.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test, gui_smoke_test, and large_file_perf_test: 3/3 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
+- Next goal step: continue thinning relationship progress/refresh policy in MainWindow and keep UI/service reads behind SemanticIndex, snapshots, Query Services, and scheduler-owned task boundaries.
+
+## Session 2026-06-08 continuation 6 note
+
+- AnalysisScheduler now owns the relationship progress/error/cancel signal boundary for relationship tasks.
+- Scheduler emits result-based progress before single-file and workspace relationship finished signals, giving UI a stable scheduler-owned progress event.
+- MainWindow no longer connects directly to SmartRelationshipBuilder analysisCompleted / analysisError / analysisCancelled.
+- This advances the goal that MainWindow remains a window coordinator while AnalysisScheduler owns analysis task policy and progress boundaries.
+- relationship_test covers scheduler single-file progress forwarding on the real multi-file fixture.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test, gui_smoke_test, and large_file_perf_test: 3/3 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
+- Next goal step: continue thinning MainWindow refresh scheduling and keep UI/service reads behind SemanticIndex, snapshots, Query Services, and scheduler-owned task boundaries.
+
+## Session 2026-06-08 continuation 7 note
+
+- AnalysisScheduler now owns Problems diagnostics refresh request timing through diagnosticsRefreshRequested(fileName).
+- MainWindow no longer decides Problems refresh timing for workspace close, workspace analysis start, or SymbolAnalyzer batch completion.
+- MainWindow keeps only UI debounce and tree rendering for Problems.
+- This advances the goal that analysis lifecycle policy belongs to AnalysisScheduler while MainWindow remains a window coordinator.
+- relationship_test covers scheduler project-close diagnostics refresh requests.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test, gui_smoke_test, and large_file_perf_test: 3/3 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
+- Next goal step: continue thinning References/Relationships refresh scheduling and keep UI/service reads behind SemanticIndex, snapshots, Query Services, and scheduler-owned task boundaries.
+
+## Session 2026-06-08 continuation 8 note
+
+- AnalysisScheduler now owns the SymbolRelationshipEngine relationship data invalidation and refresh-request boundary.
+- Scheduler emits relationshipDataInvalidated immediately for relationship changes, coalesces relationshipDataRefreshRequested for additions, and requests immediate refresh on clear.
+- MainWindow no longer connects directly to relationshipAdded / relationshipsCleared and no longer owns relationshipRefreshDeferTimer.
+- This advances the goal that MainWindow coordinates windows while AnalysisScheduler owns analysis lifecycle and refresh timing boundaries.
+- relationship_test covers scheduler relationship invalidation, coalesced refresh on additions, and immediate refresh on clear.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test, gui_smoke_test, and large_file_perf_test: 3/3 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty, excluding readme.md / plan.md / goal.md.
+  - forbidden-file guard found no demo.pro, no *.pro, no *.pri, and .claude is absent.
+- Next goal step: continue shrinking remaining MainWindow progress UI policy if a clean scheduler signal boundary exists, or add another real Problems / References / Relationships fixture.
+
+## Session 2026-06-08 continuation 9 note
+
+- ReferenceService real fixture coverage was tightened for current-file filtering.
+- relationship_test now checks that currentFileOnly keeps the matching top file for the rel_stage instantiation reference, not only that it hides the non-matching stage file.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test: passed.
+- Next goal step: continue adding focused real Problems / References / Relationships fixture coverage, or move another clean MainWindow progress UI boundary into AnalysisScheduler.
+
+## Session 2026-06-08 continuation 10 note
+
+- Final handoff point requested because context is compressing.
+- Problems / Relationships real fixture coverage was tightened again:
+  - DiagnosticReport direct fileName filtering now checks topPath keeps two diagnostics and one file group.
+  - RelationshipReport incoming-only browsing now checks rel_stage sees the top -> stage instantiation and top peer symbol.
+- Verification passed:
+  - Full ctest --output-on-failure: 6/6 passed.
+  - Focused ctest for relationship_test: passed.
+- Next goal step: in a fresh session, continue with another focused Problems / Relationships real fixture or extract one remaining clean MainWindow progress UI boundary into AnalysisScheduler.

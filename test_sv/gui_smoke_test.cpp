@@ -199,13 +199,9 @@ static void drainRelationshipWork(MainWindow& window)
 {
     if (window.relationshipBuilder)
         window.relationshipBuilder->cancelAnalysis();
-    if (window.analysisScheduler)
+    if (window.analysisScheduler) {
+        window.analysisScheduler->cancelRelationshipAnalysis();
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
-    if (window.relationshipSingleFileWatcher && window.relationshipSingleFileWatcher->isRunning()) {
-        QFuture<SingleFileRelationshipAnalysisResult> future =
-            window.relationshipSingleFileWatcher->future();
-        window.relationshipSingleFileWatcher->cancel();
-        future.waitForFinished();
     }
 }
 

@@ -41,6 +41,8 @@ struct ReferenceFileGroup {
 };
 
 struct ReferenceReport {
+    int subjectSymbolId = -1;
+    sym_list::SymbolInfo subjectSymbol = {};
     QList<ReferenceResult> references;
     QList<ReferenceFileGroup> fileGroups;
     int totalCount = 0;
