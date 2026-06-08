@@ -2,7 +2,7 @@
 
 当前版本：0.0.20/slang25
 当前分支：tree_sitter_and_slang
-构建系统：Qt 6 + CMake + Ninja，demo.pro / qmake 不再维护。
+构建系统：Qt 6 + CMake + Ninja，demo.pro / qmake 已删除，不要恢复。
 
 ZeroSlack 当前目标不是一次性做完整 IDE，而是先成为可靠的
 SystemVerilog 工程浏览器 / 轻量编辑器：能打开真实 workspace，能理解符号、
@@ -189,6 +189,7 @@ Slang 负责真实语义事实：
 ## 当前工作区注意事项
 
 Claude 相关文件已删除；不要恢复 `.claude/` 或任何 Claude 本地配置文件。
+qmake 相关文件已删除；不要恢复 `demo.pro`、任何 `*.pro` 或 `*.pri` 文件。
 
 提交或 push 只在用户明确要求时执行；提交前先确认真实内容 diff。
 
@@ -234,7 +235,12 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
    - `.claude/` 相关文件已删除。
    - 后续不要重新创建、恢复或提交任何 Claude 本地配置文件。
 
-4. 源码注释和 UI 文案必须保持英文 / ASCII
+4. 不要恢复 qmake 文件
+   - `demo.pro` 已删除。
+   - 当前维护构建系统只有 Qt 6 + CMake + Ninja。
+   - 后续不要重新创建、恢复或提交 `demo.pro`、任何 `*.pro` 或 `*.pri` 文件。
+
+5. 源码注释和 UI 文案必须保持英文 / ASCII
    - 代码注释不要再写中文。
    - UI 可见文字、状态栏、进度对话框、tooltip、日志文字全部保持英文。
    - 源码、测试、.ui、CMake 文件应避免非 ASCII 字符，三份中文文档除外：
@@ -245,7 +251,7 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
           Where-Object { $_.FullName -notmatch '\\(build|thirdparty|\.git|\.qtcreator|\.agents|\.codex)\\' -and $_.Name -notin @('readme.md','plan.md','goal.md') } |
           Select-String -Pattern '[^\x00-\x7F]'
 
-5. 注意编码显示误导
+6. 注意编码显示误导
    - PowerShell 默认显示可能把 UTF-8 中文内容显示成乱码。
    - 读中文文档或旧中文源码时优先使用：
 
@@ -253,14 +259,14 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 
    - 但源码侧的长期目标不是“正确显示中文”，而是避免中文/非 ASCII 再进入源码和 UI。
 
-6. 不要恢复已淘汰路径
+7. 不要恢复已淘汰路径
    - 不要恢复 SVLexer。
    - 不要恢复旧 Tree-sitter symbol parser。
    - 不要恢复 Tree-sitter 验证按钮。
    - 不要恢复关系分析正则路径。
    - 不要重新引入长期散落的 perflog 式性能探针。
 
-7. Query Services 收束要小步验证
+8. Query Services 收束要小步验证
    - UI/editor 迁移到 DefinitionService / CompletionService / SearchService /
      RelationshipService / HierarchyService 时，每次只迁一小段路径。
    - 高风险点包括：
@@ -268,16 +274,16 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
      Windows 路径规范化、NavigationWidget item payload。
    - 每轮至少跑 git diff --check；涉及行为变更时跑对应 exe 或完整 ctest。
 
-8. 测试素材也要避免中文
+9. 测试素材也要避免中文
    - 过去 ts_doc_test 使用中文注释测试 UTF-16 offset，后续已改为 ASCII。
    - 如需测试多字节字符，请优先用受控、明确的测试说明，并确认不会破坏“源码非 ASCII 复扫”规则；
      当前默认是不在源码测试中使用非 ASCII。
 
-9. 文档可以中文，但不要用文档规则反推源码规则
+10. 文档可以中文，但不要用文档规则反推源码规则
    - readme.md / plan.md / goal.md 是中文交接文档，可以保留中文。
    - 源码注释、UI 文案、测试字符串、CMake 注释仍按英文 / ASCII 执行。
 
-10. GUI smoke 访问私有 Qt widget 指针时要包含完整 Qt 类型
+11. GUI smoke 访问私有 Qt widget 指针时要包含完整 Qt 类型
    - gui_smoke_test 使用 `#define private public` 直接访问 MainWindow 私有成员。
    - 如果测试要调用某个私有 Qt widget 指针的方法，不能只依赖 mainwindow.h 里的前置声明；
      测试文件本身需要 include 对应 Qt 头，例如 `#include <QComboBox>`。
@@ -469,6 +475,7 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 
 重要规则：
 - Claude 相关文件已删除，不要恢复 .claude/ 或任何 Claude 本地配置。
+- qmake 相关文件已删除，不要恢复 demo.pro、任何 *.pro 或 *.pri 文件。
 - 源码注释、测试字符串、CMake 注释、UI 可见文案要求英文 / ASCII。
 - readme.md / plan.md / goal.md 是中文交接文档，可以保留中文。
 - git status 可能有 stat/CRLF 噪声，实际内容变更优先看 git diff --name-only。
@@ -550,3 +557,40 @@ git status 可能列出一些没有内容 diff 的 M 文件，这是 Windows ind
 4. 继续改进 Problems 面板诊断生命周期、清空策略和更多真实 fixture。
 5. 继续打磨 References dock：结果摘要、更多 workspace 维度和跨文件上下文。
 6. 保持 6 项 CTest 全绿。
+
+## Session 2026-06-08 follow-up
+
+- Current branch: tree_sitter_and_slang.
+- Current version: 0.0.20/slang25 in version.h.
+- Latest commit at session start: 3a799b7 Reduce live symbol database coupling.
+- Focused change: SemanticIndex now owns relationship engine attachment and SmartRelationshipBuilder creation helpers.
+- MainWindow::setupRelationshipEngine and CompletionManager::setRelationshipEngine no longer fetch the live sym_list database directly for builder wiring.
+- relationship_test adds facade-boundary coverage for relationship engine attachment and builder creation.
+- Verification passed:
+  - cmake build targets: relationship_test, completion_test, gui_smoke_test.
+  - ctest -R "relationship_test|completion_test|gui_smoke_test" --output-on-failure: 3/3 passed.
+  - git diff --check: passed.
+  - source/test/UI/CMake non-ASCII scan: empty.
+  - forbidden-file guard: no *.pro/*.pri files in working tree, .claude absent.
+- Existing staged deletion of demo.pro was present at session start and was not restored.
+- Next best step: continue reducing live sym_list exposure from service/editor transition points, especially remaining mutable completion state paths, without expanding the refactor scope.
+
+## Session 2026-06-08 continuation
+
+- Additional focused change: CompletionManager now routes file-specific symbols, cached file content, scope names, symbol id lookup, and module-name validation through private SemanticIndex helper methods.
+- CompletionManager module-context completion now prefers SemanticIndex cached file content before falling back to reading the file from disk.
+- This keeps more completion read paths snapshot-friendly while preserving the old fallback behavior.
+- Verification passed:
+  - cmake build targets: completion_test, gui_smoke_test.
+  - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
+- Next best step: continue with another small CompletionManager slice only if it can move old strategy logic behind services/facades without rewriting completion behavior.
+
+## Session 2026-06-08 continuation 2
+
+- Additional focused change: CompletionManager type-specific completion helpers now use SemanticIndex type queries instead of full-symbol scans where the desired type is known.
+- Updated enum variable lookup, module port module lookup, enum value completions, and struct member completions to use getSemanticSymbolsByType.
+- This narrows snapshot-backed reads and keeps matching behavior unchanged.
+- Verification passed:
+  - cmake build targets: completion_test, gui_smoke_test.
+  - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
+- Next best step: stop expanding CompletionManager unless the next slice can be covered by existing completion_test/gui_smoke_test or a very small targeted assertion.

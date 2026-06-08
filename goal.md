@@ -55,6 +55,7 @@ Tree-sitter + Slang 分工保持不变：
 - Ctrl+Click、导航窗格、补全面板、关系浏览、右键菜单复用 Query Services。
 - Tree-sitter 只用于即时语法体验；定义、类型、关系、诊断以 Slang / SemanticIndex 为准。
 - 性能探针只做针对性、可移除或测试内探针，不恢复长期散落 perflog。
+- qmake 路径已淘汰；不要恢复 `demo.pro`、任何 `*.pro` 或 `*.pri` 文件。
 
 ## 当前完成度
 
@@ -83,6 +84,7 @@ Tree-sitter + Slang 分工保持不变：
 - Problems 面板已支持 Current File / Workspace Files / All Files scope、service fileGroups、diagnostic replacement 生命周期和 workspace close/reopen 清空。
 - Relationships Tree 已开始消费 HierarchyReport；底部树刷新会保留展开/折叠状态。
 - 0.0.20/slang25 交接文档已同步；本轮提交和上传前按用户要求不再重复编译 / 测试。
+- `demo.pro` / qmake 文件已删除；后续只维护 Qt 6 + CMake + Ninja 构建路径。
 - GUI smoke / large file perf / relationship fixture 等 CTest 回归。
 
 仍未完成或仍是过渡形态：
@@ -224,3 +226,23 @@ UI / Services 只读 snapshot
 - 至少一个真实多文件 SV fixture 覆盖 package/import、跨文件跳转、实例化、调用、赋值、
   条件读取、clock/reset。
 - 新会话只读 readme.md、plan.md、goal.md、version.h 就能理解当前状态、下一步和最终骨架。
+
+## Session 2026-06-08 architecture note
+
+- SemanticIndex now hides relationship engine attachment and SmartRelationshipBuilder creation from MainWindow and CompletionManager.
+- This keeps live sym_list database wiring inside the facade boundary while preserving the current snapshot migration path.
+- relationship_test covers the new facade boundary.
+- Verification passed for relationship_test, completion_test, and gui_smoke_test via CTest; git diff --check and the source/test/UI/CMake non-ASCII scan also passed.
+- Continue toward the same goal: UI/editor/services should read through SemanticIndex and Query Services, with live sym_list access contained inside transition facades until snapshot-backed reads replace it.
+
+## Session 2026-06-08 continuation note
+
+- CompletionManager now centralizes more semantic reads through helper methods backed by SemanticIndex.
+- Module-context completion prefers SemanticIndex cached content before direct file fallback, improving snapshot-backed read coverage without changing completion behavior.
+- Focused verification passed for completion_test and gui_smoke_test.
+
+## Session 2026-06-08 continuation 2 note
+
+- CompletionManager now uses SemanticIndex typed queries for several type-specific completion helpers instead of scanning all symbols.
+- This is another small step toward UI/editor reads going through narrower snapshot-backed query shapes.
+- Focused verification passed for completion_test and gui_smoke_test.

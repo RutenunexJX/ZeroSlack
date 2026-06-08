@@ -205,6 +205,7 @@ UI / Services 只读 snapshot
 
 - `ctest --output-on-failure` 6/6 passed。
 - `git diff --check` 无错误。
+- 不恢复 `demo.pro`、任何 `*.pro` / `*.pri` 或 qmake 路径。
 - 不恢复 SVLexer、旧 Tree-sitter parser、Tree-sitter 验证按钮或关系分析正则路径。
 - 不引入长期散落 perflog。
 - 不恢复 `.claude/` 或任何 Claude 本地配置。
@@ -218,3 +219,43 @@ $env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;E:\QT6\Too
 
 & "E:\QT6\Tools\CMake_64\bin\ctest.exe" --test-dir "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug" --output-on-failure
 ```
+
+## Session 2026-06-08 update
+
+- Completed a small SemanticIndex facade step: relationship engine attachment and SmartRelationshipBuilder creation now live behind SemanticIndex helpers.
+- MainWindow and CompletionManager no longer request the live sym_list database directly for relationship builder wiring.
+- Added relationship_test coverage for the facade relationship-engine attachment and builder creation path.
+- Verification passed:
+  - cmake build targets: relationship_test, completion_test, gui_smoke_test.
+  - ctest -R "relationship_test|completion_test|gui_smoke_test" --output-on-failure: 3/3 passed.
+  - git diff --check passed.
+  - source/test/UI/CMake non-ASCII scan was empty.
+  - forbidden-file guard found no *.pro/*.pri files in the working tree and .claude is absent.
+- Existing staged demo.pro deletion was present before this session and remains untouched.
+- Next step: keep shrinking live sym_list exposure from completion/editor/service transition points, then broaden to scheduler/MainWindow policy extraction when a clean slice appears.
+
+## Session 2026-06-08 continuation
+
+- CompletionManager semantic reads were further centralized behind private helpers:
+  - file symbols
+  - cached file content
+  - scope symbol names
+  - symbol id lookup
+  - module-name validity
+- Module-context completion now prefers SemanticIndex cached content before disk fallback when scanning include/import context.
+- Verification passed:
+  - cmake build targets: completion_test, gui_smoke_test.
+  - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
+- Continue with small completion/service boundary moves; avoid a broad CompletionManager rewrite.
+
+## Session 2026-06-08 continuation 2
+
+- CompletionManager type-specific helpers now use SemanticIndex typed queries where available:
+  - enum variable lookup
+  - module lookup for module-port completions
+  - enum value completions
+  - struct member completions
+- Verification passed:
+  - cmake build targets: completion_test, gui_smoke_test.
+  - ctest -R "completion_test|gui_smoke_test" --output-on-failure: 2/2 passed.
+- Keep future CompletionManager changes narrow and testable; prefer service/facade reads over full-symbol scans when the query shape is already known.

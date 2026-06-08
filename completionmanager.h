@@ -171,8 +171,13 @@ private:
 
     QList<sym_list::SymbolInfo> getAllSemanticSymbols() const;
     QList<sym_list::SymbolInfo> getSemanticSymbolsByType(sym_list::sym_type_e symbolType) const;
+    QList<sym_list::SymbolInfo> getSemanticSymbolsForFile(const QString& fileName) const;
     QList<sym_list::SymbolInfo> findSemanticDefinitions(const QString& symbolName) const;
     sym_list::SymbolInfo getSemanticSymbolById(int symbolId) const;
+    int findSemanticSymbolId(const QString& symbolName) const;
+    QString getSemanticCachedFileContent(const QString& fileName) const;
+    QStringList getSemanticScopeSymbolNames(const QString& fileName, int cursorLine) const;
+    bool isSemanticValidModuleName(const QString& moduleName) const;
 
     bool shouldSkipCacheRefresh();
 

@@ -1562,16 +1562,16 @@ void MainWindow::setupRelationshipEngine()
 {
     if (!relationshipEngine) return;
 
-    sym_list* symbolDatabase = SemanticIndex::getInstance()->symbolDatabase();
-    symbolDatabase->setRelationshipEngine(relationshipEngine.get());
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    semanticIndex->attachRelationshipEngine(relationshipEngine.get());
 
     slangManager = std::make_unique<SlangManager>();
     CompletionManager* completionManager = CompletionManager::getInstance();
     completionManager->setSlangManager(slangManager.get());
     completionManager->setRelationshipEngine(relationshipEngine.get());
 
-    relationshipBuilder = std::make_unique<SmartRelationshipBuilder>(
-        relationshipEngine.get(), symbolDatabase, slangManager.get(), this);
+    relationshipBuilder = semanticIndex->createRelationshipBuilder(
+        relationshipEngine.get(), slangManager.get(), this);
 
     relationshipSingleFileWatcher = new QFutureWatcher<SingleFileRelationshipAnalysisResult>(this);
     connect(relationshipSingleFileWatcher, &QFutureWatcher<SingleFileRelationshipAnalysisResult>::finished,

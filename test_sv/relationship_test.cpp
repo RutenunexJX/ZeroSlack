@@ -485,6 +485,22 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("top reset by top_rst_n",
                hasRel(rels, topRstId, topId, SymbolRelationshipEngine::RESETS), true);
 
+    index.attachRelationshipEngine(&engine);
+    expectBool("semantic index attaches relationship engine",
+               db->getRelationshipEngine() == &engine, true);
+    const std::unique_ptr<SmartRelationshipBuilder> facadeBuilder =
+        index.createRelationshipBuilder(&engine, &slang);
+    expectBool("semantic index creates relationship builder",
+               facadeBuilder != nullptr, true);
+    const QVector<RelationshipToAdd> facadeBuilderRels =
+        facadeBuilder->computeRelationships(topPath, contents.value(topPath), topSymbols);
+    expectBool("semantic index builder uses facade database",
+               hasRel(facadeBuilderRels,
+                      topId,
+                      stageId,
+                      SymbolRelationshipEngine::INSTANTIATES),
+               true);
+
     const auto symbolOnlySnapshot = std::make_shared<SemanticIndexSnapshot>(
         SemanticIndexSnapshot::fromSymbolDatabase(db));
     SmartRelationshipBuilder snapshotBuilder(&engine, nullptr, &slang);

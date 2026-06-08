@@ -10,6 +10,9 @@
 #include <memory>
 
 class SemanticIndexSnapshot;
+class SlangManager;
+class SmartRelationshipBuilder;
+class QObject;
 
 struct SemanticQueryContext {
     QString fileName;
@@ -73,6 +76,11 @@ public:
                           const sym_list::SymbolInfo& moduleSymbol) const;
     bool contentAffectsSymbols(const QString& fileName, const QString& content) const;
     void refreshStructTypedefEnumForFile(const QString& fileName, const QString& content);
+    void attachRelationshipEngine(SymbolRelationshipEngine* engine) const;
+    std::unique_ptr<SmartRelationshipBuilder> createRelationshipBuilder(
+        SymbolRelationshipEngine* engine,
+        SlangManager* slangManager,
+        QObject* parent = nullptr) const;
 
     QList<sym_list::SymbolInfo> findDefinitions(const QString& name,
                                                 const SemanticQueryContext& context = {}) const;

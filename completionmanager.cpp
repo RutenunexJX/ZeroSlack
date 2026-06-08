@@ -52,6 +52,12 @@ QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsByType(
     return SemanticIndex::getInstance()->getSymbolsByType(symbolType);
 }
 
+QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsForFile(
+    const QString& fileName) const
+{
+    return SemanticIndex::getInstance()->getSymbols(fileName);
+}
+
 QList<sym_list::SymbolInfo> CompletionManager::findSemanticDefinitions(
     const QString& symbolName) const
 {
@@ -61,6 +67,28 @@ QList<sym_list::SymbolInfo> CompletionManager::findSemanticDefinitions(
 sym_list::SymbolInfo CompletionManager::getSemanticSymbolById(int symbolId) const
 {
     return SemanticIndex::getInstance()->getSymbolById(symbolId);
+}
+
+int CompletionManager::findSemanticSymbolId(const QString& symbolName) const
+{
+    return SemanticIndex::getInstance()->findSymbolId(symbolName);
+}
+
+QString CompletionManager::getSemanticCachedFileContent(const QString& fileName) const
+{
+    return SemanticIndex::getInstance()->getCachedFileContent(fileName);
+}
+
+QStringList CompletionManager::getSemanticScopeSymbolNames(
+    const QString& fileName,
+    int cursorLine) const
+{
+    return SemanticIndex::getInstance()->getScopeSymbolNames(fileName, cursorLine);
+}
+
+bool CompletionManager::isSemanticValidModuleName(const QString& moduleName) const
+{
+    return SemanticIndex::getInstance()->isValidModuleName(moduleName);
 }
 
 QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const QString& prefix)
@@ -749,8 +777,8 @@ void CompletionManager::setRelationshipEngine(SymbolRelationshipEngine* engine)
     relationshipEngine = engine;
 
     if (engine && !relationshipBuilder) {
-        relationshipBuilder = std::make_unique<SmartRelationshipBuilder>(
-            engine, SemanticIndex::getInstance()->symbolDatabase(), m_slangManager, nullptr);
+        relationshipBuilder = SemanticIndex::getInstance()->createRelationshipBuilder(
+            engine, m_slangManager, nullptr);
     }
 
     relationshipCacheValid = false;
@@ -1098,10 +1126,9 @@ QString CompletionManager::getEnumTypeForVariable(const QString& varName,
         }
     }
 
-    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(sym_list::sym_enum_var);
     for (const auto& symbol : symbols) {
-        if (symbol.symbolName == varName &&
-            symbol.symbolType == sym_list::sym_enum_var) {
+        if (symbol.symbolName == varName) {
             return symbol.moduleScope;
         }
     }
@@ -1118,10 +1145,9 @@ QStringList CompletionManager::getModulePortCompletions(const QString& prefix,
         return results;
     }
 
-    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(sym_list::sym_module);
     for (const auto& symbol : symbols) {
-        if (symbol.symbolType == sym_list::sym_module &&
-            symbol.symbolName == moduleTypeName) {
+        if (symbol.symbolName == moduleTypeName) {
 
             QStringList ports = getModuleInternalVariablesByType(moduleTypeName,
                                sym_list::sym_wire, prefix);
@@ -1423,7 +1449,7 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
         return QString();
     }
 
-    QList<sym_list::SymbolInfo> fileSymbols = SemanticIndex::getInstance()->getSymbols(fileName);
+    QList<sym_list::SymbolInfo> fileSymbols = getSemanticSymbolsForFile(fileName);
 
     QList<sym_list::SymbolInfo> modules;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
@@ -1441,7 +1467,7 @@ QString CompletionManager::getCurrentModule(const QString& fileName, int cursorP
                   return a.position < b.position;
               });
 
-    QString content = SemanticIndex::getInstance()->getCachedFileContent(fileName);
+    QString content = getSemanticCachedFileContent(fileName);
     QString currentModuleName = findModuleAtPosition(modules, cursorPosition, fileName, content);
 
     return currentModuleName;
@@ -1452,8 +1478,7 @@ QStringList CompletionManager::getCompletions(const QString& prefix, const QStri
     QStringList result;
     if (cursorFile.isEmpty()) return result;
 
-    const QStringList scopeNames =
-        SemanticIndex::getInstance()->getScopeSymbolNames(cursorFile, cursorLine);
+    const QStringList scopeNames = getSemanticScopeSymbolNames(cursorFile, cursorLine);
     for (const QString& name : scopeNames) {
         if (prefix.isEmpty() || matchesAbbreviation(name, prefix))
             result.append(name);
@@ -1504,7 +1529,7 @@ QString CompletionManager::findModuleAtPosition(
 
     for (const auto& module : modules) {
         if (cursorPosition < module.position) continue;
-        if (!sym_list::isValidModuleName(module.symbolName)) continue;
+        if (!isSemanticValidModuleName(module.symbolName)) continue;
 
         if (module.endLine > 0) {
             if (cursorLine >= module.startLine && cursorLine <= module.endLine)
@@ -1521,7 +1546,7 @@ QString CompletionManager::findModuleAtPosition(
 
 int CompletionManager::findSymbolIdByName(const QString& symbolName)
 {
-    return SemanticIndex::getInstance()->findSymbolId(symbolName);
+    return findSemanticSymbolId(symbolName);
 }
 
 void CompletionManager::updateRelationshipCaches()
@@ -2036,13 +2061,15 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
         }
     }
 
-    QFile file(fileName);
-    QString fileContent;
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return results;
+    QString fileContent = getSemanticCachedFileContent(fileName);
+    if (fileContent.isEmpty()) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            return results;
+        }
+        fileContent = QString::fromUtf8(file.readAll());
+        file.close();
     }
-    fileContent = QString::fromUtf8(file.readAll());
-    file.close();
 
     QSet<int> seenIds;
     for (const sym_list::SymbolInfo& s : results) {
@@ -2063,8 +2090,7 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
             if (m.hasMatch()) {
                 QString incPath = m.captured(1).trimmed();
                 QString absPath = QDir(baseDir).absoluteFilePath(incPath);
-                QList<sym_list::SymbolInfo> incSymbols =
-                    SemanticIndex::getInstance()->getSymbols(absPath);
+                QList<sym_list::SymbolInfo> incSymbols = getSemanticSymbolsForFile(absPath);
                 for (const sym_list::SymbolInfo& s : incSymbols) {
                     if (!isSymbolTypeMatchCommand(s.symbolType, symbolType)) continue;
                     if (!prefix.isEmpty() && !matchesAbbreviation(s.symbolName, prefix)) continue;
@@ -2187,16 +2213,15 @@ QStringList CompletionManager::getEnumValueCompletions(const QString& prefix,
 {
     QStringList results;
 
-    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        getSemanticSymbolsByType(sym_list::sym_enum_value);
     for (const auto& symbol : symbols) {
-        if (symbol.symbolType == sym_list::sym_enum_value) {
-            if (!enumTypeName.isEmpty() && symbol.moduleScope != enumTypeName) {
-                continue;
-            }
+        if (!enumTypeName.isEmpty() && symbol.moduleScope != enumTypeName) {
+            continue;
+        }
 
-            if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
-                results.append(symbol.symbolName);
-            }
+        if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
+            results.append(symbol.symbolName);
         }
     }
 
@@ -2210,16 +2235,15 @@ QStringList CompletionManager::getStructMemberCompletions(const QString& prefix,
 {
     QStringList results;
 
-    const QList<sym_list::SymbolInfo> symbols = getAllSemanticSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        getSemanticSymbolsByType(sym_list::sym_struct_member);
     for (const auto& symbol : symbols) {
-        if (symbol.symbolType == sym_list::sym_struct_member) {
-            if (!structTypeName.isEmpty() && symbol.moduleScope != structTypeName) {
-                continue;
-            }
+        if (!structTypeName.isEmpty() && symbol.moduleScope != structTypeName) {
+            continue;
+        }
 
-            if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
-                results.append(symbol.symbolName);
-            }
+        if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
+            results.append(symbol.symbolName);
         }
     }
 

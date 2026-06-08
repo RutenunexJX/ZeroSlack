@@ -3,6 +3,7 @@
 #include "completionmanager.h"
 #include "scope_tree.h"
 #include "semanticindexsnapshot.h"
+#include "smartrelationshipbuilder.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -272,6 +273,20 @@ void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,
                                                     const QString& content)
 {
     symbolDatabase()->refreshStructTypedefEnumForFile(fileName, content);
+}
+
+void SemanticIndex::attachRelationshipEngine(SymbolRelationshipEngine* engine) const
+{
+    symbolDatabase()->setRelationshipEngine(engine);
+}
+
+std::unique_ptr<SmartRelationshipBuilder> SemanticIndex::createRelationshipBuilder(
+    SymbolRelationshipEngine* engine,
+    SlangManager* slangManager,
+    QObject* parent) const
+{
+    return std::make_unique<SmartRelationshipBuilder>(
+        engine, symbolDatabase(), slangManager, parent);
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
