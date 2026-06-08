@@ -628,6 +628,24 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("snapshot reference service finds stage instantiation",
                snapshotReferenceFoundTop, true);
+    HierarchyService snapshotHierarchyService(&snapshotIndex);
+    HierarchyQuery snapshotHierarchyQuery;
+    snapshotHierarchyQuery.symbolId = topId;
+    snapshotHierarchyQuery.maxDepth = 1;
+    snapshotHierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<HierarchyNode> snapshotHierarchy =
+        snapshotHierarchyService.getHierarchy(snapshotHierarchyQuery);
+    bool snapshotHierarchyFoundStage = false;
+    for (const HierarchyNode& node : snapshotHierarchy) {
+        snapshotHierarchyFoundStage = snapshotHierarchyFoundStage
+            || (node.depth == 1
+                && node.parentSymbolId == topId
+                && node.symbol.symbolId == stageId
+                && node.direction == HierarchyQuery::Children
+                && node.viaType == SymbolRelationshipEngine::INSTANTIATES);
+    }
+    expectBool("snapshot hierarchy service finds stage child",
+               snapshotHierarchyFoundStage, true);
     SemanticRelationship duplicateStageRelationship;
     duplicateStageRelationship.fromId = topId;
     duplicateStageRelationship.toId = stageId;

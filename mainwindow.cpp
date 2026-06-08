@@ -116,6 +116,7 @@ void MainWindow::setupManagerConnections()
             });
     connect(analysisScheduler.get(), &AnalysisScheduler::relationshipDataRefreshRequested,
             this, [this]() {
+                CompletionManager::getInstance()->refreshRelationshipData();
                 if (navigationManager)
                     navigationManager->refreshCurrentView();
             });
@@ -167,9 +168,6 @@ void MainWindow::setupManagerConnections()
             &AnalysisProgressCoordinator::relationshipAnalysisErrorReported,
             this,
             &MainWindow::onRelationshipAnalysisError);
-
-    connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
-            this, &MainWindow::onWorkspaceRelationshipAnalysisFinished);
 
     connect(analysisScheduler.get(), &AnalysisScheduler::workspaceRelationshipAnalysisCancelled,
             this, []() {});
@@ -1282,7 +1280,6 @@ void MainWindow::setupRelationshipEngine()
 
 void MainWindow::onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound)
 {
-    CompletionManager::getInstance()->refreshRelationshipData();
     if (statusBar()) {
         statusBar()->showMessage(
             QString("Smart analysis completed: %1 relationships in %2")
@@ -1322,11 +1319,4 @@ void MainWindow::onSingleFileRelationshipFinished(
     const SingleFileRelationshipAnalysisResult& result)
 {
     onRelationshipAnalysisCompleted(result.fileName, result.relationships.size());
-}
-
-void MainWindow::onWorkspaceRelationshipAnalysisFinished(
-    const WorkspaceRelationshipAnalysisResult& result)
-{
-    Q_UNUSED(result)
-    CompletionManager::getInstance()->refreshRelationshipData();
 }

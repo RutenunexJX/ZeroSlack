@@ -106,6 +106,10 @@ Recent test coverage includes real fixture assertions for:
   endpoint symbols.
 - Snapshot-backed ReferenceService real instantiation lookup with converted
   referencing/referenced symbols.
+- Snapshot-backed HierarchyService real instantiation traversal.
+- Scheduler-owned relationship data refresh requests after relationship result
+  application, with MainWindow consuming the refresh request for completion and
+  navigation updates.
 - DefinitionService same-name struct member selection from `var.member` context.
 - Snapshot-backed struct-variable type lookup, struct-member completion,
   command-mode struct symbols, and same-name struct-member selection.

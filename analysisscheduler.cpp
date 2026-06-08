@@ -514,6 +514,7 @@ bool AnalysisScheduler::applySingleFileRelationshipResult(
 
     if (result.semanticSnapshot)
         semanticIndex->setSnapshot(result.semanticSnapshot);
+    scheduleRelationshipDataRefresh();
     return true;
 }
 
@@ -543,6 +544,7 @@ bool AnalysisScheduler::applyWorkspaceRelationshipResult(
 
     if (result.semanticSnapshot)
         semanticIndex->setSnapshot(result.semanticSnapshot);
+    scheduleRelationshipDataRefresh();
     return true;
 }
 

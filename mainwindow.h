@@ -106,8 +106,6 @@ private:
 
     void onSingleFileRelationshipFinished(const SingleFileRelationshipAnalysisResult& result);
 
-    void onWorkspaceRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
-
     static const int kFileChangeDebounceMs = 350;
 
     void setupNavigationPane();

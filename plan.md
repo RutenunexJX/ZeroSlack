@@ -62,13 +62,21 @@ Latest handoff work:
     instantiation relationships and enriched endpoint symbols.
   - Adds a snapshot-backed `ReferenceService` assertion for real instantiation
     references and converted referencing/referenced symbols.
+  - Adds a snapshot-backed `HierarchyService` assertion for real instantiation
+    hierarchy traversal.
+- `analysisscheduler.cpp`, `mainwindow.cpp`, `mainwindow.h`
+  - Moves post-apply relationship data refresh scheduling into
+    `AnalysisScheduler`.
+  - Routes completion relationship data refresh through the scheduler refresh
+    request path in `MainWindow`.
 - `readme.md`, `plan.md`, `goal.md`
   - Updated compact handoff state.
 
 Expected real diff before commit: focused `relationship_test` grouped report
 assertions for diagnostics, relationships, references, and hierarchy;
-snapshot-backed SearchService, RelationshipService, and ReferenceService
-coverage; and handoff docs.
+snapshot-backed SearchService, RelationshipService, ReferenceService, and
+HierarchyService coverage; scheduler-owned relationship refresh requests;
+MainWindow duplicate completion refresh removal; and handoff docs.
 
 ## Next Small Increments
 

@@ -40,8 +40,8 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step strengthened real fixture coverage for service
-report rows and snapshot-backed service reads.
+The latest development step tightened relationship refresh coordination and
+strengthened snapshot-backed service fixture coverage.
 
 - `relationship_test` now verifies that the grouped reference row for the
   `rel_top` -> `rel_stage` instantiation keeps the exact referencing and
@@ -60,8 +60,17 @@ report rows and snapshot-backed service reads.
   `SemanticIndex`.
 - `relationship_test` now verifies that `ReferenceService` can read real
   instantiation references through a snapshot-backed `SemanticIndex`.
+- `relationship_test` now verifies that `HierarchyService` can traverse the
+  real `rel_top` -> `rel_stage` instantiation through a snapshot-backed
+  `SemanticIndex`.
+- `AnalysisScheduler` now schedules relationship data refresh after applying
+  single-file and workspace relationship results, including zero-result runs.
+- `MainWindow` now refreshes completion relationship data from the scheduler's
+  relationship data refresh request instead of duplicate completion refreshes
+  in relationship completion callbacks.
 
-This is a test-only service coverage increment with no UI behavior change.
+This is a small refresh-coordination increment plus focused service coverage;
+there is no intended user-visible UI behavior change.
 
 ## Latest Validation
 
@@ -69,6 +78,8 @@ Validation passed after the latest code/test step:
 
 - `cmake --build ... --target relationship_test`
 - `ctest -R "relationship_test" --output-on-failure`
+- `cmake --build ... --target gui_smoke_test`
+- `ctest -R "gui_smoke_test" --output-on-failure`
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
 - changed/new source/test/UI/CMake/handoff non-ASCII scan: empty
@@ -151,9 +162,11 @@ Rules:
 - Stop for handoff when context is getting large, after a coherent validated increment, or before the next step becomes broad/risky.
 
 Latest completed continuation:
-- relationship_test now checks RelationshipReport incoming CLOCKS/RESETS report shape against the real rel_top fixture.
-- Handoff docs were compacted to short English / ASCII summaries to reduce future context load.
-- Validation passed: relationship_test target build, focused CTest, full CTest 6/6, git diff --check, non-ASCII scan, forbidden-file guard.
+- AnalysisScheduler now owns the post-apply relationship data refresh request for single-file and workspace relationship results.
+- MainWindow now refreshes completion relationship data from the scheduler refresh request path instead of duplicate relationship completion callbacks.
+- relationship_test now checks snapshot-backed HierarchyService traversal for the real rel_top -> rel_stage fixture instantiation.
+- Handoff docs were updated with the compact validated state.
+- Validation passed: relationship_test target build/focused CTest, gui_smoke_test target build/focused CTest, full CTest 6/6, git diff --check, non-ASCII scan, forbidden-file guard.
 
 Continue toward goal.md with one small, verifiable step.
 ```
