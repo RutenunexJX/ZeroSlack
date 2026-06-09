@@ -189,6 +189,92 @@ QStringList CompletionService::findSymbolCompletionsByType(
     return result;
 }
 
+bool CompletionService::matchesCompletionAbbreviation(
+    const QString& text,
+    const QString& abbreviation) const
+{
+    if (abbreviation.isEmpty() || text.isEmpty())
+        return false;
+
+    if (text.toLower().startsWith(abbreviation.toLower()))
+        return true;
+
+    return isValidContextAbbreviationMatch(text, abbreviation);
+}
+
+int CompletionService::calculateCompletionMatchScore(
+    const QString& text,
+    const QString& abbreviation) const
+{
+    return calculateContextMatchScore(text, abbreviation);
+}
+
+QList<int> CompletionService::findCompletionAbbreviationPositions(
+    const QString& text,
+    const QString& abbreviation) const
+{
+    return findContextAbbreviationPositions(text, abbreviation);
+}
+
+QVector<QPair<QString, int>> CompletionService::findScoredKeywordCompletions(
+    const QString& prefix) const
+{
+    const QStringList keywords = publicKeywordCompletions();
+    QVector<QPair<QString, int>> result;
+    result.reserve(keywords.size());
+
+    for (const QString& keyword : keywords) {
+        const int score = calculateCompletionMatchScore(keyword, prefix);
+        if (score > 0)
+            result.append(qMakePair(keyword, score));
+    }
+
+    std::sort(result.begin(), result.end(),
+              [](const QPair<QString, int>& left,
+                 const QPair<QString, int>& right) {
+                  if (left.second != right.second)
+                      return left.second > right.second;
+                  return left.first < right.first;
+              });
+
+    return result;
+}
+
+QStringList CompletionService::findKeywordCompletions(
+    const QString& prefix,
+    int maxResults) const
+{
+    const QVector<QPair<QString, int>> scored =
+        findScoredKeywordCompletions(prefix);
+
+    QStringList result;
+    result.reserve(scored.size());
+    for (const auto& match : scored)
+        result.append(match.first);
+
+    if (maxResults > 0 && result.size() > maxResults)
+        result = result.mid(0, maxResults);
+
+    return result;
+}
+
+QStringList CompletionService::findKeywordAbbreviationMatches(
+    const QStringList& candidates,
+    const QString& abbreviation) const
+{
+    const QVector<QPair<QString, int>> scored =
+        findScoredKeywordCompletions(abbreviation);
+
+    QStringList result;
+    result.reserve(scored.size());
+    for (const auto& match : scored) {
+        if (candidates.contains(match.first))
+            result.append(match.first);
+    }
+
+    return result;
+}
+
 QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
     const QString& prefix,
     const QString& fileName,
@@ -1258,6 +1344,32 @@ QString CompletionService::extractModuleTypeFromContext(const QString& context) 
     if (match.hasMatch())
         return match.captured(1);
     return QString();
+}
+
+QStringList CompletionService::publicKeywordCompletions() const
+{
+    return {
+        QStringLiteral("always"), QStringLiteral("always_comb"),
+        QStringLiteral("always_ff"), QStringLiteral("assign"),
+        QStringLiteral("begin"), QStringLiteral("end"),
+        QStringLiteral("module"), QStringLiteral("endmodule"),
+        QStringLiteral("generate"), QStringLiteral("endgenerate"),
+        QStringLiteral("if"), QStringLiteral("else"),
+        QStringLiteral("for"), QStringLiteral("define"),
+        QStringLiteral("ifdef"), QStringLiteral("ifndef"),
+        QStringLiteral("task"), QStringLiteral("endtask"),
+        QStringLiteral("initial"), QStringLiteral("reg"),
+        QStringLiteral("wire"), QStringLiteral("logic"),
+        QStringLiteral("enum"), QStringLiteral("localparam"),
+        QStringLiteral("parameter"), QStringLiteral("struct"),
+        QStringLiteral("package"), QStringLiteral("endpackage"),
+        QStringLiteral("interface"), QStringLiteral("endinterface"),
+        QStringLiteral("function"), QStringLiteral("endfunction"),
+        QStringLiteral("case"), QStringLiteral("endcase"),
+        QStringLiteral("default"), QStringLiteral("posedge"),
+        QStringLiteral("negedge"), QStringLiteral("input"),
+        QStringLiteral("output"), QStringLiteral("inout")
+    };
 }
 
 QStringList CompletionService::svKeywordCompletions(const QString& prefix) const

@@ -111,6 +111,56 @@ int main(int argc, char** argv) {
 
     CompletionManager* cm = CompletionManager::getInstance();
 
+    expectList("CompletionService keyword names",
+               CompletionService::getInstance()->findKeywordCompletions(
+                   QStringLiteral("always_f")),
+               {"always_ff"});
+    expectList("CompletionService keyword scores",
+               scoredNames(
+                   CompletionService::getInstance()->findScoredKeywordCompletions(
+                       QStringLiteral("always_f"))),
+               {"always_ff"});
+    expectList("CompletionService keyword abbrev",
+               CompletionService::getInstance()->findKeywordAbbreviationMatches(
+                   {"always_ff", "logic"}, QStringLiteral("af")),
+               {"always_ff"});
+    ++g_checks;
+    const QList<int> keywordPositions =
+        CompletionService::getInstance()->findCompletionAbbreviationPositions(
+            QStringLiteral("always_ff"), QStringLiteral("af"));
+    const bool keywordPositionsOk = keywordPositions == QList<int>({0, 7});
+    if (!keywordPositionsOk)
+        ++g_fails;
+    printf("[%s] %-34s got=[%s]\n",
+           keywordPositionsOk ? "PASS" : "FAIL",
+           "CompletionService abbrev pos",
+           QStringList({
+               QString::number(keywordPositions.value(0, -1)),
+               QString::number(keywordPositions.value(1, -1))
+           }).join(",").toLocal8Bit().constData());
+    ++g_checks;
+    const bool managerKeywordScoreOk =
+        cm->calculateMatchScore(QStringLiteral("always_ff"),
+                                QStringLiteral("af"))
+        == CompletionService::getInstance()->calculateCompletionMatchScore(
+            QStringLiteral("always_ff"), QStringLiteral("af"));
+    if (!managerKeywordScoreOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           managerKeywordScoreOk ? "PASS" : "FAIL",
+           "CompletionManager score delegation");
+    expectList("CompletionManager keyword names",
+               cm->getKeywordCompletions(QStringLiteral("always_f")),
+               {"always_ff"});
+    expectList("CompletionManager keyword scores",
+               scoredNames(cm->getScoredKeywordMatches(
+                   QStringLiteral("always_f"))),
+               {"always_ff"});
+    expectList("CompletionManager keyword abbrev",
+               cm->getAbbreviationMatches({"always_ff", "logic"},
+                                          QStringLiteral("af")),
+               {"always_ff"});
+
     // --- struct member completion (typedef'd) ---
     expectEq("getStructTypeForVariable(pixel)", cm->getStructTypeForVariable("pixel", "top"), "pixel_t");
     expectList("members of pixel_t", cm->getStructMemberCompletions("", "pixel_t"),

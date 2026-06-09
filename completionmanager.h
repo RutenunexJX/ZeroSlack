@@ -112,18 +112,7 @@ private:
 
     static std::unique_ptr<CompletionManager> instance;
 
-    bool isValidAbbreviationMatch(const QString &text, const QString &abbreviation);
-
-    QStringList svKeywords;
-    bool keywordsInitialized = false;
-    QHash<QString, QStringList> keywordMatchCache;
-    QHash<QString, QVector<QPair<QString, int>>> keywordScoreCache;
-
     bool precomputedDataValid = false;
-
-    QHash<QString, bool> singleMatchCache;
-    QHash<QString, int> singleScoreCache;
-    QHash<QString, QList<int>> positionCache;
 
     bool smartCachingEnabled = true;
     SymbolRelationshipEngine* relationshipEngine = nullptr;
@@ -135,12 +124,6 @@ private:
     QHash<QString, QStringList> clockDomainCache;
     QHash<QString, QStringList> resetSignalCache;
     bool relationshipCacheValid = false;
-
-    void initializeKeywords();
-    QString buildSingleMatchKey(const QString &text, const QString &abbreviation);
-    QString buildKeywordCacheKey(const QString &prefix);
-
-    QVector<QPair<QString, int>> calculateScoredMatches(const QStringList &candidates, const QString &abbreviation);
 
     void updatePrecomputedCompletions();
 

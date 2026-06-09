@@ -5,19 +5,10 @@
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 
-#include <QDateTime>
-#include <algorithm>
-#include <utility>
-
 std::unique_ptr<CompletionManager> CompletionManager::instance = nullptr;
 
 CompletionManager::CompletionManager()
 {
-    keywordMatchCache.reserve(100);
-    keywordScoreCache.reserve(100);
-    singleMatchCache.reserve(1000);
-    singleScoreCache.reserve(1000);
-    positionCache.reserve(500);
 }
 
 CompletionManager::~CompletionManager()
@@ -76,12 +67,6 @@ QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolT
 
 void CompletionManager::invalidateAllCaches()
 {
-    keywordMatchCache.clear();
-    keywordScoreCache.clear();
-    singleMatchCache.clear();
-    singleScoreCache.clear();
-    positionCache.clear();
-
     moduleChildrenCache.clear();
     clockDomainCache.clear();
     resetSignalCache.clear();
@@ -99,287 +84,40 @@ void CompletionManager::invalidateSymbolCaches()
 
 bool CompletionManager::matchesAbbreviation(const QString &text, const QString &abbreviation)
 {
-    if (abbreviation.isEmpty() || text.isEmpty()) {
-        return false;
-    }
-
-    QString cacheKey = buildSingleMatchKey(text, abbreviation);
-    if (singleMatchCache.contains(cacheKey)) {
-        return singleMatchCache[cacheKey];
-    }
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbrev = abbreviation.toLower();
-
-    if (lowerText.startsWith(lowerAbbrev)) {
-        singleMatchCache[cacheKey] = true;
-        return true;
-    }
-
-    bool result = isValidAbbreviationMatch(text, abbreviation);
-    singleMatchCache[cacheKey] = result;
-    return result;
+    return CompletionService::getInstance()->matchesCompletionAbbreviation(
+        text, abbreviation);
 }
 
 int CompletionManager::calculateMatchScore(const QString &text, const QString &abbreviation)
 {
-    if (abbreviation.isEmpty() || text.isEmpty()) {
-        return 0;
-    }
-
-    QString cacheKey = buildSingleMatchKey(text, abbreviation);
-    if (singleScoreCache.contains(cacheKey)) {
-        return singleScoreCache[cacheKey];
-    }
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbrev = abbreviation.toLower();
-
-    int score = 0;
-
-    if (lowerText == lowerAbbrev) {
-        score = 1000;
-    }
-    else if (lowerText.startsWith(lowerAbbrev)) {
-        score = 800 + (100 - abbreviation.length());
-    }
-    else if (lowerText.contains(lowerAbbrev)) {
-        score = 400 + (100 - text.length());
-    }
-    else if (isValidAbbreviationMatch(text, abbreviation)) {
-        QList<int> positions = findAbbreviationPositions(text, abbreviation);
-        score = 500;
-
-        int wordBoundaryMatches = 0;
-        for (int pos : std::as_const(positions)) {
-            if (pos == 0 || lowerText[pos - 1] == '_' || lowerText[pos - 1] == ' ') {
-                wordBoundaryMatches++;
-            }
-            if (pos > 0 && pos < lowerText.length()) {
-                QChar prevChar = text[pos - 1];
-                QChar currChar = text[pos];
-                if (prevChar.isLower() && currChar.isUpper()) {
-                    wordBoundaryMatches++;
-                }
-            }
-        }
-
-        score += wordBoundaryMatches * 50;
-        score -= text.length();
-
-        for (int i = 1; i < positions.size(); i++) {
-            if (positions[i] == positions[i-1] + 1) {
-                score += 10;
-            }
-        }
-    }
-
-    singleScoreCache[cacheKey] = score;
-    return score;
-}
-
-bool CompletionManager::isValidAbbreviationMatch(const QString &text, const QString &abbreviation)
-{
-    if (abbreviation.length() > text.length()) {
-        return false;
-    }
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbrev = abbreviation.toLower();
-
-    int textPos = 0;
-    int abbrevPos = 0;
-
-    while (abbrevPos < lowerAbbrev.length() && textPos < text.length()) {
-        QChar abbrevChar = lowerAbbrev[abbrevPos];
-        QChar textChar = lowerText[textPos];
-
-        if (abbrevChar == textChar) {
-            abbrevPos++;
-            textPos++;
-        } else {
-            bool isSeparator = (text[textPos] == '_' || text[textPos] == ' ');
-
-            if (textPos > 0) {
-                QChar prevChar = text[textPos - 1];
-                QChar currChar = text[textPos];
-                if (prevChar.isLower() && currChar.isUpper()) {
-                    isSeparator = true;
-                }
-            }
-
-            if (isSeparator && textPos + 1 < text.length()) {
-                QChar nextChar = lowerText[textPos + 1];
-                if (abbrevChar == nextChar) {
-                    textPos++;
-                    continue;
-                }
-            }
-
-            textPos++;
-        }
-    }
-
-    return abbrevPos == lowerAbbrev.length();
+    return CompletionService::getInstance()->calculateCompletionMatchScore(
+        text, abbreviation);
 }
 
 QList<int> CompletionManager::findAbbreviationPositions(const QString &text, const QString &abbreviation)
 {
-    QString cacheKey = buildSingleMatchKey(text, abbreviation) + "_pos";
-
-    if (positionCache.contains(cacheKey)) {
-        return positionCache[cacheKey];
-    }
-
-    QList<int> positions;
-    if (!isValidAbbreviationMatch(text, abbreviation)) {
-        positionCache[cacheKey] = positions;
-        return positions;
-    }
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbrev = abbreviation.toLower();
-
-    int textPos = 0;
-    int abbrevPos = 0;
-
-    while (abbrevPos < lowerAbbrev.length() && textPos < lowerText.length()) {
-        if (lowerAbbrev[abbrevPos] == lowerText[textPos]) {
-            positions.append(textPos);
-            abbrevPos++;
-        } else {
-            bool isSeparator = (text[textPos] == '_' || text[textPos] == ' ');
-            if (textPos > 0) {
-                QChar prevChar = text[textPos - 1];
-                QChar currChar = text[textPos];
-                if (prevChar.isLower() && currChar.isUpper()) {
-                    isSeparator = true;
-                }
-            }
-            if (isSeparator && textPos + 1 < text.length() &&
-                lowerAbbrev[abbrevPos] == lowerText[textPos + 1]) {
-                textPos++;
-                continue;
-            }
-        }
-        textPos++;
-    }
-
-    positionCache[cacheKey] = positions;
-    return positions;
-}
-
-QString CompletionManager::buildSingleMatchKey(const QString &text, const QString &abbreviation)
-{
-    return QString("%1|%2").arg(text, abbreviation);
-}
-
-QString CompletionManager::buildKeywordCacheKey(const QString &prefix)
-{
-    return QString("kw_%1").arg(prefix);
-}
-
-void CompletionManager::initializeKeywords()
-{
-    if (keywordsInitialized) return;
-
-    svKeywords.clear();
-    svKeywords << "always" << "always_comb" << "always_ff" << "assign" << "begin" << "end"
-               << "module" << "endmodule" << "generate" << "endgenerate" << "if" << "else" << "for"
-               << "define" << "ifdef" << "ifndef" << "task" << "endtask" << "initial"
-               << "reg" << "wire" << "logic" << "enum" << "localparam" << "parameter"
-               << "struct" << "package" << "endpackage" << "interface" << "endinterface"
-               << "function" << "endfunction" << "case" << "endcase" << "default"
-               << "posedge" << "negedge" << "input" << "output" << "inout";
-
-    keywordsInitialized = true;
+    return CompletionService::getInstance()->findCompletionAbbreviationPositions(
+        text, abbreviation);
 }
 
 QVector<QPair<QString, int>> CompletionManager::getScoredKeywordMatches(const QString& prefix)
 {
-    initializeKeywords();
-
-    QString cacheKey = buildKeywordCacheKey(prefix);
-
-    if (keywordScoreCache.contains(cacheKey)) {
-        return keywordScoreCache[cacheKey];
-    }
-
-    QVector<QPair<QString, int>> scoredMatches = calculateScoredMatches(svKeywords, prefix);
-
-    keywordScoreCache[cacheKey] = scoredMatches;
-
-    return scoredMatches;
+    return CompletionService::getInstance()->findScoredKeywordCompletions(prefix);
 }
 
 QStringList CompletionManager::getKeywordCompletions(const QString& prefix)
 {
-    QString cacheKey = buildKeywordCacheKey(prefix);
-
-    if (keywordMatchCache.contains(cacheKey)) {
-        return keywordMatchCache[cacheKey];
-    }
-
-    QVector<QPair<QString, int>> scoredMatches = getScoredKeywordMatches(prefix);
-
-    QStringList result;
-    result.reserve(scoredMatches.size());
-    for (const auto &match : std::as_const(scoredMatches)) {
-        result.append(match.first);
-    }
-
-    if (result.size() > 10) {
-        result = result.mid(0, 10);
-    }
-
-    keywordMatchCache[cacheKey] = result;
-
-    return result;
+    return CompletionService::getInstance()->findKeywordCompletions(prefix);
 }
 
 QStringList CompletionManager::getAbbreviationMatches(const QStringList &candidates, const QString &abbreviation)
 {
-    QVector<QPair<QString, int>> scoredMatches = getScoredKeywordMatches(abbreviation);
-
-    QStringList result;
-    result.reserve(scoredMatches.size());
-
-    for (const auto &match : std::as_const(scoredMatches)) {
-        if (candidates.contains(match.first)) {
-            result.append(match.first);
-        }
-    }
-
-    return result;
-}
-
-QVector<QPair<QString, int>> CompletionManager::calculateScoredMatches(const QStringList &candidates, const QString &abbreviation)
-{
-    QVector<QPair<QString, int>> scoredMatches;
-    scoredMatches.reserve(candidates.size());
-
-    for (const QString &candidate : candidates) {
-        int score = calculateMatchScore(candidate, abbreviation);
-        if (score > 0) {
-            scoredMatches.append(qMakePair(candidate, score));
-        }
-    }
-
-    std::sort(scoredMatches.begin(), scoredMatches.end(),
-              [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
-                  if (a.second != b.second) {
-                      return a.second > b.second;
-                  }
-                  return a.first < b.first;
-              });
-
-    return scoredMatches;
+    return CompletionService::getInstance()->findKeywordAbbreviationMatches(
+        candidates, abbreviation);
 }
 
 void CompletionManager::invalidateKeywordCaches()
 {
-    keywordMatchCache.clear();
-    keywordScoreCache.clear();
 }
 
 void CompletionManager::setSlangManager(SlangManager* slangManager)

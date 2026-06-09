@@ -60,6 +60,20 @@ public:
         sym_list::sym_type_e symbolType,
         const QString& prefix,
         int maxResults = 15) const;
+    bool matchesCompletionAbbreviation(const QString& text,
+                                       const QString& abbreviation) const;
+    int calculateCompletionMatchScore(const QString& text,
+                                      const QString& abbreviation) const;
+    QList<int> findCompletionAbbreviationPositions(
+        const QString& text,
+        const QString& abbreviation) const;
+    QVector<QPair<QString, int>> findScoredKeywordCompletions(
+        const QString& prefix) const;
+    QStringList findKeywordCompletions(const QString& prefix,
+                                       int maxResults = 10) const;
+    QStringList findKeywordAbbreviationMatches(
+        const QStringList& candidates,
+        const QString& abbreviation) const;
     QVector<QPair<QString, int>> findSmartCompletions(
         const QString& prefix,
         const QString& fileName = QString(),
@@ -145,6 +159,7 @@ private:
     QString extractStructVariableFromContext(const QString& context) const;
     QString extractEnumVariableFromContext(const QString& context) const;
     QString extractModuleTypeFromContext(const QString& context) const;
+    QStringList publicKeywordCompletions() const;
     QStringList svKeywordCompletions(const QString& prefix) const;
     int calculateContextMatchScore(const QString& text, const QString& abbreviation) const;
     int calculateSymbolTypeCompletionScore(const QString& text,
