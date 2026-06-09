@@ -41,11 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved relationship-driven completion candidates behind `CompletionService`.
+The latest block moved typed symbol completion queries behind `CompletionService`.
 
-- `CompletionService` owns module-child, related-symbol, reference, clock-domain, and reset-signal completion queries over `RelationshipService` and `SemanticIndex`.
-- Legacy `CompletionManager` relationship-completion APIs now delegate to `CompletionService`.
-- `completion_test` covers snapshot-backed relationship completion and the legacy delegation path.
+- `CompletionService` owns module-internal variable, module-by-type, global symbol, global-by-type, scoped variable, task/function, and instantiable module completion queries over `SemanticIndex`.
+- Legacy `CompletionManager` typed string-completion APIs now delegate to `CompletionService`.
+- `completion_test` covers snapshot-backed typed completions, manager delegation, and compatibility for struct variable type completions.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 

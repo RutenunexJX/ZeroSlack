@@ -614,6 +614,42 @@ int main(int argc, char** argv) {
     expectList("snapshot reset completions",
                snapshotCompletionService.findResetSignalCompletions(QStringLiteral("snap_r")),
                {"snap_rst_n"});
+    expectList("snapshot module internal variables",
+               snapshotCompletionService.findModuleInternalVariableCompletions(
+                   QStringLiteral("snap_top"),
+                   QStringLiteral("snap_")),
+               {"snap_clk", "snap_enable", "snap_rst_n"});
+    expectList("snapshot module symbols by type",
+               snapshotCompletionService.findModuleSymbolsByType(
+                   QStringLiteral("snap_top"),
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_e")),
+               {"snap_enable"});
+    expectList("snapshot global symbol names",
+               snapshotCompletionService.findGlobalSymbolCompletions(QStringLiteral("snap")),
+               {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
+    expectList("snapshot global symbols by type",
+               snapshotCompletionService.findGlobalSymbolsByType(
+                   sym_list::sym_task,
+                   QStringLiteral("snap")),
+               {"snap_task"});
+    expectList("snapshot global struct variables are not type completions",
+               snapshotCompletionService.findGlobalSymbolsByType(
+                   sym_list::sym_packed_struct_var,
+                   QStringLiteral("snap")),
+               {});
+    expectList("snapshot scoped variables by type",
+               snapshotCompletionService.findVariableCompletionsInScope(
+                   QStringLiteral("snap_top"),
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_r")),
+               {"snap_rst_n"});
+    expectList("snapshot task/function completions",
+               snapshotCompletionService.findTaskFunctionCompletions(QStringLiteral("snap")),
+               {"snap_task"});
+    expectList("snapshot instantiable modules",
+               snapshotCompletionService.findInstantiableModuleCompletions(QStringLiteral("snap")),
+               {"snap_child", "snap_scope", "snap_top"});
     SemanticIndex::getInstance()->setSnapshot(
         std::make_shared<SemanticIndexSnapshot>(
             snapshotSymbols,
@@ -630,6 +666,22 @@ int main(int argc, char** argv) {
     expectList("CompletionManager reset delegation",
                cm->getResetSignalCompletions(QStringLiteral("snap_r")),
                {"snap_rst_n"});
+    expectList("CompletionManager module variable delegation",
+               cm->getModuleInternalVariables(QStringLiteral("snap_top"),
+                                              QStringLiteral("snap_e")),
+               {"snap_enable"});
+    expectList("CompletionManager global delegation",
+               cm->getGlobalSymbolCompletions(QStringLiteral("snap")),
+               {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
+    expectList("CompletionManager type delegation",
+               cm->getGlobalSymbolsByType(sym_list::sym_task, QStringLiteral("snap")),
+               {"snap_task"});
+    expectList("CompletionManager task/function delegation",
+               cm->getTaskFunctionCompletions(QStringLiteral("snap")),
+               {"snap_task"});
+    expectList("CompletionManager module delegation",
+               cm->getInstantiableModules(QStringLiteral("snap")),
+               {"snap_child", "snap_scope", "snap_top"});
     SemanticIndex::getInstance()->clearSnapshot();
 
     CommandCompletionQuery snapshotCommandQuery;

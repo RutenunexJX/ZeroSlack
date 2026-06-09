@@ -190,8 +190,6 @@ private:
     int calculateUsageFrequencyScore(const QString& symbol);
     QStringList getBasicSymbolCompletions(const QString &prefix);
 
-    bool isInternalVariableType(sym_list::sym_type_e symbolType);
-
     bool isSymbolTypeMatchCommand(sym_list::sym_type_e symbolType,
                                  sym_list::sym_type_e commandType);
 

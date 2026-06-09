@@ -1300,43 +1300,18 @@ QStringList CompletionManager::getVariableCompletionsInScope(const QString& modu
                                                            sym_list::sym_type_e variableType,
                                                            const QString& prefix)
 {
-    QStringList results;
-
-    if (moduleName.isEmpty()) {
-        return getSymbolCompletions(variableType, prefix);
-    }
-
-    QStringList moduleChildren = getModuleChildrenCompletions(moduleName, prefix);
-
-    for (const QString& childName : moduleChildren) {
-        QList<sym_list::SymbolInfo> symbols = findSemanticDefinitions(childName);
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (symbol.symbolType == variableType) {
-                results.append(symbol.symbolName);
-                break;
-            }
-        }
-    }
-
-    return results;
+    return CompletionService::getInstance()->findVariableCompletionsInScope(
+        moduleName, variableType, prefix);
 }
 
 QStringList CompletionManager::getTaskFunctionCompletions(const QString& prefix)
 {
-    QStringList results;
-
-    QStringList tasks = getSymbolCompletions(sym_list::sym_task, prefix);
-    QStringList functions = getSymbolCompletions(sym_list::sym_function, prefix);
-
-    results.append(tasks);
-    results.append(functions);
-
-    return results;
+    return CompletionService::getInstance()->findTaskFunctionCompletions(prefix);
 }
 
 QStringList CompletionManager::getInstantiableModules(const QString& prefix)
 {
-    return getSymbolCompletions(sym_list::sym_module, prefix);
+    return CompletionService::getInstance()->findInstantiableModuleCompletions(prefix);
 }
 
 void CompletionManager::invalidateRelationshipCaches()
@@ -1494,112 +1469,20 @@ int CompletionManager::calculateUsageFrequencyScore(const QString& symbol)
 
 QStringList CompletionManager::getModuleInternalVariables(const QString& moduleName, const QString& prefix)
 {
-    if (moduleName.isEmpty()) {
-        return QStringList();
-    }
-
-    QStringList results;
-    QList<sym_list::SymbolInfo> internalSymbols =
-        getSemanticSymbolsByType(sym_list::sym_reg);
-    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_wire));
-    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_logic));
-    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_localparam));
-    internalSymbols.append(getSemanticSymbolsByType(sym_list::sym_parameter));
-
-    for (const sym_list::SymbolInfo& symbol : internalSymbols) {
-        if (symbol.moduleScope == moduleName &&
-            isInternalVariableType(symbol.symbolType)) {
-
-            if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix))
-                results.append(symbol.symbolName);
-        }
-    }
-
-    if (results.isEmpty() && relationshipEngine) {
-        RelationshipQuery query;
-        query.symbolName = moduleName;
-        query.outgoing = true;
-        query.types = {SymbolRelationshipEngine::CONTAINS};
-        QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
-        for (int childId : childrenIds) {
-            sym_list::SymbolInfo symbol = getSemanticSymbolById(childId);
-            if (symbol.symbolId != -1 && isInternalVariableType(symbol.symbolType)) {
-                if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix))
-                    results.append(symbol.symbolName);
-            }
-        }
-    }
-
-    results.removeDuplicates();
-    results.sort(Qt::CaseInsensitive);
-    return results;
-}
-
-bool CompletionManager::isInternalVariableType(sym_list::sym_type_e symbolType)
-{
-    return symbolType == sym_list::sym_reg ||
-           symbolType == sym_list::sym_wire ||
-           symbolType == sym_list::sym_logic ||
-           symbolType == sym_list::sym_localparam ||
-           symbolType == sym_list::sym_parameter;
+    return CompletionService::getInstance()->findModuleInternalVariableCompletions(
+        moduleName, prefix);
 }
 
 QStringList CompletionManager::getGlobalSymbolCompletions(const QString& prefix)
 {
-    QStringList results;
-    QList<sym_list::sym_type_e> globalTypes = {
-        sym_list::sym_module,
-        sym_list::sym_task,
-        sym_list::sym_function,
-        sym_list::sym_interface,
-        sym_list::sym_package
-    };
-
-    for (sym_list::sym_type_e type : globalTypes) {
-        QList<sym_list::SymbolInfo> symbols = getSemanticSymbolsByType(type);
-
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix))
-                results.append(symbol.symbolName);
-        }
-    }
-
-    results.removeDuplicates();
-    results.sort(Qt::CaseInsensitive);
-    return results;
+    return CompletionService::getInstance()->findGlobalSymbolCompletions(prefix);
 }
 
 QStringList CompletionManager::getModuleInternalVariablesByType(const QString& moduleName,
                                                                sym_list::sym_type_e symbolType,
                                                                const QString& prefix) {
-    QStringList results;
-    if (moduleName.isEmpty()) {
-        return results;
-    }
-
-    const QList<sym_list::SymbolInfo> symbols =
-        getSemanticSymbolsForCommandType(symbolType);
-
-    int matchedCount = 0;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        bool isCorrectModule = (symbol.moduleScope == moduleName);
-        bool isCorrectType = (symbol.symbolType == symbolType);
-        if (symbolType == sym_list::sym_enum && !isCorrectType)
-            isCorrectType =
-                (symbol.symbolType == sym_list::sym_typedef
-                 && symbol.dataType == QLatin1String("enum"));
-        bool matchesPrefix = (prefix.isEmpty() ||
-                             matchesAbbreviation(symbol.symbolName, prefix));
-
-        if (isCorrectModule && isCorrectType && matchesPrefix) {
-            results.append(symbol.symbolName);
-            matchedCount++;
-        }
-    }
-
-    results.removeDuplicates();
-    results.sort(Qt::CaseInsensitive);
-    return results;
+    return CompletionService::getInstance()->findModuleSymbolsByType(
+        moduleName, symbolType, prefix);
 }
 
 int CompletionManager::getNextModulePosition(const QList<sym_list::SymbolInfo>& modules,
@@ -1616,58 +1499,7 @@ int CompletionManager::getNextModulePosition(const QList<sym_list::SymbolInfo>& 
 QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbolType,
                                                      const QString& prefix)
 {
-    QStringList results;
-    const QList<sym_list::SymbolInfo> symbols =
-        getSemanticSymbolsForCommandType(symbolType);
-
-    QList<sym_list::sym_type_e> globalSymbolTypes = {
-        sym_list::sym_module,
-        sym_list::sym_task,
-        sym_list::sym_function,
-        sym_list::sym_interface,
-        sym_list::sym_package,
-        sym_list::sym_typedef,
-        sym_list::sym_def_define,
-        sym_list::sym_packed_struct,
-        sym_list::sym_unpacked_struct,
-        sym_list::sym_enum
-    };
-
-    if (!globalSymbolTypes.contains(symbolType) &&
-        symbolType != sym_list::sym_packed_struct &&
-        symbolType != sym_list::sym_unpacked_struct) {
-        return results;
-    }
-
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        bool typeMatches = (symbol.symbolType == symbolType);
-        if (symbolType == sym_list::sym_enum && !typeMatches) {
-            typeMatches = (symbol.symbolType == sym_list::sym_typedef && symbol.dataType == QLatin1String("enum"));
-        }
-
-        if (typeMatches) {
-            bool isGlobalSymbol = false;
-
-            if (symbolType == sym_list::sym_module ||
-                symbolType == sym_list::sym_interface ||
-                symbolType == sym_list::sym_package) {
-                isGlobalSymbol = true;
-            } else {
-                isGlobalSymbol = symbol.moduleScope.isEmpty();
-            }
-
-            if (isGlobalSymbol) {
-                if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix)) {
-                    results.append(symbol.symbolName);
-                }
-            }
-        }
-    }
-
-    results.removeDuplicates();
-    results.sort(Qt::CaseInsensitive);
-
-    return results;
+    return CompletionService::getInstance()->findGlobalSymbolsByType(symbolType, prefix);
 }
 
 

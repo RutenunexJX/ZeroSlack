@@ -67,7 +67,7 @@ Already present at a high level:
 - AnalysisScheduler and analysis/progress/command coordinators
 - File, navigation, mode, semantic runtime, semantic panel, and editor workflow coordinators
 - SemanticIndex facade and SemanticIndexSnapshot helpers
-- Definition, completion, scope/current-module, relationship-driven completion, relationship, hierarchy, reference, diagnostics, and search services
+- Definition, completion, typed symbol completion, scope/current-module, relationship-driven completion, relationship, hierarchy, reference, diagnostics, and search services
 - Problems, References, Relationships, and Navigation UI backed by coordinators/services
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 
