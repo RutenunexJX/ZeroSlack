@@ -1,5 +1,7 @@
 #include "completionmanager.h"
+#include "definitionservice.h"
 #include "relationshipservice.h"
+#include "searchservice.h"
 #include "semanticindex.h"
 #include "symbolrelationshipengine.h"
 #include "slangmanager.h"
@@ -43,13 +45,28 @@ CompletionManager* CompletionManager::getInstance()
 
 QList<sym_list::SymbolInfo> CompletionManager::getAllSemanticSymbols() const
 {
-    return SemanticIndex::getInstance()->getSymbols();
+    SearchQuery query;
+
+    QList<sym_list::SymbolInfo> symbols;
+    const QList<SearchResult> results = SearchService::getInstance()->findSymbols(query);
+    symbols.reserve(results.size());
+    for (const SearchResult& result : results)
+        symbols.append(result.symbol);
+    return symbols;
 }
 
 QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsByType(
     sym_list::sym_type_e symbolType) const
 {
-    return SemanticIndex::getInstance()->getSymbolsByType(symbolType);
+    SearchQuery query;
+    query.types = {symbolType};
+
+    QList<sym_list::SymbolInfo> symbols;
+    const QList<SearchResult> results = SearchService::getInstance()->findSymbols(query);
+    symbols.reserve(results.size());
+    for (const SearchResult& result : results)
+        symbols.append(result.symbol);
+    return symbols;
 }
 
 QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsForCommandType(
@@ -77,13 +94,23 @@ QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsForCommandType(
 QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsForFile(
     const QString& fileName) const
 {
-    return SemanticIndex::getInstance()->getSymbols(fileName);
+    SearchQuery query;
+    query.fileName = fileName;
+
+    QList<sym_list::SymbolInfo> symbols;
+    const QList<SearchResult> results = SearchService::getInstance()->findSymbols(query);
+    symbols.reserve(results.size());
+    for (const SearchResult& result : results)
+        symbols.append(result.symbol);
+    return symbols;
 }
 
 QList<sym_list::SymbolInfo> CompletionManager::findSemanticDefinitions(
     const QString& symbolName) const
 {
-    return SemanticIndex::getInstance()->findDefinitions(symbolName);
+    DefinitionQuery query;
+    query.symbolName = symbolName;
+    return DefinitionService::getInstance()->findDefinitions(query);
 }
 
 sym_list::SymbolInfo CompletionManager::getSemanticSymbolById(int symbolId) const
@@ -1230,20 +1257,17 @@ QStringList CompletionManager::getModuleChildrenCompletions(const QString& modul
 
     QStringList results;
 
-    int moduleId = findSymbolIdByName(moduleName);
-    if (moduleId != -1) {
-        RelationshipQuery query;
-        query.symbolId = moduleId;
-        query.outgoing = true;
-        query.types = {SymbolRelationshipEngine::CONTAINS};
-        QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
+    RelationshipQuery query;
+    query.symbolName = moduleName;
+    query.outgoing = true;
+    query.types = {SymbolRelationshipEngine::CONTAINS};
+    QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
 
-        QStringList childrenNames = getSymbolNamesFromIds(childrenIds);
+    QStringList childrenNames = getSymbolNamesFromIds(childrenIds);
 
-        for (const QString& childName : childrenNames) {
-            if (prefix.isEmpty() || childName.startsWith(prefix, Qt::CaseInsensitive)) {
-                results.append(childName);
-            }
+    for (const QString& childName : childrenNames) {
+        if (prefix.isEmpty() || childName.startsWith(prefix, Qt::CaseInsensitive)) {
+            results.append(childName);
         }
     }
 
@@ -1265,30 +1289,28 @@ QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbol
 
     QStringList results;
 
-    int symbolId = findSymbolIdByName(symbolName);
-    if (symbolId != -1) {
-        RelationshipQuery referencedQuery;
-        referencedQuery.symbolId = symbolId;
-        referencedQuery.outgoing = true;
-        referencedQuery.types = {SymbolRelationshipEngine::REFERENCES};
-        QList<int> referencedIds =
-            RelationshipService::getInstance()->findRelatedSymbolIds(referencedQuery);
+    RelationshipQuery referencedQuery;
+    referencedQuery.symbolName = symbolName;
+    referencedQuery.outgoing = true;
+    referencedQuery.types = {SymbolRelationshipEngine::REFERENCES};
+    QList<int> referencedIds =
+        RelationshipService::getInstance()->findRelatedSymbolIds(referencedQuery);
 
-        RelationshipQuery referencingQuery = referencedQuery;
-        referencingQuery.outgoing = false;
-        QList<int> referencingIds =
-            RelationshipService::getInstance()->findRelatedSymbolIds(referencingQuery);
+    RelationshipQuery referencingQuery = referencedQuery;
+    referencingQuery.outgoing = false;
+    QList<int> referencingIds =
+        RelationshipService::getInstance()->findRelatedSymbolIds(referencingQuery);
 
-        QSet<int> allRelatedIds;
-        for (int id : referencedIds) allRelatedIds.insert(id);
-        for (int id : referencingIds) allRelatedIds.insert(id);
+    QSet<int> allRelatedIds;
+    for (int id : referencedIds) allRelatedIds.insert(id);
+    for (int id : referencingIds) allRelatedIds.insert(id);
 
-        QStringList relatedNames = getSymbolNamesFromIds(QList<int>(allRelatedIds.begin(), allRelatedIds.end()));
+    QStringList relatedNames = getSymbolNamesFromIds(QList<int>(allRelatedIds.begin(),
+                                                               allRelatedIds.end()));
 
-        for (const QString& relatedName : relatedNames) {
-            if (prefix.isEmpty() || relatedName.startsWith(prefix, Qt::CaseInsensitive)) {
-                results.append(relatedName);
-            }
+    for (const QString& relatedName : relatedNames) {
+        if (prefix.isEmpty() || relatedName.startsWith(prefix, Qt::CaseInsensitive)) {
+            results.append(relatedName);
         }
     }
 
@@ -1304,19 +1326,16 @@ QStringList CompletionManager::getSymbolReferencesCompletions(const QString& sym
 
     QStringList results;
 
-    int symbolId = findSymbolIdByName(symbolName);
-    if (symbolId != -1) {
-        RelationshipQuery query;
-        query.symbolId = symbolId;
-        query.outgoing = false;
-        query.types = {SymbolRelationshipEngine::REFERENCES};
-        QList<int> referencingIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
-        QStringList referencingNames = getSymbolNamesFromIds(referencingIds);
+    RelationshipQuery query;
+    query.symbolName = symbolName;
+    query.outgoing = false;
+    query.types = {SymbolRelationshipEngine::REFERENCES};
+    QList<int> referencingIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
+    QStringList referencingNames = getSymbolNamesFromIds(referencingIds);
 
-        for (const QString& refName : referencingNames) {
-            if (prefix.isEmpty() || refName.startsWith(prefix, Qt::CaseInsensitive)) {
-                results.append(refName);
-            }
+    for (const QString& refName : referencingNames) {
+        if (prefix.isEmpty() || refName.startsWith(prefix, Qt::CaseInsensitive)) {
+            results.append(refName);
         }
     }
 
@@ -1553,11 +1572,6 @@ QString CompletionManager::findModuleAtPosition(
     return QString();
 }
 
-int CompletionManager::findSymbolIdByName(const QString& symbolName)
-{
-    return findSemanticSymbolId(symbolName);
-}
-
 void CompletionManager::updateRelationshipCaches()
 {
     if (relationshipCacheValid || !relationshipEngine)
@@ -1616,24 +1630,29 @@ int CompletionManager::calculateRelationshipScore(const QString& symbol, const Q
         return 0;
     }
 
-    int symbolId = findSymbolIdByName(symbol);
-    int contextId = findSymbolIdByName(currentContext);
+    auto hasNamedRelationship = [this](const QString& fromName,
+                                       const QString& toName,
+                                       SymbolRelationshipEngine::RelationType type) {
+        RelationshipQuery query;
+        query.symbolName = fromName;
+        query.outgoing = true;
+        query.types = {type};
+        const QList<int> relatedIds =
+            RelationshipService::getInstance()->findRelatedSymbolIds(query);
+        return getSymbolNamesFromIds(relatedIds).contains(toName);
+    };
 
-    if (symbolId != -1 && contextId != -1) {
-        RelationshipService* relationships = RelationshipService::getInstance();
-        if (relationships->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CONTAINS)) {
-            return 40;
-        }
+    if (hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CONTAINS))
+        return 40;
 
-        if (relationships->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::REFERENCES) ||
-            relationships->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::REFERENCES)) {
-            return 30;
-        }
+    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::REFERENCES) ||
+        hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::REFERENCES)) {
+        return 30;
+    }
 
-        if (relationships->hasRelationship(symbolId, contextId, SymbolRelationshipEngine::CALLS) ||
-            relationships->hasRelationship(contextId, symbolId, SymbolRelationshipEngine::CALLS)) {
-            return 25;
-        }
+    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::CALLS) ||
+        hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CALLS)) {
+        return 25;
     }
 
     return 0;
@@ -1683,19 +1702,16 @@ QStringList CompletionManager::getModuleInternalVariables(const QString& moduleN
     }
 
     if (results.isEmpty() && relationshipEngine) {
-        int moduleId = findSymbolIdByName(moduleName);
-        if (moduleId != -1) {
-            RelationshipQuery query;
-            query.symbolId = moduleId;
-            query.outgoing = true;
-            query.types = {SymbolRelationshipEngine::CONTAINS};
-            QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
-            for (int childId : childrenIds) {
-                sym_list::SymbolInfo symbol = getSemanticSymbolById(childId);
-                if (symbol.symbolId != -1 && isInternalVariableType(symbol.symbolType)) {
-                    if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix))
-                        results.append(symbol.symbolName);
-                }
+        RelationshipQuery query;
+        query.symbolName = moduleName;
+        query.outgoing = true;
+        query.types = {SymbolRelationshipEngine::CONTAINS};
+        QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
+        for (int childId : childrenIds) {
+            sym_list::SymbolInfo symbol = getSemanticSymbolById(childId);
+            if (symbol.symbolId != -1 && isInternalVariableType(symbol.symbolType)) {
+                if (prefix.isEmpty() || matchesAbbreviation(symbol.symbolName, prefix))
+                    results.append(symbol.symbolName);
             }
         }
     }
@@ -2029,23 +2045,20 @@ QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     }
 
     if (useRelationshipFallback && results.isEmpty() && relationshipEngine) {
-        int moduleId = findSymbolIdByName(moduleName);
-        if (moduleId != -1) {
-            RelationshipQuery query;
-            query.symbolId = moduleId;
-            query.outgoing = true;
-            query.types = {SymbolRelationshipEngine::CONTAINS};
-            QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
+        RelationshipQuery query;
+        query.symbolName = moduleName;
+        query.outgoing = true;
+        query.types = {SymbolRelationshipEngine::CONTAINS};
+        QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
 
-            for (int childId : childrenIds) {
-                sym_list::SymbolInfo symbol = getSemanticSymbolById(childId);
-                if (symbol.symbolId != -1 &&
-                    isSymbolTypeMatchCommand(symbol.symbolType, symbolType)) {
+        for (int childId : childrenIds) {
+            sym_list::SymbolInfo symbol = getSemanticSymbolById(childId);
+            if (symbol.symbolId != -1 &&
+                isSymbolTypeMatchCommand(symbol.symbolType, symbolType)) {
 
-                    if (prefix.isEmpty() ||
-                        symbol.symbolName.startsWith(prefix, Qt::CaseInsensitive)) {
-                        results.append(symbol);
-                    }
+                if (prefix.isEmpty() ||
+                    symbol.symbolName.startsWith(prefix, Qt::CaseInsensitive)) {
+                    results.append(symbol);
                 }
             }
         }

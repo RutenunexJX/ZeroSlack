@@ -733,6 +733,26 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotRelationshipReport.relationships.first()
                           .peerSymbol.symbolId == stageId,
                true);
+    expectBool("snapshot relationship report groups outgoing type",
+               snapshotRelationshipReport.directionGroups.size() == 1
+                   && snapshotRelationshipReport.directionGroups.first().direction
+                       == DirectedRelationshipResult::Outgoing
+                   && snapshotRelationshipReport.directionGroups.first().count == 1
+                   && snapshotRelationshipReport.directionGroups.first().typeGroups.size() == 1
+                   && snapshotRelationshipReport.directionGroups.first()
+                          .typeGroups.first()
+                          .type == SymbolRelationshipEngine::INSTANTIATES
+                   && snapshotRelationshipReport.directionGroups.first()
+                          .typeGroups.first()
+                          .count == 1
+                   && !snapshotRelationshipReport.directionGroups.first()
+                           .typeGroups.first()
+                           .relationships.isEmpty()
+                   && snapshotRelationshipReport.directionGroups.first()
+                          .typeGroups.first()
+                          .relationships.first()
+                          .peerSymbol.symbolId == stageId,
+               true);
     RelationshipBrowseQuery snapshotIncomingStageBrowseQuery;
     snapshotIncomingStageBrowseQuery.symbolId = stageId;
     snapshotIncomingStageBrowseQuery.includeOutgoing = false;
@@ -747,6 +767,26 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot relationship report incoming peer symbol",
                !snapshotIncomingStageReport.relationships.isEmpty()
                    && snapshotIncomingStageReport.relationships.first()
+                          .peerSymbol.symbolId == topId,
+               true);
+    expectBool("snapshot relationship report groups incoming type",
+               snapshotIncomingStageReport.directionGroups.size() == 1
+                   && snapshotIncomingStageReport.directionGroups.first().direction
+                       == DirectedRelationshipResult::Incoming
+                   && snapshotIncomingStageReport.directionGroups.first().count == 1
+                   && snapshotIncomingStageReport.directionGroups.first().typeGroups.size() == 1
+                   && snapshotIncomingStageReport.directionGroups.first()
+                          .typeGroups.first()
+                          .type == SymbolRelationshipEngine::INSTANTIATES
+                   && snapshotIncomingStageReport.directionGroups.first()
+                          .typeGroups.first()
+                          .count == 1
+                   && !snapshotIncomingStageReport.directionGroups.first()
+                           .typeGroups.first()
+                           .relationships.isEmpty()
+                   && snapshotIncomingStageReport.directionGroups.first()
+                          .typeGroups.first()
+                          .relationships.first()
                           .peerSymbol.symbolId == topId,
                true);
     RelationshipQuery snapshotNamedRelationshipQuery;
@@ -803,6 +843,25 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshotReferenceReport.fileCounts.value(topPath), 1);
     expectInt("snapshot reference report type count",
               snapshotReferenceReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectInt("snapshot reference report file/type count",
+              snapshotReferenceReport.fileTypeCounts
+                  .value(topPath)
+                  .value(SymbolRelationshipEngine::INSTANTIATES),
+              1);
+    expectBool("snapshot reference report groups file metadata",
+               snapshotReferenceReport.fileGroups.size() == 1
+                   && snapshotReferenceReport.fileGroups.first().fileKey == topPath
+                   && snapshotReferenceReport.fileGroups.first().displayName
+                       == QStringLiteral("relationship_top.sv")
+                   && snapshotReferenceReport.fileGroups.first().count == 1
+                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .type == SymbolRelationshipEngine::INSTANTIATES
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .count == 1,
+               true);
     expectBool("snapshot reference report keeps grouped symbols",
                snapshotReferenceReport.fileGroups.size() == 1
                    && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
@@ -880,10 +939,31 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshotHierarchyReport.depthCounts.value(1), 1);
     expectInt("snapshot hierarchy report type count",
               snapshotHierarchyReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectInt("snapshot hierarchy report child direction count",
+              snapshotHierarchyReport.directionCounts.value(HierarchyQuery::Children), 1);
+    expectInt("snapshot hierarchy report child root direction count",
+              snapshotHierarchyReport.rootDirectionCounts.value(HierarchyQuery::Children), 1);
+    expectBool("snapshot hierarchy report groups root child direction",
+               snapshotHierarchyReport.rootDirectionGroups.size() == 1
+                   && snapshotHierarchyReport.rootDirectionGroups.first().direction
+                       == HierarchyQuery::Children
+                   && snapshotHierarchyReport.rootDirectionGroups.first().count == 1
+                   && snapshotHierarchyReport.rootDirectionGroups.first().nodes.size() == 1
+                   && snapshotHierarchyReport.rootDirectionGroups.first()
+                          .nodes.first()
+                          .symbol.symbolId == stageId,
+               true);
     expectBool("snapshot hierarchy report keeps child identity",
                snapshotHierarchyReport.nodes.size() == 2
                    && snapshotHierarchyReport.nodes.last().symbol.symbolId == stageId
                    && snapshotHierarchyReport.nodes.last().parentSymbolId == topId,
+               true);
+    expectBool("snapshot hierarchy report keeps child node links",
+               snapshotHierarchyReport.nodes.size() == 2
+                   && snapshotHierarchyReport.nodes.first().nodeId == 0
+                   && snapshotHierarchyReport.nodes.first().parentNodeId == -1
+                   && snapshotHierarchyReport.nodes.last().nodeId == 1
+                   && snapshotHierarchyReport.nodes.last().parentNodeId == 0,
                true);
     HierarchyQuery snapshotParentHierarchyQuery;
     snapshotParentHierarchyQuery.symbolId = stageId;
@@ -897,6 +977,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("snapshot hierarchy parent report root direction count",
               snapshotParentHierarchyReport.rootDirectionCounts.value(HierarchyQuery::Parents),
               1);
+    expectInt("snapshot hierarchy parent report direction count",
+              snapshotParentHierarchyReport.directionCounts.value(HierarchyQuery::Parents),
+              1);
+    expectBool("snapshot hierarchy report groups root parent direction",
+               snapshotParentHierarchyReport.rootDirectionGroups.size() == 1
+                   && snapshotParentHierarchyReport.rootDirectionGroups.first().direction
+                       == HierarchyQuery::Parents
+                   && snapshotParentHierarchyReport.rootDirectionGroups.first().count == 1
+                   && snapshotParentHierarchyReport.rootDirectionGroups.first().nodes.size() == 1
+                   && snapshotParentHierarchyReport.rootDirectionGroups.first()
+                          .nodes.first()
+                          .symbol.symbolId == topId,
+               true);
     expectBool("snapshot hierarchy parent report keeps parent identity",
                snapshotParentHierarchyReport.nodes.size() == 2
                    && snapshotParentHierarchyReport.nodes.last().symbol.symbolId == topId

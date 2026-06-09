@@ -48,62 +48,63 @@ Still transitional:
 
 Latest handoff work:
 
-- `analysisscheduler.cpp`, `analysisscheduler.h`
-  - Adds a guarded project semantic-state clear path shared by `projectClosed`
-    and closed `projectChanged` notifications.
-  - Project close now cancels workspace relationship analysis, clears the
-    `SemanticIndex` snapshot, clears relationship-engine data, emits
-    relationship refresh signals once, and schedules diagnostics refresh.
+- `hierarchyservice.h`, `hierarchyservice.cpp`
+  - Adds `HierarchyRootDirectionGroup` and populates
+    `HierarchyReport::rootDirectionGroups`.
+  - Moves root-level hierarchy direction grouping/count data into the query
+    service report.
+- `mainwindow.cpp`
+  - Relationship tree rendering consumes `HierarchyReport` root direction
+    groups instead of deriving those counts from string-keyed UI items.
+- `completionmanager.cpp`
+  - `findSemanticDefinitions` now uses `DefinitionService` instead of reading
+    definitions directly from `SemanticIndex`.
+  - Relationship completion and scoring helpers now use name-based
+    `RelationshipService` queries instead of pre-resolving symbol IDs in
+    `CompletionManager`.
+  - `getSemanticSymbolsByType` now uses `SearchService` instead of reading
+    typed symbols directly from `SemanticIndex`.
+  - `getSemanticSymbolsForFile` now uses `SearchService` instead of reading
+    file-scoped symbols directly from `SemanticIndex`.
+  - `getAllSemanticSymbols` now uses `SearchService` instead of reading all
+    symbols directly from `SemanticIndex`.
 - `test_sv/relationship_test.cpp`
-  - Adds scheduler lifecycle coverage that project close clears stale
-    relationship data and emits relationship invalidation, relationship
-    refresh, and diagnostics refresh requests.
-- `completionservice.cpp`, `completionservice.h`
-  - Keeps command-mode module, interface, package, and define completions in
-    the global scope even when the editor provides a current module context.
-  - Keeps local command completion types scoped to the current module.
-- `test_sv/completion_test.cpp`
-  - Adds snapshot-backed assertions for module, interface, package, and define
-    command completion names and returned symbol identity while a module
-    context is present.
-- `test_sv/jump_test.cpp`
-  - Adds snapshot-backed `DefinitionService` coverage for cross-file module
-    definition resolution and local-file precedence for same-name module
-    definitions.
-  - Adds snapshot-backed `DefinitionService` coverage for cross-file interface
-    and package definition resolution.
-  - Adds wrapper coverage for `canResolveDefinition` and `findDefinitions`
-    using the same snapshot-backed queries.
-- `test_sv/relationship_test.cpp`
-  - Adds snapshot-backed `SearchService` coverage for `hasMatches` positive
-    and negative behavior, file-scoped module filtering, exact matching,
-    case sensitivity, scoring, max-result limiting, and empty-text typed/file
-    filtering.
-  - Adds snapshot-backed `DiagnosticService` `hasDiagnostics` coverage for
-    severity and workspace-file filters.
-  - Adds snapshot-backed `RelationshipService`, `ReferenceService`, and
-    `HierarchyService` report/wrapper coverage for counts and grouped symbol
-    identity.
-  - Adds snapshot-backed `ReferenceService` current-file/workspace filters and
-    `HierarchyService` parent report coverage.
-  - Adds name-based snapshot query resolution coverage for relationship,
-    reference, and hierarchy service report paths.
+  - Adds focused snapshot-backed `RelationshipReport` assertions for outgoing
+    and incoming instantiation direction/type groups.
+  - Verifies grouped direction, relationship type, count, and peer symbol
+    identity for the Relationships panel report shape.
+  - Adds focused snapshot-backed `ReferenceReport` assertions for file/type
+    counts and file group metadata.
+  - Verifies file key, display name, and type bucket count for the References
+    panel report shape.
+  - Adds minimal regression coverage for snapshot-backed `HierarchyReport`
+    root direction groups and node links.
 - `readme.md`, `plan.md`, `goal.md`
   - Updated compact handoff state.
 
-Expected real diff before commit: `CompletionService` always-global command
-scope filtering, focused `completion_test`, `jump_test`, and
-`relationship_test` snapshot coverage, and handoff docs.
+Expected real diff before commit: `HierarchyService` root direction report
+groups, `MainWindow` relationship tree consumption of those groups, focused
+`CompletionManager` definition reads through `DefinitionService`,
+`CompletionManager` relationship helper queries through name-based
+`RelationshipService`, `CompletionManager` typed symbol reads through
+`SearchService`, `CompletionManager` file-scoped symbol reads through
+`SearchService`, `CompletionManager` all-symbol reads through `SearchService`,
+focused report regressions, and handoff docs.
 
 ## Next Small Increments
 
 Choose one:
 
 1. Move another UI/editor semantic read behind SemanticIndex or a Query Service.
-2. Add one focused snapshot-backed service regression.
-3. Improve report/service tests for edge filters without changing UI behavior.
-4. Move another small MainWindow coordination responsibility into a focused coordinator.
-5. Thin another `MainWindow` refresh path without changing UI behavior.
+2. Move another small MainWindow coordination responsibility into a focused coordinator.
+3. Thin another `MainWindow` refresh path without changing UI behavior.
+4. Extract one remaining clean MainWindow progress or refresh policy boundary
+   into AnalysisScheduler.
+
+Prioritize production-code architecture progress. Do not use pure
+`relationship_test.cpp` assertion expansion as the main increment. Add tests
+only as the smallest regression protection directly tied to a production code
+change.
 
 Avoid:
 

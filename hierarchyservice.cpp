@@ -201,14 +201,27 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
     HierarchyReport report;
     report.nodes = getHierarchy(query);
     report.totalCount = report.nodes.size();
+    QMap<HierarchyQuery::Direction, int> rootDirectionGroupIndexes;
     for (const HierarchyNode& node : report.nodes) {
         report.depthCounts[node.depth]++;
         if (node.depth <= 0)
             continue;
         report.directionCounts[node.direction]++;
         report.typeCounts[node.viaType]++;
-        if (node.parentNodeId == 0)
+        if (node.parentNodeId == 0) {
             report.rootDirectionCounts[node.direction]++;
+            if (!rootDirectionGroupIndexes.contains(node.direction)) {
+                HierarchyRootDirectionGroup group;
+                group.direction = node.direction;
+                rootDirectionGroupIndexes.insert(node.direction,
+                                                 report.rootDirectionGroups.size());
+                report.rootDirectionGroups.append(group);
+            }
+            HierarchyRootDirectionGroup& group =
+                report.rootDirectionGroups[rootDirectionGroupIndexes.value(node.direction)];
+            group.nodes.append(node);
+            group.count++;
+        }
     }
     return report;
 }

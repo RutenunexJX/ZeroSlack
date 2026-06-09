@@ -747,6 +747,20 @@ static QTreeWidgetItem* getOrCreateChildGroup(QTreeWidgetItem* parent,
     return group;
 }
 
+static QTreeWidgetItem* getOrCreateHierarchyDirectionGroup(
+    QTreeWidgetItem* parent,
+    QMap<HierarchyQuery::Direction, QTreeWidgetItem*>& groups,
+    HierarchyQuery::Direction direction)
+{
+    if (groups.contains(direction))
+        return groups.value(direction);
+
+    auto* group = new QTreeWidgetItem(parent);
+    group->setText(0, hierarchyDirectionText(direction));
+    groups.insert(direction, group);
+    return group;
+}
+
 static QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
                                              const SemanticDiagnostic& diagnostic)
 {
@@ -963,7 +977,7 @@ void MainWindow::refreshRelationshipsPanel()
         const QSet<QString> expandedKeys = collectExpandedKeys(relationshipsTree);
         relationshipsTree->clear();
         QMap<int, QTreeWidgetItem*> itemByNodeId;
-        QMap<QString, QTreeWidgetItem*> rootDirectionGroups;
+        QMap<HierarchyQuery::Direction, QTreeWidgetItem*> rootDirectionItems;
         QTreeWidgetItem* rootItem = nullptr;
         int visibleCount = 0;
         for (const HierarchyNode& node : report.nodes) {
@@ -981,12 +995,9 @@ void MainWindow::refreshRelationshipsPanel()
             if (node.parentNodeId >= 0 && itemByNodeId.contains(node.parentNodeId))
                 parent = itemByNodeId.value(node.parentNodeId);
             if (node.parentNodeId == 0 && rootItem) {
-                const QString directionText = hierarchyDirectionText(node.direction);
-                parent = getOrCreateChildGroup(rootItem,
-                                               rootDirectionGroups,
-                                               directionText,
-                                               0,
-                                               directionText);
+                parent = getOrCreateHierarchyDirectionGroup(rootItem,
+                                                            rootDirectionItems,
+                                                            node.direction);
             }
 
             QTreeWidgetItem* item = createHierarchyItem(
@@ -996,12 +1007,13 @@ void MainWindow::refreshRelationshipsPanel()
             itemByNodeId.insert(node.nodeId, item);
             visibleCount++;
         }
-        for (auto it = rootDirectionGroups.begin(); it != rootDirectionGroups.end(); ++it) {
-            const HierarchyQuery::Direction direction = it.key() == QStringLiteral("Outgoing")
-                ? HierarchyQuery::Children
-                : HierarchyQuery::Parents;
-            it.value()->setText(0, countLabel(it.key(),
-                                              report.rootDirectionCounts.value(direction)));
+        for (const HierarchyRootDirectionGroup& directionGroup : report.rootDirectionGroups) {
+            if (!rootDirectionItems.contains(directionGroup.direction))
+                continue;
+            rootDirectionItems.value(directionGroup.direction)->setText(
+                0,
+                countLabel(hierarchyDirectionText(directionGroup.direction),
+                           directionGroup.count));
         }
         restoreTreeExpansion(relationshipsTree, hadExpandableItems, expandedKeys);
 

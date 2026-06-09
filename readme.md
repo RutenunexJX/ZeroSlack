@@ -40,54 +40,40 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step fixed a narrow command-mode completion regression
-in the `CompletionService` path and added one DefinitionService snapshot
-regression.
+The latest development step moved one relationship-tree report policy boundary
+from `MainWindow` into `HierarchyService` and migrated one legacy completion
+definition read behind `DefinitionService`. It also moved several relationship
+completion helpers onto name-based `RelationshipService` queries and routes
+all/typed/file-scoped completion symbol reads through `SearchService`.
 
-- `CompletionService` now keeps always-global command types visible when the
-  editor supplies a current module context.
-- The always-global command types are module, interface, package, and define.
-- Local command types still filter to the current module scope.
-- `completion_test` now verifies snapshot-backed module, interface, package,
-  and define command completion names and returned symbol identity while a
-  module context is present.
-- `jump_test` now verifies snapshot-backed `DefinitionService` cross-file
-  module definition resolution and local-file precedence for same-name module
-  definitions.
-- `jump_test` now verifies snapshot-backed `DefinitionService` cross-file
-  interface and package definition resolution.
-- `jump_test` also verifies the snapshot-backed `canResolveDefinition` and
-  `findDefinitions` wrappers for those definition queries.
-- `relationship_test` now verifies snapshot-backed `SearchService` `hasMatches`
-  positive/negative behavior, file-scoped module filtering, exact matching,
-  case sensitivity, scoring, max-result limiting, and empty-text typed/file
-  filtering.
-- `relationship_test` now verifies snapshot-backed `DiagnosticService`
-  `hasDiagnostics` positive/negative behavior for severity and workspace-file
-  filters.
-- `relationship_test` now verifies snapshot-backed `RelationshipService`
-  `hasRelationships`, exact relationship checks, and relationship report
-  counts/peer identity.
-- `relationship_test` now verifies snapshot-backed `ReferenceService`
-  `hasReferences`, current-file and workspace-file filters, and reference
-  report counts/grouped symbol identity.
-- `relationship_test` now verifies snapshot-backed `HierarchyService`
-  hierarchy report counts plus child and parent identity.
-- `relationship_test` now verifies name-based snapshot query resolution for
-  relationship, reference, and hierarchy service report paths.
-
-This restores command completion visibility for global symbols from inside a
-module and strengthens snapshot-backed definition coverage.
+- `HierarchyReport` now carries root-level direction groups with direction,
+  nodes, and count.
+- `MainWindow` relationship tree rendering now consumes those report groups
+  instead of deriving root direction counts from string-keyed UI items.
+- `CompletionManager::findSemanticDefinitions` now uses `DefinitionService`
+  instead of reading definitions directly from `SemanticIndex`.
+- `CompletionManager` relationship completion and scoring helpers now pass
+  symbol names to `RelationshipService` instead of pre-resolving IDs inside
+  `CompletionManager`.
+- `CompletionManager::getSemanticSymbolsByType` now uses `SearchService`
+  instead of reading typed symbols directly from `SemanticIndex`.
+- `CompletionManager::getSemanticSymbolsForFile` now uses `SearchService`
+  instead of reading file-scoped symbols directly from `SemanticIndex`.
+- `CompletionManager::getAllSemanticSymbols` now uses `SearchService`
+  instead of reading all symbols directly from `SemanticIndex`.
+- `relationship_test` keeps the minimal snapshot-backed regression coverage
+  for the new hierarchy report groups.
+- Existing uncommitted report fixture coverage also includes snapshot-backed
+  `RelationshipReport` direction/type grouping and `ReferenceReport` file/type
+  grouping.
 
 ## Latest Validation
 
 Validation passed after the latest code/test step:
 
+- `cmake --build ... --target relationship_test`
 - `cmake --build ... --target completion_test`
 - `ctest -R "completion_test" --output-on-failure`
-- `cmake --build ... --target jump_test`
-- `ctest -R "jump_test" --output-on-failure`
-- `cmake --build ... --target relationship_test`
 - `ctest -R "relationship_test" --output-on-failure`
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
@@ -115,9 +101,12 @@ Pick one small, verifiable increment:
 
 - Extract one remaining clean MainWindow progress or refresh policy boundary into AnalysisScheduler.
 - Move another UI/editor read path behind SemanticIndex or a Query Service.
-- Strengthen snapshot-backed service coverage without broad rewrites.
-- Add another focused real Problems / References / Relationships fixture assertion only when
-  it is the narrowest useful step.
+- Thin another `MainWindow` refresh path without changing UI behavior.
+
+Prioritize production-code architecture progress. Do not use pure
+`relationship_test.cpp` assertion expansion as the main increment. Add tests
+only as the smallest regression protection directly tied to a production code
+change.
 
 Avoid broad CompletionManager or MainWindow rewrites unless there is a narrow testable slice.
 
@@ -161,7 +150,14 @@ Known current state:
 - Branch: tree_sitter_and_slang
 - Version: 0.0.20/slang25
 - Latest commit: use git log -1 --oneline.
-- Current uncommitted diff should be empty, except local warning noise.
+- Current uncommitted diff should contain `HierarchyService` root direction
+  report grouping, `MainWindow` consumption of that report shape,
+  `CompletionManager` definition reads through `DefinitionService`,
+  `CompletionManager` relationship helper queries through name-based
+  `RelationshipService`, focused report regressions, and compact handoff docs,
+  unless it has been committed. Local warning noise is expected.
+  It should also include `CompletionManager` all/typed/file-scoped symbol reads
+  through `SearchService` unless that work has been committed.
 
 Rules:
 - Use Qt 6 + CMake + Ninja only.
@@ -169,18 +165,24 @@ Rules:
 - Keep source/test/UI/CMake and handoff docs English / ASCII.
 - Prefer git diff --name-only over git status noise.
 - Do one small, verifiable continuation at a time.
+- Prioritize production-code architecture progress; do not use pure
+  relationship_test.cpp assertion expansion as the main increment.
+- Add tests only as the smallest regression protection directly tied to a
+  production code change.
 - Stop for handoff when context is getting large, after a coherent validated increment, or before the next step becomes broad/risky.
 
 Latest completed continuation:
-- CompletionService keeps always-global command types visible even when the editor passes the current module context.
-- completion_test checks snapshot-backed module, interface, package, and define command completion names and returned symbol identity in a module context.
-- jump_test checks snapshot-backed DefinitionService cross-file module definition resolution, local-file precedence, canResolveDefinition, and findDefinitions wrappers.
-- jump_test checks snapshot-backed DefinitionService cross-file interface and package definition resolution.
-- relationship_test checks snapshot-backed SearchService hasMatches, file-scoped filtering, exact/case-sensitive search, scoring, and maxResults, plus DiagnosticService hasDiagnostics severity/workspace filters.
-- relationship_test checks snapshot-backed SearchService empty-text typed/file filtering and default scores.
-- relationship_test checks snapshot-backed RelationshipService, ReferenceService, and HierarchyService report wrappers, filters, and grouped identity.
-- relationship_test checks name-based snapshot query resolution for relationship, reference, and hierarchy service reports.
-- Validation passed: completion_test, jump_test, and relationship_test target builds/focused CTests, and full CTest 6/6.
+- HierarchyReport carries root-level direction groups and MainWindow consumes them for relationship tree root direction rows.
+- CompletionManager definition lookup now goes through DefinitionService instead of SemanticIndex directly.
+- CompletionManager relationship completion and scoring helpers now use RelationshipService name-based queries instead of pre-resolving symbol IDs.
+- CompletionManager typed symbol reads now go through SearchService instead of SemanticIndex directly.
+- CompletionManager file-scoped symbol reads now go through SearchService instead of SemanticIndex directly.
+- CompletionManager all-symbol reads now go through SearchService instead of SemanticIndex directly.
+- relationship_test checks snapshot-backed RelationshipReport direction/type grouping for outgoing and incoming instantiation rows.
+- relationship_test checks snapshot-backed ReferenceReport file/type counts and file group metadata for an instantiation reference row.
+- relationship_test checks snapshot-backed HierarchyReport root direction groups and node links.
+- Handoff docs were updated and compacted.
+- Validation passed: completion_test target build, ctest -R completion_test, relationship_test target build, ctest -R relationship_test, full CTest 6/6, git diff --check, non-ASCII scan, and forbidden-file guard.
 
 Continue toward goal.md with one small, verifiable step.
 ```

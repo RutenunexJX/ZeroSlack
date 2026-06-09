@@ -126,6 +126,16 @@ Recent test coverage includes real fixture assertions for:
 - CompletionService command-mode module, interface, package, and define
   completion names and returned symbol identity while the editor supplies a
   current module context.
+- CompletionManager definition lookup goes through DefinitionService instead
+  of reading definitions directly from SemanticIndex.
+- CompletionManager relationship completion and scoring helpers use
+  RelationshipService name-based queries instead of pre-resolving symbol IDs.
+- CompletionManager typed symbol reads go through SearchService instead of
+  reading typed symbols directly from SemanticIndex.
+- CompletionManager file-scoped symbol reads go through SearchService instead
+  of reading file-scoped symbols directly from SemanticIndex.
+- CompletionManager all-symbol reads go through SearchService instead of
+  reading all symbols directly from SemanticIndex.
 - DefinitionService snapshot-backed cross-file module definition resolution
   and local-file precedence.
 - DefinitionService snapshot-backed cross-file interface and package
@@ -141,11 +151,17 @@ Recent test coverage includes real fixture assertions for:
   workspace-file filtering.
 - RelationshipService snapshot-backed `hasRelationships`, exact relationship,
   and relationship report counts/peer identity.
+- RelationshipService snapshot-backed relationship report direction/type
+  grouping for outgoing and incoming instantiation rows.
 - ReferenceService snapshot-backed `hasReferences` and reference report
   counts/grouped symbol identity.
+- ReferenceService snapshot-backed reference report file/type counts and file
+  group metadata.
 - ReferenceService snapshot-backed current-file and workspace-file filters.
 - HierarchyService snapshot-backed hierarchy report counts plus child and
   parent identity.
+- HierarchyService snapshot-backed root direction report groups, with
+  MainWindow consuming those groups for relationship tree root direction rows.
 - RelationshipService, ReferenceService, and HierarchyService name-based
   snapshot query resolution through service report paths.
 

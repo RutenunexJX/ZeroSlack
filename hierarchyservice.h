@@ -32,8 +32,15 @@ struct HierarchyNode {
     SymbolRelationshipEngine::RelationType viaType = SymbolRelationshipEngine::CONTAINS;
 };
 
+struct HierarchyRootDirectionGroup {
+    HierarchyQuery::Direction direction = HierarchyQuery::Children;
+    QList<HierarchyNode> nodes;
+    int count = 0;
+};
+
 struct HierarchyReport {
     QList<HierarchyNode> nodes;
+    QList<HierarchyRootDirectionGroup> rootDirectionGroups;
     int totalCount = 0;
     QMap<int, int> depthCounts;
     QMap<HierarchyQuery::Direction, int> directionCounts;

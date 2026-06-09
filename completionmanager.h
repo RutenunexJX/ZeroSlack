@@ -183,7 +183,6 @@ private:
     bool shouldSkipCacheRefresh();
 
     QStringList getSymbolNamesFromIds(const QList<int>& symbolIds);
-    int findSymbolIdByName(const QString& symbolName);
     void updateRelationshipCaches();
     QStringList filterCompletionsByContext(const QStringList& completions,
                                          const QString& context);
