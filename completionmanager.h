@@ -171,11 +171,9 @@ private:
     QList<sym_list::SymbolInfo> getAllSemanticSymbols() const;
     QList<sym_list::SymbolInfo> getSemanticSymbolsByType(sym_list::sym_type_e symbolType) const;
     QList<sym_list::SymbolInfo> getSemanticSymbolsForCommandType(sym_list::sym_type_e symbolType) const;
-    QList<sym_list::SymbolInfo> getSemanticSymbolsForFile(const QString& fileName) const;
     QList<sym_list::SymbolInfo> findSemanticDefinitions(const QString& symbolName) const;
     sym_list::SymbolInfo getSemanticSymbolById(int symbolId) const;
     int findSemanticSymbolId(const QString& symbolName) const;
-    QString getSemanticCachedFileContent(const QString& fileName) const;
 
     bool shouldSkipCacheRefresh();
 
@@ -190,10 +188,6 @@ private:
     int calculateUsageFrequencyScore(const QString& symbol);
     QStringList getBasicSymbolCompletions(const QString &prefix);
 
-    bool isSymbolTypeMatchCommand(sym_list::sym_type_e symbolType,
-                                 sym_list::sym_type_e commandType);
-
-
     QString getSymbolTypeString(sym_list::sym_type_e symbolType);
 
     mutable QHash<QString, QStringList> commandModeCache;
@@ -201,8 +195,6 @@ private:
 
     QString getSymbolTypeName(sym_list::sym_type_e symbolType);
 
-    int getNextModulePosition(const QList<struct sym_list::SymbolInfo>& modules,
-                              const struct sym_list::SymbolInfo& currentModule);
     QStringList getEnumValueCompletions(const QString &prefix, const QString &enumTypeName);
     QString extractStructTypeFromContext(const QString &context);
     QStringList getModulePortCompletions(const QString &prefix, const QString &moduleTypeName);

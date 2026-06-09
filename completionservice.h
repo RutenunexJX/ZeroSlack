@@ -62,6 +62,19 @@ public:
                                                const QString& prefix = QString()) const;
     QStringList findTaskFunctionCompletions(const QString& prefix = QString()) const;
     QStringList findInstantiableModuleCompletions(const QString& prefix = QString()) const;
+    QList<sym_list::SymbolInfo> findModuleInternalSymbolInfosByType(
+        const QString& moduleName,
+        sym_list::sym_type_e symbolType,
+        const QString& prefix = QString(),
+        bool useRelationshipFallback = true) const;
+    QList<sym_list::SymbolInfo> findModuleContextSymbolInfosByType(
+        const QString& moduleName,
+        const QString& fileName,
+        sym_list::sym_type_e symbolType,
+        const QString& prefix = QString()) const;
+    QList<sym_list::SymbolInfo> findGlobalSymbolInfosByType(
+        sym_list::sym_type_e symbolType,
+        const QString& prefix = QString()) const;
     QString currentModuleAt(const QString& fileName, int cursorPosition) const;
     QString getStructTypeForVariable(const QString& variableName, const QString& moduleName) const;
     bool tryParseStructMemberContext(const QString& line,
@@ -93,9 +106,11 @@ private:
     QStringList completionNamesFromRelationshipResults(
         const QList<RelationshipResult>& relationships,
         bool outgoing) const;
+    bool isModuleRangeSymbolType(sym_list::sym_type_e type) const;
     bool isInternalCompletionType(sym_list::sym_type_e type) const;
     bool isGlobalCompletionType(sym_list::sym_type_e type) const;
     bool isGlobalSymbolType(sym_list::sym_type_e type) const;
+    bool isGlobalSymbolInfoType(sym_list::sym_type_e type) const;
     bool isCommandGlobalCompletionType(sym_list::sym_type_e type) const;
     bool isAlwaysGlobalCommandType(sym_list::sym_type_e type) const;
     bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,

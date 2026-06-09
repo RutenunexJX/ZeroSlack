@@ -48,6 +48,13 @@ static void expectExcludes(const char* what, const QStringList& got, const QStri
            got.join(",").toLocal8Bit().constData());
 }
 
+static QStringList symbolNames(const QList<sym_list::SymbolInfo>& symbols) {
+    QStringList names;
+    for (const auto& symbol : symbols)
+        names << symbol.symbolName;
+    return names;
+}
+
 static sym_list::SymbolInfo makeSymbol(const QString& name,
                                        sym_list::sym_type_e type,
                                        const QString& moduleScope,
@@ -650,6 +657,24 @@ int main(int argc, char** argv) {
     expectList("snapshot instantiable modules",
                snapshotCompletionService.findInstantiableModuleCompletions(QStringLiteral("snap")),
                {"snap_child", "snap_scope", "snap_top"});
+    expectList("snapshot module info symbols by type",
+               symbolNames(snapshotCompletionService.findModuleInternalSymbolInfosByType(
+                   QStringLiteral("snap_top"),
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_"))),
+               {"snap_clk", "snap_enable", "snap_rst_n"});
+    expectList("snapshot module context info symbols",
+               symbolNames(snapshotCompletionService.findModuleContextSymbolInfosByType(
+                   QStringLiteral("snap_scope"),
+                   snapshotScopeFile,
+                   sym_list::sym_logic,
+                   QStringLiteral("snap"))),
+               {"snap_signal"});
+    expectList("snapshot global info symbols by type",
+               symbolNames(snapshotCompletionService.findGlobalSymbolInfosByType(
+                   sym_list::sym_packed_struct_var,
+                   QStringLiteral("snap"))),
+               {"snap_pixel"});
     SemanticIndex::getInstance()->setSnapshot(
         std::make_shared<SemanticIndexSnapshot>(
             snapshotSymbols,
@@ -682,6 +707,24 @@ int main(int argc, char** argv) {
     expectList("CompletionManager module delegation",
                cm->getInstantiableModules(QStringLiteral("snap")),
                {"snap_child", "snap_scope", "snap_top"});
+    expectList("CompletionManager module info delegation",
+               symbolNames(cm->getModuleInternalSymbolsByType(
+                   QStringLiteral("snap_top"),
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_"))),
+               {"snap_clk", "snap_enable", "snap_rst_n"});
+    expectList("CompletionManager context info delegation",
+               symbolNames(cm->getModuleContextSymbolsByType(
+                   QStringLiteral("snap_scope"),
+                   snapshotScopeFile,
+                   sym_list::sym_logic,
+                   QStringLiteral("snap"))),
+               {"snap_signal"});
+    expectList("CompletionManager global info delegation",
+               symbolNames(cm->getGlobalSymbolsByType_Info(
+                   sym_list::sym_packed_struct_var,
+                   QStringLiteral("snap"))),
+               {"snap_pixel"});
     SemanticIndex::getInstance()->clearSnapshot();
 
     CommandCompletionQuery snapshotCommandQuery;
