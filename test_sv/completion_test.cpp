@@ -295,6 +295,21 @@ int main(int argc, char** argv) {
                                       QStringLiteral("snap_top"),
                                       QStringLiteral("enum"),
                                       5012));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_state"),
+                                      sym_list::sym_enum_var,
+                                      QStringLiteral("snap_top"),
+                                      QString(),
+                                      5013));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("SNAP_IDLE"),
+                                      sym_list::sym_enum_value,
+                                      QStringLiteral("snap_top"),
+                                      QString(),
+                                      5014));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("SNAP_RUN"),
+                                      sym_list::sym_enum_value,
+                                      QStringLiteral("snap_top"),
+                                      QString(),
+                                      5015));
     snapshotSymbols.append(makeSymbol(QStringLiteral("red"),
                                       sym_list::sym_struct_member,
                                       QStringLiteral("other_t"),
@@ -657,6 +672,42 @@ int main(int argc, char** argv) {
     expectList("snapshot instantiable modules",
                snapshotCompletionService.findInstantiableModuleCompletions(QStringLiteral("snap")),
                {"snap_child", "snap_scope", "snap_top"});
+    expectList("snapshot struct member service",
+               snapshotCompletionService.findStructMemberCompletions(
+                   QStringLiteral("bl"),
+                   QStringLiteral("snap_pixel_t")),
+               {"blue"});
+    expectList("snapshot enum value service",
+               snapshotCompletionService.findEnumValueCompletions(
+                   QStringLiteral("SNAP_"),
+                   QStringLiteral("snap_top")),
+               {"SNAP_IDLE", "SNAP_RUN"});
+    expectEq("snapshot enum variable type",
+             snapshotCompletionService.findEnumTypeForVariable(
+                 QStringLiteral("snap_state"),
+                 QStringLiteral("snap_top")),
+             "snap_top");
+    ContextCompletionQuery snapshotStructContextQuery;
+    snapshotStructContextQuery.prefix = QStringLiteral("bl");
+    snapshotStructContextQuery.currentModule = QStringLiteral("snap_top");
+    snapshotStructContextQuery.context = QStringLiteral("snap_pixel.");
+    expectList("snapshot context struct members",
+               snapshotCompletionService.findContextAwareCompletions(snapshotStructContextQuery),
+               {"blue"});
+    ContextCompletionQuery snapshotEnumContextQuery;
+    snapshotEnumContextQuery.prefix = QStringLiteral("SNAP_");
+    snapshotEnumContextQuery.currentModule = QStringLiteral("snap_top");
+    snapshotEnumContextQuery.context = QStringLiteral("case(snap_state)");
+    expectList("snapshot context enum values",
+               snapshotCompletionService.findContextAwareCompletions(snapshotEnumContextQuery),
+               {"SNAP_IDLE", "SNAP_RUN", "snap_enable"});
+    ContextCompletionQuery snapshotGeneralContextQuery;
+    snapshotGeneralContextQuery.prefix = QStringLiteral("snap_e");
+    snapshotGeneralContextQuery.currentModule = QStringLiteral("snap_top");
+    snapshotGeneralContextQuery.context = QStringLiteral("general");
+    expectList("snapshot context general",
+               snapshotCompletionService.findContextAwareCompletions(snapshotGeneralContextQuery),
+               {"snap_enable", "snap_scope", "snap_state_t"});
     expectList("snapshot module info symbols by type",
                symbolNames(snapshotCompletionService.findModuleInternalSymbolInfosByType(
                    QStringLiteral("snap_top"),
@@ -707,6 +758,20 @@ int main(int argc, char** argv) {
     expectList("CompletionManager module delegation",
                cm->getInstantiableModules(QStringLiteral("snap")),
                {"snap_child", "snap_scope", "snap_top"});
+    expectList("CompletionManager context struct delegation",
+               cm->getContextAwareCompletions(QStringLiteral("bl"),
+                                              QStringLiteral("snap_top"),
+                                              QStringLiteral("snap_pixel.")),
+               {"blue"});
+    expectList("CompletionManager context enum delegation",
+               cm->getContextAwareCompletions(QStringLiteral("SNAP_"),
+                                              QStringLiteral("snap_top"),
+                                              QStringLiteral("case(snap_state)")),
+               {"SNAP_IDLE", "SNAP_RUN", "snap_enable"});
+    expectList("CompletionManager struct member delegation",
+               cm->getStructMemberCompletions(QStringLiteral("bl"),
+                                              QStringLiteral("snap_pixel_t")),
+               {"blue"});
     expectList("CompletionManager module info delegation",
                symbolNames(cm->getModuleInternalSymbolsByType(
                    QStringLiteral("snap_top"),

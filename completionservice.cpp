@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QRegularExpression>
 #include <QSet>
+#include <QVector>
 #include <algorithm>
 #include <limits>
 
@@ -410,6 +411,244 @@ QStringList CompletionService::findInstantiableModuleCompletions(const QString& 
     return findGlobalSymbolsByType(sym_list::sym_module, prefix);
 }
 
+QStringList CompletionService::findContextAwareCompletions(
+    const ContextCompletionQuery& query) const
+{
+    QStringList result;
+
+    if (query.context.contains(QLatin1Char('.'))
+        || query.context.contains(QStringLiteral("->"))) {
+        const QString structVariableName =
+            extractStructVariableFromContext(query.context);
+        if (!structVariableName.isEmpty()) {
+            const QString structTypeName =
+                getStructTypeForVariable(structVariableName, query.currentModule);
+            if (!structTypeName.isEmpty()) {
+                result.append(findStructMemberCompletions(query.prefix, structTypeName));
+                if (!result.isEmpty())
+                    return result;
+            }
+        }
+    }
+
+    if (query.context.contains(QLatin1Char('='))
+        || query.context.contains(QStringLiteral("assign"))
+        || query.context.contains(QStringLiteral("case"))
+        || query.context.contains(QStringLiteral("if"))) {
+        const QString enumVariableName =
+            extractEnumVariableFromContext(query.context);
+        if (!enumVariableName.isEmpty()) {
+            const QString enumTypeName =
+                findEnumTypeForVariable(enumVariableName, query.currentModule);
+            if (!enumTypeName.isEmpty())
+                result.append(findEnumValueCompletions(query.prefix, enumTypeName));
+        }
+
+        if (result.isEmpty())
+            result.append(findEnumValueCompletions(query.prefix));
+    }
+
+    if (query.relationshipCompletionsEnabled
+        && query.context.contains(QLatin1Char('('))
+        && (query.context.contains(QStringLiteral("module"))
+            || query.context.contains(QStringLiteral("instantiation")))) {
+        const QString moduleTypeName = extractModuleTypeFromContext(query.context);
+        if (!moduleTypeName.isEmpty())
+            result.append(findModulePortCompletions(query.prefix, moduleTypeName));
+    }
+
+    if (query.context.contains(QStringLiteral("clk"), Qt::CaseInsensitive)
+        || query.context.contains(QStringLiteral("clock"), Qt::CaseInsensitive)
+        || query.context.contains(QStringLiteral("always_ff"))) {
+        result.append(findClockDomainCompletions(query.prefix));
+    }
+
+    if (query.context.contains(QStringLiteral("rst"), Qt::CaseInsensitive)
+        || query.context.contains(QStringLiteral("reset"), Qt::CaseInsensitive)
+        || query.context.contains(QStringLiteral("negedge"))
+        || query.context.contains(QStringLiteral("posedge"))) {
+        result.append(findResetSignalCompletions(query.prefix));
+    }
+
+    if (!query.currentModule.isEmpty()) {
+        result.append(findModuleChildCompletions(query.currentModule, query.prefix));
+        if (query.relationshipCompletionsEnabled)
+            result.append(findRelatedSymbolCompletions(query.currentModule, query.prefix));
+    }
+
+    if (query.context.contains(QStringLiteral("task"))
+        || query.context.contains(QStringLiteral("function"))
+        || query.context.contains(QStringLiteral("call"))) {
+        result.append(findTaskFunctionCompletions(query.prefix));
+    }
+
+    if (query.context.contains(QStringLiteral("typedef"))
+        || query.context.contains(QStringLiteral("type"))) {
+        result.append(findGlobalSymbolsByType(sym_list::sym_typedef, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_enum, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_unpacked_struct, query.prefix));
+    }
+
+    if (query.context.contains(QStringLiteral("reg"))
+        || query.context.contains(QStringLiteral("wire"))
+        || query.context.contains(QStringLiteral("logic"))
+        || query.context.contains(QStringLiteral("var"))) {
+        result.append(svKeywordCompletions(query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_enum, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_unpacked_struct, query.prefix));
+    }
+
+    if (result.isEmpty()
+        || query.context == QLatin1String("general")
+        || query.context.isEmpty()) {
+        if (!query.currentModule.isEmpty()) {
+            result.append(findModuleSymbolsByType(query.currentModule,
+                                                  sym_list::sym_reg,
+                                                  query.prefix));
+            result.append(findModuleSymbolsByType(query.currentModule,
+                                                  sym_list::sym_wire,
+                                                  query.prefix));
+            result.append(findModuleSymbolsByType(query.currentModule,
+                                                  sym_list::sym_logic,
+                                                  query.prefix));
+        }
+
+        result.append(findGlobalSymbolsByType(sym_list::sym_module, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_enum, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_task, query.prefix));
+        result.append(findGlobalSymbolsByType(sym_list::sym_function, query.prefix));
+        result.append(svKeywordCompletions(query.prefix));
+    }
+
+    result.removeDuplicates();
+
+    QVector<QPair<QString, int>> scoredResults;
+    scoredResults.reserve(result.size());
+    for (const QString& completion : std::as_const(result)) {
+        int score = calculateContextMatchScore(completion, query.prefix);
+        if (!query.context.isEmpty()
+            && query.context != QLatin1String("general")) {
+            score += calculateContextScore(completion, query.context);
+        }
+        if (!query.currentModule.isEmpty())
+            score += calculateScopeScore(completion, query.currentModule);
+        scoredResults.append(qMakePair(completion, score));
+    }
+
+    std::sort(scoredResults.begin(), scoredResults.end(),
+              [](const QPair<QString, int>& left,
+                 const QPair<QString, int>& right) {
+                  if (left.second != right.second)
+                      return left.second > right.second;
+                  return left.first < right.first;
+              });
+
+    QStringList finalResults;
+    finalResults.reserve(scoredResults.size());
+    for (const auto& scored : std::as_const(scoredResults))
+        finalResults.append(scored.first);
+
+    if (finalResults.size() > 50)
+        finalResults = finalResults.mid(0, 50);
+
+    return finalResults;
+}
+
+QStringList CompletionService::findStructMemberCompletions(
+    const QString& prefix,
+    const QString& structTypeName) const
+{
+    CompletionQuery query;
+    query.prefix = prefix;
+    query.structTypeNameForMember = structTypeName;
+    return completionNamesFromSymbols(findStructMemberSymbols(query));
+}
+
+QStringList CompletionService::findEnumValueCompletions(
+    const QString& prefix,
+    const QString& enumTypeName) const
+{
+    QStringList result;
+    QSet<QString> seenNames;
+    const QList<sym_list::SymbolInfo> symbols =
+        semanticIndex()->getSymbolsByType(sym_list::sym_enum_value);
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!enumTypeName.isEmpty() && symbol.moduleScope != enumTypeName)
+            continue;
+        if (!completionNameMatches(symbol.symbolName, prefix))
+            continue;
+
+        const QString key = symbol.symbolName.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(symbol.symbolName);
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
+QString CompletionService::findEnumTypeForVariable(
+    const QString& variableName,
+    const QString& moduleName) const
+{
+    if (!moduleName.isEmpty()) {
+        const QList<sym_list::SymbolInfo> moduleSymbols =
+            findModuleInternalSymbolInfosByType(moduleName,
+                                                sym_list::sym_enum_var);
+        for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
+            if (symbol.symbolName == variableName)
+                return symbol.moduleScope;
+        }
+    }
+
+    const QList<sym_list::SymbolInfo> symbols =
+        semanticIndex()->getSymbolsByType(sym_list::sym_enum_var);
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (symbol.symbolName == variableName)
+            return symbol.moduleScope;
+    }
+
+    return QString();
+}
+
+QStringList CompletionService::findModulePortCompletions(
+    const QString& prefix,
+    const QString& moduleTypeName) const
+{
+    QStringList result;
+    if (moduleTypeName.isEmpty())
+        return result;
+
+    bool moduleExists = false;
+    const QList<sym_list::SymbolInfo> modules =
+        semanticIndex()->getSymbolsByType(sym_list::sym_module);
+    for (const sym_list::SymbolInfo& symbol : modules) {
+        if (symbol.symbolName == moduleTypeName) {
+            moduleExists = true;
+            break;
+        }
+    }
+    if (!moduleExists)
+        return result;
+
+    result.append(findModuleSymbolsByType(moduleTypeName,
+                                          sym_list::sym_wire,
+                                          prefix));
+    result.append(findModuleSymbolsByType(moduleTypeName,
+                                          sym_list::sym_reg,
+                                          prefix));
+    result.append(findModuleSymbolsByType(moduleTypeName,
+                                          sym_list::sym_logic,
+                                          prefix));
+    result.removeDuplicates();
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
 QList<sym_list::SymbolInfo> CompletionService::findModuleInternalSymbolInfosByType(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,
@@ -791,6 +1030,255 @@ bool CompletionService::completionNameMatches(const QString& name,
         ++namePos;
     }
     return prefixPos == lowerPrefix.length();
+}
+
+QString CompletionService::extractStructVariableFromContext(const QString& context) const
+{
+    static const QRegularExpression dotPattern(
+        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*\\[[^\\]]*\\])*\\s*\\.$"));
+    QRegularExpressionMatch match = dotPattern.match(context);
+    if (match.hasMatch())
+        return match.captured(1);
+
+    static const QRegularExpression arrowPattern(
+        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)\\s*->$"));
+    match = arrowPattern.match(context);
+    if (match.hasMatch())
+        return match.captured(1);
+
+    return QString();
+}
+
+QString CompletionService::extractEnumVariableFromContext(const QString& context) const
+{
+    static const QRegularExpression assignPattern(
+        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)\\s*="));
+    QRegularExpressionMatch match = assignPattern.match(context);
+    if (match.hasMatch())
+        return match.captured(1);
+
+    static const QRegularExpression casePattern(
+        QStringLiteral("case\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)"));
+    match = casePattern.match(context);
+    if (match.hasMatch())
+        return match.captured(1);
+
+    static const QRegularExpression ifPattern(
+        QStringLiteral("if\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*=="));
+    match = ifPattern.match(context);
+    if (match.hasMatch())
+        return match.captured(1);
+
+    return QString();
+}
+
+QString CompletionService::extractModuleTypeFromContext(const QString& context) const
+{
+    static const QRegularExpression instPattern(
+        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\("));
+    const QRegularExpressionMatch match = instPattern.match(context);
+    if (match.hasMatch())
+        return match.captured(1);
+    return QString();
+}
+
+QStringList CompletionService::svKeywordCompletions(const QString& prefix) const
+{
+    static const QStringList keywords = {
+        QStringLiteral("module"), QStringLiteral("endmodule"),
+        QStringLiteral("input"), QStringLiteral("output"),
+        QStringLiteral("inout"), QStringLiteral("wire"),
+        QStringLiteral("reg"), QStringLiteral("logic"),
+        QStringLiteral("bit"), QStringLiteral("byte"),
+        QStringLiteral("shortint"), QStringLiteral("int"),
+        QStringLiteral("longint"), QStringLiteral("always"),
+        QStringLiteral("always_ff"), QStringLiteral("always_comb"),
+        QStringLiteral("initial"), QStringLiteral("assign"),
+        QStringLiteral("case"), QStringLiteral("casex"),
+        QStringLiteral("casez"), QStringLiteral("default"),
+        QStringLiteral("endcase"), QStringLiteral("if"),
+        QStringLiteral("else"), QStringLiteral("for"),
+        QStringLiteral("while"), QStringLiteral("repeat"),
+        QStringLiteral("forever"), QStringLiteral("task"),
+        QStringLiteral("function"), QStringLiteral("endtask"),
+        QStringLiteral("endfunction"), QStringLiteral("typedef"),
+        QStringLiteral("enum"), QStringLiteral("struct"),
+        QStringLiteral("packed"), QStringLiteral("unpacked"),
+        QStringLiteral("interface"), QStringLiteral("endinterface"),
+        QStringLiteral("modport"), QStringLiteral("generate"),
+        QStringLiteral("endgenerate"), QStringLiteral("genvar"),
+        QStringLiteral("parameter"), QStringLiteral("localparam"),
+        QStringLiteral("`define"), QStringLiteral("`include"),
+        QStringLiteral("posedge"), QStringLiteral("negedge"),
+        QStringLiteral("and"), QStringLiteral("or"),
+        QStringLiteral("not"), QStringLiteral("xor")
+    };
+
+    QStringList result;
+    for (const QString& keyword : keywords) {
+        if (completionNameMatches(keyword, prefix))
+            result.append(keyword);
+    }
+    return result;
+}
+
+int CompletionService::calculateContextMatchScore(
+    const QString& text,
+    const QString& abbreviation) const
+{
+    if (abbreviation.isEmpty() || text.isEmpty())
+        return 0;
+
+    const QString lowerText = text.toLower();
+    const QString lowerAbbreviation = abbreviation.toLower();
+
+    if (lowerText == lowerAbbreviation)
+        return 1000;
+    if (lowerText.startsWith(lowerAbbreviation))
+        return 800 + (100 - abbreviation.length());
+    if (lowerText.contains(lowerAbbreviation))
+        return 400 + (100 - text.length());
+    if (!isValidContextAbbreviationMatch(text, abbreviation))
+        return 0;
+
+    const QList<int> positions =
+        findContextAbbreviationPositions(text, abbreviation);
+    int score = 500;
+    int wordBoundaryMatches = 0;
+    for (int position : positions) {
+        if (position == 0
+            || lowerText.at(position - 1) == QLatin1Char('_')
+            || lowerText.at(position - 1) == QLatin1Char(' ')) {
+            ++wordBoundaryMatches;
+        }
+        if (position > 0 && position < lowerText.length()) {
+            const QChar previous = text.at(position - 1);
+            const QChar current = text.at(position);
+            if (previous.isLower() && current.isUpper())
+                ++wordBoundaryMatches;
+        }
+    }
+
+    score += wordBoundaryMatches * 50;
+    score -= text.length();
+    for (int i = 1; i < positions.size(); ++i) {
+        if (positions.at(i) == positions.at(i - 1) + 1)
+            score += 10;
+    }
+    return score;
+}
+
+bool CompletionService::isValidContextAbbreviationMatch(
+    const QString& text,
+    const QString& abbreviation) const
+{
+    if (abbreviation.length() > text.length())
+        return false;
+
+    const QString lowerText = text.toLower();
+    const QString lowerAbbreviation = abbreviation.toLower();
+    int textPosition = 0;
+    int abbreviationPosition = 0;
+    while (abbreviationPosition < lowerAbbreviation.length()
+           && textPosition < text.length()) {
+        const QChar abbreviationChar = lowerAbbreviation.at(abbreviationPosition);
+        const QChar textChar = lowerText.at(textPosition);
+        if (abbreviationChar == textChar) {
+            ++abbreviationPosition;
+            ++textPosition;
+            continue;
+        }
+
+        bool separator = text.at(textPosition) == QLatin1Char('_')
+            || text.at(textPosition) == QLatin1Char(' ');
+        if (textPosition > 0) {
+            const QChar previous = text.at(textPosition - 1);
+            const QChar current = text.at(textPosition);
+            if (previous.isLower() && current.isUpper())
+                separator = true;
+        }
+        if (separator && textPosition + 1 < text.length()
+            && abbreviationChar == lowerText.at(textPosition + 1)) {
+            ++textPosition;
+            continue;
+        }
+        ++textPosition;
+    }
+    return abbreviationPosition == lowerAbbreviation.length();
+}
+
+QList<int> CompletionService::findContextAbbreviationPositions(
+    const QString& text,
+    const QString& abbreviation) const
+{
+    QList<int> positions;
+    if (!isValidContextAbbreviationMatch(text, abbreviation))
+        return positions;
+
+    const QString lowerText = text.toLower();
+    const QString lowerAbbreviation = abbreviation.toLower();
+    int textPosition = 0;
+    int abbreviationPosition = 0;
+    while (abbreviationPosition < lowerAbbreviation.length()
+           && textPosition < lowerText.length()) {
+        if (lowerAbbreviation.at(abbreviationPosition)
+            == lowerText.at(textPosition)) {
+            positions.append(textPosition);
+            ++abbreviationPosition;
+        } else {
+            bool separator = text.at(textPosition) == QLatin1Char('_')
+                || text.at(textPosition) == QLatin1Char(' ');
+            if (textPosition > 0) {
+                const QChar previous = text.at(textPosition - 1);
+                const QChar current = text.at(textPosition);
+                if (previous.isLower() && current.isUpper())
+                    separator = true;
+            }
+            if (separator && textPosition + 1 < text.length()
+                && lowerAbbreviation.at(abbreviationPosition)
+                    == lowerText.at(textPosition + 1)) {
+                ++textPosition;
+                continue;
+            }
+        }
+        ++textPosition;
+    }
+    return positions;
+}
+
+int CompletionService::calculateContextScore(
+    const QString& symbol,
+    const QString& context) const
+{
+    if (context == QLatin1String("clock")
+        && symbol.contains(QStringLiteral("clk"), Qt::CaseInsensitive)) {
+        return 50;
+    }
+
+    static const QRegularExpression resetPattern(
+        QStringLiteral("rst|reset"),
+        QRegularExpression::CaseInsensitiveOption);
+    if (context == QLatin1String("reset") && symbol.contains(resetPattern))
+        return 50;
+
+    return 0;
+}
+
+int CompletionService::calculateScopeScore(
+    const QString& symbol,
+    const QString& currentModule) const
+{
+    if (currentModule.isEmpty())
+        return 0;
+
+    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& candidate : symbols) {
+        if (candidate.symbolName == symbol
+            && candidate.moduleScope == currentModule) {
+            return 20;
+        }
+    }
+    return 0;
 }
 
 bool CompletionService::isModuleRangeSymbolType(sym_list::sym_type_e type) const

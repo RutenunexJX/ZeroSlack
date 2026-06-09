@@ -26,6 +26,13 @@ struct CommandCompletionQuery {
     sym_list::sym_type_e symbolType = sym_list::sym_user;
 };
 
+struct ContextCompletionQuery {
+    QString prefix;
+    QString currentModule;
+    QString context;
+    bool relationshipCompletionsEnabled = true;
+};
+
 class CompletionService
 {
 public:
@@ -62,6 +69,15 @@ public:
                                                const QString& prefix = QString()) const;
     QStringList findTaskFunctionCompletions(const QString& prefix = QString()) const;
     QStringList findInstantiableModuleCompletions(const QString& prefix = QString()) const;
+    QStringList findContextAwareCompletions(const ContextCompletionQuery& query) const;
+    QStringList findStructMemberCompletions(const QString& prefix,
+                                            const QString& structTypeName) const;
+    QStringList findEnumValueCompletions(const QString& prefix,
+                                         const QString& enumTypeName = QString()) const;
+    QString findEnumTypeForVariable(const QString& variableName,
+                                    const QString& moduleName = QString()) const;
+    QStringList findModulePortCompletions(const QString& prefix,
+                                          const QString& moduleTypeName) const;
     QList<sym_list::SymbolInfo> findModuleInternalSymbolInfosByType(
         const QString& moduleName,
         sym_list::sym_type_e symbolType,
@@ -106,6 +122,17 @@ private:
     QStringList completionNamesFromRelationshipResults(
         const QList<RelationshipResult>& relationships,
         bool outgoing) const;
+    QString extractStructVariableFromContext(const QString& context) const;
+    QString extractEnumVariableFromContext(const QString& context) const;
+    QString extractModuleTypeFromContext(const QString& context) const;
+    QStringList svKeywordCompletions(const QString& prefix) const;
+    int calculateContextMatchScore(const QString& text, const QString& abbreviation) const;
+    bool isValidContextAbbreviationMatch(const QString& text,
+                                         const QString& abbreviation) const;
+    QList<int> findContextAbbreviationPositions(const QString& text,
+                                                const QString& abbreviation) const;
+    int calculateContextScore(const QString& symbol, const QString& context) const;
+    int calculateScopeScore(const QString& symbol, const QString& currentModule) const;
     bool isModuleRangeSymbolType(sym_list::sym_type_e type) const;
     bool isInternalCompletionType(sym_list::sym_type_e type) const;
     bool isGlobalCompletionType(sym_list::sym_type_e type) const;

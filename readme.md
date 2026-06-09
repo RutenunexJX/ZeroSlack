@@ -52,11 +52,11 @@ These docs are living handoff material, not a changelog.
 
 ## Latest Verified Block
 
-The latest block moved `SymbolInfo` typed completion queries behind `CompletionService`.
+The latest block moved context-aware completion assembly behind `CompletionService`.
 
-- `CompletionService` now owns module-internal, module-context, and global typed `SymbolInfo` completion queries over `SemanticIndex`, including module range handling and relationship fallback.
-- Legacy `CompletionManager` typed `SymbolInfo` APIs delegate to `CompletionService`, and unused manager-side semantic scan helpers were removed.
-- Snapshot-backed completion tests cover the service `SymbolInfo` typed queries and the `CompletionManager` delegation path.
+- `CompletionService` now owns struct-member, enum-value, module-port, keyword, clock/reset, relationship, and general context completion assembly over `SemanticIndex`.
+- Legacy `CompletionManager::getContextAwareCompletions`, struct-type lookup, struct-member completion, and struct-member parsing delegate to `CompletionService`.
+- Snapshot-backed completion tests cover service context completions and the `CompletionManager` delegation path for struct, enum, and general contexts.
 
 ## Latest Validation
 
@@ -87,7 +87,7 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex` / `CompletionManager`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command completions, typed symbol and `SymbolInfo` completions, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
+- `CompletionService` owns module/global/command completions, typed symbol and `SymbolInfo` completions, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are split out of `MainWindow`.
 
 ## Next Best Steps

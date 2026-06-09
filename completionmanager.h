@@ -195,14 +195,6 @@ private:
 
     QString getSymbolTypeName(sym_list::sym_type_e symbolType);
 
-    QStringList getEnumValueCompletions(const QString &prefix, const QString &enumTypeName);
-    QString extractStructTypeFromContext(const QString &context);
-    QStringList getModulePortCompletions(const QString &prefix, const QString &moduleTypeName);
-    QString getEnumTypeForVariable(const QString &varName, const QString &currentModule);
-    QString extractModuleTypeFromContext(const QString &context);
-    QString extractEnumVariableFromContext(const QString &context);
-    QString extractStructVariableFromContext(const QString &context);
-    QStringList getSVKeywordCompletions(const QString &prefix);
 };
 
 #endif // COMPLETIONMANAGER_H

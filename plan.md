@@ -41,11 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved `SymbolInfo` typed completion queries behind `CompletionService`.
+The latest block moved context-aware completion assembly behind `CompletionService`.
 
-- `CompletionService` owns module-internal, module-context, and global typed `SymbolInfo` completion queries over `SemanticIndex`.
-- Legacy `CompletionManager` typed `SymbolInfo` APIs now delegate to `CompletionService`.
-- `completion_test` covers snapshot-backed service queries and manager delegation for these `SymbolInfo` paths.
+- `CompletionService` owns struct-member, enum-value, module-port, keyword, clock/reset, relationship, and general context completion assembly over `SemanticIndex`.
+- Legacy `CompletionManager` context-aware and struct-member helper APIs now delegate to `CompletionService`.
+- `completion_test` covers snapshot-backed service context completions and manager delegation for struct, enum, and general contexts.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 
