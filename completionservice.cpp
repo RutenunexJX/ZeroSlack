@@ -114,6 +114,81 @@ QStringList CompletionService::findAllSymbolCompletions(
     return result;
 }
 
+QVector<QPair<sym_list::SymbolInfo, int>>
+CompletionService::findScoredSymbolCompletionsByType(
+    sym_list::sym_type_e symbolType,
+    const QString& prefix,
+    int maxResults) const
+{
+    QVector<QPair<sym_list::SymbolInfo, int>> result;
+    QList<sym_list::SymbolInfo> symbols;
+    QSet<int> seenIds;
+
+    const QList<sym_list::SymbolInfo> allSymbols = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        if (symbol.symbolType != symbolType)
+            continue;
+        if (seenIds.contains(symbol.symbolId))
+            continue;
+        seenIds.insert(symbol.symbolId);
+        symbols.append(symbol);
+    }
+
+    if (symbolType == sym_list::sym_enum) {
+        for (const sym_list::SymbolInfo& symbol : allSymbols) {
+            if (symbol.symbolType != sym_list::sym_typedef
+                || symbol.dataType != QLatin1String("enum")
+                || seenIds.contains(symbol.symbolId)) {
+                continue;
+            }
+            seenIds.insert(symbol.symbolId);
+            symbols.append(symbol);
+        }
+    }
+
+    result.reserve(qMin(symbols.size(), maxResults > 0 ? maxResults : symbols.size()));
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        const int score =
+            calculateSymbolTypeCompletionScore(symbol.symbolName, prefix);
+        if (score > 0)
+            result.append(qMakePair(symbol, score));
+    }
+
+    std::sort(result.begin(), result.end(),
+              [](const QPair<sym_list::SymbolInfo, int>& left,
+                 const QPair<sym_list::SymbolInfo, int>& right) {
+                  if (left.second != right.second)
+                      return left.second > right.second;
+                  return left.first.symbolName < right.first.symbolName;
+              });
+
+    if (maxResults > 0 && result.size() > maxResults)
+        result = result.mid(0, maxResults);
+
+    return result;
+}
+
+QStringList CompletionService::findSymbolCompletionsByType(
+    sym_list::sym_type_e symbolType,
+    const QString& prefix,
+    int maxResults) const
+{
+    const QVector<QPair<sym_list::SymbolInfo, int>> scored =
+        findScoredSymbolCompletionsByType(symbolType, prefix, maxResults);
+
+    QStringList result;
+    result.reserve(scored.size());
+    for (const auto& match : scored) {
+        if (!result.contains(match.first.symbolName))
+            result.append(match.first.symbolName);
+    }
+
+    if (maxResults > 0 && result.size() > maxResults)
+        result = result.mid(0, maxResults);
+
+    return result;
+}
+
 QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
     const QString& prefix,
     const QString& fileName,
@@ -1269,6 +1344,28 @@ int CompletionService::calculateContextMatchScore(
             score += 10;
     }
     return score;
+}
+
+int CompletionService::calculateSymbolTypeCompletionScore(
+    const QString& text,
+    const QString& abbreviation) const
+{
+    if (text.isEmpty())
+        return 0;
+    if (abbreviation.isEmpty())
+        return 100;
+
+    const QString lowerText = text.toLower();
+    const QString lowerAbbreviation = abbreviation.toLower();
+    if (lowerText == lowerAbbreviation)
+        return 1000;
+    if (lowerText.startsWith(lowerAbbreviation))
+        return 800 + (100 - abbreviation.length());
+    if (lowerText.contains(lowerAbbreviation))
+        return 400 + (100 - text.length());
+    if (isValidContextAbbreviationMatch(text, abbreviation))
+        return 200;
+    return 0;
 }
 
 bool CompletionService::isValidContextAbbreviationMatch(

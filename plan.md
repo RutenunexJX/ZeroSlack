@@ -41,11 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved smart and all-symbol completion scoring behind `CompletionService`.
+The latest block moved typed symbol scoring behind `CompletionService`.
 
-- `CompletionService` owns all-symbol scoring, all-symbol name completions, smart completion assembly, and relationship/scope scoring over `SemanticIndex`.
-- Legacy `CompletionManager` smart/all-symbol APIs now delegate to `CompletionService`.
-- `completion_test` covers snapshot-backed service smart/all-symbol completions and manager delegation.
+- `CompletionService` owns scored symbol completions by type and typed symbol name completions over `SemanticIndex`.
+- Legacy `CompletionManager` typed symbol scoring/name APIs now delegate to `CompletionService`.
+- `completion_test` covers snapshot-backed service typed symbol scoring and manager delegation.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 

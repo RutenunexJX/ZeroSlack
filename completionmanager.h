@@ -119,12 +119,6 @@ private:
     QHash<QString, QStringList> keywordMatchCache;
     QHash<QString, QVector<QPair<QString, int>>> keywordScoreCache;
 
-    QHash<sym_list::sym_type_e, QList<sym_list::SymbolInfo>> symbolTypeCache;
-    QHash<QString, QVector<QPair<sym_list::SymbolInfo, int>>> symbolScoreCache;
-    int lastSymbolDatabaseSize = 0;
-    QString lastSymbolDatabaseHash;
-
-    QHash<sym_list::sym_type_e, QStringList> precomputedCompletions;
     bool precomputedDataValid = false;
 
     QHash<QString, bool> singleMatchCache;
@@ -132,8 +126,6 @@ private:
     QHash<QString, QList<int>> positionCache;
 
     bool smartCachingEnabled = true;
-    int cacheInvalidationThreshold = 100;
-
     SymbolRelationshipEngine* relationshipEngine = nullptr;
     SlangManager* m_slangManager = nullptr;
     std::unique_ptr<SmartRelationshipBuilder> relationshipBuilder;
@@ -145,23 +137,12 @@ private:
     bool relationshipCacheValid = false;
 
     void initializeKeywords();
-    void updateSymbolCaches();
-    bool isSymbolCacheValid();
-    QString calculateSymbolDatabaseHash();
-
     QString buildSingleMatchKey(const QString &text, const QString &abbreviation);
     QString buildKeywordCacheKey(const QString &prefix);
-    QString buildSymbolCacheKey(sym_list::sym_type_e symbolType, const QString &prefix);
 
     QVector<QPair<QString, int>> calculateScoredMatches(const QStringList &candidates, const QString &abbreviation);
-    QVector<QPair<sym_list::SymbolInfo, int>> calculateScoredSymbolMatches(
-        const QList<sym_list::SymbolInfo> &symbols, const QString &abbreviation);
 
     void updatePrecomputedCompletions();
-    QList<sym_list::SymbolInfo> getAllSemanticSymbols() const;
-    QList<sym_list::SymbolInfo> getSemanticSymbolsByType(sym_list::sym_type_e symbolType) const;
-    QList<sym_list::SymbolInfo> getSemanticSymbolsForCommandType(sym_list::sym_type_e symbolType) const;
-    bool shouldSkipCacheRefresh();
 
     QString getSymbolTypeString(sym_list::sym_type_e symbolType);
 

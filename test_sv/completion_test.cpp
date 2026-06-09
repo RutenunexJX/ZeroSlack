@@ -62,6 +62,14 @@ static QStringList scoredNames(const QVector<QPair<QString, int>>& scored) {
     return names;
 }
 
+static QStringList symbolNamesFromScored(
+    const QVector<QPair<sym_list::SymbolInfo, int>>& scored) {
+    QStringList names;
+    for (const auto& item : scored)
+        names << item.first.symbolName;
+    return names;
+}
+
 static sym_list::SymbolInfo makeSymbol(const QString& name,
                                        sym_list::sym_type_e type,
                                        const QString& moduleScope,
@@ -722,6 +730,16 @@ int main(int argc, char** argv) {
                scoredNames(snapshotCompletionService.findScoredAllSymbolCompletions(
                    QStringLiteral("snap_clk"))),
                {"snap_clk"});
+    expectList("snapshot typed symbol completions",
+               snapshotCompletionService.findSymbolCompletionsByType(
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_e")),
+               {"snap_enable", "snap_other_enable"});
+    expectList("snapshot scored typed symbol completions",
+               symbolNamesFromScored(snapshotCompletionService.findScoredSymbolCompletionsByType(
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_e"))),
+               {"snap_enable", "snap_other_enable"});
     expectList("snapshot smart completions no relationships",
                scoredNames(snapshotCompletionService.findSmartCompletions(
                    QStringLiteral("snap_clk"),
@@ -806,6 +824,14 @@ int main(int argc, char** argv) {
     expectList("CompletionManager scored all-symbol delegation",
                scoredNames(cm->getScoredAllSymbolMatches(QStringLiteral("snap_clk"))),
                {"snap_clk"});
+    expectList("CompletionManager typed symbol delegation",
+               cm->getSymbolCompletions(sym_list::sym_logic, QStringLiteral("snap_e")),
+               {"snap_enable", "snap_other_enable"});
+    expectList("CompletionManager scored typed symbol delegation",
+               symbolNamesFromScored(cm->getScoredSymbolMatches(
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_e"))),
+               {"snap_enable", "snap_other_enable"});
     expectList("CompletionManager smart delegation",
                scoredNames(cm->getSmartCompletions(QStringLiteral("snap_sig"),
                                                    snapshotScopeFile,
