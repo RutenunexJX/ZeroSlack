@@ -1,6 +1,6 @@
 # ZeroSlack Handoff
 
-ZeroSlack is currently a lightweight SystemVerilog workspace browser/editor, not a full IDE. The active architecture direction is:
+ZeroSlack is a lightweight SystemVerilog workspace browser/editor. It is moving toward:
 
 ```text
 Tree-sitter live syntax and editor scope
@@ -16,16 +16,16 @@ Thin UI consumers
 - Workspace: `E:\ZeroSlack\ZeroSlack`
 - Branch: `tree_sitter_and_slang`
 - Version: `0.0.20/slang25` in `version.h`
-- Latest commit: use `git log -1 --oneline`
 - Build path: Qt 6 + CMake + Ninja only
-- Expected working tree: clean, except local warning noise.
+- Latest commit: verify with `git log -1 --oneline`
+- Expected tree after handoff commit/push: clean except local Git warning noise.
 
-Common git warnings on this machine are not content errors:
+Expected local warning noise:
 
 - `unable to access C:\Users\14971/.config/git/ignore: Permission denied`
 - `LF will be replaced by CRLF`
 
-Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `git status` noise.
+Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over noisy status output.
 
 ## Hard Rules
 
@@ -33,130 +33,62 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 - Do not restore `demo.pro`, any `*.pro`, any `*.pri`, or qmake.
 - Do not restore `.claude/` or Claude local config.
 - Do not restore SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
-- Keep source, tests, UI strings, CMake, and comments English / ASCII.
-- Keep these handoff docs concise and English / ASCII unless the user asks otherwise.
-- Do not commit or push unless the user explicitly asks.
+- Keep source, tests, UI strings, CMake, and these docs English / ASCII.
+- Do not commit or push unless explicitly asked.
 - Never discard user changes or use destructive git commands unless explicitly requested.
 
 ## Latest Completed Work
 
-Recent development work moved relationship tree report policy into
-`HierarchyService`, routed completion reads through query services, decoupled
-`MyCodeEditor` from `MainWindow`/manager classes, and moved document-close
-semantic cleanup into `AnalysisScheduler`.
+The latest architecture block thinned `MainWindow` by extracting focused coordination boundaries:
 
-- `HierarchyReport` now carries root-level direction groups with direction,
-  nodes, and count.
-- `MainWindow` relationship tree rendering now consumes those report groups
-  instead of deriving root direction counts from string-keyed UI items.
-- `CompletionManager::findSemanticDefinitions` now uses `DefinitionService`
-  instead of reading definitions directly from `SemanticIndex`.
-- `CompletionManager` relationship completion and scoring helpers now pass
-  symbol names to `RelationshipService` instead of pre-resolving IDs inside
-  `CompletionManager`.
-- `CompletionManager::getSemanticSymbolsByType` now uses `SearchService`
-  instead of reading typed symbols directly from `SemanticIndex`.
-- `CompletionManager::getSemanticSymbolsForFile` now uses `SearchService`
-  instead of reading file-scoped symbols directly from `SemanticIndex`.
-- `CompletionManager::getAllSemanticSymbols` now uses `SearchService`
-  instead of reading all symbols directly from `SemanticIndex`.
-- `MyCodeEditor` no longer includes or casts to `MainWindow`, `TabManager`,
-  `WorkspaceManager`, `ModeManager`, `SymbolAnalyzer`, or `NavigationManager`.
-- `MyCodeEditor` relationship-analysis debounce emits
-  `relationshipAnalysisRequested`; `MainWindow` connects that signal to the
-  scheduler-backed request path.
-- `MyCodeEditor` alternate-mode state and file commands now use
-  `MainWindow`-supplied state and editor signals instead of direct manager
-  reads or `TabManager` calls.
-- `MyCodeEditor` include fallback resolution and file opening now use callbacks
-  installed by `MainWindow`; current-file-relative and workspace fallback
-  resolution are owned by `WorkspaceManager::resolveIncludePath`.
-- `MainWindow` header no longer includes `mycodeeditor.h` or grants
-  `friend class MyCodeEditor`; editor-specific use is kept in `mainwindow.cpp`.
-- `MainWindow` editor setup is centralized in `configureEditor()`, and include
-  fallback is delegated to `WorkspaceManager::resolveIncludePath`.
-- `AnalysisScheduler` owns document-close semantic cleanup: it cancels pending
-  open-file analysis, drops cached relationship content, reanalyzes remaining
-  open documents, and invalidates closed-file relationships.
-- `SymbolAnalyzer` analyzes open document content lists and no longer depends
-  on `TabManager` for the open-documents analysis path.
-- `relationship_test` keeps the minimal snapshot-backed regression coverage
-  for the new hierarchy report groups.
-- Existing uncommitted report fixture coverage also includes snapshot-backed
-  `RelationshipReport` direction/type grouping and `ReferenceReport` file/type
-  grouping.
+- `ProblemsPanelCoordinator` owns Problems dock/filter/tree setup, `DiagnosticQuery` construction, report rendering, expansion preservation, and double-click navigation callbacks.
+- `ReferencesPanelCoordinator` owns References dock/filter/tree setup, `ReferenceQuery` construction, report rendering, expansion preservation, status messages, and navigation callbacks.
+- `RelationshipsPanelCoordinator` owns Relationships dock/filter/tree setup, direct/tree filters, `RelationshipBrowseQuery` / `HierarchyQuery` construction, report rendering, expansion preservation, status messages, and navigation callbacks.
+- `SemanticPanelUtils` owns shared relationship labels, count labels, normalized tree expansion keys, expanded-state capture, and restore.
+- `NavigationPaneCoordinator` owns Navigation dock/widget creation, sizing, dock features, `NavigationManager` widget attachment, and visibility toggling.
+- `EditorCoordinator` owns editor callback/signal setup, editor-originated command routing, active-tab refresh coordination, and alternate-mode propagation across open editors.
+- `TabManager::editorCount()` provides narrow read-only open-editor enumeration for coordinator-owned mode propagation.
+- `MainWindow` now injects file, navigation, analysis, and panel callbacks instead of directly owning these workflows.
+- `gui_smoke_test` was adapted to exercise the new coordinator boundaries through visible workflows.
+
+This builds on earlier work where `MyCodeEditor` was decoupled from `MainWindow`/manager classes, include fallback moved to `WorkspaceManager::resolveIncludePath`, document-close semantic cleanup moved into `AnalysisScheduler`, open-document analysis was decoupled from `TabManager`, and CompletionManager reads were routed through query services.
 
 ## Latest Validation
 
-Validation passed after the latest code/test step:
+Validation passed after the latest code/doc update:
 
 - `cmake --build ... --target gui_smoke_test`
 - `ctest -R "gui_smoke_test" --output-on-failure`
-- `cmake --build ... --target relationship_test`
-- `ctest -R "relationship_test" --output-on-failure`
 - full default target rebuild
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
-- changed/new source/test/UI/CMake/handoff non-ASCII scan: empty
-- forbidden-file guard: no `demo.pro`, no `*.pro`, no `*.pri`, `.claude` absent
+- changed/new source/test/UI/CMake/handoff non-ASCII scan: empty except local Git warning noise
+- changed/new source/test/UI/CMake/handoff trailing whitespace scan: empty except local Git warning noise
+- forbidden-file guard: `FORBIDDEN_GUARD_OK`
+
+Full default target rebuild may exceed 300 seconds while linking; rerunning the same build command has completed the remaining target.
 
 ## Current Architecture Summary
 
-- `ProjectModel` publishes `ProjectSnapshot` with workspace root, SV files, include dirs, defines, and optional project config.
-- `DocumentModel` tracks open documents, dirty/saved state, text versions, cursor state, and live module scope.
+- `ProjectModel` publishes workspace root, SV files, include dirs, defines, and optional project config.
+- `DocumentModel` tracks open document state.
 - `AnalysisScheduler` owns analysis trigger timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and relationship data refresh requests.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
-- `SemanticIndex` is the semantic facade. It still wraps live `sym_list` in places, but services and UI should read through the facade.
-- `SemanticIndexSnapshot` stores read-only symbols, relationships, diagnostics, cached file content, and minimal scope names. Background analysis can publish base/enriched snapshots.
-- `SemanticIndex` also owns struct-variable type lookup and struct-member symbol
-  reads for services that need `var.member` context, member completion, or
-  command-mode struct symbol results.
+- `SemanticIndex` is the semantic facade and still wraps live `sym_list` in some transitional paths.
+- `SemanticIndexSnapshot` stores read-only symbols, relationships, diagnostics, cached file content, and minimal scope names.
 - Query services exist for definition, completion, relationship, hierarchy, reference, diagnostics, and search.
-- Problems / References / Relationships panels consume service reports for sorting, filtering, counts, grouping, and result shape.
-- `MainWindow` is being thinned. It should coordinate UI, not own analysis policy or semantic query policy.
+- Problems, References, Relationships, Navigation pane, and editor/tab/mode workflows are now split out of `MainWindow` into focused coordinators.
+- `MainWindow` should keep shrinking toward UI composition and high-level callback wiring.
 
 ## Next Best Steps
 
 Pick one medium-sized, coherent, verifiable architecture block:
 
-- Move a related set of UI/editor/completion semantic reads or analysis policy
-  checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`.
-- Extract one complete MainWindow refresh/progress/coordination boundary into
-  a focused coordinator or existing scheduler/model boundary.
-- Thin one UI panel or editor workflow end-to-end without changing visible
-  behavior.
+- Move a related set of UI/editor/completion semantic reads or analysis policy checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`.
+- Extract another complete `MainWindow` refresh/progress/coordination boundary into a focused coordinator or existing scheduler/model boundary.
+- Thin one editor/completion workflow end-to-end without changing visible behavior.
 
-Prioritize production-code architecture progress. Do not use pure
-`relationship_test.cpp` assertion expansion as the main increment. Add tests
-only as focused regression protection directly tied to a production code change.
-
-Avoid broad scattered rewrites, but do not stop after tiny 10-20 line edits
-when a related architecture block can be finished and verified together.
-
-## Handoff Cadence
-
-Do one medium-sized, coherent block at a time. Batch related production-code
-changes, then validate and update this handoff when:
-
-- context is getting large,
-- a coherent architecture block is validated,
-- the next step is broad or risky,
-- validation is blocked,
-- or the user asks to stop.
-
-Do not keep appending long session history. Replace summaries with the current state.
-
-## Useful Commands
-
-```powershell
-$env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;E:\QT6\Tools\CMake_64\bin;E:\QT6\Tools\Ninja;$env:PATH"
-
-& "E:\QT6\Tools\CMake_64\bin\cmake.exe" --build "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug" --target relationship_test -- -j4
-
-& "E:\QT6\Tools\CMake_64\bin\ctest.exe" --test-dir "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug" -R "relationship_test" --output-on-failure
-
-& "E:\QT6\Tools\CMake_64\bin\ctest.exe" --test-dir "E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug" --output-on-failure
-```
+Prioritize production-code architecture progress. Add tests only as focused regression protection directly tied to a production code change.
 
 ## New Session Opener
 
@@ -173,47 +105,16 @@ Known current state:
 - Workspace: E:\ZeroSlack\ZeroSlack
 - Branch: tree_sitter_and_slang
 - Version: 0.0.20/slang25
-- Latest commit should be eb19bf7 Move editor semantic coordination behind services.
-- Current working tree should be clean, except local Git warning noise.
+- Build path: Qt 6 + CMake + Ninja only
+- The latest pushed commit should include the MainWindow coordinator extraction block.
+- Working tree should be clean except local Git warning noise.
 
 Rules:
-- Use Qt 6 + CMake + Ninja only.
 - Do not restore demo.pro, *.pro, *.pri, qmake, .claude, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived perflog.
 - Keep source/test/UI/CMake and handoff docs English / ASCII.
-- Prefer git diff --name-only over git status noise.
 - Do one medium-sized, coherent, verifiable architecture block at a time.
-- Do not stop after tiny 10-20 line edits if related production-code changes
-  can be finished and verified together.
-- Prioritize production-code architecture progress; do not use pure
-  relationship_test.cpp assertion expansion as the main increment.
-- Add tests only as focused regression protection directly tied to a
-  production code change.
-- Stop for handoff when context is getting large, after a coherent validated
-  block, or before the next step becomes broad/risky.
+- Prioritize production-code architecture progress; tests should be focused regressions tied to the production change.
+- Stop for handoff when a coherent block is validated, context is getting large, validation is blocked, or the user asks to stop.
 
-Latest completed continuation:
-- HierarchyReport carries root-level direction groups and MainWindow consumes them for relationship tree root direction rows.
-- CompletionManager definition lookup now goes through DefinitionService instead of SemanticIndex directly.
-- CompletionManager relationship completion and scoring helpers now use RelationshipService name-based queries instead of pre-resolving symbol IDs.
-- CompletionManager typed symbol reads now go through SearchService instead of SemanticIndex directly.
-- CompletionManager file-scoped symbol reads now go through SearchService instead of SemanticIndex directly.
-- CompletionManager all-symbol reads now go through SearchService instead of SemanticIndex directly.
-- MyCodeEditor no longer includes or casts to MainWindow or manager classes;
-  relationship analysis, alternate-mode file commands, include fallback
-  resolution, and file opening are routed through signals or injected callbacks.
-- MainWindow header no longer includes mycodeeditor.h or grants MyCodeEditor
-  friendship.
-- MainWindow editor setup is centralized in configureEditor(), while workspace
-  and current-file include fallback are owned by WorkspaceManager::resolveIncludePath.
-- AnalysisScheduler owns document-close semantic cleanup and remaining
-  open-document reanalysis; SymbolAnalyzer now takes open document content
-  lists instead of reading TabManager directly.
-- relationship_test checks snapshot-backed RelationshipReport direction/type grouping for outgoing and incoming instantiation rows.
-- relationship_test checks snapshot-backed ReferenceReport file/type counts and file group metadata for an instantiation reference row.
-- relationship_test checks snapshot-backed HierarchyReport root direction groups and node links.
-- Handoff docs were updated and compacted.
-- Validation passed: gui_smoke_test target build, ctest -R gui_smoke_test, relationship_test target build, ctest -R relationship_test, full default target rebuild, full CTest 6/6, git diff --check, non-ASCII scan, and forbidden-file guard.
-
-Continue toward goal.md with one medium-sized, coherent, verifiable
-architecture block.
+Continue toward goal.md.
 ```

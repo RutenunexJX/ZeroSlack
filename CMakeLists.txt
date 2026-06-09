@@ -53,18 +53,24 @@ set(ZEROSLACK_CORE_SOURCES
     definitionservice.cpp
     diagnosticservice.cpp
     documentmodel.cpp
+    editorcoordinator.cpp
     hierarchyservice.cpp
     tsdocument.cpp
     modemanager.cpp
     mycodeeditor.cpp
     myhighlighter.cpp
     navigationmanager.cpp
+    navigationpanecoordinator.cpp
     navigationwidget.cpp
+    problemspanelcoordinator.cpp
     projectmodel.cpp
+    referencespanelcoordinator.cpp
     referenceservice.cpp
+    relationshipspanelcoordinator.cpp
     relationshipservice.cpp
     relationshipprogressdialog.cpp
     searchservice.cpp
+    semanticpanelutils.cpp
     semanticindex.cpp
     semanticindexsnapshot.cpp
     slangmanager.cpp
@@ -87,6 +93,7 @@ set(ZEROSLACK_CORE_SOURCES
     definitionservice.h
     diagnosticservice.h
     documentmodel.h
+    editorcoordinator.h
     hierarchyservice.h
     tsdocument.h
     modemanager.h
@@ -94,12 +101,17 @@ set(ZEROSLACK_CORE_SOURCES
     myhighlighter.h
     modulehierarchymodel.h
     navigationmanager.h
+    navigationpanecoordinator.h
     navigationwidget.h
+    problemspanelcoordinator.h
     projectmodel.h
+    referencespanelcoordinator.h
     referenceservice.h
+    relationshipspanelcoordinator.h
     relationshipservice.h
     relationshipprogressdialog.h
     searchservice.h
+    semanticpanelutils.h
     semanticindex.h
     semanticindexsnapshot.h
     slangmanager.h

@@ -30,6 +30,7 @@ public:
     QString getPlainTextFromOpenFile(const QString& fileName) const;
     QStringList getAllOpenFileNames() const;
     QStringList getOpenSystemVerilogFiles() const;
+    int editorCount() const;
     DocumentModel* getDocumentModel() const;
 
     // Tab state management

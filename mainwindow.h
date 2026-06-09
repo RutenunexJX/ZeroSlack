@@ -3,7 +3,6 @@
 
 #include "syminfo.h"
 #include <QMainWindow>
-#include <QDockWidget>
 #include <memory>
 
 class AnalysisProgressCoordinator;
@@ -13,13 +12,13 @@ class WorkspaceManager;
 class ModeManager;
 class SymbolAnalyzer;
 class NavigationManager;
-class NavigationWidget;
+class NavigationPaneCoordinator;
 class AnalysisScheduler;
+class EditorCoordinator;
+class ProblemsPanelCoordinator;
+class ReferencesPanelCoordinator;
+class RelationshipsPanelCoordinator;
 struct SingleFileRelationshipAnalysisResult;
-struct WorkspaceRelationshipAnalysisResult;
-class SemanticIndexSnapshot;
-class QComboBox;
-class QTreeWidget;
 
 class SymbolRelationshipEngine;
 class SlangManager;
@@ -78,30 +77,12 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
-    QString currentFile;
 
-    QDockWidget* navigationDock;
-    NavigationWidget* navigationWidget;
-    QDockWidget* problemsDock = nullptr;
-    QTreeWidget* problemsTree = nullptr;
-    QComboBox* problemsScopeCombo = nullptr;
-    QComboBox* problemsSeverityCombo = nullptr;
-    QDockWidget* referencesDock = nullptr;
-    QTreeWidget* referencesTree = nullptr;
-    QComboBox* referenceScopeCombo = nullptr;
-    QComboBox* referenceTypeCombo = nullptr;
-    QString currentReferenceSymbolName;
-    QString currentReferenceFileName;
-    QString currentReferenceModuleName;
-    QDockWidget* relationshipsDock = nullptr;
-    QTreeWidget* relationshipsTree = nullptr;
-    QComboBox* relationshipViewCombo = nullptr;
-    QComboBox* relationshipDirectionCombo = nullptr;
-    QComboBox* relationshipTypeCombo = nullptr;
-    QComboBox* relationshipDepthCombo = nullptr;
-    QString currentRelationshipSymbolName;
-    QString currentRelationshipFileName;
-    QString currentRelationshipModuleName;
+    std::unique_ptr<NavigationPaneCoordinator> navigationPane;
+    std::unique_ptr<EditorCoordinator> editorCoordinator;
+    std::unique_ptr<ProblemsPanelCoordinator> problemsPanel;
+    std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
+    std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
 
     void onSingleFileRelationshipFinished(const SingleFileRelationshipAnalysisResult& result);
 
@@ -111,9 +92,9 @@ private:
     void setupProblemsPane();
     void setupReferencesPane();
     void setupRelationshipsPane();
+    void setupEditorCoordinator();
     void updateProblemsPanel(const QString& fileName = QString());
     void connectNavigationSignals();
-    void configureEditor(MyCodeEditor* editor);
     void navigateToFileAndLine(const QString& filePath, int lineNumber = -1, int columnNumber = -1);
     void showReferencesForSymbol(const QString& symbolName,
                                  const QString& fileName,

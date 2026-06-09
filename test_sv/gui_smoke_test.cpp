@@ -26,6 +26,9 @@
 #include "documentmodel.h"
 #include "navigationwidget.h"
 #include "navigationmanager.h"
+#include "problemspanelcoordinator.h"
+#include "referencespanelcoordinator.h"
+#include "relationshipspanelcoordinator.h"
 #include "analysisscheduler.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
@@ -195,6 +198,56 @@ static QList<QTreeWidgetItem*> navigableItems(QTreeWidget* tree)
     return out;
 }
 
+static QTreeWidget* problemsTree(MainWindow& window)
+{
+    return window.problemsPanel ? window.problemsPanel->tree() : nullptr;
+}
+
+static QComboBox* problemsScopeCombo(MainWindow& window)
+{
+    return window.problemsPanel ? window.problemsPanel->scopeCombo() : nullptr;
+}
+
+static QTreeWidget* referencesTree(MainWindow& window)
+{
+    return window.referencesPanel ? window.referencesPanel->tree() : nullptr;
+}
+
+static QComboBox* referenceScopeCombo(MainWindow& window)
+{
+    return window.referencesPanel ? window.referencesPanel->scopeCombo() : nullptr;
+}
+
+static QComboBox* referenceTypeCombo(MainWindow& window)
+{
+    return window.referencesPanel ? window.referencesPanel->typeCombo() : nullptr;
+}
+
+static QTreeWidget* relationshipsTree(MainWindow& window)
+{
+    return window.relationshipsPanel ? window.relationshipsPanel->tree() : nullptr;
+}
+
+static QComboBox* relationshipViewCombo(MainWindow& window)
+{
+    return window.relationshipsPanel ? window.relationshipsPanel->viewCombo() : nullptr;
+}
+
+static QComboBox* relationshipDirectionCombo(MainWindow& window)
+{
+    return window.relationshipsPanel ? window.relationshipsPanel->directionCombo() : nullptr;
+}
+
+static QComboBox* relationshipTypeCombo(MainWindow& window)
+{
+    return window.relationshipsPanel ? window.relationshipsPanel->typeCombo() : nullptr;
+}
+
+static QComboBox* relationshipDepthCombo(MainWindow& window)
+{
+    return window.relationshipsPanel ? window.relationshipsPanel->depthCombo() : nullptr;
+}
+
 static void drainRelationshipWork(MainWindow& window)
 {
     if (window.relationshipBuilder)
@@ -287,34 +340,34 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                                    fixturePath,
                                    QStringLiteral("ref_top"));
 
-    expectBool("references tree exists", window.referencesTree != nullptr, true);
+    expectBool("references tree exists", referencesTree(window) != nullptr, true);
     expectBool("reference results rendered",
-               navigableItemCount(window.referencesTree) == 2,
+               navigableItemCount(referencesTree(window)) == 2,
                true);
     expectBool("reference scope filter exists",
-               window.referenceScopeCombo != nullptr,
+               referenceScopeCombo(window) != nullptr,
                true);
     expectBool("reference type filter exists",
-               window.referenceTypeCombo != nullptr,
+               referenceTypeCombo(window) != nullptr,
                true);
-    if (window.referenceScopeCombo) {
-        window.referenceScopeCombo->setCurrentIndex(
-            window.referenceScopeCombo->findText(QStringLiteral("Workspace Files")));
+    if (referenceScopeCombo(window)) {
+        referenceScopeCombo(window)->setCurrentIndex(
+            referenceScopeCombo(window)->findText(QStringLiteral("Workspace Files")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("reference workspace scope hides non-workspace files",
-                   navigableItemCount(window.referencesTree) == 0,
+                   navigableItemCount(referencesTree(window)) == 0,
                    true);
     }
-    if (window.referenceScopeCombo) {
-        window.referenceScopeCombo->setCurrentIndex(
-            window.referenceScopeCombo->findText(QStringLiteral("Current File")));
+    if (referenceScopeCombo(window)) {
+        referenceScopeCombo(window)->setCurrentIndex(
+            referenceScopeCombo(window)->findText(QStringLiteral("Current File")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("reference scope narrows to current file",
-                   navigableItemCount(window.referencesTree) == 1,
+                   navigableItemCount(referencesTree(window)) == 1,
                    true);
     }
-    if (window.referencesTree && navigableItemCount(window.referencesTree) == 1) {
-        QTreeWidgetItem* item = firstNavigableItem(window.referencesTree);
+    if (referencesTree(window) && navigableItemCount(referencesTree(window)) == 1) {
+        QTreeWidgetItem* item = firstNavigableItem(referencesTree(window));
         expectBool("reference row uses source symbol",
                    item && item->text(0) == QStringLiteral("source_ref"),
                    true);
@@ -322,21 +375,21 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    item && item->data(0, Qt::UserRole + 1).toInt() == referencing.startLine,
                    true);
     }
-    if (window.referenceScopeCombo && window.referenceTypeCombo) {
-        window.referenceScopeCombo->setCurrentIndex(
-            window.referenceScopeCombo->findText(QStringLiteral("All Files")));
-        window.referenceTypeCombo->setCurrentIndex(
-            window.referenceTypeCombo->findText(QStringLiteral("Reads From")));
+    if (referenceScopeCombo(window) && referenceTypeCombo(window)) {
+        referenceScopeCombo(window)->setCurrentIndex(
+            referenceScopeCombo(window)->findText(QStringLiteral("All Files")));
+        referenceTypeCombo(window)->setCurrentIndex(
+            referenceTypeCombo(window)->findText(QStringLiteral("Reads From")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("reference type filter narrows results",
-                   navigableItemCount(window.referencesTree) == 1,
+                   navigableItemCount(referencesTree(window)) == 1,
                    true);
-        QTreeWidgetItem* item = firstNavigableItem(window.referencesTree);
+        QTreeWidgetItem* item = firstNavigableItem(referencesTree(window));
         expectBool("reference type filter keeps external source",
                    item && item->text(0) == QStringLiteral("external_ref"),
                    true);
-        window.referenceTypeCombo->setCurrentIndex(
-            window.referenceTypeCombo->findText(QStringLiteral("All Types")));
+        referenceTypeCombo(window)->setCurrentIndex(
+            referenceTypeCombo(window)->findText(QStringLiteral("All Types")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
 
@@ -379,15 +432,15 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     window.showRelationshipsForSymbol(QStringLiteral("target_ref"),
                                       fixturePath,
                                       QStringLiteral("ref_top"));
-    expectBool("relationships tree exists", window.relationshipsTree != nullptr, true);
+    expectBool("relationships tree exists", relationshipsTree(window) != nullptr, true);
     expectBool("relationship results rendered",
-               navigableItemCount(window.relationshipsTree) == 3,
+               navigableItemCount(relationshipsTree(window)) == 3,
                true);
-    if (window.relationshipsTree && navigableItemCount(window.relationshipsTree) == 3) {
+    if (relationshipsTree(window) && navigableItemCount(relationshipsTree(window)) == 3) {
         bool sawIncoming = false;
         bool sawOutgoing = false;
         bool sawExternal = false;
-        const QList<QTreeWidgetItem*> items = navigableItems(window.relationshipsTree);
+        const QList<QTreeWidgetItem*> items = navigableItems(relationshipsTree(window));
         for (QTreeWidgetItem* item : items) {
             sawIncoming = sawIncoming
                 || (item->text(0) == QStringLiteral("Incoming")
@@ -405,61 +458,61 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     }
 
     expectBool("relationship direction filter exists",
-               window.relationshipDirectionCombo != nullptr,
+               relationshipDirectionCombo(window) != nullptr,
                true);
     expectBool("relationship type filter exists",
-               window.relationshipTypeCombo != nullptr,
+               relationshipTypeCombo(window) != nullptr,
                true);
     expectBool("relationship view filter exists",
-               window.relationshipViewCombo != nullptr,
+               relationshipViewCombo(window) != nullptr,
                true);
     expectBool("relationship depth filter exists",
-               window.relationshipDepthCombo != nullptr,
+               relationshipDepthCombo(window) != nullptr,
                true);
-    if (window.relationshipDirectionCombo && window.relationshipTypeCombo) {
-        window.relationshipDirectionCombo->setCurrentIndex(
-            window.relationshipDirectionCombo->findText(QStringLiteral("Outgoing")));
+    if (relationshipDirectionCombo(window) && relationshipTypeCombo(window)) {
+        relationshipDirectionCombo(window)->setCurrentIndex(
+            relationshipDirectionCombo(window)->findText(QStringLiteral("Outgoing")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("outgoing filter narrows relationships",
-                   navigableItemCount(window.relationshipsTree) == 1,
+                   navigableItemCount(relationshipsTree(window)) == 1,
                    true);
-        if (window.relationshipsTree && navigableItemCount(window.relationshipsTree) == 1) {
-            QTreeWidgetItem* item = firstNavigableItem(window.relationshipsTree);
+        if (relationshipsTree(window) && navigableItemCount(relationshipsTree(window)) == 1) {
+            QTreeWidgetItem* item = firstNavigableItem(relationshipsTree(window));
             expectBool("outgoing filter keeps target",
                        item && item->text(1) == QStringLiteral("target_sink"),
                        true);
         }
 
-        window.relationshipDirectionCombo->setCurrentIndex(
-            window.relationshipDirectionCombo->findText(QStringLiteral("All Directions")));
-        window.relationshipTypeCombo->setCurrentIndex(
-            window.relationshipTypeCombo->findText(QStringLiteral("References")));
+        relationshipDirectionCombo(window)->setCurrentIndex(
+            relationshipDirectionCombo(window)->findText(QStringLiteral("All Directions")));
+        relationshipTypeCombo(window)->setCurrentIndex(
+            relationshipTypeCombo(window)->findText(QStringLiteral("References")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("type filter narrows relationships",
-                   navigableItemCount(window.relationshipsTree) == 1,
+                   navigableItemCount(relationshipsTree(window)) == 1,
                    true);
-        if (window.relationshipsTree && navigableItemCount(window.relationshipsTree) == 1) {
-            QTreeWidgetItem* item = firstNavigableItem(window.relationshipsTree);
+        if (relationshipsTree(window) && navigableItemCount(relationshipsTree(window)) == 1) {
+            QTreeWidgetItem* item = firstNavigableItem(relationshipsTree(window));
             expectBool("type filter keeps incoming source",
                        item && item->text(1) == QStringLiteral("source_ref"),
                        true);
         }
     }
-    if (window.relationshipViewCombo && window.relationshipTypeCombo
-        && window.relationshipDepthCombo) {
-        window.relationshipTypeCombo->setCurrentIndex(
-            window.relationshipTypeCombo->findText(QStringLiteral("Calls")));
-        window.relationshipDepthCombo->setCurrentIndex(
-            window.relationshipDepthCombo->findText(QStringLiteral("Depth 2")));
-        window.relationshipViewCombo->setCurrentIndex(
-            window.relationshipViewCombo->findText(QStringLiteral("Tree")));
+    if (relationshipViewCombo(window) && relationshipTypeCombo(window)
+        && relationshipDepthCombo(window)) {
+        relationshipTypeCombo(window)->setCurrentIndex(
+            relationshipTypeCombo(window)->findText(QStringLiteral("Calls")));
+        relationshipDepthCombo(window)->setCurrentIndex(
+            relationshipDepthCombo(window)->findText(QStringLiteral("Depth 2")));
+        relationshipViewCombo(window)->setCurrentIndex(
+            relationshipViewCombo(window)->findText(QStringLiteral("Tree")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("relationship tree mode renders hierarchy",
-                   navigableItemCount(window.relationshipsTree) == 2,
+                   navigableItemCount(relationshipsTree(window)) == 2,
                    true);
         bool sawTreeRoot = false;
         bool sawTreeChild = false;
-        const QList<QTreeWidgetItem*> items = navigableItems(window.relationshipsTree);
+        const QList<QTreeWidgetItem*> items = navigableItems(relationshipsTree(window));
         for (QTreeWidgetItem* item : items) {
             sawTreeRoot = sawTreeRoot
                 || (item->text(0) == QStringLiteral("Root")
@@ -471,18 +524,18 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
         expectBool("relationship tree mode keeps root", sawTreeRoot, true);
         expectBool("relationship tree mode keeps child target", sawTreeChild, true);
         expectBool("relationship tree keeps direction filter enabled",
-                   window.relationshipDirectionCombo->isEnabled(),
+                   relationshipDirectionCombo(window)->isEnabled(),
                    true);
-        window.relationshipDirectionCombo->setCurrentIndex(
-            window.relationshipDirectionCombo->findText(QStringLiteral("Incoming")));
-        window.relationshipTypeCombo->setCurrentIndex(
-            window.relationshipTypeCombo->findText(QStringLiteral("Reads From")));
+        relationshipDirectionCombo(window)->setCurrentIndex(
+            relationshipDirectionCombo(window)->findText(QStringLiteral("Incoming")));
+        relationshipTypeCombo(window)->setCurrentIndex(
+            relationshipTypeCombo(window)->findText(QStringLiteral("Reads From")));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("relationship tree incoming filter renders hierarchy",
-                   navigableItemCount(window.relationshipsTree) == 2,
+                   navigableItemCount(relationshipsTree(window)) == 2,
                    true);
         bool sawIncomingTreeSource = false;
-        const QList<QTreeWidgetItem*> incomingItems = navigableItems(window.relationshipsTree);
+        const QList<QTreeWidgetItem*> incomingItems = navigableItems(relationshipsTree(window));
         for (QTreeWidgetItem* item : incomingItems) {
             sawIncomingTreeSource = sawIncomingTreeSource
                 || (item->text(0) == QStringLiteral("Incoming")
@@ -506,7 +559,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
             QTreeWidgetItem* refreshedRoot = nullptr;
             const QList<QTreeWidgetItem*> refreshedItems =
-                navigableItems(window.relationshipsTree);
+                navigableItems(relationshipsTree(window));
             for (QTreeWidgetItem* item : refreshedItems) {
                 if (item->text(0) == QStringLiteral("Root")
                     && item->text(1) == QStringLiteral("target_ref")) {
@@ -786,30 +839,31 @@ int main(int argc, char** argv)
     expectBool("open diagnostic fixture", window.tabManager->openFileInTab(diagnosticPath), true);
     expectBool("diagnostic fixture analysis completes",
                waitUntil([&]() { return diagnosticFixtureAnalyzed; }, 10000), true);
-    expectBool("problems tree exists", window.problemsTree != nullptr, true);
+    expectBool("problems tree exists", problemsTree(window) != nullptr, true);
     expectBool("problems tree shows diagnostic",
                waitUntil([&]() {
-                   return window.problemsTree
-                          && navigableItemCount(window.problemsTree) > 0;
+                   return problemsTree(window)
+                          && navigableItemCount(problemsTree(window)) > 0;
                }, 2000),
                true);
-    if (window.problemsScopeCombo) {
-        window.problemsScopeCombo->setCurrentIndex(
-            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+    if (problemsScopeCombo(window)) {
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
         expectBool("problems all-files groups diagnostics",
                    waitUntil([&]() {
-                       return window.problemsTree
-                              && window.problemsTree->topLevelItemCount() > 0
-                              && window.problemsTree->topLevelItem(0)->childCount() > 0;
+                       QTreeWidget* tree = problemsTree(window);
+                       return tree
+                              && tree->topLevelItemCount() > 0
+                              && tree->topLevelItem(0)->childCount() > 0;
                    }, 2000),
                    true);
         expectBool("problems all-files group shows count",
-                   window.problemsTree
-                       && window.problemsTree->topLevelItemCount() > 0
-                       && window.problemsTree->topLevelItem(0)->text(0).contains(QStringLiteral("(")),
+                   problemsTree(window)
+                       && problemsTree(window)->topLevelItemCount() > 0
+                       && problemsTree(window)->topLevelItem(0)->text(0).contains(QStringLiteral("(")),
                    true);
-        window.problemsScopeCombo->setCurrentIndex(
-            window.problemsScopeCombo->findText(QStringLiteral("Current File")));
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("Current File")));
     }
 
     bool cleanDiagnosticFixtureAnalyzed = false;
@@ -824,30 +878,30 @@ int main(int argc, char** argv)
                window.tabManager->openFileInTab(cleanDiagnosticPath), true);
     expectBool("clean diagnostic fixture analysis completes",
                waitUntil([&]() { return cleanDiagnosticFixtureAnalyzed; }, 10000), true);
-    if (window.problemsScopeCombo) {
-        window.problemsScopeCombo->setCurrentIndex(
-            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+    if (problemsScopeCombo(window)) {
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
         expectBool("problems keep previous file diagnostic",
                    waitUntil([&]() {
-                       return hasNavigableFile(window.problemsTree, diagnosticPath);
+                       return hasNavigableFile(problemsTree(window), diagnosticPath);
                    }, 2000),
                    true);
-        window.problemsScopeCombo->setCurrentIndex(
-            window.problemsScopeCombo->findText(QStringLiteral("Workspace Files")));
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("Workspace Files")));
         expectBool("problems workspace scope hides external diagnostic",
                    waitUntil([&]() {
-                       return !hasNavigableFile(window.problemsTree, diagnosticPath);
+                       return !hasNavigableFile(problemsTree(window), diagnosticPath);
                    }, 2000),
                    true);
-        window.problemsScopeCombo->setCurrentIndex(
-            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
         expectBool("problems all-files restores external diagnostic",
                    waitUntil([&]() {
-                       return hasNavigableFile(window.problemsTree, diagnosticPath);
+                       return hasNavigableFile(problemsTree(window), diagnosticPath);
                    }, 2000),
                    true);
-        window.problemsScopeCombo->setCurrentIndex(
-            window.problemsScopeCombo->findText(QStringLiteral("Current File")));
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("Current File")));
     }
 
     expectBool("reopen symbol fixture", window.tabManager->openFileInTab(symbolFixturePath), true);
@@ -956,7 +1010,7 @@ int main(int argc, char** argv)
 
     drainRelationshipWork(window);
 
-    if (window.problemsScopeCombo) {
+    if (problemsScopeCombo(window)) {
         SemanticDiagnostic closeDiagnostic;
         closeDiagnostic.fileName = normalizedSymbolFixturePath;
         closeDiagnostic.line = 3;
@@ -968,16 +1022,16 @@ int main(int argc, char** argv)
                 QList<sym_list::SymbolInfo>{},
                 QList<SemanticRelationship>{},
                 QList<SemanticDiagnostic>{closeDiagnostic}));
-        window.problemsScopeCombo->setCurrentIndex(
-            window.problemsScopeCombo->findText(QStringLiteral("All Files")));
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
         window.updateProblemsPanel();
         expectBool("problems close probe visible",
-                   navigableItemCount(window.problemsTree) == 1,
+                   navigableItemCount(problemsTree(window)) == 1,
                    true);
         window.workspaceManager->closeWorkspace();
         expectBool("problems clear on workspace close",
                    waitUntil([&]() {
-                       return navigableItemCount(window.problemsTree) == 0;
+                       return navigableItemCount(problemsTree(window)) == 0;
                    }, 2000),
                    true);
         SemanticIndex::getInstance()->setSnapshot(
@@ -987,14 +1041,14 @@ int main(int argc, char** argv)
                 QList<SemanticDiagnostic>{closeDiagnostic}));
         window.updateProblemsPanel();
         expectBool("problems reopen probe visible",
-                   navigableItemCount(window.problemsTree) == 1,
+                   navigableItemCount(problemsTree(window)) == 1,
                    true);
         workspaceSymbolsDone = false;
         expectBool("reopen workspace after close",
                    window.workspaceManager->openWorkspace(workspacePath), true);
         expectBool("problems clear on workspace analysis start",
                    waitUntil([&]() {
-                       return navigableItemCount(window.problemsTree) == 0;
+                       return navigableItemCount(problemsTree(window)) == 0;
                    }, 2000),
                    true);
         expectBool("reopened workspace analysis completes",

@@ -176,6 +176,11 @@ QStringList TabManager::getOpenSystemVerilogFiles() const
     return svFiles;
 }
 
+int TabManager::editorCount() const
+{
+    return tabWidget ? tabWidget->count() : 0;
+}
+
 DocumentModel* TabManager::getDocumentModel() const
 {
     return documentModel.get();
