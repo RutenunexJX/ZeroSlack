@@ -9,9 +9,9 @@
 #include <QCompleter>
 #include <QTimer>
 #include <QMouseEvent>
+#include <functional>
 
 class LineNumberWidget;
-class MainWindow;
 class MyHighlighter;
 
 class MyCodeEditor : public QPlainTextEdit
@@ -35,6 +35,10 @@ public:
     void showAutoComplete();
     void hideAutoComplete();
     void refreshScopeAndCurrentLineHighlight();
+    void setAlternateModeEnabled(bool enabled);
+    void setIncludePathResolver(
+        std::function<QString(const QString& includePath, const QString& currentFile)> resolver);
+    void setFileOpenHandler(std::function<bool(const QString& filePath)> handler);
 
     void moveMouseToCursor();
 
@@ -82,6 +86,8 @@ private:
 
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
+    std::function<QString(const QString& includePath, const QString& currentFile)> includePathResolver;
+    std::function<bool(const QString& filePath)> fileOpenHandler;
 
     TSDocument m_tsdoc;
     MyHighlighter *m_highlighter = nullptr;
@@ -161,6 +167,11 @@ private:
     bool isConsecutiveSpaces();
 signals:
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
+    void relationshipAnalysisRequested(const QString& fileName, const QString& content);
+    void saveFileRequested();
+    void saveFileAsRequested();
+    void openFileRequested();
+    void newFileRequested();
     void referenceSearchRequested(const QString& symbolName,
                                   const QString& fileName,
                                   const QString& moduleName);

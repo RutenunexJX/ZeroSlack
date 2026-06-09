@@ -676,6 +676,18 @@ int main(int argc, char** argv)
     expectBool("project model has default include root",
                project.includeDirs.contains(normalizedWorkspacePath),
                true);
+    const QString resolvedWorkspaceInclude =
+        window.workspaceManager->resolveIncludePath(QFileInfo(svFiles.first()).fileName());
+    expectBool("workspace manager resolves include by basename",
+               QFileInfo(resolvedWorkspaceInclude).fileName() == QFileInfo(svFiles.first()).fileName(),
+               true);
+    const QString resolvedCurrentFileInclude =
+        window.workspaceManager->resolveIncludePath(QFileInfo(svFiles.first()).fileName(),
+                                                    svFiles.first());
+    expectBool("workspace manager resolves include from current file",
+               QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(resolvedCurrentFileInclude).absoluteFilePath()))
+                   == QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(svFiles.first()).absoluteFilePath())),
+               true);
 
     expectBool("workspace symbol analysis completes",
                waitUntil([&]() { return workspaceSymbolsDone; }, 60000), true);

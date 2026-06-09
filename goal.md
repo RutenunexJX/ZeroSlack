@@ -136,6 +136,21 @@ Recent test coverage includes real fixture assertions for:
   of reading file-scoped symbols directly from SemanticIndex.
 - CompletionManager all-symbol reads go through SearchService instead of
   reading all symbols directly from SemanticIndex.
+- MyCodeEditor no longer includes or casts to MainWindow or manager classes.
+- MyCodeEditor relationship analysis, alternate-mode file commands, include
+  fallback resolution, and file opening are routed through editor signals or
+  injected callbacks supplied by MainWindow.
+- MainWindow header no longer includes mycodeeditor.h or grants MyCodeEditor
+  friendship.
+- MainWindow editor setup is centralized in configureEditor().
+- Current-file-relative and workspace include fallback are owned by
+  WorkspaceManager::resolveIncludePath and covered by GUI smoke regression.
+- AnalysisScheduler owns document-close semantic cleanup and remaining
+  open-document reanalysis.
+- SymbolAnalyzer open-document analysis uses explicit file/content inputs
+  instead of reading TabManager directly.
+- relationship_test covers scheduler-owned document-close reanalysis of the
+  remaining open documents.
 - DefinitionService snapshot-backed cross-file module definition resolution
   and local-file precedence.
 - DefinitionService snapshot-backed cross-file interface and package
@@ -191,6 +206,7 @@ Continue with one small, verifiable increment:
 
 - add another focused real fixture assertion, or
 - extract one clear MainWindow refresh/progress policy boundary into AnalysisScheduler, or
-- move one UI/editor semantic read behind SemanticIndex or a Query Service.
+- move one UI/editor semantic read or analysis policy check behind
+  SemanticIndex, a Query Service, or AnalysisScheduler.
 
 Stop after a coherent validated increment and update the compact handoff.

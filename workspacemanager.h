@@ -28,6 +28,8 @@ public:
     QStringList getAllFiles() const;
     QStringList getSystemVerilogFiles() const;
     QStringList getFilesByExtension(const QString& extension) const;
+    QString resolveIncludePath(const QString& includePath,
+                               const QString& currentFile = QString()) const;
 
     // File watching
     void startFileWatching();

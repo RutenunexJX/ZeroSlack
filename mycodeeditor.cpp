@@ -1,15 +1,9 @@
 #include "mycodeeditor.h"
 #include "myhighlighter.h"
-#include "mainwindow.h"
 #include "completionmodel.h"
 #include "completionservice.h"
 #include "definitionservice.h"
 
-#include "tabmanager.h"
-#include "workspacemanager.h"
-#include "modemanager.h"
-#include "symbolanalyzer.h"
-#include "navigationmanager.h"
 #include "syminfo.h"
 
 #include <QPainter>
@@ -150,6 +144,22 @@ void MyCodeEditor::highlighCurrentLine()
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 {
     highlighCurrentLine();
+}
+
+void MyCodeEditor::setAlternateModeEnabled(bool enabled)
+{
+    isInAlternateMode = enabled;
+}
+
+void MyCodeEditor::setIncludePathResolver(
+    std::function<QString(const QString& includePath, const QString& currentFile)> resolver)
+{
+    includePathResolver = std::move(resolver);
+}
+
+void MyCodeEditor::setFileOpenHandler(std::function<bool(const QString& filePath)> handler)
+{
+    fileOpenHandler = std::move(handler);
 }
 
 QString MyCodeEditor::currentModuleNameAt(int charPos) const
@@ -393,9 +403,8 @@ void MyCodeEditor::initAutoComplete()
     relationshipAnalysisDebounceTimer->setSingleShot(true);
     relationshipAnalysisDebounceTimer->setInterval(RelationshipAnalysisDebounceMs);
     connect(relationshipAnalysisDebounceTimer, &QTimer::timeout, this, [this]() {
-        MainWindow *mw = qobject_cast<MainWindow*>(window());
-        if (mw && mw->relationshipBuilder && !getFileName().isEmpty())
-            mw->requestSingleFileRelationshipAnalysis(getFileName(), toPlainText());
+        if (!getFileName().isEmpty())
+            emit relationshipAnalysisRequested(getFileName(), toPlainText());
     });
     connect(autoCompleteTimer, &QTimer::timeout, this, &MyCodeEditor::onAutoCompleteTimer);
     connect(completer, QOverload<const QModelIndex &>::of(&QCompleter::activated),
@@ -409,14 +418,12 @@ void MyCodeEditor::onTextChanged()
 {
     updateSaveState();
 
-    MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-
     const bool skipRelationshipAnalysis = m_lastEditWasWhitespaceInsertion;
     m_lastEditWasWhitespaceInsertion = false;
 
     // Plain whitespace edits (spaces/tabs/newlines) cannot change symbol relationships, but the
     // old path still queued a delayed full-document toPlainText() copy on large files.
-    if (!skipRelationshipAnalysis && mainWindow && mainWindow->relationshipBuilder && !getFileName().isEmpty()) {
+    if (!skipRelationshipAnalysis && !getFileName().isEmpty()) {
         relationshipAnalysisDebounceTimer->stop();
         relationshipAnalysisDebounceTimer->start();
     }
@@ -588,11 +595,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                 }
             }
         }
-    }
-
-    MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-    if (mainWindow && mainWindow->modeManager) {
-        isInAlternateMode = (mainWindow->modeManager->getCurrentMode() == ModeManager::AlternateMode);
     }
 
     if (event->key() == Qt::Key_F12
@@ -1126,29 +1128,14 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 {
     QString cmd = command.trimmed().toLower();
 
-    MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-    if (!mainWindow) {
-        clearAlternateModeBuffer();
-        hideAutoComplete();
-        return;
-    }
-
     if (cmd == "save") {
-        if (mainWindow->tabManager) {
-            mainWindow->tabManager->saveCurrentTab();
-        }
+        emit saveFileRequested();
     } else if (cmd == "save_as") {
-        if (mainWindow->tabManager) {
-            mainWindow->tabManager->saveAsCurrentTab();
-        }
+        emit saveFileAsRequested();
     } else if (cmd == "open") {
-        if (mainWindow->tabManager) {
-            mainWindow->tabManager->openFileInTab(QString());
-        }
+        emit openFileRequested();
     } else if (cmd == "new") {
-        if (mainWindow->tabManager) {
-            mainWindow->tabManager->createNewTab();
-        }
+        emit newFileRequested();
     } else if (cmd == "copy") {
         copy();
     } else if (cmd == "paste") {
@@ -1184,11 +1171,6 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
         viewport()->setCursor(Qt::IBeamCursor);
         clearHoveredSymbolHighlight();
         hoveredWord.clear();
-    }
-
-    MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-    if (mainWindow && mainWindow->modeManager) {
-        isInAlternateMode = (mainWindow->modeManager->getCurrentMode() == ModeManager::AlternateMode);
     }
 
     if (event->key() == Qt::Key_Shift) {
@@ -1679,37 +1661,10 @@ bool MyCodeEditor::openIncludeFile(const QString& includePath)
         return false;
     }
 
+    const QString currentFile = getFileName();
     QString targetPath;
-
-    QString currentFile = getFileName();
-    if (!currentFile.isEmpty()) {
-        QFileInfo currentInfo(currentFile);
-        QString candidate = currentInfo.dir().absoluteFilePath(includePath);
-        if (QFileInfo::exists(candidate)) {
-            targetPath = candidate;
-        }
-    }
-
-    if (targetPath.isEmpty()) {
-        MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-        if (mainWindow && mainWindow->workspaceManager && mainWindow->workspaceManager->isWorkspaceOpen()) {
-            QString workspaceRoot = mainWindow->workspaceManager->getWorkspacePath();
-            QString candidate = QDir(workspaceRoot).absoluteFilePath(includePath);
-            if (QFileInfo::exists(candidate)) {
-                targetPath = candidate;
-            } else {
-                const QStringList allFiles = mainWindow->workspaceManager->getAllFiles();
-                QFileInfo incInfo(includePath);
-                QString incFileName = incInfo.fileName();
-                for (const QString& f : allFiles) {
-                    if (QFileInfo(f).fileName() == incFileName) {
-                        targetPath = f;
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    if (includePathResolver)
+        targetPath = includePathResolver(includePath, currentFile);
 
     if (targetPath.isEmpty()) {
         QMessageBox::warning(this,
@@ -1718,10 +1673,9 @@ bool MyCodeEditor::openIncludeFile(const QString& includePath)
         return false;
     }
 
-    MainWindow *mainWindow = qobject_cast<MainWindow*>(window());
-    if (!mainWindow || !mainWindow->tabManager) {
+    if (!fileOpenHandler) {
         return false;
     }
 
-    return mainWindow->tabManager->openFileInTab(targetPath);
+    return fileOpenHandler(targetPath);
 }

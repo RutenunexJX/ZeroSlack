@@ -12,8 +12,12 @@
 #include "syminfo.h"
 
 class SlangManager;
-class TabManager;
 class WorkspaceManager;
+
+struct OpenDocumentContent {
+    QString fileName;
+    QString content;
+};
 
 struct WorkspaceFileAnalysis {
     QString fileName;
@@ -36,7 +40,7 @@ public:
     ~SymbolAnalyzer();
 
     // Analysis modes
-    void analyzeOpenTabs(TabManager* tabManager);
+    void analyzeOpenDocuments(const QList<OpenDocumentContent>& documents);
     void analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
     void analyzeProject(const ProjectSnapshot& project, std::function<bool()> isCancelled = nullptr);
     void startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);

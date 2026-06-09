@@ -125,8 +125,7 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
             this, &AnalysisScheduler::onDocumentSaved);
     connect(documentModel, &DocumentModel::documentClosed,
             this, [this](const QString&, const QString& fileName) {
-                cancelScheduledOpenFileAnalysis(fileName);
-                lastRelationshipAnalysisContent.remove(fileName);
+                handleDocumentClosed(fileName);
             });
 }
 
@@ -405,6 +404,16 @@ void AnalysisScheduler::handleExternalFileChanged(const QString& fileName, int d
     timer->start(debounceMs);
 }
 
+void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
+{
+    cancelScheduledOpenFileAnalysis(fileName);
+    lastRelationshipAnalysisContent.remove(fileName);
+    analyzeOpenDocumentsNow();
+
+    if (relationshipEngine && !fileName.isEmpty())
+        relationshipEngine->invalidateFileRelationships(fileName);
+}
+
 void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
 {
     analyzeOpenDocumentNow(snapshot, false);
@@ -491,6 +500,25 @@ void AnalysisScheduler::analyzeOpenDocumentNow(const DocumentSnapshot& snapshot,
     symbolAnalyzer->analyzeFileContent(snapshot.fileName, content);
     emit documentRefreshRequested(snapshot.fileName);
     requestRelationshipAnalysis(snapshot.fileName, content);
+}
+
+void AnalysisScheduler::analyzeOpenDocumentsNow()
+{
+    if (!documentModel || !symbolAnalyzer)
+        return;
+
+    QList<OpenDocumentContent> documents;
+    for (const DocumentSnapshot& snapshot : documentModel->openDocuments()) {
+        if (snapshot.fileName.isEmpty())
+            continue;
+
+        const QString content = contentForOpenFile(snapshot.fileName);
+        if (content.isNull())
+            continue;
+        documents.append({snapshot.fileName, content});
+    }
+
+    symbolAnalyzer->analyzeOpenDocuments(documents);
 }
 
 void AnalysisScheduler::scheduleDiagnosticsRefresh(const QString& fileName)

@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 #include "completionmanager.h"
 
+#include "mycodeeditor.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "projectmodel.h"
@@ -42,6 +43,8 @@
 #include <QWidget>
 
 #include <algorithm>
+
+static void applyAlternateModeToEditor(MyCodeEditor* editor, ModeManager* modeManager);
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -140,15 +143,6 @@ void MainWindow::setupManagerConnections()
     connect(tabManager.get(), &TabManager::activeTabChanged,
             this, [](MyCodeEditor* editor) { Q_UNUSED(editor); });
 
-    connect(tabManager.get(), &TabManager::tabClosed,
-            this, [this](const QString& fileName) {
-                symbolAnalyzer->analyzeOpenTabs(tabManager.get());
-
-                if (relationshipEngine) {
-                    relationshipEngine->invalidateFileRelationships(fileName);
-                }
-            });
-
     connect(workspaceManager.get(), &WorkspaceManager::fileChanged,
             this, [this](const QString& filePath) {
                 if (analysisScheduler)
@@ -173,7 +167,12 @@ void MainWindow::setupManagerConnections()
             this, []() {});
 
     connect(modeManager.get(), &ModeManager::modeChanged,
-            this,[]{});
+            this, [this](ModeManager::AppMode) {
+                if (!tabManager)
+                    return;
+                for (int i = 0; i < ui->tabWidget->count(); ++i)
+                    applyAlternateModeToEditor(tabManager->getEditorAt(i), modeManager.get());
+            });
 
     connect(modeManager.get(), &ModeManager::navigationToggleRequested,
                 this, [this]() {
@@ -359,6 +358,13 @@ static QString normalizedUiFileName(const QString& fileName)
 static QString countLabel(const QString& text, int count)
 {
     return QStringLiteral("%1 (%2)").arg(text).arg(count);
+}
+
+static void applyAlternateModeToEditor(MyCodeEditor* editor, ModeManager* modeManager)
+{
+    if (!editor || !modeManager)
+        return;
+    editor->setAlternateModeEnabled(modeManager->getCurrentMode() == ModeManager::AlternateMode);
 }
 
 static QString stripCountSuffix(const QString& text)
@@ -1107,26 +1113,53 @@ void MainWindow::connectNavigationSignals()
 
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this](MyCodeEditor* editor) {
-                if (editor) {
-                    connect(editor, &MyCodeEditor::definitionJumpRequested,
-                            this, [this](const QString&, const QString& file, int line) {
-                                navigateToFileAndLine(file, line);
-                            });
-                    connect(editor, &MyCodeEditor::referenceSearchRequested,
-                            this, &MainWindow::showReferencesForSymbol);
-                    connect(editor, &MyCodeEditor::relationshipBrowseRequested,
-                            this, &MainWindow::showRelationshipsForSymbol);
-                }
+                configureEditor(editor);
             });
 
     connect(tabManager.get(), &TabManager::activeTabChanged,
             this, [this](MyCodeEditor* editor) {
+                applyAlternateModeToEditor(editor, modeManager.get());
                 if (editor && navigationManager) {
                     navigationManager->onTabChanged(editor->getFileName());
                 }
                 if (problemsScopeCombo && problemsScopeCombo->currentData().toInt() == 0)
                     updateProblemsPanel();
             });
+}
+
+void MainWindow::configureEditor(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    applyAlternateModeToEditor(editor, modeManager.get());
+    editor->setIncludePathResolver(
+        [this](const QString& includePath, const QString& currentFile) {
+            return workspaceManager
+                ? workspaceManager->resolveIncludePath(includePath, currentFile)
+                : QString();
+        });
+    editor->setFileOpenHandler([this](const QString& filePath) {
+        return tabManager && tabManager->openFileInTab(filePath);
+    });
+    connect(editor, &MyCodeEditor::definitionJumpRequested,
+            this, [this](const QString&, const QString& file, int line) {
+                navigateToFileAndLine(file, line);
+            });
+    connect(editor, &MyCodeEditor::relationshipAnalysisRequested,
+            this, &MainWindow::requestSingleFileRelationshipAnalysis);
+    connect(editor, &MyCodeEditor::saveFileRequested,
+            this, &MainWindow::on_save_file_triggered);
+    connect(editor, &MyCodeEditor::saveFileAsRequested,
+            this, &MainWindow::on_save_as_triggered);
+    connect(editor, &MyCodeEditor::openFileRequested,
+            this, &MainWindow::on_open_file_triggered);
+    connect(editor, &MyCodeEditor::newFileRequested,
+            this, &MainWindow::on_new_file_triggered);
+    connect(editor, &MyCodeEditor::referenceSearchRequested,
+            this, &MainWindow::showReferencesForSymbol);
+    connect(editor, &MyCodeEditor::relationshipBrowseRequested,
+            this, &MainWindow::showRelationshipsForSymbol);
 }
 
 void MainWindow::onNavigationRequested(const QString& filePath, int lineNumber)

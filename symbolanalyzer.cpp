@@ -2,7 +2,6 @@
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "slangmanager.h"
-#include "tabmanager.h"
 #include "workspacemanager.h"
 #include "completionmanager.h"
 #include <QtConcurrent/QtConcurrent>
@@ -41,20 +40,22 @@ static void publishSemanticSnapshotReplacingDiagnostics(
     const QStringList& fileNames,
     const QList<SemanticDiagnostic>& diagnostics);
 
-void SymbolAnalyzer::analyzeOpenTabs(TabManager* tabManager)
+void SymbolAnalyzer::analyzeOpenDocuments(const QList<OpenDocumentContent>& documents)
 {
-    if (!tabManager) return;
-
     emit analysisStarted("open_tabs");
 
     sym_list* symbolList = sym_list::getInstance();
-    QStringList svFiles = tabManager->getOpenSystemVerilogFiles();
+    QStringList svFiles;
     int symbolsFromOpenFiles = 0;
     QList<SemanticDiagnostic> diagnostics;
 
-    for (const QString& fileName : std::as_const(svFiles)) {
-        QString content = tabManager->getPlainTextFromOpenFile(fileName);
-        if (content.isNull()) continue;
+    for (const OpenDocumentContent& document : documents) {
+        const QString& fileName = document.fileName;
+        const QString& content = document.content;
+        if (!isSystemVerilogFile(fileName) || content.isNull())
+            continue;
+
+        svFiles.append(fileName);
         QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(fileName, content);
         symbolList->setSymbolsForFile(fileName, list, content);
         diagnostics.append(m_slangManager->extractDiagnostics(fileName, content));

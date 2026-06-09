@@ -12,6 +12,8 @@
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
 #include "syminfo.h"
+#include "mycodeeditor.h"
+#include "symbolanalyzer.h"
 
 #include <QApplication>
 #include <QDir>
@@ -1205,6 +1207,66 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               projectCloseRelationshipRefreshes, 1);
     expectBool("scheduler refreshes diagnostics on project close",
                projectCloseDiagnosticsRefreshes > 0, true);
+
+    const auto documentClosePreviousSnapshot = SemanticIndex::getInstance()->snapshot();
+    AnalysisScheduler documentCloseScheduler;
+    DocumentModel documentCloseModel;
+    SymbolAnalyzer documentCloseAnalyzer;
+    MyCodeEditor closedDocumentEditor;
+    MyCodeEditor remainingDocumentEditor;
+    const QString documentCloseClosedPath =
+        fixtureDir.absoluteFilePath(QStringLiteral("document_close_closed.sv"));
+    const QString documentCloseRemainingPath =
+        fixtureDir.absoluteFilePath(QStringLiteral("document_close_remaining.sv"));
+    const QString documentCloseClosedContent =
+        QStringLiteral("module document_close_closed; endmodule\n");
+    const QString documentCloseRemainingContent =
+        QStringLiteral("module document_close_remaining; logic keep_signal; endmodule\n");
+    closedDocumentEditor.setFileName(documentCloseClosedPath);
+    closedDocumentEditor.setPlainText(documentCloseClosedContent);
+    remainingDocumentEditor.setFileName(documentCloseRemainingPath);
+    remainingDocumentEditor.setPlainText(documentCloseRemainingContent);
+    documentCloseModel.registerEditor(&closedDocumentEditor);
+    documentCloseModel.registerEditor(&remainingDocumentEditor);
+
+    bool requestedClosedDocumentContent = false;
+    bool requestedRemainingDocumentContent = false;
+    documentCloseScheduler.setOpenFileContentProvider(
+        [&](const QString& fileName) -> QString {
+            if (fileName == documentCloseClosedPath) {
+                requestedClosedDocumentContent = true;
+                return closedDocumentEditor.toPlainText();
+            }
+            if (fileName == documentCloseRemainingPath) {
+                requestedRemainingDocumentContent = true;
+                return remainingDocumentEditor.toPlainText();
+            }
+            return QString();
+        });
+    documentCloseScheduler.setSymbolAnalyzer(&documentCloseAnalyzer);
+    documentCloseScheduler.setDocumentModel(&documentCloseModel);
+
+    QString documentCloseAnalysisName;
+    int documentCloseSymbols = -1;
+    QObject::connect(&documentCloseAnalyzer,
+                     &SymbolAnalyzer::analysisCompleted,
+                     [&](const QString& fileName, int symbolsFound) {
+                         documentCloseAnalysisName = fileName;
+                         documentCloseSymbols = symbolsFound;
+                     });
+    documentCloseModel.unregisterEditor(&closedDocumentEditor);
+    expectBool("scheduler requests remaining document content on close",
+               requestedRemainingDocumentContent, true);
+    expectBool("scheduler skips closed document content on close",
+               requestedClosedDocumentContent, false);
+    expectBool("scheduler reanalyzes open documents on close",
+               documentCloseAnalysisName == QStringLiteral("open_tabs"), true);
+    expectBool("scheduler reanalyzes remaining document symbols on close",
+               documentCloseSymbols > 0, true);
+    if (documentClosePreviousSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(documentClosePreviousSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
 
     AnalysisScheduler refreshScheduler;
     SymbolRelationshipEngine refreshEngine;

@@ -102,6 +102,34 @@ QStringList WorkspaceManager::getFilesByExtension(const QString& extension) cons
     return filteredFiles;
 }
 
+QString WorkspaceManager::resolveIncludePath(const QString& includePath,
+                                             const QString& currentFile) const
+{
+    if (includePath.isEmpty())
+        return QString();
+
+    if (!currentFile.isEmpty()) {
+        const QString currentFileCandidate =
+            QFileInfo(currentFile).dir().absoluteFilePath(includePath);
+        if (QFileInfo::exists(currentFileCandidate))
+            return currentFileCandidate;
+    }
+
+    if (!isWorkspaceOpen())
+        return QString();
+
+    const QString candidate = QDir(workspacePath).absoluteFilePath(includePath);
+    if (QFileInfo::exists(candidate))
+        return candidate;
+
+    const QString includeFileName = QFileInfo(includePath).fileName();
+    for (const QString& filePath : allFiles) {
+        if (QFileInfo(filePath).fileName() == includeFileName)
+            return filePath;
+    }
+    return QString();
+}
+
 void WorkspaceManager::startFileWatching()
 {
     if (!isWorkspaceOpen()) return;

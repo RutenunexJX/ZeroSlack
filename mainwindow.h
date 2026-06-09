@@ -1,12 +1,13 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include "mycodeeditor.h"
+#include "syminfo.h"
 #include <QMainWindow>
 #include <QDockWidget>
 #include <memory>
 
 class AnalysisProgressCoordinator;
+class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 class ModeManager;
@@ -22,7 +23,7 @@ class QTreeWidget;
 
 class SymbolRelationshipEngine;
 class SlangManager;
-#include "smartrelationshipbuilder.h"
+class SmartRelationshipBuilder;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -31,8 +32,6 @@ QT_END_NAMESPACE
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
-
-    friend class MyCodeEditor;
 
 public:
     MainWindow(QWidget *parent = nullptr);
@@ -114,6 +113,7 @@ private:
     void setupRelationshipsPane();
     void updateProblemsPanel(const QString& fileName = QString());
     void connectNavigationSignals();
+    void configureEditor(MyCodeEditor* editor);
     void navigateToFileAndLine(const QString& filePath, int lineNumber = -1, int columnNumber = -1);
     void showReferencesForSymbol(const QString& symbolName,
                                  const QString& fileName,

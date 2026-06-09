@@ -58,6 +58,7 @@ public:
     void requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceRelationshipAnalysis();
     void handleExternalFileChanged(const QString& fileName, int debounceMs);
+    void handleDocumentClosed(const QString& fileName);
 
 signals:
     void documentRefreshRequested(const QString& fileName);
@@ -108,6 +109,7 @@ private:
     void clearProjectSemanticState();
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged);
+    void analyzeOpenDocumentsNow();
     void scheduleDiagnosticsRefresh(const QString& fileName);
     void scheduleRelationshipDataRefresh();
     bool applySingleFileRelationshipResult(const SingleFileRelationshipAnalysisResult& result);

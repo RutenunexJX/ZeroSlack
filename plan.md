@@ -68,6 +68,37 @@ Latest handoff work:
     file-scoped symbols directly from `SemanticIndex`.
   - `getAllSemanticSymbols` now uses `SearchService` instead of reading all
     symbols directly from `SemanticIndex`.
+- `mycodeeditor.cpp`
+  - No longer includes or casts to `MainWindow`, `TabManager`,
+    `WorkspaceManager`, `ModeManager`, `SymbolAnalyzer`, or
+    `NavigationManager`.
+  - Relationship-analysis debounce emits `relationshipAnalysisRequested`, and
+    `MainWindow` connects that signal to the scheduler-backed request path.
+  - Alternate-mode state and file commands now use `MainWindow`-supplied state
+    and editor signals instead of direct manager reads or `TabManager` calls.
+  - Include fallback resolution and file opening now use callbacks installed by
+    `MainWindow`.
+- `mainwindow.h`
+  - No longer includes `mycodeeditor.h` or grants `friend class MyCodeEditor`;
+    editor-specific use is kept in `mainwindow.cpp`.
+- `mainwindow.cpp`
+  - Centralizes editor callback/signal setup in `configureEditor()`.
+- `workspacemanager.cpp`, `workspacemanager.h`
+  - Own current-file-relative and workspace include fallback through
+    `resolveIncludePath()`.
+- `test_sv/gui_smoke_test.cpp`
+  - Adds small regression assertions for workspace include basename resolution
+    and current-file-relative include resolution.
+- `analysisscheduler.cpp`, `analysisscheduler.h`
+  - Own document-close semantic cleanup by cancelling pending open-file
+    analysis, dropping cached relationship content, reanalyzing remaining open
+    documents, and invalidating closed-file relationships.
+- `symbolanalyzer.cpp`, `symbolanalyzer.h`
+  - Replace the `TabManager`-based open-tabs analysis entrypoint with
+    `analyzeOpenDocuments()` over explicit file/content inputs.
+- `test_sv/relationship_test.cpp`
+  - Adds a focused regression that document close reanalysis requests only the
+    remaining open document content through `AnalysisScheduler`.
 - `test_sv/relationship_test.cpp`
   - Adds focused snapshot-backed `RelationshipReport` assertions for outgoing
     and incoming instantiation direction/type groups.
@@ -89,13 +120,23 @@ groups, `MainWindow` relationship tree consumption of those groups, focused
 `RelationshipService`, `CompletionManager` typed symbol reads through
 `SearchService`, `CompletionManager` file-scoped symbol reads through
 `SearchService`, `CompletionManager` all-symbol reads through `SearchService`,
-focused report regressions, and handoff docs.
+`MyCodeEditor` relationship-analysis debounce routed through the scheduler
+boundary and exposed as an editor signal, `MyCodeEditor` alternate-mode state
+pushed from `MainWindow` / `ModeManager`, alternate-mode file commands routed
+through editor signals, include fallback resolution and file opening routed
+through injected callbacks, `MainWindow` header decoupled from `mycodeeditor.h`,
+editor setup centralized in `configureEditor()`, workspace include fallback
+moved to `WorkspaceManager::resolveIncludePath`, current-file-relative include
+resolution covered by the same workspace service, document-close semantic
+cleanup moved into `AnalysisScheduler`, `SymbolAnalyzer` open-document analysis
+decoupled from `TabManager`, focused report regressions, and handoff docs.
 
 ## Next Small Increments
 
 Choose one:
 
-1. Move another UI/editor semantic read behind SemanticIndex or a Query Service.
+1. Move another UI/editor semantic read or analysis policy check behind
+   SemanticIndex, a Query Service, or AnalysisScheduler.
 2. Move another small MainWindow coordination responsibility into a focused coordinator.
 3. Thin another `MainWindow` refresh path without changing UI behavior.
 4. Extract one remaining clean MainWindow progress or refresh policy boundary

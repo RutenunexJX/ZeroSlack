@@ -61,6 +61,26 @@ all/typed/file-scoped completion symbol reads through `SearchService`.
   instead of reading file-scoped symbols directly from `SemanticIndex`.
 - `CompletionManager::getAllSemanticSymbols` now uses `SearchService`
   instead of reading all symbols directly from `SemanticIndex`.
+- `MyCodeEditor` no longer includes or casts to `MainWindow`, `TabManager`,
+  `WorkspaceManager`, `ModeManager`, `SymbolAnalyzer`, or `NavigationManager`.
+- `MyCodeEditor` relationship-analysis debounce emits
+  `relationshipAnalysisRequested`; `MainWindow` connects that signal to the
+  scheduler-backed request path.
+- `MyCodeEditor` alternate-mode state and file commands now use
+  `MainWindow`-supplied state and editor signals instead of direct manager
+  reads or `TabManager` calls.
+- `MyCodeEditor` include fallback resolution and file opening now use callbacks
+  installed by `MainWindow`; current-file-relative and workspace fallback
+  resolution are owned by `WorkspaceManager::resolveIncludePath`.
+- `MainWindow` header no longer includes `mycodeeditor.h` or grants
+  `friend class MyCodeEditor`; editor-specific use is kept in `mainwindow.cpp`.
+- `MainWindow` editor setup is centralized in `configureEditor()`, and include
+  fallback is delegated to `WorkspaceManager::resolveIncludePath`.
+- `AnalysisScheduler` owns document-close semantic cleanup: it cancels pending
+  open-file analysis, drops cached relationship content, reanalyzes remaining
+  open documents, and invalidates closed-file relationships.
+- `SymbolAnalyzer` analyzes open document content lists and no longer depends
+  on `TabManager` for the open-documents analysis path.
 - `relationship_test` keeps the minimal snapshot-backed regression coverage
   for the new hierarchy report groups.
 - Existing uncommitted report fixture coverage also includes snapshot-backed
@@ -71,10 +91,11 @@ all/typed/file-scoped completion symbol reads through `SearchService`.
 
 Validation passed after the latest code/test step:
 
+- `cmake --build ... --target gui_smoke_test`
+- `ctest -R "gui_smoke_test" --output-on-failure`
 - `cmake --build ... --target relationship_test`
-- `cmake --build ... --target completion_test`
-- `ctest -R "completion_test" --output-on-failure`
 - `ctest -R "relationship_test" --output-on-failure`
+- full default target rebuild
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
 - changed/new source/test/UI/CMake/handoff non-ASCII scan: empty
@@ -100,7 +121,8 @@ Validation passed after the latest code/test step:
 Pick one small, verifiable increment:
 
 - Extract one remaining clean MainWindow progress or refresh policy boundary into AnalysisScheduler.
-- Move another UI/editor read path behind SemanticIndex or a Query Service.
+- Move another UI/editor read path or analysis policy check behind SemanticIndex,
+  a Query Service, or AnalysisScheduler.
 - Thin another `MainWindow` refresh path without changing UI behavior.
 
 Prioritize production-code architecture progress. Do not use pure
@@ -178,11 +200,21 @@ Latest completed continuation:
 - CompletionManager typed symbol reads now go through SearchService instead of SemanticIndex directly.
 - CompletionManager file-scoped symbol reads now go through SearchService instead of SemanticIndex directly.
 - CompletionManager all-symbol reads now go through SearchService instead of SemanticIndex directly.
+- MyCodeEditor no longer includes or casts to MainWindow or manager classes;
+  relationship analysis, alternate-mode file commands, include fallback
+  resolution, and file opening are routed through signals or injected callbacks.
+- MainWindow header no longer includes mycodeeditor.h or grants MyCodeEditor
+  friendship.
+- MainWindow editor setup is centralized in configureEditor(), while workspace
+  and current-file include fallback are owned by WorkspaceManager::resolveIncludePath.
+- AnalysisScheduler owns document-close semantic cleanup and remaining
+  open-document reanalysis; SymbolAnalyzer now takes open document content
+  lists instead of reading TabManager directly.
 - relationship_test checks snapshot-backed RelationshipReport direction/type grouping for outgoing and incoming instantiation rows.
 - relationship_test checks snapshot-backed ReferenceReport file/type counts and file group metadata for an instantiation reference row.
 - relationship_test checks snapshot-backed HierarchyReport root direction groups and node links.
 - Handoff docs were updated and compacted.
-- Validation passed: completion_test target build, ctest -R completion_test, relationship_test target build, ctest -R relationship_test, full CTest 6/6, git diff --check, non-ASCII scan, and forbidden-file guard.
+- Validation passed: gui_smoke_test target build, ctest -R gui_smoke_test, relationship_test target build, ctest -R relationship_test, full default target rebuild, full CTest 6/6, git diff --check, non-ASCII scan, and forbidden-file guard.
 
 Continue toward goal.md with one small, verifiable step.
 ```
