@@ -62,6 +62,7 @@ private:
     bool isInternalCompletionType(sym_list::sym_type_e type) const;
     bool isGlobalCompletionType(sym_list::sym_type_e type) const;
     bool isCommandGlobalCompletionType(sym_list::sym_type_e type) const;
+    bool isAlwaysGlobalCommandType(sym_list::sym_type_e type) const;
     bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                                   const QString& dataType,
                                   sym_list::sym_type_e requestedType) const;

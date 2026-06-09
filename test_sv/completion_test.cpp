@@ -227,6 +227,26 @@ int main(int argc, char** argv) {
                                       QString(),
                                       QString(),
                                       4000));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_child"),
+                                      sym_list::sym_module,
+                                      QString(),
+                                      QString(),
+                                      7000));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_if"),
+                                      sym_list::sym_interface,
+                                      QString(),
+                                      QString(),
+                                      4002));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_pkg"),
+                                      sym_list::sym_package,
+                                      QString(),
+                                      QString(),
+                                      4004));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("SNAP_FEATURE"),
+                                      sym_list::sym_def_define,
+                                      QString(),
+                                      QString(),
+                                      4003));
     snapshotSymbols.append(makeSymbol(QStringLiteral("snap_pixel"),
                                       sym_list::sym_packed_struct_var,
                                       QString(),
@@ -344,7 +364,7 @@ int main(int argc, char** argv) {
     snapshotGlobalQuery.prefix = QStringLiteral("snap");
     expectList("snapshot global completions",
                snapshotCompletionService.findCompletions(snapshotGlobalQuery),
-               {"snap_task", "snap_top"});
+               {"snap_child", "snap_if", "snap_pkg", "snap_task", "snap_top"});
     CommandCompletionQuery snapshotTaskCommandQuery;
     snapshotTaskCommandQuery.symbolType = sym_list::sym_task;
     snapshotTaskCommandQuery.prefix = QStringLiteral("snap");
@@ -364,6 +384,79 @@ int main(int argc, char** argv) {
            snapshotTaskCommandOk ? "PASS" : "FAIL",
            "snapshot command task symbols",
            snapshotTaskCommandSymbols.size());
+    CommandCompletionQuery snapshotModuleCommandQuery;
+    snapshotModuleCommandQuery.moduleName = QStringLiteral("snap_top");
+    snapshotModuleCommandQuery.symbolType = sym_list::sym_module;
+    snapshotModuleCommandQuery.prefix = QStringLiteral("snap");
+    expectList("snapshot command module in scope",
+               snapshotCompletionService.findCommandCompletions(snapshotModuleCommandQuery),
+               {"snap_child", "snap_top"});
+    const QList<sym_list::SymbolInfo> snapshotModuleCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbols(snapshotModuleCommandQuery);
+    ++g_checks;
+    const bool snapshotModuleCommandOk = snapshotModuleCommandSymbols.size() == 2
+        && snapshotModuleCommandSymbols.first().symbolId == 7000
+        && snapshotModuleCommandSymbols.last().symbolId == 4000;
+    if (!snapshotModuleCommandOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotModuleCommandOk ? "PASS" : "FAIL",
+           "snapshot command module symbols",
+           snapshotModuleCommandSymbols.size());
+    CommandCompletionQuery snapshotInterfaceCommandQuery;
+    snapshotInterfaceCommandQuery.moduleName = QStringLiteral("snap_top");
+    snapshotInterfaceCommandQuery.symbolType = sym_list::sym_interface;
+    snapshotInterfaceCommandQuery.prefix = QStringLiteral("snap");
+    expectList("snapshot command interface in scope",
+               snapshotCompletionService.findCommandCompletions(snapshotInterfaceCommandQuery),
+               {"snap_if"});
+    const QList<sym_list::SymbolInfo> snapshotInterfaceCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbols(snapshotInterfaceCommandQuery);
+    ++g_checks;
+    const bool snapshotInterfaceCommandOk = snapshotInterfaceCommandSymbols.size() == 1
+        && snapshotInterfaceCommandSymbols.first().symbolId == 4002;
+    if (!snapshotInterfaceCommandOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotInterfaceCommandOk ? "PASS" : "FAIL",
+           "snapshot command interface symbols",
+           snapshotInterfaceCommandSymbols.size());
+    CommandCompletionQuery snapshotPackageCommandQuery;
+    snapshotPackageCommandQuery.moduleName = QStringLiteral("snap_top");
+    snapshotPackageCommandQuery.symbolType = sym_list::sym_package;
+    snapshotPackageCommandQuery.prefix = QStringLiteral("snap");
+    expectList("snapshot command package in scope",
+               snapshotCompletionService.findCommandCompletions(snapshotPackageCommandQuery),
+               {"snap_pkg"});
+    const QList<sym_list::SymbolInfo> snapshotPackageCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbols(snapshotPackageCommandQuery);
+    ++g_checks;
+    const bool snapshotPackageCommandOk = snapshotPackageCommandSymbols.size() == 1
+        && snapshotPackageCommandSymbols.first().symbolId == 4004;
+    if (!snapshotPackageCommandOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotPackageCommandOk ? "PASS" : "FAIL",
+           "snapshot command package symbols",
+           snapshotPackageCommandSymbols.size());
+    CommandCompletionQuery snapshotDefineCommandQuery;
+    snapshotDefineCommandQuery.moduleName = QStringLiteral("snap_top");
+    snapshotDefineCommandQuery.symbolType = sym_list::sym_def_define;
+    snapshotDefineCommandQuery.prefix = QStringLiteral("SNAP");
+    expectList("snapshot command define in scope",
+               snapshotCompletionService.findCommandCompletions(snapshotDefineCommandQuery),
+               {"SNAP_FEATURE"});
+    const QList<sym_list::SymbolInfo> snapshotDefineCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbols(snapshotDefineCommandQuery);
+    ++g_checks;
+    const bool snapshotDefineCommandOk = snapshotDefineCommandSymbols.size() == 1
+        && snapshotDefineCommandSymbols.first().symbolId == 4003;
+    if (!snapshotDefineCommandOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotDefineCommandOk ? "PASS" : "FAIL",
+           "snapshot command define symbols",
+           snapshotDefineCommandSymbols.size());
     CommandCompletionQuery snapshotEnumCommandQuery;
     snapshotEnumCommandQuery.symbolType = sym_list::sym_enum;
     snapshotEnumCommandQuery.prefix = QStringLiteral("snap");

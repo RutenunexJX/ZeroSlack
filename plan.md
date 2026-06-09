@@ -59,27 +59,41 @@ Latest handoff work:
     relationship data and emits relationship invalidation, relationship
     refresh, and diagnostics refresh requests.
 - `completionservice.cpp`, `completionservice.h`
-  - Moves normal and command-mode module/global completion reads to the
-    service's configured `SemanticIndex` instead of the singleton
-    `CompletionManager`.
-  - Moves struct-member context parsing into `CompletionService` instead of
-    calling the singleton `CompletionManager` helper.
-  - Keeps the existing internal-variable and command/global symbol type
-    filters.
+  - Keeps command-mode module, interface, package, and define completions in
+    the global scope even when the editor provides a current module context.
+  - Keeps local command completion types scoped to the current module.
 - `test_sv/completion_test.cpp`
-  - Adds snapshot-backed normal and command-mode module/global completion
-    assertions for names and returned symbol identity.
-  - Adds `CompletionService` struct-member context parse/reject assertions.
-  - Adds command-mode enum typedef coverage for global and module-local
-    snapshot reads.
+  - Adds snapshot-backed assertions for module, interface, package, and define
+    command completion names and returned symbol identity while a module
+    context is present.
+- `test_sv/jump_test.cpp`
+  - Adds snapshot-backed `DefinitionService` coverage for cross-file module
+    definition resolution and local-file precedence for same-name module
+    definitions.
+  - Adds snapshot-backed `DefinitionService` coverage for cross-file interface
+    and package definition resolution.
+  - Adds wrapper coverage for `canResolveDefinition` and `findDefinitions`
+    using the same snapshot-backed queries.
+- `test_sv/relationship_test.cpp`
+  - Adds snapshot-backed `SearchService` coverage for `hasMatches` positive
+    and negative behavior, file-scoped module filtering, exact matching,
+    case sensitivity, scoring, max-result limiting, and empty-text typed/file
+    filtering.
+  - Adds snapshot-backed `DiagnosticService` `hasDiagnostics` coverage for
+    severity and workspace-file filters.
+  - Adds snapshot-backed `RelationshipService`, `ReferenceService`, and
+    `HierarchyService` report/wrapper coverage for counts and grouped symbol
+    identity.
+  - Adds snapshot-backed `ReferenceService` current-file/workspace filters and
+    `HierarchyService` parent report coverage.
+  - Adds name-based snapshot query resolution coverage for relationship,
+    reference, and hierarchy service report paths.
 - `readme.md`, `plan.md`, `goal.md`
   - Updated compact handoff state.
 
-Expected real diff before commit: scheduler-owned project-close semantic
-cleanup, focused scheduler lifecycle coverage, CompletionService
-SemanticIndex-backed normal and command-mode module/global completions, focused
-completion coverage including struct-member context parsing and enum typedef
-command completions, and handoff docs.
+Expected real diff before commit: `CompletionService` always-global command
+scope filtering, focused `completion_test`, `jump_test`, and
+`relationship_test` snapshot coverage, and handoff docs.
 
 ## Next Small Increments
 

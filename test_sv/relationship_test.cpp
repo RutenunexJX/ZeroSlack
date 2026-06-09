@@ -343,6 +343,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         brokenDiagnosticService.findDiagnostics(brokenDiagnosticQuery);
     expectBool("slang diagnostics flow into service",
                !brokenDiagnosticResults.isEmpty(), true);
+    expectBool("snapshot diagnostic service reports diagnostics",
+               brokenDiagnosticService.hasDiagnostics(brokenDiagnosticQuery), true);
+    DiagnosticQuery warningOnlyBrokenDiagnosticQuery = brokenDiagnosticQuery;
+    warningOnlyBrokenDiagnosticQuery.includeInfo = false;
+    warningOnlyBrokenDiagnosticQuery.includeWarnings = true;
+    warningOnlyBrokenDiagnosticQuery.includeErrors = false;
+    expectBool("snapshot diagnostic service filters severity absence",
+               brokenDiagnosticService.hasDiagnostics(warningOnlyBrokenDiagnosticQuery), false);
     if (!brokenDiagnosticResults.isEmpty()) {
         expectBool("slang diagnostic has file",
                    brokenDiagnosticResults.first().diagnostic.fileName == brokenPath, true);
@@ -443,10 +451,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("diagnostic report filters workspace files",
               diagnosticReportService.findDiagnosticReport(workspaceOnlyDiagnosticQuery).totalCount,
               2);
+    expectBool("diagnostic service has workspace diagnostics",
+               diagnosticReportService.hasDiagnostics(workspaceOnlyDiagnosticQuery), true);
     workspaceOnlyDiagnosticQuery.workspaceFiles = {stagePath};
     expectInt("diagnostic report keeps workspace error file",
               diagnosticReportService.findDiagnosticReport(workspaceOnlyDiagnosticQuery).totalCount,
               1);
+    workspaceOnlyDiagnosticQuery.workspaceFiles = {normalizedPath(
+        fixtureDir.filePath(QStringLiteral("not_in_workspace.sv")))};
+    expectBool("diagnostic service rejects missing workspace file",
+               diagnosticReportService.hasDiagnostics(workspaceOnlyDiagnosticQuery), false);
 
     SearchService searchService(&index);
     SearchQuery moduleSearchQuery;
@@ -577,6 +591,85 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotSearchFoundTop, true);
     expectBool("snapshot search service finds stage module",
                snapshotSearchFoundStage, true);
+    expectBool("snapshot search service has module matches",
+               snapshotSearchService.hasMatches(moduleSearchQuery), true);
+    SearchQuery snapshotMissingSearchQuery = moduleSearchQuery;
+    snapshotMissingSearchQuery.text = QStringLiteral("missing_rel_module");
+    expectBool("snapshot search service has no missing match",
+               snapshotSearchService.hasMatches(snapshotMissingSearchQuery), false);
+    const QList<SearchResult> snapshotFileModuleSearchResults =
+        snapshotSearchService.findSymbols(fileModuleSearchQuery);
+    bool snapshotFileSearchFoundTop = false;
+    bool snapshotFileSearchFoundStage = false;
+    for (const SearchResult& result : snapshotFileModuleSearchResults) {
+        snapshotFileSearchFoundTop =
+            snapshotFileSearchFoundTop || result.symbol.symbolId == topId;
+        snapshotFileSearchFoundStage =
+            snapshotFileSearchFoundStage || result.symbol.symbolId == stageId;
+    }
+    expectBool("snapshot search service filters file module",
+               snapshotFileSearchFoundTop, true);
+    expectBool("snapshot search service excludes other file module",
+               snapshotFileSearchFoundStage, false);
+    const QList<SearchResult> snapshotExactTaskResults =
+        snapshotSearchService.findSymbols(exactTaskSearchQuery);
+    expectBool("snapshot search service exact task result",
+               snapshotExactTaskResults.size() == 1
+                   && snapshotExactTaskResults.first().symbol.symbolId == captureId,
+               true);
+    expectInt("snapshot search service exact score",
+              snapshotExactTaskResults.isEmpty() ? 0 : snapshotExactTaskResults.first().score,
+              100);
+    SearchQuery snapshotPartialExactTaskQuery = exactTaskSearchQuery;
+    snapshotPartialExactTaskQuery.text = QStringLiteral("capture");
+    expectBool("snapshot search service exact rejects partial",
+               snapshotSearchService.findSymbols(snapshotPartialExactTaskQuery).isEmpty(),
+               true);
+    SearchQuery snapshotCaseInsensitiveQuery = moduleSearchQuery;
+    snapshotCaseInsensitiveQuery.text = QStringLiteral("REL_");
+    expectBool("snapshot search service case-insensitive match",
+               snapshotSearchService.hasMatches(snapshotCaseInsensitiveQuery), true);
+    SearchQuery snapshotCaseSensitiveQuery = snapshotCaseInsensitiveQuery;
+    snapshotCaseSensitiveQuery.caseSensitive = true;
+    expectBool("snapshot search service case-sensitive reject",
+               snapshotSearchService.hasMatches(snapshotCaseSensitiveQuery), false);
+    SearchQuery snapshotLimitedModuleQuery = moduleSearchQuery;
+    snapshotLimitedModuleQuery.maxResults = 1;
+    expectInt("snapshot search service max results",
+              snapshotSearchService.findSymbols(snapshotLimitedModuleQuery).size(), 1);
+    SearchQuery snapshotEmptyModuleQuery;
+    snapshotEmptyModuleQuery.types = {sym_list::sym_module};
+    const QList<SearchResult> snapshotEmptyModuleResults =
+        snapshotSearchService.findSymbols(snapshotEmptyModuleQuery);
+    bool snapshotEmptySearchFoundTop = false;
+    bool snapshotEmptySearchFoundStage = false;
+    bool snapshotEmptySearchUsesDefaultScore = !snapshotEmptyModuleResults.isEmpty();
+    for (const SearchResult& result : snapshotEmptyModuleResults) {
+        snapshotEmptySearchFoundTop =
+            snapshotEmptySearchFoundTop || result.symbol.symbolId == topId;
+        snapshotEmptySearchFoundStage =
+            snapshotEmptySearchFoundStage || result.symbol.symbolId == stageId;
+        snapshotEmptySearchUsesDefaultScore =
+            snapshotEmptySearchUsesDefaultScore && result.score == 1;
+    }
+    expectBool("snapshot search service empty text keeps typed modules",
+               snapshotEmptySearchFoundTop && snapshotEmptySearchFoundStage, true);
+    expectBool("snapshot search service empty text score",
+               snapshotEmptySearchUsesDefaultScore, true);
+    SearchQuery snapshotEmptyFileModuleQuery = snapshotEmptyModuleQuery;
+    snapshotEmptyFileModuleQuery.fileName = stagePath;
+    const QList<SearchResult> snapshotEmptyFileModuleResults =
+        snapshotSearchService.findSymbols(snapshotEmptyFileModuleQuery);
+    bool snapshotEmptyFileFoundStage = false;
+    bool snapshotEmptyFileFoundTop = false;
+    for (const SearchResult& result : snapshotEmptyFileModuleResults) {
+        snapshotEmptyFileFoundStage =
+            snapshotEmptyFileFoundStage || result.symbol.symbolId == stageId;
+        snapshotEmptyFileFoundTop =
+            snapshotEmptyFileFoundTop || result.symbol.symbolId == topId;
+    }
+    expectBool("snapshot search service empty text filters file module",
+               snapshotEmptyFileFoundStage && !snapshotEmptyFileFoundTop, true);
     expectBool("semantic snapshot returns cached file content",
                snapshotIndex.getCachedFileContent(topPath) == contents.value(topPath), true);
     expectBool("semantic snapshot returns scope symbols",
@@ -612,6 +705,74 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("snapshot relationship service finds stage instantiation",
                snapshotRelationshipFoundStage, true);
+    expectBool("snapshot relationship service has relationships",
+               snapshotRelationshipService.hasRelationships(snapshotRelationshipQuery), true);
+    expectBool("snapshot relationship service exact relationship",
+               snapshotRelationshipService.hasRelationship(
+                   topId, stageId, SymbolRelationshipEngine::INSTANTIATES),
+               true);
+    expectBool("snapshot relationship service rejects reversed relationship",
+               snapshotRelationshipService.hasRelationship(
+                   stageId, topId, SymbolRelationshipEngine::INSTANTIATES),
+               false);
+    RelationshipBrowseQuery snapshotRelationshipBrowseQuery;
+    snapshotRelationshipBrowseQuery.symbolId = topId;
+    snapshotRelationshipBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const RelationshipReport snapshotRelationshipReport =
+        snapshotRelationshipService.findRelationshipReport(snapshotRelationshipBrowseQuery);
+    expectInt("snapshot relationship report subject id",
+              snapshotRelationshipReport.subjectSymbolId, topId);
+    expectBool("snapshot relationship report subject symbol",
+               snapshotRelationshipReport.subjectSymbol.symbolId == topId, true);
+    expectInt("snapshot relationship report outgoing count",
+              snapshotRelationshipReport.outgoingCount, 1);
+    expectInt("snapshot relationship report total count",
+              snapshotRelationshipReport.totalCount, 1);
+    expectBool("snapshot relationship report keeps peer symbol",
+               !snapshotRelationshipReport.relationships.isEmpty()
+                   && snapshotRelationshipReport.relationships.first()
+                          .peerSymbol.symbolId == stageId,
+               true);
+    RelationshipBrowseQuery snapshotIncomingStageBrowseQuery;
+    snapshotIncomingStageBrowseQuery.symbolId = stageId;
+    snapshotIncomingStageBrowseQuery.includeOutgoing = false;
+    snapshotIncomingStageBrowseQuery.includeIncoming = true;
+    snapshotIncomingStageBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const RelationshipReport snapshotIncomingStageReport =
+        snapshotRelationshipService.findRelationshipReport(snapshotIncomingStageBrowseQuery);
+    expectInt("snapshot relationship report incoming-only total",
+              snapshotIncomingStageReport.totalCount, 1);
+    expectInt("snapshot relationship report incoming-only count",
+              snapshotIncomingStageReport.incomingCount, 1);
+    expectBool("snapshot relationship report incoming peer symbol",
+               !snapshotIncomingStageReport.relationships.isEmpty()
+                   && snapshotIncomingStageReport.relationships.first()
+                          .peerSymbol.symbolId == topId,
+               true);
+    RelationshipQuery snapshotNamedRelationshipQuery;
+    snapshotNamedRelationshipQuery.symbolName = QStringLiteral("rel_top");
+    snapshotNamedRelationshipQuery.fileName = topPath;
+    snapshotNamedRelationshipQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const QList<RelationshipResult> snapshotNamedRelationshipResults =
+        snapshotRelationshipService.findOutgoingRelationships(snapshotNamedRelationshipQuery);
+    expectBool("snapshot relationship service resolves query symbol name",
+               snapshotNamedRelationshipResults.size() == 1
+                   && snapshotNamedRelationshipResults.first().relationship.fromId == topId
+                   && snapshotNamedRelationshipResults.first().relationship.toId == stageId,
+               true);
+    RelationshipBrowseQuery snapshotNamedRelationshipBrowseQuery;
+    snapshotNamedRelationshipBrowseQuery.symbolName = QStringLiteral("rel_top");
+    snapshotNamedRelationshipBrowseQuery.fileName = topPath;
+    snapshotNamedRelationshipBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const RelationshipReport snapshotNamedRelationshipReport =
+        snapshotRelationshipService.findRelationshipReport(snapshotNamedRelationshipBrowseQuery);
+    expectBool("snapshot relationship report resolves query symbol name",
+               snapshotNamedRelationshipReport.subjectSymbolId == topId
+                   && snapshotNamedRelationshipReport.totalCount == 1
+                   && !snapshotNamedRelationshipReport.relationships.isEmpty()
+                   && snapshotNamedRelationshipReport.relationships.first()
+                          .peerSymbol.symbolId == stageId,
+               true);
     ReferenceService snapshotReferenceService(&snapshotIndex);
     ReferenceQuery snapshotReferenceQuery;
     snapshotReferenceQuery.symbolId = stageId;
@@ -628,6 +789,69 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("snapshot reference service finds stage instantiation",
                snapshotReferenceFoundTop, true);
+    expectBool("snapshot reference service has references",
+               snapshotReferenceService.hasReferences(snapshotReferenceQuery), true);
+    const ReferenceReport snapshotReferenceReport =
+        snapshotReferenceService.findReferenceReport(snapshotReferenceQuery);
+    expectInt("snapshot reference report subject id",
+              snapshotReferenceReport.subjectSymbolId, stageId);
+    expectBool("snapshot reference report subject symbol",
+               snapshotReferenceReport.subjectSymbol.symbolId == stageId, true);
+    expectInt("snapshot reference report total count",
+              snapshotReferenceReport.totalCount, 1);
+    expectInt("snapshot reference report file count",
+              snapshotReferenceReport.fileCounts.value(topPath), 1);
+    expectInt("snapshot reference report type count",
+              snapshotReferenceReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectBool("snapshot reference report keeps grouped symbols",
+               snapshotReferenceReport.fileGroups.size() == 1
+                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.first()
+                          .referencingSymbol.symbolId == topId
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.first()
+                          .referencedSymbol.symbolId == stageId,
+               true);
+    ReferenceQuery snapshotCurrentFileReferenceQuery = snapshotReferenceQuery;
+    snapshotCurrentFileReferenceQuery.currentFileOnly = true;
+    snapshotCurrentFileReferenceQuery.fileName = topPath;
+    expectInt("snapshot reference report current file filter",
+              snapshotReferenceService.findReferenceReport(snapshotCurrentFileReferenceQuery)
+                  .totalCount,
+              1);
+    snapshotCurrentFileReferenceQuery.fileName = stagePath;
+    expectInt("snapshot reference report current file hides other file",
+              snapshotReferenceService.findReferenceReport(snapshotCurrentFileReferenceQuery)
+                  .totalCount,
+              0);
+    ReferenceQuery snapshotWorkspaceReferenceQuery = snapshotReferenceQuery;
+    snapshotWorkspaceReferenceQuery.workspaceFilesOnly = true;
+    snapshotWorkspaceReferenceQuery.workspaceFiles = {topPath};
+    expectInt("snapshot reference report workspace filter",
+              snapshotReferenceService.findReferenceReport(snapshotWorkspaceReferenceQuery)
+                  .totalCount,
+              1);
+    snapshotWorkspaceReferenceQuery.workspaceFiles = {stagePath};
+    expectInt("snapshot reference report workspace hides other file",
+              snapshotReferenceService.findReferenceReport(snapshotWorkspaceReferenceQuery)
+                  .totalCount,
+              0);
+    ReferenceQuery snapshotNamedReferenceQuery;
+    snapshotNamedReferenceQuery.symbolName = QStringLiteral("rel_stage");
+    snapshotNamedReferenceQuery.fileName = stagePath;
+    snapshotNamedReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const ReferenceReport snapshotNamedReferenceReport =
+        snapshotReferenceService.findReferenceReport(snapshotNamedReferenceQuery);
+    expectBool("snapshot reference service resolves query symbol name",
+               snapshotNamedReferenceReport.subjectSymbolId == stageId
+                   && snapshotNamedReferenceReport.totalCount == 1
+                   && !snapshotNamedReferenceReport.references.isEmpty()
+                   && snapshotNamedReferenceReport.references.first()
+                          .referencingSymbol.symbolId == topId,
+               true);
     HierarchyService snapshotHierarchyService(&snapshotIndex);
     HierarchyQuery snapshotHierarchyQuery;
     snapshotHierarchyQuery.symbolId = topId;
@@ -646,6 +870,51 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("snapshot hierarchy service finds stage child",
                snapshotHierarchyFoundStage, true);
+    const HierarchyReport snapshotHierarchyReport =
+        snapshotHierarchyService.getHierarchyReport(snapshotHierarchyQuery);
+    expectInt("snapshot hierarchy report total count",
+              snapshotHierarchyReport.totalCount, 2);
+    expectInt("snapshot hierarchy report depth zero count",
+              snapshotHierarchyReport.depthCounts.value(0), 1);
+    expectInt("snapshot hierarchy report depth one count",
+              snapshotHierarchyReport.depthCounts.value(1), 1);
+    expectInt("snapshot hierarchy report type count",
+              snapshotHierarchyReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectBool("snapshot hierarchy report keeps child identity",
+               snapshotHierarchyReport.nodes.size() == 2
+                   && snapshotHierarchyReport.nodes.last().symbol.symbolId == stageId
+                   && snapshotHierarchyReport.nodes.last().parentSymbolId == topId,
+               true);
+    HierarchyQuery snapshotParentHierarchyQuery;
+    snapshotParentHierarchyQuery.symbolId = stageId;
+    snapshotParentHierarchyQuery.direction = HierarchyQuery::Parents;
+    snapshotParentHierarchyQuery.maxDepth = 1;
+    snapshotParentHierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const HierarchyReport snapshotParentHierarchyReport =
+        snapshotHierarchyService.getHierarchyReport(snapshotParentHierarchyQuery);
+    expectInt("snapshot hierarchy parent report total count",
+              snapshotParentHierarchyReport.totalCount, 2);
+    expectInt("snapshot hierarchy parent report root direction count",
+              snapshotParentHierarchyReport.rootDirectionCounts.value(HierarchyQuery::Parents),
+              1);
+    expectBool("snapshot hierarchy parent report keeps parent identity",
+               snapshotParentHierarchyReport.nodes.size() == 2
+                   && snapshotParentHierarchyReport.nodes.last().symbol.symbolId == topId
+                   && snapshotParentHierarchyReport.nodes.last().parentSymbolId == stageId
+                   && snapshotParentHierarchyReport.nodes.last().direction == HierarchyQuery::Parents,
+               true);
+    HierarchyQuery snapshotNamedHierarchyQuery;
+    snapshotNamedHierarchyQuery.symbolName = QStringLiteral("rel_top");
+    snapshotNamedHierarchyQuery.fileName = topPath;
+    snapshotNamedHierarchyQuery.maxDepth = 1;
+    snapshotNamedHierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const HierarchyReport snapshotNamedHierarchyReport =
+        snapshotHierarchyService.getHierarchyReport(snapshotNamedHierarchyQuery);
+    expectBool("snapshot hierarchy service resolves query symbol name",
+               snapshotNamedHierarchyReport.totalCount == 2
+                   && snapshotNamedHierarchyReport.nodes.first().symbol.symbolId == topId
+                   && snapshotNamedHierarchyReport.nodes.last().symbol.symbolId == stageId,
+               true);
     SemanticRelationship duplicateStageRelationship;
     duplicateStageRelationship.fromId = topId;
     duplicateStageRelationship.toId = stageId;

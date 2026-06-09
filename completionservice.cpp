@@ -204,7 +204,9 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandSymbolsFromIndex(
 
     const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        const bool scopeMatches = query.moduleName.isEmpty()
+        const bool useGlobalScope = query.moduleName.isEmpty()
+            || isAlwaysGlobalCommandType(query.symbolType);
+        const bool scopeMatches = useGlobalScope
             ? symbol.moduleScope.isEmpty()
             : symbol.moduleScope == query.moduleName;
         if (!scopeMatches
@@ -301,6 +303,14 @@ bool CompletionService::isCommandGlobalCompletionType(sym_list::sym_type_e type)
         || type == sym_list::sym_packed_struct
         || type == sym_list::sym_unpacked_struct
         || type == sym_list::sym_enum;
+}
+
+bool CompletionService::isAlwaysGlobalCommandType(sym_list::sym_type_e type) const
+{
+    return type == sym_list::sym_module
+        || type == sym_list::sym_interface
+        || type == sym_list::sym_package
+        || type == sym_list::sym_def_define;
 }
 
 bool CompletionService::commandSymbolTypeMatches(

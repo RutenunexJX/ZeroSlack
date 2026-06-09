@@ -147,6 +147,50 @@ int main(int argc, char** argv) {
     snapshotPixelVar.dataType = QStringLiteral("snap_pixel_t");
     snapshotDefinitionSymbols.append(snapshotPixelVar);
 
+    sym_list::SymbolInfo snapshotHelperModule;
+    snapshotHelperModule.fileName = QStringLiteral("snapshot_helper.sv");
+    snapshotHelperModule.symbolName = QStringLiteral("snap_helper");
+    snapshotHelperModule.symbolType = sym_list::sym_module;
+    snapshotHelperModule.startLine = 12;
+    snapshotHelperModule.startColumn = 1;
+    snapshotHelperModule.endLine = 14;
+    snapshotHelperModule.endColumn = 10;
+    snapshotHelperModule.symbolId = 6104;
+    snapshotDefinitionSymbols.append(snapshotHelperModule);
+
+    sym_list::SymbolInfo snapshotHelperInterface = snapshotHelperModule;
+    snapshotHelperInterface.fileName = QStringLiteral("snapshot_if.sv");
+    snapshotHelperInterface.symbolName = QStringLiteral("snap_if");
+    snapshotHelperInterface.symbolType = sym_list::sym_interface;
+    snapshotHelperInterface.startLine = 15;
+    snapshotHelperInterface.symbolId = 6107;
+    snapshotDefinitionSymbols.append(snapshotHelperInterface);
+
+    sym_list::SymbolInfo snapshotHelperPackage = snapshotHelperModule;
+    snapshotHelperPackage.fileName = QStringLiteral("snapshot_pkg.sv");
+    snapshotHelperPackage.symbolName = QStringLiteral("snap_pkg");
+    snapshotHelperPackage.symbolType = sym_list::sym_package;
+    snapshotHelperPackage.startLine = 18;
+    snapshotHelperPackage.symbolId = 6108;
+    snapshotDefinitionSymbols.append(snapshotHelperPackage);
+
+    sym_list::SymbolInfo snapshotLocalDuplicate;
+    snapshotLocalDuplicate.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotLocalDuplicate.symbolName = QStringLiteral("snap_dup");
+    snapshotLocalDuplicate.symbolType = sym_list::sym_module;
+    snapshotLocalDuplicate.startLine = 21;
+    snapshotLocalDuplicate.startColumn = 1;
+    snapshotLocalDuplicate.endLine = 23;
+    snapshotLocalDuplicate.endColumn = 10;
+    snapshotLocalDuplicate.symbolId = 6105;
+    snapshotDefinitionSymbols.append(snapshotLocalDuplicate);
+
+    sym_list::SymbolInfo snapshotRemoteDuplicate = snapshotLocalDuplicate;
+    snapshotRemoteDuplicate.fileName = QStringLiteral("snapshot_remote.sv");
+    snapshotRemoteDuplicate.startLine = 31;
+    snapshotRemoteDuplicate.symbolId = 6106;
+    snapshotDefinitionSymbols.append(snapshotRemoteDuplicate);
+
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
         std::make_shared<SemanticIndexSnapshot>(snapshotDefinitionSymbols));
@@ -167,6 +211,81 @@ int main(int argc, char** argv) {
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot struct-member context\n",
            snapshotMemberOk ? "PASS" : "FAIL");
+
+    DefinitionQuery snapshotModuleQuery;
+    snapshotModuleQuery.symbolName = QStringLiteral("snap_helper");
+    snapshotModuleQuery.fileName = QStringLiteral("snapshot_only.sv");
+    const DefinitionResult snapshotModuleResult =
+        snapshotDefinitionService.resolveDefinition(snapshotModuleQuery);
+    ++g_checks;
+    const bool snapshotModuleOk = snapshotModuleResult.found
+        && !snapshotModuleResult.localFile
+        && snapshotModuleResult.symbol.symbolId == snapshotHelperModule.symbolId
+        && snapshotModuleResult.symbol.fileName == QStringLiteral("snapshot_helper.sv");
+    if (!snapshotModuleOk)
+        ++g_fails;
+    printf("[%s] DefinitionService resolves snapshot cross-file module\n",
+           snapshotModuleOk ? "PASS" : "FAIL");
+    expectBool("DefinitionService canResolve snapshot cross-file module",
+               snapshotDefinitionService.canResolveDefinition(snapshotModuleQuery),
+               true);
+
+    DefinitionQuery snapshotInterfaceQuery;
+    snapshotInterfaceQuery.symbolName = QStringLiteral("snap_if");
+    snapshotInterfaceQuery.fileName = QStringLiteral("snapshot_only.sv");
+    const DefinitionResult snapshotInterfaceResult =
+        snapshotDefinitionService.resolveDefinition(snapshotInterfaceQuery);
+    ++g_checks;
+    const bool snapshotInterfaceOk = snapshotInterfaceResult.found
+        && !snapshotInterfaceResult.localFile
+        && snapshotInterfaceResult.symbol.symbolId == snapshotHelperInterface.symbolId
+        && snapshotInterfaceResult.symbol.symbolType == sym_list::sym_interface;
+    if (!snapshotInterfaceOk)
+        ++g_fails;
+    printf("[%s] DefinitionService resolves snapshot cross-file interface\n",
+           snapshotInterfaceOk ? "PASS" : "FAIL");
+    expectBool("DefinitionService canResolve snapshot cross-file interface",
+               snapshotDefinitionService.canResolveDefinition(snapshotInterfaceQuery),
+               true);
+
+    DefinitionQuery snapshotPackageQuery;
+    snapshotPackageQuery.symbolName = QStringLiteral("snap_pkg");
+    snapshotPackageQuery.fileName = QStringLiteral("snapshot_only.sv");
+    const QList<sym_list::SymbolInfo> snapshotPackageDefinitions =
+        snapshotDefinitionService.findDefinitions(snapshotPackageQuery);
+    ++g_checks;
+    const bool snapshotPackageOk = snapshotPackageDefinitions.size() == 1
+        && snapshotPackageDefinitions.first().symbolId == snapshotHelperPackage.symbolId
+        && snapshotPackageDefinitions.first().symbolType == sym_list::sym_package;
+    if (!snapshotPackageOk)
+        ++g_fails;
+    printf("[%s] DefinitionService findDefinitions resolves snapshot package\n",
+           snapshotPackageOk ? "PASS" : "FAIL");
+
+    DefinitionQuery snapshotLocalModuleQuery;
+    snapshotLocalModuleQuery.symbolName = QStringLiteral("snap_dup");
+    snapshotLocalModuleQuery.fileName = QStringLiteral("snapshot_only.sv");
+    const DefinitionResult snapshotLocalModuleResult =
+        snapshotDefinitionService.resolveDefinition(snapshotLocalModuleQuery);
+    ++g_checks;
+    const bool snapshotLocalModuleOk = snapshotLocalModuleResult.found
+        && snapshotLocalModuleResult.localFile
+        && snapshotLocalModuleResult.symbol.symbolId == snapshotLocalDuplicate.symbolId
+        && snapshotLocalModuleResult.symbol.fileName == QStringLiteral("snapshot_only.sv");
+    if (!snapshotLocalModuleOk)
+        ++g_fails;
+    printf("[%s] DefinitionService prefers snapshot local definition\n",
+           snapshotLocalModuleOk ? "PASS" : "FAIL");
+
+    const QList<sym_list::SymbolInfo> snapshotLocalDefinitions =
+        snapshotDefinitionService.findDefinitions(snapshotLocalModuleQuery);
+    ++g_checks;
+    const bool snapshotFindDefinitionsOk = snapshotLocalDefinitions.size() == 1
+        && snapshotLocalDefinitions.first().symbolId == snapshotLocalDuplicate.symbolId;
+    if (!snapshotFindDefinitionsOk)
+        ++g_fails;
+    printf("[%s] DefinitionService findDefinitions keeps snapshot local result\n",
+           snapshotFindDefinitionsOk ? "PASS" : "FAIL");
 
     // Local jump landing: jumpToDefinition moves the caret to the definition.
     sym_list::SymbolInfo counter;

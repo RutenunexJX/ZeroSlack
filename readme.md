@@ -40,29 +40,44 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step moved more completion reads behind the injected
-`SemanticIndex`.
+The latest development step fixed a narrow command-mode completion regression
+in the `CompletionService` path and added one DefinitionService snapshot
+regression.
 
-- `CompletionService` now serves normal and command-mode module/global
-  completion symbols from its configured `SemanticIndex` instead of delegating
-  those paths back to the singleton `CompletionManager`.
-- Module completion keeps the existing internal-variable type filter and global
-  completion keeps the existing symbol-type filters.
-- `CompletionService` now owns struct-member context parsing directly instead
-  of calling the singleton `CompletionManager` helper.
-- `completion_test` now verifies snapshot-backed module/global completion and
-  command-mode module/global completion names, symbol identity, and
-  struct-member context parsing.
-- `completion_test` now also verifies that command-mode enum completion keeps
-  typedefs with `dataType == "enum"` for both global and module-local snapshot
-  reads.
-- The current uncommitted diff also includes the prior scheduler increment:
-  guarded project-close semantic cleanup in `AnalysisScheduler`, with
-  `relationship_test` coverage for stale relationship clearing and refresh
-  requests.
+- `CompletionService` now keeps always-global command types visible when the
+  editor supplies a current module context.
+- The always-global command types are module, interface, package, and define.
+- Local command types still filter to the current module scope.
+- `completion_test` now verifies snapshot-backed module, interface, package,
+  and define command completion names and returned symbol identity while a
+  module context is present.
+- `jump_test` now verifies snapshot-backed `DefinitionService` cross-file
+  module definition resolution and local-file precedence for same-name module
+  definitions.
+- `jump_test` now verifies snapshot-backed `DefinitionService` cross-file
+  interface and package definition resolution.
+- `jump_test` also verifies the snapshot-backed `canResolveDefinition` and
+  `findDefinitions` wrappers for those definition queries.
+- `relationship_test` now verifies snapshot-backed `SearchService` `hasMatches`
+  positive/negative behavior, file-scoped module filtering, exact matching,
+  case sensitivity, scoring, max-result limiting, and empty-text typed/file
+  filtering.
+- `relationship_test` now verifies snapshot-backed `DiagnosticService`
+  `hasDiagnostics` positive/negative behavior for severity and workspace-file
+  filters.
+- `relationship_test` now verifies snapshot-backed `RelationshipService`
+  `hasRelationships`, exact relationship checks, and relationship report
+  counts/peer identity.
+- `relationship_test` now verifies snapshot-backed `ReferenceService`
+  `hasReferences`, current-file and workspace-file filters, and reference
+  report counts/grouped symbol identity.
+- `relationship_test` now verifies snapshot-backed `HierarchyService`
+  hierarchy report counts plus child and parent identity.
+- `relationship_test` now verifies name-based snapshot query resolution for
+  relationship, reference, and hierarchy service report paths.
 
-This is a small completion service migration increment; there is no intended
-user-visible UI behavior change.
+This restores command completion visibility for global symbols from inside a
+module and strengthens snapshot-backed definition coverage.
 
 ## Latest Validation
 
@@ -70,6 +85,8 @@ Validation passed after the latest code/test step:
 
 - `cmake --build ... --target completion_test`
 - `ctest -R "completion_test" --output-on-failure`
+- `cmake --build ... --target jump_test`
+- `ctest -R "jump_test" --output-on-failure`
 - `cmake --build ... --target relationship_test`
 - `ctest -R "relationship_test" --output-on-failure`
 - full `ctest --output-on-failure`: 6/6 passed
@@ -155,11 +172,15 @@ Rules:
 - Stop for handoff when context is getting large, after a coherent validated increment, or before the next step becomes broad/risky.
 
 Latest completed continuation:
-- CompletionService now reads normal and command-mode module/global completions through its injected SemanticIndex and owns struct-member context parsing directly.
-- completion_test now checks snapshot-backed normal and command-mode module/global completion names, symbol identity, struct-member context parsing, and enum typedef command completions.
-- Current uncommitted diff also includes scheduler-owned guarded project-close semantic cleanup and relationship_test coverage.
-- Handoff docs were updated with the compact validated state.
-- Validation passed: completion_test and relationship_test target builds/focused CTests, full CTest 6/6, git diff --check, non-ASCII scan, forbidden-file guard.
+- CompletionService keeps always-global command types visible even when the editor passes the current module context.
+- completion_test checks snapshot-backed module, interface, package, and define command completion names and returned symbol identity in a module context.
+- jump_test checks snapshot-backed DefinitionService cross-file module definition resolution, local-file precedence, canResolveDefinition, and findDefinitions wrappers.
+- jump_test checks snapshot-backed DefinitionService cross-file interface and package definition resolution.
+- relationship_test checks snapshot-backed SearchService hasMatches, file-scoped filtering, exact/case-sensitive search, scoring, and maxResults, plus DiagnosticService hasDiagnostics severity/workspace filters.
+- relationship_test checks snapshot-backed SearchService empty-text typed/file filtering and default scores.
+- relationship_test checks snapshot-backed RelationshipService, ReferenceService, and HierarchyService report wrappers, filters, and grouped identity.
+- relationship_test checks name-based snapshot query resolution for relationship, reference, and hierarchy service reports.
+- Validation passed: completion_test, jump_test, and relationship_test target builds/focused CTests, and full CTest 6/6.
 
 Continue toward goal.md with one small, verifiable step.
 ```

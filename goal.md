@@ -123,6 +123,31 @@ Recent test coverage includes real fixture assertions for:
 - CompletionService struct-member context parse and reject behavior.
 - CompletionService command-mode enum typedef completion through snapshot-backed
   global and module-local reads.
+- CompletionService command-mode module, interface, package, and define
+  completion names and returned symbol identity while the editor supplies a
+  current module context.
+- DefinitionService snapshot-backed cross-file module definition resolution
+  and local-file precedence.
+- DefinitionService snapshot-backed cross-file interface and package
+  definition resolution.
+- DefinitionService snapshot-backed `canResolveDefinition` and
+  `findDefinitions` wrappers.
+- SearchService snapshot-backed `hasMatches` positive/negative behavior and
+- SearchService snapshot-backed file-scoped module filtering, exact matching,
+  case sensitivity, scoring, and max-result limiting.
+- SearchService snapshot-backed empty-text typed/file filtering and default
+  score behavior.
+- DiagnosticService snapshot-backed `hasDiagnostics` severity and
+  workspace-file filtering.
+- RelationshipService snapshot-backed `hasRelationships`, exact relationship,
+  and relationship report counts/peer identity.
+- ReferenceService snapshot-backed `hasReferences` and reference report
+  counts/grouped symbol identity.
+- ReferenceService snapshot-backed current-file and workspace-file filters.
+- HierarchyService snapshot-backed hierarchy report counts plus child and
+  parent identity.
+- RelationshipService, ReferenceService, and HierarchyService name-based
+  snapshot query resolution through service report paths.
 
 ## Remaining Gaps
 
