@@ -1,6 +1,6 @@
 #include "semanticindex.h"
 
-#include "completionmanager.h"
+#include "completionservice.h"
 #include "scope_tree.h"
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
@@ -564,11 +564,18 @@ QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
 
 QStringList SemanticIndex::findCompletions(const SemanticQueryContext& context) const
 {
-    CompletionManager* completions = CompletionManager::getInstance();
+    CompletionQuery query;
+    query.prefix = context.prefix;
+    query.fileName = context.fileName;
+    query.moduleName = context.moduleName;
+    query.cursorLine = context.cursorLine;
+    query.cursorPosition = context.cursorPosition;
+
+    CompletionService completions(const_cast<SemanticIndex*>(this));
     if (!context.fileName.isEmpty() && context.cursorLine > 0) {
-        return completions->getCompletions(context.prefix, context.fileName, context.cursorLine);
+        return completions.findScopeCompletions(query);
     }
-    return completions->getContextAwareCompletions(context.prefix, context.moduleName);
+    return completions.findCompletions(query);
 }
 
 QList<SemanticRelationship> SemanticIndex::getRelationships(int symbolId, bool outgoing) const

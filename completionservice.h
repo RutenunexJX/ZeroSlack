@@ -36,8 +36,10 @@ public:
 
     QStringList findCompletions(const CompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCompletionSymbols(const CompletionQuery& query) const;
+    QStringList findScopeCompletions(const CompletionQuery& query) const;
     QStringList findCommandCompletions(const CommandCompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCommandCompletionSymbols(const CommandCompletionQuery& query) const;
+    QString currentModuleAt(const QString& fileName, int cursorPosition) const;
     QString getStructTypeForVariable(const QString& variableName, const QString& moduleName) const;
     bool tryParseStructMemberContext(const QString& line,
                                      QString& outVariableName,
@@ -59,6 +61,12 @@ private:
     QStringList completionNamesFromSymbols(
         const QList<sym_list::SymbolInfo>& symbols) const;
     bool completionNameMatches(const QString& name, const QString& prefix) const;
+    QString moduleNameAtPosition(const QList<sym_list::SymbolInfo>& modules,
+                                 int cursorPosition,
+                                 const QString& fileName,
+                                 const QString& fileContent) const;
+    int endModulePosition(const QString& fileContent,
+                          const sym_list::SymbolInfo& moduleSymbol) const;
     bool isInternalCompletionType(sym_list::sym_type_e type) const;
     bool isGlobalCompletionType(sym_list::sym_type_e type) const;
     bool isCommandGlobalCompletionType(sym_list::sym_type_e type) const;

@@ -67,7 +67,7 @@ Already present at a high level:
 - AnalysisScheduler and analysis/progress/command coordinators
 - File, navigation, mode, semantic runtime, semantic panel, and editor workflow coordinators
 - SemanticIndex facade and SemanticIndexSnapshot helpers
-- Definition, completion, relationship, hierarchy, reference, diagnostics, and search services
+- Definition, completion, scope completion, current-module lookup, relationship, hierarchy, reference, diagnostics, and search services
 - Problems, References, Relationships, and Navigation UI backed by coordinators/services
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 
@@ -78,7 +78,7 @@ Keep detailed completion history in Git and `readme.md` handoff snapshots, not h
 - Continue reducing live `sym_list` consumers.
 - Continue making services snapshot-backed where possible.
 - Continue thinning remaining MainWindow dependency assembly and coordination policy.
-- Continue moving editor/completion semantic decisions behind services and facades.
+- Continue moving remaining editor/completion semantic decisions behind services and facades.
 - Continue tightening real fixture coverage when production changes need it.
 
 ## Documentation Quality Goal

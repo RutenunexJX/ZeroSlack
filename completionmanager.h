@@ -101,7 +101,6 @@ public:
 
     QList<sym_list::SymbolInfo> getGlobalSymbolsByType_Info(sym_list::sym_type_e symbolType,
                                                             const QString& prefix = "");
-    int findEndModulePosition(const QString &fileContent, const sym_list::SymbolInfo &moduleSymbol);
     void invalidateCommandModeCache();
 
     QString getStructTypeForVariable(const QString &varName, const QString &currentModule);
@@ -177,8 +176,6 @@ private:
     sym_list::SymbolInfo getSemanticSymbolById(int symbolId) const;
     int findSemanticSymbolId(const QString& symbolName) const;
     QString getSemanticCachedFileContent(const QString& fileName) const;
-    QStringList getSemanticScopeSymbolNames(const QString& fileName, int cursorLine) const;
-    bool isSemanticValidModuleName(const QString& moduleName) const;
 
     bool shouldSkipCacheRefresh();
 
@@ -194,10 +191,6 @@ private:
     QStringList getBasicSymbolCompletions(const QString &prefix);
 
     bool isInternalVariableType(sym_list::sym_type_e symbolType);
-    QString findModuleAtPosition(const QList<sym_list::SymbolInfo>& modules,
-                                 int cursorPosition,
-                                 const QString& fileName,
-                                 const QString& fileContent);
 
     bool isSymbolTypeMatchCommand(sym_list::sym_type_e symbolType,
                                  sym_list::sym_type_e commandType);

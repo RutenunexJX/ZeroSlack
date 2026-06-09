@@ -52,18 +52,19 @@ These docs are living handoff material, not a changelog.
 
 ## Latest Verified Block
 
-The latest block moved editor workflow routing behind `EditorCoordinator`.
+The latest block moved scope completion and current-module lookup behind `CompletionService`.
 
-- `EditorCoordinator` now owns editor-originated include resolution, file opening, definition navigation, relationship analysis, save/open/new commands, reference lookup, relationship browsing, and active-editor semantic panel refresh routing.
-- `MainWindow` injects the editor workflow dependencies once and no longer wires individual editor signal callbacks.
-- Visible editor behavior is unchanged; the block narrows `MainWindow` to UI composition and dependency assembly.
+- `CompletionService` now owns snapshot-backed scope completion and current-module lookup.
+- Legacy `CompletionManager::getCompletions()` and `getCurrentModule()` delegate to `CompletionService` instead of scanning semantic symbols directly.
+- `SemanticIndex::findCompletions()` no longer depends on `CompletionManager`; it uses a local `CompletionService` over the active index/snapshot.
+- `completion_test` now covers snapshot scope completion, snapshot current-module lookup, and `SemanticIndex` snapshot completion facade behavior.
 
 ## Latest Validation
 
 Validation passed after the latest code/doc update:
 
-- affected build: `gui_smoke_test large_file_perf_test`
-- focused CTest: `gui_smoke_test|large_file_perf_test` 2/2 passed
+- affected build: `completion_test`
+- focused CTest: `completion_test` passed
 - full default target rebuild
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
@@ -87,6 +88,7 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex` / `CompletionManager`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
+- `CompletionService` owns module/global/command completions, struct member parsing/completion, scope completion, and current-module lookup over `SemanticIndex`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are split out of `MainWindow`.
 
 ## Next Best Steps

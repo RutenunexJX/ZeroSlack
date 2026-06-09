@@ -41,12 +41,14 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved editor workflow routing behind `EditorCoordinator`.
+The latest block moved scope completion and current-module lookup behind `CompletionService`.
 
-- `EditorCoordinator` owns editor-originated include resolution, file opening, definition navigation, relationship analysis, save/open/new commands, reference lookup, relationship browsing, and active-editor semantic panel refresh routing.
-- `MainWindow` now injects editor workflow dependencies once instead of wiring each editor signal callback.
+- `CompletionService` owns snapshot-backed scope completion and current-module lookup.
+- Legacy `CompletionManager` APIs delegate those paths to `CompletionService`.
+- `SemanticIndex::findCompletions()` no longer depends on `CompletionManager`.
+- `completion_test` covers the new snapshot-backed service and facade paths.
 
-It was validated with focused GUI/perf build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
+It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 
 ## Next Architecture Blocks
 

@@ -308,8 +308,55 @@ int main(int argc, char** argv) {
                                       QStringLiteral("snap_pixel_t"),
                                       QString(),
                                       5007));
+    const QString snapshotScopeFile = QStringLiteral("snapshot_scope.sv");
+    const QString snapshotScopeContent =
+        QStringLiteral("module snap_scope;\n"
+                       "  logic snap_signal;\n"
+                       "endmodule\n"
+                       "module other_scope;\n"
+                       "endmodule\n");
+    sym_list::SymbolInfo snapshotScopeModule =
+        makeSymbol(QStringLiteral("snap_scope"),
+                   sym_list::sym_module,
+                   QString(),
+                   QString(),
+                   6000);
+    snapshotScopeModule.fileName = snapshotScopeFile;
+    snapshotScopeModule.position = snapshotScopeContent.indexOf(QStringLiteral("module snap_scope"));
+    snapshotScopeModule.startLine = 1;
+    snapshotScopeModule.endLine = 3;
+    snapshotSymbols.append(snapshotScopeModule);
+    sym_list::SymbolInfo snapshotScopeSignal =
+        makeSymbol(QStringLiteral("snap_signal"),
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_scope"),
+                   QString(),
+                   6001);
+    snapshotScopeSignal.fileName = snapshotScopeFile;
+    snapshotScopeSignal.position = snapshotScopeContent.indexOf(QStringLiteral("snap_signal"));
+    snapshotScopeSignal.startLine = 2;
+    snapshotScopeSignal.endLine = 2;
+    snapshotSymbols.append(snapshotScopeSignal);
+    sym_list::SymbolInfo snapshotOtherModule =
+        makeSymbol(QStringLiteral("other_scope"),
+                   sym_list::sym_module,
+                   QString(),
+                   QString(),
+                   6002);
+    snapshotOtherModule.fileName = snapshotScopeFile;
+    snapshotOtherModule.position = snapshotScopeContent.indexOf(QStringLiteral("module other_scope"));
+    snapshotOtherModule.startLine = 4;
+    snapshotOtherModule.endLine = 5;
+    snapshotSymbols.append(snapshotOtherModule);
+    QHash<QString, QString> snapshotFileContents;
+    snapshotFileContents.insert(snapshotScopeFile, snapshotScopeContent);
     SemanticIndex snapshotIndex;
-    snapshotIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(snapshotSymbols));
+    snapshotIndex.setSnapshot(
+        std::make_shared<SemanticIndexSnapshot>(
+            snapshotSymbols,
+            QList<SemanticRelationship>{},
+            QList<SemanticDiagnostic>{},
+            snapshotFileContents));
     CompletionService snapshotCompletionService(&snapshotIndex);
     expectEq("snapshot struct prefers module",
              snapshotCompletionService.getStructTypeForVariable("snap_pixel", "snap_top"),
@@ -364,7 +411,7 @@ int main(int argc, char** argv) {
     snapshotGlobalQuery.prefix = QStringLiteral("snap");
     expectList("snapshot global completions",
                snapshotCompletionService.findCompletions(snapshotGlobalQuery),
-               {"snap_child", "snap_if", "snap_pkg", "snap_task", "snap_top"});
+               {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
     CommandCompletionQuery snapshotTaskCommandQuery;
     snapshotTaskCommandQuery.symbolType = sym_list::sym_task;
     snapshotTaskCommandQuery.prefix = QStringLiteral("snap");
@@ -390,12 +437,13 @@ int main(int argc, char** argv) {
     snapshotModuleCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command module in scope",
                snapshotCompletionService.findCommandCompletions(snapshotModuleCommandQuery),
-               {"snap_child", "snap_top"});
+               {"snap_child", "snap_scope", "snap_top"});
     const QList<sym_list::SymbolInfo> snapshotModuleCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbols(snapshotModuleCommandQuery);
     ++g_checks;
-    const bool snapshotModuleCommandOk = snapshotModuleCommandSymbols.size() == 2
+    const bool snapshotModuleCommandOk = snapshotModuleCommandSymbols.size() == 3
         && snapshotModuleCommandSymbols.first().symbolId == 7000
+        && snapshotModuleCommandSymbols.at(1).symbolId == 6000
         && snapshotModuleCommandSymbols.last().symbolId == 4000;
     if (!snapshotModuleCommandOk)
         ++g_fails;
@@ -489,6 +537,25 @@ int main(int argc, char** argv) {
            snapshotMemberSymbolOk ? "PASS" : "FAIL",
            "snapshot struct member symbols",
            snapshotMemberSymbols.size());
+    const int snapshotScopeCursor =
+        snapshotScopeContent.indexOf(QStringLiteral("snap_signal")) + 2;
+    expectEq("snapshot current module",
+             snapshotCompletionService.currentModuleAt(snapshotScopeFile, snapshotScopeCursor),
+             "snap_scope");
+    CompletionQuery snapshotScopeQuery;
+    snapshotScopeQuery.prefix = QStringLiteral("snap");
+    snapshotScopeQuery.fileName = snapshotScopeFile;
+    snapshotScopeQuery.cursorLine = 2;
+    expectList("snapshot scope completions",
+               snapshotCompletionService.findScopeCompletions(snapshotScopeQuery),
+               {"snap_scope", "snap_signal"});
+    SemanticQueryContext snapshotFacadeQuery;
+    snapshotFacadeQuery.prefix = QStringLiteral("snap");
+    snapshotFacadeQuery.fileName = snapshotScopeFile;
+    snapshotFacadeQuery.cursorLine = 2;
+    expectList("SemanticIndex snapshot completions",
+               snapshotIndex.findCompletions(snapshotFacadeQuery),
+               {"snap_scope", "snap_signal"});
 
     CommandCompletionQuery snapshotCommandQuery;
     snapshotCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
