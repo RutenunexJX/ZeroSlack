@@ -1,6 +1,5 @@
 #include "syminfo.h"
 #include "scope_tree.h"
-#include "completionmanager.h"
 #include "symbolrelationshipengine.h"
 
 #include <QDebug>
@@ -80,7 +79,6 @@ void sym_list::addSymbol(const SymbolInfo& symbol)
     addToIndexes(newIndex);
     updateLineBasedSymbols(newSymbol);
     indexesDirty = true;
-    CompletionManager::getInstance()->invalidateCommandModeCache();
 }
 
 sym_list::SymbolInfo sym_list::getSymbolById(int symbolId) const
@@ -339,7 +337,6 @@ void sym_list::clearSymbolsForFile(const QString& fileName)
     }
     int afterCount = symbolDatabase.size();
     if (beforeCount != afterCount) {
-        CompletionManager::getInstance()->invalidateSymbolCaches();
         invalidateCache();
     }
 }
@@ -375,7 +372,6 @@ void sym_list::setSymbolsForFile(const QString& fileName, const QList<SymbolInfo
         previousFileContents[fileName] = content;
     }
 
-    CompletionManager::getInstance()->invalidateSymbolCaches();
     invalidateCache();
     s_holdingWriteLock = false;
 }
@@ -795,7 +791,6 @@ void sym_list::clearStructTypedefEnumSymbolsForFile(const QString &fileName)
         }
     }
     rebuildAllIndexes();
-    CompletionManager::getInstance()->invalidateSymbolCaches();
 }
 
 void sym_list::refreshStructTypedefEnumForFile(const QString &fileName, const QString &content)

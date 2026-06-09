@@ -17,7 +17,6 @@ SemanticRuntimeCoordinator::SemanticRuntimeCoordinator(QObject* parent)
     slangManagerInstance = std::make_unique<SlangManager>();
 
     CompletionManager* completionManager = CompletionManager::getInstance();
-    completionManager->setSlangManager(slangManagerInstance.get());
     completionManager->setRelationshipEngine(relationshipEngineInstance.get());
 
     relationshipBuilderInstance = semanticIndex->createRelationshipBuilder(

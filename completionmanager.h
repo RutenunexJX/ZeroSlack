@@ -10,7 +10,6 @@
 #include "syminfo.h"
 
 class SymbolRelationshipEngine;
-class SlangManager;
 
 class CompletionManager
 {
@@ -19,8 +18,6 @@ public:
     ~CompletionManager();
 
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
-    void setSlangManager(SlangManager* slangManager);
-    SymbolRelationshipEngine* getRelationshipEngine() const;
 
     bool matchesAbbreviation(const QString &text, const QString &abbreviation);
     QStringList getAbbreviationMatches(const QStringList &candidates, const QString &abbreviation);
@@ -57,18 +54,6 @@ public:
     QStringList getTaskFunctionCompletions(const QString& prefix = "");
     QStringList getInstantiableModules(const QString& prefix = "");
 
-    void invalidateAllCaches();
-    void invalidateSymbolCaches();
-    void invalidateKeywordCaches();
-    void forceRefreshSymbolCaches();
-
-    void precomputeFrequentCompletions();
-    void enableSmartCaching(bool enabled = true);
-    bool isSmartCachingEnabled() const { return smartCachingEnabled; }
-
-    void invalidateRelationshipCaches();
-    void refreshRelationshipData();
-
     QString getCurrentModule(const QString& fileName, int cursorPosition);
 
     QStringList getCompletions(const QString& prefix, const QString& cursorFile, int cursorLine);
@@ -97,7 +82,6 @@ public:
 
     QList<sym_list::SymbolInfo> getGlobalSymbolsByType_Info(sym_list::sym_type_e symbolType,
                                                             const QString& prefix = "");
-    void invalidateCommandModeCache();
 
     QString getStructTypeForVariable(const QString &varName, const QString &currentModule);
     QStringList getStructMemberCompletions(const QString &prefix, const QString &structTypeName);
@@ -108,7 +92,6 @@ private:
 
     static std::unique_ptr<CompletionManager> instance;
 
-    bool smartCachingEnabled = true;
     SymbolRelationshipEngine* relationshipEngine = nullptr;
 
 };

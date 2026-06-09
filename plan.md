@@ -41,11 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block retired remaining `CompletionManager` result/cache ownership.
+The latest block removed obsolete `CompletionManager` cache lifecycle coupling.
 
-- Relationship completion APIs in `CompletionManager` now delegate directly to `CompletionService`.
-- Manager-side child/related/clock/reset caches, unused relationship builder state, command cache state, precompute flag, stale symbol-type helpers, and stale includes were removed.
-- `completion_test` covers manager delegation for child, related, reference, clock, and reset completion paths.
+- `AnalysisCoordinator`, `SymbolAnalyzer`, and `sym_list` no longer call `CompletionManager` cache invalidation or relationship refresh hooks.
+- Empty cache lifecycle APIs, stale smart-precompute controls, stale SlangManager injection, and unused relationship getter state were removed from `CompletionManager`.
+- `SemanticRuntimeCoordinator` now only injects relationship-engine availability into `CompletionManager`.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 

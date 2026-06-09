@@ -31,23 +31,6 @@ QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatc
         symbolType, prefix);
 }
 
-void CompletionManager::forceRefreshSymbolCaches()
-{
-    invalidateSymbolCaches();
-}
-
-void CompletionManager::precomputeFrequentCompletions()
-{
-}
-
-void CompletionManager::enableSmartCaching(bool enabled)
-{
-    smartCachingEnabled = enabled;
-
-    if (enabled)
-        precomputeFrequentCompletions();
-}
-
 QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
 {
     return CompletionService::getInstance()->findAllSymbolCompletions(prefix);
@@ -57,16 +40,6 @@ QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolT
 {
     return CompletionService::getInstance()->findSymbolCompletionsByType(
         symbolType, prefix);
-}
-
-void CompletionManager::invalidateAllCaches()
-{
-    invalidateCommandModeCache();
-}
-
-void CompletionManager::invalidateSymbolCaches()
-{
-    invalidateCommandModeCache();
 }
 
 bool CompletionManager::matchesAbbreviation(const QString &text, const QString &abbreviation)
@@ -103,23 +76,9 @@ QStringList CompletionManager::getAbbreviationMatches(const QStringList &candida
         candidates, abbreviation);
 }
 
-void CompletionManager::invalidateKeywordCaches()
-{
-}
-
-void CompletionManager::setSlangManager(SlangManager* slangManager)
-{
-    (void)slangManager;
-}
-
 void CompletionManager::setRelationshipEngine(SymbolRelationshipEngine* engine)
 {
     relationshipEngine = engine;
-}
-
-SymbolRelationshipEngine* CompletionManager::getRelationshipEngine() const
-{
-    return relationshipEngine;
 }
 
 QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QString& prefix,
@@ -205,15 +164,6 @@ QStringList CompletionManager::getInstantiableModules(const QString& prefix)
     return CompletionService::getInstance()->findInstantiableModuleCompletions(prefix);
 }
 
-void CompletionManager::invalidateRelationshipCaches()
-{
-}
-
-void CompletionManager::refreshRelationshipData()
-{
-    invalidateRelationshipCaches();
-}
-
 QString CompletionManager::getCurrentModule(const QString& fileName, int cursorPosition)
 {
     return CompletionService::getInstance()->currentModuleAt(fileName, cursorPosition);
@@ -252,10 +202,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
     return CompletionService::getInstance()->findGlobalSymbolsByType(symbolType, prefix);
 }
 
-
-void CompletionManager::invalidateCommandModeCache()
-{
-}
 
 QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
     const QString& moduleName,

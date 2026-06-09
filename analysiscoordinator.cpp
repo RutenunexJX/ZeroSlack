@@ -2,7 +2,6 @@
 
 #include "analysisprogresscoordinator.h"
 #include "analysisscheduler.h"
-#include "completionmanager.h"
 #include "mycodeeditor.h"
 #include "navigationmanager.h"
 #include "symbolanalyzer.h"
@@ -93,13 +92,8 @@ void AnalysisCoordinator::connectSchedulerSignals()
     if (!scheduler)
         return;
 
-    connect(scheduler, &AnalysisScheduler::relationshipDataInvalidated,
-            this, []() {
-                CompletionManager::getInstance()->invalidateRelationshipCaches();
-            });
     connect(scheduler, &AnalysisScheduler::relationshipDataRefreshRequested,
             this, [this]() {
-                CompletionManager::getInstance()->refreshRelationshipData();
                 if (navigationManager)
                     navigationManager->refreshCurrentView();
             });

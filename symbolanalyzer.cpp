@@ -3,7 +3,6 @@
 #include "semanticindexsnapshot.h"
 #include "slangmanager.h"
 #include "workspacemanager.h"
-#include "completionmanager.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
 #include <QTextStream>
@@ -136,7 +135,6 @@ void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::functio
     QStringList svFiles = project.systemVerilogFiles;
     const int totalFiles = svFiles.size();
     if (totalFiles == 0) {
-        CompletionManager::getInstance()->forceRefreshSymbolCaches();
         emit batchAnalysisCompleted(0, 0);
         emit analysisCompleted(project.workspaceRoot, 0);
         return;
@@ -159,7 +157,6 @@ void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::functio
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 
-    CompletionManager::getInstance()->forceRefreshSymbolCaches();
     publishCompleteSemanticSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(project.workspaceRoot, result.totalSymbols);
@@ -214,7 +211,6 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 
-    CompletionManager::getInstance()->forceRefreshSymbolCaches();
     publishCompleteSemanticSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(workspacePath, result.totalSymbols);
@@ -252,7 +248,6 @@ bool SymbolAnalyzer::isAnalysisNeeded(const QString& fileName, const QString& co
 void SymbolAnalyzer::invalidateCache()
 {
     lastAnalyzedContent.clear();
-    CompletionManager::getInstance()->invalidateAllCaches();
 }
 
 void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& content)
