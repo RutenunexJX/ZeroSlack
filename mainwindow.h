@@ -1,7 +1,6 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include "syminfo.h"
 #include <QMainWindow>
 #include <memory>
 
@@ -11,18 +10,18 @@ class TabManager;
 class WorkspaceManager;
 class ModeManager;
 class SymbolAnalyzer;
+class NavigationCommandCoordinator;
 class NavigationManager;
 class NavigationPaneCoordinator;
+class AnalysisCoordinator;
 class AnalysisScheduler;
 class EditorCoordinator;
+class FileCommandCoordinator;
+class ModeCommandCoordinator;
 class ProblemsPanelCoordinator;
 class ReferencesPanelCoordinator;
 class RelationshipsPanelCoordinator;
-struct SingleFileRelationshipAnalysisResult;
-
-class SymbolRelationshipEngine;
-class SlangManager;
-class SmartRelationshipBuilder;
+class SemanticRuntimeCoordinator;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -43,10 +42,6 @@ public:
     std::unique_ptr<NavigationManager> navigationManager;
     std::unique_ptr<AnalysisScheduler> analysisScheduler;
     std::unique_ptr<AnalysisProgressCoordinator> analysisProgressCoordinator;
-
-    std::unique_ptr<SymbolRelationshipEngine> relationshipEngine;
-    std::unique_ptr<SlangManager> slangManager;
-    std::unique_ptr<SmartRelationshipBuilder> relationshipBuilder;
 
     void requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
     void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
@@ -69,22 +64,19 @@ private slots:
     void on_redo_triggered();
     void on_open_direction_as_workspace_triggered();
 
-    void onNavigationRequested(const QString& filePath, int lineNumber);
-    void onSymbolNavigationRequested(const sym_list::SymbolInfo& symbol);
-
-    void onRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound);
-    void onRelationshipAnalysisError(const QString& fileName, const QString& error);
-
 private:
     Ui::MainWindow *ui;
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
+    std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
+    std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
+    std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
+    std::unique_ptr<ModeCommandCoordinator> modeCommandCoordinator;
+    std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<ProblemsPanelCoordinator> problemsPanel;
     std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
     std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
-
-    void onSingleFileRelationshipFinished(const SingleFileRelationshipAnalysisResult& result);
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -92,10 +84,11 @@ private:
     void setupProblemsPane();
     void setupReferencesPane();
     void setupRelationshipsPane();
+    void setupNavigationCommandCoordinator();
+    void setupFileCommandCoordinator();
+    void setupModeCommandCoordinator();
     void setupEditorCoordinator();
     void updateProblemsPanel(const QString& fileName = QString());
-    void connectNavigationSignals();
-    void navigateToFileAndLine(const QString& filePath, int lineNumber = -1, int columnNumber = -1);
     void showReferencesForSymbol(const QString& symbolName,
                                  const QString& fileName,
                                  const QString& moduleName);
@@ -106,7 +99,7 @@ private:
     void refreshRelationshipsPanel();
 
     void setupManagerConnections();
-    void setupRelationshipEngine();
+    void setupSemanticRuntime();
 
 };
 

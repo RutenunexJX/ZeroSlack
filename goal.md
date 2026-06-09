@@ -34,6 +34,9 @@ AnalysisScheduler
 AnalysisProgressCoordinator
   Owns workspace analysis progress dialog state, progress text, errors, and cancel state.
 
+AnalysisCoordinator
+  Owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
+
 SemanticIndex
   Owns semantic facts: symbols, definitions, relationships, references, diagnostics, cached content.
 
@@ -54,7 +57,7 @@ Tree-sitter and Slang split:
 - New semantic reads should go through SemanticIndex or Query Services.
 - Analysis triggers belong in AnalysisScheduler.
 - UI panels should render service/model output, not derive semantic policy from widgets.
-- MainWindow should compose and coordinate windows, not own analysis policy, panel rendering, or editor workflow policy.
+- MainWindow should compose and coordinate windows, not own analysis event routing, panel rendering, or editor workflow policy.
 - MyCodeEditor should provide editor UI and live syntax behavior, not project semantic decisions.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
@@ -64,13 +67,18 @@ Tree-sitter and Slang split:
 Already present:
 
 - ProjectModel and DocumentModel minimal boundaries
-- AnalysisScheduler and AnalysisProgressCoordinator
+- AnalysisScheduler, AnalysisProgressCoordinator, AnalysisCoordinator, FileCommandCoordinator, NavigationCommandCoordinator, ModeCommandCoordinator, and SemanticRuntimeCoordinator
 - SemanticIndex facade and SemanticIndexSnapshot helpers
 - DefinitionService, CompletionService, RelationshipService, HierarchyService, ReferenceService, DiagnosticService, and SearchService
 - Problems, References, and Relationships panels backed by service reports and owned by focused coordinators
 - Shared semantic panel display helpers for relationship labels, count labels, and tree expansion state
 - Navigation pane UI ownership split into a focused coordinator
+- Navigation command routing, tab activation/opening, and editor cursor placement split into a focused coordinator
 - Editor setup, editor-originated commands, active-tab refresh coordination, and alternate-mode propagation split into a focused coordinator
+- Scheduler/progress/workspace/symbol analysis event routing split into a focused coordinator
+- File/edit/workspace commands and close-event unsaved-change confirmation split into a focused coordinator
+- Mode key event routing and navigation-pane toggle routing split into a focused coordinator
+- Semantic runtime lifetimes and SemanticIndex/CompletionManager dependency injection split into a focused coordinator
 - CompletionManager reads routed through DefinitionService, RelationshipService, and SearchService for key semantic paths
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 
@@ -79,7 +87,7 @@ Recent coverage is strongest around:
 - real multi-file relationship fixtures for instantiation, calls, reads, writes, clocks/resets, diagnostics, references, hierarchy traversal, and workspace/current-file filtering,
 - snapshot-backed DefinitionService, CompletionService, SearchService, DiagnosticService, RelationshipService, ReferenceService, and HierarchyService behavior,
 - scheduler-owned lifecycle behavior including relationship refresh, project-close cleanup, diagnostics refresh, document-close cleanup, and remaining open-document reanalysis,
-- editor/MainWindow decoupling through signals, callbacks, include resolution, file opening, active-tab refresh, and mode propagation,
+- editor/MainWindow decoupling through signals, callbacks, include resolution, file opening, navigation command routing, active-tab refresh, mode propagation, mode command routing, analysis event routing, file command routing, and semantic runtime setup,
 - GUI smoke coverage for include resolution, panel behavior, navigation, and workspace close/reopen paths.
 
 ## Remaining Gaps

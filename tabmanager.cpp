@@ -123,6 +123,21 @@ MyCodeEditor* TabManager::getEditorAt(int index) const
     return qobject_cast<MyCodeEditor*>(tabWidget->widget(index));
 }
 
+bool TabManager::activateOpenFile(const QString& fileName)
+{
+    if (!tabWidget)
+        return false;
+
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        MyCodeEditor* editor = getEditorAt(i);
+        if (editor && editor->getFileName() == fileName) {
+            tabWidget->setCurrentIndex(i);
+            return true;
+        }
+    }
+    return false;
+}
+
 QString TabManager::getPlainTextFromCurrentTab() const
 {
     MyCodeEditor *codeEditor = getCurrentEditor();

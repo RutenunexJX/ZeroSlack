@@ -17,6 +17,8 @@
 #include "mainwindow.h"
 #include "analysisscheduler.h"
 #include "mycodeeditor.h"
+#include "semanticruntimecoordinator.h"
+#include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -69,8 +71,11 @@ static QString largestFile(const QStringList& files)
 
 static void drainRelationshipWork(MainWindow& window)
 {
-    if (window.relationshipBuilder)
-        window.relationshipBuilder->cancelAnalysis();
+    SmartRelationshipBuilder* builder = window.semanticRuntime
+        ? window.semanticRuntime->relationshipBuilder()
+        : nullptr;
+    if (builder)
+        builder->cancelAnalysis();
     if (window.analysisScheduler) {
         window.analysisScheduler->cancelRelationshipAnalysis();
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();

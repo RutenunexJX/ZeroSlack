@@ -25,10 +25,15 @@ Implemented and in active use:
 - ProjectModel and DocumentModel minimal boundaries
 - AnalysisScheduler for major analysis triggers, relationship work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests
 - AnalysisProgressCoordinator for workspace analysis progress dialog policy and cancel state
+- AnalysisCoordinator for scheduler/progress/workspace/symbol signal routing and active-editor refresh policy
+- FileCommandCoordinator for file/edit/workspace commands and close-event unsaved-change confirmation
+- NavigationCommandCoordinator for navigation signals, tab activation/opening, and editor cursor placement
+- ModeCommandCoordinator for mode key event routing and navigation-pane toggle routing
+- SemanticRuntimeCoordinator for semantic runtime lifetimes and SemanticIndex/CompletionManager dependency injection
 - SemanticIndex facade and SemanticIndexSnapshot storage
 - Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
 - Problems, References, and Relationships panels backed by service reports
-- Problems, References, Relationships, Navigation pane, and editor/tab/mode workflows extracted from `MainWindow` into focused coordinators
+- Problems, References, Relationships, Navigation pane, navigation commands, mode command routing, editor/tab/mode workflows, analysis event routing, file/edit/workspace commands, and semantic runtime setup extracted from `MainWindow` into focused coordinators
 - Real multi-file relationship fixture coverage for instantiation, calls, reads, writes, diagnostics filtering, workspace/current-file filtering, hierarchy, references, and timing relationships
 
 Still transitional:
@@ -40,7 +45,16 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block extracted a broad but coherent `MainWindow` coordination layer:
+The latest block extracted `ModeCommandCoordinator` from `MainWindow`:
+
+- key press routing to `ModeManager`
+- key release routing to `ModeManager`
+- `ModeManager::navigationToggleRequested` routing to `NavigationPaneCoordinator`
+- thin `MainWindow` key event overrides that delegate before falling back to `QMainWindow`
+
+The block was validated with focused GUI smoke build/test, full build, full CTest, diff hygiene, ASCII/trailing scans, and forbidden-file guard. In a plain shell, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` before CMake/CTest; GUI tests also need `E:\QT6\6.10.2\mingw_64\bin`.
+
+The previous blocks extracted `SemanticRuntimeCoordinator`, `NavigationCommandCoordinator`, `FileCommandCoordinator`, and `AnalysisCoordinator`. The earlier UI/editor coordination block extracted:
 
 - `ProblemsPanelCoordinator`
 - `ReferencesPanelCoordinator`
@@ -50,8 +64,6 @@ The latest block extracted a broad but coherent `MainWindow` coordination layer:
 - `EditorCoordinator`
 - `TabManager::editorCount()` for coordinator-owned editor enumeration
 - GUI smoke coverage adapted to validate the visible workflows through these boundaries
-
-The block was validated with focused GUI smoke build/test, full build, full CTest, diff hygiene, ASCII/trailing scans, and forbidden-file guard.
 
 ## Next Architecture Blocks
 

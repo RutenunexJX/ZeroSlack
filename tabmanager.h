@@ -26,6 +26,7 @@ public:
     // Tab queries
     MyCodeEditor* getCurrentEditor() const;
     MyCodeEditor* getEditorAt(int index) const;
+    bool activateOpenFile(const QString& fileName);
     QString getPlainTextFromCurrentTab() const;
     QString getPlainTextFromOpenFile(const QString& fileName) const;
     QStringList getAllOpenFileNames() const;

@@ -44,6 +44,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 # =========================================================
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ sources ---
+    analysiscoordinator.cpp
     analysisprogresscoordinator.cpp
     analysisscheduler.cpp
     mainwindow.cpp
@@ -54,11 +55,14 @@ set(ZEROSLACK_CORE_SOURCES
     diagnosticservice.cpp
     documentmodel.cpp
     editorcoordinator.cpp
+    filecommandcoordinator.cpp
     hierarchyservice.cpp
     tsdocument.cpp
+    modecommandcoordinator.cpp
     modemanager.cpp
     mycodeeditor.cpp
     myhighlighter.cpp
+    navigationcommandcoordinator.cpp
     navigationmanager.cpp
     navigationpanecoordinator.cpp
     navigationwidget.cpp
@@ -73,6 +77,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticpanelutils.cpp
     semanticindex.cpp
     semanticindexsnapshot.cpp
+    semanticruntimecoordinator.cpp
     slangmanager.cpp
     smartrelationshipbuilder.cpp
     symbolanalyzer.cpp
@@ -82,6 +87,7 @@ set(ZEROSLACK_CORE_SOURCES
     workspacemanager.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
+    analysiscoordinator.h
     analysisprogresscoordinator.h
     analysisscheduler.h
     mainwindow.h
@@ -94,12 +100,15 @@ set(ZEROSLACK_CORE_SOURCES
     diagnosticservice.h
     documentmodel.h
     editorcoordinator.h
+    filecommandcoordinator.h
     hierarchyservice.h
     tsdocument.h
+    modecommandcoordinator.h
     modemanager.h
     mycodeeditor.h
     myhighlighter.h
     modulehierarchymodel.h
+    navigationcommandcoordinator.h
     navigationmanager.h
     navigationpanecoordinator.h
     navigationwidget.h
@@ -114,6 +123,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticpanelutils.h
     semanticindex.h
     semanticindexsnapshot.h
+    semanticruntimecoordinator.h
     slangmanager.h
     smartrelationshipbuilder.h
     symbolanalyzer.h

@@ -39,7 +39,50 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over no
 
 ## Latest Completed Work
 
-The latest architecture block thinned `MainWindow` by extracting focused coordination boundaries:
+The latest architecture block extracted `ModeCommandCoordinator`, which owns mode/input command routing that had remained in `MainWindow`:
+
+- Owns key press and key release routing to `ModeManager`.
+- Owns `ModeManager::navigationToggleRequested` routing to `NavigationPaneCoordinator`.
+- `MainWindow` key event overrides now only delegate to the mode command boundary before falling back to `QMainWindow`.
+
+This builds on the recent `SemanticRuntimeCoordinator` block:
+
+- Owns `SymbolRelationshipEngine`, `SlangManager`, and `SmartRelationshipBuilder` lifetimes.
+- Attaches the relationship engine to `SemanticIndex`.
+- Injects Slang and relationship runtime dependencies into `CompletionManager`.
+- Creates the relationship builder through `SemanticIndex`.
+- Clears relationships during runtime teardown.
+- `MainWindow` now passes runtime engine/builder pointers to `AnalysisCoordinator` without owning setup details.
+- GUI/perf test drain helpers now cancel relationship work through the runtime coordinator.
+
+This builds on the recent `NavigationCommandCoordinator` block:
+
+- Connects `NavigationManager::navigationRequested` and `symbolNavigationRequested`.
+- Owns file/line/column navigation, including opening missing files, activating already-open tabs, cursor placement, centering, focus, and mouse-to-cursor behavior.
+- Provides a common navigation callback target for Problems, References, Relationships, and editor definition jumps.
+- `TabManager::activateOpenFile()` provides the narrow tab activation API needed by navigation without exposing `QTabWidget`.
+- `MainWindow` no longer directly handles navigation signals or cursor movement.
+
+This builds on the previous `FileCommandCoordinator` block, which owns file/edit/workspace commands that had remained in `MainWindow`:
+
+- File actions: new, open, save, and save-as.
+- Edit actions: copy, paste, cut, undo, and redo on the active editor.
+- Workspace command: open directory as workspace.
+- Close-event unsaved-change confirmation.
+- `EditorCoordinator` command callbacks now call the file command boundary instead of bouncing through `MainWindow` slots.
+- `MainWindow` keeps the Qt auto-connected menu slots, but they are thin delegators.
+
+It also builds on the recent `AnalysisCoordinator` block, which owns analysis event routing that had remained in `MainWindow`:
+
+- Configures `AnalysisScheduler` with `DocumentModel`, `ProjectModel`, `SymbolAnalyzer`, open-file content, workspace-open state, cancellation, relationship engine, and relationship builder dependencies.
+- Routes scheduler relationship invalidation/refresh signals to `CompletionManager` and `NavigationManager`.
+- Routes scheduler diagnostics refresh requests to the Problems panel callback.
+- Routes scheduler and symbol-analysis document refresh signals to the active editor scope/current-line refresh workflow.
+- Bridges workspace file-change notifications into scheduler debounced external-file handling.
+- Bridges `AnalysisProgressCoordinator` status/error signals to injected status-message callbacks.
+- Keeps single-file smart relationship completion/error status text out of `MainWindow`.
+
+This builds on the previous architecture block that thinned `MainWindow` by extracting focused UI/editor coordination boundaries:
 
 - `ProblemsPanelCoordinator` owns Problems dock/filter/tree setup, `DiagnosticQuery` construction, report rendering, expansion preservation, and double-click navigation callbacks.
 - `ReferencesPanelCoordinator` owns References dock/filter/tree setup, `ReferenceQuery` construction, report rendering, expansion preservation, status messages, and navigation callbacks.
@@ -48,7 +91,7 @@ The latest architecture block thinned `MainWindow` by extracting focused coordin
 - `NavigationPaneCoordinator` owns Navigation dock/widget creation, sizing, dock features, `NavigationManager` widget attachment, and visibility toggling.
 - `EditorCoordinator` owns editor callback/signal setup, editor-originated command routing, active-tab refresh coordination, and alternate-mode propagation across open editors.
 - `TabManager::editorCount()` provides narrow read-only open-editor enumeration for coordinator-owned mode propagation.
-- `MainWindow` now injects file, navigation, analysis, and panel callbacks instead of directly owning these workflows.
+- `MainWindow` now injects mode command, semantic runtime, file command, navigation command, analysis, and panel callbacks instead of directly owning these workflows.
 - `gui_smoke_test` was adapted to exercise the new coordinator boundaries through visible workflows.
 
 This builds on earlier work where `MyCodeEditor` was decoupled from `MainWindow`/manager classes, include fallback moved to `WorkspaceManager::resolveIncludePath`, document-close semantic cleanup moved into `AnalysisScheduler`, open-document analysis was decoupled from `TabManager`, and CompletionManager reads were routed through query services.
@@ -57,7 +100,7 @@ This builds on earlier work where `MyCodeEditor` was decoupled from `MainWindow`
 
 Validation passed after the latest code/doc update:
 
-- `cmake --build ... --target gui_smoke_test`
+- `E:\QT6\Tools\CMake_64\bin\cmake.exe --build ... --target gui_smoke_test`
 - `ctest -R "gui_smoke_test" --output-on-failure`
 - full default target rebuild
 - full `ctest --output-on-failure`: 6/6 passed
@@ -67,6 +110,7 @@ Validation passed after the latest code/doc update:
 - forbidden-file guard: `FORBIDDEN_GUARD_OK`
 
 Full default target rebuild may exceed 300 seconds while linking; rerunning the same build command has completed the remaining target.
+In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` before CMake/CTest so MinGW child tools such as `cc1plus.exe` can find their runtime DLLs. For GUI tests, also prepend `E:\QT6\6.10.2\mingw_64\bin`.
 
 ## Current Architecture Summary
 
@@ -74,10 +118,15 @@ Full default target rebuild may exceed 300 seconds while linking; rerunning the 
 - `DocumentModel` tracks open document state.
 - `AnalysisScheduler` owns analysis trigger timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and relationship data refresh requests.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
+- `AnalysisCoordinator` owns scheduler/progress/workspace/symbol analysis signal routing and active-editor refresh policy.
+- `FileCommandCoordinator` owns file/edit/workspace commands and close-event unsaved-change confirmation.
+- `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
+- `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
+- `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into SemanticIndex/CompletionManager.
 - `SemanticIndex` is the semantic facade and still wraps live `sym_list` in some transitional paths.
 - `SemanticIndexSnapshot` stores read-only symbols, relationships, diagnostics, cached file content, and minimal scope names.
 - Query services exist for definition, completion, relationship, hierarchy, reference, diagnostics, and search.
-- Problems, References, Relationships, Navigation pane, and editor/tab/mode workflows are now split out of `MainWindow` into focused coordinators.
+- Problems, References, Relationships, Navigation pane, navigation commands, mode command routing, editor/tab/mode workflows, analysis event routing, file/edit/workspace commands, and semantic runtime setup are now split out of `MainWindow` into focused coordinators.
 - `MainWindow` should keep shrinking toward UI composition and high-level callback wiring.
 
 ## Next Best Steps
@@ -85,7 +134,7 @@ Full default target rebuild may exceed 300 seconds while linking; rerunning the 
 Pick one medium-sized, coherent, verifiable architecture block:
 
 - Move a related set of UI/editor/completion semantic reads or analysis policy checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`.
-- Extract another complete `MainWindow` refresh/progress/coordination boundary into a focused coordinator or existing scheduler/model boundary.
+- Extract another complete `MainWindow` coordination boundary into a focused coordinator or existing scheduler/model boundary.
 - Thin one editor/completion workflow end-to-end without changing visible behavior.
 
 Prioritize production-code architecture progress. Add tests only as focused regression protection directly tied to a production code change.
