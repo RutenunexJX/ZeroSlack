@@ -2,6 +2,7 @@
 // public query methods and asserts the results. No GUI window is shown.
 #include "slangmanager.h"
 #include "completionmanager.h"
+#include "completionmodel.h"
 #include "completionservice.h"
 #include "semanticindexsnapshot.h"
 #include "syminfo.h"
@@ -160,6 +161,32 @@ int main(int argc, char** argv) {
                cm->getAbbreviationMatches({"always_ff", "logic"},
                                           QStringLiteral("af")),
                {"always_ff"});
+    QList<sym_list::SymbolInfo> modelScoringSymbols;
+    modelScoringSymbols.append(makeSymbol(QStringLiteral("logic"),
+                                          sym_list::sym_logic,
+                                          QStringLiteral("top"),
+                                          QString(),
+                                          9001));
+    modelScoringSymbols.append(makeSymbol(QStringLiteral("always_ff"),
+                                          sym_list::sym_logic,
+                                          QStringLiteral("top"),
+                                          QString(),
+                                          9002));
+    CompletionModel modelScoring;
+    modelScoring.updateSymbolCompletions(modelScoringSymbols,
+                                         QStringLiteral("af"),
+                                         sym_list::sym_logic);
+    ++g_checks;
+    const QString firstScoredModelSymbol =
+        modelScoring.getItem(modelScoring.index(2, 0)).text;
+    const bool modelScoringOk =
+        firstScoredModelSymbol == QStringLiteral("always_ff");
+    if (!modelScoringOk)
+        ++g_fails;
+    printf("[%s] %-34s got=\"%s\"\n",
+           modelScoringOk ? "PASS" : "FAIL",
+           "CompletionModel service scoring",
+           firstScoredModelSymbol.toLocal8Bit().constData());
 
     // --- struct member completion (typedef'd) ---
     expectEq("getStructTypeForVariable(pixel)", cm->getStructTypeForVariable("pixel", "top"), "pixel_t");

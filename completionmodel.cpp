@@ -1,5 +1,5 @@
 #include "completionmodel.h"
-#include "completionmanager.h"
+#include "completionservice.h"
 #include <QFont>
 #include <QColor>
 #include <algorithm>
@@ -388,30 +388,8 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     defaultItem.score = 999;  // High score but less than header
     completions.append(defaultItem);
 
-    CompletionManager* manager = CompletionManager::getInstance();
-/*
-    QVector<QPair<sym_list::SymbolInfo, int>> scoredMatches = manager->getScoredSymbolMatches(symbolType, prefix);
-
-    int matchCount = 0;
-    for (const auto& match : std::as_const(scoredMatches)) {
-        if (match.first.symbolName == defaultValue) {
-            continue;
-        }
-
-        CompletionItem item;
-        item.text = match.first.symbolName;
-        item.type = SymbolCompletion;
-        item.symbolType = symbolType;
-        item.description = typeDescription.split(' ')[0]; // "reg", "wire", etc.
-        item.defaultValue = match.first.symbolName;
-        item.score = match.second;
-
-        completions.append(item);
-        matchCount++;
-    }
-*/
     QSet<QString> addedItems;
-    
+
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (symbol.symbolName == defaultValue) {
             continue;
@@ -421,8 +399,8 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         item.type = SymbolCompletion;
         item.symbolType = symbolType;
         item.description = typeDescription.split(' ')[0];
-        
-        if (symbolType == sym_list::sym_packed_struct_var || 
+
+        if (symbolType == sym_list::sym_packed_struct_var ||
             symbolType == sym_list::sym_unpacked_struct_var) {
             QString structTypeName = symbol.moduleScope;
             if (!structTypeName.isEmpty()) {
@@ -431,13 +409,13 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
                 item.text = symbol.symbolName;
             }
             item.defaultValue = symbol.symbolName;
-            
+
             QString uniqueKey = QString("%1:%2").arg(symbol.symbolName).arg(structTypeName);
             if (addedItems.contains(uniqueKey)) {
                 continue;
             }
             addedItems.insert(uniqueKey);
-        } else if (symbolType == sym_list::sym_packed_struct || 
+        } else if (symbolType == sym_list::sym_packed_struct ||
                    symbolType == sym_list::sym_unpacked_struct) {
             item.text = symbol.symbolName;
             item.defaultValue = symbol.symbolName;
@@ -463,10 +441,11 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
             }
             addedItems.insert(symbol.symbolName);
         }
-        
+
         item.score = prefix.isEmpty()
             ? 100
-            : manager->calculateMatchScore(symbol.symbolName, prefix);
+            : CompletionService::getInstance()->calculateCompletionMatchScore(
+                symbol.symbolName, prefix);
 
         completions.append(item);
     }

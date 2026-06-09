@@ -52,11 +52,11 @@ These docs are living handoff material, not a changelog.
 
 ## Latest Verified Block
 
-The latest block moved relationship-completion availability behind `CompletionService`.
+The latest block moved UI completion scoring off `CompletionManager`.
 
-- `CompletionService` now determines relationship-aware completion availability from its `SemanticIndex` snapshot or live relationship engine.
-- `CompletionManager` no longer stores relationship-engine state or receives semantic runtime injection; smart/context completion APIs delegate to service availability.
-- Completion tests cover snapshot relationship availability alongside smart/context manager delegation.
+- `CompletionModel` now uses `CompletionService` directly for command-mode symbol match scoring.
+- Stale `CompletionManager` production includes and dead manager-era scoring code were removed from `CompletionModel` / `MainWindow`.
+- Completion tests cover `CompletionModel` service-backed scoring, and production C++ no longer directly references `CompletionManager` outside the compatibility implementation itself.
 
 ## Latest Validation
 
@@ -88,6 +88,7 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command completions, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
+- `CompletionModel` renders editor completion items and uses `CompletionService` for scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are split out of `MainWindow`.
 

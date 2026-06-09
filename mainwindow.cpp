@@ -1,6 +1,5 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
-#include "completionmanager.h"
 
 #include "mycodeeditor.h"
 #include "tabmanager.h"

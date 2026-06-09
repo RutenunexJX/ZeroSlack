@@ -41,11 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved relationship-completion availability behind `CompletionService`.
+The latest block moved UI completion scoring off `CompletionManager`.
 
-- `CompletionService` now determines relationship-aware completion availability from its `SemanticIndex` snapshot or live relationship engine.
-- `CompletionManager` no longer stores relationship-engine state or receives semantic runtime injection.
-- `completion_test` covers snapshot relationship availability alongside smart/context manager delegation.
+- `CompletionModel` now uses `CompletionService` directly for command-mode symbol match scoring.
+- Stale `CompletionManager` production includes and dead manager-era scoring code were removed from `CompletionModel` / `MainWindow`.
+- `completion_test` covers `CompletionModel` service-backed scoring.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 
