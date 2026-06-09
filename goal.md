@@ -6,11 +6,11 @@ ZeroSlack is a reliable SystemVerilog workspace browser and lightweight editor. 
 
 ZeroSlack should:
 
-- open real SV workspaces reliably,
-- understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, and relationships,
-- provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, and relationship browsing,
-- remain responsive on large files and multi-file workspaces,
-- keep semantic behavior testable through real fixtures.
+- open real SV workspaces reliably
+- understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, and relationships
+- provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, and relationship browsing
+- remain responsive on large files and multi-file workspaces
+- keep semantic behavior testable through real fixtures
 
 Product priority:
 
@@ -31,17 +31,14 @@ DocumentModel
 AnalysisScheduler
   Owns analysis timing: Slang runs, relationship runs, cancellation, debounce, refresh requests, lifecycle.
 
-AnalysisProgressCoordinator
-  Owns workspace analysis progress dialog state, progress text, errors, and cancel state.
-
-AnalysisCoordinator
-  Owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
-
 SemanticIndex
   Owns semantic facts: symbols, definitions, relationships, references, diagnostics, cached content.
 
 Query Services
   Own feature-specific reads: definition, completion, relationship, hierarchy, reference, diagnostics, search.
+
+Coordinators
+  Own UI/editor command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and other workflow glue.
 
 UI Layer
   Renders service/model output. It should not scan files directly or trigger Slang directly.
@@ -64,33 +61,17 @@ Tree-sitter and Slang split:
 
 ## Completed Foundation
 
-Already present:
+Already present at a high level:
 
 - ProjectModel and DocumentModel minimal boundaries
-- AnalysisScheduler, AnalysisProgressCoordinator, AnalysisCoordinator, FileCommandCoordinator, NavigationCommandCoordinator, ModeCommandCoordinator, and SemanticRuntimeCoordinator
+- AnalysisScheduler and analysis/progress/command coordinators
+- File, navigation, mode, semantic runtime, semantic panel, and editor coordinators
 - SemanticIndex facade and SemanticIndexSnapshot helpers
-- DefinitionService, CompletionService, RelationshipService, HierarchyService, ReferenceService, DiagnosticService, and SearchService
-- Problems, References, and Relationships panels backed by service reports and owned by focused coordinators
-- Shared semantic panel display helpers for relationship labels, count labels, and tree expansion state
-- Navigation pane UI ownership split into a focused coordinator
-- Navigation command routing, tab activation/opening, and editor cursor placement split into a focused coordinator
-- Editor setup, editor-originated commands, active-tab refresh coordination, and alternate-mode propagation split into a focused coordinator
-- Scheduler/progress/workspace/symbol analysis event routing split into a focused coordinator
-- Editor-originated analysis commands and relationship-work cancellation split into a focused coordinator
-- File/edit/workspace commands and close-event unsaved-change confirmation split into a focused coordinator
-- Mode key event routing and navigation-pane toggle routing split into a focused coordinator
-- Semantic runtime lifetimes and SemanticIndex/CompletionManager dependency injection split into a focused coordinator
-- Semantic panel provider/navigation/status wiring, refresh commands, and active-editor Problems refresh policy split into a focused coordinator
-- CompletionManager reads routed through DefinitionService, RelationshipService, and SearchService for key semantic paths
+- Definition, completion, relationship, hierarchy, reference, diagnostics, and search services
+- Problems, References, Relationships, and Navigation UI backed by coordinators/services
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 
-Recent coverage is strongest around:
-
-- real multi-file relationship fixtures for instantiation, calls, reads, writes, clocks/resets, diagnostics, references, hierarchy traversal, and workspace/current-file filtering,
-- snapshot-backed DefinitionService, CompletionService, SearchService, DiagnosticService, RelationshipService, ReferenceService, and HierarchyService behavior,
-- scheduler-owned lifecycle behavior including relationship refresh, project-close cleanup, diagnostics refresh, document-close cleanup, and remaining open-document reanalysis,
-- editor/MainWindow decoupling through signals, callbacks, include resolution, file opening, navigation command routing, active-tab refresh, mode propagation, mode command routing, analysis event routing, file command routing, and semantic runtime setup,
-- GUI smoke coverage for include resolution, panel behavior, navigation, and workspace close/reopen paths.
+Keep detailed completion history in Git and `readme.md` handoff snapshots, not here.
 
 ## Remaining Gaps
 
@@ -100,17 +81,26 @@ Recent coverage is strongest around:
 - Continue moving editor/completion semantic decisions behind services and facades.
 - Continue tightening real fixture coverage when production changes need it.
 
+## Documentation Quality Goal
+
+The handoff docs should stay useful under repeated automatic updates.
+
+- `goal.md` should not become a changelog.
+- Completed-work detail belongs in commits and current handoff snapshots.
+- Replace stale specifics with current architecture summaries.
+- Delete low-reference notes when they no longer guide product or architecture decisions.
+
 ## Definition Of Done
 
 The foundation is healthy when:
 
-- new feature reads mainly use ProjectModel, DocumentModel, AnalysisScheduler, SemanticIndex, and Query Services,
-- MainWindow is mostly UI composition and high-level callback wiring,
-- MyCodeEditor is mostly editor UI plus Tree-sitter live syntax,
-- UI/services can read stable snapshot-backed semantic data,
-- all CTest targets pass,
-- real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing,
-- handoff docs are short enough for a new session to read without wasting context.
+- new feature reads mainly use ProjectModel, DocumentModel, AnalysisScheduler, SemanticIndex, and Query Services
+- MainWindow is mostly UI composition and high-level callback wiring
+- MyCodeEditor is mostly editor UI plus Tree-sitter live syntax
+- UI/services can read stable snapshot-backed semantic data
+- all CTest targets pass
+- real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
+- handoff docs are short enough for a new session to read without wasting context
 
 ## Current Goal Step
 
