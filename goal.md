@@ -82,6 +82,9 @@ Already present:
 - Problems panel backed by DiagnosticService reports
 - References panel backed by ReferenceService reports
 - Relationships Direct and Tree views backed by RelationshipService / HierarchyService reports
+- CompletionService reads normal module/global completions, command-mode
+  module/global completions, and struct-member completions through its
+  configured SemanticIndex, and owns struct-member context parsing directly.
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 - DefinitionService resolves struct-member definition context from editor line-prefix context through its injected SemanticIndex
 
@@ -110,9 +113,16 @@ Recent test coverage includes real fixture assertions for:
 - Scheduler-owned relationship data refresh requests after relationship result
   application, with MainWindow consuming the refresh request for completion and
   navigation updates.
+- Scheduler-owned project-close semantic cleanup, including snapshot clear,
+  relationship-engine clear, relationship refresh, and diagnostics refresh.
 - DefinitionService same-name struct member selection from `var.member` context.
 - Snapshot-backed struct-variable type lookup, struct-member completion,
   command-mode struct symbols, and same-name struct-member selection.
+- Snapshot-backed CompletionService normal and command-mode module/global
+  completion names and returned symbol identity.
+- CompletionService struct-member context parse and reject behavior.
+- CompletionService command-mode enum typedef completion through snapshot-backed
+  global and module-local reads.
 
 ## Remaining Gaps
 

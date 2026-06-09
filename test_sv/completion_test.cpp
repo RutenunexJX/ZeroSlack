@@ -141,6 +141,35 @@ int main(int argc, char** argv) {
            serviceSymbolOk ? "PASS" : "FAIL",
            "CompletionService struct symbols",
            memberSymbols.size());
+    QString parsedVariableName;
+    QString parsedMemberPrefix;
+    ++g_checks;
+    const bool parsedMemberContext =
+        CompletionService::getInstance()->tryParseStructMemberContext(
+            QStringLiteral("assign result = pixel.bl"),
+            parsedVariableName,
+            parsedMemberPrefix);
+    const bool parseOk = parsedMemberContext
+        && parsedVariableName == QStringLiteral("pixel")
+        && parsedMemberPrefix == QStringLiteral("bl");
+    if (!parseOk)
+        ++g_fails;
+    printf("[%s] %-34s var=\"%s\" prefix=\"%s\"\n",
+           parseOk ? "PASS" : "FAIL",
+           "CompletionService member parse",
+           parsedVariableName.toLocal8Bit().constData(),
+           parsedMemberPrefix.toLocal8Bit().constData());
+    ++g_checks;
+    const bool rejectsNonMemberContext =
+        !CompletionService::getInstance()->tryParseStructMemberContext(
+            QStringLiteral("assign result = pixel"),
+            parsedVariableName,
+            parsedMemberPrefix);
+    if (!rejectsNonMemberContext)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           rejectsNonMemberContext ? "PASS" : "FAIL",
+           "CompletionService member parse reject");
 
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
@@ -214,6 +243,31 @@ int main(int argc, char** argv) {
                                       QStringLiteral("snap_top"),
                                       QStringLiteral("snap_pair_t"),
                                       5003));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_enable"),
+                                      sym_list::sym_logic,
+                                      QStringLiteral("snap_top"),
+                                      QString(),
+                                      5008));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_other_enable"),
+                                      sym_list::sym_logic,
+                                      QStringLiteral("other_top"),
+                                      QString(),
+                                      5009));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_task"),
+                                      sym_list::sym_task,
+                                      QString(),
+                                      QString(),
+                                      5010));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_state_t"),
+                                      sym_list::sym_typedef,
+                                      QString(),
+                                      QStringLiteral("enum"),
+                                      5011));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_local_state_t"),
+                                      sym_list::sym_typedef,
+                                      QStringLiteral("snap_top"),
+                                      QStringLiteral("enum"),
+                                      5012));
     snapshotSymbols.append(makeSymbol(QStringLiteral("red"),
                                       sym_list::sym_struct_member,
                                       QStringLiteral("other_t"),
@@ -246,6 +300,80 @@ int main(int argc, char** argv) {
     expectEq("snapshot unpacked struct var",
              snapshotCompletionService.getStructTypeForVariable("snap_pair", "snap_top"),
              "snap_pair_t");
+    CompletionQuery snapshotModuleQuery;
+    snapshotModuleQuery.prefix = QStringLiteral("snap");
+    snapshotModuleQuery.moduleName = QStringLiteral("snap_top");
+    expectList("snapshot module completions",
+               snapshotCompletionService.findCompletions(snapshotModuleQuery),
+               {"snap_enable"});
+    const QList<sym_list::SymbolInfo> snapshotModuleSymbols =
+        snapshotCompletionService.findCompletionSymbols(snapshotModuleQuery);
+    ++g_checks;
+    const bool snapshotModuleSymbolOk = snapshotModuleSymbols.size() == 1
+        && snapshotModuleSymbols.first().symbolName == QStringLiteral("snap_enable")
+        && snapshotModuleSymbols.first().symbolType == sym_list::sym_logic
+        && snapshotModuleSymbols.first().moduleScope == QStringLiteral("snap_top");
+    if (!snapshotModuleSymbolOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotModuleSymbolOk ? "PASS" : "FAIL",
+           "snapshot module symbols",
+           snapshotModuleSymbols.size());
+    CommandCompletionQuery snapshotLogicCommandQuery;
+    snapshotLogicCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotLogicCommandQuery.moduleName = QStringLiteral("snap_top");
+    snapshotLogicCommandQuery.symbolType = sym_list::sym_logic;
+    snapshotLogicCommandQuery.prefix = QStringLiteral("snap");
+    expectList("snapshot command logic names",
+               snapshotCompletionService.findCommandCompletions(snapshotLogicCommandQuery),
+               {"snap_enable"});
+    const QList<sym_list::SymbolInfo> snapshotLogicCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbols(snapshotLogicCommandQuery);
+    ++g_checks;
+    const bool snapshotLogicCommandOk = snapshotLogicCommandSymbols.size() == 1
+        && snapshotLogicCommandSymbols.first().symbolName == QStringLiteral("snap_enable")
+        && snapshotLogicCommandSymbols.first().symbolType == sym_list::sym_logic
+        && snapshotLogicCommandSymbols.first().moduleScope == QStringLiteral("snap_top");
+    if (!snapshotLogicCommandOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotLogicCommandOk ? "PASS" : "FAIL",
+           "snapshot command logic symbols",
+           snapshotLogicCommandSymbols.size());
+    CompletionQuery snapshotGlobalQuery;
+    snapshotGlobalQuery.prefix = QStringLiteral("snap");
+    expectList("snapshot global completions",
+               snapshotCompletionService.findCompletions(snapshotGlobalQuery),
+               {"snap_task", "snap_top"});
+    CommandCompletionQuery snapshotTaskCommandQuery;
+    snapshotTaskCommandQuery.symbolType = sym_list::sym_task;
+    snapshotTaskCommandQuery.prefix = QStringLiteral("snap");
+    expectList("snapshot command task names",
+               snapshotCompletionService.findCommandCompletions(snapshotTaskCommandQuery),
+               {"snap_task"});
+    const QList<sym_list::SymbolInfo> snapshotTaskCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbols(snapshotTaskCommandQuery);
+    ++g_checks;
+    const bool snapshotTaskCommandOk = snapshotTaskCommandSymbols.size() == 1
+        && snapshotTaskCommandSymbols.first().symbolName == QStringLiteral("snap_task")
+        && snapshotTaskCommandSymbols.first().symbolType == sym_list::sym_task
+        && snapshotTaskCommandSymbols.first().moduleScope.isEmpty();
+    if (!snapshotTaskCommandOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotTaskCommandOk ? "PASS" : "FAIL",
+           "snapshot command task symbols",
+           snapshotTaskCommandSymbols.size());
+    CommandCompletionQuery snapshotEnumCommandQuery;
+    snapshotEnumCommandQuery.symbolType = sym_list::sym_enum;
+    snapshotEnumCommandQuery.prefix = QStringLiteral("snap");
+    expectList("snapshot command enum typedef",
+               snapshotCompletionService.findCommandCompletions(snapshotEnumCommandQuery),
+               {"snap_state_t"});
+    snapshotEnumCommandQuery.moduleName = QStringLiteral("snap_top");
+    expectList("snapshot command local enum typedef",
+               snapshotCompletionService.findCommandCompletions(snapshotEnumCommandQuery),
+               {"snap_local_state_t"});
     CompletionQuery snapshotMemberQuery;
     snapshotMemberQuery.structTypeNameForMember = QStringLiteral("snap_pixel_t");
     expectList("snapshot struct members",

@@ -50,7 +50,21 @@ private:
     SemanticIndex* semanticIndex() const;
     QList<sym_list::SymbolInfo> findStructMemberSymbols(
         const CompletionQuery& query) const;
+    QList<sym_list::SymbolInfo> findModuleCompletionSymbols(
+        const CompletionQuery& query) const;
+    QList<sym_list::SymbolInfo> findGlobalCompletionSymbols(
+        const CompletionQuery& query) const;
+    QList<sym_list::SymbolInfo> findCommandSymbolsFromIndex(
+        const CommandCompletionQuery& query) const;
+    QStringList completionNamesFromSymbols(
+        const QList<sym_list::SymbolInfo>& symbols) const;
     bool completionNameMatches(const QString& name, const QString& prefix) const;
+    bool isInternalCompletionType(sym_list::sym_type_e type) const;
+    bool isGlobalCompletionType(sym_list::sym_type_e type) const;
+    bool isCommandGlobalCompletionType(sym_list::sym_type_e type) const;
+    bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
+                                  const QString& dataType,
+                                  sym_list::sym_type_e requestedType) const;
 };
 
 #endif // COMPLETIONSERVICE_H

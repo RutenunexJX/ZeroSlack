@@ -796,6 +796,54 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("scheduler requests diagnostics refresh on project close",
                diagnosticsRefreshRequests > 0, true);
 
+    AnalysisScheduler projectCloseScheduler;
+    ProjectModel projectCloseModel;
+    SymbolRelationshipEngine projectCloseEngine;
+    projectCloseEngine.addRelationship(2001,
+                                       2002,
+                                       SymbolRelationshipEngine::INSTANTIATES,
+                                       QStringLiteral("close fixture"),
+                                       100);
+    projectCloseScheduler.setRelationshipEngine(&projectCloseEngine);
+    projectCloseScheduler.setProjectModel(&projectCloseModel);
+    int projectCloseRelationshipInvalidations = 0;
+    int projectCloseRelationshipRefreshes = 0;
+    int projectCloseDiagnosticsRefreshes = 0;
+    QEventLoop projectCloseLoop;
+    QObject::connect(&projectCloseScheduler,
+                     &AnalysisScheduler::relationshipDataInvalidated,
+                     &projectCloseLoop,
+                     [&]() {
+                         ++projectCloseRelationshipInvalidations;
+                     });
+    QObject::connect(&projectCloseScheduler,
+                     &AnalysisScheduler::relationshipDataRefreshRequested,
+                     &projectCloseLoop,
+                     [&]() {
+                         ++projectCloseRelationshipRefreshes;
+                     });
+    QObject::connect(&projectCloseScheduler,
+                     &AnalysisScheduler::diagnosticsRefreshRequested,
+                     &projectCloseLoop,
+                     [&](const QString& fileName) {
+                         if (fileName.isEmpty()) {
+                             ++projectCloseDiagnosticsRefreshes;
+                             projectCloseLoop.quit();
+                         }
+                     });
+    projectCloseModel.setWorkspaceRoot(fixtureDir.absolutePath());
+    projectCloseModel.closeProject();
+    QTimer::singleShot(1000, &projectCloseLoop, &QEventLoop::quit);
+    projectCloseLoop.exec();
+    expectInt("scheduler clears relationships on project close",
+              projectCloseEngine.getRelationshipCount(), 0);
+    expectInt("scheduler invalidates relationship data on project close",
+              projectCloseRelationshipInvalidations, 1);
+    expectInt("scheduler refreshes relationship data on project close",
+              projectCloseRelationshipRefreshes, 1);
+    expectBool("scheduler refreshes diagnostics on project close",
+               projectCloseDiagnosticsRefreshes > 0, true);
+
     AnalysisScheduler refreshScheduler;
     SymbolRelationshipEngine refreshEngine;
     refreshScheduler.setRelationshipEngine(&refreshEngine);

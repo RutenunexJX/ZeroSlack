@@ -31,6 +31,9 @@ Implemented and in active use:
 - SemanticIndex owns struct-variable type lookup, struct-member symbol reads, and
   module-context command symbol reads
 - DefinitionService owns struct-member definition context resolution from editor line-prefix context and uses its injected SemanticIndex for the semantic lookup
+- CompletionService reads normal module/global completions, command-mode
+  module/global completions, and struct-member completions through its
+  configured SemanticIndex, and owns struct-member context parsing directly.
 - Problems / References / Relationships panels backed by service reports for sorting, grouping, filtering, and counts
 - Real multi-file relationship fixture coverage for instantiation, calls, reads, writes, diagnostics filtering, workspace/current-file filtering, and timing relationships
 
@@ -45,38 +48,38 @@ Still transitional:
 
 Latest handoff work:
 
+- `analysisscheduler.cpp`, `analysisscheduler.h`
+  - Adds a guarded project semantic-state clear path shared by `projectClosed`
+    and closed `projectChanged` notifications.
+  - Project close now cancels workspace relationship analysis, clears the
+    `SemanticIndex` snapshot, clears relationship-engine data, emits
+    relationship refresh signals once, and schedules diagnostics refresh.
 - `test_sv/relationship_test.cpp`
-  - Adds a real fixture assertion that the grouped `ReferenceReport` row for
-    the `rel_top` -> `rel_stage` instantiation carries the concrete referencing
-    and referenced symbols.
-  - Adds a real fixture assertion that the grouped incoming `RelationshipReport`
-    row for `rel_stage` carries the incoming direction and concrete `rel_top`
-    peer symbol.
-  - Adds a diagnostic report assertion that the current-file filtered group
-    carries only diagnostics from the requested file.
-  - Adds a hierarchy report assertion that the child node row keeps the
-    `rel_top` parent, `rel_stage` child, direction, and relationship type.
-  - Adds a snapshot-backed `SearchService` assertion for real module symbols
-    through `SemanticIndexSnapshot`.
-  - Adds a snapshot-backed `RelationshipService` assertion for real
-    instantiation relationships and enriched endpoint symbols.
-  - Adds a snapshot-backed `ReferenceService` assertion for real instantiation
-    references and converted referencing/referenced symbols.
-  - Adds a snapshot-backed `HierarchyService` assertion for real instantiation
-    hierarchy traversal.
-- `analysisscheduler.cpp`, `mainwindow.cpp`, `mainwindow.h`
-  - Moves post-apply relationship data refresh scheduling into
-    `AnalysisScheduler`.
-  - Routes completion relationship data refresh through the scheduler refresh
-    request path in `MainWindow`.
+  - Adds scheduler lifecycle coverage that project close clears stale
+    relationship data and emits relationship invalidation, relationship
+    refresh, and diagnostics refresh requests.
+- `completionservice.cpp`, `completionservice.h`
+  - Moves normal and command-mode module/global completion reads to the
+    service's configured `SemanticIndex` instead of the singleton
+    `CompletionManager`.
+  - Moves struct-member context parsing into `CompletionService` instead of
+    calling the singleton `CompletionManager` helper.
+  - Keeps the existing internal-variable and command/global symbol type
+    filters.
+- `test_sv/completion_test.cpp`
+  - Adds snapshot-backed normal and command-mode module/global completion
+    assertions for names and returned symbol identity.
+  - Adds `CompletionService` struct-member context parse/reject assertions.
+  - Adds command-mode enum typedef coverage for global and module-local
+    snapshot reads.
 - `readme.md`, `plan.md`, `goal.md`
   - Updated compact handoff state.
 
-Expected real diff before commit: focused `relationship_test` grouped report
-assertions for diagnostics, relationships, references, and hierarchy;
-snapshot-backed SearchService, RelationshipService, ReferenceService, and
-HierarchyService coverage; scheduler-owned relationship refresh requests;
-MainWindow duplicate completion refresh removal; and handoff docs.
+Expected real diff before commit: scheduler-owned project-close semantic
+cleanup, focused scheduler lifecycle coverage, CompletionService
+SemanticIndex-backed normal and command-mode module/global completions, focused
+completion coverage including struct-member context parsing and enum typedef
+command completions, and handoff docs.
 
 ## Next Small Increments
 

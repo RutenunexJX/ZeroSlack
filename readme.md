@@ -40,46 +40,38 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step tightened relationship refresh coordination and
-strengthened snapshot-backed service fixture coverage.
+The latest development step moved more completion reads behind the injected
+`SemanticIndex`.
 
-- `relationship_test` now verifies that the grouped reference row for the
-  `rel_top` -> `rel_stage` instantiation keeps the exact referencing and
-  referenced symbols, not just the aggregate counts.
-- `relationship_test` now also verifies that the grouped incoming
-  `RelationshipReport` row for `rel_stage` keeps the incoming direction and the
-  concrete `rel_top` peer symbol.
-- `relationship_test` now verifies that the current-file filtered
-  `DiagnosticReport` group keeps only the requested file's diagnostics.
-- `relationship_test` now verifies that `HierarchyReport` keeps the real
-  child row identity for the `rel_top` -> `rel_stage` instantiation.
-- `relationship_test` now verifies that `SearchService` can find real module
-  symbols through a snapshot-backed `SemanticIndex`.
-- `relationship_test` now verifies that `RelationshipService` can read and
-  enrich real instantiation relationships through a snapshot-backed
-  `SemanticIndex`.
-- `relationship_test` now verifies that `ReferenceService` can read real
-  instantiation references through a snapshot-backed `SemanticIndex`.
-- `relationship_test` now verifies that `HierarchyService` can traverse the
-  real `rel_top` -> `rel_stage` instantiation through a snapshot-backed
-  `SemanticIndex`.
-- `AnalysisScheduler` now schedules relationship data refresh after applying
-  single-file and workspace relationship results, including zero-result runs.
-- `MainWindow` now refreshes completion relationship data from the scheduler's
-  relationship data refresh request instead of duplicate completion refreshes
-  in relationship completion callbacks.
+- `CompletionService` now serves normal and command-mode module/global
+  completion symbols from its configured `SemanticIndex` instead of delegating
+  those paths back to the singleton `CompletionManager`.
+- Module completion keeps the existing internal-variable type filter and global
+  completion keeps the existing symbol-type filters.
+- `CompletionService` now owns struct-member context parsing directly instead
+  of calling the singleton `CompletionManager` helper.
+- `completion_test` now verifies snapshot-backed module/global completion and
+  command-mode module/global completion names, symbol identity, and
+  struct-member context parsing.
+- `completion_test` now also verifies that command-mode enum completion keeps
+  typedefs with `dataType == "enum"` for both global and module-local snapshot
+  reads.
+- The current uncommitted diff also includes the prior scheduler increment:
+  guarded project-close semantic cleanup in `AnalysisScheduler`, with
+  `relationship_test` coverage for stale relationship clearing and refresh
+  requests.
 
-This is a small refresh-coordination increment plus focused service coverage;
-there is no intended user-visible UI behavior change.
+This is a small completion service migration increment; there is no intended
+user-visible UI behavior change.
 
 ## Latest Validation
 
 Validation passed after the latest code/test step:
 
+- `cmake --build ... --target completion_test`
+- `ctest -R "completion_test" --output-on-failure`
 - `cmake --build ... --target relationship_test`
 - `ctest -R "relationship_test" --output-on-failure`
-- `cmake --build ... --target gui_smoke_test`
-- `ctest -R "gui_smoke_test" --output-on-failure`
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
 - changed/new source/test/UI/CMake/handoff non-ASCII scan: empty
@@ -104,10 +96,11 @@ Validation passed after the latest code/test step:
 
 Pick one small, verifiable increment:
 
-- Add another focused real Problems / References / Relationships fixture assertion.
 - Extract one remaining clean MainWindow progress or refresh policy boundary into AnalysisScheduler.
 - Move another UI/editor read path behind SemanticIndex or a Query Service.
 - Strengthen snapshot-backed service coverage without broad rewrites.
+- Add another focused real Problems / References / Relationships fixture assertion only when
+  it is the narrowest useful step.
 
 Avoid broad CompletionManager or MainWindow rewrites unless there is a narrow testable slice.
 
@@ -162,11 +155,11 @@ Rules:
 - Stop for handoff when context is getting large, after a coherent validated increment, or before the next step becomes broad/risky.
 
 Latest completed continuation:
-- AnalysisScheduler now owns the post-apply relationship data refresh request for single-file and workspace relationship results.
-- MainWindow now refreshes completion relationship data from the scheduler refresh request path instead of duplicate relationship completion callbacks.
-- relationship_test now checks snapshot-backed HierarchyService traversal for the real rel_top -> rel_stage fixture instantiation.
+- CompletionService now reads normal and command-mode module/global completions through its injected SemanticIndex and owns struct-member context parsing directly.
+- completion_test now checks snapshot-backed normal and command-mode module/global completion names, symbol identity, struct-member context parsing, and enum typedef command completions.
+- Current uncommitted diff also includes scheduler-owned guarded project-close semantic cleanup and relationship_test coverage.
 - Handoff docs were updated with the compact validated state.
-- Validation passed: relationship_test target build/focused CTest, gui_smoke_test target build/focused CTest, full CTest 6/6, git diff --check, non-ASCII scan, forbidden-file guard.
+- Validation passed: completion_test and relationship_test target builds/focused CTests, full CTest 6/6, git diff --check, non-ASCII scan, forbidden-file guard.
 
 Continue toward goal.md with one small, verifiable step.
 ```

@@ -143,13 +143,9 @@ void AnalysisScheduler::setProjectModel(ProjectModel* model)
 
     connect(projectModel, &ProjectModel::projectChanged,
             this, &AnalysisScheduler::onProjectChanged);
-    connect(projectModel, &ProjectModel::projectClosed, this, [this]() {
-        workspaceSymbolAnalysisActive = false;
-        activeWorkspaceProject = ProjectSnapshot();
-        cancelWorkspaceRelationshipAnalysis();
-        SemanticIndex::getInstance()->clearSnapshot();
-        scheduleDiagnosticsRefresh(QString());
-    });
+    connect(projectModel, &ProjectModel::projectClosed,
+            this, &AnalysisScheduler::clearProjectSemanticState);
+    projectSemanticStateCleared = !projectModel->isOpen();
 }
 
 void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
@@ -432,15 +428,35 @@ void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
 void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
 {
     if (!project.isOpen()) {
-        workspaceSymbolAnalysisActive = false;
-        activeWorkspaceProject = ProjectSnapshot();
-        cancelWorkspaceRelationshipAnalysis();
-        SemanticIndex::getInstance()->clearSnapshot();
-        scheduleDiagnosticsRefresh(QString());
+        clearProjectSemanticState();
         return;
     }
 
+    projectSemanticStateCleared = false;
     requestWorkspaceAnalysis(project);
+}
+
+void AnalysisScheduler::clearProjectSemanticState()
+{
+    if (projectSemanticStateCleared)
+        return;
+
+    projectSemanticStateCleared = true;
+    workspaceSymbolAnalysisActive = false;
+    activeWorkspaceProject = ProjectSnapshot();
+    cancelWorkspaceRelationshipAnalysis();
+    SemanticIndex::getInstance()->clearSnapshot();
+
+    if (relationshipEngine) {
+        relationshipEngine->clearAllRelationships();
+    } else {
+        if (relationshipRefreshTimer)
+            relationshipRefreshTimer->stop();
+        emit relationshipDataInvalidated();
+        emit relationshipDataRefreshRequested();
+    }
+
+    scheduleDiagnosticsRefresh(QString());
 }
 
 void AnalysisScheduler::onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols)

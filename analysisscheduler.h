@@ -99,11 +99,13 @@ private:
     QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceRelationshipWatcher = nullptr;
     ProjectSnapshot activeWorkspaceProject;
     bool workspaceSymbolAnalysisActive = false;
+    bool projectSemanticStateCleared = true;
 
     void onDocumentOpened(const DocumentSnapshot& snapshot);
     void onDocumentEdited(const DocumentSnapshot& snapshot);
     void onDocumentSaved(const DocumentSnapshot& snapshot);
     void onProjectChanged(const ProjectSnapshot& project);
+    void clearProjectSemanticState();
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged);
     void scheduleDiagnosticsRefresh(const QString& fileName);
