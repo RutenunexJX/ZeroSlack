@@ -17,7 +17,7 @@ Thin UI consumers
 - Branch: `tree_sitter_and_slang`
 - Version: `0.0.20/slang25` in `version.h`
 - Build path: Qt 6 + CMake + Ninja only
-- Latest local commit at this handoff: `cf8585a Extract MainWindow analysis coordinators`
+- Latest local commit is local-only; check `git log -1 --oneline` at session start.
 - Local branch is intentionally ahead of origin until the user explicitly asks to push.
 
 Expected local warning noise:
@@ -52,12 +52,11 @@ These docs are living handoff material, not a changelog.
 
 ## Latest Verified Block
 
-The latest block extracted `AnalysisCommandCoordinator` and `SemanticPanelRefreshCoordinator` from `MainWindow`.
+The latest block moved editor workflow routing behind `EditorCoordinator`.
 
-- `AnalysisCommandCoordinator` owns editor-originated relationship analysis commands, open-file analysis schedule/cancel commands, and relationship-work cancellation.
-- `SemanticPanelRefreshCoordinator` owns Problems/References/Relationships provider setup, navigation callbacks, status messages, refresh commands, and active-editor Problems refresh policy.
-- `MainWindow` now focuses more on UI composition and coordinator wiring.
-- GUI smoke and large-file perf drain helpers now exercise coordinator boundaries instead of calling scheduler/panel helpers directly.
+- `EditorCoordinator` now owns editor-originated include resolution, file opening, definition navigation, relationship analysis, save/open/new commands, reference lookup, relationship browsing, and active-editor semantic panel refresh routing.
+- `MainWindow` injects the editor workflow dependencies once and no longer wires individual editor signal callbacks.
+- Visible editor behavior is unchanged; the block narrows `MainWindow` to UI composition and dependency assembly.
 
 ## Latest Validation
 
@@ -82,6 +81,7 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
+- `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, relationship analysis requests, and semantic panel refresh requests.
 - `FileCommandCoordinator` owns file/edit/workspace commands and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.

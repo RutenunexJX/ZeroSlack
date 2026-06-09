@@ -1,10 +1,13 @@
 #include "editorcoordinator.h"
 
+#include "analysiscommandcoordinator.h"
+#include "filecommandcoordinator.h"
 #include "modemanager.h"
 #include "mycodeeditor.h"
+#include "navigationcommandcoordinator.h"
+#include "semanticpanelrefreshcoordinator.h"
 #include "tabmanager.h"
-
-#include <utility>
+#include "workspacemanager.h"
 
 EditorCoordinator::EditorCoordinator(TabManager* tabManager,
                                      ModeManager* modeManager,
@@ -15,65 +18,18 @@ EditorCoordinator::EditorCoordinator(TabManager* tabManager,
 {
 }
 
-void EditorCoordinator::setIncludePathResolver(
-    std::function<QString(const QString&, const QString&)> resolver)
+void EditorCoordinator::setWorkflowDependencies(
+    WorkspaceManager* newWorkspaceManager,
+    FileCommandCoordinator* newFileCommandCoordinator,
+    NavigationCommandCoordinator* newNavigationCommandCoordinator,
+    AnalysisCommandCoordinator* newAnalysisCommandCoordinator,
+    SemanticPanelRefreshCoordinator* newSemanticPanelRefresh)
 {
-    includePathResolver = std::move(resolver);
-}
-
-void EditorCoordinator::setFileOpenHandler(std::function<bool(const QString&)> handler)
-{
-    fileOpenHandler = std::move(handler);
-}
-
-void EditorCoordinator::setDefinitionNavigationHandler(
-    std::function<void(const QString&, int)> handler)
-{
-    definitionNavigationHandler = std::move(handler);
-}
-
-void EditorCoordinator::setRelationshipAnalysisHandler(
-    std::function<void(const QString&, const QString&)> handler)
-{
-    relationshipAnalysisHandler = std::move(handler);
-}
-
-void EditorCoordinator::setSaveFileHandler(std::function<void()> handler)
-{
-    saveFileHandler = std::move(handler);
-}
-
-void EditorCoordinator::setSaveFileAsHandler(std::function<void()> handler)
-{
-    saveFileAsHandler = std::move(handler);
-}
-
-void EditorCoordinator::setOpenFileHandler(std::function<void()> handler)
-{
-    openFileHandler = std::move(handler);
-}
-
-void EditorCoordinator::setNewFileHandler(std::function<void()> handler)
-{
-    newFileHandler = std::move(handler);
-}
-
-void EditorCoordinator::setReferenceSearchHandler(
-    std::function<void(const QString&, const QString&, const QString&)> handler)
-{
-    referenceSearchHandler = std::move(handler);
-}
-
-void EditorCoordinator::setRelationshipBrowseHandler(
-    std::function<void(const QString&, const QString&, const QString&)> handler)
-{
-    relationshipBrowseHandler = std::move(handler);
-}
-
-void EditorCoordinator::setActiveEditorChangedHandler(
-    std::function<void(MyCodeEditor*)> handler)
-{
-    activeEditorChangedHandler = std::move(handler);
+    workspaceManager = newWorkspaceManager;
+    fileCommandCoordinator = newFileCommandCoordinator;
+    navigationCommandCoordinator = newNavigationCommandCoordinator;
+    analysisCommandCoordinator = newAnalysisCommandCoordinator;
+    semanticPanelRefresh = newSemanticPanelRefresh;
 }
 
 void EditorCoordinator::connectSignals()
@@ -101,56 +57,62 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     applyAlternateMode(editor);
     editor->setIncludePathResolver(
         [this](const QString& includePath, const QString& currentFile) {
-            return includePathResolver
-                ? includePathResolver(includePath, currentFile)
+            return workspaceManager
+                ? workspaceManager->resolveIncludePath(includePath, currentFile)
                 : QString();
         });
     editor->setFileOpenHandler([this](const QString& filePath) {
-        return fileOpenHandler ? fileOpenHandler(filePath) : false;
+        return tabManager && tabManager->openFileInTab(filePath);
     });
     connect(editor, &MyCodeEditor::definitionJumpRequested,
             this, [this](const QString&, const QString& file, int line) {
-                if (definitionNavigationHandler)
-                    definitionNavigationHandler(file, line);
+                if (navigationCommandCoordinator)
+                    navigationCommandCoordinator->navigateToFileAndLine(file, line);
             });
     connect(editor, &MyCodeEditor::relationshipAnalysisRequested,
             this, [this](const QString& fileName, const QString& content) {
-                if (relationshipAnalysisHandler)
-                    relationshipAnalysisHandler(fileName, content);
+                if (analysisCommandCoordinator) {
+                    analysisCommandCoordinator->requestSingleFileRelationshipAnalysis(
+                        fileName, content);
+                }
             });
     connect(editor, &MyCodeEditor::saveFileRequested,
             this, [this]() {
-                if (saveFileHandler)
-                    saveFileHandler();
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->saveFile();
             });
     connect(editor, &MyCodeEditor::saveFileAsRequested,
             this, [this]() {
-                if (saveFileAsHandler)
-                    saveFileAsHandler();
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->saveFileAs();
             });
     connect(editor, &MyCodeEditor::openFileRequested,
             this, [this]() {
-                if (openFileHandler)
-                    openFileHandler();
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->openFile();
             });
     connect(editor, &MyCodeEditor::newFileRequested,
             this, [this]() {
-                if (newFileHandler)
-                    newFileHandler();
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->newFile();
             });
     connect(editor, &MyCodeEditor::referenceSearchRequested,
             this, [this](const QString& symbolName,
                          const QString& fileName,
                          const QString& moduleName) {
-                if (referenceSearchHandler)
-                    referenceSearchHandler(symbolName, fileName, moduleName);
+                if (semanticPanelRefresh) {
+                    semanticPanelRefresh->showReferencesForSymbol(
+                        symbolName, fileName, moduleName);
+                }
             });
     connect(editor, &MyCodeEditor::relationshipBrowseRequested,
             this, [this](const QString& symbolName,
                          const QString& fileName,
                          const QString& moduleName) {
-                if (relationshipBrowseHandler)
-                    relationshipBrowseHandler(symbolName, fileName, moduleName);
+                if (semanticPanelRefresh) {
+                    semanticPanelRefresh->showRelationshipsForSymbol(
+                        symbolName, fileName, moduleName);
+                }
             });
 }
 
@@ -173,6 +135,6 @@ void EditorCoordinator::applyAlternateModeToOpenEditors() const
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
     applyAlternateMode(editor);
-    if (activeEditorChangedHandler)
-        activeEditorChangedHandler(editor);
+    if (semanticPanelRefresh)
+        semanticPanelRefresh->handleActiveEditorChanged(editor);
 }

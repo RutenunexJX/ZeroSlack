@@ -41,12 +41,10 @@ Still transitional:
 
 ## Latest Completed Block
 
-Latest local commit: `cf8585a Extract MainWindow analysis coordinators`
+The latest block moved editor workflow routing behind `EditorCoordinator`.
 
-The latest block extracted:
-
-- `AnalysisCommandCoordinator`
-- `SemanticPanelRefreshCoordinator`
+- `EditorCoordinator` owns editor-originated include resolution, file opening, definition navigation, relationship analysis, save/open/new commands, reference lookup, relationship browsing, and active-editor semantic panel refresh routing.
+- `MainWindow` now injects editor workflow dependencies once instead of wiring each editor signal callback.
 
 It was validated with focused GUI/perf build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 

@@ -179,59 +179,12 @@ void MainWindow::setupEditorCoordinator()
 {
     editorCoordinator = std::make_unique<EditorCoordinator>(
         tabManager.get(), modeManager.get(), this);
-    editorCoordinator->setIncludePathResolver(
-        [this](const QString& includePath, const QString& currentFile) {
-            return workspaceManager
-                ? workspaceManager->resolveIncludePath(includePath, currentFile)
-                : QString();
-        });
-    editorCoordinator->setFileOpenHandler([this](const QString& filePath) {
-        return tabManager && tabManager->openFileInTab(filePath);
-    });
-    editorCoordinator->setDefinitionNavigationHandler(
-        [this](const QString& fileName, int line) {
-            if (navigationCommandCoordinator)
-                navigationCommandCoordinator->navigateToFileAndLine(fileName, line);
-        });
-    editorCoordinator->setRelationshipAnalysisHandler(
-        [this](const QString& fileName, const QString& content) {
-            if (analysisCommandCoordinator)
-                analysisCommandCoordinator->requestSingleFileRelationshipAnalysis(fileName, content);
-        });
-    editorCoordinator->setSaveFileHandler([this]() {
-        if (fileCommandCoordinator)
-            fileCommandCoordinator->saveFile();
-    });
-    editorCoordinator->setSaveFileAsHandler([this]() {
-        if (fileCommandCoordinator)
-            fileCommandCoordinator->saveFileAs();
-    });
-    editorCoordinator->setOpenFileHandler([this]() {
-        if (fileCommandCoordinator)
-            fileCommandCoordinator->openFile();
-    });
-    editorCoordinator->setNewFileHandler([this]() {
-        if (fileCommandCoordinator)
-            fileCommandCoordinator->newFile();
-    });
-    editorCoordinator->setReferenceSearchHandler(
-        [this](const QString& symbolName,
-               const QString& fileName,
-               const QString& moduleName) {
-            if (semanticPanelRefresh)
-                semanticPanelRefresh->showReferencesForSymbol(symbolName, fileName, moduleName);
-        });
-    editorCoordinator->setRelationshipBrowseHandler(
-        [this](const QString& symbolName,
-               const QString& fileName,
-               const QString& moduleName) {
-            if (semanticPanelRefresh)
-                semanticPanelRefresh->showRelationshipsForSymbol(symbolName, fileName, moduleName);
-        });
-    editorCoordinator->setActiveEditorChangedHandler([this](MyCodeEditor* editor) {
-        if (semanticPanelRefresh)
-            semanticPanelRefresh->handleActiveEditorChanged(editor);
-    });
+    editorCoordinator->setWorkflowDependencies(
+        workspaceManager.get(),
+        fileCommandCoordinator.get(),
+        navigationCommandCoordinator.get(),
+        analysisCommandCoordinator.get(),
+        semanticPanelRefresh.get());
     editorCoordinator->connectSignals();
 }
 
