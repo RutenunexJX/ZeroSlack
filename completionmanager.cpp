@@ -1,7 +1,5 @@
 #include "completionmanager.h"
 #include "completionservice.h"
-#include "definitionservice.h"
-#include "relationshipservice.h"
 #include "searchservice.h"
 #include "semanticindex.h"
 #include "symbolrelationshipengine.h"
@@ -9,7 +7,6 @@
 #include "smartrelationshipbuilder.h"
 
 #include <QDateTime>
-#include <QRegularExpression>
 #include <algorithm>
 #include <utility>
 
@@ -23,10 +20,7 @@ CompletionManager::CompletionManager()
     singleMatchCache.reserve(1000);
     singleScoreCache.reserve(1000);
     positionCache.reserve(500);
-    allSymbolScoreCache.reserve(150);
-    allSymbolMatchCache.reserve(150);
     precomputedCompletions.reserve(20);
-    precomputedPrefixMatches.reserve(300);
 }
 
 CompletionManager::~CompletionManager()
@@ -89,58 +83,9 @@ QList<sym_list::SymbolInfo> CompletionManager::getSemanticSymbolsForCommandType(
     return symbols;
 }
 
-QList<sym_list::SymbolInfo> CompletionManager::findSemanticDefinitions(
-    const QString& symbolName) const
-{
-    DefinitionQuery query;
-    query.symbolName = symbolName;
-    return DefinitionService::getInstance()->findDefinitions(query);
-}
-
-sym_list::SymbolInfo CompletionManager::getSemanticSymbolById(int symbolId) const
-{
-    return SemanticIndex::getInstance()->getSymbolById(symbolId);
-}
-
-int CompletionManager::findSemanticSymbolId(const QString& symbolName) const
-{
-    return SemanticIndex::getInstance()->findSymbolId(symbolName);
-}
-
 QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const QString& prefix)
 {
-    QString cacheKey = QString("all_symbols_%1").arg(prefix);
-
-    if (allSymbolScoreCache.contains(cacheKey) && allSymbolsCacheValid) {
-        return allSymbolScoreCache[cacheKey];
-    }
-
-    updateAllSymbolsCache();
-
-    QVector<QPair<QString, int>> scoredMatches;
-    scoredMatches.reserve(qMin(cachedAllSymbolNames.size(), 50));
-
-    for (const QString& symbolName : std::as_const(cachedAllSymbolNames)) {
-        int score = calculateMatchScore(symbolName, prefix);
-        if (score > 0) {
-            scoredMatches.append(qMakePair(symbolName, score));
-        }
-    }
-
-    std::sort(scoredMatches.begin(), scoredMatches.end(),
-              [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
-                  if (a.second != b.second) {
-                      return a.second > b.second;
-                  }
-                  return a.first < b.first;
-              });
-
-    if (scoredMatches.size() > 20) {
-        scoredMatches = scoredMatches.mid(0, 20);
-    }
-
-    allSymbolScoreCache[cacheKey] = scoredMatches;
-    return scoredMatches;
+    return CompletionService::getInstance()->findScoredAllSymbolCompletions(prefix);
 }
 
 QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatches(
@@ -209,31 +154,10 @@ void CompletionManager::forceRefreshSymbolCaches()
     lastSymbolDatabaseHash.clear();
     invalidateSymbolCaches();
     updateSymbolCaches();
-    updateAllSymbolsCache();
 
     if (smartCachingEnabled) {
         precomputeFrequentCompletions();
     }
-}
-
-void CompletionManager::updateAllSymbolsCache()
-{
-    if (allSymbolsCacheValid) return;
-
-    QSet<QString> uniqueNames;
-    const QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (!symbol.symbolName.isEmpty())
-            uniqueNames.insert(symbol.symbolName);
-    }
-
-    cachedAllSymbolNames = QStringList(uniqueNames.begin(), uniqueNames.end());
-    cachedAllSymbolNames.sort();
-
-    allSymbolScoreCache.clear();
-    allSymbolMatchCache.clear();
-
-    allSymbolsCacheValid = true;
 }
 
 void CompletionManager::precomputeFrequentCompletions()
@@ -251,22 +175,6 @@ void CompletionManager::precomputeFrequentCompletions()
                 names.append(symbol.symbolName);
         }
         precomputedCompletions[symbolType] = names;
-    }
-
-    QStringList commonPrefixes = {"c", "d", "e", "m", "r", "s", "t", "v", "w"};
-
-    for (const QString& prefix : commonPrefixes) {
-        QStringList matches;
-        for (const QString& name : std::as_const(cachedAllSymbolNames)) {
-            if (name.startsWith(prefix, Qt::CaseInsensitive)) {
-                matches.append(name);
-            }
-        }
-
-        if (!matches.isEmpty()) {
-            matches.sort();
-            precomputedPrefixMatches[prefix] = matches;
-        }
     }
 
     precomputedDataValid = true;
@@ -317,37 +225,7 @@ void CompletionManager::enableSmartCaching(bool enabled)
 
 QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
 {
-    QString cacheKey = QString("all_symbols_list_%1").arg(prefix);
-
-    if (allSymbolMatchCache.contains(cacheKey) && allSymbolsCacheValid) {
-        return allSymbolMatchCache[cacheKey];
-    }
-
-    if (precomputedDataValid && prefix.length() == 1 && precomputedPrefixMatches.contains(prefix)) {
-        QStringList result = precomputedPrefixMatches[prefix];
-        if (result.size() > 15) {
-            result = result.mid(0, 15);
-        }
-
-        allSymbolMatchCache[cacheKey] = result;
-        return result;
-    }
-
-    QVector<QPair<QString, int>> scoredMatches = getScoredAllSymbolMatches(prefix);
-
-    QStringList result;
-    result.reserve(scoredMatches.size());
-    for (const auto &match : std::as_const(scoredMatches)) {
-        result.append(match.first);
-    }
-
-    if (result.size() > 15) {
-        result = result.mid(0, 15);
-    }
-
-    allSymbolMatchCache[cacheKey] = result;
-
-    return result;
+    return CompletionService::getInstance()->findAllSymbolCompletions(prefix);
 }
 
 QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolType, const QString& prefix)
@@ -389,10 +267,7 @@ void CompletionManager::invalidateAllCaches()
     singleScoreCache.clear();
     positionCache.clear();
 
-    allSymbolScoreCache.clear();
-    allSymbolMatchCache.clear();
     precomputedCompletions.clear();
-    precomputedPrefixMatches.clear();
 
     moduleChildrenCache.clear();
     clockDomainCache.clear();
@@ -400,7 +275,6 @@ void CompletionManager::invalidateAllCaches()
 
     invalidateCommandModeCache();
 
-    allSymbolsCacheValid = false;
     precomputedDataValid = false;
 }
 
@@ -409,10 +283,6 @@ void CompletionManager::invalidateSymbolCaches()
     symbolTypeCache.clear();
     symbolScoreCache.clear();
 
-    allSymbolScoreCache.clear();
-    allSymbolMatchCache.clear();
-    allSymbolsCacheValid = false;
-
     invalidateCommandModeCache();
 
     if (smartCachingEnabled) {
@@ -420,12 +290,10 @@ void CompletionManager::invalidateSymbolCaches()
 
         if (abs(currentSize - lastSymbolDatabaseSize) > cacheInvalidationThreshold) {
             precomputedCompletions.clear();
-            precomputedPrefixMatches.clear();
             precomputedDataValid = false;
         }
     } else {
         precomputedCompletions.clear();
-        precomputedPrefixMatches.clear();
         precomputedDataValid = false;
     }
 }
@@ -447,7 +315,6 @@ void CompletionManager::updateSymbolCaches()
         symbolTypeCache[sym_list::sym_task] = getSemanticSymbolsByType(sym_list::sym_task);
         symbolTypeCache[sym_list::sym_function] = getSemanticSymbolsByType(sym_list::sym_function);
 
-        allSymbolsCacheValid = false;
     }
 }
 
@@ -796,44 +663,11 @@ QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QStrin
                                                                   const QString& fileName,
                                                                   int cursorPosition)
 {
-    QVector<QPair<QString, int>> results;
-
-    if (!relationshipEngine) {
-        return getScoredAllSymbolMatches(prefix);
-    }
-
-    QString currentModule = getCurrentModule(fileName, cursorPosition);
-    QString context = "general";
-
-    QStringList contextCompletions = getContextAwareCompletions(prefix, currentModule, context);
-
-    results.reserve(contextCompletions.size());
-
-    for (const QString& completion : std::as_const(contextCompletions)) {
-        int baseScore = calculateMatchScore(completion, prefix);
-        int contextScore = calculateContextScore(completion, context);
-        int relationshipScore = calculateRelationshipScore(completion, currentModule);
-        int scopeScore = calculateScopeScore(completion, currentModule);
-
-        int finalScore = baseScore * 0.4 + contextScore * 0.2 +
-                        relationshipScore * 0.3 + scopeScore * 0.1;
-
-        results.append(qMakePair(completion, finalScore));
-    }
-
-    std::sort(results.begin(), results.end(),
-              [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
-                  if (a.second != b.second) {
-                      return a.second > b.second;
-                  }
-                  return a.first < b.first;
-              });
-
-    if (results.size() > 20) {
-        results = results.mid(0, 20);
-    }
-
-    return results;
+    return CompletionService::getInstance()->findSmartCompletions(
+        prefix,
+        fileName,
+        cursorPosition,
+        relationshipEngine != nullptr);
 }
 
 QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
@@ -861,21 +695,6 @@ bool CompletionManager::tryParseStructMemberContext(const QString &line,
 {
     return CompletionService::getInstance()->tryParseStructMemberContext(
         line, outVarName, outMemberPrefix);
-}
-
-QStringList CompletionManager::getBasicSymbolCompletions(const QString& prefix)
-{
-    QVector<QPair<QString, int>> scoredMatches = getScoredAllSymbolMatches(prefix);
-
-    QStringList result;
-    result.reserve(10);
-
-    for (const auto &match : std::as_const(scoredMatches)) {
-        result.append(match.first);
-        if (result.size() >= 10) break;
-    }
-
-    return result;
 }
 
 QStringList CompletionManager::getModuleChildrenCompletions(const QString& moduleName, const QString& prefix)
@@ -965,7 +784,6 @@ void CompletionManager::invalidateRelationshipCaches()
     symbolRelationsCache.clear();
     clockDomainCache.clear();
     resetSignalCache.clear();
-    symbolToModuleCache.clear();
     relationshipCacheValid = false;
 }
 
@@ -973,7 +791,7 @@ void CompletionManager::refreshRelationshipData()
 {
     if (relationshipEngine) {
         invalidateRelationshipCaches();
-        updateRelationshipCaches();
+        relationshipCacheValid = true;
     }
 }
 
@@ -989,127 +807,6 @@ QStringList CompletionManager::getCompletions(const QString& prefix, const QStri
     query.fileName = cursorFile;
     query.cursorLine = cursorLine;
     return CompletionService::getInstance()->findScopeCompletions(query);
-}
-
-QStringList CompletionManager::getSymbolNamesFromIds(const QList<int>& symbolIds)
-{
-    QStringList names;
-    names.reserve(symbolIds.size());
-
-    for (int symbolId : symbolIds) {
-        sym_list::SymbolInfo symbol = getSemanticSymbolById(symbolId);
-        if (symbol.symbolId != -1) {
-            names.append(symbol.symbolName);
-        }
-    }
-
-    return names;
-}
-
-void CompletionManager::updateRelationshipCaches()
-{
-    if (relationshipCacheValid || !relationshipEngine)
-        return;
-
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
-
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (!symbol.moduleScope.isEmpty()) {
-            symbolToModuleCache[symbol.symbolName] = symbol.moduleScope;
-        }
-    }
-
-    relationshipCacheValid = true;
-}
-
-QStringList CompletionManager::filterCompletionsByContext(const QStringList& completions,
-                                                        const QString& context)
-{
-    if (context == "assignment") {
-        QStringList filtered;
-        for (const QString& completion : completions) {
-            QList<sym_list::SymbolInfo> symbols = findSemanticDefinitions(completion);
-            for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
-                if (symbol.symbolType == sym_list::sym_reg ||
-                    symbol.symbolType == sym_list::sym_wire ||
-                    symbol.symbolType == sym_list::sym_logic) {
-                    filtered.append(completion);
-                    break;
-                }
-            }
-        }
-
-        return filtered;
-    }
-
-    return completions;
-}
-
-int CompletionManager::calculateContextScore(const QString& symbol, const QString& context)
-{
-    if (context == "clock" && symbol.contains("clk", Qt::CaseInsensitive)) {
-        return 50;
-    }
-
-    if (context == "reset" && symbol.contains(QRegularExpression("rst|reset", QRegularExpression::CaseInsensitiveOption))) {
-        return 50;
-    }
-
-    return 0;
-}
-
-int CompletionManager::calculateRelationshipScore(const QString& symbol, const QString& currentContext)
-{
-    if (!relationshipEngine || currentContext.isEmpty()) {
-        return 0;
-    }
-
-    auto hasNamedRelationship = [this](const QString& fromName,
-                                       const QString& toName,
-                                       SymbolRelationshipEngine::RelationType type) {
-        RelationshipQuery query;
-        query.symbolName = fromName;
-        query.outgoing = true;
-        query.types = {type};
-        const QList<int> relatedIds =
-            RelationshipService::getInstance()->findRelatedSymbolIds(query);
-        return getSymbolNamesFromIds(relatedIds).contains(toName);
-    };
-
-    if (hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CONTAINS))
-        return 40;
-
-    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::REFERENCES) ||
-        hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::REFERENCES)) {
-        return 30;
-    }
-
-    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::CALLS) ||
-        hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CALLS)) {
-        return 25;
-    }
-
-    return 0;
-}
-
-int CompletionManager::calculateScopeScore(const QString& symbol, const QString& currentModule)
-{
-    if (currentModule.isEmpty()) {
-        return 0;
-    }
-
-    if (symbolToModuleCache.contains(symbol) &&
-        symbolToModuleCache[symbol] == currentModule) {
-        return 20;
-    }
-
-    return 0;
-}
-
-int CompletionManager::calculateUsageFrequencyScore(const QString& symbol)
-{
-    Q_UNUSED(symbol)
-    return 0;
 }
 
 QStringList CompletionManager::getModuleInternalVariables(const QString& moduleName, const QString& prefix)

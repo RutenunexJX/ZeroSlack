@@ -125,13 +125,7 @@ private:
     QString lastSymbolDatabaseHash;
 
     QHash<sym_list::sym_type_e, QStringList> precomputedCompletions;
-    QHash<QString, QStringList> precomputedPrefixMatches;
     bool precomputedDataValid = false;
-
-    QHash<QString, QVector<QPair<QString, int>>> allSymbolScoreCache;
-    QHash<QString, QStringList> allSymbolMatchCache;
-    QStringList cachedAllSymbolNames;
-    bool allSymbolsCacheValid = false;
 
     QHash<QString, bool> singleMatchCache;
     QHash<QString, int> singleScoreCache;
@@ -148,7 +142,6 @@ private:
     QHash<QString, QStringList> symbolRelationsCache;
     QHash<QString, QStringList> clockDomainCache;
     QHash<QString, QStringList> resetSignalCache;
-    QHash<QString, QString> symbolToModuleCache;
     bool relationshipCacheValid = false;
 
     void initializeKeywords();
@@ -165,28 +158,10 @@ private:
         const QList<sym_list::SymbolInfo> &symbols, const QString &abbreviation);
 
     void updatePrecomputedCompletions();
-    void updateAllSymbolsCache();
-    QStringList getAllSymbolNamesFromDatabase();
-
     QList<sym_list::SymbolInfo> getAllSemanticSymbols() const;
     QList<sym_list::SymbolInfo> getSemanticSymbolsByType(sym_list::sym_type_e symbolType) const;
     QList<sym_list::SymbolInfo> getSemanticSymbolsForCommandType(sym_list::sym_type_e symbolType) const;
-    QList<sym_list::SymbolInfo> findSemanticDefinitions(const QString& symbolName) const;
-    sym_list::SymbolInfo getSemanticSymbolById(int symbolId) const;
-    int findSemanticSymbolId(const QString& symbolName) const;
-
     bool shouldSkipCacheRefresh();
-
-    QStringList getSymbolNamesFromIds(const QList<int>& symbolIds);
-    void updateRelationshipCaches();
-    QStringList filterCompletionsByContext(const QStringList& completions,
-                                         const QString& context);
-    int calculateContextScore(const QString& symbol, const QString& context);
-
-    int calculateRelationshipScore(const QString& symbol, const QString& currentContext);
-    int calculateScopeScore(const QString& symbol, const QString& currentModule);
-    int calculateUsageFrequencyScore(const QString& symbol);
-    QStringList getBasicSymbolCompletions(const QString &prefix);
 
     QString getSymbolTypeString(sym_list::sym_type_e symbolType);
 

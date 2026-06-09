@@ -55,6 +55,13 @@ static QStringList symbolNames(const QList<sym_list::SymbolInfo>& symbols) {
     return names;
 }
 
+static QStringList scoredNames(const QVector<QPair<QString, int>>& scored) {
+    QStringList names;
+    for (const auto& item : scored)
+        names << item.first;
+    return names;
+}
+
 static sym_list::SymbolInfo makeSymbol(const QString& name,
                                        sym_list::sym_type_e type,
                                        const QString& moduleScope,
@@ -708,6 +715,27 @@ int main(int argc, char** argv) {
     expectList("snapshot context general",
                snapshotCompletionService.findContextAwareCompletions(snapshotGeneralContextQuery),
                {"snap_enable", "snap_scope", "snap_state_t"});
+    expectList("snapshot all-symbol completions",
+               snapshotCompletionService.findAllSymbolCompletions(QStringLiteral("snap_clk")),
+               {"snap_clk"});
+    expectList("snapshot scored all-symbol completions",
+               scoredNames(snapshotCompletionService.findScoredAllSymbolCompletions(
+                   QStringLiteral("snap_clk"))),
+               {"snap_clk"});
+    expectList("snapshot smart completions no relationships",
+               scoredNames(snapshotCompletionService.findSmartCompletions(
+                   QStringLiteral("snap_clk"),
+                   QString(),
+                   -1,
+                   false)),
+               {"snap_clk"});
+    expectList("snapshot smart completions in scope",
+               scoredNames(snapshotCompletionService.findSmartCompletions(
+                   QStringLiteral("snap_sig"),
+                   snapshotScopeFile,
+                   snapshotScopeCursor,
+                   true)),
+               {"snap_signal"});
     expectList("snapshot module info symbols by type",
                symbolNames(snapshotCompletionService.findModuleInternalSymbolInfosByType(
                    QStringLiteral("snap_top"),
@@ -772,6 +800,17 @@ int main(int argc, char** argv) {
                cm->getStructMemberCompletions(QStringLiteral("bl"),
                                               QStringLiteral("snap_pixel_t")),
                {"blue"});
+    expectList("CompletionManager all-symbol delegation",
+               cm->getAllSymbolCompletions(QStringLiteral("snap_clk")),
+               {"snap_clk"});
+    expectList("CompletionManager scored all-symbol delegation",
+               scoredNames(cm->getScoredAllSymbolMatches(QStringLiteral("snap_clk"))),
+               {"snap_clk"});
+    expectList("CompletionManager smart delegation",
+               scoredNames(cm->getSmartCompletions(QStringLiteral("snap_sig"),
+                                                   snapshotScopeFile,
+                                                   snapshotScopeCursor)),
+               {"snap_signal"});
     expectList("CompletionManager module info delegation",
                symbolNames(cm->getModuleInternalSymbolsByType(
                    QStringLiteral("snap_top"),

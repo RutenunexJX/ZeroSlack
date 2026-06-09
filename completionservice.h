@@ -3,8 +3,10 @@
 
 #include "semanticindex.h"
 
+#include <QPair>
 #include <QString>
 #include <QStringList>
+#include <QVector>
 #include <memory>
 
 struct RelationshipResult;
@@ -45,6 +47,16 @@ public:
 
     QStringList findCompletions(const CompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCompletionSymbols(const CompletionQuery& query) const;
+    QVector<QPair<QString, int>> findScoredAllSymbolCompletions(
+        const QString& prefix,
+        int maxResults = 20) const;
+    QStringList findAllSymbolCompletions(const QString& prefix,
+                                         int maxResults = 15) const;
+    QVector<QPair<QString, int>> findSmartCompletions(
+        const QString& prefix,
+        const QString& fileName = QString(),
+        int cursorPosition = -1,
+        bool relationshipCompletionsEnabled = true) const;
     QStringList findScopeCompletions(const CompletionQuery& query) const;
     QStringList findCommandCompletions(const CommandCompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCommandCompletionSymbols(const CommandCompletionQuery& query) const;
@@ -132,6 +144,8 @@ private:
     QList<int> findContextAbbreviationPositions(const QString& text,
                                                 const QString& abbreviation) const;
     int calculateContextScore(const QString& symbol, const QString& context) const;
+    int calculateRelationshipScore(const QString& symbol,
+                                   const QString& currentContext) const;
     int calculateScopeScore(const QString& symbol, const QString& currentModule) const;
     bool isModuleRangeSymbolType(sym_list::sym_type_e type) const;
     bool isInternalCompletionType(sym_list::sym_type_e type) const;

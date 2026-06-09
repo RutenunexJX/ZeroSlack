@@ -60,6 +60,109 @@ QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
     return findGlobalCompletionSymbols(query);
 }
 
+QVector<QPair<QString, int>> CompletionService::findScoredAllSymbolCompletions(
+    const QString& prefix,
+    int maxResults) const
+{
+    QSet<QString> uniqueNames;
+    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!symbol.symbolName.isEmpty())
+            uniqueNames.insert(symbol.symbolName);
+    }
+
+    QStringList names(uniqueNames.begin(), uniqueNames.end());
+    names.sort(Qt::CaseInsensitive);
+
+    QVector<QPair<QString, int>> scored;
+    scored.reserve(qMin(names.size(), maxResults > 0 ? maxResults : names.size()));
+    for (const QString& name : std::as_const(names)) {
+        const int score = calculateContextMatchScore(name, prefix);
+        if (score > 0)
+            scored.append(qMakePair(name, score));
+    }
+
+    std::sort(scored.begin(), scored.end(),
+              [](const QPair<QString, int>& left,
+                 const QPair<QString, int>& right) {
+                  if (left.second != right.second)
+                      return left.second > right.second;
+                  return left.first < right.first;
+              });
+
+    if (maxResults > 0 && scored.size() > maxResults)
+        scored = scored.mid(0, maxResults);
+
+    return scored;
+}
+
+QStringList CompletionService::findAllSymbolCompletions(
+    const QString& prefix,
+    int maxResults) const
+{
+    const QVector<QPair<QString, int>> scored =
+        findScoredAllSymbolCompletions(prefix, maxResults);
+
+    QStringList result;
+    result.reserve(scored.size());
+    for (const auto& match : scored)
+        result.append(match.first);
+
+    if (maxResults > 0 && result.size() > maxResults)
+        result = result.mid(0, maxResults);
+
+    return result;
+}
+
+QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
+    const QString& prefix,
+    const QString& fileName,
+    int cursorPosition,
+    bool relationshipCompletionsEnabled) const
+{
+    if (!relationshipCompletionsEnabled)
+        return findScoredAllSymbolCompletions(prefix);
+
+    const QString currentModule = currentModuleAt(fileName, cursorPosition);
+    const QString context = QStringLiteral("general");
+
+    ContextCompletionQuery query;
+    query.prefix = prefix;
+    query.currentModule = currentModule;
+    query.context = context;
+    query.relationshipCompletionsEnabled = true;
+    const QStringList completions = findContextAwareCompletions(query);
+
+    QVector<QPair<QString, int>> result;
+    result.reserve(completions.size());
+    for (const QString& completion : completions) {
+        const int baseScore = calculateContextMatchScore(completion, prefix);
+        const int contextScore = calculateContextScore(completion, context);
+        const int relationshipScore =
+            calculateRelationshipScore(completion, currentModule);
+        const int scopeScore = calculateScopeScore(completion, currentModule);
+
+        const int finalScore = baseScore * 0.4
+            + contextScore * 0.2
+            + relationshipScore * 0.3
+            + scopeScore * 0.1;
+        result.append(qMakePair(completion, finalScore));
+    }
+
+    std::sort(result.begin(), result.end(),
+              [](const QPair<QString, int>& left,
+                 const QPair<QString, int>& right) {
+                  if (left.second != right.second)
+                      return left.second > right.second;
+                  return left.first < right.first;
+              });
+
+    if (result.size() > 20)
+        result = result.mid(0, 20);
+
+    return result;
+}
+
 QStringList CompletionService::findScopeCompletions(const CompletionQuery& query) const
 {
     QStringList result;
@@ -1260,6 +1363,46 @@ int CompletionService::calculateContextScore(
         QRegularExpression::CaseInsensitiveOption);
     if (context == QLatin1String("reset") && symbol.contains(resetPattern))
         return 50;
+
+    return 0;
+}
+
+int CompletionService::calculateRelationshipScore(
+    const QString& symbol,
+    const QString& currentContext) const
+{
+    if (currentContext.isEmpty())
+        return 0;
+
+    RelationshipService relationships(semanticIndex());
+    auto hasNamedRelationship = [&relationships](const QString& fromName,
+                                                 const QString& toName,
+                                                 SymbolRelationshipEngine::RelationType type) {
+        RelationshipQuery query;
+        query.symbolName = fromName;
+        query.outgoing = true;
+        query.types = {type};
+        const QList<RelationshipResult> results =
+            relationships.findRelationships(query);
+        for (const RelationshipResult& result : results) {
+            if (result.toSymbol.symbolName == toName)
+                return true;
+        }
+        return false;
+    };
+
+    if (hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CONTAINS))
+        return 40;
+
+    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::REFERENCES)
+        || hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::REFERENCES)) {
+        return 30;
+    }
+
+    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::CALLS)
+        || hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CALLS)) {
+        return 25;
+    }
 
     return 0;
 }

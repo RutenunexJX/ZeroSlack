@@ -41,11 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved context-aware completion assembly behind `CompletionService`.
+The latest block moved smart and all-symbol completion scoring behind `CompletionService`.
 
-- `CompletionService` owns struct-member, enum-value, module-port, keyword, clock/reset, relationship, and general context completion assembly over `SemanticIndex`.
-- Legacy `CompletionManager` context-aware and struct-member helper APIs now delegate to `CompletionService`.
-- `completion_test` covers snapshot-backed service context completions and manager delegation for struct, enum, and general contexts.
+- `CompletionService` owns all-symbol scoring, all-symbol name completions, smart completion assembly, and relationship/scope scoring over `SemanticIndex`.
+- Legacy `CompletionManager` smart/all-symbol APIs now delegate to `CompletionService`.
+- `completion_test` covers snapshot-backed service smart/all-symbol completions and manager delegation.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 
