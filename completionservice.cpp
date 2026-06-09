@@ -1,5 +1,7 @@
 #include "completionservice.h"
 
+#include "relationshipservice.h"
+
 #include <QFile>
 #include <QRegularExpression>
 #include <QSet>
@@ -106,6 +108,141 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
     }
 
     return findCommandSymbolsFromIndex(query);
+}
+
+QStringList CompletionService::findModuleChildCompletions(
+    const QString& moduleName,
+    const QString& prefix) const
+{
+    if (moduleName.isEmpty())
+        return {};
+
+    RelationshipQuery query;
+    query.symbolName = moduleName;
+    query.outgoing = true;
+    query.types = {SymbolRelationshipEngine::CONTAINS};
+
+    RelationshipService relationships(semanticIndex());
+    const QStringList names = completionNamesFromRelationshipResults(
+        relationships.findRelationships(query),
+        true);
+    QStringList filtered;
+    for (const QString& name : names) {
+        if (completionNameMatches(name, prefix))
+            filtered.append(name);
+    }
+    return filtered;
+}
+
+QStringList CompletionService::findRelatedSymbolCompletions(
+    const QString& symbolName,
+    const QString& prefix) const
+{
+    if (symbolName.isEmpty())
+        return {};
+
+    RelationshipService relationships(semanticIndex());
+    RelationshipQuery outgoingQuery;
+    outgoingQuery.symbolName = symbolName;
+    outgoingQuery.outgoing = true;
+    outgoingQuery.types = {SymbolRelationshipEngine::REFERENCES};
+
+    RelationshipQuery incomingQuery = outgoingQuery;
+    incomingQuery.outgoing = false;
+
+    QStringList result = completionNamesFromRelationshipResults(
+        relationships.findRelationships(outgoingQuery),
+        true);
+    result.append(completionNamesFromRelationshipResults(
+        relationships.findRelationships(incomingQuery),
+        false));
+    result.removeDuplicates();
+
+    QStringList filtered;
+    for (const QString& name : result) {
+        if (completionNameMatches(name, prefix))
+            filtered.append(name);
+    }
+    filtered.sort(Qt::CaseInsensitive);
+    return filtered;
+}
+
+QStringList CompletionService::findSymbolReferenceCompletions(
+    const QString& symbolName,
+    const QString& prefix) const
+{
+    if (symbolName.isEmpty())
+        return {};
+
+    RelationshipQuery query;
+    query.symbolName = symbolName;
+    query.outgoing = false;
+    query.types = {SymbolRelationshipEngine::REFERENCES};
+
+    RelationshipService relationships(semanticIndex());
+    const QStringList names = completionNamesFromRelationshipResults(
+        relationships.findRelationships(query),
+        false);
+    QStringList filtered;
+    for (const QString& name : names) {
+        if (completionNameMatches(name, prefix))
+            filtered.append(name);
+    }
+    return filtered;
+}
+
+QStringList CompletionService::findClockDomainCompletions(const QString& prefix) const
+{
+    RelationshipService relationships(semanticIndex());
+    QStringList result;
+    QSet<QString> seenNames;
+    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!completionNameMatches(symbol.symbolName, prefix))
+            continue;
+
+        RelationshipQuery query;
+        query.symbolId = symbol.symbolId;
+        query.outgoing = true;
+        query.types = {SymbolRelationshipEngine::CLOCKS};
+        if (!relationships.hasRelationships(query))
+            continue;
+
+        const QString key = symbol.symbolName.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(symbol.symbolName);
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
+QStringList CompletionService::findResetSignalCompletions(const QString& prefix) const
+{
+    RelationshipService relationships(semanticIndex());
+    QStringList result;
+    QSet<QString> seenNames;
+    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!completionNameMatches(symbol.symbolName, prefix))
+            continue;
+
+        RelationshipQuery query;
+        query.symbolId = symbol.symbolId;
+        query.outgoing = true;
+        query.types = {SymbolRelationshipEngine::RESETS};
+        if (!relationships.hasRelationships(query))
+            continue;
+
+        const QString key = symbol.symbolName.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(symbol.symbolName);
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
 }
 
 QString CompletionService::currentModuleAt(const QString& fileName, int cursorPosition) const
@@ -291,6 +428,27 @@ QStringList CompletionService::completionNamesFromSymbols(
     QStringList result;
     QSet<QString> seenNames;
     for (const sym_list::SymbolInfo& symbol : symbols) {
+        const QString key = symbol.symbolName.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(symbol.symbolName);
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
+QStringList CompletionService::completionNamesFromRelationshipResults(
+    const QList<RelationshipResult>& relationships,
+    bool outgoing) const
+{
+    QStringList result;
+    QSet<QString> seenNames;
+    for (const RelationshipResult& relationship : relationships) {
+        const sym_list::SymbolInfo& symbol =
+            outgoing ? relationship.toSymbol : relationship.fromSymbol;
+        if (symbol.symbolId < 0 || symbol.symbolName.isEmpty())
+            continue;
         const QString key = symbol.symbolName.toCaseFolded();
         if (seenNames.contains(key))
             continue;

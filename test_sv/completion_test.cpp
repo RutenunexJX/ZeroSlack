@@ -348,13 +348,50 @@ int main(int argc, char** argv) {
     snapshotOtherModule.startLine = 4;
     snapshotOtherModule.endLine = 5;
     snapshotSymbols.append(snapshotOtherModule);
+    sym_list::SymbolInfo snapshotClock =
+        makeSymbol(QStringLiteral("snap_clk"),
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_top"),
+                   QString(),
+                   6003);
+    snapshotClock.fileName = snapshotScopeFile;
+    snapshotSymbols.append(snapshotClock);
+    sym_list::SymbolInfo snapshotReset =
+        makeSymbol(QStringLiteral("snap_rst_n"),
+                   sym_list::sym_logic,
+                   QStringLiteral("snap_top"),
+                   QString(),
+                   6004);
+    snapshotReset.fileName = snapshotScopeFile;
+    snapshotSymbols.append(snapshotReset);
+    QList<SemanticRelationship> snapshotRelationships;
+    SemanticRelationship containsSnapEnable;
+    containsSnapEnable.fromId = 4000;
+    containsSnapEnable.toId = 5008;
+    containsSnapEnable.type = SymbolRelationshipEngine::CONTAINS;
+    snapshotRelationships.append(containsSnapEnable);
+    SemanticRelationship otherReferencesEnable;
+    otherReferencesEnable.fromId = 5009;
+    otherReferencesEnable.toId = 5008;
+    otherReferencesEnable.type = SymbolRelationshipEngine::REFERENCES;
+    snapshotRelationships.append(otherReferencesEnable);
+    SemanticRelationship clockDrivesTop;
+    clockDrivesTop.fromId = 6003;
+    clockDrivesTop.toId = 4000;
+    clockDrivesTop.type = SymbolRelationshipEngine::CLOCKS;
+    snapshotRelationships.append(clockDrivesTop);
+    SemanticRelationship resetDrivesTop;
+    resetDrivesTop.fromId = 6004;
+    resetDrivesTop.toId = 4000;
+    resetDrivesTop.type = SymbolRelationshipEngine::RESETS;
+    snapshotRelationships.append(resetDrivesTop);
     QHash<QString, QString> snapshotFileContents;
     snapshotFileContents.insert(snapshotScopeFile, snapshotScopeContent);
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
         std::make_shared<SemanticIndexSnapshot>(
             snapshotSymbols,
-            QList<SemanticRelationship>{},
+            snapshotRelationships,
             QList<SemanticDiagnostic>{},
             snapshotFileContents));
     CompletionService snapshotCompletionService(&snapshotIndex);
@@ -368,7 +405,7 @@ int main(int argc, char** argv) {
              snapshotCompletionService.getStructTypeForVariable("snap_pair", "snap_top"),
              "snap_pair_t");
     CompletionQuery snapshotModuleQuery;
-    snapshotModuleQuery.prefix = QStringLiteral("snap");
+    snapshotModuleQuery.prefix = QStringLiteral("snap_e");
     snapshotModuleQuery.moduleName = QStringLiteral("snap_top");
     expectList("snapshot module completions",
                snapshotCompletionService.findCompletions(snapshotModuleQuery),
@@ -390,7 +427,7 @@ int main(int argc, char** argv) {
     snapshotLogicCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotLogicCommandQuery.moduleName = QStringLiteral("snap_top");
     snapshotLogicCommandQuery.symbolType = sym_list::sym_logic;
-    snapshotLogicCommandQuery.prefix = QStringLiteral("snap");
+    snapshotLogicCommandQuery.prefix = QStringLiteral("snap_e");
     expectList("snapshot command logic names",
                snapshotCompletionService.findCommandCompletions(snapshotLogicCommandQuery),
                {"snap_enable"});
@@ -556,6 +593,44 @@ int main(int argc, char** argv) {
     expectList("SemanticIndex snapshot completions",
                snapshotIndex.findCompletions(snapshotFacadeQuery),
                {"snap_scope", "snap_signal"});
+    expectList("snapshot child completions",
+               snapshotCompletionService.findModuleChildCompletions(
+                   QStringLiteral("snap_top"),
+                   QStringLiteral("snap")),
+               {"snap_enable"});
+    expectList("snapshot related completions",
+               snapshotCompletionService.findRelatedSymbolCompletions(
+                   QStringLiteral("snap_enable"),
+                   QStringLiteral("snap_other")),
+               {"snap_other_enable"});
+    expectList("snapshot reference completions",
+               snapshotCompletionService.findSymbolReferenceCompletions(
+                   QStringLiteral("snap_enable"),
+                   QStringLiteral("snap_other")),
+               {"snap_other_enable"});
+    expectList("snapshot clock completions",
+               snapshotCompletionService.findClockDomainCompletions(QStringLiteral("snap_c")),
+               {"snap_clk"});
+    expectList("snapshot reset completions",
+               snapshotCompletionService.findResetSignalCompletions(QStringLiteral("snap_r")),
+               {"snap_rst_n"});
+    SemanticIndex::getInstance()->setSnapshot(
+        std::make_shared<SemanticIndexSnapshot>(
+            snapshotSymbols,
+            snapshotRelationships,
+            QList<SemanticDiagnostic>{},
+            snapshotFileContents));
+    expectList("CompletionManager child delegation",
+               cm->getModuleChildrenCompletions(QStringLiteral("snap_top"),
+                                                QStringLiteral("snap")),
+               {"snap_enable"});
+    expectList("CompletionManager clock delegation",
+               cm->getClockDomainCompletions(QStringLiteral("snap_c")),
+               {"snap_clk"});
+    expectList("CompletionManager reset delegation",
+               cm->getResetSignalCompletions(QStringLiteral("snap_r")),
+               {"snap_rst_n"});
+    SemanticIndex::getInstance()->clearSnapshot();
 
     CommandCompletionQuery snapshotCommandQuery;
     snapshotCommandQuery.fileName = QStringLiteral("snapshot_only.sv");

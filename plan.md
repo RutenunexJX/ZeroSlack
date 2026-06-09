@@ -41,12 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved scope completion and current-module lookup behind `CompletionService`.
+The latest block moved relationship-driven completion candidates behind `CompletionService`.
 
-- `CompletionService` owns snapshot-backed scope completion and current-module lookup.
-- Legacy `CompletionManager` APIs delegate those paths to `CompletionService`.
-- `SemanticIndex::findCompletions()` no longer depends on `CompletionManager`.
-- `completion_test` covers the new snapshot-backed service and facade paths.
+- `CompletionService` owns module-child, related-symbol, reference, clock-domain, and reset-signal completion queries over `RelationshipService` and `SemanticIndex`.
+- Legacy `CompletionManager` relationship-completion APIs now delegate to `CompletionService`.
+- `completion_test` covers snapshot-backed relationship completion and the legacy delegation path.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 

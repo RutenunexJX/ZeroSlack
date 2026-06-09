@@ -1235,166 +1235,63 @@ QStringList CompletionManager::getBasicSymbolCompletions(const QString& prefix)
 
 QStringList CompletionManager::getModuleChildrenCompletions(const QString& moduleName, const QString& prefix)
 {
-    if (!relationshipEngine || moduleName.isEmpty()) {
+    if (moduleName.isEmpty())
         return QStringList();
-    }
 
     QString cacheKey = QString("module_children_%1_%2").arg(moduleName, prefix);
     if (relationshipCacheValid && moduleChildrenCache.contains(cacheKey)) {
         return moduleChildrenCache[cacheKey];
     }
 
-    QStringList results;
-
-    RelationshipQuery query;
-    query.symbolName = moduleName;
-    query.outgoing = true;
-    query.types = {SymbolRelationshipEngine::CONTAINS};
-    QList<int> childrenIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
-
-    QStringList childrenNames = getSymbolNamesFromIds(childrenIds);
-
-    for (const QString& childName : childrenNames) {
-        if (prefix.isEmpty() || childName.startsWith(prefix, Qt::CaseInsensitive)) {
-            results.append(childName);
-        }
-    }
-
+    const QStringList results =
+        CompletionService::getInstance()->findModuleChildCompletions(moduleName, prefix);
     moduleChildrenCache[cacheKey] = results;
-
     return results;
 }
 
 QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbolName, const QString& prefix)
 {
-    if (!relationshipEngine || symbolName.isEmpty()) {
+    if (symbolName.isEmpty())
         return QStringList();
-    }
 
     QString cacheKey = QString("related_%1_%2").arg(symbolName, prefix);
     if (relationshipCacheValid && symbolRelationsCache.contains(cacheKey)) {
         return symbolRelationsCache[cacheKey];
     }
 
-    QStringList results;
-
-    RelationshipQuery referencedQuery;
-    referencedQuery.symbolName = symbolName;
-    referencedQuery.outgoing = true;
-    referencedQuery.types = {SymbolRelationshipEngine::REFERENCES};
-    QList<int> referencedIds =
-        RelationshipService::getInstance()->findRelatedSymbolIds(referencedQuery);
-
-    RelationshipQuery referencingQuery = referencedQuery;
-    referencingQuery.outgoing = false;
-    QList<int> referencingIds =
-        RelationshipService::getInstance()->findRelatedSymbolIds(referencingQuery);
-
-    QSet<int> allRelatedIds;
-    for (int id : referencedIds) allRelatedIds.insert(id);
-    for (int id : referencingIds) allRelatedIds.insert(id);
-
-    QStringList relatedNames = getSymbolNamesFromIds(QList<int>(allRelatedIds.begin(),
-                                                               allRelatedIds.end()));
-
-    for (const QString& relatedName : relatedNames) {
-        if (prefix.isEmpty() || relatedName.startsWith(prefix, Qt::CaseInsensitive)) {
-            results.append(relatedName);
-        }
-    }
-
+    const QStringList results =
+        CompletionService::getInstance()->findRelatedSymbolCompletions(symbolName, prefix);
     symbolRelationsCache[cacheKey] = results;
     return results;
 }
 
 QStringList CompletionManager::getSymbolReferencesCompletions(const QString& symbolName, const QString& prefix)
 {
-    if (!relationshipEngine || symbolName.isEmpty()) {
-        return QStringList();
-    }
-
-    QStringList results;
-
-    RelationshipQuery query;
-    query.symbolName = symbolName;
-    query.outgoing = false;
-    query.types = {SymbolRelationshipEngine::REFERENCES};
-    QList<int> referencingIds = RelationshipService::getInstance()->findRelatedSymbolIds(query);
-    QStringList referencingNames = getSymbolNamesFromIds(referencingIds);
-
-    for (const QString& refName : referencingNames) {
-        if (prefix.isEmpty() || refName.startsWith(prefix, Qt::CaseInsensitive)) {
-            results.append(refName);
-        }
-    }
-
-    return results;
+    return CompletionService::getInstance()->findSymbolReferenceCompletions(symbolName, prefix);
 }
 
 QStringList CompletionManager::getClockDomainCompletions(const QString& prefix)
 {
-    if (!relationshipEngine) {
-        return QStringList();
-    }
-
     QString cacheKey = QString("clock_domain_%1").arg(prefix);
     if (relationshipCacheValid && clockDomainCache.contains(cacheKey)) {
         return clockDomainCache[cacheKey];
     }
 
-    QStringList results;
-
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
-
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        RelationshipQuery query;
-        query.symbolId = symbol.symbolId;
-        query.outgoing = true;
-        query.types = {SymbolRelationshipEngine::CLOCKS};
-        QList<int> clockedModules = RelationshipService::getInstance()->findRelatedSymbolIds(query);
-
-        if (!clockedModules.isEmpty()) {
-            QString symbolName = symbol.symbolName;
-            if (prefix.isEmpty() || symbolName.startsWith(prefix, Qt::CaseInsensitive)) {
-                results.append(symbolName);
-            }
-        }
-    }
-
+    const QStringList results =
+        CompletionService::getInstance()->findClockDomainCompletions(prefix);
     clockDomainCache[cacheKey] = results;
     return results;
 }
 
 QStringList CompletionManager::getResetSignalCompletions(const QString& prefix)
 {
-    if (!relationshipEngine) {
-        return QStringList();
-    }
-
     QString cacheKey = QString("reset_signals_%1").arg(prefix);
     if (relationshipCacheValid && resetSignalCache.contains(cacheKey)) {
         return resetSignalCache[cacheKey];
     }
 
-    QStringList results;
-
-    QList<sym_list::SymbolInfo> allSymbols = getAllSemanticSymbols();
-
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        RelationshipQuery query;
-        query.symbolId = symbol.symbolId;
-        query.outgoing = true;
-        query.types = {SymbolRelationshipEngine::RESETS};
-        QList<int> resetModules = RelationshipService::getInstance()->findRelatedSymbolIds(query);
-
-        if (!resetModules.isEmpty()) {
-            QString symbolName = symbol.symbolName;
-            if (prefix.isEmpty() || symbolName.startsWith(prefix, Qt::CaseInsensitive)) {
-                results.append(symbolName);
-            }
-        }
-    }
-
+    const QStringList results =
+        CompletionService::getInstance()->findResetSignalCompletions(prefix);
     resetSignalCache[cacheKey] = results;
     return results;
 }

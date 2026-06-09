@@ -7,6 +7,8 @@
 #include <QStringList>
 #include <memory>
 
+struct RelationshipResult;
+
 struct CompletionQuery {
     QString prefix;
     QString fileName;
@@ -39,6 +41,14 @@ public:
     QStringList findScopeCompletions(const CompletionQuery& query) const;
     QStringList findCommandCompletions(const CommandCompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCommandCompletionSymbols(const CommandCompletionQuery& query) const;
+    QStringList findModuleChildCompletions(const QString& moduleName,
+                                           const QString& prefix = QString()) const;
+    QStringList findRelatedSymbolCompletions(const QString& symbolName,
+                                             const QString& prefix = QString()) const;
+    QStringList findSymbolReferenceCompletions(const QString& symbolName,
+                                               const QString& prefix = QString()) const;
+    QStringList findClockDomainCompletions(const QString& prefix = QString()) const;
+    QStringList findResetSignalCompletions(const QString& prefix = QString()) const;
     QString currentModuleAt(const QString& fileName, int cursorPosition) const;
     QString getStructTypeForVariable(const QString& variableName, const QString& moduleName) const;
     bool tryParseStructMemberContext(const QString& line,
@@ -67,6 +77,9 @@ private:
                                  const QString& fileContent) const;
     int endModulePosition(const QString& fileContent,
                           const sym_list::SymbolInfo& moduleSymbol) const;
+    QStringList completionNamesFromRelationshipResults(
+        const QList<RelationshipResult>& relationships,
+        bool outgoing) const;
     bool isInternalCompletionType(sym_list::sym_type_e type) const;
     bool isGlobalCompletionType(sym_list::sym_type_e type) const;
     bool isCommandGlobalCompletionType(sym_list::sym_type_e type) const;
