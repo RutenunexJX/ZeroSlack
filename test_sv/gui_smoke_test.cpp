@@ -29,9 +29,10 @@
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
-#include "analysisscheduler.h"
+#include "analysiscommandcoordinator.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
+#include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
@@ -257,10 +258,8 @@ static void drainRelationshipWork(MainWindow& window)
         : nullptr;
     if (builder)
         builder->cancelAnalysis();
-    if (window.analysisScheduler) {
-        window.analysisScheduler->cancelRelationshipAnalysis();
-        window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
-    }
+    if (window.analysisCommandCoordinator)
+        window.analysisCommandCoordinator->cancelRelationshipWork();
 }
 
 static void runReferenceDockRegression(MainWindow& window, const QString& fixturePath)
@@ -341,9 +340,9 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                                         externalIncomingRelationship,
                                         outgoingRelationship}));
 
-    window.showReferencesForSymbol(QStringLiteral("target_ref"),
-                                   fixturePath,
-                                   QStringLiteral("ref_top"));
+    window.semanticPanelRefresh->showReferencesForSymbol(QStringLiteral("target_ref"),
+                                                         fixturePath,
+                                                         QStringLiteral("ref_top"));
 
     expectBool("references tree exists", referencesTree(window) != nullptr, true);
     expectBool("reference results rendered",
@@ -434,9 +433,9 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    true);
     }
 
-    window.showRelationshipsForSymbol(QStringLiteral("target_ref"),
-                                      fixturePath,
-                                      QStringLiteral("ref_top"));
+    window.semanticPanelRefresh->showRelationshipsForSymbol(QStringLiteral("target_ref"),
+                                                            fixturePath,
+                                                            QStringLiteral("ref_top"));
     expectBool("relationships tree exists", relationshipsTree(window) != nullptr, true);
     expectBool("relationship results rendered",
                navigableItemCount(relationshipsTree(window)) == 3,
@@ -560,7 +559,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    rootItem != nullptr, true);
         if (rootItem) {
             rootItem->setExpanded(false);
-            window.refreshRelationshipsPanel();
+            window.semanticPanelRefresh->refreshRelationshipsPanel();
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
             QTreeWidgetItem* refreshedRoot = nullptr;
             const QList<QTreeWidgetItem*> refreshedItems =
@@ -1029,7 +1028,7 @@ int main(int argc, char** argv)
                 QList<SemanticDiagnostic>{closeDiagnostic}));
         problemsScopeCombo(window)->setCurrentIndex(
             problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
-        window.updateProblemsPanel();
+        window.semanticPanelRefresh->updateProblemsPanel();
         expectBool("problems close probe visible",
                    navigableItemCount(problemsTree(window)) == 1,
                    true);
@@ -1044,7 +1043,7 @@ int main(int argc, char** argv)
                 QList<sym_list::SymbolInfo>{},
                 QList<SemanticRelationship>{},
                 QList<SemanticDiagnostic>{closeDiagnostic}));
-        window.updateProblemsPanel();
+        window.semanticPanelRefresh->updateProblemsPanel();
         expectBool("problems reopen probe visible",
                    navigableItemCount(problemsTree(window)) == 1,
                    true);

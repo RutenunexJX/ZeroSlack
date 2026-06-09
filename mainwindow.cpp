@@ -9,6 +9,7 @@
 #include "modemanager.h"
 #include "symbolanalyzer.h"
 #include "analysisscheduler.h"
+#include "analysiscommandcoordinator.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
 #include "editorcoordinator.h"
@@ -20,6 +21,7 @@
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
+#include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "version.h"
 #include <QCloseEvent>
@@ -43,11 +45,13 @@ MainWindow::MainWindow(QWidget *parent)
         std::unique_ptr<AnalysisProgressCoordinator>(new AnalysisProgressCoordinator(this, this));
 
     setupSemanticRuntime();
+    setupAnalysisCommandCoordinator();
     setupNavigationPane();
     setupNavigationCommandCoordinator();
     setupProblemsPane();
     setupReferencesPane();
     setupRelationshipsPane();
+    setupSemanticPanelRefreshCoordinator();
     setupFileCommandCoordinator();
     setupModeCommandCoordinator();
     setupEditorCoordinator();
@@ -67,9 +71,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    if (analysisScheduler) {
-        analysisScheduler->cancelWorkspaceRelationshipAnalysis();
-    }
     delete ui;
 }
 
@@ -88,7 +89,8 @@ void MainWindow::setupManagerConnections()
     analysisCoordinator->setFileChangeDebounceMs(kFileChangeDebounceMs);
     analysisCoordinator->setProblemsRefreshHandler(
         [this](const QString& fileName) {
-            updateProblemsPanel(fileName);
+            if (semanticPanelRefresh)
+                semanticPanelRefresh->updateProblemsPanel(fileName);
         });
     analysisCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
@@ -121,52 +123,43 @@ void MainWindow::setupNavigationCommandCoordinator()
 void MainWindow::setupProblemsPane()
 {
     problemsPanel = std::make_unique<ProblemsPanelCoordinator>(this);
-    problemsPanel->setCurrentFileProvider([this]() {
-        MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-        return editor ? editor->getFileName() : QString();
-    });
-    problemsPanel->setWorkspaceFilesProvider([this]() {
-        return workspaceManager ? workspaceManager->getSystemVerilogFiles() : QStringList();
-    });
-    problemsPanel->setNavigationHandler(
-        [this](const QString& fileName, int line, int column) {
-            if (navigationCommandCoordinator)
-                navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
-        });
     addDockWidget(Qt::BottomDockWidgetArea, problemsPanel->dock());
 }
 
 void MainWindow::setupReferencesPane()
 {
     referencesPanel = std::make_unique<ReferencesPanelCoordinator>(this);
-    referencesPanel->setWorkspaceFilesProvider([this]() {
-        return workspaceManager ? workspaceManager->getSystemVerilogFiles() : QStringList();
-    });
-    referencesPanel->setNavigationHandler(
-        [this](const QString& fileName, int line, int column) {
-            if (navigationCommandCoordinator)
-                navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
-        });
-    referencesPanel->setStatusMessageHandler([this](const QString& message, int timeoutMs) {
-        if (statusBar())
-            statusBar()->showMessage(message, timeoutMs);
-    });
     addDockWidget(Qt::BottomDockWidgetArea, referencesPanel->dock());
 }
 
 void MainWindow::setupRelationshipsPane()
 {
     relationshipsPanel = std::make_unique<RelationshipsPanelCoordinator>(this);
-    relationshipsPanel->setNavigationHandler(
-        [this](const QString& fileName, int line, int column) {
-            if (navigationCommandCoordinator)
-                navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
-        });
-    relationshipsPanel->setStatusMessageHandler([this](const QString& message, int timeoutMs) {
-        if (statusBar())
-            statusBar()->showMessage(message, timeoutMs);
-    });
     addDockWidget(Qt::BottomDockWidgetArea, relationshipsPanel->dock());
+}
+
+void MainWindow::setupSemanticPanelRefreshCoordinator()
+{
+    semanticPanelRefresh = std::make_unique<SemanticPanelRefreshCoordinator>(
+        tabManager.get(),
+        workspaceManager.get(),
+        navigationManager.get(),
+        navigationCommandCoordinator.get(),
+        problemsPanel.get(),
+        referencesPanel.get(),
+        relationshipsPanel.get());
+    semanticPanelRefresh->setStatusMessageHandler(
+        [this](const QString& message, int timeoutMs) {
+            if (statusBar())
+                statusBar()->showMessage(message, timeoutMs);
+        });
+    semanticPanelRefresh->configurePanels();
+}
+
+void MainWindow::setupAnalysisCommandCoordinator()
+{
+    analysisCommandCoordinator =
+        std::make_unique<AnalysisCommandCoordinator>(analysisScheduler.get(), this);
 }
 
 void MainWindow::setupFileCommandCoordinator()
@@ -202,7 +195,8 @@ void MainWindow::setupEditorCoordinator()
         });
     editorCoordinator->setRelationshipAnalysisHandler(
         [this](const QString& fileName, const QString& content) {
-            requestSingleFileRelationshipAnalysis(fileName, content);
+            if (analysisCommandCoordinator)
+                analysisCommandCoordinator->requestSingleFileRelationshipAnalysis(fileName, content);
         });
     editorCoordinator->setSaveFileHandler([this]() {
         if (fileCommandCoordinator)
@@ -224,57 +218,21 @@ void MainWindow::setupEditorCoordinator()
         [this](const QString& symbolName,
                const QString& fileName,
                const QString& moduleName) {
-            showReferencesForSymbol(symbolName, fileName, moduleName);
+            if (semanticPanelRefresh)
+                semanticPanelRefresh->showReferencesForSymbol(symbolName, fileName, moduleName);
         });
     editorCoordinator->setRelationshipBrowseHandler(
         [this](const QString& symbolName,
                const QString& fileName,
                const QString& moduleName) {
-            showRelationshipsForSymbol(symbolName, fileName, moduleName);
+            if (semanticPanelRefresh)
+                semanticPanelRefresh->showRelationshipsForSymbol(symbolName, fileName, moduleName);
         });
     editorCoordinator->setActiveEditorChangedHandler([this](MyCodeEditor* editor) {
-        if (editor && navigationManager)
-            navigationManager->onTabChanged(editor->getFileName());
-        if (problemsPanel && problemsPanel->scopeCombo()
-            && problemsPanel->scopeCombo()->currentData().toInt() == 0) {
-            updateProblemsPanel();
-        }
+        if (semanticPanelRefresh)
+            semanticPanelRefresh->handleActiveEditorChanged(editor);
     });
     editorCoordinator->connectSignals();
-}
-
-void MainWindow::updateProblemsPanel(const QString& fileName)
-{
-    if (problemsPanel)
-        problemsPanel->update(fileName);
-}
-
-void MainWindow::showReferencesForSymbol(const QString& symbolName,
-                                         const QString& fileName,
-                                         const QString& moduleName)
-{
-    if (referencesPanel)
-        referencesPanel->showReferencesForSymbol(symbolName, fileName, moduleName);
-}
-
-void MainWindow::refreshReferencesPanel()
-{
-    if (referencesPanel)
-        referencesPanel->refresh();
-}
-
-void MainWindow::showRelationshipsForSymbol(const QString& symbolName,
-                                            const QString& fileName,
-                                            const QString& moduleName)
-{
-    if (relationshipsPanel)
-        relationshipsPanel->showRelationshipsForSymbol(symbolName, fileName, moduleName);
-}
-
-void MainWindow::refreshRelationshipsPanel()
-{
-    if (relationshipsPanel)
-        relationshipsPanel->refresh();
 }
 
 void MainWindow::on_new_file_triggered()
@@ -363,22 +321,4 @@ void MainWindow::keyReleaseEvent(QKeyEvent *event)
 void MainWindow::setupSemanticRuntime()
 {
     semanticRuntime = std::make_unique<SemanticRuntimeCoordinator>(this);
-}
-
-void MainWindow::requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content)
-{
-    if (analysisScheduler)
-        analysisScheduler->requestRelationshipAnalysis(fileName, content);
-}
-
-void MainWindow::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
-{
-    if (analysisScheduler)
-        analysisScheduler->scheduleOpenFileAnalysis(fileName, delayMs);
-}
-
-void MainWindow::cancelScheduledOpenFileAnalysis(const QString& fileName)
-{
-    if (analysisScheduler)
-        analysisScheduler->cancelScheduledOpenFileAnalysis(fileName);
 }

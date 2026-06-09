@@ -76,9 +76,11 @@ Already present:
 - Navigation command routing, tab activation/opening, and editor cursor placement split into a focused coordinator
 - Editor setup, editor-originated commands, active-tab refresh coordination, and alternate-mode propagation split into a focused coordinator
 - Scheduler/progress/workspace/symbol analysis event routing split into a focused coordinator
+- Editor-originated analysis commands and relationship-work cancellation split into a focused coordinator
 - File/edit/workspace commands and close-event unsaved-change confirmation split into a focused coordinator
 - Mode key event routing and navigation-pane toggle routing split into a focused coordinator
 - Semantic runtime lifetimes and SemanticIndex/CompletionManager dependency injection split into a focused coordinator
+- Semantic panel provider/navigation/status wiring, refresh commands, and active-editor Problems refresh policy split into a focused coordinator
 - CompletionManager reads routed through DefinitionService, RelationshipService, and SearchService for key semantic paths
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 

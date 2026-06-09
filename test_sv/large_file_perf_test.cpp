@@ -15,7 +15,7 @@
 
 #define private public
 #include "mainwindow.h"
-#include "analysisscheduler.h"
+#include "analysiscommandcoordinator.h"
 #include "mycodeeditor.h"
 #include "semanticruntimecoordinator.h"
 #include "smartrelationshipbuilder.h"
@@ -76,10 +76,8 @@ static void drainRelationshipWork(MainWindow& window)
         : nullptr;
     if (builder)
         builder->cancelAnalysis();
-    if (window.analysisScheduler) {
-        window.analysisScheduler->cancelRelationshipAnalysis();
-        window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
-    }
+    if (window.analysisCommandCoordinator)
+        window.analysisCommandCoordinator->cancelRelationshipWork();
 }
 
 int main(int argc, char** argv)

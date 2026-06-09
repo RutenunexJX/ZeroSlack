@@ -44,6 +44,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 # =========================================================
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ sources ---
+    analysiscommandcoordinator.cpp
     analysiscoordinator.cpp
     analysisprogresscoordinator.cpp
     analysisscheduler.cpp
@@ -75,6 +76,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipprogressdialog.cpp
     searchservice.cpp
     semanticpanelutils.cpp
+    semanticpanelrefreshcoordinator.cpp
     semanticindex.cpp
     semanticindexsnapshot.cpp
     semanticruntimecoordinator.cpp
@@ -87,6 +89,7 @@ set(ZEROSLACK_CORE_SOURCES
     workspacemanager.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
+    analysiscommandcoordinator.h
     analysiscoordinator.h
     analysisprogresscoordinator.h
     analysisscheduler.h
@@ -121,6 +124,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipprogressdialog.h
     searchservice.h
     semanticpanelutils.h
+    semanticpanelrefreshcoordinator.h
     semanticindex.h
     semanticindexsnapshot.h
     semanticruntimecoordinator.h

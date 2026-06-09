@@ -26,10 +26,12 @@ Implemented and in active use:
 - AnalysisScheduler for major analysis triggers, relationship work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests
 - AnalysisProgressCoordinator for workspace analysis progress dialog policy and cancel state
 - AnalysisCoordinator for scheduler/progress/workspace/symbol signal routing and active-editor refresh policy
+- AnalysisCommandCoordinator for editor-originated analysis command routing and relationship-work cancellation
 - FileCommandCoordinator for file/edit/workspace commands and close-event unsaved-change confirmation
 - NavigationCommandCoordinator for navigation signals, tab activation/opening, and editor cursor placement
 - ModeCommandCoordinator for mode key event routing and navigation-pane toggle routing
 - SemanticRuntimeCoordinator for semantic runtime lifetimes and SemanticIndex/CompletionManager dependency injection
+- SemanticPanelRefreshCoordinator for Problems/References/Relationships provider, navigation, status, refresh, and active-editor refresh routing
 - SemanticIndex facade and SemanticIndexSnapshot storage
 - Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
 - Problems, References, and Relationships panels backed by service reports
@@ -45,16 +47,17 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block extracted `ModeCommandCoordinator` from `MainWindow`:
+The latest block extracted `AnalysisCommandCoordinator` from `MainWindow`:
 
-- key press routing to `ModeManager`
-- key release routing to `ModeManager`
-- `ModeManager::navigationToggleRequested` routing to `NavigationPaneCoordinator`
-- thin `MainWindow` key event overrides that delegate before falling back to `QMainWindow`
+- editor-originated single-file relationship analysis requests
+- a narrow open-file analysis schedule/cancel command boundary
+- relationship-work cancellation during coordinator teardown
+- removal of public analysis command wrappers from `MainWindow`
+- GUI smoke and large-file perf drain helpers updated to exercise the new analysis command boundary
 
 The block was validated with focused GUI smoke build/test, full build, full CTest, diff hygiene, ASCII/trailing scans, and forbidden-file guard. In a plain shell, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` before CMake/CTest; GUI tests also need `E:\QT6\6.10.2\mingw_64\bin`.
 
-The previous blocks extracted `SemanticRuntimeCoordinator`, `NavigationCommandCoordinator`, `FileCommandCoordinator`, and `AnalysisCoordinator`. The earlier UI/editor coordination block extracted:
+The previous blocks extracted `SemanticPanelRefreshCoordinator`, `ModeCommandCoordinator`, `SemanticRuntimeCoordinator`, `NavigationCommandCoordinator`, `FileCommandCoordinator`, and `AnalysisCoordinator`. The earlier UI/editor coordination block extracted:
 
 - `ProblemsPanelCoordinator`
 - `ReferencesPanelCoordinator`
@@ -103,6 +106,12 @@ For docs-only cleanup:
 - `git diff --check`
 - changed doc ASCII and trailing-whitespace scans
 - forbidden-file guard
+
+## Commit Policy
+
+- After a medium-sized coherent architecture block passes the agreed build/test/hygiene gates, create a local commit automatically.
+- Do not push unless explicitly asked.
+- Keep commit messages concise and architecture-oriented.
 
 ## Handoff Policy
 

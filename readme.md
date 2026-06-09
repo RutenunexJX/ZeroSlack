@@ -34,12 +34,31 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over no
 - Do not restore `.claude/` or Claude local config.
 - Do not restore SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
 - Keep source, tests, UI strings, CMake, and these docs English / ASCII.
-- Do not commit or push unless explicitly asked.
+- Auto-create a local commit after each completed medium-sized coherent architecture block passes the agreed build/test/hygiene gates.
+- Do not push unless explicitly asked.
+- Keep commit messages concise and architecture-oriented.
 - Never discard user changes or use destructive git commands unless explicitly requested.
 
 ## Latest Completed Work
 
-The latest architecture block extracted `ModeCommandCoordinator`, which owns mode/input command routing that had remained in `MainWindow`:
+The latest architecture block extracted `AnalysisCommandCoordinator`, which owns editor-originated analysis command routing and relationship-work cancellation that had remained in `MainWindow`:
+
+- Routes single-file relationship analysis requests from editor workflows to `AnalysisScheduler`.
+- Provides the narrow open-file analysis schedule/cancel command boundary for future editor callers.
+- Cancels single-file and workspace relationship work during coordinator teardown.
+- Removes public analysis command wrappers from `MainWindow`.
+- GUI smoke and large-file perf drain helpers now cancel relationship work through the analysis command boundary instead of calling scheduler relationship cancellation directly.
+
+This builds on the previous architecture block that extracted `SemanticPanelRefreshCoordinator`, which owns semantic panel refresh and command glue that had remained in `MainWindow`:
+
+- Configures Problems, References, and Relationships panel providers.
+- Routes panel double-click navigation through `NavigationCommandCoordinator`.
+- Routes References/Relationships status messages through a shared status-message callback.
+- Owns Problems refresh requests, References/Relationships show/refresh commands, and active-editor-change Problems refresh policy.
+- GUI smoke coverage now calls the semantic panel refresh boundary instead of private `MainWindow` panel helpers.
+- `MainWindow` now creates the dock widgets and delegates semantic panel refresh/command wiring.
+
+This builds on the previous architecture block that extracted `ModeCommandCoordinator`, which owns mode/input command routing that had remained in `MainWindow`:
 
 - Owns key press and key release routing to `ModeManager`.
 - Owns `ModeManager::navigationToggleRequested` routing to `NavigationPaneCoordinator`.
@@ -92,6 +111,7 @@ This builds on the previous architecture block that thinned `MainWindow` by extr
 - `EditorCoordinator` owns editor callback/signal setup, editor-originated command routing, active-tab refresh coordination, and alternate-mode propagation across open editors.
 - `TabManager::editorCount()` provides narrow read-only open-editor enumeration for coordinator-owned mode propagation.
 - `MainWindow` now injects mode command, semantic runtime, file command, navigation command, analysis, and panel callbacks instead of directly owning these workflows.
+- `MainWindow` now delegates semantic panel provider/navigation/status wiring and refresh commands to `SemanticPanelRefreshCoordinator`.
 - `gui_smoke_test` was adapted to exercise the new coordinator boundaries through visible workflows.
 
 This builds on earlier work where `MyCodeEditor` was decoupled from `MainWindow`/manager classes, include fallback moved to `WorkspaceManager::resolveIncludePath`, document-close semantic cleanup moved into `AnalysisScheduler`, open-document analysis was decoupled from `TabManager`, and CompletionManager reads were routed through query services.
@@ -105,8 +125,8 @@ Validation passed after the latest code/doc update:
 - full default target rebuild
 - full `ctest --output-on-failure`: 6/6 passed
 - `git diff --check`
-- changed/new source/test/UI/CMake/handoff non-ASCII scan: empty except local Git warning noise
-- changed/new source/test/UI/CMake/handoff trailing whitespace scan: empty except local Git warning noise
+- changed/new source/test/UI/CMake/handoff non-ASCII scan: `ASCII_SCAN_OK`
+- changed/new source/test/UI/CMake/handoff trailing whitespace scan: `TRAILING_WHITESPACE_SCAN_OK`
 - forbidden-file guard: `FORBIDDEN_GUARD_OK`
 
 Full default target rebuild may exceed 300 seconds while linking; rerunning the same build command has completed the remaining target.
@@ -119,6 +139,7 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `AnalysisScheduler` owns analysis trigger timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and relationship data refresh requests.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol analysis signal routing and active-editor refresh policy.
+- `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
 - `FileCommandCoordinator` owns file/edit/workspace commands and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
@@ -126,7 +147,7 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `SemanticIndex` is the semantic facade and still wraps live `sym_list` in some transitional paths.
 - `SemanticIndexSnapshot` stores read-only symbols, relationships, diagnostics, cached file content, and minimal scope names.
 - Query services exist for definition, completion, relationship, hierarchy, reference, diagnostics, and search.
-- Problems, References, Relationships, Navigation pane, navigation commands, mode command routing, editor/tab/mode workflows, analysis event routing, file/edit/workspace commands, and semantic runtime setup are now split out of `MainWindow` into focused coordinators.
+- Problems, References, Relationships, semantic panel refresh commands, Navigation pane, navigation commands, mode command routing, editor/tab/mode workflows, analysis command routing, analysis event routing, file/edit/workspace commands, and semantic runtime setup are now split out of `MainWindow` into focused coordinators.
 - `MainWindow` should keep shrinking toward UI composition and high-level callback wiring.
 
 ## Next Best Steps

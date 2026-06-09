@@ -5,6 +5,7 @@
 #include <memory>
 
 class AnalysisProgressCoordinator;
+class AnalysisCommandCoordinator;
 class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
@@ -21,6 +22,7 @@ class ModeCommandCoordinator;
 class ProblemsPanelCoordinator;
 class ReferencesPanelCoordinator;
 class RelationshipsPanelCoordinator;
+class SemanticPanelRefreshCoordinator;
 class SemanticRuntimeCoordinator;
 
 QT_BEGIN_NAMESPACE
@@ -42,10 +44,6 @@ public:
     std::unique_ptr<NavigationManager> navigationManager;
     std::unique_ptr<AnalysisScheduler> analysisScheduler;
     std::unique_ptr<AnalysisProgressCoordinator> analysisProgressCoordinator;
-
-    void requestSingleFileRelationshipAnalysis(const QString& fileName, const QString& content);
-    void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
-    void cancelScheduledOpenFileAnalysis(const QString& fileName);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -69,6 +67,7 @@ private:
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
+    std::unique_ptr<AnalysisCommandCoordinator> analysisCommandCoordinator;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
@@ -77,6 +76,7 @@ private:
     std::unique_ptr<ProblemsPanelCoordinator> problemsPanel;
     std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
     std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
+    std::unique_ptr<SemanticPanelRefreshCoordinator> semanticPanelRefresh;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -84,19 +84,12 @@ private:
     void setupProblemsPane();
     void setupReferencesPane();
     void setupRelationshipsPane();
+    void setupSemanticPanelRefreshCoordinator();
+    void setupAnalysisCommandCoordinator();
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupModeCommandCoordinator();
     void setupEditorCoordinator();
-    void updateProblemsPanel(const QString& fileName = QString());
-    void showReferencesForSymbol(const QString& symbolName,
-                                 const QString& fileName,
-                                 const QString& moduleName);
-    void refreshReferencesPanel();
-    void showRelationshipsForSymbol(const QString& symbolName,
-                                    const QString& fileName,
-                                    const QString& moduleName);
-    void refreshRelationshipsPanel();
 
     void setupManagerConnections();
     void setupSemanticRuntime();
