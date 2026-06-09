@@ -68,6 +68,7 @@ Already present at a high level:
 - File, navigation, mode, semantic runtime, semantic panel, and editor workflow coordinators
 - SemanticIndex facade and SemanticIndexSnapshot helpers
 - Definition, completion, smart/all-symbol, typed symbol, and keyword/abbreviation scoring, context-aware completion, typed symbol and `SymbolInfo` completion, scope/current-module, relationship-driven completion, relationship, hierarchy, reference, diagnostics, and search services
+- CompletionManager compatibility facade over CompletionService for legacy completion callers
 - Problems, References, Relationships, and Navigation UI backed by coordinators/services
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 

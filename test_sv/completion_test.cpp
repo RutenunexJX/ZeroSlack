@@ -832,6 +832,14 @@ int main(int argc, char** argv) {
                cm->getModuleChildrenCompletions(QStringLiteral("snap_top"),
                                                 QStringLiteral("snap")),
                {"snap_enable"});
+    expectList("CompletionManager related delegation",
+               cm->getRelatedSymbolCompletions(QStringLiteral("snap_enable"),
+                                               QStringLiteral("snap_other")),
+               {"snap_other_enable"});
+    expectList("CompletionManager reference delegation",
+               cm->getSymbolReferencesCompletions(QStringLiteral("snap_enable"),
+                                                  QStringLiteral("snap_other")),
+               {"snap_other_enable"});
     expectList("CompletionManager clock delegation",
                cm->getClockDomainCompletions(QStringLiteral("snap_c")),
                {"snap_clk"});

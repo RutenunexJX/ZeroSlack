@@ -41,11 +41,11 @@ Still transitional:
 
 ## Latest Completed Block
 
-The latest block moved keyword and abbreviation scoring behind `CompletionService`.
+The latest block retired remaining `CompletionManager` result/cache ownership.
 
-- `CompletionService` owns public keyword completions, keyword abbreviation matches, and generic abbreviation match/score/position helpers.
-- Legacy `CompletionManager` keyword and abbreviation APIs now delegate to `CompletionService`.
-- `completion_test` covers service keyword/abbreviation scoring and manager delegation.
+- Relationship completion APIs in `CompletionManager` now delegate directly to `CompletionService`.
+- Manager-side child/related/clock/reset caches, unused relationship builder state, command cache state, precompute flag, stale symbol-type helpers, and stale includes were removed.
+- `completion_test` covers manager delegation for child, related, reference, clock, and reset completion paths.
 
 It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 

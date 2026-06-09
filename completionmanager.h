@@ -3,18 +3,14 @@
 
 #include <QString>
 #include <QStringList>
-#include <QHash>
 #include <QVector>
 #include <QPair>
 #include <QList>
-#include <QSet>
 #include <memory>
 #include "syminfo.h"
-#include "scope_tree.h"
 
 class SymbolRelationshipEngine;
 class SlangManager;
-class SmartRelationshipBuilder;
 
 class CompletionManager
 {
@@ -112,27 +108,8 @@ private:
 
     static std::unique_ptr<CompletionManager> instance;
 
-    bool precomputedDataValid = false;
-
     bool smartCachingEnabled = true;
     SymbolRelationshipEngine* relationshipEngine = nullptr;
-    SlangManager* m_slangManager = nullptr;
-    std::unique_ptr<SmartRelationshipBuilder> relationshipBuilder;
-
-    QHash<QString, QStringList> moduleChildrenCache;
-    QHash<QString, QStringList> symbolRelationsCache;
-    QHash<QString, QStringList> clockDomainCache;
-    QHash<QString, QStringList> resetSignalCache;
-    bool relationshipCacheValid = false;
-
-    void updatePrecomputedCompletions();
-
-    QString getSymbolTypeString(sym_list::sym_type_e symbolType);
-
-    mutable QHash<QString, QStringList> commandModeCache;
-    mutable bool commandModeCacheValid = false;
-
-    QString getSymbolTypeName(sym_list::sym_type_e symbolType);
 
 };
 

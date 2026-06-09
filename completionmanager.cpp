@@ -1,9 +1,5 @@
 #include "completionmanager.h"
 #include "completionservice.h"
-#include "semanticindex.h"
-#include "symbolrelationshipengine.h"
-#include "slangmanager.h"
-#include "smartrelationshipbuilder.h"
 
 std::unique_ptr<CompletionManager> CompletionManager::instance = nullptr;
 
@@ -42,16 +38,14 @@ void CompletionManager::forceRefreshSymbolCaches()
 
 void CompletionManager::precomputeFrequentCompletions()
 {
-    precomputedDataValid = true;
 }
 
 void CompletionManager::enableSmartCaching(bool enabled)
 {
     smartCachingEnabled = enabled;
 
-    if (enabled) {
+    if (enabled)
         precomputeFrequentCompletions();
-    }
 }
 
 QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
@@ -67,19 +61,12 @@ QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolT
 
 void CompletionManager::invalidateAllCaches()
 {
-    moduleChildrenCache.clear();
-    clockDomainCache.clear();
-    resetSignalCache.clear();
-
     invalidateCommandModeCache();
-
-    precomputedDataValid = false;
 }
 
 void CompletionManager::invalidateSymbolCaches()
 {
     invalidateCommandModeCache();
-    precomputedDataValid = false;
 }
 
 bool CompletionManager::matchesAbbreviation(const QString &text, const QString &abbreviation)
@@ -122,19 +109,12 @@ void CompletionManager::invalidateKeywordCaches()
 
 void CompletionManager::setSlangManager(SlangManager* slangManager)
 {
-    m_slangManager = slangManager;
+    (void)slangManager;
 }
 
 void CompletionManager::setRelationshipEngine(SymbolRelationshipEngine* engine)
 {
     relationshipEngine = engine;
-
-    if (engine && !relationshipBuilder) {
-        relationshipBuilder = SemanticIndex::getInstance()->createRelationshipBuilder(
-            engine, m_slangManager, nullptr);
-    }
-
-    relationshipCacheValid = false;
 }
 
 SymbolRelationshipEngine* CompletionManager::getRelationshipEngine() const
@@ -182,34 +162,14 @@ bool CompletionManager::tryParseStructMemberContext(const QString &line,
 
 QStringList CompletionManager::getModuleChildrenCompletions(const QString& moduleName, const QString& prefix)
 {
-    if (moduleName.isEmpty())
-        return QStringList();
-
-    QString cacheKey = QString("module_children_%1_%2").arg(moduleName, prefix);
-    if (relationshipCacheValid && moduleChildrenCache.contains(cacheKey)) {
-        return moduleChildrenCache[cacheKey];
-    }
-
-    const QStringList results =
-        CompletionService::getInstance()->findModuleChildCompletions(moduleName, prefix);
-    moduleChildrenCache[cacheKey] = results;
-    return results;
+    return CompletionService::getInstance()->findModuleChildCompletions(
+        moduleName, prefix);
 }
 
 QStringList CompletionManager::getRelatedSymbolCompletions(const QString& symbolName, const QString& prefix)
 {
-    if (symbolName.isEmpty())
-        return QStringList();
-
-    QString cacheKey = QString("related_%1_%2").arg(symbolName, prefix);
-    if (relationshipCacheValid && symbolRelationsCache.contains(cacheKey)) {
-        return symbolRelationsCache[cacheKey];
-    }
-
-    const QStringList results =
-        CompletionService::getInstance()->findRelatedSymbolCompletions(symbolName, prefix);
-    symbolRelationsCache[cacheKey] = results;
-    return results;
+    return CompletionService::getInstance()->findRelatedSymbolCompletions(
+        symbolName, prefix);
 }
 
 QStringList CompletionManager::getSymbolReferencesCompletions(const QString& symbolName, const QString& prefix)
@@ -219,28 +179,12 @@ QStringList CompletionManager::getSymbolReferencesCompletions(const QString& sym
 
 QStringList CompletionManager::getClockDomainCompletions(const QString& prefix)
 {
-    QString cacheKey = QString("clock_domain_%1").arg(prefix);
-    if (relationshipCacheValid && clockDomainCache.contains(cacheKey)) {
-        return clockDomainCache[cacheKey];
-    }
-
-    const QStringList results =
-        CompletionService::getInstance()->findClockDomainCompletions(prefix);
-    clockDomainCache[cacheKey] = results;
-    return results;
+    return CompletionService::getInstance()->findClockDomainCompletions(prefix);
 }
 
 QStringList CompletionManager::getResetSignalCompletions(const QString& prefix)
 {
-    QString cacheKey = QString("reset_signals_%1").arg(prefix);
-    if (relationshipCacheValid && resetSignalCache.contains(cacheKey)) {
-        return resetSignalCache[cacheKey];
-    }
-
-    const QStringList results =
-        CompletionService::getInstance()->findResetSignalCompletions(prefix);
-    resetSignalCache[cacheKey] = results;
-    return results;
+    return CompletionService::getInstance()->findResetSignalCompletions(prefix);
 }
 
 QStringList CompletionManager::getVariableCompletionsInScope(const QString& moduleName,
@@ -263,19 +207,11 @@ QStringList CompletionManager::getInstantiableModules(const QString& prefix)
 
 void CompletionManager::invalidateRelationshipCaches()
 {
-    moduleChildrenCache.clear();
-    symbolRelationsCache.clear();
-    clockDomainCache.clear();
-    resetSignalCache.clear();
-    relationshipCacheValid = false;
 }
 
 void CompletionManager::refreshRelationshipData()
 {
-    if (relationshipEngine) {
-        invalidateRelationshipCaches();
-        relationshipCacheValid = true;
-    }
+    invalidateRelationshipCaches();
 }
 
 QString CompletionManager::getCurrentModule(const QString& fileName, int cursorPosition)
@@ -317,61 +253,8 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
 }
 
 
-QString CompletionManager::getSymbolTypeName(sym_list::sym_type_e symbolType)
-{
-    switch (symbolType) {
-        case sym_list::sym_logic: return "logic";
-        case sym_list::sym_reg: return "reg";
-        case sym_list::sym_wire: return "wire";
-        case sym_list::sym_localparam: return "localparam";
-        case sym_list::sym_parameter: return "parameter";
-        case sym_list::sym_module: return "module";
-        case sym_list::sym_task: return "task";
-        case sym_list::sym_function: return "function";
-        case sym_list::sym_interface: return "interface";
-        case sym_list::sym_interface_modport: return "interface_modport";
-        case sym_list::sym_packed_struct: return "packed_struct";
-        case sym_list::sym_unpacked_struct: return "unpacked_struct";
-        case sym_list::sym_enum: return "enum";
-        case sym_list::sym_typedef: return "typedef";
-        case sym_list::sym_def_define: return "define";
-        case sym_list::sym_def_ifdef: return "ifdef";
-        case sym_list::sym_def_ifndef: return "ifndef";
-        case sym_list::sym_always: return "always";
-        case sym_list::sym_always_ff: return "always_ff";
-        case sym_list::sym_always_comb: return "always_comb";
-        case sym_list::sym_always_latch: return "always_latch";
-        case sym_list::sym_assign: return "assign";
-        case sym_list::sym_xilinx_constraint: return "xilinx_constraint";
-        case sym_list::sym_package: return "package";
-        case sym_list::sym_user: return "user";
-        default: return "unknown";
-    }
-}
-
-QString CompletionManager::getSymbolTypeString(sym_list::sym_type_e symbolType)
-{
-    switch (symbolType) {
-    case sym_list::sym_reg:        return "reg";
-    case sym_list::sym_wire:       return "wire";
-    case sym_list::sym_logic:      return "logic";
-    case sym_list::sym_module:     return "module";
-    case sym_list::sym_task:       return "task";
-    case sym_list::sym_function:   return "function";
-    case sym_list::sym_always:     return "always";
-    case sym_list::sym_always_ff:  return "always_ff";
-    case sym_list::sym_always_comb: return "always_comb";
-    case sym_list::sym_always_latch: return "always_latch";
-    case sym_list::sym_assign:     return "assign";
-    case sym_list::sym_typedef:    return "typedef";
-    default:                       return QString("unknown_%1").arg(static_cast<int>(symbolType));
-    }
-}
-
 void CompletionManager::invalidateCommandModeCache()
 {
-    commandModeCache.clear();
-    commandModeCacheValid = false;
 }
 
 QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
