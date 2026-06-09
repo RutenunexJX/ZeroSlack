@@ -74,6 +74,7 @@ public:
     QStringList findKeywordAbbreviationMatches(
         const QStringList& candidates,
         const QString& abbreviation) const;
+    bool relationshipCompletionsAvailable() const;
     QVector<QPair<QString, int>> findSmartCompletions(
         const QString& prefix,
         const QString& fileName = QString(),

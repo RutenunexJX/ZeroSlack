@@ -9,15 +9,11 @@
 #include <memory>
 #include "syminfo.h"
 
-class SymbolRelationshipEngine;
-
 class CompletionManager
 {
 public:
     static CompletionManager* getInstance();
     ~CompletionManager();
-
-    void setRelationshipEngine(SymbolRelationshipEngine* engine);
 
     bool matchesAbbreviation(const QString &text, const QString &abbreviation);
     QStringList getAbbreviationMatches(const QStringList &candidates, const QString &abbreviation);
@@ -91,8 +87,6 @@ private:
     CompletionManager();
 
     static std::unique_ptr<CompletionManager> instance;
-
-    SymbolRelationshipEngine* relationshipEngine = nullptr;
 
 };
 

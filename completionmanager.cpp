@@ -76,11 +76,6 @@ QStringList CompletionManager::getAbbreviationMatches(const QStringList &candida
         candidates, abbreviation);
 }
 
-void CompletionManager::setRelationshipEngine(SymbolRelationshipEngine* engine)
-{
-    relationshipEngine = engine;
-}
-
 QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QString& prefix,
                                                                   const QString& fileName,
                                                                   int cursorPosition)
@@ -88,8 +83,7 @@ QVector<QPair<QString, int>> CompletionManager::getSmartCompletions(const QStrin
     return CompletionService::getInstance()->findSmartCompletions(
         prefix,
         fileName,
-        cursorPosition,
-        relationshipEngine != nullptr);
+        cursorPosition);
 }
 
 QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
@@ -100,7 +94,6 @@ QStringList CompletionManager::getContextAwareCompletions(const QString& prefix,
     query.prefix = prefix;
     query.currentModule = currentModule;
     query.context = context;
-    query.relationshipCompletionsEnabled = relationshipEngine != nullptr;
     return CompletionService::getInstance()->findContextAwareCompletions(query);
 }
 

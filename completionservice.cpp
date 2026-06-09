@@ -275,13 +275,21 @@ QStringList CompletionService::findKeywordAbbreviationMatches(
     return result;
 }
 
+bool CompletionService::relationshipCompletionsAvailable() const
+{
+    if (semanticIndex()->snapshot())
+        return true;
+
+    return semanticIndex()->symbolDatabase()->getRelationshipEngine() != nullptr;
+}
+
 QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
     const QString& prefix,
     const QString& fileName,
     int cursorPosition,
     bool relationshipCompletionsEnabled) const
 {
-    if (!relationshipCompletionsEnabled)
+    if (!relationshipCompletionsEnabled || !relationshipCompletionsAvailable())
         return findScoredAllSymbolCompletions(prefix);
 
     const QString currentModule = currentModuleAt(fileName, cursorPosition);
@@ -679,6 +687,8 @@ QStringList CompletionService::findContextAwareCompletions(
     const ContextCompletionQuery& query) const
 {
     QStringList result;
+    const bool relationshipsEnabled =
+        query.relationshipCompletionsEnabled && relationshipCompletionsAvailable();
 
     if (query.context.contains(QLatin1Char('.'))
         || query.context.contains(QStringLiteral("->"))) {
@@ -712,7 +722,7 @@ QStringList CompletionService::findContextAwareCompletions(
             result.append(findEnumValueCompletions(query.prefix));
     }
 
-    if (query.relationshipCompletionsEnabled
+    if (relationshipsEnabled
         && query.context.contains(QLatin1Char('('))
         && (query.context.contains(QStringLiteral("module"))
             || query.context.contains(QStringLiteral("instantiation")))) {
@@ -736,7 +746,7 @@ QStringList CompletionService::findContextAwareCompletions(
 
     if (!query.currentModule.isEmpty()) {
         result.append(findModuleChildCompletions(query.currentModule, query.prefix));
-        if (query.relationshipCompletionsEnabled)
+        if (relationshipsEnabled)
             result.append(findRelatedSymbolCompletions(query.currentModule, query.prefix));
     }
 

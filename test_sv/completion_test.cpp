@@ -695,6 +695,14 @@ int main(int argc, char** argv) {
                    QStringLiteral("snap_enable"),
                    QStringLiteral("snap_other")),
                {"snap_other_enable"});
+    ++g_checks;
+    const bool snapshotRelationshipsAvailable =
+        snapshotCompletionService.relationshipCompletionsAvailable();
+    if (!snapshotRelationshipsAvailable)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           snapshotRelationshipsAvailable ? "PASS" : "FAIL",
+           "snapshot relationship availability");
     expectList("snapshot clock completions",
                snapshotCompletionService.findClockDomainCompletions(QStringLiteral("snap_c")),
                {"snap_clk"});

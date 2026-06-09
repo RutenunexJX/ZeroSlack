@@ -1,6 +1,5 @@
 #include "semanticruntimecoordinator.h"
 
-#include "completionmanager.h"
 #include "semanticindex.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
@@ -15,9 +14,6 @@ SemanticRuntimeCoordinator::SemanticRuntimeCoordinator(QObject* parent)
     semanticIndex->attachRelationshipEngine(relationshipEngineInstance.get());
 
     slangManagerInstance = std::make_unique<SlangManager>();
-
-    CompletionManager* completionManager = CompletionManager::getInstance();
-    completionManager->setRelationshipEngine(relationshipEngineInstance.get());
 
     relationshipBuilderInstance = semanticIndex->createRelationshipBuilder(
         relationshipEngineInstance.get(), slangManagerInstance.get(), this);

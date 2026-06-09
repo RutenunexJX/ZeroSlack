@@ -52,11 +52,11 @@ These docs are living handoff material, not a changelog.
 
 ## Latest Verified Block
 
-The latest block removed obsolete `CompletionManager` cache lifecycle coupling.
+The latest block moved relationship-completion availability behind `CompletionService`.
 
-- `AnalysisCoordinator`, `SymbolAnalyzer`, and `sym_list` no longer notify `CompletionManager` about cache invalidation or relationship refresh events.
-- Empty cache lifecycle APIs, stale smart-precompute controls, stale SlangManager injection, and unused relationship getter state were removed from `CompletionManager`.
-- `SemanticRuntimeCoordinator` now only injects relationship-engine availability into `CompletionManager`; semantic data refresh remains owned by `SemanticIndex` / scheduler paths.
+- `CompletionService` now determines relationship-aware completion availability from its `SemanticIndex` snapshot or live relationship engine.
+- `CompletionManager` no longer stores relationship-engine state or receives semantic runtime injection; smart/context completion APIs delegate to service availability.
+- Completion tests cover snapshot relationship availability alongside smart/context manager delegation.
 
 ## Latest Validation
 
@@ -85,10 +85,10 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `FileCommandCoordinator` owns file/edit/workspace commands and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
-- `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex` / `CompletionManager`.
+- `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command completions, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
-- `CompletionManager` is now a compatibility facade over `CompletionService` plus relationship-engine availability for smart/context completions.
+- `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are split out of `MainWindow`.
 
 ## Next Best Steps
