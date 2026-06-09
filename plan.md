@@ -87,7 +87,7 @@ Latest handoff work:
   - Own current-file-relative and workspace include fallback through
     `resolveIncludePath()`.
 - `test_sv/gui_smoke_test.cpp`
-  - Adds small regression assertions for workspace include basename resolution
+  - Adds focused regression assertions for workspace include basename resolution
     and current-file-relative include resolution.
 - `analysisscheduler.cpp`, `analysisscheduler.h`
   - Own document-close semantic cleanup by cancelling pending open-file
@@ -113,43 +113,35 @@ Latest handoff work:
 - `readme.md`, `plan.md`, `goal.md`
   - Updated compact handoff state.
 
-Expected real diff before commit: `HierarchyService` root direction report
-groups, `MainWindow` relationship tree consumption of those groups, focused
-`CompletionManager` definition reads through `DefinitionService`,
-`CompletionManager` relationship helper queries through name-based
-`RelationshipService`, `CompletionManager` typed symbol reads through
-`SearchService`, `CompletionManager` file-scoped symbol reads through
-`SearchService`, `CompletionManager` all-symbol reads through `SearchService`,
-`MyCodeEditor` relationship-analysis debounce routed through the scheduler
-boundary and exposed as an editor signal, `MyCodeEditor` alternate-mode state
-pushed from `MainWindow` / `ModeManager`, alternate-mode file commands routed
-through editor signals, include fallback resolution and file opening routed
-through injected callbacks, `MainWindow` header decoupled from `mycodeeditor.h`,
-editor setup centralized in `configureEditor()`, workspace include fallback
-moved to `WorkspaceManager::resolveIncludePath`, current-file-relative include
-resolution covered by the same workspace service, document-close semantic
-cleanup moved into `AnalysisScheduler`, `SymbolAnalyzer` open-document analysis
-decoupled from `TabManager`, focused report regressions, and handoff docs.
+Latest committed architecture work includes `HierarchyService` root direction
+report groups, `CompletionManager` reads routed through Definition,
+Relationship, and Search services, `MyCodeEditor` decoupled from
+`MainWindow`/manager classes, include fallback moved to
+`WorkspaceManager::resolveIncludePath`, document-close semantic cleanup moved
+into `AnalysisScheduler`, `SymbolAnalyzer` open-document analysis decoupled
+from `TabManager`, focused regressions, and handoff docs.
 
-## Next Small Increments
+## Next Architecture Blocks
 
 Choose one:
 
-1. Move another UI/editor semantic read or analysis policy check behind
-   SemanticIndex, a Query Service, or AnalysisScheduler.
-2. Move another small MainWindow coordination responsibility into a focused coordinator.
-3. Thin another `MainWindow` refresh path without changing UI behavior.
-4. Extract one remaining clean MainWindow progress or refresh policy boundary
-   into AnalysisScheduler.
+1. Move a related group of UI/editor/completion semantic reads or analysis
+   policy checks behind `SemanticIndex`, Query Services, models, or
+   `AnalysisScheduler`.
+2. Extract one complete MainWindow coordination responsibility into a focused
+   coordinator or an existing scheduler/model boundary.
+3. Thin one UI panel or editor workflow end-to-end without changing visible
+   behavior.
+4. Move a related completion/editor legacy state path behind existing service
+   or model APIs.
 
 Prioritize production-code architecture progress. Do not use pure
 `relationship_test.cpp` assertion expansion as the main increment. Add tests
-only as the smallest regression protection directly tied to a production code
-change.
+only as focused regression protection directly tied to a production code change.
 
 Avoid:
 
-- broad rewrites,
+- broad scattered rewrites,
 - unrelated cleanup,
 - qmake files,
 - `.claude`,
@@ -167,8 +159,9 @@ For docs-only cleanup:
 
 For code/test changes:
 
-- build the affected target,
-- run the focused CTest,
+- batch related production-code changes first,
+- build the affected target when compile risk is meaningful or the block is done,
+- run the focused CTest after the coherent block is complete,
 - run full `ctest --output-on-failure` when shared behavior or service reports are touched,
 - run `git diff --check`,
 - run the non-ASCII scan,
@@ -180,7 +173,7 @@ Do not append every session forever. Keep this file current and compact.
 
 Stop and hand off when:
 
-- one coherent increment is validated,
+- one coherent architecture block is validated,
 - context is getting large,
 - the next step is broad or risky,
 - validation is blocked,

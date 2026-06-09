@@ -88,97 +88,24 @@ Already present:
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
 - DefinitionService resolves struct-member definition context from editor line-prefix context through its injected SemanticIndex
 
-Recent test coverage includes real fixture assertions for:
+Recent test coverage is strongest around:
 
-- cross-file instantiation,
-- task calls,
-- condition reads,
-- assignment writes,
-- current-file and workspace-file reference filtering,
-- diagnostic file filtering,
-- DiagnosticReport current-file grouped diagnostic identity.
-- incoming relationship browsing,
-- incoming timing relationships (`CLOCKS` / `RESETS`),
-- incoming timing reference report shape.
-- ReferenceReport grouped row symbol identity for real instantiation results.
-- RelationshipReport grouped incoming row direction and peer identity for real
-  instantiation results.
-- HierarchyReport child row identity for real instantiation results.
-- Snapshot-backed SearchService real module symbol lookup.
-- Snapshot-backed RelationshipService real instantiation lookup with enriched
-  endpoint symbols.
-- Snapshot-backed ReferenceService real instantiation lookup with converted
-  referencing/referenced symbols.
-- Snapshot-backed HierarchyService real instantiation traversal.
-- Scheduler-owned relationship data refresh requests after relationship result
-  application, with MainWindow consuming the refresh request for completion and
-  navigation updates.
-- Scheduler-owned project-close semantic cleanup, including snapshot clear,
-  relationship-engine clear, relationship refresh, and diagnostics refresh.
-- DefinitionService same-name struct member selection from `var.member` context.
-- Snapshot-backed struct-variable type lookup, struct-member completion,
-  command-mode struct symbols, and same-name struct-member selection.
-- Snapshot-backed CompletionService normal and command-mode module/global
-  completion names and returned symbol identity.
-- CompletionService struct-member context parse and reject behavior.
-- CompletionService command-mode enum typedef completion through snapshot-backed
-  global and module-local reads.
-- CompletionService command-mode module, interface, package, and define
-  completion names and returned symbol identity while the editor supplies a
-  current module context.
-- CompletionManager definition lookup goes through DefinitionService instead
-  of reading definitions directly from SemanticIndex.
-- CompletionManager relationship completion and scoring helpers use
-  RelationshipService name-based queries instead of pre-resolving symbol IDs.
-- CompletionManager typed symbol reads go through SearchService instead of
-  reading typed symbols directly from SemanticIndex.
-- CompletionManager file-scoped symbol reads go through SearchService instead
-  of reading file-scoped symbols directly from SemanticIndex.
-- CompletionManager all-symbol reads go through SearchService instead of
-  reading all symbols directly from SemanticIndex.
-- MyCodeEditor no longer includes or casts to MainWindow or manager classes.
-- MyCodeEditor relationship analysis, alternate-mode file commands, include
-  fallback resolution, and file opening are routed through editor signals or
-  injected callbacks supplied by MainWindow.
-- MainWindow header no longer includes mycodeeditor.h or grants MyCodeEditor
-  friendship.
-- MainWindow editor setup is centralized in configureEditor().
-- Current-file-relative and workspace include fallback are owned by
-  WorkspaceManager::resolveIncludePath and covered by GUI smoke regression.
-- AnalysisScheduler owns document-close semantic cleanup and remaining
-  open-document reanalysis.
-- SymbolAnalyzer open-document analysis uses explicit file/content inputs
-  instead of reading TabManager directly.
-- relationship_test covers scheduler-owned document-close reanalysis of the
-  remaining open documents.
-- DefinitionService snapshot-backed cross-file module definition resolution
-  and local-file precedence.
-- DefinitionService snapshot-backed cross-file interface and package
-  definition resolution.
-- DefinitionService snapshot-backed `canResolveDefinition` and
-  `findDefinitions` wrappers.
-- SearchService snapshot-backed `hasMatches` positive/negative behavior and
-- SearchService snapshot-backed file-scoped module filtering, exact matching,
-  case sensitivity, scoring, and max-result limiting.
-- SearchService snapshot-backed empty-text typed/file filtering and default
-  score behavior.
-- DiagnosticService snapshot-backed `hasDiagnostics` severity and
-  workspace-file filtering.
-- RelationshipService snapshot-backed `hasRelationships`, exact relationship,
-  and relationship report counts/peer identity.
-- RelationshipService snapshot-backed relationship report direction/type
-  grouping for outgoing and incoming instantiation rows.
-- ReferenceService snapshot-backed `hasReferences` and reference report
-  counts/grouped symbol identity.
-- ReferenceService snapshot-backed reference report file/type counts and file
-  group metadata.
-- ReferenceService snapshot-backed current-file and workspace-file filters.
-- HierarchyService snapshot-backed hierarchy report counts plus child and
-  parent identity.
-- HierarchyService snapshot-backed root direction report groups, with
-  MainWindow consuming those groups for relationship tree root direction rows.
-- RelationshipService, ReferenceService, and HierarchyService name-based
-  snapshot query resolution through service report paths.
+- real multi-file relationship fixtures for instantiation, calls, reads,
+  writes, clocks/resets, diagnostics, references, hierarchy traversal, and
+  workspace/current-file filtering,
+- snapshot-backed DefinitionService, CompletionService, SearchService,
+  DiagnosticService, RelationshipService, ReferenceService, and
+  HierarchyService behavior,
+- CompletionManager reads routed through DefinitionService,
+  RelationshipService, and SearchService instead of direct SemanticIndex
+  queries,
+- scheduler-owned lifecycle behavior, including relationship refresh requests,
+  project-close cleanup, diagnostics refresh, document-close cleanup, and
+  remaining open-document reanalysis,
+- editor/MainWindow decoupling, including signal/callback driven relationship
+  analysis, alternate-mode file commands, include resolution, and file opening,
+- GUI smoke coverage for include resolution, panel behavior, navigation, and
+  workspace close/reopen paths.
 
 ## Remaining Gaps
 
@@ -202,11 +129,15 @@ The foundation is healthy when:
 
 ## Current Goal Step
 
-Continue with one small, verifiable increment:
+Continue with one medium-sized, coherent, verifiable architecture block:
 
-- add another focused real fixture assertion, or
-- extract one clear MainWindow refresh/progress policy boundary into AnalysisScheduler, or
-- move one UI/editor semantic read or analysis policy check behind
-  SemanticIndex, a Query Service, or AnalysisScheduler.
+- move a related group of UI/editor/completion semantic reads or analysis
+  policy checks behind SemanticIndex, Query Services, models, or
+  AnalysisScheduler, or
+- extract one complete MainWindow refresh/progress/coordination boundary into a
+  focused coordinator or existing scheduler/model boundary, or
+- thin one UI panel or editor workflow end-to-end without changing visible
+  behavior.
 
-Stop after a coherent validated increment and update the compact handoff.
+Batch related production-code changes, then validate and update the compact
+handoff after the block is complete.

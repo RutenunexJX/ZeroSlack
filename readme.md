@@ -18,7 +18,7 @@ Thin UI consumers
 - Version: `0.0.20/slang25` in `version.h`
 - Latest commit: use `git log -1 --oneline`
 - Build path: Qt 6 + CMake + Ninja only
-- Expected real diff after the handoff commit/push: empty, except local warning noise.
+- Expected working tree: clean, except local warning noise.
 
 Common git warnings on this machine are not content errors:
 
@@ -40,11 +40,10 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over `g
 
 ## Latest Completed Work
 
-The latest development step moved one relationship-tree report policy boundary
-from `MainWindow` into `HierarchyService` and migrated one legacy completion
-definition read behind `DefinitionService`. It also moved several relationship
-completion helpers onto name-based `RelationshipService` queries and routes
-all/typed/file-scoped completion symbol reads through `SearchService`.
+Recent development work moved relationship tree report policy into
+`HierarchyService`, routed completion reads through query services, decoupled
+`MyCodeEditor` from `MainWindow`/manager classes, and moved document-close
+semantic cleanup into `AnalysisScheduler`.
 
 - `HierarchyReport` now carries root-level direction groups with direction,
   nodes, and count.
@@ -118,26 +117,29 @@ Validation passed after the latest code/test step:
 
 ## Next Best Steps
 
-Pick one small, verifiable increment:
+Pick one medium-sized, coherent, verifiable architecture block:
 
-- Extract one remaining clean MainWindow progress or refresh policy boundary into AnalysisScheduler.
-- Move another UI/editor read path or analysis policy check behind SemanticIndex,
-  a Query Service, or AnalysisScheduler.
-- Thin another `MainWindow` refresh path without changing UI behavior.
+- Move a related set of UI/editor/completion semantic reads or analysis policy
+  checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`.
+- Extract one complete MainWindow refresh/progress/coordination boundary into
+  a focused coordinator or existing scheduler/model boundary.
+- Thin one UI panel or editor workflow end-to-end without changing visible
+  behavior.
 
 Prioritize production-code architecture progress. Do not use pure
 `relationship_test.cpp` assertion expansion as the main increment. Add tests
-only as the smallest regression protection directly tied to a production code
-change.
+only as focused regression protection directly tied to a production code change.
 
-Avoid broad CompletionManager or MainWindow rewrites unless there is a narrow testable slice.
+Avoid broad scattered rewrites, but do not stop after tiny 10-20 line edits
+when a related architecture block can be finished and verified together.
 
 ## Handoff Cadence
 
-Do one small, verified continuation at a time. Stop and update this handoff when:
+Do one medium-sized, coherent block at a time. Batch related production-code
+changes, then validate and update this handoff when:
 
 - context is getting large,
-- a coherent increment is validated,
+- a coherent architecture block is validated,
 - the next step is broad or risky,
 - validation is blocked,
 - or the user asks to stop.
@@ -159,7 +161,7 @@ $env:PATH = "E:\QT6\Tools\mingw1310_64\bin;E:\QT6\6.10.2\mingw_64\bin;E:\QT6\Too
 ## New Session Opener
 
 ```text
-Please use the zeroslack-handoff-dev skill to take over ZeroSlack and continue iterative development.
+Please take over ZeroSlack and continue iterative development.
 
 First read readme.md, plan.md, goal.md, and version.h, then inspect:
 - git log -1 --oneline
@@ -171,27 +173,23 @@ Known current state:
 - Workspace: E:\ZeroSlack\ZeroSlack
 - Branch: tree_sitter_and_slang
 - Version: 0.0.20/slang25
-- Latest commit: use git log -1 --oneline.
-- Current uncommitted diff should contain `HierarchyService` root direction
-  report grouping, `MainWindow` consumption of that report shape,
-  `CompletionManager` definition reads through `DefinitionService`,
-  `CompletionManager` relationship helper queries through name-based
-  `RelationshipService`, focused report regressions, and compact handoff docs,
-  unless it has been committed. Local warning noise is expected.
-  It should also include `CompletionManager` all/typed/file-scoped symbol reads
-  through `SearchService` unless that work has been committed.
+- Latest commit should be eb19bf7 Move editor semantic coordination behind services.
+- Current working tree should be clean, except local Git warning noise.
 
 Rules:
 - Use Qt 6 + CMake + Ninja only.
 - Do not restore demo.pro, *.pro, *.pri, qmake, .claude, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived perflog.
 - Keep source/test/UI/CMake and handoff docs English / ASCII.
 - Prefer git diff --name-only over git status noise.
-- Do one small, verifiable continuation at a time.
+- Do one medium-sized, coherent, verifiable architecture block at a time.
+- Do not stop after tiny 10-20 line edits if related production-code changes
+  can be finished and verified together.
 - Prioritize production-code architecture progress; do not use pure
   relationship_test.cpp assertion expansion as the main increment.
-- Add tests only as the smallest regression protection directly tied to a
+- Add tests only as focused regression protection directly tied to a
   production code change.
-- Stop for handoff when context is getting large, after a coherent validated increment, or before the next step becomes broad/risky.
+- Stop for handoff when context is getting large, after a coherent validated
+  block, or before the next step becomes broad/risky.
 
 Latest completed continuation:
 - HierarchyReport carries root-level direction groups and MainWindow consumes them for relationship tree root direction rows.
@@ -216,5 +214,6 @@ Latest completed continuation:
 - Handoff docs were updated and compacted.
 - Validation passed: gui_smoke_test target build, ctest -R gui_smoke_test, relationship_test target build, ctest -R relationship_test, full default target rebuild, full CTest 6/6, git diff --check, non-ASCII scan, and forbidden-file guard.
 
-Continue toward goal.md with one small, verifiable step.
+Continue toward goal.md with one medium-sized, coherent, verifiable
+architecture block.
 ```
