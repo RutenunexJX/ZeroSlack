@@ -487,6 +487,59 @@ int main(int argc, char** argv) {
                    && identifierPriorityTarget.kind
                        == SourceNavigationTargetKind::Identifier,
                true);
+    const SourceEditorNavigationTarget includeEditorTarget =
+        sourceNavigationService->editorNavigationTargetAtColumn(
+            includeLine,
+            includeLine.indexOf(QStringLiteral("pkg_defs")),
+            [](const QString&) { return false; });
+    expectBool("SourceNavigation editor include target",
+               includeEditorTarget.matched
+                   && includeEditorTarget.includeTarget
+                   && includeEditorTarget.jumpable,
+               true);
+    expectEq("SourceNavigation editor include text",
+             includeEditorTarget.text,
+             QStringLiteral("rtl/pkg_defs.svh"));
+
+    const SourceEditorNavigationTarget importEditorTarget =
+        sourceNavigationService->editorNavigationTargetAtColumn(
+            importLine,
+            importLine.indexOf(QStringLiteral("pkg_defs")),
+            [](const QString&) { return false; });
+    expectBool("SourceNavigation editor import target",
+               importEditorTarget.matched
+                   && !importEditorTarget.includeTarget
+                   && !importEditorTarget.identifierTarget
+                   && importEditorTarget.jumpable,
+               true);
+    expectEq("SourceNavigation editor import text",
+             importEditorTarget.text,
+             QStringLiteral("pkg_defs"));
+
+    const SourceEditorNavigationTarget identifierEditorTarget =
+        sourceNavigationService->editorNavigationTargetAtColumn(
+            identifierLine,
+            identifierLine.indexOf(QStringLiteral("current_value")),
+            [](const QString& symbolName) {
+                return symbolName == QStringLiteral("current_value");
+            });
+    expectBool("SourceNavigation editor identifier target",
+               identifierEditorTarget.matched
+                   && identifierEditorTarget.identifierTarget
+                   && identifierEditorTarget.jumpable,
+               true);
+    expectEq("SourceNavigation editor identifier text",
+             identifierEditorTarget.text,
+             QStringLiteral("current_value"));
+    expectBool("SourceNavigation editor unresolved identifier",
+               !sourceNavigationService
+                    ->editorNavigationTargetAtColumn(
+                        identifierLine,
+                        identifierLine.indexOf(QStringLiteral("current_value")),
+                        [](const QString&) { return false; })
+                    .jumpable,
+               true);
+
     const int editorActionPos =
         content.indexOf(QStringLiteral("counter <= 8'd0"));
     expectBool("Editor symbol action fixture position",

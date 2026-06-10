@@ -207,3 +207,30 @@ SourceSymbolActionContext SourceNavigationService::symbolActionContextAtColumn(
     context.moduleName = moduleName;
     return context;
 }
+
+SourceEditorNavigationTarget SourceNavigationService::editorNavigationTargetAtColumn(
+    const QString& lineText,
+    int column,
+    const std::function<bool(const QString&)>& canResolveIdentifier) const
+{
+    SourceEditorNavigationTarget editorTarget;
+    const SourceNavigationTarget sourceTarget = targetAtColumn(lineText, column);
+    if (!sourceTarget.matched)
+        return editorTarget;
+
+    editorTarget.matched = true;
+    editorTarget.text = sourceTarget.text;
+    editorTarget.startColumn = sourceTarget.startColumn;
+    editorTarget.endColumn = sourceTarget.endColumn;
+    editorTarget.cursorColumn = column;
+    editorTarget.includeTarget =
+        sourceTarget.kind == SourceNavigationTargetKind::IncludeDirective;
+    editorTarget.identifierTarget =
+        sourceTarget.kind == SourceNavigationTargetKind::Identifier;
+    editorTarget.jumpable = editorTarget.includeTarget
+        || sourceTarget.kind == SourceNavigationTargetKind::PackageImport
+        || (editorTarget.identifierTarget
+            && canResolveIdentifier
+            && canResolveIdentifier(editorTarget.text));
+    return editorTarget;
+}

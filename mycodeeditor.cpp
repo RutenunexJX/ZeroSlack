@@ -1042,8 +1042,13 @@ MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
         return editorTarget;
 
     const int posInLine = cursor.position() - block.position();
-    const SourceNavigationTarget sourceTarget =
-        SourceNavigationService::getInstance()->targetAtColumn(block.text(), posInLine);
+    const SourceEditorNavigationTarget sourceTarget =
+        SourceNavigationService::getInstance()->editorNavigationTargetAtColumn(
+            block.text(),
+            posInLine,
+            [this](const QString& symbolName) {
+                return canJumpToDefinition(symbolName);
+            });
     if (!sourceTarget.matched)
         return editorTarget;
 
@@ -1051,14 +1056,10 @@ MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
     editorTarget.text = sourceTarget.text;
     editorTarget.startPos = block.position() + sourceTarget.startColumn;
     editorTarget.endPos = block.position() + sourceTarget.endColumn;
-    editorTarget.cursorPosition = cursor.position();
-    editorTarget.includeTarget =
-        sourceTarget.kind == SourceNavigationTargetKind::IncludeDirective;
-    editorTarget.identifierTarget =
-        sourceTarget.kind == SourceNavigationTargetKind::Identifier;
-    editorTarget.jumpable = editorTarget.includeTarget
-        || sourceTarget.kind == SourceNavigationTargetKind::PackageImport
-        || canJumpToDefinition(editorTarget.text);
+    editorTarget.cursorPosition = block.position() + sourceTarget.cursorColumn;
+    editorTarget.includeTarget = sourceTarget.includeTarget;
+    editorTarget.identifierTarget = sourceTarget.identifierTarget;
+    editorTarget.jumpable = sourceTarget.jumpable;
     return editorTarget;
 }
 

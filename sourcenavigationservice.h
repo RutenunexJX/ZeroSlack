@@ -2,6 +2,7 @@
 #define SOURCENAVIGATIONSERVICE_H
 
 #include <QString>
+#include <functional>
 #include <memory>
 
 struct IncludeDirectiveTarget {
@@ -47,6 +48,17 @@ struct SourceSymbolActionContext {
     QString moduleName;
 };
 
+struct SourceEditorNavigationTarget {
+    bool matched = false;
+    bool jumpable = false;
+    bool includeTarget = false;
+    bool identifierTarget = false;
+    QString text;
+    int startColumn = -1;
+    int endColumn = -1;
+    int cursorColumn = -1;
+};
+
 class SourceNavigationService
 {
 public:
@@ -68,6 +80,10 @@ public:
         int column,
         const QString& fileName,
         const QString& moduleName) const;
+    SourceEditorNavigationTarget editorNavigationTargetAtColumn(
+        const QString& lineText,
+        int column,
+        const std::function<bool(const QString&)>& canResolveIdentifier) const;
 
 private:
     static std::unique_ptr<SourceNavigationService> instance;
