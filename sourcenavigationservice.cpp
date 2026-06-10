@@ -98,3 +98,51 @@ PackageImportTarget SourceNavigationService::packageImportAtColumn(
     target.endColumn = packageEnd;
     return target;
 }
+
+SourceIdentifierTarget SourceNavigationService::identifierAtColumn(
+    const QString& lineText,
+    int column) const
+{
+    SourceIdentifierTarget target;
+    if (lineText.isEmpty() || column < 0)
+        return target;
+
+    int hitColumn = column;
+    if (hitColumn >= lineText.size()) {
+        hitColumn = lineText.size() - 1;
+    }
+
+    if (hitColumn < 0 || !isIdentifierPart(lineText.at(hitColumn)))
+        return target;
+
+    int startColumn = hitColumn;
+    while (startColumn > 0
+           && isIdentifierPart(lineText.at(startColumn - 1))) {
+        --startColumn;
+    }
+
+    if (!isIdentifierStart(lineText.at(startColumn)))
+        return target;
+
+    int endColumn = hitColumn + 1;
+    while (endColumn < lineText.size()
+           && isIdentifierPart(lineText.at(endColumn))) {
+        ++endColumn;
+    }
+
+    target.matched = true;
+    target.identifier = lineText.mid(startColumn, endColumn - startColumn);
+    target.startColumn = startColumn;
+    target.endColumn = endColumn;
+    return target;
+}
+
+bool SourceNavigationService::isIdentifierStart(QChar ch)
+{
+    return ch.isLetter() || ch == QLatin1Char('_');
+}
+
+bool SourceNavigationService::isIdentifierPart(QChar ch)
+{
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_');
+}

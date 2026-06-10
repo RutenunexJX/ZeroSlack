@@ -1232,37 +1232,36 @@ QString MyCodeEditor::getWordAtPosition(const QPoint& position)
 
 QString MyCodeEditor::getWordAtTextPosition(int position)
 {
-    QTextCursor cursor = textCursor();
-    cursor.setPosition(position);
-
-    if (!cursor.atBlockEnd() && !cursor.atBlockStart()) {
-        QChar currentChar = document()->characterAt(position);
-        if (!currentChar.isLetterOrNumber() && currentChar != '_') {
-            return QString();
-        }
-    }
-
-    cursor.select(QTextCursor::WordUnderCursor);
-    QString word = cursor.selectedText();
-
-    if (word.isEmpty() || (!word[0].isLetter() && word[0] != '_')) {
+    const QTextBlock block = document()->findBlock(position);
+    if (!block.isValid())
         return QString();
-    }
 
-    for (int i = 1; i < word.length(); ++i) {
-        if (!word[i].isLetterOrNumber() && word[i] != '_') {
-            return QString();
-        }
-    }
-
-    return word;
+    const SourceIdentifierTarget identifierTarget =
+        SourceNavigationService::getInstance()->identifierAtColumn(
+            block.text(),
+            position - block.position());
+    return identifierTarget.matched ? identifierTarget.identifier : QString();
 }
 
 QTextCursor MyCodeEditor::getWordCursorAtPosition(int position)
 {
     QTextCursor cursor = textCursor();
-    cursor.setPosition(position);
-    cursor.select(QTextCursor::WordUnderCursor);
+    const QTextBlock block = document()->findBlock(position);
+    if (!block.isValid())
+        return cursor;
+
+    const SourceIdentifierTarget identifierTarget =
+        SourceNavigationService::getInstance()->identifierAtColumn(
+            block.text(),
+            position - block.position());
+    if (!identifierTarget.matched) {
+        cursor.setPosition(position);
+        return cursor;
+    }
+
+    cursor.setPosition(block.position() + identifierTarget.startColumn);
+    cursor.setPosition(block.position() + identifierTarget.endColumn,
+                       QTextCursor::KeepAnchor);
     return cursor;
 }
 

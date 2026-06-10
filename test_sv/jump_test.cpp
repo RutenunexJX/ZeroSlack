@@ -349,6 +349,46 @@ int main(int argc, char** argv) {
                    .matched,
                false);
 
+    const QString identifierLine =
+        QStringLiteral("assign next_value = current_value + 1;");
+    const SourceIdentifierTarget identifierTarget =
+        sourceNavigationService->identifierAtColumn(
+            identifierLine,
+            identifierLine.indexOf(QStringLiteral("current")) + 3);
+    expectBool("SourceNavigation matches identifier",
+               identifierTarget.matched,
+               true);
+    expectEq("SourceNavigation identifier text",
+             identifierTarget.identifier,
+             QStringLiteral("current_value"));
+    ++g_checks;
+    const bool identifierRangeOk =
+        identifierTarget.startColumn
+            == identifierLine.indexOf(QStringLiteral("current_value"))
+        && identifierTarget.endColumn == identifierTarget.startColumn
+            + QStringLiteral("current_value").size();
+    if (!identifierRangeOk)
+        ++g_fails;
+    printf("[%s] SourceNavigation returns identifier range\n",
+           identifierRangeOk ? "PASS" : "FAIL");
+    expectBool("SourceNavigation matches line-end identifier",
+               sourceNavigationService
+                   ->identifierAtColumn(QStringLiteral("  done_signal"),
+                                        QStringLiteral("  done_signal").size())
+                   .matched,
+               true);
+    expectBool("SourceNavigation rejects numeric start",
+               sourceNavigationService
+                   ->identifierAtColumn(QStringLiteral("123abc"), 2)
+                   .matched,
+               false);
+    expectBool("SourceNavigation rejects punctuation",
+               sourceNavigationService
+                   ->identifierAtColumn(identifierLine,
+                                        identifierLine.indexOf(QLatin1Char('+')))
+                   .matched,
+               false);
+
     // Local jump landing: jumpToDefinition moves the caret to the definition.
     sym_list::SymbolInfo counter;
     for (const auto& s : sym_list::getInstance()->findSymbolsByName("counter"))

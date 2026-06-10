@@ -18,6 +18,13 @@ struct PackageImportTarget {
     int endColumn = -1;
 };
 
+struct SourceIdentifierTarget {
+    bool matched = false;
+    QString identifier;
+    int startColumn = -1;
+    int endColumn = -1;
+};
+
 class SourceNavigationService
 {
 public:
@@ -30,9 +37,14 @@ public:
                                            int column) const;
     PackageImportTarget packageImportAtColumn(const QString& lineText,
                                               int column) const;
+    SourceIdentifierTarget identifierAtColumn(const QString& lineText,
+                                              int column) const;
 
 private:
     static std::unique_ptr<SourceNavigationService> instance;
+
+    static bool isIdentifierStart(QChar ch);
+    static bool isIdentifierPart(QChar ch);
 };
 
 #endif // SOURCENAVIGATIONSERVICE_H
