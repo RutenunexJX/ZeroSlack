@@ -35,6 +35,19 @@ struct ContextCompletionQuery {
     bool relationshipCompletionsEnabled = true;
 };
 
+struct CommandSymbolPresentation {
+    QString defaultValue;
+    QString typeDescription;
+};
+
+struct CommandSymbolCompletionItem {
+    QString text;
+    QString defaultValue;
+    QString description;
+    QString uniqueKey;
+    int score = 0;
+};
+
 class CompletionService
 {
 public:
@@ -64,6 +77,12 @@ public:
                                        const QString& abbreviation) const;
     int calculateCompletionMatchScore(const QString& text,
                                       const QString& abbreviation) const;
+    CommandSymbolPresentation commandSymbolPresentation(
+        sym_list::sym_type_e symbolType) const;
+    CommandSymbolCompletionItem commandSymbolCompletionItem(
+        const sym_list::SymbolInfo& symbol,
+        sym_list::sym_type_e requestedType,
+        const QString& prefix = QString()) const;
     QList<int> findCompletionAbbreviationPositions(
         const QString& text,
         const QString& abbreviation) const;

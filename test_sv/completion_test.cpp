@@ -188,6 +188,42 @@ int main(int argc, char** argv) {
            "CompletionModel service scoring",
            firstScoredModelSymbol.toLocal8Bit().constData());
 
+    const CommandSymbolPresentation logicPresentation =
+        CompletionService::getInstance()->commandSymbolPresentation(sym_list::sym_logic);
+    expectEq("CompletionService command default",
+             logicPresentation.defaultValue,
+             QStringLiteral("logic"));
+    expectEq("CompletionService command desc",
+             logicPresentation.typeDescription,
+             QStringLiteral("logic variables"));
+
+    const CommandSymbolCompletionItem structPresentationItem =
+        CompletionService::getInstance()->commandSymbolCompletionItem(
+            makeSymbol(QStringLiteral("pixel"),
+                       sym_list::sym_packed_struct_var,
+                       QStringLiteral("pixel_t"),
+                       QString(),
+                       9003),
+            sym_list::sym_packed_struct_var);
+    expectEq("CompletionService struct text",
+             structPresentationItem.text,
+             QStringLiteral("pixel(pixel_t)"));
+    expectEq("CompletionService struct key",
+             structPresentationItem.uniqueKey,
+             QStringLiteral("pixel:pixel_t"));
+
+    const CommandSymbolCompletionItem enumPresentationItem =
+        CompletionService::getInstance()->commandSymbolCompletionItem(
+            makeSymbol(QStringLiteral("IDLE"),
+                       sym_list::sym_enum_value,
+                       QStringLiteral("top"),
+                       QStringLiteral("state_t"),
+                       9004),
+            sym_list::sym_enum_value);
+    expectEq("CompletionService enum desc",
+             enumPresentationItem.description,
+             QStringLiteral("state_t"));
+
     // --- struct member completion (typedef'd) ---
     expectEq("getStructTypeForVariable(pixel)", cm->getStructTypeForVariable("pixel", "top"), "pixel_t");
     expectList("members of pixel_t", cm->getStructMemberCompletions("", "pixel_t"),

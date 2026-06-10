@@ -303,149 +303,48 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     beginResetModel();
     completions.clear();
 
-    QString defaultValue, typeDescription;
-    switch (symbolType) {
-    case sym_list::sym_reg:
-        defaultValue = "reg";
-        typeDescription = "reg variables";
-        break;
-    case sym_list::sym_wire:
-        defaultValue = "wire";
-        typeDescription = "wire variables";
-        break;
-    case sym_list::sym_logic:
-        defaultValue = "logic";
-        typeDescription = "logic variables";
-        break;
-    case sym_list::sym_module:
-        defaultValue = "module";
-        typeDescription = "modules";
-        break;
-    case sym_list::sym_task:
-        defaultValue = "task";
-        typeDescription = "tasks";
-        break;
-    case sym_list::sym_function:
-        defaultValue = "function";
-        typeDescription = "functions";
-        break;
-    case sym_list::sym_packed_struct_var:
-        defaultValue = "struct";
-        typeDescription = "packed struct variables";
-        break;
-    case sym_list::sym_unpacked_struct_var:
-        defaultValue = "struct";
-        typeDescription = "unpacked struct variables";
-        break;
-    case sym_list::sym_packed_struct:
-        defaultValue = "struct";
-        typeDescription = "packed struct types";
-        break;
-    case sym_list::sym_unpacked_struct:
-        defaultValue = "struct";
-        typeDescription = "unpacked struct types";
-        break;
-    case sym_list::sym_parameter:
-        defaultValue = "parameter";
-        typeDescription = "parameter declarations";
-        break;
-    case sym_list::sym_localparam:
-        defaultValue = "localparam";
-        typeDescription = "localparam declarations";
-        break;
-    case sym_list::sym_enum_value:
-        defaultValue = "enum_value";
-        typeDescription = "enum values";
-        break;
-    case sym_list::sym_enum:
-        defaultValue = "enum";
-        typeDescription = "enum types";
-        break;
-    case sym_list::sym_enum_var:
-        defaultValue = "enum_var";
-        typeDescription = "enum variables";
-        break;
-    default:
-        defaultValue = "symbol";
-        typeDescription = "symbols";
-        break;
-    }
+    CompletionService* completionService = CompletionService::getInstance();
+    const CommandSymbolPresentation presentation =
+        completionService->commandSymbolPresentation(symbolType);
 
     CompletionItem descItem;
-    descItem.text = QString(":: COMMAND MODE - %1 ::").arg(typeDescription);
+    descItem.text = QString(":: COMMAND MODE - %1 ::").arg(presentation.typeDescription);
     descItem.type = SymbolCompletion;
     descItem.description = "Command Mode";
     descItem.score = 1000;
-    descItem.defaultValue = defaultValue;
+    descItem.defaultValue = presentation.defaultValue;
     completions.append(descItem);
 
     CompletionItem defaultItem;
-    defaultItem.text = QString("[DEFAULT] %1").arg(defaultValue);
+    defaultItem.text = QString("[DEFAULT] %1").arg(presentation.defaultValue);
     defaultItem.type = SymbolCompletion;
     defaultItem.symbolType = symbolType;
-    defaultItem.description = QString("Default %1 declaration").arg(typeDescription.split(' ')[0]);
-    defaultItem.defaultValue = defaultValue;
+    defaultItem.description =
+        QString("Default %1 declaration").arg(presentation.typeDescription.split(' ').value(0));
+    defaultItem.defaultValue = presentation.defaultValue;
     defaultItem.score = 999;  // High score but less than header
     completions.append(defaultItem);
 
     QSet<QString> addedItems;
 
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolName == defaultValue) {
+        if (symbol.symbolName == presentation.defaultValue) {
             continue;
         }
+
+        const CommandSymbolCompletionItem serviceItem =
+            completionService->commandSymbolCompletionItem(symbol, symbolType, prefix);
+        if (addedItems.contains(serviceItem.uniqueKey))
+            continue;
+        addedItems.insert(serviceItem.uniqueKey);
 
         CompletionItem item;
         item.type = SymbolCompletion;
         item.symbolType = symbolType;
-        item.description = typeDescription.split(' ')[0];
-
-        if (symbolType == sym_list::sym_packed_struct_var ||
-            symbolType == sym_list::sym_unpacked_struct_var) {
-            QString structTypeName = symbol.moduleScope;
-            if (!structTypeName.isEmpty()) {
-                item.text = QString("%1(%2)").arg(symbol.symbolName).arg(structTypeName);
-            } else {
-                item.text = symbol.symbolName;
-            }
-            item.defaultValue = symbol.symbolName;
-
-            QString uniqueKey = QString("%1:%2").arg(symbol.symbolName).arg(structTypeName);
-            if (addedItems.contains(uniqueKey)) {
-                continue;
-            }
-            addedItems.insert(uniqueKey);
-        } else if (symbolType == sym_list::sym_packed_struct ||
-                   symbolType == sym_list::sym_unpacked_struct) {
-            item.text = symbol.symbolName;
-            item.defaultValue = symbol.symbolName;
-
-            if (addedItems.contains(symbol.symbolName)) {
-                continue;
-            }
-            addedItems.insert(symbol.symbolName);
-        } else if (symbolType == sym_list::sym_enum_value) {
-            item.text = symbol.symbolName;
-            item.defaultValue = symbol.symbolName;
-            item.description = symbol.dataType.isEmpty() ? QStringLiteral("enum") : symbol.dataType;
-            if (addedItems.contains(symbol.symbolName)) {
-                continue;
-            }
-            addedItems.insert(symbol.symbolName);
-        } else {
-            item.text = symbol.symbolName;
-            item.defaultValue = symbol.symbolName;
-
-            if (addedItems.contains(symbol.symbolName)) {
-                continue;
-            }
-            addedItems.insert(symbol.symbolName);
-        }
-
-        item.score = prefix.isEmpty()
-            ? 100
-            : CompletionService::getInstance()->calculateCompletionMatchScore(
-                symbol.symbolName, prefix);
+        item.text = serviceItem.text;
+        item.description = serviceItem.description;
+        item.defaultValue = serviceItem.defaultValue;
+        item.score = serviceItem.score;
 
         completions.append(item);
     }
@@ -499,43 +398,4 @@ int CompletionModel::calculateScore(const QString &text, const QString &prefix) 
     }
 
     return score;
-}
-
-QString CompletionModel::getTypeDescription(sym_list::sym_type_e symbolType)
-{
-    switch (symbolType) {
-    case sym_list::sym_reg: return "reg variables";
-    case sym_list::sym_wire: return "wire variables";
-    case sym_list::sym_logic: return "logic variables";
-    case sym_list::sym_module: return "modules";
-    case sym_list::sym_task: return "tasks";
-    case sym_list::sym_function: return "functions";
-
-    case sym_list::sym_interface: return "interfaces";
-    case sym_list::sym_interface_modport: return "interface modports";
-    case sym_list::sym_packed_struct: return "packed structures";
-    case sym_list::sym_unpacked_struct: return "unpacked structures";
-    case sym_list::sym_enum: return "enumeration types";
-    case sym_list::sym_typedef: return "type definitions";
-    case sym_list::sym_def_define: return "macro definitions";
-    case sym_list::sym_def_ifdef: return "conditional compilation";
-    case sym_list::sym_def_ifndef: return "conditional compilation";
-    case sym_list::sym_parameter: return "parameters";
-    case sym_list::sym_localparam: return "local parameters";
-    case sym_list::sym_always: return "always blocks";
-    case sym_list::sym_always_ff: return "always_ff blocks";
-    case sym_list::sym_always_comb: return "always_comb blocks";
-    case sym_list::sym_always_latch: return "always_latch blocks";
-    case sym_list::sym_assign: return "continuous assignments";
-    case sym_list::sym_xilinx_constraint: return "synthesis constraints";
-
-    case sym_list::sym_enum_var:          return "enumeration variables";
-    case sym_list::sym_enum_value:        return "enumeration values";
-
-    case sym_list::sym_packed_struct_var: return "packed struct variables";
-    case sym_list::sym_unpacked_struct_var: return "unpacked struct variables";
-    case sym_list::sym_struct_member:     return "structure members";
-
-    default: return "symbols";
-    }
 }

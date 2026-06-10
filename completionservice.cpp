@@ -209,6 +209,113 @@ int CompletionService::calculateCompletionMatchScore(
     return calculateContextMatchScore(text, abbreviation);
 }
 
+CommandSymbolPresentation CompletionService::commandSymbolPresentation(
+    sym_list::sym_type_e symbolType) const
+{
+    CommandSymbolPresentation presentation;
+    switch (symbolType) {
+    case sym_list::sym_reg:
+        presentation.defaultValue = QStringLiteral("reg");
+        presentation.typeDescription = QStringLiteral("reg variables");
+        break;
+    case sym_list::sym_wire:
+        presentation.defaultValue = QStringLiteral("wire");
+        presentation.typeDescription = QStringLiteral("wire variables");
+        break;
+    case sym_list::sym_logic:
+        presentation.defaultValue = QStringLiteral("logic");
+        presentation.typeDescription = QStringLiteral("logic variables");
+        break;
+    case sym_list::sym_module:
+        presentation.defaultValue = QStringLiteral("module");
+        presentation.typeDescription = QStringLiteral("modules");
+        break;
+    case sym_list::sym_task:
+        presentation.defaultValue = QStringLiteral("task");
+        presentation.typeDescription = QStringLiteral("tasks");
+        break;
+    case sym_list::sym_function:
+        presentation.defaultValue = QStringLiteral("function");
+        presentation.typeDescription = QStringLiteral("functions");
+        break;
+    case sym_list::sym_packed_struct_var:
+        presentation.defaultValue = QStringLiteral("struct");
+        presentation.typeDescription = QStringLiteral("packed struct variables");
+        break;
+    case sym_list::sym_unpacked_struct_var:
+        presentation.defaultValue = QStringLiteral("struct");
+        presentation.typeDescription = QStringLiteral("unpacked struct variables");
+        break;
+    case sym_list::sym_packed_struct:
+        presentation.defaultValue = QStringLiteral("struct");
+        presentation.typeDescription = QStringLiteral("packed struct types");
+        break;
+    case sym_list::sym_unpacked_struct:
+        presentation.defaultValue = QStringLiteral("struct");
+        presentation.typeDescription = QStringLiteral("unpacked struct types");
+        break;
+    case sym_list::sym_parameter:
+        presentation.defaultValue = QStringLiteral("parameter");
+        presentation.typeDescription = QStringLiteral("parameter declarations");
+        break;
+    case sym_list::sym_localparam:
+        presentation.defaultValue = QStringLiteral("localparam");
+        presentation.typeDescription = QStringLiteral("localparam declarations");
+        break;
+    case sym_list::sym_enum_value:
+        presentation.defaultValue = QStringLiteral("enum_value");
+        presentation.typeDescription = QStringLiteral("enum values");
+        break;
+    case sym_list::sym_enum:
+        presentation.defaultValue = QStringLiteral("enum");
+        presentation.typeDescription = QStringLiteral("enum types");
+        break;
+    case sym_list::sym_enum_var:
+        presentation.defaultValue = QStringLiteral("enum_var");
+        presentation.typeDescription = QStringLiteral("enum variables");
+        break;
+    default:
+        presentation.defaultValue = QStringLiteral("symbol");
+        presentation.typeDescription = QStringLiteral("symbols");
+        break;
+    }
+    return presentation;
+}
+
+CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
+    const sym_list::SymbolInfo& symbol,
+    sym_list::sym_type_e requestedType,
+    const QString& prefix) const
+{
+    CommandSymbolCompletionItem item;
+    item.defaultValue = symbol.symbolName;
+    item.description = commandSymbolPresentation(requestedType)
+        .typeDescription
+        .split(' ')
+        .value(0);
+
+    if (requestedType == sym_list::sym_packed_struct_var
+        || requestedType == sym_list::sym_unpacked_struct_var) {
+        const QString structTypeName = symbol.moduleScope;
+        item.text = structTypeName.isEmpty()
+            ? symbol.symbolName
+            : QStringLiteral("%1(%2)").arg(symbol.symbolName, structTypeName);
+        item.uniqueKey = QStringLiteral("%1:%2").arg(symbol.symbolName, structTypeName);
+    } else if (requestedType == sym_list::sym_enum_value) {
+        item.text = symbol.symbolName;
+        item.description = symbol.dataType.isEmpty() ? QStringLiteral("enum") : symbol.dataType;
+        item.uniqueKey = symbol.symbolName;
+    } else {
+        item.text = symbol.symbolName;
+        item.uniqueKey = symbol.symbolName;
+    }
+
+    item.score = prefix.isEmpty()
+        ? 100
+        : calculateCompletionMatchScore(symbol.symbolName, prefix);
+    return item;
+}
+
 QList<int> CompletionService::findCompletionAbbreviationPositions(
     const QString& text,
     const QString& abbreviation) const

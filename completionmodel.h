@@ -57,7 +57,6 @@ private:
 
     void sortCompletionsByScore();
     int calculateScore(const QString &text, const QString &prefix) const;
-    QString getTypeDescription(sym_list::sym_type_e symbolType);
 };
 
 Q_DECLARE_METATYPE(CompletionModel::CompletionItem)
