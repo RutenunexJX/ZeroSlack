@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Semantic dock assembly now lives behind `SemanticDockCoordinator`.
-`MainWindow` creates one semantic dock coordinator instead of owning Problems, References, Relationships, and semantic refresh wiring directly.
+Editor semantic query assembly now lives behind `EditorSemanticContextService`.
+`MyCodeEditor` provides live editor context and asks the service to build completion, command-mode, definition, and source-symbol action queries.
 
 ## Current Architecture Snapshot
 
@@ -46,6 +46,7 @@ Semantic dock assembly now lives behind `SemanticDockCoordinator`.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, relationship analysis requests, and semantic panel refresh requests.
+- `EditorSemanticContextService` owns editor-context-to-query assembly for completion, command mode, definition navigation, and source symbol actions.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.

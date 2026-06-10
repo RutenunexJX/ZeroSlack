@@ -4,6 +4,7 @@
 #include "completionmodel.h"
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
+#include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
 
 #include "syminfo.h"
@@ -243,11 +244,13 @@ SourceSymbolActionContext MyCodeEditor::sourceSymbolActionContextForCursor(
     if (!block.isValid())
         return {};
 
-    return SourceNavigationService::getInstance()->symbolActionContextAtColumn(
-        block.text(),
-        cursor.position() - block.position(),
-        getFileName(),
-        currentModuleNameAt(cursor.position()));
+    EditorSemanticContext context;
+    context.fileName = getFileName();
+    context.moduleName = currentModuleNameAt(cursor.position());
+    context.lineText = block.text();
+    context.column = cursor.position() - block.position();
+    return EditorSemanticContextService::getInstance()
+        ->sourceSymbolActionContext(context);
 }
 
 bool MyCodeEditor::emitReferenceSearchForCursor(const QTextCursor& cursor)
@@ -284,8 +287,7 @@ DefinitionNavigationQuery MyCodeEditor::definitionNavigationQuery(
         ? cursorPosition
         : textCursor().position();
 
-    DefinitionNavigationContext context;
-    context.symbolName = symbolName;
+    EditorSemanticContext context;
     context.fileName = getFileName();
     context.moduleName = currentModuleNameAt(semanticPosition);
     if (cursorPosition >= 0) {
@@ -296,8 +298,8 @@ DefinitionNavigationQuery MyCodeEditor::definitionNavigationQuery(
         }
     }
 
-    return DefinitionNavigationService::getInstance()
-        ->navigationQueryForContext(context);
+    return EditorSemanticContextService::getInstance()
+        ->definitionNavigationQuery(symbolName, context);
 }
 
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
@@ -478,10 +480,12 @@ void MyCodeEditor::onTextChanged()
 
     checkForCustomCommand(lineUpToCursor);
 
-    CompletionTriggerQuery triggerQuery;
-    triggerQuery.lineUpToCursor = lineUpToCursor;
-    triggerQuery.moduleName = currentModuleNameAt(cursor.position() - 1);
-    triggerQuery.commandModeActive = isInCustomCommandMode;
+    EditorSemanticContext context;
+    context.lineUpToCursor = lineUpToCursor;
+    context.moduleName = currentModuleNameAt(cursor.position() - 1);
+    context.commandModeActive = isInCustomCommandMode;
+    const CompletionTriggerQuery triggerQuery =
+        EditorSemanticContextService::getInstance()->completionTriggerQuery(context);
     const CompletionTriggerState triggerState =
         CompletionService::getInstance()->completionTriggerState(triggerQuery);
 
@@ -505,12 +509,13 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
 {
     QTextCursor cursor = textCursor();
     int cursorPosition = cursor.position();
-    CompletionQuery query;
-    query.prefix = prefix;
-    query.fileName = getFileName();
-    query.moduleName = currentModuleNameAt(cursorPosition);
-    query.cursorLine = cursor.block().blockNumber() + 1;
-    query.cursorPosition = cursorPosition;
+    EditorSemanticContext context;
+    context.fileName = getFileName();
+    context.moduleName = currentModuleNameAt(cursorPosition);
+    context.cursorLine = cursor.block().blockNumber() + 1;
+    context.cursorPosition = cursorPosition;
+    const CompletionQuery query =
+        EditorSemanticContextService::getInstance()->completionQuery(prefix, context);
     return CompletionService::getInstance()->findCompletionResult(query).names;
 }
 
@@ -740,14 +745,18 @@ void MyCodeEditor::onAutoCompleteTimer()
     }
 
     CompletionService* completionService = CompletionService::getInstance();
-    CommandModeCompletionQuery commandQuery;
-    commandQuery.lineUpToCursor = lineUpToCursor;
-    commandQuery.fileName = getFileName();
-    commandQuery.moduleName = currentModuleNameAt(cursor.position());
-    commandQuery.documentText = document()->toPlainText();
+    EditorSemanticContext context;
+    context.lineUpToCursor = lineUpToCursor;
+    context.fileName = getFileName();
+    context.moduleName = currentModuleNameAt(cursor.position());
+    context.documentText = document()->toPlainText();
+    context.cursorLine = cursor.block().blockNumber() + 1;
+    context.cursorPosition = cursor.position();
 
     const CommandModeCompletionState commandState =
-        completionService->commandModeCompletionState(commandQuery);
+        completionService->commandModeCompletionState(
+            EditorSemanticContextService::getInstance()
+                ->commandModeCompletionQuery(context));
     if (commandState.matched) {
         isInCustomCommandMode = true;
         if (commandModeExitedByDoubleSpace) {
@@ -792,13 +801,9 @@ void MyCodeEditor::onAutoCompleteTimer()
         return;
     }
 
-    EditorCompletionQuery query;
-    query.lineUpToCursor = lineUpToCursor;
-    query.wordPrefix = getWordUnderCursor();
-    query.fileName = getFileName();
-    query.moduleName = currentModuleNameAt(cursor.position());
-    query.cursorLine = cursor.block().blockNumber() + 1;
-    query.cursorPosition = cursor.position();
+    context.wordPrefix = getWordUnderCursor();
+    const EditorCompletionQuery query =
+        EditorSemanticContextService::getInstance()->editorCompletionQuery(context);
 
     const EditorCompletionState completionState =
         completionService->editorCompletionState(query);
