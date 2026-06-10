@@ -25,6 +25,21 @@ struct SourceIdentifierTarget {
     int endColumn = -1;
 };
 
+enum class SourceNavigationTargetKind {
+    None,
+    IncludeDirective,
+    PackageImport,
+    Identifier
+};
+
+struct SourceNavigationTarget {
+    bool matched = false;
+    SourceNavigationTargetKind kind = SourceNavigationTargetKind::None;
+    QString text;
+    int startColumn = -1;
+    int endColumn = -1;
+};
+
 class SourceNavigationService
 {
 public:
@@ -39,6 +54,8 @@ public:
                                               int column) const;
     SourceIdentifierTarget identifierAtColumn(const QString& lineText,
                                               int column) const;
+    SourceNavigationTarget targetAtColumn(const QString& lineText,
+                                          int column) const;
 
 private:
     static std::unique_ptr<SourceNavigationService> instance;

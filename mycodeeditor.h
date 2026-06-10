@@ -134,10 +134,22 @@ private:
     int hoveredWordStartPos = -1;
     int hoveredWordEndPos = -1;
 
-    QString getWordAtPosition(const QPoint& position);
+    struct EditorNavigationTarget {
+        bool matched = false;
+        bool jumpable = false;
+        bool includeTarget = false;
+        bool identifierTarget = false;
+        QString text;
+        int startPos = -1;
+        int endPos = -1;
+        int cursorPosition = -1;
+    };
+
+    EditorNavigationTarget sourceNavigationTargetAtPosition(const QPoint& position);
+    void applySourceNavigationHover(const EditorNavigationTarget& target);
+    void clearSourceNavigationHover();
+
     QString getWordAtTextPosition(int position);
-    QTextCursor getWordCursorAtPosition(int position);
-    bool getPackageNameFromImport(const QPoint& position, QString& packageName, int& startPos, int& endPos);
     void jumpToDefinition(const QString& symbolName, int cursorPosition = -1);
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
     void clearHoveredSymbolHighlight();
@@ -145,8 +157,6 @@ private:
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();
 
-    bool getIncludeInfoAtPosition(const QPoint& position, int &startPos, int &endPos, QString &includePath);
-    bool tryJumpToIncludeAtPosition(const QPoint& position);
     bool openIncludeFile(const QString& includePath);
 
     void showSymbolTooltip(const QString& symbolName, const QPoint& position);

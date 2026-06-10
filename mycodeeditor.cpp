@@ -552,48 +552,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
         QPoint mousePos = mapFromGlobal(QCursor::pos());
         if (rect().contains(mousePos)) {
-            clearHoveredSymbolHighlight();
-
-            int incStart = -1;
-            int incEnd = -1;
-            QString incPath;
-            if (getIncludeInfoAtPosition(mousePos, incStart, incEnd, incPath)) {
-                hoveredWord = incPath;
-                hoveredWordStartPos = incStart;
-                hoveredWordEndPos = incEnd;
-                highlightHoveredSymbol(incPath, incStart, incEnd);
-                viewport()->setCursor(createJumpableCursor());
-            } else {
-                QString pkgName;
-                int pkgStart = -1;
-                int pkgEnd = -1;
-                if (getPackageNameFromImport(mousePos, pkgName, pkgStart, pkgEnd)) {
-                    hoveredWord = pkgName;
-                    hoveredWordStartPos = pkgStart;
-                    hoveredWordEndPos = pkgEnd;
-                    highlightHoveredSymbol(pkgName, pkgStart, pkgEnd);
-                    viewport()->setCursor(createJumpableCursor());
-                } else {
-                    QString word = getWordAtPosition(mousePos);
-                    if (!word.isEmpty()) {
-                        QTextCursor cursor = cursorForPosition(mousePos);
-                        QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                        hoveredWord = word;
-                        hoveredWordStartPos = wordCursor.selectionStart();
-                        hoveredWordEndPos = wordCursor.selectionEnd();
-                        highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
-
-                        if (canJumpToDefinition(word)) {
-                            viewport()->setCursor(createJumpableCursor());
-                        } else {
-                            viewport()->setCursor(createNonJumpableCursor());
-                        }
-                    } else {
-                        hoveredWord.clear();
-                        viewport()->setCursor(createNonJumpableCursor());
-                    }
-                }
-            }
+            applySourceNavigationHover(sourceNavigationTargetAtPosition(mousePos));
         }
     }
 
@@ -1055,9 +1014,7 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Control && ctrlPressed) {
         ctrlPressed = false;
-        viewport()->setCursor(Qt::IBeamCursor);
-        clearHoveredSymbolHighlight();
-        hoveredWord.clear();
+        clearSourceNavigationHover();
     }
 
     if (event->key() == Qt::Key_Shift) {
@@ -1075,24 +1032,20 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
-        if (tryJumpToIncludeAtPosition(event->pos())) {
-            event->accept();
+        const EditorNavigationTarget target =
+            sourceNavigationTargetAtPosition(event->pos());
+        if (target.includeTarget) {
+            if (openIncludeFile(target.text)) {
+                event->accept();
+                return;
+            }
+            QPlainTextEdit::mousePressEvent(event);
             return;
         }
 
-        QString pkgName;
-        int pkgStart = -1;
-        int pkgEnd = -1;
-        if (getPackageNameFromImport(event->pos(), pkgName, pkgStart, pkgEnd)) {
-            jumpToDefinition(pkgName);
-            event->accept();
-            return;
-        }
-
-        QString wordUnderCursor = getWordAtPosition(event->pos());
-        if (!wordUnderCursor.isEmpty()) {
-            QTextCursor cur = cursorForPosition(event->pos());
-            jumpToDefinition(wordUnderCursor, cur.position());
+        if (target.matched && !target.text.isEmpty()) {
+            jumpToDefinition(target.text,
+                             target.identifierTarget ? target.cursorPosition : -1);
             event->accept();
             return;
         }
@@ -1109,106 +1062,12 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
         ctrlPressed = isCtrlPressed;
 
         if (ctrlPressed) {
-            clearHoveredSymbolHighlight();
-
-            int incStart = -1;
-            int incEnd = -1;
-            QString incPath;
-            if (getIncludeInfoAtPosition(event->pos(), incStart, incEnd, incPath)) {
-                hoveredWord = incPath;
-                hoveredWordStartPos = incStart;
-                hoveredWordEndPos = incEnd;
-                highlightHoveredSymbol(incPath, incStart, incEnd);
-                viewport()->setCursor(createJumpableCursor());
-            } else {
-                QString pkgName;
-                int pkgStart = -1;
-                int pkgEnd = -1;
-                if (getPackageNameFromImport(event->pos(), pkgName, pkgStart, pkgEnd)) {
-                    hoveredWord = pkgName;
-                    hoveredWordStartPos = pkgStart;
-                    hoveredWordEndPos = pkgEnd;
-                    highlightHoveredSymbol(pkgName, pkgStart, pkgEnd);
-                    viewport()->setCursor(createJumpableCursor());
-                } else {
-                    QString word = getWordAtPosition(event->pos());
-                    if (!word.isEmpty()) {
-                        QTextCursor cursor = cursorForPosition(event->pos());
-                        QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                        hoveredWord = word;
-                        hoveredWordStartPos = wordCursor.selectionStart();
-                        hoveredWordEndPos = wordCursor.selectionEnd();
-                        highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
-
-                        if (canJumpToDefinition(word)) {
-                            viewport()->setCursor(createJumpableCursor());
-                        } else {
-                            viewport()->setCursor(createNonJumpableCursor());
-                        }
-                    } else {
-                        hoveredWord.clear();
-                        viewport()->setCursor(createNonJumpableCursor());
-                    }
-                }
-            }
+            applySourceNavigationHover(sourceNavigationTargetAtPosition(event->pos()));
         } else {
-            viewport()->setCursor(Qt::IBeamCursor);
-            clearHoveredSymbolHighlight();
-            hoveredWord.clear();
+            clearSourceNavigationHover();
         }
     } else if (ctrlPressed) {
-        int incStart = -1;
-        int incEnd = -1;
-        QString incPath;
-        bool onInclude = getIncludeInfoAtPosition(event->pos(), incStart, incEnd, incPath);
-
-        if (onInclude) {
-            if (hoveredWord != incPath || hoveredWordStartPos != incStart || hoveredWordEndPos != incEnd) {
-                clearHoveredSymbolHighlight();
-                hoveredWord = incPath;
-                hoveredWordStartPos = incStart;
-                hoveredWordEndPos = incEnd;
-                highlightHoveredSymbol(incPath, incStart, incEnd);
-            }
-            viewport()->setCursor(createJumpableCursor());
-        } else {
-            QString pkgName;
-            int pkgStart = -1;
-            int pkgEnd = -1;
-            bool onImport = getPackageNameFromImport(event->pos(), pkgName, pkgStart, pkgEnd);
-
-            if (onImport) {
-                if (hoveredWord != pkgName || hoveredWordStartPos != pkgStart || hoveredWordEndPos != pkgEnd) {
-                    clearHoveredSymbolHighlight();
-                    hoveredWord = pkgName;
-                    hoveredWordStartPos = pkgStart;
-                    hoveredWordEndPos = pkgEnd;
-                    highlightHoveredSymbol(pkgName, pkgStart, pkgEnd);
-                }
-                viewport()->setCursor(createJumpableCursor());
-            } else {
-                QString word = getWordAtPosition(event->pos());
-                if (word != hoveredWord) {
-                    clearHoveredSymbolHighlight();
-                    if (!word.isEmpty()) {
-                        QTextCursor cursor = cursorForPosition(event->pos());
-                        QTextCursor wordCursor = getWordCursorAtPosition(cursor.position());
-                        hoveredWord = word;
-                        hoveredWordStartPos = wordCursor.selectionStart();
-                        hoveredWordEndPos = wordCursor.selectionEnd();
-                        highlightHoveredSymbol(word, hoveredWordStartPos, hoveredWordEndPos);
-                    } else {
-                        hoveredWord.clear();
-                    }
-                }
-
-                if (!hoveredWord.isEmpty() && canJumpToDefinition(hoveredWord)) {
-                    viewport()->setCursor(createJumpableCursor());
-                } else {
-                    viewport()->setCursor(createNonJumpableCursor());
-                }
-            }
-        }
+        applySourceNavigationHover(sourceNavigationTargetAtPosition(event->pos()));
     }
 
     QPlainTextEdit::mouseMoveEvent(event);
@@ -1217,17 +1076,69 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 void MyCodeEditor::leaveEvent(QEvent *event)
 {
     ctrlPressed = false;
-    viewport()->setCursor(Qt::IBeamCursor);
-    clearHoveredSymbolHighlight();
-    hoveredWord.clear();
+    clearSourceNavigationHover();
 
     QPlainTextEdit::leaveEvent(event);
 }
 
-QString MyCodeEditor::getWordAtPosition(const QPoint& position)
+MyCodeEditor::EditorNavigationTarget
+MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
 {
+    EditorNavigationTarget editorTarget;
     QTextCursor cursor = cursorForPosition(position);
-    return getWordAtTextPosition(cursor.position());
+    QTextBlock block = cursor.block();
+    if (!block.isValid())
+        return editorTarget;
+
+    const int posInLine = cursor.position() - block.position();
+    const SourceNavigationTarget sourceTarget =
+        SourceNavigationService::getInstance()->targetAtColumn(block.text(), posInLine);
+    if (!sourceTarget.matched)
+        return editorTarget;
+
+    editorTarget.matched = true;
+    editorTarget.text = sourceTarget.text;
+    editorTarget.startPos = block.position() + sourceTarget.startColumn;
+    editorTarget.endPos = block.position() + sourceTarget.endColumn;
+    editorTarget.cursorPosition = cursor.position();
+    editorTarget.includeTarget =
+        sourceTarget.kind == SourceNavigationTargetKind::IncludeDirective;
+    editorTarget.identifierTarget =
+        sourceTarget.kind == SourceNavigationTargetKind::Identifier;
+    editorTarget.jumpable = editorTarget.includeTarget
+        || sourceTarget.kind == SourceNavigationTargetKind::PackageImport
+        || canJumpToDefinition(editorTarget.text);
+    return editorTarget;
+}
+
+void MyCodeEditor::applySourceNavigationHover(
+    const EditorNavigationTarget& target)
+{
+    if (!target.matched) {
+        clearSourceNavigationHover();
+        viewport()->setCursor(createNonJumpableCursor());
+        return;
+    }
+
+    if (hoveredWord != target.text
+        || hoveredWordStartPos != target.startPos
+        || hoveredWordEndPos != target.endPos) {
+        clearHoveredSymbolHighlight();
+        hoveredWord = target.text;
+        hoveredWordStartPos = target.startPos;
+        hoveredWordEndPos = target.endPos;
+        highlightHoveredSymbol(target.text, target.startPos, target.endPos);
+    }
+
+    viewport()->setCursor(
+        target.jumpable ? createJumpableCursor() : createNonJumpableCursor());
+}
+
+void MyCodeEditor::clearSourceNavigationHover()
+{
+    viewport()->setCursor(Qt::IBeamCursor);
+    clearHoveredSymbolHighlight();
+    hoveredWord.clear();
 }
 
 QString MyCodeEditor::getWordAtTextPosition(int position)
@@ -1242,54 +1153,6 @@ QString MyCodeEditor::getWordAtTextPosition(int position)
             position - block.position());
     return identifierTarget.matched ? identifierTarget.identifier : QString();
 }
-
-QTextCursor MyCodeEditor::getWordCursorAtPosition(int position)
-{
-    QTextCursor cursor = textCursor();
-    const QTextBlock block = document()->findBlock(position);
-    if (!block.isValid())
-        return cursor;
-
-    const SourceIdentifierTarget identifierTarget =
-        SourceNavigationService::getInstance()->identifierAtColumn(
-            block.text(),
-            position - block.position());
-    if (!identifierTarget.matched) {
-        cursor.setPosition(position);
-        return cursor;
-    }
-
-    cursor.setPosition(block.position() + identifierTarget.startColumn);
-    cursor.setPosition(block.position() + identifierTarget.endColumn,
-                       QTextCursor::KeepAnchor);
-    return cursor;
-}
-
-bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& packageName, int& startPos, int& endPos)
-{
-    QTextCursor cursor = cursorForPosition(position);
-    QTextBlock block = cursor.block();
-    QString lineText = block.text();
-    if (lineText.isEmpty()) {
-        return false;
-    }
-
-    int posInLine = cursor.position() - block.position();
-
-    const PackageImportTarget importTarget =
-        SourceNavigationService::getInstance()->packageImportAtColumn(
-            lineText,
-            posInLine);
-    if (!importTarget.matched)
-        return false;
-
-    packageName = importTarget.packageName;
-    startPos = block.position() + importTarget.startColumn;
-    endPos = block.position() + importTarget.endColumn;
-
-    return true;
-}
-
 
 void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPosition)
 {
@@ -1439,35 +1302,6 @@ QCursor MyCodeEditor::createNonJumpableCursor()
     painter.drawLine(15, 5, 5, 15);
 
     return QCursor(pixmap, 10, 10);
-}
-
-bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPos, int &endPos, QString &includePath)
-{
-    QTextCursor cursor = cursorForPosition(position);
-    QTextBlock block = cursor.block();
-    const int posInLine = cursor.position() - block.position();
-    const IncludeDirectiveTarget includeTarget =
-        SourceNavigationService::getInstance()->includeAtColumn(block.text(), posInLine);
-    if (!includeTarget.matched)
-        return false;
-
-    includePath = includeTarget.includePath;
-    startPos = block.position() + includeTarget.startColumn;
-    endPos = block.position() + includeTarget.endColumn;
-
-    return true;
-}
-
-bool MyCodeEditor::tryJumpToIncludeAtPosition(const QPoint& position)
-{
-    int startPos = -1;
-    int endPos = -1;
-    QString includePath;
-    if (!getIncludeInfoAtPosition(position, startPos, endPos, includePath)) {
-        return false;
-    }
-
-    return openIncludeFile(includePath);
 }
 
 bool MyCodeEditor::openIncludeFile(const QString& includePath)

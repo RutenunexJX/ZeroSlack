@@ -146,3 +146,43 @@ bool SourceNavigationService::isIdentifierPart(QChar ch)
 {
     return ch.isLetterOrNumber() || ch == QLatin1Char('_');
 }
+
+SourceNavigationTarget SourceNavigationService::targetAtColumn(
+    const QString& lineText,
+    int column) const
+{
+    const IncludeDirectiveTarget includeTarget = includeAtColumn(lineText, column);
+    if (includeTarget.matched) {
+        SourceNavigationTarget target;
+        target.matched = true;
+        target.kind = SourceNavigationTargetKind::IncludeDirective;
+        target.text = includeTarget.includePath;
+        target.startColumn = includeTarget.startColumn;
+        target.endColumn = includeTarget.endColumn;
+        return target;
+    }
+
+    const PackageImportTarget importTarget = packageImportAtColumn(lineText, column);
+    if (importTarget.matched) {
+        SourceNavigationTarget target;
+        target.matched = true;
+        target.kind = SourceNavigationTargetKind::PackageImport;
+        target.text = importTarget.packageName;
+        target.startColumn = importTarget.startColumn;
+        target.endColumn = importTarget.endColumn;
+        return target;
+    }
+
+    const SourceIdentifierTarget identifierTarget = identifierAtColumn(lineText, column);
+    if (identifierTarget.matched) {
+        SourceNavigationTarget target;
+        target.matched = true;
+        target.kind = SourceNavigationTargetKind::Identifier;
+        target.text = identifierTarget.identifier;
+        target.startColumn = identifierTarget.startColumn;
+        target.endColumn = identifierTarget.endColumn;
+        return target;
+    }
+
+    return {};
+}

@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Identifier hit-testing now lives behind `SourceNavigationService`.
-`MyCodeEditor` asks the service for identifier text and ranges instead of owning source-word parsing for hover, click, references, and relationships.
+Source navigation target selection now lives behind `SourceNavigationService`.
+`MyCodeEditor` maps service targets to hover state, cursors, and jump/open dispatch instead of duplicating include/import/identifier selection in event handlers.
 
 ## Latest Validation
 
@@ -65,7 +65,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command completion results, trigger policy, row scoring, symbol display descriptions, command-mode catalog/matching and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, and command membership checks.
-- `SourceNavigationService` owns SystemVerilog include directive, package-import, and identifier hit-testing for editor source navigation.
+- `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, and source navigation target selection.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.

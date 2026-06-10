@@ -389,6 +389,39 @@ int main(int argc, char** argv) {
                    .matched,
                false);
 
+    const SourceNavigationTarget includePriorityTarget =
+        sourceNavigationService->targetAtColumn(
+            includeLine,
+            includeLine.indexOf(QStringLiteral("pkg_defs")));
+    expectBool("SourceNavigation target include priority",
+               includePriorityTarget.matched
+                   && includePriorityTarget.kind
+                       == SourceNavigationTargetKind::IncludeDirective,
+               true);
+    expectEq("SourceNavigation target include text",
+             includePriorityTarget.text,
+             QStringLiteral("rtl/pkg_defs.svh"));
+
+    const SourceNavigationTarget importPriorityTarget =
+        sourceNavigationService->targetAtColumn(
+            importLine,
+            importLine.indexOf(QStringLiteral("pkg_defs")));
+    expectBool("SourceNavigation target import priority",
+               importPriorityTarget.matched
+                   && importPriorityTarget.kind
+                       == SourceNavigationTargetKind::PackageImport,
+               true);
+
+    const SourceNavigationTarget identifierPriorityTarget =
+        sourceNavigationService->targetAtColumn(
+            identifierLine,
+            identifierLine.indexOf(QStringLiteral("current_value")));
+    expectBool("SourceNavigation target identifier fallback",
+               identifierPriorityTarget.matched
+                   && identifierPriorityTarget.kind
+                       == SourceNavigationTargetKind::Identifier,
+               true);
+
     // Local jump landing: jumpToDefinition moves the caret to the definition.
     sym_list::SymbolInfo counter;
     for (const auto& s : sym_list::getInstance()->findSymbolsByName("counter"))
