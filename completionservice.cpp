@@ -209,6 +209,32 @@ int CompletionService::calculateCompletionMatchScore(
     return calculateContextMatchScore(text, abbreviation);
 }
 
+QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType) const
+{
+    switch (symbolType) {
+    case sym_list::sym_module:
+        return QStringLiteral("module");
+    case sym_list::sym_reg:
+        return QStringLiteral("reg");
+    case sym_list::sym_wire:
+        return QStringLiteral("wire");
+    case sym_list::sym_logic:
+        return QStringLiteral("logic");
+    case sym_list::sym_task:
+        return QStringLiteral("task");
+    case sym_list::sym_function:
+        return QStringLiteral("function");
+    case sym_list::sym_parameter:
+        return QStringLiteral("parameter");
+    case sym_list::sym_localparam:
+        return QStringLiteral("localparam");
+    case sym_list::sym_struct_member:
+        return QStringLiteral("member");
+    default:
+        return QStringLiteral("symbol");
+    }
+}
+
 QList<CommandModeCommand> CompletionService::commandModeCommands() const
 {
     return {

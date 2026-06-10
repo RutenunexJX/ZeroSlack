@@ -145,6 +145,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
             completions.append(item);
         }
     } else if (type == SymbolCompletion) {
+        CompletionService* completionService = CompletionService::getInstance();
         if (symbols.size() == keywords.size()) {
             for (int i = 0; i < keywords.size() && i < symbols.size(); i++) {
                 CompletionItem item;
@@ -152,39 +153,8 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.type = SymbolCompletion;
                 item.symbolType = symbols[i].symbolType;
                 item.score = calculateScore(keywords[i], prefix);
-
-                switch (symbols[i].symbolType) {
-                case sym_list::sym_module:
-                    item.description = "module";
-                    break;
-                case sym_list::sym_reg:
-                    item.description = "reg";
-                    break;
-                case sym_list::sym_wire:
-                    item.description = "wire";
-                    break;
-                case sym_list::sym_logic:
-                    item.description = "logic";
-                    break;
-                case sym_list::sym_task:
-                    item.description = "task";
-                    break;
-                case sym_list::sym_function:
-                    item.description = "function";
-                    break;
-                case sym_list::sym_parameter:
-                    item.description = "parameter";
-                    break;
-                case sym_list::sym_localparam:
-                    item.description = "localparam";
-                    break;
-                case sym_list::sym_struct_member:
-                    item.description = "member";
-                    break;
-                default:
-                    item.description = "symbol";
-                    break;
-                }
+                item.description =
+                    completionService->symbolTypeDescription(symbols[i].symbolType);
 
                 completions.append(item);
             }
@@ -195,39 +165,8 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.type = SymbolCompletion;
                 item.symbolType = symbol.symbolType;
                 item.score = calculateScore(symbol.symbolName, prefix);
-
-                switch (symbol.symbolType) {
-                case sym_list::sym_module:
-                    item.description = "module";
-                    break;
-                case sym_list::sym_reg:
-                    item.description = "reg";
-                    break;
-                case sym_list::sym_wire:
-                    item.description = "wire";
-                    break;
-                case sym_list::sym_logic:
-                    item.description = "logic";
-                    break;
-                case sym_list::sym_task:
-                    item.description = "task";
-                    break;
-                case sym_list::sym_function:
-                    item.description = "function";
-                    break;
-                case sym_list::sym_parameter:
-                    item.description = "parameter";
-                    break;
-                case sym_list::sym_localparam:
-                    item.description = "localparam";
-                    break;
-                case sym_list::sym_struct_member:
-                    item.description = "member";
-                    break;
-                default:
-                    item.description = "symbol";
-                    break;
-                }
+                item.description =
+                    completionService->symbolTypeDescription(symbol.symbolType);
 
                 completions.append(item);
             }

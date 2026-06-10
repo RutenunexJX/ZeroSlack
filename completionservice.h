@@ -98,6 +98,7 @@ public:
                                        const QString& abbreviation) const;
     int calculateCompletionMatchScore(const QString& text,
                                       const QString& abbreviation) const;
+    QString symbolTypeDescription(sym_list::sym_type_e symbolType) const;
     CommandSymbolPresentation commandSymbolPresentation(
         sym_list::sym_type_e symbolType) const;
     CommandSymbolCompletionItem commandSymbolCompletionItem(

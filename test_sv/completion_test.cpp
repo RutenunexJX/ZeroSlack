@@ -187,6 +187,12 @@ int main(int argc, char** argv) {
            modelScoringOk ? "PASS" : "FAIL",
            "CompletionModel service scoring",
            firstScoredModelSymbol.toLocal8Bit().constData());
+    expectEq("CompletionService symbol desc",
+             CompletionService::getInstance()->symbolTypeDescription(sym_list::sym_logic),
+             QStringLiteral("logic"));
+    expectEq("CompletionModel symbol desc",
+             modelScoring.getItem(modelScoring.index(2, 0)).description,
+             QStringLiteral("logic"));
 
     CompletionModel commandSelectionModel;
     commandSelectionModel.updateCommandCompletions(
