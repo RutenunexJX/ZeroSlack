@@ -360,6 +360,107 @@ int main(int argc, char** argv) {
              enumPresentationItem.description,
              QStringLiteral("state_t"));
 
+    CompletionActivationQuery editorActivationQuery;
+    editorActivationQuery.selectable = true;
+    editorActivationQuery.mode = CompletionActivationMode::EditorWord;
+    editorActivationQuery.itemText = QStringLiteral("enable");
+    const CompletionActivationState editorActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            editorActivationQuery);
+    ++g_checks;
+    const bool editorActivationOk =
+        editorActivationState.action == CompletionActivationAction::ReplaceWord
+        && editorActivationState.text == QStringLiteral("enable")
+        && !editorActivationState.clearCommandMode
+        && editorActivationState.hidePopup;
+    if (!editorActivationOk)
+        ++g_fails;
+    printf("[%s] %-34s text=\"%s\"\n",
+           editorActivationOk ? "PASS" : "FAIL",
+           "CompletionService activate word",
+           editorActivationState.text.toLocal8Bit().constData());
+
+    CompletionActivationQuery commandActivationQuery;
+    commandActivationQuery.selectable = true;
+    commandActivationQuery.mode = CompletionActivationMode::CommandMode;
+    commandActivationQuery.itemText = QStringLiteral("[DEFAULT] logic");
+    commandActivationQuery.defaultValue = QStringLiteral("logic");
+    const CompletionActivationState commandActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            commandActivationQuery);
+    ++g_checks;
+    const bool commandActivationOk =
+        commandActivationState.action == CompletionActivationAction::ReplaceLine
+        && commandActivationState.text == QStringLiteral("logic")
+        && commandActivationState.clearCommandMode
+        && commandActivationState.hidePopup;
+    if (!commandActivationOk)
+        ++g_fails;
+    printf("[%s] %-34s text=\"%s\"\n",
+           commandActivationOk ? "PASS" : "FAIL",
+           "CompletionService activate command",
+           commandActivationState.text.toLocal8Bit().constData());
+
+    CompletionActivationQuery commandFallbackQuery;
+    commandFallbackQuery.selectable = true;
+    commandFallbackQuery.mode = CompletionActivationMode::CommandMode;
+    commandFallbackQuery.itemText = QStringLiteral("enable");
+    const CompletionActivationState commandFallbackState =
+        CompletionService::getInstance()->completionActivationState(
+            commandFallbackQuery);
+    ++g_checks;
+    const bool commandFallbackOk =
+        commandFallbackState.action == CompletionActivationAction::ReplaceLine
+        && commandFallbackState.text == QStringLiteral("enable")
+        && commandFallbackState.clearCommandMode
+        && commandFallbackState.hidePopup;
+    if (!commandFallbackOk)
+        ++g_fails;
+    printf("[%s] %-34s text=\"%s\"\n",
+           commandFallbackOk ? "PASS" : "FAIL",
+           "CompletionService activate fallback",
+           commandFallbackState.text.toLocal8Bit().constData());
+
+    CompletionActivationQuery alternateActivationQuery;
+    alternateActivationQuery.selectable = true;
+    alternateActivationQuery.mode = CompletionActivationMode::AlternateMode;
+    alternateActivationQuery.itemText = QStringLiteral("save");
+    const CompletionActivationState alternateActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            alternateActivationQuery);
+    ++g_checks;
+    const bool alternateActivationOk =
+        alternateActivationState.action
+            == CompletionActivationAction::ExecuteAlternateCommand
+        && alternateActivationState.text == QStringLiteral("save")
+        && !alternateActivationState.clearCommandMode
+        && !alternateActivationState.hidePopup;
+    if (!alternateActivationOk)
+        ++g_fails;
+    printf("[%s] %-34s text=\"%s\"\n",
+           alternateActivationOk ? "PASS" : "FAIL",
+           "CompletionService activate alt",
+           alternateActivationState.text.toLocal8Bit().constData());
+
+    CompletionActivationQuery inactiveActivationQuery;
+    inactiveActivationQuery.selectable = false;
+    inactiveActivationQuery.mode = CompletionActivationMode::EditorWord;
+    inactiveActivationQuery.itemText = QStringLiteral("enable");
+    const CompletionActivationState inactiveActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            inactiveActivationQuery);
+    ++g_checks;
+    const bool inactiveActivationOk =
+        inactiveActivationState.action == CompletionActivationAction::None
+        && inactiveActivationState.text.isEmpty()
+        && !inactiveActivationState.clearCommandMode
+        && !inactiveActivationState.hidePopup;
+    if (!inactiveActivationOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           inactiveActivationOk ? "PASS" : "FAIL",
+           "CompletionService activate inactive");
+
     const CommandModeMatch commandModeMatch =
         CompletionService::getInstance()->matchCommandMode(QStringLiteral("l ena"));
     ++g_checks;

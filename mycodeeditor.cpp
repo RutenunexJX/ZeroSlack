@@ -525,40 +525,47 @@ bool MyCodeEditor::isInCommentArea()
 void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 {
     CompletionModel::CompletionItem item = completionModel->getItem(index);
+    CompletionActivationQuery activationQuery;
+    activationQuery.selectable = completionModel->isSelectableIndex(index);
+    activationQuery.itemText = item.text;
+    activationQuery.defaultValue = item.defaultValue;
+    activationQuery.mode = isInAlternateMode
+        ? CompletionActivationMode::AlternateMode
+        : (isInCustomCommandMode
+               ? CompletionActivationMode::CommandMode
+               : CompletionActivationMode::EditorWord);
+    const CompletionActivationState activationState =
+        CompletionService::getInstance()->completionActivationState(
+            activationQuery);
 
-    if (!completionModel->isSelectableIndex(index)) {
+    if (activationState.action == CompletionActivationAction::None)
         return;
-    }
 
     QTextCursor cursor = textCursor();
 
-    if (isInAlternateMode) {
-        executeAlternateModeCommand(item.text);
+    if (activationState.action
+        == CompletionActivationAction::ExecuteAlternateCommand) {
+        executeAlternateModeCommand(activationState.text);
         return;
     }
 
-    if (isInCustomCommandMode) {
-        QString actualCompletion;
-
-        if (!item.defaultValue.isEmpty()) {
-            actualCompletion = item.defaultValue;
-        } else {
-            actualCompletion = item.text;
-        }
-
+    if (activationState.action == CompletionActivationAction::ReplaceLine) {
         cursor.movePosition(QTextCursor::StartOfLine, QTextCursor::MoveAnchor);
         cursor.movePosition(QTextCursor::EndOfLine, QTextCursor::KeepAnchor);
-        cursor.insertText(actualCompletion);
+        cursor.insertText(activationState.text);
 
-        isInCustomCommandMode = false;
-        clearCommandHighlight();
-    } else {
+        if (activationState.clearCommandMode) {
+            isInCustomCommandMode = false;
+            clearCommandHighlight();
+        }
+    } else if (activationState.action == CompletionActivationAction::ReplaceWord) {
         cursor.setPosition(wordStartPos);
         cursor.setPosition(textCursor().position(), QTextCursor::KeepAnchor);
-        cursor.insertText(item.text);
+        cursor.insertText(activationState.text);
     }
 
-    hideAutoComplete();
+    if (activationState.hidePopup)
+        hideAutoComplete();
 }
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)

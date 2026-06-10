@@ -52,6 +52,33 @@ struct CompletionTriggerState {
     bool hidePopup = false;
 };
 
+enum class CompletionActivationMode {
+    EditorWord,
+    CommandMode,
+    AlternateMode
+};
+
+enum class CompletionActivationAction {
+    None,
+    ReplaceWord,
+    ReplaceLine,
+    ExecuteAlternateCommand
+};
+
+struct CompletionActivationQuery {
+    bool selectable = false;
+    CompletionActivationMode mode = CompletionActivationMode::EditorWord;
+    QString itemText;
+    QString defaultValue;
+};
+
+struct CompletionActivationState {
+    CompletionActivationAction action = CompletionActivationAction::None;
+    QString text;
+    bool clearCommandMode = false;
+    bool hidePopup = false;
+};
+
 struct EditorCompletionQuery {
     QString lineUpToCursor;
     QString wordPrefix;
@@ -170,6 +197,8 @@ public:
         const EditorCompletionQuery& query) const;
     CompletionTriggerState completionTriggerState(
         const CompletionTriggerQuery& query) const;
+    CompletionActivationState completionActivationState(
+        const CompletionActivationQuery& query) const;
     bool shouldContinueCompletion(const CompletionTriggerQuery& query) const;
     QList<int> findCompletionAbbreviationPositions(
         const QString& text,

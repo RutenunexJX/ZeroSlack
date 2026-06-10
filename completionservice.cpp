@@ -445,6 +445,36 @@ bool CompletionService::shouldContinueCompletion(
     return completionTriggerState(query).continueCompletion;
 }
 
+CompletionActivationState CompletionService::completionActivationState(
+    const CompletionActivationQuery& query) const
+{
+    CompletionActivationState state;
+    if (!query.selectable)
+        return state;
+
+    switch (query.mode) {
+    case CompletionActivationMode::AlternateMode:
+        state.action = CompletionActivationAction::ExecuteAlternateCommand;
+        state.text = query.itemText;
+        return state;
+    case CompletionActivationMode::CommandMode:
+        state.action = CompletionActivationAction::ReplaceLine;
+        state.text = query.defaultValue.isEmpty()
+            ? query.itemText
+            : query.defaultValue;
+        state.clearCommandMode = true;
+        state.hidePopup = true;
+        return state;
+    case CompletionActivationMode::EditorWord:
+        state.action = CompletionActivationAction::ReplaceWord;
+        state.text = query.itemText;
+        state.hidePopup = true;
+        return state;
+    }
+
+    return state;
+}
+
 CommandSymbolPresentation CompletionService::commandSymbolPresentation(
     sym_list::sym_type_e symbolType) const
 {
