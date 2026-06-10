@@ -47,6 +47,22 @@ struct CompletionTriggerQuery {
     bool commandModeActive = false;
 };
 
+struct EditorCompletionQuery {
+    QString lineUpToCursor;
+    QString wordPrefix;
+    QString fileName;
+    QString moduleName;
+    int cursorLine = -1;
+    int cursorPosition = -1;
+};
+
+struct EditorCompletionState {
+    bool available = false;
+    QString prefix;
+    int replacementStartColumn = -1;
+    CompletionResult completion;
+};
+
 struct CommandSymbolPresentation {
     QString defaultValue;
     QString typeDescription;
@@ -124,6 +140,8 @@ public:
     CommandModeMatch matchCommandMode(const QString& lineUpToCursor) const;
     CommandModeInputState commandModeInputState(
         const QString& lineUpToCursor) const;
+    EditorCompletionState editorCompletionState(
+        const EditorCompletionQuery& query) const;
     bool shouldContinueCompletion(const CompletionTriggerQuery& query) const;
     QList<int> findCompletionAbbreviationPositions(
         const QString& text,

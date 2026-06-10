@@ -306,6 +306,53 @@ CommandModeInputState CompletionService::commandModeInputState(
     return state;
 }
 
+EditorCompletionState CompletionService::editorCompletionState(
+    const EditorCompletionQuery& query) const
+{
+    EditorCompletionState state;
+
+    QString variableName;
+    QString memberPrefix;
+    const QString lineForParse = query.lineUpToCursor.trimmed();
+    if (tryParseStructMemberContext(lineForParse, variableName, memberPrefix)) {
+        const QString structTypeName =
+            getStructTypeForVariable(variableName, query.moduleName);
+        if (!structTypeName.isEmpty()) {
+            CompletionQuery completionQuery;
+            completionQuery.prefix = memberPrefix;
+            completionQuery.fileName = query.fileName;
+            completionQuery.moduleName = query.moduleName;
+            completionQuery.structTypeNameForMember = structTypeName;
+            completionQuery.cursorLine = query.cursorLine;
+            completionQuery.cursorPosition = query.cursorPosition;
+
+            state.available = true;
+            state.prefix = memberPrefix;
+            state.replacementStartColumn =
+                query.lineUpToCursor.lastIndexOf(QLatin1Char('.')) + 1;
+            state.completion = findCompletionResult(completionQuery);
+            return state;
+        }
+    }
+
+    if (query.wordPrefix.length() < 1)
+        return state;
+
+    CompletionQuery completionQuery;
+    completionQuery.prefix = query.wordPrefix;
+    completionQuery.fileName = query.fileName;
+    completionQuery.moduleName = query.moduleName;
+    completionQuery.cursorLine = query.cursorLine;
+    completionQuery.cursorPosition = query.cursorPosition;
+
+    state.available = true;
+    state.prefix = query.wordPrefix;
+    state.replacementStartColumn =
+        qMax(0, query.lineUpToCursor.size() - query.wordPrefix.size());
+    state.completion = findCompletionResult(completionQuery);
+    return state;
+}
+
 bool CompletionService::shouldContinueCompletion(
     const CompletionTriggerQuery& query) const
 {

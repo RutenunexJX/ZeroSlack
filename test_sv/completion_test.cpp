@@ -531,6 +531,75 @@ int main(int argc, char** argv) {
            rejectsNonMemberContext ? "PASS" : "FAIL",
            "CompletionService member parse reject");
 
+    EditorCompletionQuery editorMemberQuery;
+    editorMemberQuery.lineUpToCursor = QStringLiteral("assign result = pixel.bl");
+    editorMemberQuery.wordPrefix = QStringLiteral("bl");
+    editorMemberQuery.fileName = path;
+    editorMemberQuery.moduleName = QStringLiteral("top");
+    editorMemberQuery.cursorLine = 1;
+    editorMemberQuery.cursorPosition = editorMemberQuery.lineUpToCursor.size();
+    const EditorCompletionState editorMemberState =
+        CompletionService::getInstance()->editorCompletionState(editorMemberQuery);
+    expectList("CompletionService editor member",
+               editorMemberState.completion.names,
+               {"blue"});
+    ++g_checks;
+    const bool editorMemberStateOk = editorMemberState.available
+        && editorMemberState.prefix == QStringLiteral("bl")
+        && editorMemberState.replacementStartColumn
+            == editorMemberQuery.lineUpToCursor.lastIndexOf(QLatin1Char('.')) + 1
+        && editorMemberState.completion.symbols.size() == 1
+        && editorMemberState.completion.symbols.first().symbolType
+            == sym_list::sym_struct_member;
+    if (!editorMemberStateOk)
+        ++g_fails;
+    printf("[%s] %-34s start=%d\n",
+           editorMemberStateOk ? "PASS" : "FAIL",
+           "CompletionService editor member state",
+           editorMemberState.replacementStartColumn);
+
+    EditorCompletionQuery editorWordQuery;
+    editorWordQuery.lineUpToCursor = QStringLiteral("assign en");
+    editorWordQuery.wordPrefix = QStringLiteral("en");
+    editorWordQuery.fileName = path;
+    editorWordQuery.moduleName = QStringLiteral("top");
+    editorWordQuery.cursorLine = 1;
+    editorWordQuery.cursorPosition = editorWordQuery.lineUpToCursor.size();
+    const EditorCompletionState editorWordState =
+        CompletionService::getInstance()->editorCompletionState(editorWordQuery);
+    expectList("CompletionService editor word",
+               editorWordState.completion.names,
+               {"enable"});
+    ++g_checks;
+    const bool editorWordStateOk = editorWordState.available
+        && editorWordState.prefix == QStringLiteral("en")
+        && editorWordState.replacementStartColumn
+            == editorWordQuery.lineUpToCursor.size() - editorWordQuery.wordPrefix.size()
+        && editorWordState.completion.symbols.size() == 1
+        && editorWordState.completion.symbols.first().symbolName
+            == QStringLiteral("enable");
+    if (!editorWordStateOk)
+        ++g_fails;
+    printf("[%s] %-34s start=%d\n",
+           editorWordStateOk ? "PASS" : "FAIL",
+           "CompletionService editor word state",
+           editorWordState.replacementStartColumn);
+
+    EditorCompletionQuery editorEmptyQuery;
+    editorEmptyQuery.lineUpToCursor = QStringLiteral("assign ");
+    editorEmptyQuery.fileName = path;
+    editorEmptyQuery.moduleName = QStringLiteral("top");
+    ++g_checks;
+    const bool editorEmptyStateOk =
+        !CompletionService::getInstance()
+             ->editorCompletionState(editorEmptyQuery)
+             .available;
+    if (!editorEmptyStateOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           editorEmptyStateOk ? "PASS" : "FAIL",
+           "CompletionService editor empty");
+
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
     commandQuery.moduleName = "top";

@@ -774,47 +774,24 @@ void MyCodeEditor::onAutoCompleteTimer()
         return;
     }
 
-    QString lineForParse = lineUpToCursor.trimmed();
-    QString varName, memberPrefix;
     CompletionService* completionService = CompletionService::getInstance();
-    if (completionService->tryParseStructMemberContext(lineForParse, varName, memberPrefix)) {
-        QString currentModule = currentModuleNameAt(cursor.position());
-        QString structTypeName = completionService->getStructTypeForVariable(varName, currentModule);
-        if (!structTypeName.isEmpty()) {
-            CompletionQuery query;
-            query.prefix = memberPrefix;
-            query.fileName = getFileName();
-            query.moduleName = currentModule;
-            query.structTypeNameForMember = structTypeName;
-            query.cursorLine = cursor.block().blockNumber() + 1;
-            query.cursorPosition = cursor.position();
-            const CompletionResult completion =
-                completionService->findCompletionResult(query);
-            completionModel->updateCompletions(completion.names,
-                                               completion.symbols,
-                                               memberPrefix,
-                                               CompletionModel::SymbolCompletion);
-            wordStartPos = currentBlock.position() + lineUpToCursor.lastIndexOf('.') + 1;
-            showAutoComplete();
-            return;
-        }
-    }
+    EditorCompletionQuery query;
+    query.lineUpToCursor = lineUpToCursor;
+    query.wordPrefix = getWordUnderCursor();
+    query.fileName = getFileName();
+    query.moduleName = currentModuleNameAt(cursor.position());
+    query.cursorLine = cursor.block().blockNumber() + 1;
+    query.cursorPosition = cursor.position();
 
-    QString prefix = getWordUnderCursor();
-    if (prefix.length() >= 1) {
-        CompletionQuery query;
-        query.prefix = prefix;
-        query.fileName = getFileName();
-        query.moduleName = currentModuleNameAt(cursor.position());
-        query.cursorLine = cursor.block().blockNumber() + 1;
-        query.cursorPosition = cursor.position();
-
-        const CompletionResult completion =
-            completionService->findCompletionResult(query);
-        completionModel->updateCompletions(completion.names,
-                                           completion.symbols,
-                                           prefix,
+    const EditorCompletionState completionState =
+        completionService->editorCompletionState(query);
+    if (completionState.available) {
+        completionModel->updateCompletions(completionState.completion.names,
+                                           completionState.completion.symbols,
+                                           completionState.prefix,
                                            CompletionModel::SymbolCompletion);
+        wordStartPos =
+            currentBlock.position() + completionState.replacementStartColumn;
         showAutoComplete();
     }
 }
