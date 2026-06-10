@@ -19,10 +19,7 @@ class AnalysisScheduler;
 class EditorCoordinator;
 class FileCommandCoordinator;
 class ModeCommandCoordinator;
-class ProblemsPanelCoordinator;
-class ReferencesPanelCoordinator;
-class RelationshipsPanelCoordinator;
-class SemanticPanelRefreshCoordinator;
+class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
 
 QT_BEGIN_NAMESPACE
@@ -61,18 +58,12 @@ private:
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<ModeCommandCoordinator> modeCommandCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
-    std::unique_ptr<ProblemsPanelCoordinator> problemsPanel;
-    std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
-    std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
-    std::unique_ptr<SemanticPanelRefreshCoordinator> semanticPanelRefresh;
+    std::unique_ptr<SemanticDockCoordinator> semanticDocks;
 
     static const int kFileChangeDebounceMs = 350;
 
     void setupNavigationPane();
-    void setupProblemsPane();
-    void setupReferencesPane();
-    void setupRelationshipsPane();
-    void setupSemanticPanelRefreshCoordinator();
+    void setupSemanticDocks();
     void setupAnalysisCommandCoordinator();
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();

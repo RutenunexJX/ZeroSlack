@@ -14,12 +14,10 @@
 #include "editorcoordinator.h"
 #include "filecommandcoordinator.h"
 #include "modecommandcoordinator.h"
-#include "problemspanelcoordinator.h"
-#include "referencespanelcoordinator.h"
-#include "relationshipspanelcoordinator.h"
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
+#include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "version.h"
@@ -47,10 +45,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupAnalysisCommandCoordinator();
     setupNavigationPane();
     setupNavigationCommandCoordinator();
-    setupProblemsPane();
-    setupReferencesPane();
-    setupRelationshipsPane();
-    setupSemanticPanelRefreshCoordinator();
+    setupSemanticDocks();
     setupFileCommandCoordinator();
     setupModeCommandCoordinator();
     setupEditorCoordinator();
@@ -88,8 +83,8 @@ void MainWindow::setupManagerConnections()
     analysisCoordinator->setFileChangeDebounceMs(kFileChangeDebounceMs);
     analysisCoordinator->setProblemsRefreshHandler(
         [this](const QString& fileName) {
-            if (semanticPanelRefresh)
-                semanticPanelRefresh->updateProblemsPanel(fileName);
+            if (semanticDocks && semanticDocks->refreshCoordinator())
+                semanticDocks->refreshCoordinator()->updateProblemsPanel(fileName);
         });
     analysisCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
@@ -119,40 +114,20 @@ void MainWindow::setupNavigationCommandCoordinator()
     navigationCommandCoordinator->connectSignals();
 }
 
-void MainWindow::setupProblemsPane()
+void MainWindow::setupSemanticDocks()
 {
-    problemsPanel = std::make_unique<ProblemsPanelCoordinator>(this);
-    addDockWidget(Qt::BottomDockWidgetArea, problemsPanel->dock());
-}
-
-void MainWindow::setupReferencesPane()
-{
-    referencesPanel = std::make_unique<ReferencesPanelCoordinator>(this);
-    addDockWidget(Qt::BottomDockWidgetArea, referencesPanel->dock());
-}
-
-void MainWindow::setupRelationshipsPane()
-{
-    relationshipsPanel = std::make_unique<RelationshipsPanelCoordinator>(this);
-    addDockWidget(Qt::BottomDockWidgetArea, relationshipsPanel->dock());
-}
-
-void MainWindow::setupSemanticPanelRefreshCoordinator()
-{
-    semanticPanelRefresh = std::make_unique<SemanticPanelRefreshCoordinator>(
+    semanticDocks = std::make_unique<SemanticDockCoordinator>(
+        this,
         tabManager.get(),
         workspaceManager.get(),
         navigationManager.get(),
-        navigationCommandCoordinator.get(),
-        problemsPanel.get(),
-        referencesPanel.get(),
-        relationshipsPanel.get());
-    semanticPanelRefresh->setStatusMessageHandler(
+        navigationCommandCoordinator.get());
+    semanticDocks->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
             if (statusBar())
                 statusBar()->showMessage(message, timeoutMs);
         });
-    semanticPanelRefresh->configurePanels();
+    semanticDocks->setup();
 }
 
 void MainWindow::setupAnalysisCommandCoordinator()
@@ -194,7 +169,7 @@ void MainWindow::setupEditorCoordinator()
         fileCommandCoordinator.get(),
         navigationCommandCoordinator.get(),
         analysisCommandCoordinator.get(),
-        semanticPanelRefresh.get());
+        semanticDocks ? semanticDocks->refreshCoordinator() : nullptr);
     editorCoordinator->connectSignals();
 }
 

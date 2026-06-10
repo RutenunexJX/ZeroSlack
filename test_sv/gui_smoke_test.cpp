@@ -33,6 +33,7 @@
 #include "analysiscommandcoordinator.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
+#include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "smartrelationshipbuilder.h"
@@ -204,52 +205,77 @@ static QList<QTreeWidgetItem*> navigableItems(QTreeWidget* tree)
 
 static QTreeWidget* problemsTree(MainWindow& window)
 {
-    return window.problemsPanel ? window.problemsPanel->tree() : nullptr;
+    return window.semanticDocks && window.semanticDocks->problemsPanelCoordinator()
+        ? window.semanticDocks->problemsPanelCoordinator()->tree()
+        : nullptr;
 }
 
 static QComboBox* problemsScopeCombo(MainWindow& window)
 {
-    return window.problemsPanel ? window.problemsPanel->scopeCombo() : nullptr;
+    return window.semanticDocks && window.semanticDocks->problemsPanelCoordinator()
+        ? window.semanticDocks->problemsPanelCoordinator()->scopeCombo()
+        : nullptr;
 }
 
 static QTreeWidget* referencesTree(MainWindow& window)
 {
-    return window.referencesPanel ? window.referencesPanel->tree() : nullptr;
+    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
+        ? window.semanticDocks->referencesPanelCoordinator()->tree()
+        : nullptr;
 }
 
 static QComboBox* referenceScopeCombo(MainWindow& window)
 {
-    return window.referencesPanel ? window.referencesPanel->scopeCombo() : nullptr;
+    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
+        ? window.semanticDocks->referencesPanelCoordinator()->scopeCombo()
+        : nullptr;
 }
 
 static QComboBox* referenceTypeCombo(MainWindow& window)
 {
-    return window.referencesPanel ? window.referencesPanel->typeCombo() : nullptr;
+    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
+        ? window.semanticDocks->referencesPanelCoordinator()->typeCombo()
+        : nullptr;
 }
 
 static QTreeWidget* relationshipsTree(MainWindow& window)
 {
-    return window.relationshipsPanel ? window.relationshipsPanel->tree() : nullptr;
+    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
+        ? window.semanticDocks->relationshipsPanelCoordinator()->tree()
+        : nullptr;
 }
 
 static QComboBox* relationshipViewCombo(MainWindow& window)
 {
-    return window.relationshipsPanel ? window.relationshipsPanel->viewCombo() : nullptr;
+    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
+        ? window.semanticDocks->relationshipsPanelCoordinator()->viewCombo()
+        : nullptr;
 }
 
 static QComboBox* relationshipDirectionCombo(MainWindow& window)
 {
-    return window.relationshipsPanel ? window.relationshipsPanel->directionCombo() : nullptr;
+    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
+        ? window.semanticDocks->relationshipsPanelCoordinator()->directionCombo()
+        : nullptr;
 }
 
 static QComboBox* relationshipTypeCombo(MainWindow& window)
 {
-    return window.relationshipsPanel ? window.relationshipsPanel->typeCombo() : nullptr;
+    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
+        ? window.semanticDocks->relationshipsPanelCoordinator()->typeCombo()
+        : nullptr;
 }
 
 static QComboBox* relationshipDepthCombo(MainWindow& window)
 {
-    return window.relationshipsPanel ? window.relationshipsPanel->depthCombo() : nullptr;
+    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
+        ? window.semanticDocks->relationshipsPanelCoordinator()->depthCombo()
+        : nullptr;
+}
+
+static SemanticPanelRefreshCoordinator* semanticPanelRefresh(MainWindow& window)
+{
+    return window.semanticDocks ? window.semanticDocks->refreshCoordinator() : nullptr;
 }
 
 static void drainRelationshipWork(MainWindow& window)
@@ -341,9 +367,9 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                                         externalIncomingRelationship,
                                         outgoingRelationship}));
 
-    window.semanticPanelRefresh->showReferencesForSymbol(QStringLiteral("target_ref"),
-                                                         fixturePath,
-                                                         QStringLiteral("ref_top"));
+    semanticPanelRefresh(window)->showReferencesForSymbol(QStringLiteral("target_ref"),
+                                                          fixturePath,
+                                                          QStringLiteral("ref_top"));
 
     expectBool("references tree exists", referencesTree(window) != nullptr, true);
     expectBool("reference results rendered",
@@ -434,9 +460,9 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    true);
     }
 
-    window.semanticPanelRefresh->showRelationshipsForSymbol(QStringLiteral("target_ref"),
-                                                            fixturePath,
-                                                            QStringLiteral("ref_top"));
+    semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),
+                                                             fixturePath,
+                                                             QStringLiteral("ref_top"));
     expectBool("relationships tree exists", relationshipsTree(window) != nullptr, true);
     expectBool("relationship results rendered",
                navigableItemCount(relationshipsTree(window)) == 3,
@@ -560,7 +586,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    rootItem != nullptr, true);
         if (rootItem) {
             rootItem->setExpanded(false);
-            window.semanticPanelRefresh->refreshRelationshipsPanel();
+            semanticPanelRefresh(window)->refreshRelationshipsPanel();
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
             QTreeWidgetItem* refreshedRoot = nullptr;
             const QList<QTreeWidgetItem*> refreshedItems =
@@ -1040,7 +1066,7 @@ int main(int argc, char** argv)
                 QList<SemanticDiagnostic>{closeDiagnostic}));
         problemsScopeCombo(window)->setCurrentIndex(
             problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
-        window.semanticPanelRefresh->updateProblemsPanel();
+        semanticPanelRefresh(window)->updateProblemsPanel();
         expectBool("problems close probe visible",
                    navigableItemCount(problemsTree(window)) == 1,
                    true);
@@ -1055,7 +1081,7 @@ int main(int argc, char** argv)
                 QList<sym_list::SymbolInfo>{},
                 QList<SemanticRelationship>{},
                 QList<SemanticDiagnostic>{closeDiagnostic}));
-        window.semanticPanelRefresh->updateProblemsPanel();
+        semanticPanelRefresh(window)->updateProblemsPanel();
         expectBool("problems reopen probe visible",
                    navigableItemCount(problemsTree(window)) == 1,
                    true);

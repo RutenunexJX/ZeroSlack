@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Navigation manager input wiring now lives behind `NavigationPaneCoordinator`.
-`MainWindow` asks the navigation pane coordinator to connect tab, workspace, and symbol analyzer inputs instead of wiring `NavigationManager` directly.
+Semantic dock assembly now lives behind `SemanticDockCoordinator`.
+`MainWindow` creates one semantic dock coordinator instead of owning Problems, References, Relationships, and semantic refresh wiring directly.
 
 ## Current Architecture Snapshot
 
@@ -50,6 +50,7 @@ Navigation manager input wiring now lives behind `NavigationPaneCoordinator`.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
+- `SemanticDockCoordinator` owns Problems, References, and Relationships dock creation, placement, and semantic refresh coordinator assembly.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.

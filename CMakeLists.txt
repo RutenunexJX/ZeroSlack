@@ -81,6 +81,7 @@ set(ZEROSLACK_CORE_SOURCES
     searchservice.cpp
     semanticpanelutils.cpp
     semanticpanelrefreshcoordinator.cpp
+    semanticdockcoordinator.cpp
     semanticindex.cpp
     semanticindexsnapshot.cpp
     semanticruntimecoordinator.cpp
@@ -133,6 +134,7 @@ set(ZEROSLACK_CORE_SOURCES
     searchservice.h
     semanticpanelutils.h
     semanticpanelrefreshcoordinator.h
+    semanticdockcoordinator.h
     semanticindex.h
     semanticindexsnapshot.h
     semanticruntimecoordinator.h
