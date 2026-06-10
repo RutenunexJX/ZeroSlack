@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor source-navigation target assembly now lives behind `SourceNavigationService`.
-`MyCodeEditor` supplies line/column context and maps the returned target to document positions instead of locally deriving include/package/identifier jumpability policy.
+Alternate-mode command action classification now lives behind `AlternateCommandService`.
+`MyCodeEditor` executes service-classified command actions instead of locally mapping alternate command strings to editor/file operations.
 
 ## Latest Validation
 
@@ -64,7 +64,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command/editor completion results and command-mode completion state, trigger policy, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
-- `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, and command membership checks.
+- `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, command membership checks, and command action classification.
 - `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, source navigation target selection, editor source-navigation target assembly, and editor symbol action context assembly.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.

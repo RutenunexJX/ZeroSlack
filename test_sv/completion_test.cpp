@@ -235,6 +235,21 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            alternateKnownOk ? "PASS" : "FAIL",
            "AlternateCommand known command");
+    ++g_checks;
+    const bool alternateActionOk =
+        alternateCommandService->commandAction(QStringLiteral(" SAVE_AS "))
+            == AlternateCommandAction::SaveAs
+        && alternateCommandService->commandAction(QStringLiteral("new"))
+            == AlternateCommandAction::NewFile
+        && alternateCommandService->commandAction(QStringLiteral("select_all"))
+            == AlternateCommandAction::SelectAll
+        && alternateCommandService->commandAction(QStringLiteral("unknown"))
+            == AlternateCommandAction::None;
+    if (!alternateActionOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           alternateActionOk ? "PASS" : "FAIL",
+           "AlternateCommand action mapping");
 
     CompletionModel commandSelectionModel;
     commandSelectionModel.updateCommandCompletions(

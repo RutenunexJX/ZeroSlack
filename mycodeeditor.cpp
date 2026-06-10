@@ -923,33 +923,49 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 {
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();
-    QString cmd = alternateCommandService->normalizeCommandInput(command);
-
-    if (cmd == "save") {
+    switch (alternateCommandService->commandAction(command)) {
+    case AlternateCommandAction::Save:
         emit saveFileRequested();
-    } else if (cmd == "save_as") {
+        break;
+    case AlternateCommandAction::SaveAs:
         emit saveFileAsRequested();
-    } else if (cmd == "open") {
+        break;
+    case AlternateCommandAction::Open:
         emit openFileRequested();
-    } else if (cmd == "new") {
+        break;
+    case AlternateCommandAction::NewFile:
         emit newFileRequested();
-    } else if (cmd == "copy") {
+        break;
+    case AlternateCommandAction::Copy:
         copy();
-    } else if (cmd == "paste") {
+        break;
+    case AlternateCommandAction::Paste:
         paste();
-    } else if (cmd == "cut") {
+        break;
+    case AlternateCommandAction::Cut:
         cut();
-    } else if (cmd == "undo") {
+        break;
+    case AlternateCommandAction::Undo:
         undo();
-    } else if (cmd == "redo") {
+        break;
+    case AlternateCommandAction::Redo:
         redo();
-    } else if (cmd == "select_all") {
+        break;
+    case AlternateCommandAction::SelectAll:
         selectAll();
-    } else if (cmd == "comment") {
+        break;
+    case AlternateCommandAction::Comment:
         insertPlainText("// ");
-    } else if (cmd == "goto_line") {
-        // TODO: Implement goto line functionality
-    } else {
+        break;
+    case AlternateCommandAction::Close:
+    case AlternateCommandAction::Find:
+    case AlternateCommandAction::Replace:
+    case AlternateCommandAction::GotoLine:
+    case AlternateCommandAction::Uncomment:
+    case AlternateCommandAction::Indent:
+    case AlternateCommandAction::Unindent:
+    case AlternateCommandAction::None:
+        break;
     }
 
     clearAlternateModeBuffer();

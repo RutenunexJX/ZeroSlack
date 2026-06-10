@@ -68,3 +68,46 @@ bool AlternateCommandService::isKnownCommand(const QString& command) const
                            return catalogCommand == normalizedCommand;
                        });
 }
+
+AlternateCommandAction AlternateCommandService::commandAction(
+    const QString& command) const
+{
+    const QString normalizedCommand = normalizeCommandInput(command);
+    if (normalizedCommand == QStringLiteral("save"))
+        return AlternateCommandAction::Save;
+    if (normalizedCommand == QStringLiteral("save_as"))
+        return AlternateCommandAction::SaveAs;
+    if (normalizedCommand == QStringLiteral("open"))
+        return AlternateCommandAction::Open;
+    if (normalizedCommand == QStringLiteral("new"))
+        return AlternateCommandAction::NewFile;
+    if (normalizedCommand == QStringLiteral("close"))
+        return AlternateCommandAction::Close;
+    if (normalizedCommand == QStringLiteral("copy"))
+        return AlternateCommandAction::Copy;
+    if (normalizedCommand == QStringLiteral("paste"))
+        return AlternateCommandAction::Paste;
+    if (normalizedCommand == QStringLiteral("cut"))
+        return AlternateCommandAction::Cut;
+    if (normalizedCommand == QStringLiteral("undo"))
+        return AlternateCommandAction::Undo;
+    if (normalizedCommand == QStringLiteral("redo"))
+        return AlternateCommandAction::Redo;
+    if (normalizedCommand == QStringLiteral("find"))
+        return AlternateCommandAction::Find;
+    if (normalizedCommand == QStringLiteral("replace"))
+        return AlternateCommandAction::Replace;
+    if (normalizedCommand == QStringLiteral("goto_line"))
+        return AlternateCommandAction::GotoLine;
+    if (normalizedCommand == QStringLiteral("select_all"))
+        return AlternateCommandAction::SelectAll;
+    if (normalizedCommand == QStringLiteral("comment"))
+        return AlternateCommandAction::Comment;
+    if (normalizedCommand == QStringLiteral("uncomment"))
+        return AlternateCommandAction::Uncomment;
+    if (normalizedCommand == QStringLiteral("indent"))
+        return AlternateCommandAction::Indent;
+    if (normalizedCommand == QStringLiteral("unindent"))
+        return AlternateCommandAction::Unindent;
+    return AlternateCommandAction::None;
+}
