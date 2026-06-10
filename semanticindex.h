@@ -70,6 +70,13 @@ public:
     std::shared_ptr<const SemanticIndexSnapshot> captureSnapshotReplacingDiagnostics(
         const QStringList& fileNames,
         const QList<SemanticDiagnostic>& diagnostics) const;
+    std::shared_ptr<const SemanticIndexSnapshot> beginRelationshipAnalysisSnapshot();
+    std::shared_ptr<const SemanticIndexSnapshot> snapshotWithAdditionalRelationships(
+        std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot,
+        const QList<SemanticRelationship>& relationships) const;
+    bool publishSnapshotIfCurrent(
+        std::shared_ptr<const SemanticIndexSnapshot> expectedCurrentSnapshot,
+        std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
 
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;

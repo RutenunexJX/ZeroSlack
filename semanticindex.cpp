@@ -273,6 +273,37 @@ SemanticIndex::captureSnapshotReplacingDiagnostics(
         SemanticIndexSnapshot::fromSymbolDatabase(symbolDatabase(), mergedDiagnostics));
 }
 
+std::shared_ptr<const SemanticIndexSnapshot>
+SemanticIndex::beginRelationshipAnalysisSnapshot()
+{
+    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot =
+        captureSnapshotPreservingDiagnostics();
+    setSnapshot(baseSnapshot);
+    return baseSnapshot;
+}
+
+std::shared_ptr<const SemanticIndexSnapshot>
+SemanticIndex::snapshotWithAdditionalRelationships(
+    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot,
+    const QList<SemanticRelationship>& relationships) const
+{
+    if (!baseSnapshot)
+        return baseSnapshot;
+    return std::make_shared<const SemanticIndexSnapshot>(
+        baseSnapshot->withAdditionalRelationships(relationships));
+}
+
+bool SemanticIndex::publishSnapshotIfCurrent(
+    std::shared_ptr<const SemanticIndexSnapshot> expectedCurrentSnapshot,
+    std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot)
+{
+    if (expectedCurrentSnapshot && snapshot() != expectedCurrentSnapshot)
+        return false;
+    if (nextSnapshot)
+        setSnapshot(std::move(nextSnapshot));
+    return true;
+}
+
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) const
 {
     if (m_snapshot)

@@ -298,8 +298,7 @@ void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, con
 
     relationshipBuilder->resetCancellation();
     const auto baseSnapshot =
-        SemanticIndex::getInstance()->captureSnapshotPreservingDiagnostics();
-    SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
+        SemanticIndex::getInstance()->beginRelationshipAnalysisSnapshot();
 
     QFuture<SingleFileRelationshipAnalysisResult> future =
         QtConcurrent::run([this, fileName, content, baseSnapshot]() {
@@ -352,8 +351,7 @@ void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapsh
     emit workspaceRelationshipAnalysisStarted(project, project.systemVerilogFiles.size());
 
     const auto baseSnapshot =
-        SemanticIndex::getInstance()->captureSnapshotPreservingDiagnostics();
-    SemanticIndex::getInstance()->setSnapshot(baseSnapshot);
+        SemanticIndex::getInstance()->beginRelationshipAnalysisSnapshot();
 
     QFuture<WorkspaceRelationshipAnalysisResult> future =
         QtConcurrent::run([this, project, baseSnapshot]() {
@@ -541,7 +539,8 @@ bool AnalysisScheduler::applySingleFileRelationshipResult(
         return false;
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    if (result.baseSnapshot && semanticIndex->snapshot() != result.baseSnapshot)
+    if (!semanticIndex->publishSnapshotIfCurrent(result.baseSnapshot,
+                                                 result.semanticSnapshot))
         return false;
 
     relationshipEngine->beginUpdate();
@@ -556,8 +555,6 @@ bool AnalysisScheduler::applySingleFileRelationshipResult(
     }
     relationshipEngine->endUpdate();
 
-    if (result.semanticSnapshot)
-        semanticIndex->setSnapshot(result.semanticSnapshot);
     scheduleRelationshipDataRefresh();
     return true;
 }
@@ -569,7 +566,8 @@ bool AnalysisScheduler::applyWorkspaceRelationshipResult(
         return false;
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    if (result.baseSnapshot && semanticIndex->snapshot() != result.baseSnapshot)
+    if (!semanticIndex->publishSnapshotIfCurrent(result.baseSnapshot,
+                                                 result.semanticSnapshot))
         return false;
 
     relationshipEngine->beginUpdate();
@@ -586,8 +584,6 @@ bool AnalysisScheduler::applyWorkspaceRelationshipResult(
     }
     relationshipEngine->endUpdate();
 
-    if (result.semanticSnapshot)
-        semanticIndex->setSnapshot(result.semanticSnapshot);
     scheduleRelationshipDataRefresh();
     return true;
 }
@@ -609,9 +605,10 @@ SingleFileRelationshipAnalysisResult AnalysisScheduler::analyzeSingleFileRelatio
         relationshipBuilder->computeRelationships(
             fileName, content, fileSymbols, baseSnapshot.get());
 
-    result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
-        baseSnapshot->withAdditionalRelationships(
-            toSemanticRelationships(result.relationships)));
+    result.semanticSnapshot =
+        SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
+            baseSnapshot,
+            toSemanticRelationships(result.relationships));
     return result;
 }
 
@@ -645,10 +642,10 @@ WorkspaceRelationshipAnalysisResult AnalysisScheduler::analyzeWorkspaceRelations
         result.fileRelationships.append({filePath, relationships});
         newRelationships.append(toSemanticRelationships(relationships));
     }
-    if (baseSnapshot) {
-        result.semanticSnapshot = std::make_shared<SemanticIndexSnapshot>(
-            baseSnapshot->withAdditionalRelationships(newRelationships));
-    }
+    result.semanticSnapshot =
+        SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
+            baseSnapshot,
+            newRelationships);
     return result;
 }
 

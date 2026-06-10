@@ -34,15 +34,15 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Analysis symbol write-back and semantic snapshot publication now live behind `SemanticIndex`.
-`SymbolAnalyzer` extracts Slang symbols/diagnostics and asks the index to update stored facts and publish snapshots.
+Relationship analysis snapshot lifecycle now lives behind `SemanticIndex`.
+`AnalysisScheduler` coordinates relationship work while the index captures base snapshots, builds relationship-augmented snapshots, and publishes them only when current.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
-- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
+- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
