@@ -4,13 +4,8 @@
 #include "workspacemanager.h"
 #include "symbolanalyzer.h"
 #include "definitionservice.h"
-#include "hierarchyservice.h"
-#include "searchservice.h"
-#include "semanticindex.h"
-#include <algorithm>
+#include "navigationservice.h"
 #include <utility>
-#include <QFileInfo>
-#include <QSet>
 
 NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
@@ -375,231 +370,17 @@ void NavigationManager::updateFileHierarchyData()
 
 void NavigationManager::updateModuleHierarchyData()
 {
-    moduleHierarchyCache.clear();
-
-    SearchQuery moduleQuery;
-    moduleQuery.types = {sym_list::sym_module};
-
-    QList<sym_list::SymbolInfo> modules;
-    const QList<SearchResult> moduleResults =
-        SearchService::getInstance()->findSymbols(moduleQuery);
-    modules.reserve(moduleResults.size());
-    for (const SearchResult& result : moduleResults)
-        modules.append(result.symbol);
-
-    moduleHierarchyCache = buildModuleInstantiationHierarchy(modules);
-    if (moduleHierarchyCache.isEmpty())
-        moduleHierarchyCache = buildModuleFileGroups(modules);
-    moduleHierarchyCache = filterModuleHierarchy(moduleHierarchyCache);
-}
-
-QList<ModuleHierarchyGroup> NavigationManager::buildModuleFileGroups(
-    const QList<sym_list::SymbolInfo>& modules) const
-{
-    QHash<QString, QStringList> groups;
-    for (const sym_list::SymbolInfo& module : modules) {
-        if (!module.fileName.isEmpty() && !module.symbolName.isEmpty())
-            groups[module.fileName].append(module.symbolName);
-    }
-
-    for (auto it = groups.begin(); it != groups.end(); ++it) {
-        it.value().removeDuplicates();
-        it.value().sort(Qt::CaseInsensitive);
-    }
-
-    QList<ModuleHierarchyGroup> result;
-    result.reserve(groups.size());
-    for (auto it = groups.begin(); it != groups.end(); ++it) {
-        ModuleHierarchyGroup group;
-        group.rootKind = ModuleHierarchyRootKind::FileGroup;
-        group.rootName = it.key();
-        group.rootDisplayName = QFileInfo(it.key()).fileName();
-        group.rootToolTip = it.key();
-        group.childModules = it.value();
-        result.append(group);
-    }
-
-    std::sort(result.begin(), result.end(), [](const ModuleHierarchyGroup& a,
-                                               const ModuleHierarchyGroup& b) {
-        return QString::compare(a.rootDisplayName, b.rootDisplayName, Qt::CaseInsensitive) < 0;
-    });
-    return result;
-}
-
-QList<ModuleHierarchyGroup> NavigationManager::buildModuleInstantiationHierarchy(
-    const QList<sym_list::SymbolInfo>& modules) const
-{
-    QList<ModuleHierarchyGroup> hierarchy;
-    QSet<int> childModuleIds;
-    QHash<int, QStringList> childrenByParentId;
-
-    for (const sym_list::SymbolInfo& module : modules) {
-        if (module.symbolId < 0 || module.symbolName.isEmpty())
-            continue;
-
-        HierarchyQuery query;
-        query.symbolId = module.symbolId;
-        query.maxDepth = 1;
-        query.types = {SymbolRelationshipEngine::INSTANTIATES};
-
-        QStringList children;
-        const QList<HierarchyNode> childNodes = HierarchyService::getInstance()->getChildren(query);
-        for (const HierarchyNode& node : childNodes) {
-            if (node.symbol.symbolType != sym_list::sym_module || node.symbol.symbolName.isEmpty())
-                continue;
-            children.append(node.symbol.symbolName);
-            childModuleIds.insert(node.symbol.symbolId);
-        }
-
-        if (!children.isEmpty()) {
-            children.removeDuplicates();
-            children.sort(Qt::CaseInsensitive);
-            childrenByParentId.insert(module.symbolId, children);
-        }
-    }
-
-    for (const sym_list::SymbolInfo& module : modules) {
-        if (!childrenByParentId.contains(module.symbolId))
-            continue;
-        if (!childModuleIds.contains(module.symbolId)) {
-            ModuleHierarchyGroup group;
-            group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
-            group.rootName = module.symbolName;
-            group.rootDisplayName = module.symbolName;
-            group.rootToolTip = QString("Module: %1").arg(module.symbolName);
-            group.childModules = childrenByParentId.value(module.symbolId);
-            hierarchy.append(group);
-        }
-    }
-
-    if (!hierarchy.isEmpty()) {
-        std::sort(hierarchy.begin(), hierarchy.end(), [](const ModuleHierarchyGroup& a,
-                                                         const ModuleHierarchyGroup& b) {
-            return QString::compare(a.rootDisplayName, b.rootDisplayName, Qt::CaseInsensitive) < 0;
-        });
-        return hierarchy;
-    }
-
-    for (const sym_list::SymbolInfo& module : modules) {
-        if (childrenByParentId.contains(module.symbolId)) {
-            ModuleHierarchyGroup group;
-            group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
-            group.rootName = module.symbolName;
-            group.rootDisplayName = module.symbolName;
-            group.rootToolTip = QString("Module: %1").arg(module.symbolName);
-            group.childModules = childrenByParentId.value(module.symbolId);
-            hierarchy.append(group);
-        }
-    }
-    std::sort(hierarchy.begin(), hierarchy.end(), [](const ModuleHierarchyGroup& a,
-                                                     const ModuleHierarchyGroup& b) {
-        return QString::compare(a.rootDisplayName, b.rootDisplayName, Qt::CaseInsensitive) < 0;
-    });
-    return hierarchy;
-}
-
-QList<ModuleHierarchyGroup> NavigationManager::filterModuleHierarchy(
-    const QList<ModuleHierarchyGroup>& hierarchy) const
-{
-    if (searchFilter.isEmpty())
-        return hierarchy;
-
-    QList<ModuleHierarchyGroup> filtered;
-    for (const ModuleHierarchyGroup& group : hierarchy) {
-        const bool rootMatches = group.rootDisplayName.contains(searchFilter, Qt::CaseInsensitive)
-            || group.rootName.contains(searchFilter, Qt::CaseInsensitive);
-        QStringList children;
-        for (const QString& moduleName : group.childModules) {
-            if (rootMatches || moduleName.contains(searchFilter, Qt::CaseInsensitive))
-                children.append(moduleName);
-        }
-
-        if (rootMatches || !children.isEmpty()) {
-            ModuleHierarchyGroup filteredGroup = group;
-            filteredGroup.childModules = children;
-            filtered.append(filteredGroup);
-        }
-    }
-    return filtered;
+    NavigationModuleQuery query;
+    query.filter = searchFilter;
+    moduleHierarchyCache = NavigationService::getInstance()->findModuleHierarchy(query);
 }
 
 void NavigationManager::updateSymbolHierarchyData()
 {
-    symbolOutlineCache.clear();
-
-    // Outline symbol types. Display order is carried by SymbolOutlineGroup order.
-    static const QList<sym_list::sym_type_e> symbolTypes = {
-        sym_list::sym_module,
-        sym_list::sym_parameter,
-        sym_list::sym_localparam,
-        sym_list::sym_port_input,
-        sym_list::sym_port_output,
-        sym_list::sym_port_inout,
-        sym_list::sym_port_ref,
-        sym_list::sym_reg,
-        sym_list::sym_wire,
-        sym_list::sym_logic,
-        sym_list::sym_typedef,
-        sym_list::sym_enum,
-        sym_list::sym_enum_var,
-        sym_list::sym_enum_value,
-        sym_list::sym_packed_struct,
-        sym_list::sym_unpacked_struct,
-        sym_list::sym_packed_struct_var,
-        sym_list::sym_unpacked_struct_var,
-        sym_list::sym_struct_member,
-        sym_list::sym_task,
-        sym_list::sym_function,
-        sym_list::sym_inst
-    };
-
-    SearchQuery outlineQuery;
-    outlineQuery.fileName = currentFileName;
-    QList<sym_list::SymbolInfo> symbols;
-    const QList<SearchResult> searchResults =
-        SearchService::getInstance()->findSymbols(outlineQuery);
-    symbols.reserve(searchResults.size());
-    for (const SearchResult& result : searchResults)
-        symbols.append(result.symbol);
-
-    // Exclude symbols whose moduleScope is a task/function name so local subroutine
-    // symbols do not leak into module-level outline groups.
-    QSet<QString> subroutineScopes;
-    for (const sym_list::SymbolInfo& s : std::as_const(symbols)) {
-        if (s.symbolType == sym_list::sym_task || s.symbolType == sym_list::sym_function)
-            subroutineScopes.insert(s.symbolName);
-    }
-
-    QHash<sym_list::sym_type_e, QList<sym_list::SymbolInfo>> byType;
-    for (const sym_list::SymbolInfo& s : std::as_const(symbols)) {
-        const bool isSubroutine = (s.symbolType == sym_list::sym_task
-                                   || s.symbolType == sym_list::sym_function);
-        if (!isSubroutine && subroutineScopes.contains(s.moduleScope))
-            continue;  // Subroutine-local symbol; skip the outline.
-        byType[s.symbolType].append(s);
-    }
-
-    for (sym_list::sym_type_e symbolType : symbolTypes) {
-        QList<sym_list::SymbolInfo> outlineSymbols = byType.value(symbolType);
-        if (outlineSymbols.isEmpty()) continue;
-
-        if (!searchFilter.isEmpty()) {
-            QList<sym_list::SymbolInfo> filteredSymbols;
-            filteredSymbols.reserve(outlineSymbols.size());
-            for (const sym_list::SymbolInfo& symbol : std::as_const(outlineSymbols)) {
-                if (symbol.symbolName.contains(searchFilter, Qt::CaseInsensitive))
-                    filteredSymbols.append(symbol);
-            }
-            outlineSymbols = filteredSymbols;
-        }
-
-        if (!outlineSymbols.isEmpty()) {
-            SymbolOutlineGroup group;
-            group.symbolType = symbolType;
-            group.symbols = outlineSymbols;
-            symbolOutlineCache.append(group);
-        }
-    }
+    NavigationSymbolOutlineQuery query;
+    query.fileName = currentFileName;
+    query.filter = searchFilter;
+    symbolOutlineCache = NavigationService::getInstance()->findSymbolOutline(query);
 }
 
 bool NavigationManager::shouldRefreshCache() const

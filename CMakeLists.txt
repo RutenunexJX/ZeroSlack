@@ -66,6 +66,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationcommandcoordinator.cpp
     navigationmanager.cpp
     navigationpanecoordinator.cpp
+    navigationservice.cpp
     navigationwidget.cpp
     problemspanelcoordinator.cpp
     projectmodel.cpp
@@ -114,6 +115,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationcommandcoordinator.h
     navigationmanager.h
     navigationpanecoordinator.h
+    navigationservice.h
     navigationwidget.h
     problemspanelcoordinator.h
     projectmodel.h

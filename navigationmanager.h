@@ -99,9 +99,6 @@ private:
     void updateFileHierarchyData();
     void updateModuleHierarchyData();
     void updateSymbolHierarchyData();
-    QList<ModuleHierarchyGroup> buildModuleFileGroups(const QList<sym_list::SymbolInfo>& modules) const;
-    QList<ModuleHierarchyGroup> buildModuleInstantiationHierarchy(const QList<sym_list::SymbolInfo>& modules) const;
-    QList<ModuleHierarchyGroup> filterModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy) const;
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;
     QStringList filterFiles(const QStringList& files, const QString& filter) const;

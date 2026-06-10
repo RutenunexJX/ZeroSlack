@@ -34,17 +34,19 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-The latest architecture block moved UI completion scoring off `CompletionManager`.
-`CompletionModel` now uses `CompletionService` directly, and production C++ no longer directly references `CompletionManager` outside the compatibility implementation itself.
+Navigation semantic view assembly now lives behind `NavigationService`.
+`NavigationManager` now delegates module hierarchy and symbol outline construction to the service, leaving the manager focused on cache refreshes, signal routing, and widget updates.
 
 ## Latest Validation
 
 Latest code validation passed:
 
-- focused `completion_test`
+- focused `gui_smoke_test`
 - full Ninja build
 - full CTest: 6/6 passed
 - `git diff --check`, ASCII scan, trailing-whitespace scan, forbidden-file guard
+
+Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1plus.exe` can load `libwinpthread-1.dll`.
 
 ## Current Architecture Snapshot
 
@@ -63,6 +65,7 @@ Latest code validation passed:
 - `CompletionService` owns module/global/command completions, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `CompletionModel` renders editor completion items and uses `CompletionService` for scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
+- `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
 
 ## Next Best Steps
