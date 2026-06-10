@@ -209,6 +209,11 @@ int CompletionService::calculateCompletionMatchScore(
     return calculateContextMatchScore(text, abbreviation);
 }
 
+int CompletionService::completionItemScore(const QString& text, const QString& prefix) const
+{
+    return prefix.isEmpty() ? 100 : calculateCompletionMatchScore(text, prefix);
+}
+
 QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType) const
 {
     switch (symbolType) {

@@ -58,7 +58,6 @@ private:
     static const int MaxCompletionItems = 500;
 
     void sortCompletionsByScore();
-    int calculateScore(const QString &text, const QString &prefix) const;
     bool isSelectableItem(const CompletionItem &item) const;
 };
 

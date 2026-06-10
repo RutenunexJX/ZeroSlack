@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Symbol completion display descriptions now live behind `CompletionService`.
-`CompletionModel` renders service-provided symbol type descriptions instead of maintaining duplicate symbol-type switch tables.
+Completion row scoring now lives behind `CompletionService`.
+`CompletionModel` uses service-provided item scores for keyword, symbol, and command completion rows instead of maintaining local scoring logic.
 
 ## Latest Validation
 
@@ -63,7 +63,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command completion results, symbol display descriptions, command-mode catalog/matching and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
+- `CompletionService` owns module/global/command completion results, row scoring, symbol display descriptions, command-mode catalog/matching and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.

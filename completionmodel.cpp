@@ -136,23 +136,23 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
     beginResetModel();
     completions.clear();
 
+    CompletionService* completionService = CompletionService::getInstance();
     if (type == KeywordCompletion) {
         for (const QString &keyword : keywords) {
             CompletionItem item;
             item.text = keyword;
             item.type = KeywordCompletion;
-            item.score = calculateScore(keyword, prefix);
+            item.score = completionService->completionItemScore(keyword, prefix);
             completions.append(item);
         }
     } else if (type == SymbolCompletion) {
-        CompletionService* completionService = CompletionService::getInstance();
         if (symbols.size() == keywords.size()) {
             for (int i = 0; i < keywords.size() && i < symbols.size(); i++) {
                 CompletionItem item;
                 item.text = keywords[i];
                 item.type = SymbolCompletion;
                 item.symbolType = symbols[i].symbolType;
-                item.score = calculateScore(keywords[i], prefix);
+                item.score = completionService->completionItemScore(keywords[i], prefix);
                 item.description =
                     completionService->symbolTypeDescription(symbols[i].symbolType);
 
@@ -164,7 +164,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.text = symbol.symbolName;
                 item.type = SymbolCompletion;
                 item.symbolType = symbol.symbolType;
-                item.score = calculateScore(symbol.symbolName, prefix);
+                item.score = completionService->completionItemScore(symbol.symbolName, prefix);
                 item.description =
                     completionService->symbolTypeDescription(symbol.symbolType);
 
@@ -198,6 +198,7 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
     headerItem.score = 1000;
     completions.append(headerItem);
 
+    CompletionService* completionService = CompletionService::getInstance();
     int matchCount = 0;
     for (const QString &command : commands) {
         if (prefix.isEmpty() || command.startsWith(prefix, Qt::CaseInsensitive)) {
@@ -205,7 +206,7 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
             item.text = command;
             item.type = CommandCompletion;
             item.description = QString("Execute %1 command").arg(command);
-            item.score = calculateScore(command, prefix);
+            item.score = completionService->completionItemScore(command, prefix);
             completions.append(item);
             matchCount++;
         }
@@ -321,38 +322,6 @@ void CompletionModel::sortCompletionsByScore()
               [](const CompletionItem &a, const CompletionItem &b) {
                   return a.score > b.score;
               });
-}
-
-int CompletionModel::calculateScore(const QString &text, const QString &prefix) const
-{
-    if (prefix.isEmpty()) return 100;
-
-    const QString lowerText = text.toLower();
-    const QString lowerPrefix = prefix.toLower();
-
-    if (lowerText == lowerPrefix) return 1000;
-
-    if (lowerText.startsWith(lowerPrefix)) {
-        return 800 + (100 - prefix.length());
-    }
-
-    if (lowerText.contains(lowerPrefix)) {
-        return 400 + (100 - text.length());
-    }
-
-    int score = 0;
-    int textPos = 0;
-    for (const QChar &ch : lowerPrefix) {
-        int found = lowerText.indexOf(ch, textPos);
-        if (found >= 0) {
-            score += 10;
-            textPos = found + 1;
-        } else {
-            return 0; // No match
-        }
-    }
-
-    return score;
 }
 
 bool CompletionModel::isSelectableItem(const CompletionItem &item) const

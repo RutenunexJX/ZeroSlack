@@ -150,6 +150,16 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            managerKeywordScoreOk ? "PASS" : "FAIL",
            "CompletionManager score delegation");
+    ++g_checks;
+    const bool serviceItemScoreOk =
+        CompletionService::getInstance()->completionItemScore(QStringLiteral("save"),
+                                                              QString())
+        == 100;
+    if (!serviceItemScoreOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           serviceItemScoreOk ? "PASS" : "FAIL",
+           "CompletionService item score");
     expectList("CompletionManager keyword names",
                cm->getKeywordCompletions(QStringLiteral("always_f")),
                {"always_ff"});
@@ -203,7 +213,10 @@ int main(int argc, char** argv) {
         commandSelectionModel.firstSelectableIndex();
     const bool commandSelectableOk = commandSelectableIndex.isValid()
         && commandSelectionModel.getItem(commandSelectableIndex).text == QStringLiteral("save")
-        && commandSelectionModel.isSelectableIndex(commandSelectableIndex);
+        && commandSelectionModel.isSelectableIndex(commandSelectableIndex)
+        && commandSelectionModel.getItem(commandSelectableIndex).score
+            == CompletionService::getInstance()->completionItemScore(QStringLiteral("save"),
+                                                                     QStringLiteral("s"));
     if (!commandSelectableOk)
         ++g_fails;
     printf("[%s] %-34s row=%d\n",
