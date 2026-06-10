@@ -1,15 +1,11 @@
 #include "symbolanalyzer.h"
 #include "semanticindex.h"
-#include "semanticindexsnapshot.h"
 #include "slangmanager.h"
 #include "workspacemanager.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
 #include <QTextStream>
 #include <QFileInfo>
-#include <QApplication>
-#include <QEventLoop>
-#include <memory>
 #include <utility>
 
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
@@ -34,16 +30,11 @@ SymbolAnalyzer::~SymbolAnalyzer()
     m_slangManager = nullptr;
 }
 
-static void publishCompleteSemanticSnapshot(QList<SemanticDiagnostic> diagnostics = {});
-static void publishSemanticSnapshotReplacingDiagnostics(
-    const QStringList& fileNames,
-    const QList<SemanticDiagnostic>& diagnostics);
-
 void SymbolAnalyzer::analyzeOpenDocuments(const QList<OpenDocumentContent>& documents)
 {
     emit analysisStarted("open_tabs");
 
-    sym_list* symbolList = sym_list::getInstance();
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     QStringList svFiles;
     int symbolsFromOpenFiles = 0;
     QList<SemanticDiagnostic> diagnostics;
@@ -56,12 +47,12 @@ void SymbolAnalyzer::analyzeOpenDocuments(const QList<OpenDocumentContent>& docu
 
         svFiles.append(fileName);
         QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(fileName, content);
-        symbolList->setSymbolsForFile(fileName, list, content);
+        semanticIndex->updateSymbolsForFile(fileName, list, content);
         diagnostics.append(m_slangManager->extractDiagnostics(fileName, content));
         symbolsFromOpenFiles += list.size();
     }
 
-    publishSemanticSnapshotReplacingDiagnostics(svFiles, diagnostics);
+    semanticIndex->publishSnapshotReplacingDiagnostics(svFiles, diagnostics);
     emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
 }
 
@@ -82,20 +73,6 @@ static QString readTextFile(const QString& filePath)
         return QString();
     QTextStream stream(&file);
     return stream.readAll();
-}
-
-static void publishCompleteSemanticSnapshot(QList<SemanticDiagnostic> diagnostics)
-{
-    SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolDatabase(sym_list::getInstance(), std::move(diagnostics))));
-}
-
-static void publishSemanticSnapshotReplacingDiagnostics(
-    const QStringList& fileNames,
-    const QList<SemanticDiagnostic>& diagnostics)
-{
-    SemanticIndex::getInstance()->setSnapshot(
-        SemanticIndex::getInstance()->captureSnapshotReplacingDiagnostics(fileNames, diagnostics));
 }
 
 static WorkspaceAnalysisResult buildWorkspaceAnalysisResult(const QStringList& svFiles,
@@ -149,15 +126,16 @@ void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::functio
 
     WorkspaceAnalysisResult result = buildWorkspaceAnalysisResult(svFiles, allSymbols, isCancelled);
     result.diagnostics = m_slangManager->extractWorkspaceDiagnostics(svFiles);
-    sym_list* symbolList = sym_list::getInstance();
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     int filesAnalyzed = 0;
     for (const WorkspaceFileAnalysis& fileResult : std::as_const(result.files)) {
-        symbolList->setSymbolsForFile(fileResult.fileName, fileResult.symbols, fileResult.content);
+        semanticIndex->updateSymbolsForFile(
+            fileResult.fileName, fileResult.symbols, fileResult.content);
         filesAnalyzed++;
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 
-    publishCompleteSemanticSnapshot(result.diagnostics);
+    semanticIndex->publishCompleteSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(project.workspaceRoot, result.totalSymbols);
 }
@@ -203,15 +181,16 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
     QString workspacePath = workspaceAnalysisWatcher->property("workspacePath").toString();
     int totalFiles = workspaceAnalysisWatcher->property("totalFiles").toInt();
 
-    sym_list* symbolList = sym_list::getInstance();
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     int filesAnalyzed = 0;
     for (const WorkspaceFileAnalysis& fileResult : std::as_const(result.files)) {
-        symbolList->setSymbolsForFile(fileResult.fileName, fileResult.symbols, fileResult.content);
+        semanticIndex->updateSymbolsForFile(
+            fileResult.fileName, fileResult.symbols, fileResult.content);
         filesAnalyzed++;
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 
-    publishCompleteSemanticSnapshot(result.diagnostics);
+    semanticIndex->publishCompleteSnapshot(result.diagnostics);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(workspacePath, result.totalSymbols);
 }
@@ -232,9 +211,8 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
 
     QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(filePath, content);
     QList<SemanticDiagnostic> diagnostics = m_slangManager->extractDiagnostics(filePath, content);
-    sym_list* symbolList = sym_list::getInstance();
-    symbolList->setSymbolsForFile(filePath, list, content);
-    publishSemanticSnapshotReplacingDiagnostics({filePath}, diagnostics);
+    SemanticIndex::getInstance()->updateSymbolsForFile(filePath, list, content);
+    SemanticIndex::getInstance()->publishSnapshotReplacingDiagnostics({filePath}, diagnostics);
     emit analysisCompleted(filePath, list.size());
 }
 
@@ -255,9 +233,8 @@ void SymbolAnalyzer::analyzeFileContent(const QString& fileName, const QString& 
     if (fileName.isEmpty() || !isSystemVerilogFile(fileName)) return;
     QList<sym_list::SymbolInfo> list = m_slangManager->extractSymbols(fileName, content);
     QList<SemanticDiagnostic> diagnostics = m_slangManager->extractDiagnostics(fileName, content);
-    sym_list* sym = sym_list::getInstance();
-    sym->setSymbolsForFile(fileName, list, content);
-    publishSemanticSnapshotReplacingDiagnostics({fileName}, diagnostics);
+    SemanticIndex::getInstance()->updateSymbolsForFile(fileName, list, content);
+    SemanticIndex::getInstance()->publishSnapshotReplacingDiagnostics({fileName}, diagnostics);
     emit analysisCompleted(fileName, list.size());
 }
 
@@ -276,8 +253,9 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
                 const auto result = watcher->result();
                 watcher->deleteLater();
                 // Write-back (DB + scope tree + caches) on the main thread.
-                sym_list::getInstance()->setSymbolsForFile(fileName, result.first, content);
-                publishSemanticSnapshotReplacingDiagnostics({fileName}, result.second);
+                SemanticIndex::getInstance()->updateSymbolsForFile(fileName, result.first, content);
+                SemanticIndex::getInstance()->publishSnapshotReplacingDiagnostics(
+                    {fileName}, result.second);
                 emit analysisCompleted(fileName, result.first.size());
             });
     watcher->setFuture(QtConcurrent::run([fileName, content]() {

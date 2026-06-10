@@ -230,6 +230,26 @@ std::shared_ptr<const SemanticIndexSnapshot> SemanticIndex::snapshot() const
     return m_snapshot;
 }
 
+void SemanticIndex::updateSymbolsForFile(const QString& fileName,
+                                         const QList<sym_list::SymbolInfo>& symbols,
+                                         const QString& content)
+{
+    symbolDatabase()->setSymbolsForFile(fileName, symbols, content);
+}
+
+void SemanticIndex::publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics)
+{
+    setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolDatabase(symbolDatabase(), std::move(diagnostics))));
+}
+
+void SemanticIndex::publishSnapshotReplacingDiagnostics(
+    const QStringList& fileNames,
+    const QList<SemanticDiagnostic>& diagnostics)
+{
+    setSnapshot(captureSnapshotReplacingDiagnostics(fileNames, diagnostics));
+}
+
 std::shared_ptr<const SemanticIndexSnapshot>
 SemanticIndex::captureSnapshotPreservingDiagnostics() const
 {
