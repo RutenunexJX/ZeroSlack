@@ -209,76 +209,69 @@ int CompletionService::calculateCompletionMatchScore(
     return calculateContextMatchScore(text, abbreviation);
 }
 
+QList<CommandModeCommand> CompletionService::commandModeCommands() const
+{
+    return {
+        {QStringLiteral("r "), sym_list::sym_reg, QStringLiteral("reg variables"), QStringLiteral("reg")},
+        {QStringLiteral("w "), sym_list::sym_wire, QStringLiteral("wire variables"), QStringLiteral("wire")},
+        {QStringLiteral("l "), sym_list::sym_logic, QStringLiteral("logic variables"), QStringLiteral("logic")},
+        {QStringLiteral("m "), sym_list::sym_module, QStringLiteral("modules"), QStringLiteral("module")},
+        {QStringLiteral("t "), sym_list::sym_task, QStringLiteral("tasks"), QStringLiteral("task")},
+        {QStringLiteral("f "), sym_list::sym_function, QStringLiteral("functions"), QStringLiteral("function")},
+        {QStringLiteral("i "), sym_list::sym_interface, QStringLiteral("interfaces"), QStringLiteral("interface")},
+        {QStringLiteral("d "), sym_list::sym_def_define, QStringLiteral("macro definitions"), QStringLiteral("`define")},
+        {QStringLiteral("lp "), sym_list::sym_localparam, QStringLiteral("localparam declarations"), QStringLiteral("localparam")},
+        {QStringLiteral("p "), sym_list::sym_parameter, QStringLiteral("parameter declarations"), QStringLiteral("parameter")},
+        {QStringLiteral("a "), sym_list::sym_always, QStringLiteral("always blocks"), QStringLiteral("always")},
+        {QStringLiteral("c "), sym_list::sym_assign, QStringLiteral("continuous assignments"), QStringLiteral("assign")},
+        {QStringLiteral("u "), sym_list::sym_typedef, QStringLiteral("type definitions"), QStringLiteral("typedef")},
+        {QStringLiteral("ee "), sym_list::sym_enum_value, QStringLiteral("enum values"), QStringLiteral("enum_value")},
+        {QStringLiteral("ne "), sym_list::sym_enum, QStringLiteral("enum types"), QStringLiteral("enum")},
+        {QStringLiteral("e "), sym_list::sym_enum_var, QStringLiteral("enum variables"), QStringLiteral("enum_var")},
+        {QStringLiteral("sm "), sym_list::sym_struct_member, QStringLiteral("struct members"), QStringLiteral("member")},
+        {QStringLiteral("nsp "), sym_list::sym_packed_struct, QStringLiteral("packed struct types"), QStringLiteral("struct")},
+        {QStringLiteral("ns "), sym_list::sym_unpacked_struct, QStringLiteral("unpacked struct types"), QStringLiteral("struct")},
+        {QStringLiteral("sp "), sym_list::sym_packed_struct_var, QStringLiteral("packed struct variables"), QStringLiteral("struct")},
+        {QStringLiteral("s "), sym_list::sym_unpacked_struct_var, QStringLiteral("unpacked struct variables"), QStringLiteral("struct")},
+    };
+}
+
+CommandModeMatch CompletionService::matchCommandMode(const QString& lineUpToCursor) const
+{
+    CommandModeMatch result;
+    for (const CommandModeCommand& command : commandModeCommands()) {
+        const int prefixPosition = lineUpToCursor.lastIndexOf(command.prefix);
+        if (prefixPosition < 0)
+            continue;
+
+        const QString beforePrefix = lineUpToCursor.left(prefixPosition).trimmed();
+        if (!beforePrefix.isEmpty())
+            continue;
+
+        result.matched = true;
+        result.prefixPosition = prefixPosition;
+        result.command = command;
+        result.input = lineUpToCursor.mid(prefixPosition + command.prefix.length());
+        return result;
+    }
+    return result;
+}
+
 CommandSymbolPresentation CompletionService::commandSymbolPresentation(
     sym_list::sym_type_e symbolType) const
 {
-    CommandSymbolPresentation presentation;
-    switch (symbolType) {
-    case sym_list::sym_reg:
-        presentation.defaultValue = QStringLiteral("reg");
-        presentation.typeDescription = QStringLiteral("reg variables");
-        break;
-    case sym_list::sym_wire:
-        presentation.defaultValue = QStringLiteral("wire");
-        presentation.typeDescription = QStringLiteral("wire variables");
-        break;
-    case sym_list::sym_logic:
-        presentation.defaultValue = QStringLiteral("logic");
-        presentation.typeDescription = QStringLiteral("logic variables");
-        break;
-    case sym_list::sym_module:
-        presentation.defaultValue = QStringLiteral("module");
-        presentation.typeDescription = QStringLiteral("modules");
-        break;
-    case sym_list::sym_task:
-        presentation.defaultValue = QStringLiteral("task");
-        presentation.typeDescription = QStringLiteral("tasks");
-        break;
-    case sym_list::sym_function:
-        presentation.defaultValue = QStringLiteral("function");
-        presentation.typeDescription = QStringLiteral("functions");
-        break;
-    case sym_list::sym_packed_struct_var:
-        presentation.defaultValue = QStringLiteral("struct");
-        presentation.typeDescription = QStringLiteral("packed struct variables");
-        break;
-    case sym_list::sym_unpacked_struct_var:
-        presentation.defaultValue = QStringLiteral("struct");
-        presentation.typeDescription = QStringLiteral("unpacked struct variables");
-        break;
-    case sym_list::sym_packed_struct:
-        presentation.defaultValue = QStringLiteral("struct");
-        presentation.typeDescription = QStringLiteral("packed struct types");
-        break;
-    case sym_list::sym_unpacked_struct:
-        presentation.defaultValue = QStringLiteral("struct");
-        presentation.typeDescription = QStringLiteral("unpacked struct types");
-        break;
-    case sym_list::sym_parameter:
-        presentation.defaultValue = QStringLiteral("parameter");
-        presentation.typeDescription = QStringLiteral("parameter declarations");
-        break;
-    case sym_list::sym_localparam:
-        presentation.defaultValue = QStringLiteral("localparam");
-        presentation.typeDescription = QStringLiteral("localparam declarations");
-        break;
-    case sym_list::sym_enum_value:
-        presentation.defaultValue = QStringLiteral("enum_value");
-        presentation.typeDescription = QStringLiteral("enum values");
-        break;
-    case sym_list::sym_enum:
-        presentation.defaultValue = QStringLiteral("enum");
-        presentation.typeDescription = QStringLiteral("enum types");
-        break;
-    case sym_list::sym_enum_var:
-        presentation.defaultValue = QStringLiteral("enum_var");
-        presentation.typeDescription = QStringLiteral("enum variables");
-        break;
-    default:
-        presentation.defaultValue = QStringLiteral("symbol");
-        presentation.typeDescription = QStringLiteral("symbols");
-        break;
+    for (const CommandModeCommand& command : commandModeCommands()) {
+        if (command.symbolType == symbolType) {
+            CommandSymbolPresentation presentation;
+            presentation.defaultValue = command.defaultValue;
+            presentation.typeDescription = command.description;
+            return presentation;
+        }
     }
+
+    CommandSymbolPresentation presentation;
+    presentation.defaultValue = QStringLiteral("symbol");
+    presentation.typeDescription = QStringLiteral("symbols");
     return presentation;
 }
 

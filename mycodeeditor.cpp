@@ -432,7 +432,6 @@ void MyCodeEditor::initAutoComplete()
             this, &MyCodeEditor::onCompletionActivated);
 
     connect(this, &QPlainTextEdit::textChanged, this, &MyCodeEditor::onTextChanged);
-    initCustomCommands();
 }
 
 void MyCodeEditor::onTextChanged()
@@ -553,7 +552,6 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
         cursor.insertText(actualCompletion);
 
         isInCustomCommandMode = false;
-        currentCommandPrefix.clear();
         clearCommandHighlight();
     } else {
         cursor.setPosition(wordStartPos);
@@ -748,16 +746,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     QPlainTextEdit::keyPressEvent(event);
 }
 
-QString MyCodeEditor::getCurrentCommandDefaultValue()
-{
-    for (const CustomCommand &cmd : std::as_const(customCommands)) {
-        if (cmd.symbolType == currentCommandType) {
-            return cmd.defaultValue;
-        }
-    }
-    return QString();
-}
-
 QString MyCodeEditor::textUnderCursor() const
 {
     QTextCursor cursor = textCursor();
@@ -936,17 +924,9 @@ void MyCodeEditor::highlightCommandText()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
-    int prefixPos = -1;
-    for (const CustomCommand &cmd : std::as_const(customCommands)) {
-        int pos = lineUpToCursor.lastIndexOf(cmd.prefix);
-        if (pos != -1) {
-            QString beforePrefix = lineUpToCursor.left(pos).trimmed();
-            if (beforePrefix.isEmpty()) {
-                prefixPos = pos;
-                break;
-            }
-        }
-    }
+    const CommandModeMatch match =
+        CompletionService::getInstance()->matchCommandMode(lineUpToCursor);
+    const int prefixPos = match.prefixPosition;
 
     if (prefixPos == -1) return;
 
@@ -1009,89 +989,18 @@ QString MyCodeEditor::getWordUnderCursor()
     return cursor.selectedText();
 }
 
-void MyCodeEditor::initCustomCommands()
-{
-    customCommands.clear();
-    CustomCommand regCommand;
-    regCommand.prefix = "r ";
-    regCommand.symbolType = sym_list::sym_reg;
-    regCommand.description = "reg variables";
-    regCommand.defaultValue = "reg";
-    customCommands.append(regCommand);
-
-    CustomCommand wireCommand;
-    wireCommand.prefix = "w ";
-    wireCommand.symbolType = sym_list::sym_wire;
-    wireCommand.description = "wire variables";
-    wireCommand.defaultValue = "wire";
-    customCommands.append(wireCommand);
-
-    CustomCommand logicCommand;
-    logicCommand.prefix = "l ";
-    logicCommand.symbolType = sym_list::sym_logic;
-    logicCommand.description = "logic variables";
-    logicCommand.defaultValue = "logic";
-    customCommands.append(logicCommand);
-
-    CustomCommand moduleCommand;
-    moduleCommand.prefix = "m ";
-    moduleCommand.symbolType = sym_list::sym_module;
-    moduleCommand.description = "modules";
-    moduleCommand.defaultValue = "module";
-    customCommands.append(moduleCommand);
-
-    CustomCommand taskCommand;
-    taskCommand.prefix = "t ";
-    taskCommand.symbolType = sym_list::sym_task;
-    taskCommand.description = "tasks";
-    taskCommand.defaultValue = "task";
-    customCommands.append(taskCommand);
-
-    CustomCommand functionCommand;
-    functionCommand.prefix = "f ";
-    functionCommand.symbolType = sym_list::sym_function;
-    functionCommand.description = "functions";
-    functionCommand.defaultValue = "function";
-    customCommands.append(functionCommand);
-
-    customCommands << CustomCommand{"i ", sym_list::sym_interface, "interfaces", "interface"};
-    customCommands << CustomCommand{"d ", sym_list::sym_def_define, "define macros", "`define"};
-    customCommands << CustomCommand{"lp ", sym_list::sym_localparam, "local parameters", "localparam"};
-    customCommands << CustomCommand{"p ", sym_list::sym_parameter, "parameters", "parameter"};
-    customCommands << CustomCommand{"a ", sym_list::sym_always, "always blocks", "always"};
-    customCommands << CustomCommand{"c ", sym_list::sym_assign, "continuous assigns", "assign"};
-    customCommands << CustomCommand{"u ", sym_list::sym_typedef, "type definitions", "typedef"};
-
-    customCommands << CustomCommand{"ee ", sym_list::sym_enum_value, "enum values", "enum_value"};
-    customCommands << CustomCommand{"ne ", sym_list::sym_enum, "enum types", "enum"};
-    customCommands << CustomCommand{"e ", sym_list::sym_enum_var, "enum variables", "enum_var"};
-    customCommands << CustomCommand{"sm ", sym_list::sym_struct_member, "struct members", "member"};
-
-    customCommands << CustomCommand{"nsp ", sym_list::sym_packed_struct, "packed struct types", "struct"};
-    customCommands << CustomCommand{"ns ", sym_list::sym_unpacked_struct, "unpacked struct types", "struct"};
-    customCommands << CustomCommand{"sp ", sym_list::sym_packed_struct_var, "packed struct variables", "struct"};
-    customCommands << CustomCommand{"s ", sym_list::sym_unpacked_struct_var, "unpacked struct variables", "struct"};
-
-}
-
 bool MyCodeEditor::checkForCustomCommand(const QString &lineUpToCursor)
 {
-    for (const CustomCommand &cmd : std::as_const(customCommands)) {
-        int prefixPos = lineUpToCursor.lastIndexOf(cmd.prefix);
-        if (prefixPos != -1) {
-            QString beforePrefix = lineUpToCursor.left(prefixPos).trimmed();
-            if (beforePrefix.isEmpty()) {
-                isInCustomCommandMode = true;
-                currentCommandPrefix = cmd.prefix;
-                currentCommandType = cmd.symbolType;
-
-                return true;
-            }
-        }
+    const CommandModeMatch match =
+        CompletionService::getInstance()->matchCommandMode(lineUpToCursor);
+    if (match.matched) {
+        isInCustomCommandMode = true;
+        currentCommandType = match.command.symbolType;
+        return true;
     }
 
     isInCustomCommandMode = false;
-    currentCommandPrefix.clear();
+    currentCommandType = sym_list::sym_user;
     return false;
 }
 
@@ -1103,17 +1012,9 @@ QString MyCodeEditor::extractCommandInput()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
-    int prefixPos = currentCommandPrefix.isEmpty()
-        ? -1
-        : lineUpToCursor.lastIndexOf(currentCommandPrefix);
-
-    if (prefixPos >= 0) {
-        int startPos = prefixPos + currentCommandPrefix.length();
-        QString result = lineUpToCursor.mid(startPos);
-        return result;
-    }
-
-    return QString();
+    const CommandModeMatch match =
+        CompletionService::getInstance()->matchCommandMode(lineUpToCursor);
+    return match.matched ? match.input : QString();
 }
 
 void MyCodeEditor::initAlternateModeCommands()

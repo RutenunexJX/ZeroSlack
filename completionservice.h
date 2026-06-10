@@ -3,6 +3,7 @@
 
 #include "semanticindex.h"
 
+#include <QList>
 #include <QPair>
 #include <QString>
 #include <QStringList>
@@ -48,6 +49,20 @@ struct CommandSymbolCompletionItem {
     int score = 0;
 };
 
+struct CommandModeCommand {
+    QString prefix;
+    sym_list::sym_type_e symbolType = sym_list::sym_user;
+    QString description;
+    QString defaultValue;
+};
+
+struct CommandModeMatch {
+    bool matched = false;
+    int prefixPosition = -1;
+    QString input;
+    CommandModeCommand command;
+};
+
 class CompletionService
 {
 public:
@@ -83,6 +98,8 @@ public:
         const sym_list::SymbolInfo& symbol,
         sym_list::sym_type_e requestedType,
         const QString& prefix = QString()) const;
+    QList<CommandModeCommand> commandModeCommands() const;
+    CommandModeMatch matchCommandMode(const QString& lineUpToCursor) const;
     QList<int> findCompletionAbbreviationPositions(
         const QString& text,
         const QString& abbreviation) const;

@@ -112,20 +112,9 @@ private:
 
     QString textUnderCursor() const;
 
-    struct CustomCommand {
-        QString prefix;
-        sym_list::sym_type_e symbolType;
-        QString description;
-        QString defaultValue;
-    };
-
-    QList<CustomCommand> customCommands;
     bool isInCustomCommandMode = false;
-    QString currentCommandPrefix;
-    sym_list::sym_type_e currentCommandType;
-    QString getCurrentCommandDefaultValue();
+    sym_list::sym_type_e currentCommandType = sym_list::sym_user;
 
-    void initCustomCommands();
     bool checkForCustomCommand(const QString &text);
     QString extractCommandInput();
 

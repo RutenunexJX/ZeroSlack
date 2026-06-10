@@ -224,6 +224,37 @@ int main(int argc, char** argv) {
              enumPresentationItem.description,
              QStringLiteral("state_t"));
 
+    const CommandModeMatch commandModeMatch =
+        CompletionService::getInstance()->matchCommandMode(QStringLiteral("l ena"));
+    ++g_checks;
+    const bool commandModeMatchOk = commandModeMatch.matched
+        && commandModeMatch.prefixPosition == 0
+        && commandModeMatch.input == QStringLiteral("ena")
+        && commandModeMatch.command.symbolType == sym_list::sym_logic;
+    if (!commandModeMatchOk)
+        ++g_fails;
+    printf("[%s] %-34s input=\"%s\"\n",
+           commandModeMatchOk ? "PASS" : "FAIL",
+           "CompletionService command match",
+           commandModeMatch.input.toLocal8Bit().constData());
+
+    ++g_checks;
+    const bool commandModeRejectOk =
+        !CompletionService::getInstance()
+             ->matchCommandMode(QStringLiteral("assign l ena"))
+             .matched;
+    if (!commandModeRejectOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           commandModeRejectOk ? "PASS" : "FAIL",
+           "CompletionService command reject");
+
+    const CommandSymbolPresentation interfacePresentation =
+        CompletionService::getInstance()->commandSymbolPresentation(sym_list::sym_interface);
+    expectEq("CompletionService interface default",
+             interfacePresentation.defaultValue,
+             QStringLiteral("interface"));
+
     // --- struct member completion (typedef'd) ---
     expectEq("getStructTypeForVariable(pixel)", cm->getStructTypeForVariable("pixel", "top"), "pixel_t");
     expectList("members of pixel_t", cm->getStructMemberCompletions("", "pixel_t"),

@@ -34,14 +34,14 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Command-mode symbol completion presentation now lives behind `CompletionService`.
-`CompletionModel` renders service-provided default text, descriptions, unique keys, and scores for symbol completions instead of owning those rules.
+Command-mode command catalog and matching now live behind `CompletionService`.
+`MyCodeEditor` no longer maintains command prefixes/defaults/descriptions; it only tracks command-mode state and renders service-backed completion results.
 
 ## Latest Validation
 
 Latest code validation passed:
 
-- focused `completion_test`
+- focused `completion_test` and `gui_smoke_test`
 - full Ninja build
 - full CTest: 6/6 passed
 - `git diff --check`, ASCII scan, trailing-whitespace scan, forbidden-file guard
@@ -63,7 +63,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command completions, command-mode symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
+- `CompletionService` owns module/global/command completions, command-mode catalog/matching and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `CompletionModel` renders editor completion items and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
