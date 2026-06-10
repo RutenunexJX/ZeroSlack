@@ -3,6 +3,7 @@
 
 #include "syminfo.h"
 #include "completionmodel.h"
+#include "definitionnavigationservice.h"
 #include "tsdocument.h"
 
 #include <QPlainTextEdit>
@@ -80,6 +81,9 @@ private:
     QString currentModuleNameAt(int charPos) const;
     bool emitReferenceSearchForCursor(const QTextCursor& cursor);
     bool emitRelationshipBrowseForCursor(const QTextCursor& cursor);
+    DefinitionNavigationQuery definitionNavigationQuery(
+        const QString& symbolName,
+        int cursorPosition = -1) const;
     QString getWordUnderCursor();
     QStringList getCompletionSuggestions(const QString &prefix);
     bool isInCommentArea();
@@ -159,7 +163,6 @@ private:
     bool openIncludeFile(const QString& includePath);
 
     void showSymbolTooltip(const QString& symbolName, const QPoint& position);
-    QString getSymbolTypeString(sym_list::sym_type_e symbolType);
 
     QStringList getCommandModeInternalVariables(const QString &prefix);
 

@@ -52,6 +52,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionmanager.cpp
     completionmodel.cpp
     completionservice.cpp
+    definitionnavigationservice.cpp
     definitionservice.cpp
     diagnosticservice.cpp
     documentmodel.cpp
@@ -100,6 +101,7 @@ set(ZEROSLACK_CORE_SOURCES
     version.h
     completionmodel.h
     completionservice.h
+    definitionnavigationservice.h
     definitionservice.h
     diagnosticservice.h
     documentmodel.h

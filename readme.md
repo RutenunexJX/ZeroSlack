@@ -34,14 +34,14 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Navigation semantic view assembly now lives behind `NavigationService`.
-`NavigationManager` now delegates module hierarchy and symbol outline construction to the service, leaving the manager focused on cache refreshes, signal routing, and widget updates.
+Editor definition navigation now lives behind `DefinitionNavigationService`.
+`MyCodeEditor` delegates definition target resolution, jump availability, and tooltip text to the service, leaving the editor focused on cursor context, hover UI, and local caret movement.
 
 ## Latest Validation
 
 Latest code validation passed:
 
-- focused `gui_smoke_test`
+- focused `jump_test`
 - full Ninja build
 - full CTest: 6/6 passed
 - `git diff --check`, ASCII scan, trailing-whitespace scan, forbidden-file guard
@@ -66,6 +66,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `CompletionModel` renders editor completion items and uses `CompletionService` for scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
+- `DefinitionNavigationService` owns editor-facing definition jump targets, availability, and tooltip text over `DefinitionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
 
 ## Next Best Steps

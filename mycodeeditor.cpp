@@ -2,7 +2,7 @@
 #include "myhighlighter.h"
 #include "completionmodel.h"
 #include "completionservice.h"
-#include "definitionservice.h"
+#include "definitionnavigationservice.h"
 
 #include "syminfo.h"
 
@@ -257,6 +257,27 @@ bool MyCodeEditor::emitRelationshipBrowseForCursor(const QTextCursor& cursor)
                                      getFileName(),
                                      currentModuleNameAt(cursor.position()));
     return true;
+}
+
+DefinitionNavigationQuery MyCodeEditor::definitionNavigationQuery(
+    const QString& symbolName,
+    int cursorPosition) const
+{
+    DefinitionNavigationQuery query;
+    query.symbolName = symbolName;
+    query.fileName = getFileName();
+    const int semanticPosition = cursorPosition >= 0
+        ? cursorPosition
+        : textCursor().position();
+    query.moduleName = currentModuleNameAt(semanticPosition);
+
+    if (cursorPosition >= 0) {
+        QTextBlock block = document()->findBlock(cursorPosition);
+        const int posInBlock = cursorPosition - block.position();
+        query.linePrefixBeforeCursor = block.text().left(posInBlock);
+    }
+
+    return query;
 }
 
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
@@ -1045,7 +1066,7 @@ void MyCodeEditor::initCustomCommands()
     customCommands << CustomCommand{"ne ", sym_list::sym_enum, "enum types", "enum"};
     customCommands << CustomCommand{"e ", sym_list::sym_enum_var, "enum variables", "enum_var"};
     customCommands << CustomCommand{"sm ", sym_list::sym_struct_member, "struct members", "member"};
-    
+
     customCommands << CustomCommand{"nsp ", sym_list::sym_packed_struct, "packed struct types", "struct"};
     customCommands << CustomCommand{"ns ", sym_list::sym_unpacked_struct, "unpacked struct types", "struct"};
     customCommands << CustomCommand{"sp ", sym_list::sym_packed_struct_var, "packed struct variables", "struct"};
@@ -1419,30 +1440,20 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
 
 void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPosition)
 {
-    if (symbolName.isEmpty()) {
-        return;
-    }
-
-    DefinitionQuery query;
-    query.symbolName = symbolName;
-    query.fileName = getFileName();
-    query.moduleName = currentModuleNameAt(cursorPosition >= 0 ? cursorPosition : textCursor().position());
-
-    if (cursorPosition >= 0) {
-        QTextBlock block = document()->findBlock(cursorPosition);
-        const int posInBlock = cursorPosition - block.position();
-        query.linePrefixBeforeCursor = block.text().left(posInBlock);
-    }
-
-    const DefinitionResult result = DefinitionService::getInstance()->resolveDefinition(query);
-    if (!result.found)
+    if (symbolName.isEmpty())
         return;
 
-    if (result.localFile) {
+    const DefinitionNavigationTarget target =
+        DefinitionNavigationService::getInstance()->resolveTarget(
+            definitionNavigationQuery(symbolName, cursorPosition));
+    if (!target.found)
+        return;
+
+    if (target.localFile) {
         QTextCursor cursor = textCursor();
         cursor.movePosition(QTextCursor::Start);
-        const int downLines = (result.symbol.startLine > 0) ? result.symbol.startLine - 1 : 0;
-        const int rightCols = (result.symbol.startColumn > 0) ? result.symbol.startColumn - 1 : 0;
+        const int downLines = (target.line > 0) ? target.line - 1 : 0;
+        const int rightCols = (target.column > 0) ? target.column - 1 : 0;
         cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, downLines);
         cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, rightCols);
         setTextCursor(cursor);
@@ -1451,9 +1462,7 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
         return;
     }
 
-    emit definitionJumpRequested(result.symbol.symbolName,
-                                 result.symbol.fileName,
-                                 result.symbol.startLine);
+    emit definitionJumpRequested(target.symbolName, target.fileName, target.line);
 }
 
 void MyCodeEditor::moveMouseToCursor()
@@ -1518,70 +1527,46 @@ void MyCodeEditor::showSymbolTooltip(const QString& symbolName, const QPoint& po
 {
     if (symbolName.isEmpty()) return;
 
-    DefinitionQuery query;
-    query.symbolName = symbolName;
-    query.fileName = getFileName();
-    query.moduleName = currentModuleNameAt(textCursor().position());
-    const DefinitionResult result = DefinitionService::getInstance()->resolveDefinition(query);
-    if (!result.found)
+    const QString tooltipText =
+        DefinitionNavigationService::getInstance()->tooltipText(
+            definitionNavigationQuery(symbolName));
+    if (tooltipText.isEmpty())
         return;
 
-    const QString tooltipText = QString("Definition: %1 (%2)\nLocation: %3:%4")
-                                    .arg(result.symbol.symbolName)
-                                    .arg(getSymbolTypeString(result.symbol.symbolType))
-                                    .arg(QFileInfo(result.symbol.fileName).fileName())
-                                    .arg(result.symbol.startLine);
     QToolTip::showText(mapToGlobal(position), tooltipText, this);
-}
-
-QString MyCodeEditor::getSymbolTypeString(sym_list::sym_type_e symbolType)
-{
-    switch (symbolType) {
-    case sym_list::sym_reg:      return "reg";
-    case sym_list::sym_wire:     return "wire";
-    case sym_list::sym_logic:    return "logic";
-    case sym_list::sym_module:   return "module";
-    case sym_list::sym_task:     return "task";
-    case sym_list::sym_function: return "function";
-    default:                     return QString("unknown_%1").arg(static_cast<int>(symbolType));
-    }
 }
 
 bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
 {
-    if (symbolName.isEmpty()) {
+    if (symbolName.isEmpty())
         return false;
-    }
 
-    DefinitionQuery query;
-    query.symbolName = symbolName;
-    query.fileName = getFileName();
-    query.moduleName = currentModuleNameAt(textCursor().position());
-    return DefinitionService::getInstance()->canResolveDefinition(query);
+    return DefinitionNavigationService::getInstance()->canResolveTarget(
+        definitionNavigationQuery(symbolName));
 }
 
 QCursor MyCodeEditor::createJumpableCursor()
 {
     QPixmap pixmap(24, 24);
     pixmap.fill(Qt::transparent);
-    
+
     QPainter painter(&pixmap);
     if (!painter.isActive()) {
         return QCursor(Qt::PointingHandCursor);
     }
-    
+
     painter.setRenderHint(QPainter::Antialiasing);
-    
+
     QPen pen(QColor(0, 255, 0), 4);
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
     painter.setPen(pen);
-    
+
     painter.drawLine(7, 12, 11, 16);
     painter.drawLine(11, 16, 18, 6);
-    
+
     painter.end();
-    
+
     return QCursor(pixmap, 12, 12);
 }
 
@@ -1589,17 +1574,17 @@ QCursor MyCodeEditor::createNonJumpableCursor()
 {
     QPixmap pixmap(20, 20);
     pixmap.fill(Qt::transparent);
-    
+
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
-    
+
     QPen pen(QColor(255, 0, 0), 3);
     pen.setCapStyle(Qt::RoundCap);
     painter.setPen(pen);
-    
+
     painter.drawLine(5, 5, 15, 15);
     painter.drawLine(15, 5, 5, 15);
-    
+
     return QCursor(pixmap, 10, 10);
 }
 
