@@ -75,11 +75,20 @@ public:
                                      const QString& moduleName = QString()) const;
     QList<sym_list::SymbolInfo> getStructMembers(
         const QString& structTypeName = QString()) const;
+    QList<sym_list::SymbolInfo> getModuleInternalSymbolsByType(
+        const QString& moduleName,
+        sym_list::sym_type_e symbolType,
+        const QString& prefix = QString(),
+        bool useRelationshipFallback = true) const;
     QList<sym_list::SymbolInfo> getModuleContextSymbolsByType(
         const QString& moduleName,
         const QString& fileName,
         sym_list::sym_type_e symbolType,
         const QString& prefix = QString()) const;
+    QString currentModuleAt(const QString& fileName, int cursorPosition) const;
+    bool hasRelationshipFacts() const;
+    int scopeScoreForSymbol(const QString& symbolName,
+                            const QString& moduleName) const;
     bool isValidModuleName(const QString& name) const;
     int findEndModuleLine(const QString& fileName,
                           const sym_list::SymbolInfo& moduleSymbol) const;

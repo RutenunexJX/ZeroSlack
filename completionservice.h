@@ -284,12 +284,6 @@ private:
     QStringList completionNamesFromSymbols(
         const QList<sym_list::SymbolInfo>& symbols) const;
     bool completionNameMatches(const QString& name, const QString& prefix) const;
-    QString moduleNameAtPosition(const QList<sym_list::SymbolInfo>& modules,
-                                 int cursorPosition,
-                                 const QString& fileName,
-                                 const QString& fileContent) const;
-    int endModulePosition(const QString& fileContent,
-                          const sym_list::SymbolInfo& moduleSymbol) const;
     QStringList completionNamesFromRelationshipResults(
         const QList<RelationshipResult>& relationships,
         bool outgoing) const;

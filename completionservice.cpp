@@ -2,12 +2,10 @@
 
 #include "relationshipservice.h"
 
-#include <QFile>
 #include <QRegularExpression>
 #include <QSet>
 #include <QVector>
 #include <algorithm>
-#include <limits>
 
 std::unique_ptr<CompletionService> CompletionService::instance = nullptr;
 
@@ -595,10 +593,7 @@ QStringList CompletionService::findKeywordAbbreviationMatches(
 
 bool CompletionService::relationshipCompletionsAvailable() const
 {
-    if (semanticIndex()->snapshot())
-        return true;
-
-    return semanticIndex()->symbolDatabase()->getRelationshipEngine() != nullptr;
+    return semanticIndex()->hasRelationshipFacts();
 }
 
 QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
@@ -1247,96 +1242,11 @@ QList<sym_list::SymbolInfo> CompletionService::findModuleInternalSymbolInfosByTy
     const QString& prefix,
     bool useRelationshipFallback) const
 {
-    QList<sym_list::SymbolInfo> result;
-    if (moduleName.isEmpty())
-        return result;
-
-    const QList<sym_list::SymbolInfo> allSymbols = semanticIndex()->getSymbols();
-    sym_list::SymbolInfo moduleSymbol;
-    bool foundModule = false;
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (symbol.symbolType == sym_list::sym_module
-            && symbol.symbolName == moduleName) {
-            moduleSymbol = symbol;
-            foundModule = true;
-            break;
-        }
-    }
-
-    int moduleEndLineExclusive = std::numeric_limits<int>::max();
-    if (foundModule) {
-        QList<sym_list::SymbolInfo> fileModules;
-        const QList<sym_list::SymbolInfo> fileSymbols =
-            semanticIndex()->getSymbols(moduleSymbol.fileName);
-        for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-            if (symbol.symbolType == sym_list::sym_module
-                && symbol.fileName == moduleSymbol.fileName) {
-                fileModules.append(symbol);
-            }
-        }
-        std::sort(fileModules.begin(), fileModules.end(),
-                  [](const sym_list::SymbolInfo& left,
-                     const sym_list::SymbolInfo& right) {
-                      return left.startLine < right.startLine;
-                  });
-        for (int i = 0; i < fileModules.size(); ++i) {
-            if (fileModules.at(i).symbolId == moduleSymbol.symbolId
-                && i + 1 < fileModules.size()) {
-                moduleEndLineExclusive = fileModules.at(i + 1).startLine;
-                break;
-            }
-        }
-    }
-
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (!commandSymbolTypeMatches(symbol.symbolType,
-                                      symbol.dataType,
-                                      symbolType)
-            || !completionNameMatches(symbol.symbolName, prefix)) {
-            continue;
-        }
-
-        bool correctModule = false;
-        if (isModuleRangeSymbolType(symbolType)) {
-            correctModule = foundModule
-                && symbol.fileName == moduleSymbol.fileName
-                && symbol.startLine > moduleSymbol.startLine
-                && symbol.startLine < moduleEndLineExclusive;
-        } else {
-            correctModule = symbol.moduleScope == moduleName;
-        }
-
-        if (correctModule)
-            result.append(symbol);
-    }
-
-    if (useRelationshipFallback && result.isEmpty()) {
-        RelationshipQuery query;
-        query.symbolName = moduleName;
-        query.outgoing = true;
-        query.types = {SymbolRelationshipEngine::CONTAINS};
-
-        RelationshipService relationships(semanticIndex());
-        const QList<RelationshipResult> related =
-            relationships.findRelationships(query);
-        for (const RelationshipResult& relationship : related) {
-            const sym_list::SymbolInfo& symbol = relationship.toSymbol;
-            if (symbol.symbolId < 0)
-                continue;
-            if (!commandSymbolTypeMatches(symbol.symbolType,
-                                          symbol.dataType,
-                                          symbolType)) {
-                continue;
-            }
-            if (!prefix.isEmpty()
-                && !symbol.symbolName.startsWith(prefix, Qt::CaseInsensitive)) {
-                continue;
-            }
-            result.append(symbol);
-        }
-    }
-
-    return result;
+    return semanticIndex()->getModuleInternalSymbolsByType(
+        moduleName,
+        symbolType,
+        prefix,
+        useRelationshipFallback);
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findModuleContextSymbolInfosByType(
@@ -1389,30 +1299,7 @@ QList<sym_list::SymbolInfo> CompletionService::findGlobalSymbolInfosByType(
 
 QString CompletionService::currentModuleAt(const QString& fileName, int cursorPosition) const
 {
-    if (fileName.isEmpty() || cursorPosition < 0)
-        return QString();
-
-    QList<sym_list::SymbolInfo> modules;
-    const QList<sym_list::SymbolInfo> fileSymbols = semanticIndex()->getSymbols(fileName);
-    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (symbol.symbolType == sym_list::sym_module)
-            modules.append(symbol);
-    }
-
-    if (modules.isEmpty())
-        return QString();
-
-    std::sort(modules.begin(), modules.end(),
-              [](const sym_list::SymbolInfo& left,
-                 const sym_list::SymbolInfo& right) {
-                  return left.position < right.position;
-              });
-
-    return moduleNameAtPosition(
-        modules,
-        cursorPosition,
-        fileName,
-        semanticIndex()->getCachedFileContent(fileName));
+    return semanticIndex()->currentModuleAt(fileName, cursorPosition);
 }
 
 QString CompletionService::getStructTypeForVariable(const QString& variableName,
@@ -1948,17 +1835,7 @@ int CompletionService::calculateScopeScore(
     const QString& symbol,
     const QString& currentModule) const
 {
-    if (currentModule.isEmpty())
-        return 0;
-
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& candidate : symbols) {
-        if (candidate.symbolName == symbol
-            && candidate.moduleScope == currentModule) {
-            return 20;
-        }
-    }
-    return 0;
+    return semanticIndex()->scopeScoreForSymbol(symbol, currentModule);
 }
 
 bool CompletionService::isModuleRangeSymbolType(sym_list::sym_type_e type) const
@@ -1967,89 +1844,6 @@ bool CompletionService::isModuleRangeSymbolType(sym_list::sym_type_e type) const
         || type == sym_list::sym_unpacked_struct
         || type == sym_list::sym_packed_struct_var
         || type == sym_list::sym_unpacked_struct_var;
-}
-
-QString CompletionService::moduleNameAtPosition(
-    const QList<sym_list::SymbolInfo>& modules,
-    int cursorPosition,
-    const QString& fileName,
-    const QString& fileContent) const
-{
-    QString content = fileContent;
-    if (content.isEmpty()) {
-        QFile file(fileName);
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
-            content = QString::fromUtf8(file.readAll());
-    }
-    if (content.isEmpty())
-        return QString();
-
-    int cursorLine = 0;
-    int pos = 0;
-    while (pos < cursorPosition && pos < content.length()) {
-        if (content.at(pos) == QLatin1Char('\n'))
-            ++cursorLine;
-        ++pos;
-    }
-
-    for (const sym_list::SymbolInfo& module : modules) {
-        if (cursorPosition < module.position)
-            continue;
-        if (!semanticIndex()->isValidModuleName(module.symbolName))
-            continue;
-
-        if (module.endLine > 0) {
-            if (cursorLine >= module.startLine && cursorLine <= module.endLine)
-                return module.symbolName;
-            continue;
-        }
-
-        const int moduleEndPosition = endModulePosition(content, module);
-        if (moduleEndPosition >= 0 && cursorPosition < moduleEndPosition)
-            return module.symbolName;
-    }
-
-    return QString();
-}
-
-int CompletionService::endModulePosition(
-    const QString& fileContent,
-    const sym_list::SymbolInfo& moduleSymbol) const
-{
-    int searchStart = moduleSymbol.position;
-    int moduleDepth = 0;
-    bool foundModule = false;
-
-    static const QRegularExpression moduleStartPattern(QStringLiteral("\\bmodule\\s+"));
-    static const QRegularExpression moduleEndPattern(QStringLiteral("\\bendmodule\\b"));
-
-    int pos = searchStart;
-    while (pos < fileContent.length()) {
-        const QRegularExpressionMatch startMatch = moduleStartPattern.match(fileContent, pos);
-        const QRegularExpressionMatch endMatch = moduleEndPattern.match(fileContent, pos);
-        const int nextModuleStart = startMatch.hasMatch() ? startMatch.capturedStart(0) : -1;
-        const int nextModuleEnd = endMatch.hasMatch() ? endMatch.capturedStart(0) : -1;
-
-        if (nextModuleStart != -1
-            && (nextModuleEnd == -1 || nextModuleStart < nextModuleEnd)) {
-            if (foundModule || nextModuleStart == moduleSymbol.position) {
-                ++moduleDepth;
-                foundModule = true;
-            }
-            pos = nextModuleStart + startMatch.capturedLength(0);
-        } else if (nextModuleEnd != -1) {
-            if (foundModule) {
-                --moduleDepth;
-                if (moduleDepth == 0)
-                    return nextModuleEnd + endMatch.capturedLength(0);
-            }
-            pos = nextModuleEnd + endMatch.capturedLength(0);
-        } else {
-            break;
-        }
-    }
-
-    return -1;
 }
 
 bool CompletionService::isInternalCompletionType(sym_list::sym_type_e type) const

@@ -34,14 +34,15 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor semantic query assembly now lives behind `EditorSemanticContextService`.
-`MyCodeEditor` provides live editor context and asks the service to build completion, command-mode, definition, and source-symbol action queries.
+Completion semantic reads for module internals, current module lookup, relationship availability, and scope scoring now live behind `SemanticIndex`.
+`CompletionService` delegates those reads to the index instead of scanning symbols or relationship engine state directly.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
+- `SemanticIndex` owns semantic facts and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
@@ -55,7 +56,7 @@ Editor semantic query assembly now lives behind `EditorSemanticContextService`.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command/editor completion results, command-mode completion state, completion trigger and activation state, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
+- `CompletionService` owns module/global/command/editor completion results, command-mode completion state, completion trigger and activation state, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates over `SemanticIndex`.
 - `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, command membership checks, command action classification, and command completion state.
 - `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, source navigation target selection, editor source-navigation target assembly, and editor symbol action context assembly.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
