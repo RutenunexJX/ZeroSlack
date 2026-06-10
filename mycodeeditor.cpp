@@ -4,7 +4,7 @@
 #include "completionmodel.h"
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
-#include "includenavigationservice.h"
+#include "sourcenavigationservice.h"
 
 #include "syminfo.h"
 
@@ -29,7 +29,6 @@
 #include <QPixmap>
 #include <QPen>
 #include <QBrush>
-#include <QRegularExpression>
 #include <memory>
 #include <utility>
 
@@ -1278,28 +1277,16 @@ bool MyCodeEditor::getPackageNameFromImport(const QPoint& position, QString& pac
 
     int posInLine = cursor.position() - block.position();
 
-    int importPos = lineText.indexOf("import");
-    if (importPos == -1) {
+    const PackageImportTarget importTarget =
+        SourceNavigationService::getInstance()->packageImportAtColumn(
+            lineText,
+            posInLine);
+    if (!importTarget.matched)
         return false;
-    }
 
-    static const QRegularExpression importPattern("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::");
-    QRegularExpressionMatch m = importPattern.match(lineText);
-    if (!m.hasMatch()) {
-        return false;
-    }
-
-    QString matchedPackageName = m.captured(1);
-    int packageStartInLine = m.capturedStart(1);
-    int packageEndInLine = packageStartInLine + matchedPackageName.length();
-
-    if (posInLine < packageStartInLine || posInLine >= packageEndInLine) {
-        return false;
-    }
-
-    packageName = matchedPackageName;
-    startPos = block.position() + packageStartInLine;
-    endPos = block.position() + packageEndInLine;
+    packageName = importTarget.packageName;
+    startPos = block.position() + importTarget.startColumn;
+    endPos = block.position() + importTarget.endColumn;
 
     return true;
 }
@@ -1461,7 +1448,7 @@ bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPo
     QTextBlock block = cursor.block();
     const int posInLine = cursor.position() - block.position();
     const IncludeDirectiveTarget includeTarget =
-        IncludeNavigationService::getInstance()->includeAtColumn(block.text(), posInLine);
+        SourceNavigationService::getInstance()->includeAtColumn(block.text(), posInLine);
     if (!includeTarget.matched)
         return false;
 

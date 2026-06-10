@@ -16,7 +16,7 @@
 #include "syminfo.h"
 #include "completionmodel.h"
 #include "definitionservice.h"
-#include "includenavigationservice.h"
+#include "sourcenavigationservice.h"
 #include "semanticindexsnapshot.h"
 // Test-only: reach the editor's private jump methods. Non-virtual, so ABI is unaffected and the
 // calls bind to the real symbols in the already-compiled mycodeeditor.cpp.obj. Qt headers are
@@ -294,18 +294,18 @@ int main(int argc, char** argv) {
     printf("[%s] DefinitionService findDefinitions keeps snapshot local result\n",
            snapshotFindDefinitionsOk ? "PASS" : "FAIL");
 
-    IncludeNavigationService* includeNavigationService =
-        IncludeNavigationService::getInstance();
+    SourceNavigationService* sourceNavigationService =
+        SourceNavigationService::getInstance();
     const QString includeLine =
         QStringLiteral("  `include \"rtl/pkg_defs.svh\"");
     const IncludeDirectiveTarget includeTarget =
-        includeNavigationService->includeAtColumn(
+        sourceNavigationService->includeAtColumn(
             includeLine,
             includeLine.indexOf(QStringLiteral("pkg_defs")));
-    expectBool("IncludeNavigation matches include path",
+    expectBool("SourceNavigation matches include path",
                includeTarget.matched,
                true);
-    expectEq("IncludeNavigation trims path",
+    expectEq("SourceNavigation trims include path",
              includeTarget.includePath,
              QStringLiteral("rtl/pkg_defs.svh"));
     ++g_checks;
@@ -314,11 +314,38 @@ int main(int argc, char** argv) {
         && includeTarget.endColumn == includeLine.lastIndexOf(QLatin1Char('"'));
     if (!includeRangeOk)
         ++g_fails;
-    printf("[%s] IncludeNavigation returns quote-relative range\n",
+    printf("[%s] SourceNavigation returns include range\n",
            includeRangeOk ? "PASS" : "FAIL");
-    expectBool("IncludeNavigation ignores quote boundary",
-               includeNavigationService
+    expectBool("SourceNavigation ignores quote boundary",
+               sourceNavigationService
                    ->includeAtColumn(includeLine, includeTarget.startColumn - 1)
+                   .matched,
+               false);
+
+    const QString importLine =
+        QStringLiteral("  import pkg_defs :: *;");
+    const PackageImportTarget importTarget =
+        sourceNavigationService->packageImportAtColumn(
+            importLine,
+            importLine.indexOf(QStringLiteral("pkg_defs")));
+    expectBool("SourceNavigation matches import package",
+               importTarget.matched,
+               true);
+    expectEq("SourceNavigation import package",
+             importTarget.packageName,
+             QStringLiteral("pkg_defs"));
+    ++g_checks;
+    const bool importRangeOk =
+        importTarget.startColumn == importLine.indexOf(QStringLiteral("pkg_defs"))
+        && importTarget.endColumn == importTarget.startColumn
+            + QStringLiteral("pkg_defs").size();
+    if (!importRangeOk)
+        ++g_fails;
+    printf("[%s] SourceNavigation returns import package range\n",
+           importRangeOk ? "PASS" : "FAIL");
+    expectBool("SourceNavigation ignores import boundary",
+               sourceNavigationService
+                   ->packageImportAtColumn(importLine, importTarget.endColumn)
                    .matched,
                false);
 

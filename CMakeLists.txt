@@ -60,7 +60,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorcoordinator.cpp
     filecommandcoordinator.cpp
     hierarchyservice.cpp
-    includenavigationservice.cpp
+    sourcenavigationservice.cpp
     tsdocument.cpp
     modecommandcoordinator.cpp
     modemanager.cpp
@@ -111,7 +111,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorcoordinator.h
     filecommandcoordinator.h
     hierarchyservice.h
-    includenavigationservice.h
+    sourcenavigationservice.h
     tsdocument.h
     modecommandcoordinator.h
     modemanager.h
