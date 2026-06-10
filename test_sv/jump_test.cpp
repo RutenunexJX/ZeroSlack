@@ -388,6 +388,41 @@ int main(int argc, char** argv) {
                                         identifierLine.indexOf(QLatin1Char('+')))
                    .matched,
                false);
+    const SourceSymbolActionContext symbolActionContext =
+        sourceNavigationService->symbolActionContextAtColumn(
+            identifierLine,
+            identifierLine.indexOf(QStringLiteral("current_value")) + 3,
+            QStringLiteral("unit.sv"),
+            QStringLiteral("top"));
+    expectBool("SourceNavigation symbol action available",
+               symbolActionContext.available,
+               true);
+    expectEq("SourceNavigation symbol action name",
+             symbolActionContext.symbolName,
+             QStringLiteral("current_value"));
+    expectEq("SourceNavigation symbol action file",
+             symbolActionContext.fileName,
+             QStringLiteral("unit.sv"));
+    expectEq("SourceNavigation symbol action module",
+             symbolActionContext.moduleName,
+             QStringLiteral("top"));
+    expectBool("SourceNavigation symbol action needs file",
+               sourceNavigationService
+                   ->symbolActionContextAtColumn(identifierLine,
+                                                 identifierLine.indexOf(
+                                                     QStringLiteral("current_value")),
+                                                 QString(),
+                                                 QStringLiteral("top"))
+                   .available,
+               false);
+    expectBool("SourceNavigation symbol action rejects punctuation",
+               sourceNavigationService
+                   ->symbolActionContextAtColumn(identifierLine,
+                                                 identifierLine.indexOf(QLatin1Char('+')),
+                                                 QStringLiteral("unit.sv"),
+                                                 QStringLiteral("top"))
+                   .available,
+               false);
 
     const SourceNavigationTarget includePriorityTarget =
         sourceNavigationService->targetAtColumn(
@@ -421,6 +456,27 @@ int main(int argc, char** argv) {
                    && identifierPriorityTarget.kind
                        == SourceNavigationTargetKind::Identifier,
                true);
+    const int editorActionPos =
+        content.indexOf(QStringLiteral("counter <= 8'd0"));
+    expectBool("Editor symbol action fixture position",
+               editorActionPos >= 0,
+               true);
+    QTextCursor editorActionCursor = ed.textCursor();
+    editorActionCursor.setPosition(qMax(0, editorActionPos));
+    const SourceSymbolActionContext editorActionContext =
+        ed.sourceSymbolActionContextForCursor(editorActionCursor);
+    expectBool("Editor symbol action available",
+               editorActionContext.available,
+               true);
+    expectEq("Editor symbol action name",
+             editorActionContext.symbolName,
+             QStringLiteral("counter"));
+    expectEq("Editor symbol action file",
+             editorActionContext.fileName,
+             path);
+    expectEq("Editor symbol action module",
+             editorActionContext.moduleName,
+             QStringLiteral("top"));
 
     // Local jump landing: jumpToDefinition moves the caret to the definition.
     sym_list::SymbolInfo counter;

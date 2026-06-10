@@ -40,6 +40,13 @@ struct SourceNavigationTarget {
     int endColumn = -1;
 };
 
+struct SourceSymbolActionContext {
+    bool available = false;
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+};
+
 class SourceNavigationService
 {
 public:
@@ -56,6 +63,11 @@ public:
                                               int column) const;
     SourceNavigationTarget targetAtColumn(const QString& lineText,
                                           int column) const;
+    SourceSymbolActionContext symbolActionContextAtColumn(
+        const QString& lineText,
+        int column,
+        const QString& fileName,
+        const QString& moduleName) const;
 
 private:
     static std::unique_ptr<SourceNavigationService> instance;

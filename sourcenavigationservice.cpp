@@ -186,3 +186,24 @@ SourceNavigationTarget SourceNavigationService::targetAtColumn(
 
     return {};
 }
+
+SourceSymbolActionContext SourceNavigationService::symbolActionContextAtColumn(
+    const QString& lineText,
+    int column,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    SourceSymbolActionContext context;
+    if (fileName.isEmpty())
+        return context;
+
+    const SourceIdentifierTarget identifier = identifierAtColumn(lineText, column);
+    if (!identifier.matched || identifier.identifier.isEmpty())
+        return context;
+
+    context.available = true;
+    context.symbolName = identifier.identifier;
+    context.fileName = fileName;
+    context.moduleName = moduleName;
+    return context;
+}

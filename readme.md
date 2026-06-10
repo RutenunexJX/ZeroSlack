@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Command-mode completion state now lives behind `CompletionService`.
-`MyCodeEditor` supplies command context and renders the returned command completion state instead of assembling command queries, tracking command symbol type, or applying command-specific empty-result popup policy locally.
+Editor-originated reference and relationship symbol action context now lives behind `SourceNavigationService`.
+`MyCodeEditor` consumes the service context for context-menu enablement and shortcut-triggered signal payloads instead of extracting symbol/file/module action data locally.
 
 ## Latest Validation
 
@@ -65,7 +65,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command/editor completion results and command-mode completion state, trigger policy, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, and command membership checks.
-- `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, and source navigation target selection.
+- `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, source navigation target selection, and editor symbol action context assembly.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.

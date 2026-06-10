@@ -217,17 +217,18 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 {
     std::unique_ptr<QMenu> menu(createStandardContextMenu(event->pos()));
     const QTextCursor cursorAtPos = cursorForPosition(event->pos());
-    const QString symbolName = getWordAtTextPosition(cursorAtPos.position());
+    const SourceSymbolActionContext actionContext =
+        sourceSymbolActionContextForCursor(cursorAtPos);
 
     menu->addSeparator();
     QAction* findReferencesAction = menu->addAction(QStringLiteral("Find References"));
-    findReferencesAction->setEnabled(!symbolName.isEmpty() && !getFileName().isEmpty());
+    findReferencesAction->setEnabled(actionContext.available);
     connect(findReferencesAction, &QAction::triggered, this, [this, cursorAtPos]() {
         emitReferenceSearchForCursor(cursorAtPos);
     });
 
     QAction* showRelationshipsAction = menu->addAction(QStringLiteral("Show Relationships"));
-    showRelationshipsAction->setEnabled(!symbolName.isEmpty() && !getFileName().isEmpty());
+    showRelationshipsAction->setEnabled(actionContext.available);
     connect(showRelationshipsAction, &QAction::triggered, this, [this, cursorAtPos]() {
         emitRelationshipBrowseForCursor(cursorAtPos);
     });
@@ -235,27 +236,43 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
     menu->exec(event->globalPos());
 }
 
+SourceSymbolActionContext MyCodeEditor::sourceSymbolActionContextForCursor(
+    const QTextCursor& cursor) const
+{
+    const QTextBlock block = document()->findBlock(cursor.position());
+    if (!block.isValid())
+        return {};
+
+    return SourceNavigationService::getInstance()->symbolActionContextAtColumn(
+        block.text(),
+        cursor.position() - block.position(),
+        getFileName(),
+        currentModuleNameAt(cursor.position()));
+}
+
 bool MyCodeEditor::emitReferenceSearchForCursor(const QTextCursor& cursor)
 {
-    const QString symbolName = getWordAtTextPosition(cursor.position());
-    if (symbolName.isEmpty() || getFileName().isEmpty())
+    const SourceSymbolActionContext actionContext =
+        sourceSymbolActionContextForCursor(cursor);
+    if (!actionContext.available)
         return false;
 
-    emit referenceSearchRequested(symbolName,
-                                  getFileName(),
-                                  currentModuleNameAt(cursor.position()));
+    emit referenceSearchRequested(actionContext.symbolName,
+                                  actionContext.fileName,
+                                  actionContext.moduleName);
     return true;
 }
 
 bool MyCodeEditor::emitRelationshipBrowseForCursor(const QTextCursor& cursor)
 {
-    const QString symbolName = getWordAtTextPosition(cursor.position());
-    if (symbolName.isEmpty() || getFileName().isEmpty())
+    const SourceSymbolActionContext actionContext =
+        sourceSymbolActionContextForCursor(cursor);
+    if (!actionContext.available)
         return false;
 
-    emit relationshipBrowseRequested(symbolName,
-                                     getFileName(),
-                                     currentModuleNameAt(cursor.position()));
+    emit relationshipBrowseRequested(actionContext.symbolName,
+                                     actionContext.fileName,
+                                     actionContext.moduleName);
     return true;
 }
 

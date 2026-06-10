@@ -14,6 +14,7 @@
 
 class LineNumberWidget;
 class MyHighlighter;
+struct SourceSymbolActionContext;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -79,6 +80,8 @@ private:
     int getLineNumberWidgetWidth();
 
     QString currentModuleNameAt(int charPos) const;
+    SourceSymbolActionContext sourceSymbolActionContextForCursor(
+        const QTextCursor& cursor) const;
     bool emitReferenceSearchForCursor(const QTextCursor& cursor);
     bool emitRelationshipBrowseForCursor(const QTextCursor& cursor);
     DefinitionNavigationQuery definitionNavigationQuery(
