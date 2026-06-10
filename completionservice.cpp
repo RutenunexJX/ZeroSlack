@@ -1069,82 +1069,21 @@ QStringList CompletionService::findEnumValueCompletions(
     const QString& prefix,
     const QString& enumTypeName) const
 {
-    QStringList result;
-    QSet<QString> seenNames;
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticIndex()->getSymbolsByType(sym_list::sym_enum_value);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!enumTypeName.isEmpty() && symbol.moduleScope != enumTypeName)
-            continue;
-        if (!completionNameMatches(symbol.symbolName, prefix))
-            continue;
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return semanticIndex()->getEnumValueCompletionNames(prefix, enumTypeName);
 }
 
 QString CompletionService::findEnumTypeForVariable(
     const QString& variableName,
     const QString& moduleName) const
 {
-    if (!moduleName.isEmpty()) {
-        const QList<sym_list::SymbolInfo> moduleSymbols =
-            findModuleInternalSymbolInfosByType(moduleName,
-                                                sym_list::sym_enum_var);
-        for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
-            if (symbol.symbolName == variableName)
-                return symbol.moduleScope;
-        }
-    }
-
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticIndex()->getSymbolsByType(sym_list::sym_enum_var);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolName == variableName)
-            return symbol.moduleScope;
-    }
-
-    return QString();
+    return semanticIndex()->enumTypeForVariable(variableName, moduleName);
 }
 
 QStringList CompletionService::findModulePortCompletions(
     const QString& prefix,
     const QString& moduleTypeName) const
 {
-    QStringList result;
-    if (moduleTypeName.isEmpty())
-        return result;
-
-    bool moduleExists = false;
-    const QList<sym_list::SymbolInfo> modules =
-        semanticIndex()->getSymbolsByType(sym_list::sym_module);
-    for (const sym_list::SymbolInfo& symbol : modules) {
-        if (symbol.symbolName == moduleTypeName) {
-            moduleExists = true;
-            break;
-        }
-    }
-    if (!moduleExists)
-        return result;
-
-    result.append(findModuleSymbolsByType(moduleTypeName,
-                                          sym_list::sym_wire,
-                                          prefix));
-    result.append(findModuleSymbolsByType(moduleTypeName,
-                                          sym_list::sym_reg,
-                                          prefix));
-    result.append(findModuleSymbolsByType(moduleTypeName,
-                                          sym_list::sym_logic,
-                                          prefix));
-    result.removeDuplicates();
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return semanticIndex()->getModulePortCompletionNames(prefix, moduleTypeName);
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findModuleInternalSymbolInfosByType(

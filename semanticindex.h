@@ -112,6 +112,15 @@ public:
     QList<sym_list::SymbolInfo> getGlobalSymbolInfosByType(
         sym_list::sym_type_e symbolType,
         const QString& prefix = QString()) const;
+    QStringList getEnumValueCompletionNames(
+        const QString& prefix = QString(),
+        const QString& enumTypeName = QString()) const;
+    QString enumTypeForVariable(
+        const QString& variableName,
+        const QString& moduleName = QString()) const;
+    QStringList getModulePortCompletionNames(
+        const QString& prefix,
+        const QString& moduleTypeName) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
     int findSymbolId(const QString& name,
                      const SemanticQueryContext& context = {}) const;
