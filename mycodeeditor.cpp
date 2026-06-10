@@ -1,4 +1,5 @@
 #include "mycodeeditor.h"
+#include "alternatecommandservice.h"
 #include "myhighlighter.h"
 #include "completionmodel.h"
 #include "completionservice.h"
@@ -39,7 +40,6 @@ MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
     initFont();
     initHighlighter();
     initAutoComplete();
-    initAlternateModeCommands();
 
     highlighCurrentLine();
     updateLineNumberWidgetWidth();
@@ -1003,28 +1003,24 @@ QString MyCodeEditor::extractCommandInput()
     return match.matched ? match.input : QString();
 }
 
-void MyCodeEditor::initAlternateModeCommands()
-{
-    alternateModeCommands.clear();
-
-    alternateModeCommands << "save" << "save_as" << "open" << "new" << "close"
-                         << "copy" << "paste" << "cut" << "undo" << "redo"
-                         << "find" << "replace" << "goto_line" << "select_all"
-                         << "comment" << "uncomment" << "indent" << "unindent";
-}
-
 void MyCodeEditor::processAlternateModeInput(const QString &input)
 {
     if (!isInAlternateMode) return;
 
-    alternateCommandBuffer = input.trimmed().toLower();
+    AlternateCommandService* alternateCommandService =
+        AlternateCommandService::getInstance();
+    alternateCommandBuffer = alternateCommandService->normalizeCommandInput(input);
 
     showAlternateModeCommands(alternateCommandBuffer);
 }
 
 void MyCodeEditor::showAlternateModeCommands(const QString &filter)
 {
-    completionModel->updateCommandCompletions(alternateModeCommands, filter);
+    AlternateCommandService* alternateCommandService =
+        AlternateCommandService::getInstance();
+    completionModel->updateCommandCompletions(
+        alternateCommandService->matchingCommands(filter),
+        alternateCommandService->normalizeCommandInput(filter));
 
     if (completionModel->rowCount() > 0) {
         showAutoComplete();
@@ -1034,7 +1030,9 @@ void MyCodeEditor::showAlternateModeCommands(const QString &filter)
 
 void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 {
-    QString cmd = command.trimmed().toLower();
+    AlternateCommandService* alternateCommandService =
+        AlternateCommandService::getInstance();
+    QString cmd = alternateCommandService->normalizeCommandInput(command);
 
     if (cmd == "save") {
         emit saveFileRequested();

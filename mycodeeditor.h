@@ -125,9 +125,7 @@ private:
 
     bool isInAlternateMode = false;
     QString alternateCommandBuffer;
-    QStringList alternateModeCommands;
 
-    void initAlternateModeCommands();
     void executeAlternateModeCommand(const QString &command);
     void showAlternateModeCommands(const QString &filter = QString());
 

@@ -1,6 +1,7 @@
 // Headless completion-logic test. Populates sym_list from Slang, then drives CompletionManager's
 // public query methods and asserts the results. No GUI window is shown.
 #include "slangmanager.h"
+#include "alternatecommandservice.h"
 #include "completionmanager.h"
 #include "completionmodel.h"
 #include "completionservice.h"
@@ -203,6 +204,29 @@ int main(int argc, char** argv) {
     expectEq("CompletionModel symbol desc",
              modelScoring.getItem(modelScoring.index(2, 0)).description,
              QStringLiteral("logic"));
+
+    AlternateCommandService* alternateCommandService =
+        AlternateCommandService::getInstance();
+    expectEq("AlternateCommand normalize",
+             alternateCommandService->normalizeCommandInput(QStringLiteral(" SAVE_AS ")),
+             QStringLiteral("save_as"));
+    expectList("AlternateCommand catalog",
+               alternateCommandService->commands(),
+               {"save", "save_as", "open", "new", "close",
+                "copy", "paste", "cut", "undo", "redo",
+                "find", "replace", "goto_line", "select_all",
+                "comment", "uncomment", "indent", "unindent"});
+    expectList("AlternateCommand filter",
+               alternateCommandService->matchingCommands(QStringLiteral("s")),
+               {"save", "save_as", "select_all"});
+    ++g_checks;
+    const bool alternateKnownOk =
+        alternateCommandService->isKnownCommand(QStringLiteral(" SELECT_ALL "));
+    if (!alternateKnownOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           alternateKnownOk ? "PASS" : "FAIL",
+           "AlternateCommand known command");
 
     CompletionModel commandSelectionModel;
     commandSelectionModel.updateCommandCompletions(
