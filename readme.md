@@ -34,15 +34,15 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Relationship analysis snapshot lifecycle now lives behind `SemanticIndex`.
-`AnalysisScheduler` coordinates relationship work while the index captures base snapshots, builds relationship-augmented snapshots, and publishes them only when current.
+Generic symbol search now lives behind `SemanticIndex`.
+`SearchService` remains the feature-facing query facade while the index owns shared symbol filtering, scoring, sorting, and snapshot-backed reads.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
-- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
+- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, generic symbol search, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
@@ -61,6 +61,7 @@ Relationship analysis snapshot lifecycle now lives behind `SemanticIndex`.
 - `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, source navigation target selection, editor source-navigation target assembly, and editor symbol action context assembly.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
+- `SearchService` owns feature-facing symbol search queries over `SemanticIndex`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
 - `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.

@@ -116,6 +116,34 @@ bool isModuleRangeSymbolType(sym_list::sym_type_e type)
         || type == sym_list::sym_unpacked_struct_var;
 }
 
+bool symbolSearchTypeMatches(sym_list::sym_type_e type,
+                             const QList<sym_list::sym_type_e>& types)
+{
+    return types.isEmpty() || types.contains(type);
+}
+
+int symbolSearchMatchScore(const QString& symbolName,
+                           const SemanticSymbolSearchQuery& query)
+{
+    if (symbolName.isEmpty())
+        return 0;
+    if (query.text.isEmpty())
+        return 1;
+
+    const Qt::CaseSensitivity sensitivity =
+        query.caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
+
+    if (QString::compare(symbolName, query.text, sensitivity) == 0)
+        return 100;
+    if (query.exactMatch)
+        return 0;
+    if (symbolName.startsWith(query.text, sensitivity))
+        return 75;
+    if (symbolName.contains(query.text, sensitivity))
+        return 50;
+    return 0;
+}
+
 int endModulePositionInContent(const QString& fileContent,
                                const sym_list::SymbolInfo& moduleSymbol)
 {
@@ -332,6 +360,42 @@ QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e
         return m_snapshot->getSymbolsByType(type);
 
     return symbolDatabase()->findSymbolsByType(type);
+}
+
+QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
+    const SemanticSymbolSearchQuery& query) const
+{
+    QList<SemanticSymbolSearchResult> result;
+    const QList<sym_list::SymbolInfo> symbols = getSymbols(query.fileName);
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!symbolSearchTypeMatches(symbol.symbolType, query.types))
+            continue;
+
+        const int score = symbolSearchMatchScore(symbol.symbolName, query);
+        if (score <= 0)
+            continue;
+
+        SemanticSymbolSearchResult item;
+        item.symbol = symbol;
+        item.score = score;
+        result.append(item);
+    }
+
+    std::stable_sort(result.begin(), result.end(),
+                     [](const SemanticSymbolSearchResult& a,
+                        const SemanticSymbolSearchResult& b) {
+        if (a.score != b.score)
+            return a.score > b.score;
+        if (a.symbol.fileName != b.symbol.fileName)
+            return a.symbol.fileName < b.symbol.fileName;
+        if (a.symbol.startLine != b.symbol.startLine)
+            return a.symbol.startLine < b.symbol.startLine;
+        return a.symbol.symbolName < b.symbol.symbolName;
+    });
+
+    if (query.maxResults >= 0 && result.size() > query.maxResults)
+        result = result.mid(0, query.maxResults);
+    return result;
 }
 
 sym_list::SymbolInfo SemanticIndex::getSymbolById(int symbolId) const

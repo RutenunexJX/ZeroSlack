@@ -42,6 +42,20 @@ struct SemanticDiagnostic {
     Severity severity = Info;
 };
 
+struct SemanticSymbolSearchQuery {
+    QString text;
+    QString fileName;
+    QList<sym_list::sym_type_e> types;
+    bool caseSensitive = false;
+    bool exactMatch = false;
+    int maxResults = -1;
+};
+
+struct SemanticSymbolSearchResult {
+    sym_list::SymbolInfo symbol;
+    int score = 0;
+};
+
 // Thin facade over the current sym_list-backed semantic store.
 //
 // This is the migration boundary for new code: the first implementation delegates to sym_list
@@ -80,6 +94,8 @@ public:
 
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
+    QList<SemanticSymbolSearchResult> searchSymbols(
+        const SemanticSymbolSearchQuery& query) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
     int findSymbolId(const QString& name,
                      const SemanticQueryContext& context = {}) const;

@@ -1,7 +1,5 @@
 #include "searchservice.h"
 
-#include <algorithm>
-
 std::unique_ptr<SearchService> SearchService::instance = nullptr;
 
 SearchService* SearchService::getInstance()
@@ -25,35 +23,24 @@ void SearchService::setSemanticIndex(SemanticIndex* semanticIndex)
 
 QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
 {
+    SemanticSymbolSearchQuery indexQuery;
+    indexQuery.text = query.text;
+    indexQuery.fileName = query.fileName;
+    indexQuery.types = query.types;
+    indexQuery.caseSensitive = query.caseSensitive;
+    indexQuery.exactMatch = query.exactMatch;
+    indexQuery.maxResults = query.maxResults;
+
     QList<SearchResult> result;
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols(query.fileName);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!typeMatches(symbol.symbolType, query.types))
-            continue;
-
-        const int score = matchScore(symbol.symbolName, query);
-        if (score <= 0)
-            continue;
-
+    const QList<SemanticSymbolSearchResult> indexResults =
+        semanticIndex()->searchSymbols(indexQuery);
+    result.reserve(indexResults.size());
+    for (const SemanticSymbolSearchResult& indexResult : indexResults) {
         SearchResult item;
-        item.symbol = symbol;
-        item.score = score;
+        item.symbol = indexResult.symbol;
+        item.score = indexResult.score;
         result.append(item);
     }
-
-    std::stable_sort(result.begin(), result.end(), [](const SearchResult& a,
-                                                      const SearchResult& b) {
-        if (a.score != b.score)
-            return a.score > b.score;
-        if (a.symbol.fileName != b.symbol.fileName)
-            return a.symbol.fileName < b.symbol.fileName;
-        if (a.symbol.startLine != b.symbol.startLine)
-            return a.symbol.startLine < b.symbol.startLine;
-        return a.symbol.symbolName < b.symbol.symbolName;
-    });
-
-    if (query.maxResults >= 0 && result.size() > query.maxResults)
-        result = result.mid(0, query.maxResults);
     return result;
 }
 
@@ -65,31 +52,4 @@ bool SearchService::hasMatches(const SearchQuery& query) const
 SemanticIndex* SearchService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
-}
-
-bool SearchService::typeMatches(sym_list::sym_type_e type,
-                                const QList<sym_list::sym_type_e>& types) const
-{
-    return types.isEmpty() || types.contains(type);
-}
-
-int SearchService::matchScore(const QString& symbolName, const SearchQuery& query) const
-{
-    if (symbolName.isEmpty())
-        return 0;
-    if (query.text.isEmpty())
-        return 1;
-
-    const Qt::CaseSensitivity sensitivity =
-        query.caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
-
-    if (QString::compare(symbolName, query.text, sensitivity) == 0)
-        return 100;
-    if (query.exactMatch)
-        return 0;
-    if (symbolName.startsWith(query.text, sensitivity))
-        return 75;
-    if (symbolName.contains(query.text, sensitivity))
-        return 50;
-    return 0;
 }

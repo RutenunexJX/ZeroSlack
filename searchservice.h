@@ -39,8 +39,6 @@ private:
     static std::unique_ptr<SearchService> instance;
 
     SemanticIndex* semanticIndex() const;
-    bool typeMatches(sym_list::sym_type_e type, const QList<sym_list::sym_type_e>& types) const;
-    int matchScore(const QString& symbolName, const SearchQuery& query) const;
 };
 
 #endif // SEARCHSERVICE_H
