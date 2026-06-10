@@ -6,6 +6,7 @@
 
 class SlangManager;
 class SmartRelationshipBuilder;
+class SemanticIndex;
 class SymbolRelationshipEngine;
 
 class SemanticRuntimeCoordinator : public QObject
@@ -21,6 +22,8 @@ public:
     SlangManager* slangManager() const;
 
 private:
+    void configureQueryServices(SemanticIndex* semanticIndex) const;
+
     std::unique_ptr<SymbolRelationshipEngine> relationshipEngineInstance;
     std::unique_ptr<SlangManager> slangManagerInstance;
     std::unique_ptr<SmartRelationshipBuilder> relationshipBuilderInstance;

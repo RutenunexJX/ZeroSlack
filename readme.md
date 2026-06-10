@@ -34,14 +34,14 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor definition navigation now lives behind `DefinitionNavigationService`.
-`MyCodeEditor` delegates definition target resolution, jump availability, and tooltip text to the service, leaving the editor focused on cursor context, hover UI, and local caret movement.
+Semantic query service dependency injection now lives in `SemanticRuntimeCoordinator`.
+The runtime coordinator wires the shared `SemanticIndex` into completion, definition, navigation, diagnostic, relationship, reference, hierarchy, and search services at startup.
 
 ## Latest Validation
 
 Latest code validation passed:
 
-- focused `jump_test`
+- focused `gui_smoke_test`
 - full Ninja build
 - full CTest: 6/6 passed
 - `git diff --check`, ASCII scan, trailing-whitespace scan, forbidden-file guard
@@ -61,6 +61,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
+- `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command completions, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `CompletionModel` renders editor completion items and uses `CompletionService` for scoring.
