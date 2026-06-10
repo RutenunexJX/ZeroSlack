@@ -721,6 +721,72 @@ QStringList SemanticIndex::getModulePortCompletionNames(
     return uniqueSortedSymbolNames(portSymbols);
 }
 
+QStringList SemanticIndex::getRelationshipCompletionNames(
+    const QString& symbolName,
+    const QList<SymbolRelationshipEngine::RelationType>& types,
+    bool outgoing,
+    const QString& prefix) const
+{
+    if (symbolName.isEmpty())
+        return {};
+
+    const int symbolId = findSymbolId(symbolName);
+    if (symbolId < 0)
+        return {};
+
+    QList<sym_list::SymbolInfo> symbols;
+    const QList<SemanticRelationship> relationships = getRelationships(symbolId, outgoing);
+    for (const SemanticRelationship& relationship : relationships) {
+        if (!types.isEmpty() && !types.contains(relationship.type))
+            continue;
+
+        const int peerId = outgoing ? relationship.toId : relationship.fromId;
+        const sym_list::SymbolInfo symbol = getSymbolById(peerId);
+        if (symbol.symbolId < 0)
+            continue;
+        if (!semanticCompletionNameMatches(symbol.symbolName, prefix))
+            continue;
+        symbols.append(symbol);
+    }
+
+    return uniqueSortedSymbolNames(symbols);
+}
+
+QStringList SemanticIndex::getBidirectionalRelationshipCompletionNames(
+    const QString& symbolName,
+    const QList<SymbolRelationshipEngine::RelationType>& types,
+    const QString& prefix) const
+{
+    QStringList result = getRelationshipCompletionNames(symbolName, types, true, prefix);
+    result.append(getRelationshipCompletionNames(symbolName, types, false, prefix));
+    result.removeDuplicates();
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
+QStringList SemanticIndex::getSymbolsWithOutgoingRelationshipCompletionNames(
+    SymbolRelationshipEngine::RelationType type,
+    const QString& prefix) const
+{
+    QList<sym_list::SymbolInfo> result;
+    const QList<sym_list::SymbolInfo> symbols = getSymbols();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!semanticCompletionNameMatches(symbol.symbolName, prefix))
+            continue;
+
+        const QList<SemanticRelationship> relationships =
+            getRelationships(symbol.symbolId, true);
+        for (const SemanticRelationship& relationship : relationships) {
+            if (relationship.type == type) {
+                result.append(symbol);
+                break;
+            }
+        }
+    }
+
+    return uniqueSortedSymbolNames(result);
+}
+
 sym_list::SymbolInfo SemanticIndex::getSymbolById(int symbolId) const
 {
     if (m_snapshot)

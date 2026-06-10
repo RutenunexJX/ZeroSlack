@@ -121,6 +121,18 @@ public:
     QStringList getModulePortCompletionNames(
         const QString& prefix,
         const QString& moduleTypeName) const;
+    QStringList getRelationshipCompletionNames(
+        const QString& symbolName,
+        const QList<SymbolRelationshipEngine::RelationType>& types,
+        bool outgoing,
+        const QString& prefix = QString()) const;
+    QStringList getBidirectionalRelationshipCompletionNames(
+        const QString& symbolName,
+        const QList<SymbolRelationshipEngine::RelationType>& types,
+        const QString& prefix = QString()) const;
+    QStringList getSymbolsWithOutgoingRelationshipCompletionNames(
+        SymbolRelationshipEngine::RelationType type,
+        const QString& prefix = QString()) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
     int findSymbolId(const QString& name,
                      const SemanticQueryContext& context = {}) const;

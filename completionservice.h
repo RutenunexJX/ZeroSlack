@@ -10,8 +10,6 @@
 #include <QVector>
 #include <memory>
 
-struct RelationshipResult;
-
 struct CompletionQuery {
     QString prefix;
     QString fileName;
@@ -284,9 +282,6 @@ private:
     QStringList completionNamesFromSymbols(
         const QList<sym_list::SymbolInfo>& symbols) const;
     bool completionNameMatches(const QString& name, const QString& prefix) const;
-    QStringList completionNamesFromRelationshipResults(
-        const QList<RelationshipResult>& relationships,
-        bool outgoing) const;
     QString extractStructVariableFromContext(const QString& context) const;
     QString extractEnumVariableFromContext(const QString& context) const;
     QString extractModuleTypeFromContext(const QString& context) const;

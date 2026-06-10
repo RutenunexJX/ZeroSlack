@@ -34,15 +34,15 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Enum and module-port completion reads now live behind `SemanticIndex`.
-`CompletionService` remains the feature-facing scoring, policy, and presentation layer while the index owns enum value completions, enum-variable type lookup, module-port completions, all-symbol names, typed symbol candidates, global symbol-info candidates, and module/global/command completion candidate filtering, dedupe, sorting, and snapshot-backed reads.
+Relationship-driven completion reads now live behind `SemanticIndex`.
+`CompletionService` remains the feature-facing scoring, policy, and presentation layer while the index owns relationship-driven completion candidates, enum value completions, enum-variable type lookup, module-port completions, all-symbol names, typed symbol candidates, global symbol-info candidates, and module/global/command completion candidate filtering, dedupe, sorting, and snapshot-backed reads.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
-- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, generic symbol search, enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
+- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
