@@ -304,12 +304,8 @@ private:
                                    const QString& currentContext) const;
     int calculateScopeScore(const QString& symbol, const QString& currentModule) const;
     bool isModuleRangeSymbolType(sym_list::sym_type_e type) const;
-    bool isInternalCompletionType(sym_list::sym_type_e type) const;
-    bool isGlobalCompletionType(sym_list::sym_type_e type) const;
     bool isGlobalSymbolType(sym_list::sym_type_e type) const;
     bool isGlobalSymbolInfoType(sym_list::sym_type_e type) const;
-    bool isCommandGlobalCompletionType(sym_list::sym_type_e type) const;
-    bool isAlwaysGlobalCommandType(sym_list::sym_type_e type) const;
     bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                                   const QString& dataType,
                                   sym_list::sym_type_e requestedType) const;

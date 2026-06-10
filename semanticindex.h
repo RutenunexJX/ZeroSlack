@@ -96,6 +96,15 @@ public:
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
     QList<SemanticSymbolSearchResult> searchSymbols(
         const SemanticSymbolSearchQuery& query) const;
+    QList<sym_list::SymbolInfo> getModuleCompletionSymbols(
+        const QString& moduleName,
+        const QString& prefix = QString()) const;
+    QList<sym_list::SymbolInfo> getGlobalCompletionSymbols(
+        const QString& prefix = QString()) const;
+    QList<sym_list::SymbolInfo> getCommandCompletionSymbols(
+        const QString& moduleName,
+        sym_list::sym_type_e symbolType,
+        const QString& prefix = QString()) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
     int findSymbolId(const QString& name,
                      const SemanticQueryContext& context = {}) const;

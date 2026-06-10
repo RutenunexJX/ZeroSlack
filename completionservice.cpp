@@ -836,27 +836,8 @@ QStringList CompletionService::findModuleInternalVariableCompletions(
     const QString& moduleName,
     const QString& prefix) const
 {
-    QStringList result;
-    QSet<QString> seenNames;
-    if (moduleName.isEmpty())
-        return result;
-
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.moduleScope != moduleName
-            || !isInternalCompletionType(symbol.symbolType)
-            || !completionNameMatches(symbol.symbolName, prefix)) {
-            continue;
-        }
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return completionNamesFromSymbols(
+        semanticIndex()->getModuleCompletionSymbols(moduleName, prefix));
 }
 
 QStringList CompletionService::findModuleSymbolsByType(
@@ -887,23 +868,7 @@ QStringList CompletionService::findModuleSymbolsByType(
 
 QStringList CompletionService::findGlobalSymbolCompletions(const QString& prefix) const
 {
-    QStringList result;
-    QSet<QString> seenNames;
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!isGlobalCompletionType(symbol.symbolType)
-            || !completionNameMatches(symbol.symbolName, prefix)) {
-            continue;
-        }
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return completionNamesFromSymbols(semanticIndex()->getGlobalCompletionSymbols(prefix));
 }
 
 QStringList CompletionService::findGlobalSymbolsByType(
@@ -1350,105 +1315,22 @@ QList<sym_list::SymbolInfo> CompletionService::findStructMemberSymbols(
 QList<sym_list::SymbolInfo> CompletionService::findModuleCompletionSymbols(
     const CompletionQuery& query) const
 {
-    QList<sym_list::SymbolInfo> result;
-    QSet<QString> seenNames;
-    if (query.moduleName.isEmpty())
-        return result;
-
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.moduleScope != query.moduleName
-            || !isInternalCompletionType(symbol.symbolType)
-            || !completionNameMatches(symbol.symbolName, query.prefix)) {
-            continue;
-        }
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol);
-    }
-
-    std::sort(result.begin(), result.end(),
-              [](const sym_list::SymbolInfo& left,
-                 const sym_list::SymbolInfo& right) {
-                  return QString::compare(left.symbolName,
-                                          right.symbolName,
-                                          Qt::CaseInsensitive) < 0;
-              });
-    return result;
+    return semanticIndex()->getModuleCompletionSymbols(query.moduleName, query.prefix);
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findGlobalCompletionSymbols(
     const CompletionQuery& query) const
 {
-    QList<sym_list::SymbolInfo> result;
-    QSet<QString> seenNames;
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!isGlobalCompletionType(symbol.symbolType)
-            || !completionNameMatches(symbol.symbolName, query.prefix)) {
-            continue;
-        }
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol);
-    }
-
-    std::sort(result.begin(), result.end(),
-              [](const sym_list::SymbolInfo& left,
-                 const sym_list::SymbolInfo& right) {
-                  return QString::compare(left.symbolName,
-                                          right.symbolName,
-                                          Qt::CaseInsensitive) < 0;
-              });
-    return result;
+    return semanticIndex()->getGlobalCompletionSymbols(query.prefix);
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findCommandSymbolsFromIndex(
     const CommandCompletionQuery& query) const
 {
-    QList<sym_list::SymbolInfo> result;
-    QSet<QString> seenNames;
-    if (query.moduleName.isEmpty()
-        && !isCommandGlobalCompletionType(query.symbolType)) {
-        return result;
-    }
-
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const bool useGlobalScope = query.moduleName.isEmpty()
-            || isAlwaysGlobalCommandType(query.symbolType);
-        const bool scopeMatches = useGlobalScope
-            ? symbol.moduleScope.isEmpty()
-            : symbol.moduleScope == query.moduleName;
-        if (!scopeMatches
-            || !commandSymbolTypeMatches(symbol.symbolType,
-                                        symbol.dataType,
-                                        query.symbolType)
-            || !completionNameMatches(symbol.symbolName, query.prefix)) {
-            continue;
-        }
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol);
-    }
-
-    std::sort(result.begin(), result.end(),
-              [](const sym_list::SymbolInfo& left,
-                 const sym_list::SymbolInfo& right) {
-                  return QString::compare(left.symbolName,
-                                          right.symbolName,
-                                          Qt::CaseInsensitive) < 0;
-              });
-    return result;
+    return semanticIndex()->getCommandCompletionSymbols(
+        query.moduleName,
+        query.symbolType,
+        query.prefix);
 }
 
 QStringList CompletionService::completionNamesFromSymbols(
@@ -1846,24 +1728,6 @@ bool CompletionService::isModuleRangeSymbolType(sym_list::sym_type_e type) const
         || type == sym_list::sym_unpacked_struct_var;
 }
 
-bool CompletionService::isInternalCompletionType(sym_list::sym_type_e type) const
-{
-    return type == sym_list::sym_reg
-        || type == sym_list::sym_wire
-        || type == sym_list::sym_logic
-        || type == sym_list::sym_localparam
-        || type == sym_list::sym_parameter;
-}
-
-bool CompletionService::isGlobalCompletionType(sym_list::sym_type_e type) const
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package;
-}
-
 bool CompletionService::isGlobalSymbolType(sym_list::sym_type_e type) const
 {
     return type == sym_list::sym_module
@@ -1891,28 +1755,6 @@ bool CompletionService::isGlobalSymbolInfoType(sym_list::sym_type_e type) const
         || type == sym_list::sym_unpacked_struct
         || type == sym_list::sym_packed_struct_var
         || type == sym_list::sym_unpacked_struct_var;
-}
-
-bool CompletionService::isCommandGlobalCompletionType(sym_list::sym_type_e type) const
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_enum;
-}
-
-bool CompletionService::isAlwaysGlobalCommandType(sym_list::sym_type_e type) const
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_def_define;
 }
 
 bool CompletionService::commandSymbolTypeMatches(
