@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor-originated reference and relationship symbol action context now lives behind `SourceNavigationService`.
-`MyCodeEditor` consumes the service context for context-menu enablement and shortcut-triggered signal payloads instead of extracting symbol/file/module action data locally.
+Definition navigation query assembly now lives behind `DefinitionNavigationService`.
+`MyCodeEditor` supplies definition context and consumes the returned navigation query instead of locally assembling line-prefix context for jump, hover, and can-jump checks.
 
 ## Latest Validation
 
@@ -69,7 +69,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
-- `DefinitionNavigationService` owns editor-facing definition jump targets, availability, and tooltip text over `DefinitionService`.
+- `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
 
 ## Next Best Steps

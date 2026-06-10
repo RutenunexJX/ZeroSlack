@@ -17,6 +17,14 @@ struct DefinitionNavigationQuery {
     QString linePrefixBeforeCursor;
 };
 
+struct DefinitionNavigationContext {
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+    QString lineText;
+    int column = -1;
+};
+
 struct DefinitionNavigationTarget {
     bool found = false;
     bool localFile = false;
@@ -42,6 +50,8 @@ public:
         const DefinitionNavigationQuery& query) const;
     bool canResolveTarget(const DefinitionNavigationQuery& query) const;
     QString tooltipText(const DefinitionNavigationQuery& query) const;
+    DefinitionNavigationQuery navigationQueryForContext(
+        const DefinitionNavigationContext& context) const;
 
 private:
     SemanticIndex* index = nullptr;

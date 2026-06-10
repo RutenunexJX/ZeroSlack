@@ -280,21 +280,24 @@ DefinitionNavigationQuery MyCodeEditor::definitionNavigationQuery(
     const QString& symbolName,
     int cursorPosition) const
 {
-    DefinitionNavigationQuery query;
-    query.symbolName = symbolName;
-    query.fileName = getFileName();
     const int semanticPosition = cursorPosition >= 0
         ? cursorPosition
         : textCursor().position();
-    query.moduleName = currentModuleNameAt(semanticPosition);
 
+    DefinitionNavigationContext context;
+    context.symbolName = symbolName;
+    context.fileName = getFileName();
+    context.moduleName = currentModuleNameAt(semanticPosition);
     if (cursorPosition >= 0) {
-        QTextBlock block = document()->findBlock(cursorPosition);
-        const int posInBlock = cursorPosition - block.position();
-        query.linePrefixBeforeCursor = block.text().left(posInBlock);
+        const QTextBlock block = document()->findBlock(cursorPosition);
+        if (block.isValid()) {
+            context.lineText = block.text();
+            context.column = cursorPosition - block.position();
+        }
     }
 
-    return query;
+    return DefinitionNavigationService::getInstance()
+        ->navigationQueryForContext(context);
 }
 
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)

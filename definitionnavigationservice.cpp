@@ -3,6 +3,7 @@
 #include "definitionservice.h"
 
 #include <QFileInfo>
+#include <QtGlobal>
 
 std::unique_ptr<DefinitionNavigationService> DefinitionNavigationService::instance = nullptr;
 
@@ -53,6 +54,23 @@ QString DefinitionNavigationService::tooltipText(
              target.symbolTypeText,
              QFileInfo(target.fileName).fileName())
         .arg(target.line);
+}
+
+DefinitionNavigationQuery DefinitionNavigationService::navigationQueryForContext(
+    const DefinitionNavigationContext& context) const
+{
+    DefinitionNavigationQuery query;
+    query.symbolName = context.symbolName;
+    query.fileName = context.fileName;
+    query.moduleName = context.moduleName;
+
+    if (context.column >= 0) {
+        const int prefixColumn =
+            qBound(0, context.column, context.lineText.size());
+        query.linePrefixBeforeCursor = context.lineText.left(prefixColumn);
+    }
+
+    return query;
 }
 
 DefinitionQuery DefinitionNavigationService::toDefinitionQuery(

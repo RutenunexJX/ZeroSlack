@@ -130,6 +130,37 @@ int main(int argc, char** argv) {
     printf("[%s] DefinitionService resolves pixel.red member context to pixel_t.red\n",
            memberOk ? "PASS" : "FAIL");
 
+    DefinitionNavigationService definitionNavigationService;
+    DefinitionNavigationContext memberNavigationContext;
+    memberNavigationContext.symbolName = QStringLiteral("red");
+    memberNavigationContext.fileName = syntheticFile;
+    memberNavigationContext.moduleName = QStringLiteral("top");
+    memberNavigationContext.lineText = QStringLiteral("assign out = pixel.red;");
+    memberNavigationContext.column =
+        memberNavigationContext.lineText.indexOf(QStringLiteral("red"))
+        + QStringLiteral("red").size();
+    const DefinitionNavigationQuery memberNavigationQuery =
+        definitionNavigationService.navigationQueryForContext(memberNavigationContext);
+    expectEq("DefinitionNavigation query symbol",
+             memberNavigationQuery.symbolName,
+             QStringLiteral("red"));
+    expectEq("DefinitionNavigation query file",
+             memberNavigationQuery.fileName,
+             syntheticFile);
+    expectEq("DefinitionNavigation query module",
+             memberNavigationQuery.moduleName,
+             QStringLiteral("top"));
+    expectEq("DefinitionNavigation query prefix",
+             memberNavigationQuery.linePrefixBeforeCursor,
+             QStringLiteral("assign out = pixel.red"));
+
+    memberNavigationContext.column = 500;
+    const DefinitionNavigationQuery clampedNavigationQuery =
+        definitionNavigationService.navigationQueryForContext(memberNavigationContext);
+    expectEq("DefinitionNavigation clamps prefix",
+             clampedNavigationQuery.linePrefixBeforeCursor,
+             memberNavigationContext.lineText);
+
     QList<sym_list::SymbolInfo> snapshotDefinitionSymbols;
     sym_list::SymbolInfo snapshotOtherRed = otherRed;
     snapshotOtherRed.fileName = QStringLiteral("snapshot_only.sv");
