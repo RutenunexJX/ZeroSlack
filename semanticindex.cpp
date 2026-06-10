@@ -1471,6 +1471,33 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(const QString& scope
     return getRelationships(defs.first().symbolId, outgoing);
 }
 
+QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
+    int symbolId,
+    bool outgoing) const
+{
+    QList<SemanticRelationshipResult> result;
+    const QList<SemanticRelationship> relationships = getRelationships(symbolId, outgoing);
+    result.reserve(relationships.size());
+    for (const SemanticRelationship& relationship : relationships) {
+        SemanticRelationshipResult item;
+        item.relationship = relationship;
+        item.fromSymbol = getSymbolById(relationship.fromId);
+        item.toSymbol = getSymbolById(relationship.toId);
+        result.append(item);
+    }
+    return result;
+}
+
+QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
+    const QString& scopeName,
+    bool outgoing) const
+{
+    const QList<sym_list::SymbolInfo> defs = findDefinitions(scopeName);
+    if (defs.isEmpty())
+        return {};
+    return getRelationshipResults(defs.first().symbolId, outgoing);
+}
+
 QList<SemanticDiagnostic> SemanticIndex::getDiagnostics(const QString& fileName) const
 {
     if (m_snapshot)

@@ -691,6 +691,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("semantic snapshot captures relationships",
                snapshotFoundStage, true);
+    const QList<SemanticRelationshipResult> snapshotTopRelationshipResults =
+        snapshotIndex.getRelationshipResults(topId, true);
+    bool snapshotFoundStageResult = false;
+    for (const SemanticRelationshipResult& relationship : snapshotTopRelationshipResults) {
+        snapshotFoundStageResult = snapshotFoundStageResult
+            || (relationship.relationship.fromId == topId
+                && relationship.relationship.toId == stageId
+                && relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES
+                && relationship.fromSymbol.symbolId == topId
+                && relationship.toSymbol.symbolId == stageId);
+    }
+    expectBool("semantic snapshot returns relationship endpoint symbols",
+               snapshotFoundStageResult, true);
     RelationshipService snapshotRelationshipService(&snapshotIndex);
     RelationshipQuery snapshotRelationshipQuery;
     snapshotRelationshipQuery.symbolId = topId;

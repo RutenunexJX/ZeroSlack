@@ -17,11 +17,7 @@ struct RelationshipQuery {
     QList<SymbolRelationshipEngine::RelationType> types;
 };
 
-struct RelationshipResult {
-    SemanticRelationship relationship;
-    sym_list::SymbolInfo fromSymbol;
-    sym_list::SymbolInfo toSymbol;
-};
+using RelationshipResult = SemanticRelationshipResult;
 
 struct RelationshipBrowseQuery {
     int symbolId = -1;
@@ -99,7 +95,6 @@ private:
     int resolveSymbolId(const RelationshipBrowseQuery& query) const;
     bool typeMatches(SymbolRelationshipEngine::RelationType type,
                      const QList<SymbolRelationshipEngine::RelationType>& allowedTypes) const;
-    RelationshipResult enrich(const SemanticRelationship& relationship) const;
 };
 
 #endif // RELATIONSHIPSERVICE_H

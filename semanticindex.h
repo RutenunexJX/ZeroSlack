@@ -28,6 +28,12 @@ struct SemanticRelationship {
     SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
 };
 
+struct SemanticRelationshipResult {
+    SemanticRelationship relationship;
+    sym_list::SymbolInfo fromSymbol;
+    sym_list::SymbolInfo toSymbol;
+};
+
 struct SemanticDiagnostic {
     enum Severity {
         Info,
@@ -191,6 +197,12 @@ public:
     QList<SemanticRelationship> getRelationships(int symbolId, bool outgoing = true) const;
     QList<SemanticRelationship> getRelationships(const QString& scopeName,
                                                  bool outgoing = true) const;
+    QList<SemanticRelationshipResult> getRelationshipResults(
+        int symbolId,
+        bool outgoing = true) const;
+    QList<SemanticRelationshipResult> getRelationshipResults(
+        const QString& scopeName,
+        bool outgoing = true) const;
 
     QList<SemanticDiagnostic> getDiagnostics(const QString& fileName = QString()) const;
 

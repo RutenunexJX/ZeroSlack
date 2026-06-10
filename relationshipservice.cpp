@@ -71,13 +71,13 @@ QList<RelationshipResult> RelationshipService::findRelationships(const Relations
         return {};
 
     QList<RelationshipResult> result;
-    const QList<SemanticRelationship> relationships =
-        semanticIndex()->getRelationships(id, query.outgoing);
+    const QList<SemanticRelationshipResult> relationships =
+        semanticIndex()->getRelationshipResults(id, query.outgoing);
 
-    for (const SemanticRelationship& rel : relationships) {
-        if (!typeMatches(rel.type, query.types))
+    for (const SemanticRelationshipResult& rel : relationships) {
+        if (!typeMatches(rel.relationship.type, query.types))
             continue;
-        result.append(enrich(rel));
+        result.append(rel);
     }
     sortRelationshipResults(result, query.outgoing);
 
@@ -262,15 +262,4 @@ bool RelationshipService::typeMatches(
     const QList<SymbolRelationshipEngine::RelationType>& allowedTypes) const
 {
     return allowedTypes.isEmpty() || allowedTypes.contains(type);
-}
-
-RelationshipResult RelationshipService::enrich(const SemanticRelationship& relationship) const
-{
-    RelationshipResult result;
-    result.relationship = relationship;
-
-    result.fromSymbol = semanticIndex()->getSymbolById(relationship.fromId);
-    result.toSymbol = semanticIndex()->getSymbolById(relationship.toId);
-
-    return result;
 }
