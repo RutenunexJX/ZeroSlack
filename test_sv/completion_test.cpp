@@ -188,6 +188,55 @@ int main(int argc, char** argv) {
            "CompletionModel service scoring",
            firstScoredModelSymbol.toLocal8Bit().constData());
 
+    CompletionModel commandSelectionModel;
+    commandSelectionModel.updateCommandCompletions(
+        QStringList{QStringLiteral("save"), QStringLiteral("open")},
+        QStringLiteral("s"));
+    ++g_checks;
+    const QModelIndex commandSelectableIndex =
+        commandSelectionModel.firstSelectableIndex();
+    const bool commandSelectableOk = commandSelectableIndex.isValid()
+        && commandSelectionModel.getItem(commandSelectableIndex).text == QStringLiteral("save")
+        && commandSelectionModel.isSelectableIndex(commandSelectableIndex);
+    if (!commandSelectableOk)
+        ++g_fails;
+    printf("[%s] %-34s row=%d\n",
+           commandSelectableOk ? "PASS" : "FAIL",
+           "CompletionModel selectable command",
+           commandSelectableIndex.row());
+
+    CompletionModel noMatchSelectionModel;
+    noMatchSelectionModel.updateCommandCompletions(
+        QStringList{QStringLiteral("save"), QStringLiteral("open")},
+        QStringLiteral("zz"));
+    ++g_checks;
+    const bool noMatchSelectableOk =
+        !noMatchSelectionModel.firstSelectableIndex().isValid();
+    if (!noMatchSelectableOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           noMatchSelectableOk ? "PASS" : "FAIL",
+           "CompletionModel no-match hidden");
+
+    CompletionModel defaultSelectionModel;
+    defaultSelectionModel.updateSymbolCompletions({},
+                                                  QStringLiteral("missing"),
+                                                  sym_list::sym_logic);
+    ++g_checks;
+    const QModelIndex defaultSelectableIndex =
+        defaultSelectionModel.firstSelectableIndex();
+    const bool defaultSelectableOk = defaultSelectableIndex.isValid()
+        && defaultSelectionModel.getItem(defaultSelectableIndex)
+               .text
+               .startsWith(QStringLiteral("[DEFAULT]"))
+        && defaultSelectionModel.isSelectableIndex(defaultSelectableIndex);
+    if (!defaultSelectableOk)
+        ++g_fails;
+    printf("[%s] %-34s row=%d\n",
+           defaultSelectableOk ? "PASS" : "FAIL",
+           "CompletionModel selectable default",
+           defaultSelectableIndex.row());
+
     const CommandSymbolPresentation logicPresentation =
         CompletionService::getInstance()->commandSymbolPresentation(sym_list::sym_logic);
     expectEq("CompletionService command default",

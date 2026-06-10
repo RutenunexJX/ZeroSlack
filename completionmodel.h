@@ -44,6 +44,8 @@ public:
     void clear();
 
     CompletionItem getItem(const QModelIndex &index) const;
+    bool isSelectableIndex(const QModelIndex &index) const;
+    QModelIndex firstSelectableIndex() const;
 
     void updateSymbolCompletions(const QList<sym_list::SymbolInfo> &symbols,
                                const QString &prefix,
@@ -57,6 +59,7 @@ private:
 
     void sortCompletionsByScore();
     int calculateScore(const QString &text, const QString &prefix) const;
+    bool isSelectableItem(const CompletionItem &item) const;
 };
 
 Q_DECLARE_METATYPE(CompletionModel::CompletionItem)

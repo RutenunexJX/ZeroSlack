@@ -527,7 +527,7 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 {
     CompletionModel::CompletionItem item = completionModel->getItem(index);
 
-    if (item.text.contains("::") || item.text == "No matching commands" || item.text == "No matching symbols") {
+    if (!completionModel->isSelectableIndex(index)) {
         return;
     }
 
@@ -710,17 +710,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
             {
                 QModelIndex currentIndex = completer->popup()->currentIndex();
                 if (!currentIndex.isValid() && completionModel->rowCount() > 0) {
-                    for (int i = 0; i < completionModel->rowCount(); i++) {
-                        QModelIndex index = completionModel->index(i, 0);
-                        CompletionModel::CompletionItem item = completionModel->getItem(index);
-
-                        if (!item.text.contains("::") &&
-                            item.text != "No matching commands" &&
-                            item.text != "No matching symbols") {
-                            currentIndex = index;
-                            break;
-                        }
-                    }
+                    currentIndex = completionModel->firstSelectableIndex();
                 }
 
                 if (currentIndex.isValid()) {
@@ -760,17 +750,9 @@ void MyCodeEditor::showAutoComplete()
         QRect rect = cursorRect(cursor);
         rect.setWidth(completer->popup()->sizeHintForColumn(0) + 20);
         if (isInCustomCommandMode) {
-            for (int i = 0; i < completionModel->rowCount(); i++) {
-                QModelIndex index = completionModel->index(i, 0);
-                CompletionModel::CompletionItem item = completionModel->getItem(index);
-
-                if (!item.text.contains("::") &&
-                    item.text != "No matching commands" &&
-                    item.text != "No matching symbols") {
-                    completer->popup()->setCurrentIndex(index);
-                    break;
-                }
-            }
+            const QModelIndex selectableIndex = completionModel->firstSelectableIndex();
+            if (selectableIndex.isValid())
+                completer->popup()->setCurrentIndex(selectableIndex);
         }
 
         completer->complete(rect);

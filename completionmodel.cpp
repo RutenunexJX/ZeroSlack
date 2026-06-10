@@ -296,6 +296,22 @@ CompletionModel::CompletionItem CompletionModel::getItem(const QModelIndex &inde
     return completions.at(index.row());
 }
 
+bool CompletionModel::isSelectableIndex(const QModelIndex &index) const
+{
+    if (!index.isValid() || index.row() >= completions.size())
+        return false;
+    return isSelectableItem(completions.at(index.row()));
+}
+
+QModelIndex CompletionModel::firstSelectableIndex() const
+{
+    for (int row = 0; row < completions.size(); ++row) {
+        if (isSelectableItem(completions.at(row)))
+            return index(row, 0);
+    }
+    return QModelIndex();
+}
+
 void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> &symbols,
                                               const QString &prefix,
                                               sym_list::sym_type_e symbolType)
@@ -398,4 +414,15 @@ int CompletionModel::calculateScore(const QString &text, const QString &prefix) 
     }
 
     return score;
+}
+
+bool CompletionModel::isSelectableItem(const CompletionItem &item) const
+{
+    if (item.text.contains(QStringLiteral("::")))
+        return false;
+    if (item.text == QStringLiteral("No matching commands")
+        || item.text == QStringLiteral("No matching symbols")) {
+        return false;
+    }
+    return true;
 }
