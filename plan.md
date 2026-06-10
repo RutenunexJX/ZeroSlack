@@ -4,7 +4,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product/architecture 
 
 ## Direction
 
-Keep moving ZeroSlack toward:
+Keep moving ZeroSlack toward a model/scheduler/index/service architecture:
 
 - `ProjectModel`
 - `DocumentModel`
@@ -15,39 +15,17 @@ Keep moving ZeroSlack toward:
 - snapshot-backed UI/service reads
 - thinner `MainWindow`
 
-Tree-sitter remains the live syntax/editing layer. Slang remains the semantic fact source.
-
 ## Current Foundation
 
-Implemented and in active use:
-
-- CTest targets: `ts_doc_test`, `completion_test`, `jump_test`, `relationship_test`, `gui_smoke_test`, `large_file_perf_test`
-- ProjectModel and DocumentModel minimal boundaries
-- AnalysisScheduler, AnalysisProgressCoordinator, AnalysisCoordinator, AnalysisCommandCoordinator
-- FileCommandCoordinator, NavigationCommandCoordinator, ModeCommandCoordinator
-- SemanticRuntimeCoordinator and SemanticPanelRefreshCoordinator
-- SemanticIndex facade and SemanticIndexSnapshot storage
-- Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
-- Problems, References, Relationships, and Navigation pane coordinators
-- EditorCoordinator and TabManager support APIs for editor workflow routing
-- Real multi-file relationship fixture coverage for core relationship/navigation behavior
+- CTest targets cover Tree-sitter documents, completion, jump, relationships, GUI smoke, and large-file behavior.
+- Core ownership boundaries exist for project/document state, analysis scheduling, semantic index snapshots, query services, coordinators, completion, navigation, references, problems, and relationships.
+- `CompletionManager` is now a stateless compatibility facade; production completion scoring and relationship availability live in `CompletionService`.
 
 Still transitional:
 
 - Some live `sym_list` consumption remains behind facade/service boundaries.
 - `MainWindow` still has high-level UI composition and callback wiring to thin.
-- Completion/editor paths still have stateful legacy pieces.
 - More snapshot-backed service coverage is needed.
-
-## Latest Completed Block
-
-The latest block moved UI completion scoring off `CompletionManager`.
-
-- `CompletionModel` now uses `CompletionService` directly for command-mode symbol match scoring.
-- Stale `CompletionManager` production includes and dead manager-era scoring code were removed from `CompletionModel` / `MainWindow`.
-- `completion_test` covers `CompletionModel` service-backed scoring.
-
-It was validated with focused completion build and CTest, full build, full CTest, `git diff --check`, ASCII scan, trailing-whitespace scan, and forbidden-file guard.
 
 ## Next Architecture Blocks
 
@@ -56,7 +34,6 @@ Choose one medium-sized block:
 1. Move a related group of UI/editor/completion semantic reads or analysis policy checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`.
 2. Extract another complete `MainWindow` coordination responsibility into a focused coordinator or existing scheduler/model boundary.
 3. Thin one editor/completion workflow end-to-end without changing visible behavior.
-4. Move a related completion/editor legacy state path behind existing service or model APIs.
 
 Prioritize production-code architecture progress. Do not use pure assertion expansion as the main increment. Add tests only as focused regression protection directly tied to a production change.
 
@@ -74,10 +51,8 @@ Avoid:
 
 For code/test changes:
 
-- batch related production-code changes first
-- build affected targets when compile risk is meaningful or the block is done
-- run focused CTest after the coherent block is complete
-- run full `ctest --output-on-failure` when shared behavior or service reports are touched
+- build affected targets and run focused CTest after the coherent block is complete
+- run full Ninja and full `ctest --output-on-failure` when shared behavior, service APIs, or UI wiring are touched
 - run `git diff --check`
 - run changed/new source/doc ASCII and trailing-whitespace scans
 - run the forbidden-file guard
@@ -97,27 +72,4 @@ For docs-only cleanup:
 
 ## Documentation Policy
 
-At every handoff or block completion, update docs by replacement, not accumulation.
-
-- `readme.md`: current handoff only. Keep current state, hard rules, latest verified block, validation, architecture snapshot, next steps, and startup checklist.
-- `plan.md`: execution policy only. Keep current foundation, next block menu, validation, commit, documentation, and handoff policies.
-- `goal.md`: stable destination only. Keep product goals, target architecture, principles, remaining gaps, and definition of done.
-
-Automatic stale-content cleanup rules:
-
-- Replace the previous latest block when a new latest block exists.
-- Delete detailed older block chains after they are represented by the architecture snapshot.
-- Delete validation output that no longer describes the current diff or latest commit.
-- Delete stale next steps once they are completed, contradicted, or too broad to guide the next session.
-- Keep commit hashes only when they identify the latest local handoff state.
-- Keep docs compact enough for a new session to read before coding.
-
-## Handoff Policy
-
-At handoff, record only:
-
-- current diff/commit shape
-- latest completed work
-- latest validation
-- next best step
-- rule or workflow changes
+Update docs by replacement, not accumulation. Keep `readme.md` as current handoff, `plan.md` as execution policy, and `goal.md` as stable product/architecture goal.

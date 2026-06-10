@@ -17,15 +17,8 @@ Thin UI consumers
 - Branch: `tree_sitter_and_slang`
 - Version: `0.0.20/slang25` in `version.h`
 - Build path: Qt 6 + CMake + Ninja only
-- Latest local commit is local-only; check `git log -1 --oneline` at session start.
+- Latest local commit is local-only; check `git log -1 --oneline`.
 - Local branch is intentionally ahead of origin until the user explicitly asks to push.
-
-Expected local warning noise:
-
-- `unable to access C:\Users\14971/.config/git/ignore: Permission denied`
-- `LF will be replaced by CRLF`
-
-Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over noisy status output.
 
 ## Hard Rules
 
@@ -39,39 +32,19 @@ Prefer `git diff --name-only`, `git diff --stat`, and `git diff --check` over no
 - Keep commit messages concise and architecture-oriented.
 - Never discard user changes or use destructive git commands unless explicitly requested.
 
-## Documentation Upkeep
-
-These docs are living handoff material, not a changelog.
-
-- `readme.md` keeps only current handoff state, latest verified block, validation, and next start instructions.
-- `plan.md` keeps execution policy and the next block menu.
-- `goal.md` keeps stable product and architecture goals.
-- When a new block completes, replace the prior "latest block" text instead of appending a history chain.
-- Remove stale commit IDs, validation notes, next steps, and implementation details that no longer help the next session.
-- Keep detailed history in Git commits, not in these files.
-
 ## Latest Verified Block
 
-The latest block moved UI completion scoring off `CompletionManager`.
-
-- `CompletionModel` now uses `CompletionService` directly for command-mode symbol match scoring.
-- Stale `CompletionManager` production includes and dead manager-era scoring code were removed from `CompletionModel` / `MainWindow`.
-- Completion tests cover `CompletionModel` service-backed scoring, and production C++ no longer directly references `CompletionManager` outside the compatibility implementation itself.
+The latest architecture block moved UI completion scoring off `CompletionManager`.
+`CompletionModel` now uses `CompletionService` directly, and production C++ no longer directly references `CompletionManager` outside the compatibility implementation itself.
 
 ## Latest Validation
 
-Validation passed after the latest code/doc update:
+Latest code validation passed:
 
-- affected build: `completion_test`
-- focused CTest: `completion_test` passed
-- full default target rebuild
-- full `ctest --output-on-failure`: 6/6 passed
-- `git diff --check`
-- changed/new source/test/UI/CMake/handoff non-ASCII scan: `ASCII_SCAN_OK`
-- changed/new source/test/UI/CMake/handoff trailing whitespace scan: `TRAILING_WHITESPACE_SCAN_OK`
-- forbidden-file guard: `FORBIDDEN_GUARD_OK`
-
-In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` before CMake/CTest so MinGW child tools can find runtime DLLs. For GUI tests, also prepend `E:\QT6\6.10.2\mingw_64\bin`.
+- focused `completion_test`
+- full Ninja build
+- full CTest: 6/6 passed
+- `git diff --check`, ASCII scan, trailing-whitespace scan, forbidden-file guard
 
 ## Current Architecture Snapshot
 
@@ -90,7 +63,7 @@ In a bare PowerShell session, prepend `E:\QT6\Tools\mingw1310_64\bin` to `PATH` 
 - `CompletionService` owns module/global/command completions, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `CompletionModel` renders editor completion items and uses `CompletionService` for scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
-- Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are split out of `MainWindow`.
+- Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
 
 ## Next Best Steps
 

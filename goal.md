@@ -12,13 +12,6 @@ ZeroSlack should:
 - remain responsive on large files and multi-file workspaces
 - keep semantic behavior testable through real fixtures
 
-Product priority:
-
-1. Read the workspace.
-2. Understand the workspace.
-3. Navigate definitions and relationships.
-4. Expand editing features gradually.
-
 ## Target Architecture
 
 ```text
@@ -61,19 +54,16 @@ Tree-sitter and Slang split:
 
 ## Completed Foundation
 
-Already present at a high level:
+Already present:
 
 - ProjectModel and DocumentModel minimal boundaries
 - AnalysisScheduler and analysis/progress/command coordinators
 - File, navigation, mode, semantic runtime, semantic panel, and editor workflow coordinators
 - SemanticIndex facade and SemanticIndexSnapshot helpers
-- Definition, completion, smart/all-symbol, typed symbol, and keyword/abbreviation scoring, context-aware completion, typed symbol and `SymbolInfo` completion, scope/current-module, relationship-driven completion, relationship, hierarchy, reference, diagnostics, and search services
-- CompletionModel using CompletionService-backed scoring for editor completion presentation
-- Stateless CompletionManager compatibility facade over CompletionService
-- Problems, References, Relationships, and Navigation UI backed by coordinators/services
+- Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
+- CompletionService-backed editor completion presentation and a stateless CompletionManager compatibility facade
+- Problems, References, Relationships, and Navigation UI backed by coordinators or services
 - GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
-
-Keep detailed completion history in Git and `readme.md` handoff snapshots, not here.
 
 ## Remaining Gaps
 
@@ -82,15 +72,6 @@ Keep detailed completion history in Git and `readme.md` handoff snapshots, not h
 - Continue thinning remaining MainWindow dependency assembly and coordination policy.
 - Continue moving remaining editor/completion semantic decisions behind services and facades.
 - Continue tightening real fixture coverage when production changes need it.
-
-## Documentation Quality Goal
-
-The handoff docs should stay useful under repeated automatic updates.
-
-- `goal.md` should not become a changelog.
-- Completed-work detail belongs in commits and current handoff snapshots.
-- Replace stale specifics with current architecture summaries.
-- Delete low-reference notes when they no longer guide product or architecture decisions.
 
 ## Definition Of Done
 
@@ -103,13 +84,3 @@ The foundation is healthy when:
 - all CTest targets pass
 - real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
 - handoff docs are short enough for a new session to read without wasting context
-
-## Current Goal Step
-
-Continue with one medium-sized, coherent, verifiable architecture block:
-
-- move a related group of UI/editor/completion semantic reads or analysis policy checks behind SemanticIndex, Query Services, models, or AnalysisScheduler, or
-- extract one complete MainWindow refresh/progress/coordination boundary into a focused coordinator or existing scheduler/model boundary, or
-- thin one editor/completion workflow end-to-end without changing visible behavior.
-
-Batch related production-code changes, then validate and update the compact handoff after the block is complete.
