@@ -37,17 +37,6 @@ Thin UI consumers
 Navigation manager input wiring now lives behind `NavigationPaneCoordinator`.
 `MainWindow` asks the navigation pane coordinator to connect tab, workspace, and symbol analyzer inputs instead of wiring `NavigationManager` directly.
 
-## Latest Validation
-
-Latest code validation passed:
-
-- focused `completion_test` and `gui_smoke_test`
-- full Ninja build
-- full CTest: 6/6 passed
-- `git diff --check`, ASCII scan, trailing-whitespace scan, forbidden-file guard
-
-Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1plus.exe` can load `libwinpthread-1.dll`.
-
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
@@ -72,14 +61,6 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
 - `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
-
-## Next Best Steps
-
-Pick one medium-sized, coherent, verifiable architecture block:
-
-- Move a related group of UI/editor/completion semantic reads or analysis policy checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`.
-- Extract another complete `MainWindow` coordination responsibility into a focused coordinator or existing scheduler/model boundary.
-- Thin one editor/completion workflow end-to-end without changing visible behavior.
 
 ## Session Start Checklist
 

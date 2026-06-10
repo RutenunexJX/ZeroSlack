@@ -52,19 +52,6 @@ Tree-sitter and Slang split:
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
 
-## Completed Foundation
-
-Already present:
-
-- ProjectModel and DocumentModel minimal boundaries
-- AnalysisScheduler and analysis/progress/command coordinators
-- File, navigation, mode, semantic runtime, semantic panel, and editor workflow coordinators
-- SemanticIndex facade and SemanticIndexSnapshot helpers
-- Query services for definition, completion, relationship, hierarchy, reference, diagnostics, and search
-- CompletionService-backed editor completion presentation and a stateless CompletionManager compatibility facade
-- Problems, References, Relationships, and Navigation UI backed by coordinators or services
-- GUI smoke, relationship fixture, completion, jump, Tree-sitter document, and large-file perf tests
-
 ## Remaining Gaps
 
 - Continue reducing live `sym_list` consumers.

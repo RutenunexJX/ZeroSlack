@@ -15,18 +15,6 @@ Keep moving ZeroSlack toward a model/scheduler/index/service architecture:
 - snapshot-backed UI/service reads
 - thinner `MainWindow`
 
-## Current Foundation
-
-- CTest targets cover Tree-sitter documents, completion, jump, relationships, GUI smoke, and large-file behavior.
-- Core ownership boundaries exist for project/document state, analysis scheduling, semantic index snapshots, query services, coordinators, completion, navigation, references, problems, and relationships.
-- `CompletionManager` is now a stateless compatibility facade; production completion scoring and relationship availability live in `CompletionService`.
-
-Still transitional:
-
-- Some live `sym_list` consumption remains behind facade/service boundaries.
-- `MainWindow` still has high-level UI composition and callback wiring to thin.
-- More snapshot-backed service coverage is needed.
-
 ## Next Architecture Blocks
 
 Choose one medium-sized block:
