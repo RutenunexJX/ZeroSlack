@@ -60,6 +60,16 @@ QStringList AlternateCommandService::matchingCommands(const QString& filter) con
     return matches;
 }
 
+AlternateCommandCompletionState AlternateCommandService::completionState(
+    const QString& input) const
+{
+    AlternateCommandCompletionState state;
+    state.normalizedInput = normalizeCommandInput(input);
+    state.matches = matchingCommands(state.normalizedInput);
+    state.showCompletions = !state.matches.isEmpty();
+    return state;
+}
+
 bool AlternateCommandService::isKnownCommand(const QString& command) const
 {
     const QString normalizedCommand = normalizeCommandInput(command);

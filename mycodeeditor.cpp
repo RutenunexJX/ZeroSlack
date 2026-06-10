@@ -898,24 +898,22 @@ void MyCodeEditor::processAlternateModeInput(const QString &input)
 {
     if (!isInAlternateMode) return;
 
-    AlternateCommandService* alternateCommandService =
-        AlternateCommandService::getInstance();
-    alternateCommandBuffer = alternateCommandService->normalizeCommandInput(input);
-
-    showAlternateModeCommands(alternateCommandBuffer);
+    showAlternateModeCommands(input);
 }
 
 void MyCodeEditor::showAlternateModeCommands(const QString &filter)
 {
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();
+    const AlternateCommandCompletionState completionState =
+        alternateCommandService->completionState(filter);
+    alternateCommandBuffer = completionState.normalizedInput;
     completionModel->updateCommandCompletions(
-        alternateCommandService->matchingCommands(filter),
-        alternateCommandService->normalizeCommandInput(filter));
+        completionState.matches,
+        completionState.normalizedInput);
 
-    if (completionModel->rowCount() > 0) {
+    if (completionState.showCompletions) {
         showAutoComplete();
-    } else {
     }
 }
 

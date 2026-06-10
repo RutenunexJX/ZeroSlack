@@ -227,6 +227,27 @@ int main(int argc, char** argv) {
     expectList("AlternateCommand filter",
                alternateCommandService->matchingCommands(QStringLiteral("s")),
                {"save", "save_as", "select_all"});
+    const AlternateCommandCompletionState alternateCompletionState =
+        alternateCommandService->completionState(QStringLiteral(" S "));
+    expectEq("AlternateCommand state input",
+             alternateCompletionState.normalizedInput,
+             QStringLiteral("s"));
+    expectList("AlternateCommand state matches",
+               alternateCompletionState.matches,
+               {"save", "save_as", "select_all"});
+    expectBool("AlternateCommand state visible",
+               alternateCompletionState.showCompletions,
+               true);
+    const AlternateCommandCompletionState alternateEmptyState =
+        alternateCommandService->completionState(QString());
+    expectBool("AlternateCommand empty visible",
+               alternateEmptyState.showCompletions,
+               true);
+    const AlternateCommandCompletionState alternateNoMatchState =
+        alternateCommandService->completionState(QStringLiteral("zz"));
+    expectBool("AlternateCommand no-match hidden",
+               alternateNoMatchState.showCompletions,
+               false);
     ++g_checks;
     const bool alternateKnownOk =
         alternateCommandService->isKnownCommand(QStringLiteral(" SELECT_ALL "));

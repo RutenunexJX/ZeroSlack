@@ -27,6 +27,12 @@ enum class AlternateCommandAction {
     Unindent
 };
 
+struct AlternateCommandCompletionState {
+    QString normalizedInput;
+    QStringList matches;
+    bool showCompletions = false;
+};
+
 class AlternateCommandService
 {
 public:
@@ -38,6 +44,8 @@ public:
     QString normalizeCommandInput(const QString& input) const;
     QStringList commands() const;
     QStringList matchingCommands(const QString& filter) const;
+    AlternateCommandCompletionState completionState(
+        const QString& input) const;
     bool isKnownCommand(const QString& command) const;
     AlternateCommandAction commandAction(const QString& command) const;
 
