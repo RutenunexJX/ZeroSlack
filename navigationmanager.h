@@ -10,6 +10,7 @@
 #include "syminfo.h"
 
 class NavigationWidget;
+class NavigationService;
 class TabManager;
 class WorkspaceManager;
 class SymbolAnalyzer;
@@ -30,6 +31,7 @@ public:
 
     // Core navigation operations
     void setNavigationWidget(NavigationWidget* widget);
+    void setNavigationService(NavigationService* service);
     void setActiveView(NavigationView view);
     void setSearchFilter(const QString &filter);
     NavigationView getActiveView() const { return currentView; }
@@ -78,6 +80,7 @@ private slots:
 
 private:
     NavigationWidget* navigationWidget = nullptr;
+    NavigationService* navigationService = nullptr;
     NavigationView currentView = FileHierarchyView;
 
     TabManager* connectedTabManager = nullptr;

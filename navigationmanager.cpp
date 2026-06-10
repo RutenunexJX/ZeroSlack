@@ -3,13 +3,14 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "symbolanalyzer.h"
-#include "definitionservice.h"
 #include "navigationservice.h"
 #include <utility>
 
 NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
 {
+    navigationService = NavigationService::getInstance();
+
     // Reserve common cache sizes for the navigation views.
     cachedFileList.reserve(100);
     moduleHierarchyCache.reserve(50);
@@ -29,6 +30,14 @@ void NavigationManager::setNavigationWidget(NavigationWidget* widget)
         setupConnections();
         refreshCurrentView();
     }
+}
+
+void NavigationManager::setNavigationService(NavigationService* service)
+{
+    navigationService = service ? service : NavigationService::getInstance();
+    moduleHierarchyCache.clear();
+    symbolOutlineCache.clear();
+    refreshCurrentView();
 }
 
 void NavigationManager::connectToTabManager(TabManager* tabManager)
@@ -211,12 +220,12 @@ void NavigationManager::navigateToSymbol(const sym_list::SymbolInfo& symbol)
 void NavigationManager::navigateToModule(const QString& moduleName)
 {
     if (moduleName.isEmpty()) return;
+    if (!navigationService) return;
 
-    DefinitionQuery query;
-    query.symbolName = moduleName;
-    const DefinitionResult result = DefinitionService::getInstance()->resolveDefinition(query);
-    if (result.found && result.symbol.symbolType == sym_list::sym_module)
-        navigateToSymbol(result.symbol);
+    const NavigationModuleTarget target =
+        navigationService->resolveModuleTarget(moduleName);
+    if (target.found)
+        navigateToSymbol(target.symbol);
 }
 
 void NavigationManager::setSearchFilter(const QString& filter)
@@ -370,17 +379,23 @@ void NavigationManager::updateFileHierarchyData()
 
 void NavigationManager::updateModuleHierarchyData()
 {
+    if (!navigationService)
+        return;
+
     NavigationModuleQuery query;
     query.filter = searchFilter;
-    moduleHierarchyCache = NavigationService::getInstance()->findModuleHierarchy(query);
+    moduleHierarchyCache = navigationService->findModuleHierarchy(query);
 }
 
 void NavigationManager::updateSymbolHierarchyData()
 {
+    if (!navigationService)
+        return;
+
     NavigationSymbolOutlineQuery query;
     query.fileName = currentFileName;
     query.filter = searchFilter;
-    symbolOutlineCache = NavigationService::getInstance()->findSymbolOutline(query);
+    symbolOutlineCache = navigationService->findSymbolOutline(query);
 }
 
 bool NavigationManager::shouldRefreshCache() const

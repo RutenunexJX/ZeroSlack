@@ -15,6 +15,7 @@ NavigationService* NavigationService::getInstance()
 
 NavigationService::NavigationService(SemanticIndex* semanticIndex)
     : index(semanticIndex ? semanticIndex : SemanticIndex::getInstance()),
+      definitionNavigationService(index),
       searchService(index),
       hierarchyService(index)
 {
@@ -25,6 +26,7 @@ NavigationService::~NavigationService() = default;
 void NavigationService::setSemanticIndex(SemanticIndex* semanticIndex)
 {
     index = semanticIndex ? semanticIndex : SemanticIndex::getInstance();
+    definitionNavigationService.setSemanticIndex(index);
     searchService.setSemanticIndex(index);
     hierarchyService.setSemanticIndex(index);
 }
@@ -91,6 +93,25 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             result.append(group);
         }
     }
+    return result;
+}
+
+NavigationModuleTarget NavigationService::resolveModuleTarget(
+    const QString& moduleName) const
+{
+    NavigationModuleTarget result;
+    if (moduleName.isEmpty())
+        return result;
+
+    DefinitionNavigationQuery query;
+    query.symbolName = moduleName;
+    const DefinitionNavigationTarget target =
+        definitionNavigationService.resolveTarget(query);
+    if (!target.found || target.symbolType != sym_list::sym_module)
+        return result;
+
+    result.found = true;
+    result.symbol = target.symbol;
     return result;
 }
 

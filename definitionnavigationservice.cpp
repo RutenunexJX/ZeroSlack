@@ -93,6 +93,7 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
 
     target.found = true;
     target.localFile = result.localFile;
+    target.symbol = result.symbol;
     target.symbolName = result.symbol.symbolName;
     target.fileName = result.symbol.fileName;
     target.line = result.symbol.startLine;

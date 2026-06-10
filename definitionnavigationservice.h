@@ -28,6 +28,7 @@ struct DefinitionNavigationContext {
 struct DefinitionNavigationTarget {
     bool found = false;
     bool localFile = false;
+    sym_list::SymbolInfo symbol;
     QString symbolName;
     QString fileName;
     int line = 0;

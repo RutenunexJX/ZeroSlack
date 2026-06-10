@@ -1,6 +1,7 @@
 #ifndef NAVIGATIONSERVICE_H
 #define NAVIGATIONSERVICE_H
 
+#include "definitionnavigationservice.h"
 #include "hierarchyservice.h"
 #include "modulehierarchymodel.h"
 #include "searchservice.h"
@@ -19,6 +20,11 @@ struct NavigationSymbolOutlineQuery {
     QString filter;
 };
 
+struct NavigationModuleTarget {
+    bool found = false;
+    sym_list::SymbolInfo symbol;
+};
+
 class NavigationService
 {
 public:
@@ -33,9 +39,11 @@ public:
         const NavigationModuleQuery& query = {}) const;
     QList<SymbolOutlineGroup> findSymbolOutline(
         const NavigationSymbolOutlineQuery& query) const;
+    NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;
 
 private:
     SemanticIndex* index = nullptr;
+    DefinitionNavigationService definitionNavigationService;
     SearchService searchService;
     HierarchyService hierarchyService;
     static std::unique_ptr<NavigationService> instance;

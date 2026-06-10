@@ -6,6 +6,7 @@
 #include "semanticindex.h"
 #include "diagnosticservice.h"
 #include "hierarchyservice.h"
+#include "navigationservice.h"
 #include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
@@ -672,6 +673,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("snapshot search service empty text filters file module",
                snapshotEmptyFileFoundStage && !snapshotEmptyFileFoundTop, true);
+    NavigationService snapshotNavigationService(&snapshotIndex);
+    const NavigationModuleTarget snapshotNavigationTarget =
+        snapshotNavigationService.resolveModuleTarget(QStringLiteral("rel_stage"));
+    expectBool("snapshot navigation service resolves module target",
+               snapshotNavigationTarget.found
+                   && snapshotNavigationTarget.symbol.symbolId == stageId
+                   && snapshotNavigationTarget.symbol.fileName == stagePath,
+               true);
     expectBool("semantic snapshot returns cached file content",
                snapshotIndex.getCachedFileContent(topPath) == contents.value(topPath), true);
     expectBool("semantic snapshot returns scope symbols",

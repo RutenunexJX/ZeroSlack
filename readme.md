@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Relationship endpoint enrichment now lives behind `SemanticIndex`.
-`RelationshipService` remains the feature-facing facade for relationship queries, filtering, sorting, and reports while the index owns snapshot-backed relationship edge reads with resolved endpoint symbols.
+Navigation module target resolution now lives behind `NavigationService`.
+`NavigationManager` depends on the navigation facade for module hierarchy, symbol outline, and module double-click targets instead of reaching into definition services directly.
 
 ## Current Architecture Snapshot
 
@@ -51,6 +51,7 @@ Relationship endpoint enrichment now lives behind `SemanticIndex`.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
+- `NavigationManager` owns navigation view cache/refresh state and delegates semantic navigation reads to `NavigationService`.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticDockCoordinator` owns Problems, References, and Relationships dock creation, placement, and semantic refresh coordinator assembly.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
@@ -64,7 +65,7 @@ Relationship endpoint enrichment now lives behind `SemanticIndex`.
 - `SearchService` owns feature-facing symbol search queries over `SemanticIndex`.
 - `DefinitionService` owns feature-facing definition queries and editor/member context handling over `SemanticIndex`.
 - `RelationshipService` owns feature-facing relationship queries, filtering, sorting, and reports over `SemanticIndex`.
-- `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
+- `NavigationService` owns module hierarchy, symbol outline, and module target semantic assembly for the navigation pane.
 - `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
 
