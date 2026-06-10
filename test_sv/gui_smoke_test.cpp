@@ -3,6 +3,7 @@
 // the GUI workflow is alive, while detailed semantic behavior stays in the focused
 // headless tests.
 #include <QApplication>
+#include <QAction>
 #include <QCompleter>
 #include <QComboBox>
 #include <QDir>
@@ -716,6 +717,17 @@ int main(int argc, char** argv)
     window.resize(1100, 760);
     window.show();
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
+    QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
+    const int editorCountBeforeNewAction = window.tabManager->editorCount();
+    if (newFileAction) {
+        newFileAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("file action routes through coordinator",
+               newFileAction
+                   && window.tabManager->editorCount()
+                       == editorCountBeforeNewAction + 1,
+               true);
 
     const bool workspaceOpened = window.workspaceManager->openWorkspace(workspacePath);
     expectBool("open workspace", workspaceOpened, true);

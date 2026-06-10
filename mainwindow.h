@@ -50,18 +50,6 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
 
-private slots:
-    void on_new_file_triggered();
-    void on_open_file_triggered();
-    void on_save_file_triggered();
-    void on_save_as_triggered();
-    void on_copy_triggered();
-    void on_paste_triggered();
-    void on_cut_triggered();
-    void on_undo_triggered();
-    void on_redo_triggered();
-    void on_open_direction_as_workspace_triggered();
-
 private:
     Ui::MainWindow *ui;
 

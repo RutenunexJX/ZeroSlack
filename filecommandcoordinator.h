@@ -3,6 +3,7 @@
 
 #include <QObject>
 
+class QAction;
 class QCloseEvent;
 class QWidget;
 class TabManager;
@@ -28,6 +29,16 @@ public:
     void redo();
     void openDirectoryAsWorkspace();
     void handleCloseEvent(QCloseEvent* event, QWidget* dialogParent);
+    void connectActions(QAction* newFileAction,
+                        QAction* openFileAction,
+                        QAction* saveFileAction,
+                        QAction* saveAsAction,
+                        QAction* copyAction,
+                        QAction* pasteAction,
+                        QAction* cutAction,
+                        QAction* undoAction,
+                        QAction* redoAction,
+                        QAction* openWorkspaceAction);
 
 private:
     TabManager* tabManager = nullptr;

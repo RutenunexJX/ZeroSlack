@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor completion activation state now lives behind `CompletionService`.
-`MyCodeEditor` consumes service-owned activation actions for word replacement, command-mode line replacement, and alternate command execution.
+File/edit/workspace action routing now lives behind `FileCommandCoordinator`.
+`MainWindow` wires UI actions into the coordinator instead of keeping file command forwarding slots.
 
 ## Latest Validation
 
@@ -57,7 +57,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, relationship analysis requests, and semantic panel refresh requests.
-- `FileCommandCoordinator` owns file/edit/workspace commands and close-event unsaved-change confirmation.
+- `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.

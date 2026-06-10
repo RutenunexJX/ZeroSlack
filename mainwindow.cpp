@@ -165,6 +165,17 @@ void MainWindow::setupFileCommandCoordinator()
 {
     fileCommandCoordinator = std::make_unique<FileCommandCoordinator>(
         tabManager.get(), workspaceManager.get(), this);
+    fileCommandCoordinator->connectActions(
+        ui->new_file,
+        ui->open_file,
+        ui->save_file,
+        ui->save_as,
+        ui->copy,
+        ui->paste,
+        ui->cut,
+        ui->undo,
+        ui->redo,
+        ui->open_direction_as_workspace);
 }
 
 void MainWindow::setupModeCommandCoordinator()
@@ -185,66 +196,6 @@ void MainWindow::setupEditorCoordinator()
         analysisCommandCoordinator.get(),
         semanticPanelRefresh.get());
     editorCoordinator->connectSignals();
-}
-
-void MainWindow::on_new_file_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->newFile();
-}
-
-void MainWindow::on_open_file_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->openFile();
-}
-
-void MainWindow::on_save_file_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->saveFile();
-}
-
-void MainWindow::on_save_as_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->saveFileAs();
-}
-
-void MainWindow::on_copy_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->copy();
-}
-
-void MainWindow::on_paste_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->paste();
-}
-
-void MainWindow::on_cut_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->cut();
-}
-
-void MainWindow::on_undo_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->undo();
-}
-
-void MainWindow::on_redo_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->redo();
-}
-
-void MainWindow::on_open_direction_as_workspace_triggered()
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->openDirectoryAsWorkspace();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
