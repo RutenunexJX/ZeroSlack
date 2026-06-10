@@ -390,6 +390,66 @@ int main(int argc, char** argv) {
            commandInputRejectOk ? "PASS" : "FAIL",
            "CompletionService command input reject");
 
+    CommandModeCompletionQuery commandCompletionQuery;
+    commandCompletionQuery.lineUpToCursor = QStringLiteral("l en");
+    commandCompletionQuery.fileName = path;
+    commandCompletionQuery.moduleName = QStringLiteral("top");
+    commandCompletionQuery.documentText = content;
+    const CommandModeCompletionState commandCompletionState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            commandCompletionQuery);
+    expectList("CompletionService command state",
+               symbolNames(commandCompletionState.symbols),
+               {"enable"});
+    ++g_checks;
+    const bool commandCompletionStateOk = commandCompletionState.matched
+        && !commandCompletionState.exitRequested
+        && !commandCompletionState.hidePopup
+        && commandCompletionState.showCompletions
+        && commandCompletionState.completionPrefix == QStringLiteral("en")
+        && commandCompletionState.command.symbolType == sym_list::sym_logic;
+    if (!commandCompletionStateOk)
+        ++g_fails;
+    printf("[%s] %-34s prefix=\"%s\"\n",
+           commandCompletionStateOk ? "PASS" : "FAIL",
+           "CompletionService command state flags",
+           commandCompletionState.completionPrefix.toLocal8Bit().constData());
+
+    CommandModeCompletionQuery commandCompletionExitQuery;
+    commandCompletionExitQuery.lineUpToCursor = QStringLiteral("l  ");
+    const CommandModeCompletionState commandCompletionExitState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            commandCompletionExitQuery);
+    ++g_checks;
+    const bool commandCompletionExitOk = commandCompletionExitState.matched
+        && commandCompletionExitState.exitRequested
+        && !commandCompletionExitState.showCompletions
+        && commandCompletionExitState.symbols.isEmpty();
+    if (!commandCompletionExitOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           commandCompletionExitOk ? "PASS" : "FAIL",
+           "CompletionService command state exit");
+
+    CommandModeCompletionQuery commandCompletionHideQuery;
+    commandCompletionHideQuery.lineUpToCursor = QStringLiteral("sp pix");
+    commandCompletionHideQuery.fileName = path;
+    commandCompletionHideQuery.documentText = content;
+    const CommandModeCompletionState commandCompletionHideState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            commandCompletionHideQuery);
+    ++g_checks;
+    const bool commandCompletionHideOk = commandCompletionHideState.matched
+        && commandCompletionHideState.hidePopup
+        && !commandCompletionHideState.showCompletions
+        && commandCompletionHideState.command.symbolType
+            == sym_list::sym_packed_struct_var;
+    if (!commandCompletionHideOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           commandCompletionHideOk ? "PASS" : "FAIL",
+           "CompletionService command state hide");
+
     CompletionTriggerQuery commandTriggerQuery;
     commandTriggerQuery.lineUpToCursor = QStringLiteral("l ena ");
     commandTriggerQuery.commandModeActive = true;

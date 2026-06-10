@@ -714,11 +714,17 @@ void MyCodeEditor::onAutoCompleteTimer()
         lastLineNumber = currentLineNumber;
     }
 
-    const CommandModeInputState commandState =
-        CompletionService::getInstance()->commandModeInputState(lineUpToCursor);
+    CompletionService* completionService = CompletionService::getInstance();
+    CommandModeCompletionQuery commandQuery;
+    commandQuery.lineUpToCursor = lineUpToCursor;
+    commandQuery.fileName = getFileName();
+    commandQuery.moduleName = currentModuleNameAt(cursor.position());
+    commandQuery.documentText = document()->toPlainText();
+
+    const CommandModeCompletionState commandState =
+        completionService->commandModeCompletionState(commandQuery);
     if (commandState.matched) {
         isInCustomCommandMode = true;
-        currentCommandType = commandState.command.symbolType;
         if (commandModeExitedByDoubleSpace) {
             return;
         }
@@ -734,33 +740,20 @@ void MyCodeEditor::onAutoCompleteTimer()
         }
 
         highlightCommandText();
-        QString commandInput = commandState.input.trimmed();
 
-        int cursorPosition = cursor.position();
-        CommandCompletionQuery query;
-        query.prefix = commandInput;
-        query.fileName = getFileName();
-        query.moduleName = currentModuleNameAt(cursorPosition);
-        query.documentText = document()->toPlainText();
-        query.symbolType = commandState.command.symbolType;
-
-        const QList<sym_list::SymbolInfo> filteredSymbols =
-            CompletionService::getInstance()->findCommandCompletionSymbols(query);
-        if (filteredSymbols.isEmpty()
-            && (commandState.command.symbolType == sym_list::sym_packed_struct_var
-                || commandState.command.symbolType == sym_list::sym_unpacked_struct_var
-                || commandState.command.symbolType == sym_list::sym_packed_struct
-                || commandState.command.symbolType == sym_list::sym_unpacked_struct)
-            && query.moduleName.isEmpty()) {
+        if (commandState.hidePopup) {
             if (completer->popup()->isVisible())
                 completer->popup()->hide();
             return;
         }
 
-        completionModel->updateSymbolCompletions(filteredSymbols,
-                                                 commandInput,
-                                                 commandState.command.symbolType);
-        showAutoComplete();
+        if (commandState.showCompletions) {
+            completionModel->updateSymbolCompletions(
+                commandState.symbols,
+                commandState.completionPrefix,
+                commandState.command.symbolType);
+            showAutoComplete();
+        }
         return;
     }
 
@@ -774,7 +767,6 @@ void MyCodeEditor::onAutoCompleteTimer()
         return;
     }
 
-    CompletionService* completionService = CompletionService::getInstance();
     EditorCompletionQuery query;
     query.lineUpToCursor = lineUpToCursor;
     query.wordPrefix = getWordUnderCursor();
@@ -794,18 +786,6 @@ void MyCodeEditor::onAutoCompleteTimer()
             currentBlock.position() + completionState.replacementStartColumn;
         showAutoComplete();
     }
-}
-
-
-QStringList MyCodeEditor::getCommandModeInternalVariables(const QString &prefix)
-{
-    QTextCursor cursor = textCursor();
-    CommandCompletionQuery query;
-    query.prefix = prefix;
-    query.fileName = getFileName();
-    query.moduleName = currentModuleNameAt(cursor.position());
-    query.symbolType = currentCommandType;
-    return CompletionService::getInstance()->findCommandCompletions(query);
 }
 
 void MyCodeEditor::highlightCommandText()
@@ -887,12 +867,10 @@ bool MyCodeEditor::checkForCustomCommand(const QString &lineUpToCursor)
         CompletionService::getInstance()->commandModeInputState(lineUpToCursor);
     if (state.matched) {
         isInCustomCommandMode = true;
-        currentCommandType = state.command.symbolType;
         return true;
     }
 
     isInCustomCommandMode = false;
-    currentCommandType = sym_list::sym_user;
     return false;
 }
 

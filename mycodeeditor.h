@@ -113,7 +113,6 @@ private:
     QString textUnderCursor() const;
 
     bool isInCustomCommandMode = false;
-    sym_list::sym_type_e currentCommandType = sym_list::sym_user;
 
     bool checkForCustomCommand(const QString &text);
 
@@ -159,8 +158,6 @@ private:
     bool openIncludeFile(const QString& includePath);
 
     void showSymbolTooltip(const QString& symbolName, const QPoint& position);
-
-    QStringList getCommandModeInternalVariables(const QString &prefix);
 
     bool commandModeExitedByDoubleSpace = false;
 signals:

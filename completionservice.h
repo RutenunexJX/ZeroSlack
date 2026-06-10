@@ -98,6 +98,25 @@ struct CommandModeInputState {
     CommandModeCommand command;
 };
 
+struct CommandModeCompletionQuery {
+    QString lineUpToCursor;
+    QString fileName;
+    QString moduleName;
+    QString documentText;
+};
+
+struct CommandModeCompletionState {
+    bool matched = false;
+    bool exitRequested = false;
+    bool hidePopup = false;
+    bool showCompletions = false;
+    int prefixPosition = -1;
+    QString input;
+    QString completionPrefix;
+    CommandModeCommand command;
+    QList<sym_list::SymbolInfo> symbols;
+};
+
 class CompletionService
 {
 public:
@@ -140,6 +159,8 @@ public:
     CommandModeMatch matchCommandMode(const QString& lineUpToCursor) const;
     CommandModeInputState commandModeInputState(
         const QString& lineUpToCursor) const;
+    CommandModeCompletionState commandModeCompletionState(
+        const CommandModeCompletionQuery& query) const;
     EditorCompletionState editorCompletionState(
         const EditorCompletionQuery& query) const;
     bool shouldContinueCompletion(const CompletionTriggerQuery& query) const;
