@@ -34,15 +34,15 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Relationship-driven completion reads now live behind `SemanticIndex`.
-`CompletionService` remains the feature-facing scoring, policy, and presentation layer while the index owns relationship-driven completion candidates, enum value completions, enum-variable type lookup, module-port completions, all-symbol names, typed symbol candidates, global symbol-info candidates, and module/global/command completion candidate filtering, dedupe, sorting, and snapshot-backed reads.
+Definition candidate resolution now lives behind `SemanticIndex`.
+`DefinitionService` remains the feature-facing facade for editor/member context handling while the index owns local/global definition candidate selection, scope filtering, type priority, and snapshot-backed definition reads.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
-- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
+- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
@@ -62,6 +62,7 @@ Relationship-driven completion reads now live behind `SemanticIndex`.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `SearchService` owns feature-facing symbol search queries over `SemanticIndex`.
+- `DefinitionService` owns feature-facing definition queries and editor/member context handling over `SemanticIndex`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.
 - `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.

@@ -122,6 +122,92 @@ bool symbolSearchTypeMatches(sym_list::sym_type_e type,
     return types.isEmpty() || types.contains(type);
 }
 
+bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
+                                     const QString& searchWord)
+{
+    if (symbol.symbolName != searchWord)
+        return false;
+
+    switch (symbol.symbolType) {
+    case sym_list::sym_module:
+    case sym_list::sym_interface:
+    case sym_list::sym_package:
+    case sym_list::sym_task:
+    case sym_list::sym_function:
+    case sym_list::sym_port_input:
+    case sym_list::sym_port_output:
+    case sym_list::sym_port_inout:
+    case sym_list::sym_port_ref:
+    case sym_list::sym_port_interface:
+    case sym_list::sym_port_interface_modport:
+    case sym_list::sym_reg:
+    case sym_list::sym_wire:
+    case sym_list::sym_logic:
+    case sym_list::sym_parameter:
+    case sym_list::sym_localparam:
+    case sym_list::sym_packed_struct:
+    case sym_list::sym_unpacked_struct:
+    case sym_list::sym_packed_struct_var:
+    case sym_list::sym_unpacked_struct_var:
+    case sym_list::sym_struct_member:
+    case sym_list::sym_typedef:
+    case sym_list::sym_enum_var:
+    case sym_list::sym_enum_value:
+        return true;
+    default:
+        return false;
+    }
+}
+
+int semanticDefinitionTypePriority(sym_list::sym_type_e type)
+{
+    switch (type) {
+    case sym_list::sym_module: return 0;
+    case sym_list::sym_interface: return 1;
+    case sym_list::sym_package: return 2;
+    case sym_list::sym_port_input:
+    case sym_list::sym_port_output:
+    case sym_list::sym_port_inout:
+    case sym_list::sym_port_ref:
+    case sym_list::sym_port_interface:
+    case sym_list::sym_port_interface_modport: return 3;
+    case sym_list::sym_task:
+    case sym_list::sym_function: return 4;
+    case sym_list::sym_reg:
+    case sym_list::sym_wire:
+    case sym_list::sym_logic:
+    case sym_list::sym_packed_struct_var:
+    case sym_list::sym_unpacked_struct_var:
+    case sym_list::sym_enum_var: return 5;
+    case sym_list::sym_parameter:
+    case sym_list::sym_localparam:
+    case sym_list::sym_packed_struct:
+    case sym_list::sym_unpacked_struct:
+    case sym_list::sym_typedef: return 6;
+    case sym_list::sym_struct_member:
+    case sym_list::sym_enum_value: return 7;
+    default: return 10;
+    }
+}
+
+bool semanticDefinitionInScope(const sym_list::SymbolInfo& symbol,
+                               const SemanticDefinitionQuery& query)
+{
+    if (query.moduleName.isEmpty())
+        return true;
+    return symbol.moduleScope == query.moduleName;
+}
+
+bool semanticDefinitionSkipForStructMemberType(
+    const sym_list::SymbolInfo& symbol,
+    const SemanticDefinitionQuery& query)
+{
+    if (query.structTypeNameForMember.isEmpty())
+        return false;
+    return symbol.symbolType == sym_list::sym_struct_member
+        && symbol.moduleScope != query.structTypeNameForMember;
+}
+
 int symbolSearchMatchScore(const QString& symbolName,
                            const SemanticSymbolSearchQuery& query)
 {
@@ -813,6 +899,41 @@ sym_list::SymbolInfo SemanticIndex::getSymbolById(int symbolId) const
     return missing;
 }
 
+SemanticDefinitionResult SemanticIndex::resolveDefinition(
+    const SemanticDefinitionQuery& query) const
+{
+    SemanticDefinitionResult empty;
+    if (query.symbolName.isEmpty())
+        return empty;
+
+    SemanticDefinitionResult local = bestDefinitionFromCandidates(
+        getSymbols(query.fileName),
+        query,
+        true);
+    if (local.found)
+        return local;
+
+    QList<sym_list::SymbolInfo> globalCandidates = findDefinitions(query.symbolName);
+    const QString queryFile = normalizedFileName(query.fileName);
+    globalCandidates.erase(
+        std::remove_if(globalCandidates.begin(), globalCandidates.end(),
+                       [&queryFile](const sym_list::SymbolInfo& symbol) {
+                           return normalizedFileName(symbol.fileName) == queryFile;
+                       }),
+        globalCandidates.end());
+    return bestDefinitionFromCandidates(globalCandidates, query, false);
+}
+
+QList<sym_list::SymbolInfo> SemanticIndex::findDefinitionSymbols(
+    const SemanticDefinitionQuery& query) const
+{
+    QList<sym_list::SymbolInfo> result;
+    const SemanticDefinitionResult resolved = resolveDefinition(query);
+    if (resolved.found)
+        result.append(resolved.symbol);
+    return result;
+}
+
 int SemanticIndex::findSymbolId(const QString& name,
                                 const SemanticQueryContext& context) const
 {
@@ -1393,6 +1514,40 @@ QList<sym_list::SymbolInfo> SemanticIndex::sortedDefinitions(
         return a.symbolId < b.symbolId;
     });
     return sorted;
+}
+
+SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
+    const QList<sym_list::SymbolInfo>& candidates,
+    const SemanticDefinitionQuery& query,
+    bool localFile) const
+{
+    SemanticDefinitionResult best;
+    int bestPriority = 999;
+
+    for (const sym_list::SymbolInfo& symbol : candidates) {
+        if (!semanticDefinitionSymbolMatches(symbol, query.symbolName))
+            continue;
+        if (semanticDefinitionSkipForStructMemberType(symbol, query))
+            continue;
+        if (symbol.symbolType != sym_list::sym_struct_member
+            && symbol.symbolType != sym_list::sym_enum_value
+            && !semanticDefinitionInScope(symbol, query)) {
+            continue;
+        }
+
+        int priority = semanticDefinitionTypePriority(symbol.symbolType);
+        if (!query.moduleName.isEmpty() && symbol.moduleScope == query.moduleName)
+            priority -= 100;
+
+        if (!best.found || priority < bestPriority) {
+            best.found = true;
+            best.localFile = localFile;
+            best.symbol = symbol;
+            bestPriority = priority;
+        }
+    }
+
+    return best;
 }
 
 QList<SymbolRelationshipEngine::RelationType> SemanticIndex::relationshipTypes() const

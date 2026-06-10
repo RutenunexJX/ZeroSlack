@@ -56,6 +56,19 @@ struct SemanticSymbolSearchResult {
     int score = 0;
 };
 
+struct SemanticDefinitionQuery {
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+    QString structTypeNameForMember;
+};
+
+struct SemanticDefinitionResult {
+    bool found = false;
+    bool localFile = false;
+    sym_list::SymbolInfo symbol;
+};
+
 // Thin facade over the current sym_list-backed semantic store.
 //
 // This is the migration boundary for new code: the first implementation delegates to sym_list
@@ -134,6 +147,10 @@ public:
         SymbolRelationshipEngine::RelationType type,
         const QString& prefix = QString()) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
+    SemanticDefinitionResult resolveDefinition(
+        const SemanticDefinitionQuery& query) const;
+    QList<sym_list::SymbolInfo> findDefinitionSymbols(
+        const SemanticDefinitionQuery& query) const;
     int findSymbolId(const QString& name,
                      const SemanticQueryContext& context = {}) const;
     QString getCachedFileContent(const QString& fileName) const;
@@ -184,6 +201,10 @@ private:
 
     QList<sym_list::SymbolInfo> sortedDefinitions(const QList<sym_list::SymbolInfo>& symbols,
                                                   const SemanticQueryContext& context) const;
+    SemanticDefinitionResult bestDefinitionFromCandidates(
+        const QList<sym_list::SymbolInfo>& candidates,
+        const SemanticDefinitionQuery& query,
+        bool localFile) const;
     QList<SymbolRelationshipEngine::RelationType> relationshipTypes() const;
 };
 

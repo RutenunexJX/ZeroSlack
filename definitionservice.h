@@ -41,14 +41,7 @@ private:
     static std::unique_ptr<DefinitionService> instance;
 
     SemanticIndex* semanticIndex() const;
-    int definitionTypePriority(sym_list::sym_type_e type) const;
     DefinitionQuery withResolvedMemberContext(const DefinitionQuery& query) const;
-    bool inScope(const sym_list::SymbolInfo& symbol, const DefinitionQuery& query) const;
-    bool shouldSkipForStructMemberType(const sym_list::SymbolInfo& symbol,
-                                       const DefinitionQuery& query) const;
-    DefinitionResult bestFromCandidates(const QList<sym_list::SymbolInfo>& candidates,
-                                        const DefinitionQuery& query,
-                                        bool localFile) const;
 };
 
 #endif // DEFINITIONSERVICE_H

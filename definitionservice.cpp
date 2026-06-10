@@ -2,18 +2,26 @@
 
 #include "completionservice.h"
 
-#include <QDir>
-#include <QFileInfo>
-#include <algorithm>
-
 std::unique_ptr<DefinitionService> DefinitionService::instance = nullptr;
 
 namespace {
-QString normalizedDefinitionFileName(const QString& fileName)
+SemanticDefinitionQuery toSemanticDefinitionQuery(const DefinitionQuery& query)
 {
-    if (fileName.isEmpty())
-        return QString();
-    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    SemanticDefinitionQuery semanticQuery;
+    semanticQuery.symbolName = query.symbolName;
+    semanticQuery.fileName = query.fileName;
+    semanticQuery.moduleName = query.moduleName;
+    semanticQuery.structTypeNameForMember = query.structTypeNameForMember;
+    return semanticQuery;
+}
+
+DefinitionResult toDefinitionResult(const SemanticDefinitionResult& semanticResult)
+{
+    DefinitionResult result;
+    result.found = semanticResult.found;
+    result.localFile = semanticResult.localFile;
+    result.symbol = semanticResult.symbol;
+    return result;
 }
 }
 
@@ -43,33 +51,14 @@ DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& que
         return empty;
 
     const DefinitionQuery resolvedQuery = withResolvedMemberContext(query);
-
-    DefinitionResult local = bestFromCandidates(
-        semanticIndex()->getSymbols(resolvedQuery.fileName),
-        resolvedQuery,
-        true);
-    if (local.found)
-        return local;
-
-    QList<sym_list::SymbolInfo> globalCandidates =
-        semanticIndex()->findDefinitions(resolvedQuery.symbolName);
-    const QString queryFile = normalizedDefinitionFileName(resolvedQuery.fileName);
-    globalCandidates.erase(
-        std::remove_if(globalCandidates.begin(), globalCandidates.end(),
-                       [&queryFile](const sym_list::SymbolInfo& symbol) {
-                           return normalizedDefinitionFileName(symbol.fileName) == queryFile;
-                       }),
-        globalCandidates.end());
-    return bestFromCandidates(globalCandidates, resolvedQuery, false);
+    return toDefinitionResult(
+        semanticIndex()->resolveDefinition(toSemanticDefinitionQuery(resolvedQuery)));
 }
 
 QList<sym_list::SymbolInfo> DefinitionService::findDefinitions(const DefinitionQuery& query) const
 {
-    QList<sym_list::SymbolInfo> result;
-    const DefinitionResult resolved = resolveDefinition(query);
-    if (resolved.found)
-        result.append(resolved.symbol);
-    return result;
+    const DefinitionQuery resolvedQuery = withResolvedMemberContext(query);
+    return semanticIndex()->findDefinitionSymbols(toSemanticDefinitionQuery(resolvedQuery));
 }
 
 bool DefinitionService::canResolveDefinition(const DefinitionQuery& query) const
@@ -119,37 +108,6 @@ SemanticIndex* DefinitionService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-int DefinitionService::definitionTypePriority(sym_list::sym_type_e type) const
-{
-    switch (type) {
-    case sym_list::sym_module: return 0;
-    case sym_list::sym_interface: return 1;
-    case sym_list::sym_package: return 2;
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport: return 3;
-    case sym_list::sym_task:
-    case sym_list::sym_function: return 4;
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_enum_var: return 5;
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_typedef: return 6;
-    case sym_list::sym_struct_member:
-    case sym_list::sym_enum_value: return 7;
-    default: return 10;
-    }
-}
-
 DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQuery& query) const
 {
     if (!query.structTypeNameForMember.isEmpty()
@@ -173,55 +131,4 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
     resolved.structTypeNameForMember =
         semanticIndex()->getStructTypeForVariable(variableName, query.moduleName);
     return resolved;
-}
-
-bool DefinitionService::inScope(const sym_list::SymbolInfo& symbol,
-                                const DefinitionQuery& query) const
-{
-    if (query.moduleName.isEmpty())
-        return true;
-    return symbol.moduleScope == query.moduleName;
-}
-
-bool DefinitionService::shouldSkipForStructMemberType(const sym_list::SymbolInfo& symbol,
-                                                      const DefinitionQuery& query) const
-{
-    if (query.structTypeNameForMember.isEmpty())
-        return false;
-    return symbol.symbolType == sym_list::sym_struct_member
-        && symbol.moduleScope != query.structTypeNameForMember;
-}
-
-DefinitionResult DefinitionService::bestFromCandidates(
-    const QList<sym_list::SymbolInfo>& candidates,
-    const DefinitionQuery& query,
-    bool localFile) const
-{
-    DefinitionResult best;
-    int bestPriority = 999;
-
-    for (const sym_list::SymbolInfo& symbol : candidates) {
-        if (!isDefinition(symbol, query.symbolName))
-            continue;
-        if (shouldSkipForStructMemberType(symbol, query))
-            continue;
-        if (symbol.symbolType != sym_list::sym_struct_member
-            && symbol.symbolType != sym_list::sym_enum_value
-            && !inScope(symbol, query)) {
-            continue;
-        }
-
-        int priority = definitionTypePriority(symbol.symbolType);
-        if (!query.moduleName.isEmpty() && symbol.moduleScope == query.moduleName)
-            priority -= 100;
-
-        if (!best.found || priority < bestPriority) {
-            best.found = true;
-            best.localFile = localFile;
-            best.symbol = symbol;
-            bestPriority = priority;
-        }
-    }
-
-    return best;
 }
