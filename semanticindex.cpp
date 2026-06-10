@@ -176,6 +176,30 @@ bool commandGlobalCompletionSymbolType(sym_list::sym_type_e type)
         || type == sym_list::sym_enum;
 }
 
+bool globalSymbolInfoType(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_module
+        || type == sym_list::sym_task
+        || type == sym_list::sym_function
+        || type == sym_list::sym_interface
+        || type == sym_list::sym_package
+        || type == sym_list::sym_typedef
+        || type == sym_list::sym_def_define
+        || type == sym_list::sym_packed_struct
+        || type == sym_list::sym_unpacked_struct
+        || type == sym_list::sym_packed_struct_var
+        || type == sym_list::sym_unpacked_struct_var;
+}
+
+bool alwaysGlobalSymbolInfoType(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_module
+        || type == sym_list::sym_interface
+        || type == sym_list::sym_package
+        || type == sym_list::sym_packed_struct
+        || type == sym_list::sym_unpacked_struct;
+}
+
 bool alwaysGlobalCommandSymbolType(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_module
@@ -533,6 +557,80 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
     }
 
     sortSymbolsByName(result);
+    return result;
+}
+
+QStringList SemanticIndex::getCompletionSymbolNames() const
+{
+    QSet<QString> uniqueNames;
+    const QList<sym_list::SymbolInfo> symbols = getSymbols();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!symbol.symbolName.isEmpty())
+            uniqueNames.insert(symbol.symbolName);
+    }
+
+    QStringList names(uniqueNames.begin(), uniqueNames.end());
+    names.sort(Qt::CaseInsensitive);
+    return names;
+}
+
+QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
+    sym_list::sym_type_e symbolType,
+    const QString& prefix) const
+{
+    QList<sym_list::SymbolInfo> result;
+    QSet<int> seenIds;
+
+    const QList<sym_list::SymbolInfo> symbols = getSymbols();
+    auto appendIfMatches = [&](const sym_list::SymbolInfo& symbol) {
+        if (seenIds.contains(symbol.symbolId))
+            return;
+        if (!semanticCompletionNameMatches(symbol.symbolName, prefix))
+            return;
+        seenIds.insert(symbol.symbolId);
+        result.append(symbol);
+    };
+
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (symbol.symbolType == symbolType)
+            appendIfMatches(symbol);
+    }
+
+    if (symbolType == sym_list::sym_enum) {
+        for (const sym_list::SymbolInfo& symbol : symbols) {
+            if (symbol.symbolType == sym_list::sym_typedef
+                && symbol.dataType == QLatin1String("enum")) {
+                appendIfMatches(symbol);
+            }
+        }
+    }
+
+    return result;
+}
+
+QList<sym_list::SymbolInfo> SemanticIndex::getGlobalSymbolInfosByType(
+    sym_list::sym_type_e symbolType,
+    const QString& prefix) const
+{
+    QList<sym_list::SymbolInfo> result;
+    if (!globalSymbolInfoType(symbolType))
+        return result;
+
+    const QList<sym_list::SymbolInfo> symbols = getSymbols();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (!commandSymbolTypeMatches(symbol.symbolType,
+                                      symbolType,
+                                      symbol.dataType)
+            || !semanticCompletionNameMatches(symbol.symbolName, prefix)) {
+            continue;
+        }
+
+        const bool global = alwaysGlobalSymbolInfoType(symbolType)
+            || symbol.moduleScope.isEmpty();
+        if (global)
+            result.append(symbol);
+    }
+
     return result;
 }
 

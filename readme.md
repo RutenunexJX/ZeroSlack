@@ -34,15 +34,15 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Completion symbol candidate reads now live behind `SemanticIndex`.
-`CompletionService` remains the feature-facing policy and presentation layer while the index owns module, global, and command completion symbol candidate filtering, dedupe, sorting, and snapshot-backed reads.
+Typed completion symbol candidate reads now live behind `SemanticIndex`.
+`CompletionService` remains the feature-facing scoring, policy, and presentation layer while the index owns all-symbol names, typed symbol candidates, global symbol-info candidates, and module/global/command completion candidate filtering, dedupe, sorting, and snapshot-backed reads.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
-- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, generic symbol search, completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
+- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, generic symbol search, typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
@@ -56,7 +56,7 @@ Completion symbol candidate reads now live behind `SemanticIndex`.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command/editor completion results over `SemanticIndex`, command-mode completion state, completion trigger and activation state, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates.
+- `CompletionService` owns module/global/command/editor completion results over `SemanticIndex`, command-mode completion state, completion trigger and activation state, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completion presentation, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates.
 - `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, command membership checks, command action classification, and command completion state.
 - `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, source navigation target selection, editor source-navigation target assembly, and editor symbol action context assembly.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.

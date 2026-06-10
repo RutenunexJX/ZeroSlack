@@ -62,15 +62,7 @@ QVector<QPair<QString, int>> CompletionService::findScoredAllSymbolCompletions(
     const QString& prefix,
     int maxResults) const
 {
-    QSet<QString> uniqueNames;
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!symbol.symbolName.isEmpty())
-            uniqueNames.insert(symbol.symbolName);
-    }
-
-    QStringList names(uniqueNames.begin(), uniqueNames.end());
-    names.sort(Qt::CaseInsensitive);
+    const QStringList names = semanticIndex()->getCompletionSymbolNames();
 
     QVector<QPair<QString, int>> scored;
     scored.reserve(qMin(names.size(), maxResults > 0 ? maxResults : names.size()));
@@ -119,30 +111,8 @@ CompletionService::findScoredSymbolCompletionsByType(
     int maxResults) const
 {
     QVector<QPair<sym_list::SymbolInfo, int>> result;
-    QList<sym_list::SymbolInfo> symbols;
-    QSet<int> seenIds;
-
-    const QList<sym_list::SymbolInfo> allSymbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (symbol.symbolType != symbolType)
-            continue;
-        if (seenIds.contains(symbol.symbolId))
-            continue;
-        seenIds.insert(symbol.symbolId);
-        symbols.append(symbol);
-    }
-
-    if (symbolType == sym_list::sym_enum) {
-        for (const sym_list::SymbolInfo& symbol : allSymbols) {
-            if (symbol.symbolType != sym_list::sym_typedef
-                || symbol.dataType != QLatin1String("enum")
-                || seenIds.contains(symbol.symbolId)) {
-                continue;
-            }
-            seenIds.insert(symbol.symbolId);
-            symbols.append(symbol);
-        }
-    }
+    const QList<sym_list::SymbolInfo> symbols =
+        semanticIndex()->getTypedCompletionSymbols(symbolType);
 
     result.reserve(qMin(symbols.size(), maxResults > 0 ? maxResults : symbols.size()));
     for (const sym_list::SymbolInfo& symbol : symbols) {
@@ -914,22 +884,8 @@ QStringList CompletionService::findVariableCompletionsInScope(
     const QString& prefix) const
 {
     if (moduleName.isEmpty()) {
-        QStringList result;
-        QSet<QString> seenNames;
-        const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (!commandSymbolTypeMatches(symbol.symbolType, symbol.dataType, variableType)
-                || !completionNameMatches(symbol.symbolName, prefix)) {
-                continue;
-            }
-            const QString key = symbol.symbolName.toCaseFolded();
-            if (seenNames.contains(key))
-                continue;
-            seenNames.insert(key);
-            result.append(symbol.symbolName);
-        }
-        result.sort(Qt::CaseInsensitive);
-        return result;
+        return completionNamesFromSymbols(
+            semanticIndex()->getTypedCompletionSymbols(variableType, prefix));
     }
     return findModuleSymbolsByType(moduleName, variableType, prefix);
 }
@@ -937,20 +893,10 @@ QStringList CompletionService::findVariableCompletionsInScope(
 QStringList CompletionService::findTaskFunctionCompletions(const QString& prefix) const
 {
     QStringList result;
-    QSet<QString> seenNames;
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if ((symbol.symbolType != sym_list::sym_task
-             && symbol.symbolType != sym_list::sym_function)
-            || !completionNameMatches(symbol.symbolName, prefix)) {
-            continue;
-        }
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
+    result.append(completionNamesFromSymbols(
+        semanticIndex()->getTypedCompletionSymbols(sym_list::sym_task, prefix)));
+    result.append(completionNamesFromSymbols(
+        semanticIndex()->getTypedCompletionSymbols(sym_list::sym_function, prefix)));
     result.removeDuplicates();
     result.sort(Qt::CaseInsensitive);
     return result;
@@ -1231,35 +1177,7 @@ QList<sym_list::SymbolInfo> CompletionService::findGlobalSymbolInfosByType(
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
-    QList<sym_list::SymbolInfo> result;
-    if (!isGlobalSymbolInfoType(symbolType))
-        return result;
-
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!commandSymbolTypeMatches(symbol.symbolType,
-                                      symbol.dataType,
-                                      symbolType)
-            || !completionNameMatches(symbol.symbolName, prefix)) {
-            continue;
-        }
-
-        bool global = false;
-        if (symbolType == sym_list::sym_module
-            || symbolType == sym_list::sym_interface
-            || symbolType == sym_list::sym_package
-            || symbolType == sym_list::sym_packed_struct
-            || symbolType == sym_list::sym_unpacked_struct) {
-            global = true;
-        } else {
-            global = symbol.moduleScope.isEmpty();
-        }
-
-        if (global)
-            result.append(symbol);
-    }
-
-    return result;
+    return semanticIndex()->getGlobalSymbolInfosByType(symbolType, prefix);
 }
 
 QString CompletionService::currentModuleAt(const QString& fileName, int cursorPosition) const
@@ -1740,31 +1658,4 @@ bool CompletionService::isGlobalSymbolType(sym_list::sym_type_e type) const
         || type == sym_list::sym_packed_struct
         || type == sym_list::sym_unpacked_struct
         || type == sym_list::sym_enum;
-}
-
-bool CompletionService::isGlobalSymbolInfoType(sym_list::sym_type_e type) const
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_packed_struct_var
-        || type == sym_list::sym_unpacked_struct_var;
-}
-
-bool CompletionService::commandSymbolTypeMatches(
-    sym_list::sym_type_e symbolType,
-    const QString& dataType,
-    sym_list::sym_type_e requestedType) const
-{
-    if (symbolType == requestedType)
-        return true;
-    return requestedType == sym_list::sym_enum
-        && symbolType == sym_list::sym_typedef
-        && dataType == QLatin1String("enum");
 }
