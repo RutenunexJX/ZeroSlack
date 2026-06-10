@@ -20,8 +20,22 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
 
 void NavigationPaneCoordinator::attachNavigationManager(NavigationManager* manager)
 {
+    navigationManager = manager;
     if (manager)
         manager->setNavigationWidget(navigationWidget);
+}
+
+void NavigationPaneCoordinator::connectNavigationInputs(
+    TabManager* tabManager,
+    WorkspaceManager* workspaceManager,
+    SymbolAnalyzer* symbolAnalyzer)
+{
+    if (!navigationManager)
+        return;
+
+    navigationManager->connectToTabManager(tabManager);
+    navigationManager->connectToWorkspaceManager(workspaceManager);
+    navigationManager->connectToSymbolAnalyzer(symbolAnalyzer);
 }
 
 void NavigationPaneCoordinator::toggleVisible()

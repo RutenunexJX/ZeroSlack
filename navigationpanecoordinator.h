@@ -5,7 +5,10 @@
 
 class NavigationManager;
 class NavigationWidget;
+class SymbolAnalyzer;
+class TabManager;
 class QWidget;
+class WorkspaceManager;
 
 class NavigationPaneCoordinator
 {
@@ -13,6 +16,9 @@ public:
     explicit NavigationPaneCoordinator(QWidget* parent);
 
     void attachNavigationManager(NavigationManager* manager);
+    void connectNavigationInputs(TabManager* tabManager,
+                                 WorkspaceManager* workspaceManager,
+                                 SymbolAnalyzer* symbolAnalyzer);
     void toggleVisible();
 
     QDockWidget* dock() const { return navigationDock; }
@@ -21,6 +27,7 @@ public:
 private:
     QDockWidget* navigationDock = nullptr;
     NavigationWidget* navigationWidget = nullptr;
+    NavigationManager* navigationManager = nullptr;
 };
 
 #endif // NAVIGATIONPANECOORDINATOR_H

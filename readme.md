@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-File/edit/workspace action routing now lives behind `FileCommandCoordinator`.
-`MainWindow` wires UI actions into the coordinator instead of keeping file command forwarding slots.
+Navigation manager input wiring now lives behind `NavigationPaneCoordinator`.
+`MainWindow` asks the navigation pane coordinator to connect tab, workspace, and symbol analyzer inputs instead of wiring `NavigationManager` directly.
 
 ## Latest Validation
 
@@ -59,6 +59,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, relationship analysis requests, and semantic panel refresh requests.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
+- `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.

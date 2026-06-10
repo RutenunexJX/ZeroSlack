@@ -98,10 +98,6 @@ void MainWindow::setupManagerConnections()
         });
     analysisCoordinator->connectSignals();
 
-    navigationManager->connectToTabManager(tabManager.get());
-    navigationManager->connectToWorkspaceManager(workspaceManager.get());
-    navigationManager->connectToSymbolAnalyzer(symbolAnalyzer.get());
-
 }
 
 
@@ -109,6 +105,10 @@ void MainWindow::setupNavigationPane()
 {
     navigationPane = std::make_unique<NavigationPaneCoordinator>(this);
     navigationPane->attachNavigationManager(navigationManager.get());
+    navigationPane->connectNavigationInputs(
+        tabManager.get(),
+        workspaceManager.get(),
+        symbolAnalyzer.get());
     addDockWidget(Qt::LeftDockWidgetArea, navigationPane->dock());
 }
 
