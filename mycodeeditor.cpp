@@ -512,7 +512,7 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
     query.moduleName = currentModuleNameAt(cursorPosition);
     query.cursorLine = cursor.block().blockNumber() + 1;
     query.cursorPosition = cursorPosition;
-    return CompletionService::getInstance()->findCompletions(query);
+    return CompletionService::getInstance()->findCompletionResult(query).names;
 }
 
 bool MyCodeEditor::isInCommentArea()
@@ -842,10 +842,12 @@ void MyCodeEditor::onAutoCompleteTimer()
             query.structTypeNameForMember = structTypeName;
             query.cursorLine = cursor.block().blockNumber() + 1;
             query.cursorPosition = cursor.position();
-            QStringList memberNames = completionService->findCompletions(query);
-            QList<sym_list::SymbolInfo> symbolInfoList =
-                completionService->findCompletionSymbols(query);
-            completionModel->updateCompletions(memberNames, symbolInfoList, memberPrefix, CompletionModel::SymbolCompletion);
+            const CompletionResult completion =
+                completionService->findCompletionResult(query);
+            completionModel->updateCompletions(completion.names,
+                                               completion.symbols,
+                                               memberPrefix,
+                                               CompletionModel::SymbolCompletion);
             wordStartPos = currentBlock.position() + lineUpToCursor.lastIndexOf('.') + 1;
             showAutoComplete();
             return;
@@ -861,10 +863,12 @@ void MyCodeEditor::onAutoCompleteTimer()
         query.cursorLine = cursor.block().blockNumber() + 1;
         query.cursorPosition = cursor.position();
 
-        QStringList suggestions = completionService->findCompletions(query);
-        QList<sym_list::SymbolInfo> symbolInfoList =
-            completionService->findCompletionSymbols(query);
-        completionModel->updateCompletions(suggestions, symbolInfoList, prefix, CompletionModel::SymbolCompletion);
+        const CompletionResult completion =
+            completionService->findCompletionResult(query);
+        completionModel->updateCompletions(completion.names,
+                                           completion.symbols,
+                                           prefix,
+                                           CompletionModel::SymbolCompletion);
         showAutoComplete();
     }
 }

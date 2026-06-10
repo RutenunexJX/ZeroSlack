@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Completion row selection policy now lives behind `CompletionModel`.
-`MyCodeEditor` asks the model for selectable completion rows instead of duplicating header/no-match string rules in editor key and popup handling.
+Editor completion name/symbol lookup now uses a single `CompletionService` result.
+`MyCodeEditor` consumes service-provided completion names and `SymbolInfo` together instead of issuing parallel semantic queries for the same completion request.
 
 ## Latest Validation
 
@@ -63,7 +63,7 @@ Build/test commands need `E:\QT6\Tools\mingw1310_64\bin` on `PATH` so MinGW `cc1
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command completions, command-mode catalog/matching and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
+- `CompletionService` owns module/global/command completion results, command-mode catalog/matching and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completions, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion, current-module lookup, and relationship-driven completion candidates over `SemanticIndex`.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `NavigationService` owns module hierarchy and symbol outline semantic assembly for the navigation pane.

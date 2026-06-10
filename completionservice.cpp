@@ -32,24 +32,24 @@ void CompletionService::setSemanticIndex(SemanticIndex* semanticIndex)
 
 QStringList CompletionService::findCompletions(const CompletionQuery& query) const
 {
-    if (!query.structTypeNameForMember.isEmpty()) {
-        return completionNamesFromSymbols(findStructMemberSymbols(query));
-    }
+    return findCompletionResult(query).names;
+}
 
-    if (query.prefix.isEmpty())
-        return {};
-
-    if (!query.moduleName.isEmpty())
-        return completionNamesFromSymbols(findModuleCompletionSymbols(query));
-
-    return completionNamesFromSymbols(findGlobalCompletionSymbols(query));
+CompletionResult CompletionService::findCompletionResult(
+    const CompletionQuery& query) const
+{
+    CompletionResult result;
+    result.symbols = findCompletionSymbols(query);
+    result.names = completionNamesFromSymbols(result.symbols);
+    return result;
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
     const CompletionQuery& query) const
 {
-    if (!query.structTypeNameForMember.isEmpty())
+    if (!query.structTypeNameForMember.isEmpty()) {
         return findStructMemberSymbols(query);
+    }
 
     if (query.prefix.isEmpty())
         return {};

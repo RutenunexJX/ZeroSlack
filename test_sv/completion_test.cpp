@@ -332,6 +332,20 @@ int main(int argc, char** argv) {
     query.moduleName = "top";
     expectList("CompletionService module prefix", CompletionService::getInstance()->findCompletions(query),
                {"enable"});
+    const CompletionResult moduleCompletion =
+        CompletionService::getInstance()->findCompletionResult(query);
+    expectList("CompletionService module result",
+               moduleCompletion.names,
+               {"enable"});
+    ++g_checks;
+    const bool moduleResultSymbolsOk = moduleCompletion.symbols.size() == 1
+        && moduleCompletion.symbols.first().symbolName == QStringLiteral("enable");
+    if (!moduleResultSymbolsOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           moduleResultSymbolsOk ? "PASS" : "FAIL",
+           "CompletionService result symbols",
+           moduleCompletion.symbols.size());
 
     CompletionQuery memberQuery;
     memberQuery.structTypeNameForMember = "pixel_t";
@@ -340,10 +354,11 @@ int main(int argc, char** argv) {
                {"red", "green", "blue"});
 
     memberQuery.prefix = "bl";
-    const QList<sym_list::SymbolInfo> memberSymbols =
-        CompletionService::getInstance()->findCompletionSymbols(memberQuery);
+    const CompletionResult memberCompletion =
+        CompletionService::getInstance()->findCompletionResult(memberQuery);
+    const QList<sym_list::SymbolInfo> memberSymbols = memberCompletion.symbols;
     expectList("CompletionService struct prefix",
-               CompletionService::getInstance()->findCompletions(memberQuery),
+               memberCompletion.names,
                {"blue"});
     ++g_checks;
     const bool serviceSymbolOk = memberSymbols.size() == 1

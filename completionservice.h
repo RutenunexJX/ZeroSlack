@@ -21,6 +21,11 @@ struct CompletionQuery {
     int cursorPosition = -1;
 };
 
+struct CompletionResult {
+    QStringList names;
+    QList<sym_list::SymbolInfo> symbols;
+};
+
 struct CommandCompletionQuery {
     QString prefix;
     QString fileName;
@@ -74,6 +79,7 @@ public:
     void setSemanticIndex(SemanticIndex* semanticIndex);
 
     QStringList findCompletions(const CompletionQuery& query) const;
+    CompletionResult findCompletionResult(const CompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCompletionSymbols(const CompletionQuery& query) const;
     QVector<QPair<QString, int>> findScoredAllSymbolCompletions(
         const QString& prefix,
