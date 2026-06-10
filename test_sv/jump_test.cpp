@@ -16,6 +16,7 @@
 #include "syminfo.h"
 #include "completionmodel.h"
 #include "definitionservice.h"
+#include "includenavigationservice.h"
 #include "semanticindexsnapshot.h"
 // Test-only: reach the editor's private jump methods. Non-virtual, so ABI is unaffected and the
 // calls bind to the real symbols in the already-compiled mycodeeditor.cpp.obj. Qt headers are
@@ -30,6 +31,12 @@ static void expectBool(const char* what, bool got, bool want) {
     ++g_checks; bool ok = (got == want); if (!ok) ++g_fails;
     printf("[%s] %-46s got=%s want=%s\n", ok ? "PASS" : "FAIL", what,
            got ? "true" : "false", want ? "true" : "false");
+}
+
+static void expectEq(const char* what, const QString& got, const QString& want) {
+    ++g_checks; bool ok = (got == want); if (!ok) ++g_fails;
+    printf("[%s] %-46s got=\"%s\" want=\"%s\"\n", ok ? "PASS" : "FAIL", what,
+           got.toLocal8Bit().constData(), want.toLocal8Bit().constData());
 }
 
 // Put the caret on a given 0-based block (line) so getCurrentModuleScope resolves the module.
@@ -286,6 +293,34 @@ int main(int argc, char** argv) {
         ++g_fails;
     printf("[%s] DefinitionService findDefinitions keeps snapshot local result\n",
            snapshotFindDefinitionsOk ? "PASS" : "FAIL");
+
+    IncludeNavigationService* includeNavigationService =
+        IncludeNavigationService::getInstance();
+    const QString includeLine =
+        QStringLiteral("  `include \"rtl/pkg_defs.svh\"");
+    const IncludeDirectiveTarget includeTarget =
+        includeNavigationService->includeAtColumn(
+            includeLine,
+            includeLine.indexOf(QStringLiteral("pkg_defs")));
+    expectBool("IncludeNavigation matches include path",
+               includeTarget.matched,
+               true);
+    expectEq("IncludeNavigation trims path",
+             includeTarget.includePath,
+             QStringLiteral("rtl/pkg_defs.svh"));
+    ++g_checks;
+    const bool includeRangeOk =
+        includeTarget.startColumn == includeLine.indexOf(QLatin1Char('"')) + 1
+        && includeTarget.endColumn == includeLine.lastIndexOf(QLatin1Char('"'));
+    if (!includeRangeOk)
+        ++g_fails;
+    printf("[%s] IncludeNavigation returns quote-relative range\n",
+           includeRangeOk ? "PASS" : "FAIL");
+    expectBool("IncludeNavigation ignores quote boundary",
+               includeNavigationService
+                   ->includeAtColumn(includeLine, includeTarget.startColumn - 1)
+                   .matched,
+               false);
 
     // Local jump landing: jumpToDefinition moves the caret to the definition.
     sym_list::SymbolInfo counter;

@@ -4,6 +4,7 @@
 #include "completionmodel.h"
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
+#include "includenavigationservice.h"
 
 #include "syminfo.h"
 
@@ -1477,38 +1478,15 @@ bool MyCodeEditor::getIncludeInfoAtPosition(const QPoint& position, int &startPo
 {
     QTextCursor cursor = cursorForPosition(position);
     QTextBlock block = cursor.block();
-    QString lineText = block.text();
-    if (lineText.isEmpty()) {
+    const int posInLine = cursor.position() - block.position();
+    const IncludeDirectiveTarget includeTarget =
+        IncludeNavigationService::getInstance()->includeAtColumn(block.text(), posInLine);
+    if (!includeTarget.matched)
         return false;
-    }
 
-    int posInLine = cursor.position() - block.position();
-
-    int keywordPos = lineText.indexOf("`include");
-    if (keywordPos == -1) {
-        return false;
-    }
-
-    int firstQuote = lineText.indexOf('"', keywordPos);
-    if (firstQuote == -1) {
-        return false;
-    }
-    int secondQuote = lineText.indexOf('"', firstQuote + 1);
-    if (secondQuote == -1) {
-        return false;
-    }
-
-    if (posInLine <= firstQuote || posInLine >= secondQuote) {
-        return false;
-    }
-
-    includePath = lineText.mid(firstQuote + 1, secondQuote - firstQuote - 1).trimmed();
-    if (includePath.isEmpty()) {
-        return false;
-    }
-
-    startPos = block.position() + firstQuote + 1;
-    endPos = block.position() + secondQuote;
+    includePath = includeTarget.includePath;
+    startPos = block.position() + includeTarget.startColumn;
+    endPos = block.position() + includeTarget.endColumn;
 
     return true;
 }
