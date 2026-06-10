@@ -493,6 +493,14 @@ int main(int argc, char** argv) {
                CompletionService::getInstance()->shouldContinueCompletion(
                    commandTriggerQuery),
                true);
+    const CompletionTriggerState commandTriggerState =
+        CompletionService::getInstance()->completionTriggerState(commandTriggerQuery);
+    expectBool("CompletionService trigger command state",
+               commandTriggerState.continueCompletion,
+               true);
+    expectBool("CompletionService trigger command hide",
+               commandTriggerState.hidePopup,
+               false);
 
     CompletionTriggerQuery wordTriggerQuery;
     wordTriggerQuery.lineUpToCursor = QStringLiteral("assign en");
@@ -500,6 +508,14 @@ int main(int argc, char** argv) {
                CompletionService::getInstance()->shouldContinueCompletion(
                    wordTriggerQuery),
                true);
+    const CompletionTriggerState wordTriggerState =
+        CompletionService::getInstance()->completionTriggerState(wordTriggerQuery);
+    expectBool("CompletionService trigger word state",
+               wordTriggerState.continueCompletion,
+               true);
+    expectBool("CompletionService trigger word hide",
+               wordTriggerState.hidePopup,
+               false);
 
     CompletionTriggerQuery dotTriggerQuery;
     dotTriggerQuery.lineUpToCursor = QStringLiteral("pixel.");
@@ -515,6 +531,15 @@ int main(int argc, char** argv) {
                CompletionService::getInstance()->shouldContinueCompletion(
                    structSpaceTriggerQuery),
                true);
+    const CompletionTriggerState structSpaceTriggerState =
+        CompletionService::getInstance()->completionTriggerState(
+            structSpaceTriggerQuery);
+    expectBool("CompletionService trigger struct state",
+               structSpaceTriggerState.continueCompletion,
+               true);
+    expectBool("CompletionService trigger struct hide",
+               structSpaceTriggerState.hidePopup,
+               false);
 
     CompletionTriggerQuery plainSpaceTriggerQuery;
     plainSpaceTriggerQuery.lineUpToCursor = QStringLiteral("assign value ");
@@ -523,6 +548,38 @@ int main(int argc, char** argv) {
                CompletionService::getInstance()->shouldContinueCompletion(
                    plainSpaceTriggerQuery),
                false);
+    const CompletionTriggerState plainSpaceTriggerState =
+        CompletionService::getInstance()->completionTriggerState(
+            plainSpaceTriggerQuery);
+    expectBool("CompletionService trigger plain state",
+               plainSpaceTriggerState.continueCompletion,
+               false);
+    expectBool("CompletionService trigger plain hide",
+               plainSpaceTriggerState.hidePopup,
+               true);
+
+    CompletionTriggerQuery commandStopTriggerQuery;
+    commandStopTriggerQuery.lineUpToCursor = QStringLiteral("l ena;");
+    commandStopTriggerQuery.commandModeActive = true;
+    const CompletionTriggerState commandStopTriggerState =
+        CompletionService::getInstance()->completionTriggerState(
+            commandStopTriggerQuery);
+    expectBool("CompletionService trigger command stop",
+               commandStopTriggerState.continueCompletion,
+               false);
+    expectBool("CompletionService trigger command stop hide",
+               commandStopTriggerState.hidePopup,
+               false);
+
+    CompletionTriggerQuery emptyTriggerQuery;
+    const CompletionTriggerState emptyTriggerState =
+        CompletionService::getInstance()->completionTriggerState(emptyTriggerQuery);
+    expectBool("CompletionService trigger empty state",
+               emptyTriggerState.continueCompletion,
+               false);
+    expectBool("CompletionService trigger empty hide",
+               emptyTriggerState.hidePopup,
+               true);
 
     const CommandSymbolPresentation interfacePresentation =
         CompletionService::getInstance()->commandSymbolPresentation(sym_list::sym_interface);

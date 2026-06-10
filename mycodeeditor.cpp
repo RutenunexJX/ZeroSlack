@@ -482,15 +482,13 @@ void MyCodeEditor::onTextChanged()
     triggerQuery.lineUpToCursor = lineUpToCursor;
     triggerQuery.moduleName = currentModuleNameAt(cursor.position() - 1);
     triggerQuery.commandModeActive = isInCustomCommandMode;
-    const bool shouldContinueAutoComplete =
-        CompletionService::getInstance()->shouldContinueCompletion(triggerQuery);
+    const CompletionTriggerState triggerState =
+        CompletionService::getInstance()->completionTriggerState(triggerQuery);
 
-    if (shouldContinueAutoComplete) {
+    if (triggerState.continueCompletion) {
         autoCompleteTimer->start();
-    } else {
-        if (!isInCustomCommandMode) {
-            hideAutoComplete();
-        }
+    } else if (triggerState.hidePopup) {
+        hideAutoComplete();
     }
 }
 

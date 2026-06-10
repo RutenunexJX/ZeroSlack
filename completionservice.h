@@ -47,6 +47,11 @@ struct CompletionTriggerQuery {
     bool commandModeActive = false;
 };
 
+struct CompletionTriggerState {
+    bool continueCompletion = false;
+    bool hidePopup = false;
+};
+
 struct EditorCompletionQuery {
     QString lineUpToCursor;
     QString wordPrefix;
@@ -163,6 +168,8 @@ public:
         const CommandModeCompletionQuery& query) const;
     EditorCompletionState editorCompletionState(
         const EditorCompletionQuery& query) const;
+    CompletionTriggerState completionTriggerState(
+        const CompletionTriggerQuery& query) const;
     bool shouldContinueCompletion(const CompletionTriggerQuery& query) const;
     QList<int> findCompletionAbbreviationPositions(
         const QString& text,

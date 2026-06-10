@@ -392,36 +392,57 @@ EditorCompletionState CompletionService::editorCompletionState(
     return state;
 }
 
-bool CompletionService::shouldContinueCompletion(
+CompletionTriggerState CompletionService::completionTriggerState(
     const CompletionTriggerQuery& query) const
 {
-    if (query.lineUpToCursor.isEmpty())
-        return false;
+    CompletionTriggerState state;
+
+    if (query.lineUpToCursor.isEmpty()) {
+        state.hidePopup = !query.commandModeActive;
+        return state;
+    }
 
     const QChar lastChar = query.lineUpToCursor.back();
     if (query.commandModeActive) {
-        return lastChar.isLetterOrNumber()
+        state.continueCompletion =
+            lastChar.isLetterOrNumber()
             || lastChar == QLatin1Char('_')
             || lastChar == QLatin1Char(' ');
+        state.hidePopup = false;
+        return state;
     }
 
     if (lastChar.isLetterOrNumber()
         || lastChar == QLatin1Char('_')
         || lastChar == QLatin1Char('.')) {
-        return true;
+        state.continueCompletion = true;
+        return state;
     }
 
-    if (lastChar != QLatin1Char(' '))
-        return false;
+    if (lastChar != QLatin1Char(' ')) {
+        state.hidePopup = true;
+        return state;
+    }
 
     const QString lineBeforeSpace =
         query.lineUpToCursor.left(query.lineUpToCursor.size() - 1).trimmed();
     QString variableName;
     QString memberPrefix;
-    if (!tryParseStructMemberContext(lineBeforeSpace, variableName, memberPrefix))
-        return false;
+    if (!tryParseStructMemberContext(lineBeforeSpace, variableName, memberPrefix)) {
+        state.hidePopup = true;
+        return state;
+    }
 
-    return !getStructTypeForVariable(variableName, query.moduleName).isEmpty();
+    state.continueCompletion =
+        !getStructTypeForVariable(variableName, query.moduleName).isEmpty();
+    state.hidePopup = !state.continueCompletion;
+    return state;
+}
+
+bool CompletionService::shouldContinueCompletion(
+    const CompletionTriggerQuery& query) const
+{
+    return completionTriggerState(query).continueCompletion;
 }
 
 CommandSymbolPresentation CompletionService::commandSymbolPresentation(
