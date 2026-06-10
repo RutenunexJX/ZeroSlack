@@ -28,6 +28,14 @@ static void expectEq(const char* what, const QString& got, const QString& want) 
            got.toLocal8Bit().constData(), want.toLocal8Bit().constData());
 }
 
+static void expectBool(const char* what, bool got, bool want) {
+    ++g_checks;
+    bool ok = (got == want);
+    if (!ok) ++g_fails;
+    printf("[%s] %-34s got=%s want=%s\n", ok ? "PASS" : "FAIL", what,
+           got ? "true" : "false", want ? "true" : "false");
+}
+
 static void expectList(const char* what, QStringList got, QStringList want) {
     ++g_checks;
     got = sorted(got);
@@ -340,6 +348,44 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            commandModeRejectOk ? "PASS" : "FAIL",
            "CompletionService command reject");
+
+    CompletionTriggerQuery commandTriggerQuery;
+    commandTriggerQuery.lineUpToCursor = QStringLiteral("l ena ");
+    commandTriggerQuery.commandModeActive = true;
+    expectBool("CompletionService trigger command",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   commandTriggerQuery),
+               true);
+
+    CompletionTriggerQuery wordTriggerQuery;
+    wordTriggerQuery.lineUpToCursor = QStringLiteral("assign en");
+    expectBool("CompletionService trigger word",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   wordTriggerQuery),
+               true);
+
+    CompletionTriggerQuery dotTriggerQuery;
+    dotTriggerQuery.lineUpToCursor = QStringLiteral("pixel.");
+    expectBool("CompletionService trigger dot",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   dotTriggerQuery),
+               true);
+
+    CompletionTriggerQuery structSpaceTriggerQuery;
+    structSpaceTriggerQuery.lineUpToCursor = QStringLiteral("pixel. ");
+    structSpaceTriggerQuery.moduleName = QStringLiteral("top");
+    expectBool("CompletionService trigger struct space",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   structSpaceTriggerQuery),
+               true);
+
+    CompletionTriggerQuery plainSpaceTriggerQuery;
+    plainSpaceTriggerQuery.lineUpToCursor = QStringLiteral("assign value ");
+    plainSpaceTriggerQuery.moduleName = QStringLiteral("top");
+    expectBool("CompletionService trigger plain space",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   plainSpaceTriggerQuery),
+               false);
 
     const CommandSymbolPresentation interfacePresentation =
         CompletionService::getInstance()->commandSymbolPresentation(sym_list::sym_interface);

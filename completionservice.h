@@ -41,6 +41,12 @@ struct ContextCompletionQuery {
     bool relationshipCompletionsEnabled = true;
 };
 
+struct CompletionTriggerQuery {
+    QString lineUpToCursor;
+    QString moduleName;
+    bool commandModeActive = false;
+};
+
 struct CommandSymbolPresentation {
     QString defaultValue;
     QString typeDescription;
@@ -108,6 +114,7 @@ public:
         const QString& prefix = QString()) const;
     QList<CommandModeCommand> commandModeCommands() const;
     CommandModeMatch matchCommandMode(const QString& lineUpToCursor) const;
+    bool shouldContinueCompletion(const CompletionTriggerQuery& query) const;
     QList<int> findCompletionAbbreviationPositions(
         const QString& text,
         const QString& abbreviation) const;

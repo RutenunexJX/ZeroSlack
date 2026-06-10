@@ -459,31 +459,12 @@ void MyCodeEditor::onTextChanged()
 
     checkForCustomCommand(lineUpToCursor);
 
-    QChar charAtCursor = document()->characterAt(cursor.position() - 1);
-    bool shouldContinueAutoComplete = false;
-
-    if (isInCustomCommandMode) {
-        shouldContinueAutoComplete = (charAtCursor.isLetterOrNumber() ||
-                                    charAtCursor == '_' ||
-                                    charAtCursor == ' ');
-    } else {
-        shouldContinueAutoComplete = (charAtCursor.isLetterOrNumber() ||
-                                    charAtCursor == '_');
-        if (charAtCursor == '.') {
-            shouldContinueAutoComplete = true;
-        }
-        if (charAtCursor == ' ') {
-            QString lineBeforeSpace = lineUpToCursor.left(qMax(0, positionInLine - 1)).trimmed();
-            QString varName, memberPrefix;
-            CompletionService* completionService = CompletionService::getInstance();
-            if (completionService->tryParseStructMemberContext(lineBeforeSpace, varName, memberPrefix)) {
-                QString mod = currentModuleNameAt(cursor.position() - 1);
-                if (!completionService->getStructTypeForVariable(varName, mod).isEmpty()) {
-                    shouldContinueAutoComplete = true;
-                }
-            }
-        }
-    }
+    CompletionTriggerQuery triggerQuery;
+    triggerQuery.lineUpToCursor = lineUpToCursor;
+    triggerQuery.moduleName = currentModuleNameAt(cursor.position() - 1);
+    triggerQuery.commandModeActive = isInCustomCommandMode;
+    const bool shouldContinueAutoComplete =
+        CompletionService::getInstance()->shouldContinueCompletion(triggerQuery);
 
     if (shouldContinueAutoComplete) {
         autoCompleteTimer->start();

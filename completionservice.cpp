@@ -288,6 +288,38 @@ CommandModeMatch CompletionService::matchCommandMode(const QString& lineUpToCurs
     return result;
 }
 
+bool CompletionService::shouldContinueCompletion(
+    const CompletionTriggerQuery& query) const
+{
+    if (query.lineUpToCursor.isEmpty())
+        return false;
+
+    const QChar lastChar = query.lineUpToCursor.back();
+    if (query.commandModeActive) {
+        return lastChar.isLetterOrNumber()
+            || lastChar == QLatin1Char('_')
+            || lastChar == QLatin1Char(' ');
+    }
+
+    if (lastChar.isLetterOrNumber()
+        || lastChar == QLatin1Char('_')
+        || lastChar == QLatin1Char('.')) {
+        return true;
+    }
+
+    if (lastChar != QLatin1Char(' '))
+        return false;
+
+    const QString lineBeforeSpace =
+        query.lineUpToCursor.left(query.lineUpToCursor.size() - 1).trimmed();
+    QString variableName;
+    QString memberPrefix;
+    if (!tryParseStructMemberContext(lineBeforeSpace, variableName, memberPrefix))
+        return false;
+
+    return !getStructTypeForVariable(variableName, query.moduleName).isEmpty();
+}
+
 CommandSymbolPresentation CompletionService::commandSymbolPresentation(
     sym_list::sym_type_e symbolType) const
 {
