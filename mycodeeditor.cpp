@@ -714,12 +714,16 @@ void MyCodeEditor::onAutoCompleteTimer()
         lastLineNumber = currentLineNumber;
     }
 
-    if (checkForCustomCommand(lineUpToCursor)) {
+    const CommandModeInputState commandState =
+        CompletionService::getInstance()->commandModeInputState(lineUpToCursor);
+    if (commandState.matched) {
+        isInCustomCommandMode = true;
+        currentCommandType = commandState.command.symbolType;
         if (commandModeExitedByDoubleSpace) {
             return;
         }
 
-        if (isConsecutiveSpaces()) {
+        if (commandState.exitRequested) {
             clearCommandHighlight();
             isInCustomCommandMode = false;
             commandModeExitedByDoubleSpace = true;
@@ -730,7 +734,7 @@ void MyCodeEditor::onAutoCompleteTimer()
         }
 
         highlightCommandText();
-        QString commandInput = extractCommandInput().trimmed();
+        QString commandInput = commandState.input.trimmed();
 
         int cursorPosition = cursor.position();
         CommandCompletionQuery query;
@@ -738,22 +742,24 @@ void MyCodeEditor::onAutoCompleteTimer()
         query.fileName = getFileName();
         query.moduleName = currentModuleNameAt(cursorPosition);
         query.documentText = document()->toPlainText();
-        query.symbolType = currentCommandType;
+        query.symbolType = commandState.command.symbolType;
 
         const QList<sym_list::SymbolInfo> filteredSymbols =
             CompletionService::getInstance()->findCommandCompletionSymbols(query);
         if (filteredSymbols.isEmpty()
-            && (currentCommandType == sym_list::sym_packed_struct_var
-                || currentCommandType == sym_list::sym_unpacked_struct_var
-                || currentCommandType == sym_list::sym_packed_struct
-                || currentCommandType == sym_list::sym_unpacked_struct)
+            && (commandState.command.symbolType == sym_list::sym_packed_struct_var
+                || commandState.command.symbolType == sym_list::sym_unpacked_struct_var
+                || commandState.command.symbolType == sym_list::sym_packed_struct
+                || commandState.command.symbolType == sym_list::sym_unpacked_struct)
             && query.moduleName.isEmpty()) {
             if (completer->popup()->isVisible())
                 completer->popup()->hide();
             return;
         }
 
-        completionModel->updateSymbolCompletions(filteredSymbols, commandInput, currentCommandType);
+        completionModel->updateSymbolCompletions(filteredSymbols,
+                                                 commandInput,
+                                                 commandState.command.symbolType);
         showAutoComplete();
         return;
     }
@@ -813,23 +819,6 @@ void MyCodeEditor::onAutoCompleteTimer()
     }
 }
 
-
-bool MyCodeEditor::isConsecutiveSpaces()
-{
-    QTextCursor cursor = textCursor();
-    QTextBlock currentBlock = cursor.block();
-    QString lineText = currentBlock.text();
-    int positionInLine = cursor.position() - currentBlock.position();
-
-    if (positionInLine >= 2) {
-        QString lastTwoChars = lineText.mid(positionInLine - 2, 2);
-        if (lastTwoChars == "  ") {
-            return true;
-        }
-    }
-
-    return false;
-}
 
 QStringList MyCodeEditor::getCommandModeInternalVariables(const QString &prefix)
 {
@@ -917,30 +906,17 @@ QString MyCodeEditor::getWordUnderCursor()
 
 bool MyCodeEditor::checkForCustomCommand(const QString &lineUpToCursor)
 {
-    const CommandModeMatch match =
-        CompletionService::getInstance()->matchCommandMode(lineUpToCursor);
-    if (match.matched) {
+    const CommandModeInputState state =
+        CompletionService::getInstance()->commandModeInputState(lineUpToCursor);
+    if (state.matched) {
         isInCustomCommandMode = true;
-        currentCommandType = match.command.symbolType;
+        currentCommandType = state.command.symbolType;
         return true;
     }
 
     isInCustomCommandMode = false;
     currentCommandType = sym_list::sym_user;
     return false;
-}
-
-QString MyCodeEditor::extractCommandInput()
-{
-    QTextCursor cursor = textCursor();
-    QTextBlock currentBlock = cursor.block();
-    QString lineText = currentBlock.text();
-    int positionInLine = cursor.position() - currentBlock.position();
-    QString lineUpToCursor = lineText.left(positionInLine);
-
-    const CommandModeMatch match =
-        CompletionService::getInstance()->matchCommandMode(lineUpToCursor);
-    return match.matched ? match.input : QString();
 }
 
 void MyCodeEditor::processAlternateModeInput(const QString &input)

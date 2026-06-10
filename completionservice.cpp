@@ -288,6 +288,24 @@ CommandModeMatch CompletionService::matchCommandMode(const QString& lineUpToCurs
     return result;
 }
 
+CommandModeInputState CompletionService::commandModeInputState(
+    const QString& lineUpToCursor) const
+{
+    const CommandModeMatch match = matchCommandMode(lineUpToCursor);
+    CommandModeInputState state;
+    if (!match.matched)
+        return state;
+
+    state.matched = true;
+    state.prefixPosition = match.prefixPosition;
+    state.input = match.input;
+    state.command = match.command;
+    state.exitRequested =
+        lineUpToCursor.size() >= 2
+        && lineUpToCursor.right(2) == QStringLiteral("  ");
+    return state;
+}
+
 bool CompletionService::shouldContinueCompletion(
     const CompletionTriggerQuery& query) const
 {

@@ -338,6 +338,36 @@ int main(int argc, char** argv) {
            "CompletionService command match",
            commandModeMatch.input.toLocal8Bit().constData());
 
+    const CommandModeInputState commandInputState =
+        CompletionService::getInstance()->commandModeInputState(QStringLiteral("l ena"));
+    ++g_checks;
+    const bool commandInputStateOk = commandInputState.matched
+        && !commandInputState.exitRequested
+        && commandInputState.prefixPosition == 0
+        && commandInputState.input == QStringLiteral("ena")
+        && commandInputState.command.symbolType == sym_list::sym_logic;
+    if (!commandInputStateOk)
+        ++g_fails;
+    printf("[%s] %-34s input=\"%s\"\n",
+           commandInputStateOk ? "PASS" : "FAIL",
+           "CompletionService command input",
+           commandInputState.input.toLocal8Bit().constData());
+
+    const CommandModeInputState commandExitState =
+        CompletionService::getInstance()->commandModeInputState(QStringLiteral("l  "));
+    ++g_checks;
+    const bool commandExitStateOk = commandExitState.matched
+        && commandExitState.exitRequested
+        && commandExitState.prefixPosition == 0
+        && commandExitState.input == QStringLiteral(" ")
+        && commandExitState.command.symbolType == sym_list::sym_logic;
+    if (!commandExitStateOk)
+        ++g_fails;
+    printf("[%s] %-34s input=\"%s\"\n",
+           commandExitStateOk ? "PASS" : "FAIL",
+           "CompletionService command exit",
+           commandExitState.input.toLocal8Bit().constData());
+
     ++g_checks;
     const bool commandModeRejectOk =
         !CompletionService::getInstance()
@@ -348,6 +378,17 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            commandModeRejectOk ? "PASS" : "FAIL",
            "CompletionService command reject");
+
+    ++g_checks;
+    const bool commandInputRejectOk =
+        !CompletionService::getInstance()
+             ->commandModeInputState(QStringLiteral("assign l ena"))
+             .matched;
+    if (!commandInputRejectOk)
+        ++g_fails;
+    printf("[%s] %-34s\n",
+           commandInputRejectOk ? "PASS" : "FAIL",
+           "CompletionService command input reject");
 
     CompletionTriggerQuery commandTriggerQuery;
     commandTriggerQuery.lineUpToCursor = QStringLiteral("l ena ");

@@ -74,6 +74,14 @@ struct CommandModeMatch {
     CommandModeCommand command;
 };
 
+struct CommandModeInputState {
+    bool matched = false;
+    bool exitRequested = false;
+    int prefixPosition = -1;
+    QString input;
+    CommandModeCommand command;
+};
+
 class CompletionService
 {
 public:
@@ -114,6 +122,8 @@ public:
         const QString& prefix = QString()) const;
     QList<CommandModeCommand> commandModeCommands() const;
     CommandModeMatch matchCommandMode(const QString& lineUpToCursor) const;
+    CommandModeInputState commandModeInputState(
+        const QString& lineUpToCursor) const;
     bool shouldContinueCompletion(const CompletionTriggerQuery& query) const;
     QList<int> findCompletionAbbreviationPositions(
         const QString& text,
