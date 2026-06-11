@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Alternate-command execution now routes through coordinators by command text.
-`MyCodeEditor` emits the requested alternate command string; `EditorCoordinator` forwards it, and `FileCommandCoordinator` owns command-to-action classification plus editor/file command execution.
+Command-mode completion highlight now uses completion state directly.
+`MyCodeEditor` uses `CommandModeCompletionState::prefixPosition` for command highlighting, removes stale completion helper methods/state, and avoids a duplicate command-mode match read during rendering.
 
 ## Current Architecture Snapshot
 
@@ -37,7 +37,7 @@ Alternate-command execution now routes through coordinators by command text.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
-- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode, definition navigation, definition-aware source navigation target, and source symbol action reads.
+- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.
 - `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.

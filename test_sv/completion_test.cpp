@@ -894,6 +894,10 @@ int main(int argc, char** argv) {
     expectList("EditorSemanticContext command state",
                symbolNames(contextCommandState.symbols),
                {"enable"});
+    expectBool("EditorSemanticContext command state range",
+               contextCommandState.matched
+                   && contextCommandState.prefixPosition == 0,
+               true);
     const CommandModeInputState contextInputState =
         EditorSemanticContextService::getInstance()
             ->commandModeInputState(commandContext);

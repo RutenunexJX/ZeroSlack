@@ -76,8 +76,6 @@ private:
     QString currentModuleNameAt(int charPos) const;
     EditorSemanticContext editorSemanticContextForPosition(int cursorPosition = -1) const;
     QString getWordUnderCursor();
-    QStringList getCompletionSuggestions(const QString &prefix);
-    bool isInCommentArea();
 
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
@@ -88,22 +86,15 @@ private:
     QCompleter *completer;
     CompletionModel *completionModel;
     QTimer *autoCompleteTimer;
-    QString currentWord;
     int wordStartPos;
 
     // Coalesce current-line selection refresh after cursor/text changes.
     QTimer *scopeRefreshTimer = nullptr;
 
-    QString textUnderCursor() const;
-
     bool isInCustomCommandMode = false;
 
-    bool checkForCustomCommand(const QString &text);
-
-    void highlightCommandText();
+    void highlightCommandText(int prefixPosition);
     void clearCommandHighlight();
-    int commandStartPosition = -1;
-    int commandEndPosition = -1;
 
     bool isInAlternateMode = false;
     QString alternateCommandBuffer;

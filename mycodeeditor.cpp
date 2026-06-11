@@ -338,11 +338,12 @@ void MyCodeEditor::onTextChanged()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
-    checkForCustomCommand(lineUpToCursor);
-
     EditorSemanticContext context;
     context.lineUpToCursor = lineUpToCursor;
     context.moduleName = currentModuleNameAt(cursor.position() - 1);
+    const CommandModeInputState commandInputState =
+        EditorSemanticContextService::getInstance()->commandModeInputState(context);
+    isInCustomCommandMode = commandInputState.matched;
     context.commandModeActive = isInCustomCommandMode;
     const CompletionTriggerState triggerState =
         EditorSemanticContextService::getInstance()->completionTriggerState(context);
@@ -361,27 +362,6 @@ void MyCodeEditor::hideAutoComplete()
     if (isInCustomCommandMode) {
         clearCommandHighlight();
     }
-}
-
-QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
-{
-    QTextCursor cursor = textCursor();
-    int cursorPosition = cursor.position();
-    EditorSemanticContext context;
-    context.fileName = getFileName();
-    context.moduleName = currentModuleNameAt(cursorPosition);
-    context.cursorLine = cursor.block().blockNumber() + 1;
-    context.cursorPosition = cursorPosition;
-    return EditorSemanticContextService::getInstance()
-        ->completionNames(prefix, context);
-}
-
-bool MyCodeEditor::isInCommentArea()
-{
-    QTextCursor cursor = textCursor();
-    const int position = cursor.position();
-    return m_tsdoc.isCommentAt(position)
-        || (position > 0 && m_tsdoc.isCommentAt(position - 1));
 }
 
 void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
@@ -556,13 +536,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     QPlainTextEdit::keyPressEvent(event);
 }
 
-QString MyCodeEditor::textUnderCursor() const
-{
-    QTextCursor cursor = textCursor();
-    cursor.select(QTextCursor::WordUnderCursor);
-    return cursor.selectedText();
-}
-
 void MyCodeEditor::showAutoComplete()
 {
     if (completionModel->rowCount() > 0) {
@@ -621,7 +594,7 @@ void MyCodeEditor::onAutoCompleteTimer()
             return;
         }
 
-        highlightCommandText();
+        highlightCommandText(commandState.prefixPosition);
 
         if (commandState.hidePopup) {
             if (completer->popup()->isVisible())
@@ -663,24 +636,10 @@ void MyCodeEditor::onAutoCompleteTimer()
     }
 }
 
-void MyCodeEditor::highlightCommandText()
+void MyCodeEditor::highlightCommandText(int prefixPosition)
 {
-    QTextCursor cursor = textCursor();
-    QTextBlock currentBlock = cursor.block();
-    QString lineText = currentBlock.text();
-    int positionInLine = cursor.position() - currentBlock.position();
-    QString lineUpToCursor = lineText.left(positionInLine);
-
-    EditorSemanticContext context;
-    context.lineUpToCursor = lineUpToCursor;
-    const CommandModeMatch match =
-        EditorSemanticContextService::getInstance()->commandModeMatch(context);
-    const int prefixPos = match.prefixPosition;
-
-    if (prefixPos == -1) return;
-
-    commandStartPosition = currentBlock.position() + prefixPos;
-    commandEndPosition = cursor.position();
+    if (prefixPosition < 0)
+        return;
 
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
@@ -697,9 +656,10 @@ void MyCodeEditor::highlightCommandText()
     commandSelection.format.setForeground(QColor(255, 255, 255));   // White text
     commandSelection.format.setProperty(QTextFormat::UserProperty, 999); // Custom marker
 
-    QTextCursor commandCursor = cursor;
+    QTextCursor commandCursor = textCursor();
+    const int commandStartPosition = commandCursor.block().position() + prefixPosition;
     commandCursor.setPosition(commandStartPosition);
-    commandCursor.setPosition(commandEndPosition, QTextCursor::KeepAnchor);
+    commandCursor.setPosition(textCursor().position(), QTextCursor::KeepAnchor);
     commandSelection.cursor = commandCursor;
 
     extraSelections.append(commandSelection);
@@ -719,9 +679,6 @@ void MyCodeEditor::clearCommandHighlight()
     );
 
     setExtraSelections(extraSelections);
-
-    commandStartPosition = -1;
-    commandEndPosition = -1;
 }
 
 QString MyCodeEditor::getWordUnderCursor()
@@ -736,21 +693,6 @@ QString MyCodeEditor::getWordUnderCursor()
     cursor.setPosition(currentPos, QTextCursor::KeepAnchor);
 
     return cursor.selectedText();
-}
-
-bool MyCodeEditor::checkForCustomCommand(const QString &lineUpToCursor)
-{
-    EditorSemanticContext context;
-    context.lineUpToCursor = lineUpToCursor;
-    const CommandModeInputState state =
-        EditorSemanticContextService::getInstance()->commandModeInputState(context);
-    if (state.matched) {
-        isInCustomCommandMode = true;
-        return true;
-    }
-
-    isInCustomCommandMode = false;
-    return false;
 }
 
 void MyCodeEditor::processAlternateModeInput(const QString &input)
