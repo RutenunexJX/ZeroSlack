@@ -2,19 +2,6 @@
 
 Use `readme.md` for handoff state and `goal.md` for stable product/architecture goals. This file defines how to keep moving.
 
-## Direction
-
-Keep moving ZeroSlack toward a model/scheduler/index/service architecture:
-
-- `ProjectModel`
-- `DocumentModel`
-- `AnalysisScheduler`
-- `SemanticIndex`
-- `SemanticIndexSnapshot`
-- Query Services
-- snapshot-backed UI/service reads
-- thinner `MainWindow`
-
 ## Next Architecture Blocks
 
 Choose one medium-sized block:

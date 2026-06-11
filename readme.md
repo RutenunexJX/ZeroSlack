@@ -11,15 +11,6 @@ Query Services
 Thin UI consumers
 ```
 
-## Current State
-
-- Workspace: `E:\ZeroSlack\ZeroSlack`
-- Branch: `tree_sitter_and_slang`
-- Version: `0.0.20/slang25` in `version.h`
-- Build path: Qt 6 + CMake + Ninja only
-- Latest local commit is local-only; check `git log -1 --oneline`.
-- Local branch is intentionally ahead of origin until the user explicitly asks to push.
-
 ## Hard Rules
 
 - Use Qt 6 + CMake + Ninja only.
@@ -68,16 +59,3 @@ Editor completion state now lives behind `EditorSemanticContextService`.
 - `NavigationService` owns module hierarchy, symbol outline, and module target semantic assembly for the navigation pane.
 - `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
 - Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
-
-## Session Start Checklist
-
-Read `readme.md`, `plan.md`, `goal.md`, and `version.h`, then inspect:
-
-```text
-git log -1 --oneline
-git branch --show-current
-git diff --name-only
-git status -sb
-```
-
-Continue toward `goal.md` with one coherent architecture block at a time.

@@ -52,14 +52,6 @@ Tree-sitter and Slang split:
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
 
-## Remaining Gaps
-
-- Continue reducing live `sym_list` consumers.
-- Continue making services snapshot-backed where possible.
-- Continue thinning remaining MainWindow dependency assembly and coordination policy.
-- Continue moving remaining editor/completion semantic decisions behind services and facades.
-- Continue tightening real fixture coverage when production changes need it.
-
 ## Definition Of Done
 
 The foundation is healthy when:
