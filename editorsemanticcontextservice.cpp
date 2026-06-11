@@ -163,6 +163,13 @@ CommandModeMatch EditorSemanticContextService::commandModeMatch(
         context.lineUpToCursor);
 }
 
+AlternateCommandCompletionState
+EditorSemanticContextService::alternateCommandCompletionState(
+    const QString& input) const
+{
+    return AlternateCommandService::getInstance()->completionState(input);
+}
+
 EditorCompletionQuery EditorSemanticContextService::editorCompletionQuery(
     const EditorSemanticContext& context) const
 {

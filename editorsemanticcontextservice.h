@@ -1,6 +1,7 @@
 #ifndef EDITORSEMANTICCONTEXTSERVICE_H
 #define EDITORSEMANTICCONTEXTSERVICE_H
 
+#include "alternatecommandservice.h"
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
 #include "sourcenavigationservice.h"
@@ -67,6 +68,8 @@ public:
         const EditorSemanticContext& context) const;
     CommandModeMatch commandModeMatch(
         const EditorSemanticContext& context) const;
+    AlternateCommandCompletionState alternateCommandCompletionState(
+        const QString& input) const;
     EditorCompletionQuery editorCompletionQuery(
         const EditorSemanticContext& context) const;
     EditorCompletionState editorCompletionState(

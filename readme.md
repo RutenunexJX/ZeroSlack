@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Completion popup key policy now lives in `CompletionService`.
-`MyCodeEditor` asks `CompletionService` how popup keys should behave, then only performs UI actions such as forwarding, activation, hiding, or alternate-buffer edits.
+Alternate-command completion reads now go through `EditorSemanticContextService`.
+`MyCodeEditor` asks the editor semantic context facade for alternate-command completion state; `AlternateCommandService` remains the catalog/filtering owner behind that facade.
 
 ## Current Architecture Snapshot
 
@@ -37,7 +37,7 @@ Completion popup key policy now lives in `CompletionService`.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
-- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
+- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.
 - `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.

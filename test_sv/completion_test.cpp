@@ -239,6 +239,15 @@ int main(int argc, char** argv) {
     expectBool("AlternateCommand state visible",
                alternateCompletionState.showCompletions,
                true);
+    const AlternateCommandCompletionState contextAlternateState =
+        EditorSemanticContextService::getInstance()
+            ->alternateCommandCompletionState(QStringLiteral(" S "));
+    expectEq("EditorContext alternate input",
+             contextAlternateState.normalizedInput,
+             QStringLiteral("s"));
+    expectList("EditorContext alternate matches",
+               contextAlternateState.matches,
+               {"save", "save_as", "select_all"});
     const AlternateCommandCompletionState alternateEmptyState =
         alternateCommandService->completionState(QString());
     expectBool("AlternateCommand empty visible",

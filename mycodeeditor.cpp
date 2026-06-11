@@ -1,5 +1,4 @@
 #include "mycodeeditor.h"
-#include "alternatecommandservice.h"
 #include "myhighlighter.h"
 #include "completionmodel.h"
 #include "editorsemanticcontextservice.h"
@@ -705,10 +704,9 @@ void MyCodeEditor::processAlternateModeInput(const QString &input)
 
 void MyCodeEditor::showAlternateModeCommands(const QString &filter)
 {
-    AlternateCommandService* alternateCommandService =
-        AlternateCommandService::getInstance();
     const AlternateCommandCompletionState completionState =
-        alternateCommandService->completionState(filter);
+        EditorSemanticContextService::getInstance()
+            ->alternateCommandCompletionState(filter);
     alternateCommandBuffer = completionState.normalizedInput;
     completionModel->updateCommandCompletions(
         completionState.matches,
