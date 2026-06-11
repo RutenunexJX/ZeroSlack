@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor semantic context assembly is now shared across completion workflows.
-`MyCodeEditor::editorSemanticContextForPosition` provides the common file/module/line/cursor context for text-change triggers and autocomplete, with optional document text only on paths that need full content.
+Completion popup key policy now lives in `CompletionService`.
+`MyCodeEditor` asks `CompletionService` how popup keys should behave, then only performs UI actions such as forwarding, activation, hiding, or alternate-buffer edits.
 
 ## Current Architecture Snapshot
 
@@ -48,7 +48,7 @@ Editor semantic context assembly is now shared across completion workflows.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command/editor completion results over `SemanticIndex`, command-mode completion state, completion trigger and activation state, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completion presentation, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates.
+- `CompletionService` owns module/global/command/editor completion results over `SemanticIndex`, command-mode completion state, completion trigger/activation/popup-key policy, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completion presentation, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates.
 - `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, command membership checks, command action classification, and command completion state.
 - `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, and source navigation target primitives.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.

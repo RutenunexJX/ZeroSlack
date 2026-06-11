@@ -103,6 +103,7 @@ private:
 
     void executeAlternateModeCommand(const QString &command);
     void showAlternateModeCommands(const QString &filter = QString());
+    bool handleCompletionPopupKey(QKeyEvent *event);
 
     bool ctrlPressed = false;
     QString hoveredWord;

@@ -444,34 +444,8 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     }
 
     if (isInAlternateMode) {
-        if (completer->popup()->isVisible()) {
-            switch (event->key()) {
-            case Qt::Key_Down:
-            case Qt::Key_Up:
-                QApplication::sendEvent(completer->popup(), event);
-                return;
-            case Qt::Key_Return:
-            case Qt::Key_Enter:
-                if (completer->popup()->currentIndex().isValid()) {
-                    emit completer->activated(completer->popup()->currentIndex());
-                }
-                return;
-            case Qt::Key_Escape:
-                hideAutoComplete();
-                clearAlternateModeBuffer();
-                return;
-            case Qt::Key_Backspace:
-                if (!alternateCommandBuffer.isEmpty()) {
-                    alternateCommandBuffer.chop(1);
-                    processAlternateModeInput(alternateCommandBuffer);
-                } else {
-                    hideAutoComplete();
-                }
-                return;
-            default:
-                break;
-            }
-        }
+        if (handleCompletionPopupKey(event))
+            return;
 
         if (event->key() == Qt::Key_Backspace) {
             if (!alternateCommandBuffer.isEmpty()) {
@@ -505,33 +479,70 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         return;
     }
 
-    if (completer->popup()->isVisible()) {
-        switch (event->key()) {
-        case Qt::Key_Down:
-        case Qt::Key_Up:
-            QApplication::sendEvent(completer->popup(), event);
-            return;
-        case Qt::Key_Return:
-        case Qt::Key_Enter:
-        case Qt::Key_Tab:
-            {
-                QModelIndex currentIndex = completer->popup()->currentIndex();
-                if (!currentIndex.isValid() && completionModel->rowCount() > 0) {
-                    currentIndex = completionModel->firstSelectableIndex();
-                }
-
-                if (currentIndex.isValid()) {
-                    emit completer->activated(currentIndex);
-                }
-            }
-            return;
-        case Qt::Key_Escape:
-            hideAutoComplete();
-            return;
-        }
-    }
+    if (handleCompletionPopupKey(event))
+        return;
 
     QPlainTextEdit::keyPressEvent(event);
+}
+
+bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
+{
+    if (!completer->popup()->isVisible())
+        return false;
+
+    CompletionPopupKeyQuery query;
+    query.key = event->key();
+    query.mode = isInAlternateMode
+        ? CompletionActivationMode::AlternateMode
+        : (isInCustomCommandMode
+               ? CompletionActivationMode::CommandMode
+               : CompletionActivationMode::EditorWord);
+    query.currentIndexValid = completer->popup()->currentIndex().isValid();
+    query.hasRows = completionModel->rowCount() > 0;
+    query.alternateBufferEmpty = alternateCommandBuffer.isEmpty();
+
+    const CompletionPopupKeyState state =
+        CompletionService::getInstance()->completionPopupKeyState(query);
+
+    switch (state.action) {
+    case CompletionPopupKeyAction::ForwardToPopup:
+        QApplication::sendEvent(completer->popup(), event);
+        return true;
+    case CompletionPopupKeyAction::ActivateCurrent:
+        if (completer->popup()->currentIndex().isValid())
+            emit completer->activated(completer->popup()->currentIndex());
+        return true;
+    case CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable:
+        {
+            QModelIndex currentIndex = completer->popup()->currentIndex();
+            if (!currentIndex.isValid() && completionModel->rowCount() > 0)
+                currentIndex = completionModel->firstSelectableIndex();
+            if (currentIndex.isValid())
+                emit completer->activated(currentIndex);
+        }
+        return true;
+    case CompletionPopupKeyAction::HidePopup:
+        hideAutoComplete();
+        return true;
+    case CompletionPopupKeyAction::HidePopupAndClearAlternate:
+        hideAutoComplete();
+        clearAlternateModeBuffer();
+        return true;
+    case CompletionPopupKeyAction::BackspaceAlternateInput:
+        if (!alternateCommandBuffer.isEmpty()) {
+            alternateCommandBuffer.chop(1);
+            processAlternateModeInput(alternateCommandBuffer);
+        } else {
+            hideAutoComplete();
+        }
+        return true;
+    case CompletionPopupKeyAction::Consume:
+        return true;
+    case CompletionPopupKeyAction::None:
+        return false;
+    }
+
+    return false;
 }
 
 void MyCodeEditor::showAutoComplete()

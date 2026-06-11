@@ -462,6 +462,54 @@ int main(int argc, char** argv) {
            inactiveActivationOk ? "PASS" : "FAIL",
            "CompletionService activate inactive");
 
+    CompletionPopupKeyQuery popupQuery;
+    popupQuery.mode = CompletionActivationMode::EditorWord;
+    popupQuery.key = Qt::Key_Down;
+    expectBool("CompletionService popup forwards arrows",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action == CompletionPopupKeyAction::ForwardToPopup,
+               true);
+    popupQuery.key = Qt::Key_Return;
+    popupQuery.hasRows = true;
+    popupQuery.currentIndexValid = false;
+    expectBool("CompletionService popup activates selectable",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action
+                   == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
+               true);
+    popupQuery.key = Qt::Key_Escape;
+    expectBool("CompletionService popup hides",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action == CompletionPopupKeyAction::HidePopup,
+               true);
+
+    CompletionPopupKeyQuery alternatePopupQuery;
+    alternatePopupQuery.mode = CompletionActivationMode::AlternateMode;
+    alternatePopupQuery.key = Qt::Key_Backspace;
+    alternatePopupQuery.alternateBufferEmpty = false;
+    expectBool("CompletionService alternate popup edits buffer",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(alternatePopupQuery)
+                       .action == CompletionPopupKeyAction::BackspaceAlternateInput,
+               true);
+    alternatePopupQuery.key = Qt::Key_Escape;
+    expectBool("CompletionService alternate popup clears",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(alternatePopupQuery)
+                       .action
+                   == CompletionPopupKeyAction::HidePopupAndClearAlternate,
+               true);
+    alternatePopupQuery.key = Qt::Key_Return;
+    alternatePopupQuery.currentIndexValid = false;
+    expectBool("CompletionService alternate popup consumes empty return",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(alternatePopupQuery)
+                       .action == CompletionPopupKeyAction::Consume,
+               true);
+
     const CommandModeMatch commandModeMatch =
         CompletionService::getInstance()->matchCommandMode(QStringLiteral("l ena"));
     ++g_checks;

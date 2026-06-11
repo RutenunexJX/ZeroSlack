@@ -4,6 +4,7 @@
 
 #include <QRegularExpression>
 #include <QSet>
+#include <Qt>
 #include <QVector>
 #include <algorithm>
 
@@ -441,6 +442,52 @@ CompletionActivationState CompletionService::completionActivationState(
     }
 
     return state;
+}
+
+CompletionPopupKeyState CompletionService::completionPopupKeyState(
+    const CompletionPopupKeyQuery& query) const
+{
+    CompletionPopupKeyState state;
+
+    switch (query.key) {
+    case Qt::Key_Down:
+    case Qt::Key_Up:
+        state.action = CompletionPopupKeyAction::ForwardToPopup;
+        return state;
+    case Qt::Key_Escape:
+        state.action = query.mode == CompletionActivationMode::AlternateMode
+            ? CompletionPopupKeyAction::HidePopupAndClearAlternate
+            : CompletionPopupKeyAction::HidePopup;
+        return state;
+    case Qt::Key_Backspace:
+        if (query.mode == CompletionActivationMode::AlternateMode) {
+            state.action = query.alternateBufferEmpty
+                ? CompletionPopupKeyAction::HidePopup
+                : CompletionPopupKeyAction::BackspaceAlternateInput;
+        }
+        return state;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        if (query.mode == CompletionActivationMode::AlternateMode) {
+            state.action = query.currentIndexValid
+                ? CompletionPopupKeyAction::ActivateCurrent
+                : CompletionPopupKeyAction::Consume;
+        } else {
+            state.action = query.hasRows
+                ? CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable
+                : CompletionPopupKeyAction::Consume;
+        }
+        return state;
+    case Qt::Key_Tab:
+        if (query.mode != CompletionActivationMode::AlternateMode) {
+            state.action = query.hasRows
+                ? CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable
+                : CompletionPopupKeyAction::Consume;
+        }
+        return state;
+    default:
+        return state;
+    }
 }
 
 CommandSymbolPresentation CompletionService::commandSymbolPresentation(
