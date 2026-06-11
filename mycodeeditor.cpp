@@ -200,42 +200,11 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 {
     std::unique_ptr<QMenu> menu(createStandardContextMenu(event->pos()));
     const QTextCursor cursorAtPos = cursorForPosition(event->pos());
-    const SourceSymbolActionContext actionContext =
-        sourceSymbolActionContextForCursor(cursorAtPos);
-
-    menu->addSeparator();
-    QAction* findReferencesAction = menu->addAction(QStringLiteral("Find References"));
-    findReferencesAction->setEnabled(actionContext.available);
-    connect(findReferencesAction, &QAction::triggered, this, [this, cursorAtPos]() {
-        emitSourceSymbolActionForCursor(SourceSymbolAction::FindReferences, cursorAtPos);
-    });
-
-    QAction* showRelationshipsAction = menu->addAction(QStringLiteral("Show Relationships"));
-    showRelationshipsAction->setEnabled(actionContext.available);
-    connect(showRelationshipsAction, &QAction::triggered, this, [this, cursorAtPos]() {
-        emitSourceSymbolActionForCursor(SourceSymbolAction::ShowRelationships, cursorAtPos);
-    });
+    emit sourceSymbolContextMenuRequested(
+        menu.get(),
+        editorSemanticContextForPosition(cursorAtPos.position()));
 
     menu->exec(event->globalPos());
-}
-
-SourceSymbolActionContext MyCodeEditor::sourceSymbolActionContextForCursor(
-    const QTextCursor& cursor) const
-{
-    return EditorSemanticContextService::getInstance()
-        ->sourceSymbolActionContext(editorSemanticContextForPosition(cursor.position()));
-}
-
-bool MyCodeEditor::emitSourceSymbolActionForCursor(SourceSymbolAction action,
-                                                   const QTextCursor& cursor)
-{
-    const SourceSymbolActionContext actionContext =
-        sourceSymbolActionContextForCursor(cursor);
-    if (!actionContext.available)
-        return false;
-
-    emit sourceSymbolActionRequested(action, actionContext);
-    return true;
 }
 
 EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
@@ -475,7 +444,9 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
     if (event->key() == Qt::Key_F12
         && (event->modifiers() & Qt::ShiftModifier)) {
-        emitSourceSymbolActionForCursor(SourceSymbolAction::FindReferences, textCursor());
+        emit sourceSymbolActionRequested(
+            SourceSymbolAction::FindReferences,
+            editorSemanticContextForPosition(textCursor().position()));
         event->accept();
         return;
     }
@@ -483,7 +454,9 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_R
         && (event->modifiers() & Qt::ControlModifier)
         && (event->modifiers() & Qt::ShiftModifier)) {
-        emitSourceSymbolActionForCursor(SourceSymbolAction::ShowRelationships, textCursor());
+        emit sourceSymbolActionRequested(
+            SourceSymbolAction::ShowRelationships,
+            editorSemanticContextForPosition(textCursor().position()));
         event->accept();
         return;
     }

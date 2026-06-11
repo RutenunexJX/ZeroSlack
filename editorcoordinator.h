@@ -6,9 +6,11 @@
 
 class FileCommandCoordinator;
 struct EditorSemanticContext;
+enum class SourceSymbolAction;
 class ModeManager;
 class MyCodeEditor;
 class NavigationCommandCoordinator;
+class QMenu;
 class SemanticPanelRefreshCoordinator;
 class TabManager;
 class WorkspaceManager;
@@ -40,6 +42,12 @@ private:
     void handleDefinitionNavigationRequested(
         MyCodeEditor* editor,
         const QString& symbolName,
+        const EditorSemanticContext& context) const;
+    void handleSourceSymbolActionRequested(
+        SourceSymbolAction action,
+        const EditorSemanticContext& context) const;
+    void handleSourceSymbolContextMenuRequested(
+        QMenu* menu,
         const EditorSemanticContext& context) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);
 

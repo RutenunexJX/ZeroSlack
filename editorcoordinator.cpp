@@ -10,6 +10,7 @@
 #include "workspacemanager.h"
 
 #include <QMessageBox>
+#include <QMenu>
 
 EditorCoordinator::EditorCoordinator(TabManager* tabManager,
                                      ModeManager* modeManager,
@@ -71,21 +72,10 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 handleIncludeOpenRequested(editor, includePath, currentFile);
             });
     connect(editor, &MyCodeEditor::sourceSymbolActionRequested,
-            this, [this](SourceSymbolAction action,
-                         const SourceSymbolActionContext& context) {
-                if (!semanticPanelRefresh || !context.available)
-                    return;
-
-                switch (action) {
-                case SourceSymbolAction::FindReferences:
-                    semanticPanelRefresh->showReferencesForSymbol(
-                        context.symbolName, context.fileName, context.moduleName);
-                    break;
-                case SourceSymbolAction::ShowRelationships:
-                    semanticPanelRefresh->showRelationshipsForSymbol(
-                        context.symbolName, context.fileName, context.moduleName);
-                    break;
-                }
+            this, &EditorCoordinator::handleSourceSymbolActionRequested);
+    connect(editor, &MyCodeEditor::sourceSymbolContextMenuRequested,
+            this, [this](QMenu* menu, const EditorSemanticContext& context) {
+                handleSourceSymbolContextMenuRequested(menu, context);
             });
 }
 
@@ -151,6 +141,60 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
         target.fileName.isEmpty() ? context.fileName : target.fileName;
     navigationCommandCoordinator->navigateToFileAndLine(
         targetFile, target.line, target.column);
+}
+
+void EditorCoordinator::handleSourceSymbolActionRequested(
+    SourceSymbolAction action,
+    const EditorSemanticContext& context) const
+{
+    if (!semanticPanelRefresh)
+        return;
+
+    const SourceSymbolActionContext actionContext =
+        EditorSemanticContextService::getInstance()->sourceSymbolActionContext(context);
+    if (!actionContext.available)
+        return;
+
+    switch (action) {
+    case SourceSymbolAction::FindReferences:
+        semanticPanelRefresh->showReferencesForSymbol(
+            actionContext.symbolName,
+            actionContext.fileName,
+            actionContext.moduleName);
+        break;
+    case SourceSymbolAction::ShowRelationships:
+        semanticPanelRefresh->showRelationshipsForSymbol(
+            actionContext.symbolName,
+            actionContext.fileName,
+            actionContext.moduleName);
+        break;
+    }
+}
+
+void EditorCoordinator::handleSourceSymbolContextMenuRequested(
+    QMenu* menu,
+    const EditorSemanticContext& context) const
+{
+    if (!menu)
+        return;
+
+    const SourceSymbolActionContext actionContext =
+        EditorSemanticContextService::getInstance()->sourceSymbolActionContext(context);
+
+    menu->addSeparator();
+    QAction* findReferencesAction =
+        menu->addAction(QStringLiteral("Find References"));
+    findReferencesAction->setEnabled(actionContext.available);
+    connect(findReferencesAction, &QAction::triggered, this, [this, context]() {
+        handleSourceSymbolActionRequested(SourceSymbolAction::FindReferences, context);
+    });
+
+    QAction* showRelationshipsAction =
+        menu->addAction(QStringLiteral("Show Relationships"));
+    showRelationshipsAction->setEnabled(actionContext.available);
+    connect(showRelationshipsAction, &QAction::triggered, this, [this, context]() {
+        handleSourceSymbolActionRequested(SourceSymbolAction::ShowRelationships, context);
+    });
 }
 
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)

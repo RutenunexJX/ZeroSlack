@@ -595,7 +595,8 @@ int main(int argc, char** argv) {
     QTextCursor editorActionCursor = ed.textCursor();
     editorActionCursor.setPosition(qMax(0, editorActionPos));
     const SourceSymbolActionContext editorActionContext =
-        ed.sourceSymbolActionContextForCursor(editorActionCursor);
+        EditorSemanticContextService::getInstance()->sourceSymbolActionContext(
+            ed.editorSemanticContextForPosition(editorActionCursor.position()));
     expectBool("Editor symbol action available",
                editorActionContext.available,
                true);

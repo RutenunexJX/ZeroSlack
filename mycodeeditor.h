@@ -14,7 +14,7 @@
 
 class LineNumberWidget;
 class MyHighlighter;
-struct SourceSymbolActionContext;
+class QMenu;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -75,10 +75,6 @@ private:
     int getLineNumberWidgetWidth();
 
     QString currentModuleNameAt(int charPos) const;
-    SourceSymbolActionContext sourceSymbolActionContextForCursor(
-        const QTextCursor& cursor) const;
-    bool emitSourceSymbolActionForCursor(SourceSymbolAction action,
-                                         const QTextCursor& cursor);
     EditorSemanticContext editorSemanticContextForPosition(int cursorPosition = -1) const;
     QString getWordUnderCursor();
     QStringList getCompletionSuggestions(const QString &prefix);
@@ -152,7 +148,9 @@ signals:
     void alternateCommandActionRequested(AlternateCommandAction action);
     void includeOpenRequested(const QString& includePath, const QString& currentFile);
     void sourceSymbolActionRequested(SourceSymbolAction action,
-                                     const SourceSymbolActionContext& context);
+                                     const EditorSemanticContext& context);
+    void sourceSymbolContextMenuRequested(QMenu* menu,
+                                          const EditorSemanticContext& context);
 };
 
 class LineNumberWidget : public QWidget

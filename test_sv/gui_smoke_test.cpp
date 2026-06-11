@@ -449,12 +449,12 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     shortcutEditor.setTextCursor(shortcutCursor);
     int sourceActionCount = 0;
     SourceSymbolAction lastSourceAction = SourceSymbolAction::FindReferences;
-    SourceSymbolActionContext lastSourceActionContext;
+    EditorSemanticContext lastSourceActionContext;
     QObject::connect(&shortcutEditor,
                      &MyCodeEditor::sourceSymbolActionRequested,
                      &shortcutEditor,
                      [&](SourceSymbolAction action,
-                         const SourceSymbolActionContext& context) {
+                         const EditorSemanticContext& context) {
                          ++sourceActionCount;
                          lastSourceAction = action;
                          lastSourceActionContext = context;
@@ -465,7 +465,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    && lastSourceAction == SourceSymbolAction::FindReferences,
                true);
     expectBool("find references shortcut emits symbol",
-               lastSourceActionContext.symbolName == QStringLiteral("target_ref"),
+               lastSourceActionContext.lineText.contains(QStringLiteral("target_ref")),
                true);
     QTest::keyClick(&shortcutEditor, Qt::Key_R,
                     Qt::ControlModifier | Qt::ShiftModifier);
@@ -474,7 +474,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    && lastSourceAction == SourceSymbolAction::ShowRelationships,
                true);
     expectBool("show relationships shortcut emits symbol",
-               lastSourceActionContext.symbolName == QStringLiteral("target_ref")
+               lastSourceActionContext.lineText.contains(QStringLiteral("target_ref"))
                    && lastSourceActionContext.fileName == fixturePath
                    && lastSourceActionContext.moduleName == QStringLiteral("ref_top"),
                true);
