@@ -300,7 +300,6 @@ bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
     file.close();
 
     editor->setFileName(fileName);
-    editor->markDocumentSaved();
     return true;
 }
 
@@ -317,7 +316,12 @@ bool TabManager::confirmCloseUnsaved(MyCodeEditor* editor)
         QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
 
     if (result == QMessageBox::Yes) {
-        return saveEditorToFile(editor, false); // Return save result
+        if (!saveEditorToFile(editor, false))
+            return false;
+        documentModel->markSaved(editor);
+        updateTabTitle(editor);
+        emit fileSaved(editor->getFileName());
+        return true;
     } else if (result == QMessageBox::No) {
         return true; // Don't save, but allow close
     }

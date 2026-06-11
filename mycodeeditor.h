@@ -138,6 +138,8 @@ private:
     bool commandModeExitedByDoubleSpace = false;
     bool isSaved = false;
 signals:
+    void fileNameChanged(const QString& fileName);
+    void savedStateChanged(bool saved);
     void definitionNavigationRequested(const QString& symbolName,
                                        const EditorSemanticContext& context);
     void alternateCommandRequested(const QString& command);

@@ -819,6 +819,9 @@ int main(int argc, char** argv)
         saveEditor->setPlainText(savedText);
         saveEditor->markDocumentDirty();
         QSignalSpy fileSavedSpy(window.tabManager.get(), &TabManager::fileSaved);
+        QSignalSpy documentSavedSpy(
+            window.tabManager->getDocumentModel(),
+            &DocumentModel::documentSaved);
         expectBool("tab manager saves current tab",
                    window.tabManager->saveCurrentTab(),
                    true);
@@ -836,6 +839,9 @@ int main(int argc, char** argv)
                    true);
         expectBool("tab manager emits fileSaved",
                    fileSavedSpy.count() == 1,
+                   true);
+        expectBool("document model emits one saved snapshot",
+                   documentSavedSpy.count() == 1,
                    true);
         const DocumentSnapshot savedDoc =
             window.tabManager->getDocumentModel()

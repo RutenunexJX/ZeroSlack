@@ -64,6 +64,7 @@ private:
                                   const DocumentSnapshot* previous = nullptr) const;
     TrackedDocument makeTrackedDocument(MyCodeEditor* editor,
                                         const DocumentSnapshot* previous = nullptr) const;
+    DocumentSnapshot refreshTrackedDocument(MyCodeEditor* editor);
     void indexDocument(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
     void removeIndexes(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
 };

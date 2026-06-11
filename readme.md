@@ -25,13 +25,13 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor document state now flows through `DocumentModel`.
-`MyCodeEditor` exposes explicit document state and save/dirty methods, `DocumentModel` caches open-document text/snapshots, `TabManager` reads open file lists and unsaved state from document snapshots, and `AnalysisScheduler` takes open-document content from `DocumentModel` before falling back to legacy providers.
+Editor document state updates now route through `DocumentModel`.
+`MyCodeEditor` emits file-name and saved-state changes, `DocumentModel` refreshes tracked snapshots and indexes through one helper, and `TabManager` routes successful save transactions through `DocumentModel` so file-save and document-save events stay aligned.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
-- `DocumentModel` owns open document snapshots, cached open-document text, dirty/saved state, cursor state, and live module names.
+- `DocumentModel` owns open document snapshots, cached open-document text, dirty/saved state, cursor/file-name refresh events, and live module names.
 - `AnalysisScheduler` owns analysis timing, `SymbolAnalyzer` execution/signal adaptation, open-document content reads from `DocumentModel`, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog rendering policy and cancel state.

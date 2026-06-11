@@ -289,9 +289,14 @@ void MyCodeEditor::lineNumberWidgetWheelEvent(QWheelEvent *event)
 
 void MyCodeEditor::setFileName(QString fileName)
 {
-    mFileName = fileName.isEmpty()
+    const QString normalizedFileName = fileName.isEmpty()
         ? QString()
         : QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    if (mFileName == normalizedFileName)
+        return;
+
+    mFileName = normalizedFileName;
+    emit fileNameChanged(mFileName);
 }
 
 QString MyCodeEditor::getFileName() const
@@ -311,12 +316,20 @@ bool MyCodeEditor::isDocumentSaved() const
 
 void MyCodeEditor::markDocumentSaved()
 {
+    if (isSaved)
+        return;
+
     isSaved = true;
+    emit savedStateChanged(isSaved);
 }
 
 void MyCodeEditor::markDocumentDirty()
 {
+    if (!isSaved)
+        return;
+
     isSaved = false;
+    emit savedStateChanged(isSaved);
 }
 
 EditorDocumentState MyCodeEditor::documentState(bool includeText) const
