@@ -1307,9 +1307,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                          documentCloseSymbols = symbolsFound;
                      });
     documentCloseModel.unregisterEditor(&closedDocumentEditor);
-    expectBool("scheduler requests remaining document content on close",
-               requestedRemainingDocumentContent, true);
-    expectBool("scheduler skips closed document content on close",
+    expectBool("scheduler uses model text for remaining document on close",
+               requestedRemainingDocumentContent, false);
+    expectBool("scheduler skips closed document fallback content on close",
                requestedClosedDocumentContent, false);
     expectBool("scheduler reanalyzes open documents on close",
                documentCloseAnalysisName == QStringLiteral("open_tabs"), true);

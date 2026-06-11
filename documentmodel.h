@@ -7,6 +7,7 @@
 #include <QString>
 
 class MyCodeEditor;
+struct EditorDocumentState;
 
 struct DocumentSnapshot {
     QString documentId;
@@ -37,6 +38,7 @@ public:
     DocumentSnapshot documentForEditor(MyCodeEditor* editor) const;
     DocumentSnapshot documentForFile(const QString& fileName) const;
     QString documentText(const QString& documentId) const;
+    QString documentTextForFile(const QString& fileName) const;
 
 signals:
     void documentOpened(const DocumentSnapshot& snapshot);
@@ -49,6 +51,7 @@ private:
     struct TrackedDocument {
         DocumentSnapshot snapshot;
         MyCodeEditor* editor = nullptr;
+        QString text;
     };
 
     QHash<MyCodeEditor*, TrackedDocument> documentsByEditor;
@@ -57,7 +60,10 @@ private:
 
     QString documentIdForEditor(MyCodeEditor* editor) const;
     QString normalizedFileName(const QString& fileName) const;
-    DocumentSnapshot makeSnapshot(MyCodeEditor* editor, const DocumentSnapshot* previous = nullptr) const;
+    DocumentSnapshot makeSnapshot(const EditorDocumentState& state,
+                                  const DocumentSnapshot* previous = nullptr) const;
+    TrackedDocument makeTrackedDocument(MyCodeEditor* editor,
+                                        const DocumentSnapshot* previous = nullptr) const;
     void indexDocument(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
     void removeIndexes(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
 };

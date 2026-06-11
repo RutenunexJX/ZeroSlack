@@ -69,9 +69,6 @@ void AnalysisCoordinator::configureScheduler()
     scheduler->setDocumentModel(tabManager ? tabManager->getDocumentModel() : nullptr);
     scheduler->setProjectModel(workspaceManager ? workspaceManager->getProjectModel() : nullptr);
     scheduler->setSymbolAnalyzer(semanticRuntime ? semanticRuntime->symbolAnalyzer() : nullptr);
-    scheduler->setOpenFileContentProvider([this](const QString& fileName) {
-        return tabManager ? tabManager->getPlainTextFromOpenFile(fileName) : QString();
-    });
     scheduler->setWorkspaceOpenProvider([this]() {
         return workspaceManager && workspaceManager->isWorkspaceOpen();
     });

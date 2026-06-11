@@ -185,7 +185,7 @@ void MyCodeEditor::updateLineNumberWidgetWidth()
 
 void MyCodeEditor::updateSaveState()
 {
-    isSaved = false;
+    markDocumentDirty();
 }
 
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
@@ -299,9 +299,43 @@ QString MyCodeEditor::getFileName() const
     return mFileName;
 }
 
-bool MyCodeEditor::checkSaved()
+bool MyCodeEditor::checkSaved() const
+{
+    return isDocumentSaved();
+}
+
+bool MyCodeEditor::isDocumentSaved() const
 {
     return isSaved;
+}
+
+void MyCodeEditor::markDocumentSaved()
+{
+    isSaved = true;
+}
+
+void MyCodeEditor::markDocumentDirty()
+{
+    isSaved = false;
+}
+
+EditorDocumentState MyCodeEditor::documentState(bool includeText) const
+{
+    EditorDocumentState state;
+    state.fileName = getFileName();
+    if (includeText)
+        state.text = document()->toPlainText();
+    state.saved = isDocumentSaved();
+
+    const QTextCursor cursor = textCursor();
+    state.cursorPosition = cursor.position();
+    const QTextBlock block = cursor.block();
+    state.cursorLine = block.isValid() ? block.blockNumber() + 1 : 1;
+    state.cursorColumn = block.isValid()
+        ? cursor.position() - block.position() + 1
+        : 1;
+    state.currentModuleName = currentModuleNameAt(cursor.position());
+    return state;
 }
 
 QString MyCodeEditor::currentModuleName() const

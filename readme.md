@@ -25,21 +25,21 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-`SymbolAnalyzer` event fan-out now terminates at `AnalysisScheduler`.
-`AnalysisCoordinator` receives scheduler-level symbol events for file completion, workspace progress, and workspace completion, then routes navigation/editor/progress UI updates without connecting directly to the analyzer.
+Editor document state now flows through `DocumentModel`.
+`MyCodeEditor` exposes explicit document state and save/dirty methods, `DocumentModel` caches open-document text/snapshots, `TabManager` reads open file lists and unsaved state from document snapshots, and `AnalysisScheduler` takes open-document content from `DocumentModel` before falling back to legacy providers.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
-- `DocumentModel` owns open document state.
-- `AnalysisScheduler` owns analysis timing, `SymbolAnalyzer` execution/signal adaptation, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
+- `DocumentModel` owns open document snapshots, cached open-document text, dirty/saved state, cursor state, and live module names.
+- `AnalysisScheduler` owns analysis timing, `SymbolAnalyzer` execution/signal adaptation, open-document content reads from `DocumentModel`, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog rendering policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace signal routing, symbol analysis event routing from scheduler-level events, navigation analysis refresh routing, runtime dependency configuration, and active-editor refresh policy.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, text-change completion workflow state, command-mode completion refresh workflow state, alternate-mode key workflow state, alternate-mode completion display workflow state, source-navigation hover/click workflow state, source-symbol shortcut workflow state, source-symbol menu/action workflow state, completion activation/popup mode query assembly, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.
-- `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
+- `TabManager` owns tab lifecycle, file reads/writes, tab titles, and `DocumentModel` registration/save updates while querying open-document state through `DocumentModel`.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` tab/workspace input wiring.
 - `NavigationManager` owns navigation view cache/refresh state, accepts analysis refresh events from coordinators, and delegates semantic navigation reads to `NavigationService`.

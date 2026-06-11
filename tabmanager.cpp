@@ -59,7 +59,7 @@ bool TabManager::openFileInTab(const QString& fileName)
     MyCodeEditor* editorPtr = codeEditor.get();
     editorPtr->setPlainText(text);
     editorPtr->setFileName(fileToOpen);
-    editorPtr->isSaved = true;
+    editorPtr->markDocumentSaved();
     tabWidget->addTab(codeEditor.release(), getDisplayName(fileToOpen));
     documentModel->registerEditor(editorPtr);
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
@@ -148,6 +148,12 @@ QString TabManager::getPlainTextFromOpenFile(const QString& fileName) const
 {
     const QString requestedPath = QDir::cleanPath(
         QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    const QString modelText = documentModel
+        ? documentModel->documentTextForFile(requestedPath)
+        : QString();
+    if (!modelText.isNull())
+        return modelText;
+
     for (int i = 0; i < tabWidget->count(); ++i) {
         MyCodeEditor *codeEditor = getEditorAt(i);
         if (!codeEditor)
@@ -165,8 +171,17 @@ QString TabManager::getPlainTextFromOpenFile(const QString& fileName) const
 QStringList TabManager::getAllOpenFileNames() const
 {
     QStringList fileNames;
-    fileNames.reserve(tabWidget->count());
+    if (documentModel) {
+        const QList<DocumentSnapshot> documents = documentModel->openDocuments();
+        fileNames.reserve(documents.size());
+        for (const DocumentSnapshot& document : documents) {
+            if (!document.fileName.isEmpty())
+                fileNames.append(document.fileName);
+        }
+        return fileNames;
+    }
 
+    fileNames.reserve(tabWidget->count());
     for (int i = 0; i < tabWidget->count(); ++i) {
         MyCodeEditor *codeEditor = getEditorAt(i);
         if (codeEditor && !codeEditor->getFileName().isEmpty()) {
@@ -221,6 +236,14 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
 
 bool TabManager::hasUnsavedChanges() const
 {
+    if (documentModel) {
+        for (const DocumentSnapshot& document : documentModel->openDocuments()) {
+            if (document.dirty || !document.saved)
+                return true;
+        }
+        return false;
+    }
+
     for (int i = 0; i < tabWidget->count(); ++i) {
         MyCodeEditor *codeEditor = getEditorAt(i);
         if (codeEditor && !codeEditor->checkSaved()) {
@@ -277,7 +300,7 @@ bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
     file.close();
 
     editor->setFileName(fileName);
-    editor->isSaved = true;
+    editor->markDocumentSaved();
     return true;
 }
 

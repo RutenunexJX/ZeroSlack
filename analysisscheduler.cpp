@@ -720,6 +720,12 @@ WorkspaceRelationshipAnalysisResult AnalysisScheduler::analyzeWorkspaceRelations
 
 QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const
 {
+    if (documentModel) {
+        const QString modelText = documentModel->documentTextForFile(fileName);
+        if (!modelText.isNull())
+            return modelText;
+    }
+
     if (openFileContentProvider)
         return openFileContentProvider(fileName);
     return QString();

@@ -817,7 +817,7 @@ int main(int argc, char** argv)
             QStringLiteral("module saved_tab;\nendmodule\n");
         saveEditor->setFileName(savePath);
         saveEditor->setPlainText(savedText);
-        saveEditor->isSaved = false;
+        saveEditor->markDocumentDirty();
         QSignalSpy fileSavedSpy(window.tabManager.get(), &TabManager::fileSaved);
         expectBool("tab manager saves current tab",
                    window.tabManager->saveCurrentTab(),
@@ -949,6 +949,15 @@ int main(int argc, char** argv)
                    beforeEditDoc.fileName == QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(largeFile).absoluteFilePath())),
                    true);
         expectBool("opened document starts saved", beforeEditDoc.saved, true);
+        expectBool("document model caches opened text",
+                   documents
+                       && documents->documentTextForFile(largeFile)
+                           == largeEditor->toPlainText(),
+                   true);
+        expectBool("tab manager reads model open-file text",
+                   window.tabManager->getPlainTextFromOpenFile(largeFile)
+                       == largeEditor->toPlainText(),
+                   true);
 
         largeEditor->setFocus();
         QTextCursor cursor = largeEditor->textCursor();
@@ -971,6 +980,18 @@ int main(int argc, char** argv)
         expectBool("document model increments version",
                    afterEditDoc.textVersion > beforeEditDoc.textVersion, true);
         expectBool("document model tracks cursor line", afterEditDoc.cursorLine > 0, true);
+        expectBool("document model updates cached text",
+                   documents
+                       && documents->documentTextForFile(largeFile)
+                           == largeEditor->toPlainText(),
+                   true);
+        const EditorDocumentState editorState = largeEditor->documentState(true);
+        expectBool("editor exposes document state",
+                   editorState.fileName == afterEditDoc.fileName
+                       && editorState.text == largeEditor->toPlainText()
+                       && !editorState.saved
+                       && editorState.cursorLine == afterEditDoc.cursorLine,
+                   true);
         drainRelationshipWork(window);
     }
 
