@@ -248,6 +248,66 @@ int main(int argc, char** argv) {
     expectList("EditorContext alternate matches",
                contextAlternateState.matches,
                {"save", "save_as", "select_all"});
+    EditorAlternateModeKeyContext alternateKeyContext;
+    alternateKeyContext.key = Qt::Key_Backspace;
+    alternateKeyContext.buffer = QStringLiteral("sav");
+    const EditorAlternateModeKeyState alternateBackspaceState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeKeyState(alternateKeyContext);
+    expectBool("EditorContext alternate key backspace",
+               alternateBackspaceState.action
+                       == EditorAlternateModeKeyAction::UpdateInput
+                   && alternateBackspaceState.nextInput == QStringLiteral("sa"),
+               true);
+    alternateKeyContext.buffer.clear();
+    const EditorAlternateModeKeyState alternateEmptyBackspaceState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeKeyState(alternateKeyContext);
+    expectBool("EditorContext alternate key empty backspace",
+               alternateEmptyBackspaceState.action
+                       == EditorAlternateModeKeyAction::RefreshCompletions
+                   && alternateEmptyBackspaceState.nextInput.isEmpty(),
+               true);
+    alternateKeyContext.key = Qt::Key_Escape;
+    alternateKeyContext.buffer = QStringLiteral("save");
+    const EditorAlternateModeKeyState alternateEscapeState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeKeyState(alternateKeyContext);
+    expectBool("EditorContext alternate key escape",
+               alternateEscapeState.action
+                       == EditorAlternateModeKeyAction::ClearAndHide
+                   && alternateEscapeState.hidePopup
+                   && alternateEscapeState.clearBuffer,
+               true);
+    alternateKeyContext.key = Qt::Key_Return;
+    const EditorAlternateModeKeyState alternateReturnState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeKeyState(alternateKeyContext);
+    expectBool("EditorContext alternate key return",
+               alternateReturnState.action
+                       == EditorAlternateModeKeyAction::ExecuteCommand
+                   && alternateReturnState.command == QStringLiteral("save"),
+               true);
+    alternateKeyContext.key = Qt::Key_A;
+    alternateKeyContext.text = QStringLiteral("a");
+    alternateKeyContext.buffer = QStringLiteral("s");
+    const EditorAlternateModeKeyState alternatePrintableState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeKeyState(alternateKeyContext);
+    expectBool("EditorContext alternate key printable",
+               alternatePrintableState.action
+                       == EditorAlternateModeKeyAction::UpdateInput
+                   && alternatePrintableState.nextInput == QStringLiteral("sa"),
+               true);
+    alternateKeyContext.key = Qt::Key_F1;
+    alternateKeyContext.text.clear();
+    const EditorAlternateModeKeyState alternateConsumeState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeKeyState(alternateKeyContext);
+    expectBool("EditorContext alternate key consume",
+               alternateConsumeState.action
+                   == EditorAlternateModeKeyAction::Consume,
+               true);
     const AlternateCommandCompletionState alternateEmptyState =
         alternateCommandService->completionState(QString());
     expectBool("AlternateCommand empty visible",

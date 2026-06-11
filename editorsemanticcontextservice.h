@@ -62,6 +62,29 @@ struct EditorCommandModeCompletionRefreshState {
     CommandModeCompletionState completion;
 };
 
+struct EditorAlternateModeKeyContext {
+    int key = 0;
+    QString text;
+    QString buffer;
+};
+
+enum class EditorAlternateModeKeyAction {
+    Consume,
+    UpdateInput,
+    RefreshCompletions,
+    ExecuteCommand,
+    ClearAndHide
+};
+
+struct EditorAlternateModeKeyState {
+    EditorAlternateModeKeyAction action =
+        EditorAlternateModeKeyAction::Consume;
+    QString nextInput;
+    QString command;
+    bool hidePopup = false;
+    bool clearBuffer = false;
+};
+
 class EditorSemanticContextService
 {
 public:
@@ -112,6 +135,8 @@ public:
         const EditorSemanticContext& context) const;
     CommandModeMatch commandModeMatch(
         const EditorSemanticContext& context) const;
+    EditorAlternateModeKeyState alternateModeKeyState(
+        const EditorAlternateModeKeyContext& context) const;
     AlternateCommandCompletionState alternateCommandCompletionState(
         const QString& input) const;
     EditorCompletionQuery editorCompletionQuery(

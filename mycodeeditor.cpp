@@ -441,33 +441,32 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         if (handleCompletionPopupKey(event))
             return;
 
-        if (event->key() == Qt::Key_Backspace) {
-            if (!alternateCommandBuffer.isEmpty()) {
-                alternateCommandBuffer.chop(1);
-                processAlternateModeInput(alternateCommandBuffer);
-            } else {
-                showAlternateModeCommands("");
-            }
-            return;
-        }
+        EditorAlternateModeKeyContext alternateKeyContext;
+        alternateKeyContext.key = event->key();
+        alternateKeyContext.text = event->text();
+        alternateKeyContext.buffer = alternateCommandBuffer;
+        const EditorAlternateModeKeyState alternateKeyState =
+            EditorSemanticContextService::getInstance()
+                ->alternateModeKeyState(alternateKeyContext);
 
-        if (event->key() == Qt::Key_Escape) {
-            hideAutoComplete();
-            clearAlternateModeBuffer();
-            return;
-        }
-
-        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-            if (!alternateCommandBuffer.isEmpty()) {
-                executeAlternateModeCommand(alternateCommandBuffer);
-            }
-            return;
-        }
-
-        QString newChar = event->text();
-        if (!newChar.isEmpty() && (newChar.at(0).isPrint())) {
-            alternateCommandBuffer += newChar;
-            processAlternateModeInput(alternateCommandBuffer);
+        switch (alternateKeyState.action) {
+        case EditorAlternateModeKeyAction::UpdateInput:
+            processAlternateModeInput(alternateKeyState.nextInput);
+            break;
+        case EditorAlternateModeKeyAction::RefreshCompletions:
+            showAlternateModeCommands(alternateKeyState.nextInput);
+            break;
+        case EditorAlternateModeKeyAction::ExecuteCommand:
+            executeAlternateModeCommand(alternateKeyState.command);
+            break;
+        case EditorAlternateModeKeyAction::ClearAndHide:
+            if (alternateKeyState.hidePopup)
+                hideAutoComplete();
+            if (alternateKeyState.clearBuffer)
+                clearAlternateModeBuffer();
+            break;
+        case EditorAlternateModeKeyAction::Consume:
+            break;
         }
 
         return;

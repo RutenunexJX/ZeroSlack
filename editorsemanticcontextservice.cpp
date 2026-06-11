@@ -1,5 +1,7 @@
 #include "editorsemanticcontextservice.h"
 
+#include <Qt>
+
 std::unique_ptr<EditorSemanticContextService>
     EditorSemanticContextService::instance = nullptr;
 
@@ -225,6 +227,46 @@ CommandModeMatch EditorSemanticContextService::commandModeMatch(
 {
     return CompletionService::getInstance()->matchCommandMode(
         context.lineUpToCursor);
+}
+
+EditorAlternateModeKeyState EditorSemanticContextService::alternateModeKeyState(
+    const EditorAlternateModeKeyContext& context) const
+{
+    EditorAlternateModeKeyState state;
+
+    if (context.key == Qt::Key_Backspace) {
+        if (context.buffer.isEmpty()) {
+            state.action = EditorAlternateModeKeyAction::RefreshCompletions;
+            state.nextInput = QString();
+        } else {
+            state.action = EditorAlternateModeKeyAction::UpdateInput;
+            state.nextInput = context.buffer.left(context.buffer.size() - 1);
+        }
+        return state;
+    }
+
+    if (context.key == Qt::Key_Escape) {
+        state.action = EditorAlternateModeKeyAction::ClearAndHide;
+        state.hidePopup = true;
+        state.clearBuffer = true;
+        return state;
+    }
+
+    if (context.key == Qt::Key_Return || context.key == Qt::Key_Enter) {
+        if (!context.buffer.isEmpty()) {
+            state.action = EditorAlternateModeKeyAction::ExecuteCommand;
+            state.command = context.buffer;
+        }
+        return state;
+    }
+
+    if (!context.text.isEmpty() && context.text.at(0).isPrint()) {
+        state.action = EditorAlternateModeKeyAction::UpdateInput;
+        state.nextInput = context.buffer + context.text;
+        return state;
+    }
+
+    return state;
 }
 
 AlternateCommandCompletionState
