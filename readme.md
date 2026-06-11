@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor source/definition navigation context now lives behind `EditorSemanticContextService`.
-`MyCodeEditor` builds editor context once and delegates source target, identifier, symbol action, definition target, and tooltip reads to the editor semantic facade instead of reaching into source/definition services directly.
+Editor completion state now lives behind `EditorSemanticContextService`.
+`MyCodeEditor` delegates completion trigger, completion names, command-mode state, editor completion state, activation policy, source navigation, definition navigation, and tooltip reads to the editor semantic facade instead of reaching into feature services directly.
 
 ## Current Architecture Snapshot
 
@@ -47,7 +47,7 @@ Editor source/definition navigation context now lives behind `EditorSemanticCont
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, relationship analysis requests, and semantic panel refresh requests.
-- `EditorSemanticContextService` owns editor-context-to-query assembly for completion, command mode, definition navigation, source navigation targets, and source symbol actions.
+- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode, definition navigation, source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.

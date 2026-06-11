@@ -2,7 +2,6 @@
 #include "alternatecommandservice.h"
 #include "myhighlighter.h"
 #include "completionmodel.h"
-#include "completionservice.h"
 #include "editorsemanticcontextservice.h"
 
 #include "syminfo.h"
@@ -473,10 +472,8 @@ void MyCodeEditor::onTextChanged()
     context.lineUpToCursor = lineUpToCursor;
     context.moduleName = currentModuleNameAt(cursor.position() - 1);
     context.commandModeActive = isInCustomCommandMode;
-    const CompletionTriggerQuery triggerQuery =
-        EditorSemanticContextService::getInstance()->completionTriggerQuery(context);
     const CompletionTriggerState triggerState =
-        CompletionService::getInstance()->completionTriggerState(triggerQuery);
+        EditorSemanticContextService::getInstance()->completionTriggerState(context);
 
     if (triggerState.continueCompletion) {
         autoCompleteTimer->start();
@@ -503,9 +500,8 @@ QStringList MyCodeEditor::getCompletionSuggestions(const QString &prefix)
     context.moduleName = currentModuleNameAt(cursorPosition);
     context.cursorLine = cursor.block().blockNumber() + 1;
     context.cursorPosition = cursorPosition;
-    const CompletionQuery query =
-        EditorSemanticContextService::getInstance()->completionQuery(prefix, context);
-    return CompletionService::getInstance()->findCompletionResult(query).names;
+    return EditorSemanticContextService::getInstance()
+        ->completionNames(prefix, context);
 }
 
 bool MyCodeEditor::isInCommentArea()
@@ -529,8 +525,8 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
                ? CompletionActivationMode::CommandMode
                : CompletionActivationMode::EditorWord);
     const CompletionActivationState activationState =
-        CompletionService::getInstance()->completionActivationState(
-            activationQuery);
+        EditorSemanticContextService::getInstance()
+            ->completionActivationState(activationQuery);
 
     if (activationState.action == CompletionActivationAction::None)
         return;
@@ -733,7 +729,6 @@ void MyCodeEditor::onAutoCompleteTimer()
         lastLineNumber = currentLineNumber;
     }
 
-    CompletionService* completionService = CompletionService::getInstance();
     EditorSemanticContext context;
     context.lineUpToCursor = lineUpToCursor;
     context.fileName = getFileName();
@@ -743,9 +738,8 @@ void MyCodeEditor::onAutoCompleteTimer()
     context.cursorPosition = cursor.position();
 
     const CommandModeCompletionState commandState =
-        completionService->commandModeCompletionState(
-            EditorSemanticContextService::getInstance()
-                ->commandModeCompletionQuery(context));
+        EditorSemanticContextService::getInstance()
+            ->commandModeCompletionState(context);
     if (commandState.matched) {
         isInCustomCommandMode = true;
         if (commandModeExitedByDoubleSpace) {
@@ -791,11 +785,8 @@ void MyCodeEditor::onAutoCompleteTimer()
     }
 
     context.wordPrefix = getWordUnderCursor();
-    const EditorCompletionQuery query =
-        EditorSemanticContextService::getInstance()->editorCompletionQuery(context);
-
     const EditorCompletionState completionState =
-        completionService->editorCompletionState(query);
+        EditorSemanticContextService::getInstance()->editorCompletionState(context);
     if (completionState.available) {
         completionModel->updateCompletions(completionState.completion.names,
                                            completionState.completion.symbols,
@@ -815,8 +806,10 @@ void MyCodeEditor::highlightCommandText()
     int positionInLine = cursor.position() - currentBlock.position();
     QString lineUpToCursor = lineText.left(positionInLine);
 
+    EditorSemanticContext context;
+    context.lineUpToCursor = lineUpToCursor;
     const CommandModeMatch match =
-        CompletionService::getInstance()->matchCommandMode(lineUpToCursor);
+        EditorSemanticContextService::getInstance()->commandModeMatch(context);
     const int prefixPos = match.prefixPosition;
 
     if (prefixPos == -1) return;
@@ -882,8 +875,10 @@ QString MyCodeEditor::getWordUnderCursor()
 
 bool MyCodeEditor::checkForCustomCommand(const QString &lineUpToCursor)
 {
+    EditorSemanticContext context;
+    context.lineUpToCursor = lineUpToCursor;
     const CommandModeInputState state =
-        CompletionService::getInstance()->commandModeInputState(lineUpToCursor);
+        EditorSemanticContextService::getInstance()->commandModeInputState(context);
     if (state.matched) {
         isInCustomCommandMode = true;
         return true;

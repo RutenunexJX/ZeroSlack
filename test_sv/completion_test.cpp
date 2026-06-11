@@ -5,6 +5,7 @@
 #include "completionmanager.h"
 #include "completionmodel.h"
 #include "completionservice.h"
+#include "editorsemanticcontextservice.h"
 #include "semanticindexsnapshot.h"
 #include "syminfo.h"
 #include <QApplication>
@@ -853,6 +854,69 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            editorEmptyStateOk ? "PASS" : "FAIL",
            "CompletionService editor empty");
+
+    EditorSemanticContext editorCompletionContext;
+    editorCompletionContext.lineUpToCursor = editorWordQuery.lineUpToCursor;
+    editorCompletionContext.wordPrefix = editorWordQuery.wordPrefix;
+    editorCompletionContext.fileName = path;
+    editorCompletionContext.moduleName = QStringLiteral("top");
+    editorCompletionContext.cursorLine = 1;
+    editorCompletionContext.cursorPosition =
+        editorCompletionContext.lineUpToCursor.size();
+    const EditorCompletionState contextEditorState =
+        EditorSemanticContextService::getInstance()
+            ->editorCompletionState(editorCompletionContext);
+    expectList("EditorSemanticContext editor word",
+               contextEditorState.completion.names,
+               {"enable"});
+    expectList("EditorSemanticContext names",
+               EditorSemanticContextService::getInstance()
+                   ->completionNames(QStringLiteral("en"), editorCompletionContext),
+               {"enable"});
+
+    EditorSemanticContext triggerContext;
+    triggerContext.lineUpToCursor = QStringLiteral("assign en");
+    const CompletionTriggerState contextTriggerState =
+        EditorSemanticContextService::getInstance()
+            ->completionTriggerState(triggerContext);
+    expectBool("EditorSemanticContext trigger state",
+               contextTriggerState.continueCompletion,
+               true);
+
+    EditorSemanticContext commandContext;
+    commandContext.lineUpToCursor = QStringLiteral("l ena ");
+    commandContext.fileName = path;
+    commandContext.moduleName = QStringLiteral("top");
+    commandContext.documentText = content;
+    const CommandModeCompletionState contextCommandState =
+        EditorSemanticContextService::getInstance()
+            ->commandModeCompletionState(commandContext);
+    expectList("EditorSemanticContext command state",
+               symbolNames(contextCommandState.symbols),
+               {"enable"});
+    const CommandModeInputState contextInputState =
+        EditorSemanticContextService::getInstance()
+            ->commandModeInputState(commandContext);
+    expectBool("EditorSemanticContext command input",
+               contextInputState.matched,
+               true);
+    const CommandModeMatch contextCommandMatch =
+        EditorSemanticContextService::getInstance()
+            ->commandModeMatch(commandContext);
+    expectBool("EditorSemanticContext command match",
+               contextCommandMatch.matched,
+               true);
+
+    CompletionActivationQuery contextActivationQuery;
+    contextActivationQuery.selectable = true;
+    contextActivationQuery.mode = CompletionActivationMode::EditorWord;
+    contextActivationQuery.itemText = QStringLiteral("enable");
+    const CompletionActivationState contextActivationState =
+        EditorSemanticContextService::getInstance()
+            ->completionActivationState(contextActivationQuery);
+    expectBool("EditorSemanticContext activation",
+               contextActivationState.action == CompletionActivationAction::ReplaceWord,
+               true);
 
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;

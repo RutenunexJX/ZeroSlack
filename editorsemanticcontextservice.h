@@ -51,12 +51,26 @@ public:
         const EditorSemanticContext& context) const;
     CompletionTriggerQuery completionTriggerQuery(
         const EditorSemanticContext& context) const;
+    CompletionTriggerState completionTriggerState(
+        const EditorSemanticContext& context) const;
     CompletionQuery completionQuery(const QString& prefix,
                                     const EditorSemanticContext& context) const;
+    QStringList completionNames(const QString& prefix,
+                                const EditorSemanticContext& context) const;
     CommandModeCompletionQuery commandModeCompletionQuery(
+        const EditorSemanticContext& context) const;
+    CommandModeCompletionState commandModeCompletionState(
+        const EditorSemanticContext& context) const;
+    CommandModeInputState commandModeInputState(
+        const EditorSemanticContext& context) const;
+    CommandModeMatch commandModeMatch(
         const EditorSemanticContext& context) const;
     EditorCompletionQuery editorCompletionQuery(
         const EditorSemanticContext& context) const;
+    EditorCompletionState editorCompletionState(
+        const EditorSemanticContext& context) const;
+    CompletionActivationState completionActivationState(
+        const CompletionActivationQuery& query) const;
 
 private:
     static std::unique_ptr<EditorSemanticContextService> instance;

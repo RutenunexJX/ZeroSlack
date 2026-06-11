@@ -90,6 +90,13 @@ CompletionTriggerQuery EditorSemanticContextService::completionTriggerQuery(
     return query;
 }
 
+CompletionTriggerState EditorSemanticContextService::completionTriggerState(
+    const EditorSemanticContext& context) const
+{
+    return CompletionService::getInstance()->completionTriggerState(
+        completionTriggerQuery(context));
+}
+
 CompletionQuery EditorSemanticContextService::completionQuery(
     const QString& prefix,
     const EditorSemanticContext& context) const
@@ -101,6 +108,15 @@ CompletionQuery EditorSemanticContextService::completionQuery(
     query.cursorLine = context.cursorLine;
     query.cursorPosition = context.cursorPosition;
     return query;
+}
+
+QStringList EditorSemanticContextService::completionNames(
+    const QString& prefix,
+    const EditorSemanticContext& context) const
+{
+    return CompletionService::getInstance()
+        ->findCompletionResult(completionQuery(prefix, context))
+        .names;
 }
 
 CommandModeCompletionQuery
@@ -115,6 +131,27 @@ EditorSemanticContextService::commandModeCompletionQuery(
     return query;
 }
 
+CommandModeCompletionState EditorSemanticContextService::commandModeCompletionState(
+    const EditorSemanticContext& context) const
+{
+    return CompletionService::getInstance()->commandModeCompletionState(
+        commandModeCompletionQuery(context));
+}
+
+CommandModeInputState EditorSemanticContextService::commandModeInputState(
+    const EditorSemanticContext& context) const
+{
+    return CompletionService::getInstance()->commandModeInputState(
+        context.lineUpToCursor);
+}
+
+CommandModeMatch EditorSemanticContextService::commandModeMatch(
+    const EditorSemanticContext& context) const
+{
+    return CompletionService::getInstance()->matchCommandMode(
+        context.lineUpToCursor);
+}
+
 EditorCompletionQuery EditorSemanticContextService::editorCompletionQuery(
     const EditorSemanticContext& context) const
 {
@@ -126,4 +163,17 @@ EditorCompletionQuery EditorSemanticContextService::editorCompletionQuery(
     query.cursorLine = context.cursorLine;
     query.cursorPosition = context.cursorPosition;
     return query;
+}
+
+EditorCompletionState EditorSemanticContextService::editorCompletionState(
+    const EditorSemanticContext& context) const
+{
+    return CompletionService::getInstance()->editorCompletionState(
+        editorCompletionQuery(context));
+}
+
+CompletionActivationState EditorSemanticContextService::completionActivationState(
+    const CompletionActivationQuery& query) const
+{
+    return CompletionService::getInstance()->completionActivationState(query);
 }
