@@ -39,6 +39,35 @@ SourceSymbolActionContext EditorSemanticContextService::sourceSymbolActionContex
         context.moduleName);
 }
 
+EditorSourceSymbolShortcutState
+EditorSemanticContextService::sourceSymbolShortcutState(
+    const EditorSourceSymbolShortcutContext& context) const
+{
+    EditorSourceSymbolShortcutState state;
+    const Qt::KeyboardModifiers modifiers =
+        Qt::KeyboardModifiers::fromInt(context.modifiers);
+
+    if (context.key == Qt::Key_F12 && modifiers.testFlag(Qt::ShiftModifier)) {
+        state.matched = true;
+        state.acceptEvent = true;
+        state.action = SourceSymbolAction::FindReferences;
+        state.semanticContext = context.semanticContext;
+        return state;
+    }
+
+    if (context.key == Qt::Key_R
+        && modifiers.testFlag(Qt::ControlModifier)
+        && modifiers.testFlag(Qt::ShiftModifier)) {
+        state.matched = true;
+        state.acceptEvent = true;
+        state.action = SourceSymbolAction::ShowRelationships;
+        state.semanticContext = context.semanticContext;
+        return state;
+    }
+
+    return state;
+}
+
 SourceEditorNavigationTarget EditorSemanticContextService::sourceNavigationTarget(
     const EditorSemanticContext& context,
     const std::function<bool(const QString&)>& canResolveIdentifier) const

@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Source-navigation hover/click workflow state now lives in `EditorSemanticContextService`.
-`MyCodeEditor` asks for editor-facing source navigation targets and click actions covering include opens, definition navigation, jumpability, absolute ranges, and event acceptance, then only performs UI highlighting/cursor/signals.
+Source-symbol shortcut workflow state now lives in `EditorSemanticContextService`.
+`MyCodeEditor` asks for one editor-facing shortcut state covering Shift+F12 references, Ctrl+Shift+R relationships, request context, event acceptance, and no-op key paths, then only emits UI workflow signals.
 
 ## Current Architecture Snapshot
 
@@ -37,7 +37,7 @@ Source-navigation hover/click workflow state now lives in `EditorSemanticContext
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
-- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, text-change completion workflow state, command-mode completion refresh workflow state, alternate-mode key workflow state, source-navigation hover/click workflow state, completion activation/popup mode query assembly, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
+- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, text-change completion workflow state, command-mode completion refresh workflow state, alternate-mode key workflow state, source-navigation hover/click workflow state, source-symbol shortcut workflow state, completion activation/popup mode query assembly, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.
 - `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.

@@ -110,6 +110,19 @@ struct EditorSourceNavigationClickState {
     bool acceptEvent = false;
 };
 
+struct EditorSourceSymbolShortcutContext {
+    int key = 0;
+    int modifiers = 0;
+    EditorSemanticContext semanticContext;
+};
+
+struct EditorSourceSymbolShortcutState {
+    bool matched = false;
+    bool acceptEvent = false;
+    SourceSymbolAction action = SourceSymbolAction::FindReferences;
+    EditorSemanticContext semanticContext;
+};
+
 class EditorSemanticContextService
 {
 public:
@@ -120,6 +133,8 @@ public:
 
     SourceSymbolActionContext sourceSymbolActionContext(
         const EditorSemanticContext& context) const;
+    EditorSourceSymbolShortcutState sourceSymbolShortcutState(
+        const EditorSourceSymbolShortcutContext& context) const;
     SourceEditorNavigationTarget sourceNavigationTarget(
         const EditorSemanticContext& context,
         const std::function<bool(const QString&)>& canResolveIdentifier) const;

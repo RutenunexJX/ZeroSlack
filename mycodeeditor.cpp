@@ -413,22 +413,20 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         }
     }
 
-    if (event->key() == Qt::Key_F12
-        && (event->modifiers() & Qt::ShiftModifier)) {
+    EditorSourceSymbolShortcutContext sourceShortcutContext;
+    sourceShortcutContext.key = event->key();
+    sourceShortcutContext.modifiers = int(event->modifiers());
+    sourceShortcutContext.semanticContext =
+        editorSemanticContextForPosition(textCursor().position());
+    const EditorSourceSymbolShortcutState sourceShortcutState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolShortcutState(sourceShortcutContext);
+    if (sourceShortcutState.matched) {
         emit sourceSymbolActionRequested(
-            SourceSymbolAction::FindReferences,
-            editorSemanticContextForPosition(textCursor().position()));
-        event->accept();
-        return;
-    }
-
-    if (event->key() == Qt::Key_R
-        && (event->modifiers() & Qt::ControlModifier)
-        && (event->modifiers() & Qt::ShiftModifier)) {
-        emit sourceSymbolActionRequested(
-            SourceSymbolAction::ShowRelationships,
-            editorSemanticContextForPosition(textCursor().position()));
-        event->accept();
+            sourceShortcutState.action,
+            sourceShortcutState.semanticContext);
+        if (sourceShortcutState.acceptEvent)
+            event->accept();
         return;
     }
 

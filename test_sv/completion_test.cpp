@@ -1239,6 +1239,50 @@ int main(int argc, char** argv) {
                true);
     SemanticIndex::getInstance()->clearSnapshot();
 
+    EditorSourceSymbolShortcutContext sourceShortcutContext;
+    sourceShortcutContext.key = Qt::Key_F12;
+    sourceShortcutContext.modifiers = int(Qt::ShiftModifier);
+    sourceShortcutContext.semanticContext = identifierNavigationContext;
+    const EditorSourceSymbolShortcutState findReferencesShortcutState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolShortcutState(sourceShortcutContext);
+    expectBool("EditorSemanticContext source shortcut refs",
+               findReferencesShortcutState.matched
+                   && findReferencesShortcutState.acceptEvent
+                   && findReferencesShortcutState.action
+                       == SourceSymbolAction::FindReferences
+                   && findReferencesShortcutState.semanticContext.lineText
+                       == identifierNavigationContext.lineText,
+               true);
+    sourceShortcutContext.key = Qt::Key_R;
+    sourceShortcutContext.modifiers =
+        int(Qt::ControlModifier | Qt::ShiftModifier);
+    const EditorSourceSymbolShortcutState relationshipsShortcutState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolShortcutState(sourceShortcutContext);
+    expectBool("EditorSemanticContext source shortcut rels",
+               relationshipsShortcutState.matched
+                   && relationshipsShortcutState.acceptEvent
+                   && relationshipsShortcutState.action
+                       == SourceSymbolAction::ShowRelationships,
+               true);
+    sourceShortcutContext.key = Qt::Key_F12;
+    sourceShortcutContext.modifiers = 0;
+    const EditorSourceSymbolShortcutState plainF12State =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolShortcutState(sourceShortcutContext);
+    expectBool("EditorSemanticContext source shortcut plain f12",
+               !plainF12State.matched && !plainF12State.acceptEvent,
+               true);
+    sourceShortcutContext.key = Qt::Key_R;
+    sourceShortcutContext.modifiers = int(Qt::ControlModifier);
+    const EditorSourceSymbolShortcutState plainControlRState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolShortcutState(sourceShortcutContext);
+    expectBool("EditorSemanticContext source shortcut plain ctrl-r",
+               !plainControlRState.matched && !plainControlRState.acceptEvent,
+               true);
+
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
     commandQuery.moduleName = "top";
