@@ -69,22 +69,21 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                                  const QString& currentFile) {
                 handleIncludeOpenRequested(editor, includePath, currentFile);
             });
-    connect(editor, &MyCodeEditor::referenceSearchRequested,
-            this, [this](const QString& symbolName,
-                         const QString& fileName,
-                         const QString& moduleName) {
-                if (semanticPanelRefresh) {
+    connect(editor, &MyCodeEditor::sourceSymbolActionRequested,
+            this, [this](SourceSymbolAction action,
+                         const SourceSymbolActionContext& context) {
+                if (!semanticPanelRefresh || !context.available)
+                    return;
+
+                switch (action) {
+                case SourceSymbolAction::FindReferences:
                     semanticPanelRefresh->showReferencesForSymbol(
-                        symbolName, fileName, moduleName);
-                }
-            });
-    connect(editor, &MyCodeEditor::relationshipBrowseRequested,
-            this, [this](const QString& symbolName,
-                         const QString& fileName,
-                         const QString& moduleName) {
-                if (semanticPanelRefresh) {
+                        context.symbolName, context.fileName, context.moduleName);
+                    break;
+                case SourceSymbolAction::ShowRelationships:
                     semanticPanelRefresh->showRelationshipsForSymbol(
-                        symbolName, fileName, moduleName);
+                        context.symbolName, context.fileName, context.moduleName);
+                    break;
                 }
             });
 }

@@ -48,6 +48,11 @@ struct SourceSymbolActionContext {
     QString moduleName;
 };
 
+enum class SourceSymbolAction {
+    FindReferences,
+    ShowRelationships
+};
+
 struct SourceEditorNavigationTarget {
     bool matched = false;
     bool jumpable = false;

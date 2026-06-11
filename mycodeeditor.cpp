@@ -207,13 +207,13 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
     QAction* findReferencesAction = menu->addAction(QStringLiteral("Find References"));
     findReferencesAction->setEnabled(actionContext.available);
     connect(findReferencesAction, &QAction::triggered, this, [this, cursorAtPos]() {
-        emitReferenceSearchForCursor(cursorAtPos);
+        emitSourceSymbolActionForCursor(SourceSymbolAction::FindReferences, cursorAtPos);
     });
 
     QAction* showRelationshipsAction = menu->addAction(QStringLiteral("Show Relationships"));
     showRelationshipsAction->setEnabled(actionContext.available);
     connect(showRelationshipsAction, &QAction::triggered, this, [this, cursorAtPos]() {
-        emitRelationshipBrowseForCursor(cursorAtPos);
+        emitSourceSymbolActionForCursor(SourceSymbolAction::ShowRelationships, cursorAtPos);
     });
 
     menu->exec(event->globalPos());
@@ -226,29 +226,15 @@ SourceSymbolActionContext MyCodeEditor::sourceSymbolActionContextForCursor(
         ->sourceSymbolActionContext(editorSemanticContextForPosition(cursor.position()));
 }
 
-bool MyCodeEditor::emitReferenceSearchForCursor(const QTextCursor& cursor)
+bool MyCodeEditor::emitSourceSymbolActionForCursor(SourceSymbolAction action,
+                                                   const QTextCursor& cursor)
 {
     const SourceSymbolActionContext actionContext =
         sourceSymbolActionContextForCursor(cursor);
     if (!actionContext.available)
         return false;
 
-    emit referenceSearchRequested(actionContext.symbolName,
-                                  actionContext.fileName,
-                                  actionContext.moduleName);
-    return true;
-}
-
-bool MyCodeEditor::emitRelationshipBrowseForCursor(const QTextCursor& cursor)
-{
-    const SourceSymbolActionContext actionContext =
-        sourceSymbolActionContextForCursor(cursor);
-    if (!actionContext.available)
-        return false;
-
-    emit relationshipBrowseRequested(actionContext.symbolName,
-                                     actionContext.fileName,
-                                     actionContext.moduleName);
+    emit sourceSymbolActionRequested(action, actionContext);
     return true;
 }
 
@@ -489,7 +475,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
     if (event->key() == Qt::Key_F12
         && (event->modifiers() & Qt::ShiftModifier)) {
-        emitReferenceSearchForCursor(textCursor());
+        emitSourceSymbolActionForCursor(SourceSymbolAction::FindReferences, textCursor());
         event->accept();
         return;
     }
@@ -497,7 +483,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_R
         && (event->modifiers() & Qt::ControlModifier)
         && (event->modifiers() & Qt::ShiftModifier)) {
-        emitRelationshipBrowseForCursor(textCursor());
+        emitSourceSymbolActionForCursor(SourceSymbolAction::ShowRelationships, textCursor());
         event->accept();
         return;
     }

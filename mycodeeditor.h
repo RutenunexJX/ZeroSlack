@@ -77,8 +77,8 @@ private:
     QString currentModuleNameAt(int charPos) const;
     SourceSymbolActionContext sourceSymbolActionContextForCursor(
         const QTextCursor& cursor) const;
-    bool emitReferenceSearchForCursor(const QTextCursor& cursor);
-    bool emitRelationshipBrowseForCursor(const QTextCursor& cursor);
+    bool emitSourceSymbolActionForCursor(SourceSymbolAction action,
+                                         const QTextCursor& cursor);
     EditorSemanticContext editorSemanticContextForPosition(int cursorPosition = -1) const;
     QString getWordUnderCursor();
     QStringList getCompletionSuggestions(const QString &prefix);
@@ -151,12 +151,8 @@ signals:
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
     void alternateCommandActionRequested(AlternateCommandAction action);
     void includeOpenRequested(const QString& includePath, const QString& currentFile);
-    void referenceSearchRequested(const QString& symbolName,
-                                  const QString& fileName,
-                                  const QString& moduleName);
-    void relationshipBrowseRequested(const QString& symbolName,
-                                     const QString& fileName,
-                                     const QString& moduleName);
+    void sourceSymbolActionRequested(SourceSymbolAction action,
+                                     const SourceSymbolActionContext& context);
 };
 
 class LineNumberWidget : public QWidget

@@ -447,31 +447,37 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     QTextCursor shortcutCursor(shortcutEditor.document());
     shortcutCursor.setPosition(targetOffset);
     shortcutEditor.setTextCursor(shortcutCursor);
-    QSignalSpy referenceShortcutSpy(&shortcutEditor,
-                                    &MyCodeEditor::referenceSearchRequested);
-    QSignalSpy relationshipShortcutSpy(&shortcutEditor,
-                                       &MyCodeEditor::relationshipBrowseRequested);
+    int sourceActionCount = 0;
+    SourceSymbolAction lastSourceAction = SourceSymbolAction::FindReferences;
+    SourceSymbolActionContext lastSourceActionContext;
+    QObject::connect(&shortcutEditor,
+                     &MyCodeEditor::sourceSymbolActionRequested,
+                     &shortcutEditor,
+                     [&](SourceSymbolAction action,
+                         const SourceSymbolActionContext& context) {
+                         ++sourceActionCount;
+                         lastSourceAction = action;
+                         lastSourceActionContext = context;
+                     });
     QTest::keyClick(&shortcutEditor, Qt::Key_F12, Qt::ShiftModifier);
     expectBool("find references shortcut emits request",
-               referenceShortcutSpy.count() == 1,
+               sourceActionCount == 1
+                   && lastSourceAction == SourceSymbolAction::FindReferences,
                true);
-    if (referenceShortcutSpy.count() == 1) {
-        const QList<QVariant> args = referenceShortcutSpy.takeFirst();
-        expectBool("find references shortcut emits symbol",
-                   args.at(0).toString() == QStringLiteral("target_ref"),
-                   true);
-    }
+    expectBool("find references shortcut emits symbol",
+               lastSourceActionContext.symbolName == QStringLiteral("target_ref"),
+               true);
     QTest::keyClick(&shortcutEditor, Qt::Key_R,
                     Qt::ControlModifier | Qt::ShiftModifier);
     expectBool("show relationships shortcut emits request",
-               relationshipShortcutSpy.count() == 1,
+               sourceActionCount == 2
+                   && lastSourceAction == SourceSymbolAction::ShowRelationships,
                true);
-    if (relationshipShortcutSpy.count() == 1) {
-        const QList<QVariant> args = relationshipShortcutSpy.takeFirst();
-        expectBool("show relationships shortcut emits symbol",
-                   args.at(0).toString() == QStringLiteral("target_ref"),
-                   true);
-    }
+    expectBool("show relationships shortcut emits symbol",
+               lastSourceActionContext.symbolName == QStringLiteral("target_ref")
+                   && lastSourceActionContext.fileName == fixturePath
+                   && lastSourceActionContext.moduleName == QStringLiteral("ref_top"),
+               true);
 
     AlternateCommandAction emittedAlternateAction = AlternateCommandAction::None;
     QObject::connect(&shortcutEditor,
