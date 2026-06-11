@@ -8,11 +8,9 @@
 
 #include <QPainter>
 #include <QScrollBar>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QTextStream>
 #include <QFileInfo>
 #include <QDir>
+#include <QMessageBox>
 
 #include <QKeyEvent>
 #include <QMenu>
@@ -344,55 +342,6 @@ void MyCodeEditor::lineNumberWidgetWheelEvent(QWheelEvent *event)
     }
 
     event->accept();
-}
-
-bool MyCodeEditor::saveFile()
-{
-    QString fileName;
-    if(mFileName.isEmpty() || !QFile::exists(mFileName)){
-        fileName = QFileDialog::getSaveFileName(this, "Save file");
-
-        if(fileName.isEmpty()) {
-            return false; // User cancelled the dialog
-        }
-        mFileName = fileName;
-    }
-    else{
-        fileName = mFileName;
-    }
-
-    QFile file(fileName);
-    if(!file.open(QIODevice::WriteOnly)){
-        QMessageBox::warning(this,"Warning","Cannot save file: "+file.errorString());
-        return false;
-    }
-
-    QTextStream out(&file);
-    out << toPlainText();
-    file.close();
-
-    isSaved = true;
-    return true;
-}
-
-bool MyCodeEditor::saveAsFile()
-{
-    QString fileName = QFileDialog::getSaveFileName(this,"save file as ");
-    QFile file(fileName);
-    if(!file.open(QIODevice::WriteOnly)){
-        QMessageBox::warning(this,"warning","can not save file:"+file.errorString());
-        return false;
-    }
-
-    mFileName = fileName;
-    QTextStream out(&file);
-    QString text = toPlainText();
-    out<<text;
-    file.close();
-
-    isSaved = true;
-
-    return true;
 }
 
 void MyCodeEditor::setFileName(QString fileName)

@@ -54,6 +54,7 @@ private:
 
     // Helper methods
     std::unique_ptr<MyCodeEditor> createEditor();
+    bool saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs);
     bool confirmCloseUnsaved(MyCodeEditor* editor);
     QString getDisplayName(const QString& fullPath) const;
     bool isSystemVerilogFile(const QString& fileName) const;

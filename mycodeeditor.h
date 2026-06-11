@@ -28,8 +28,6 @@ public:
     void lineNumberWidgetMousePressEvent(QMouseEvent *event);
     void lineNumberWidgetWheelEvent(QWheelEvent *event);
 
-    bool saveFile();
-    bool saveAsFile();
     void setFileName(QString fileName);
     QString getFileName() const;
     bool checkSaved();

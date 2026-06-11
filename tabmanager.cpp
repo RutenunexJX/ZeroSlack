@@ -72,7 +72,7 @@ bool TabManager::saveCurrentTab()
     MyCodeEditor *codeEditor = getCurrentEditor();
     if (!codeEditor) return false;
 
-    if (codeEditor->saveFile()) {
+    if (saveEditorToFile(codeEditor, false)) {
         documentModel->markSaved(codeEditor);
         updateTabTitle(codeEditor);
         emit fileSaved(codeEditor->getFileName());
@@ -86,7 +86,7 @@ bool TabManager::saveAsCurrentTab()
     MyCodeEditor *codeEditor = getCurrentEditor();
     if (!codeEditor) return false;
 
-    if (codeEditor->saveAsFile()) {
+    if (saveEditorToFile(codeEditor, true)) {
         documentModel->markSaved(codeEditor);
         updateTabTitle(codeEditor);
         emit fileSaved(codeEditor->getFileName());
@@ -249,6 +249,38 @@ std::unique_ptr<MyCodeEditor> TabManager::createEditor()
     return std::unique_ptr<MyCodeEditor>(new MyCodeEditor(tabWidget));
 }
 
+bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
+{
+    if (!editor)
+        return false;
+
+    QString fileName = editor->getFileName();
+    if (forceSaveAs || fileName.isEmpty() || !QFile::exists(fileName)) {
+        fileName = QFileDialog::getSaveFileName(
+            qobject_cast<QWidget*>(parent()),
+            forceSaveAs ? QStringLiteral("save file as ") : QStringLiteral("Save file"));
+        if (fileName.isEmpty())
+            return false;
+    }
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QFile::Text)) {
+        QMessageBox::warning(
+            qobject_cast<QWidget*>(parent()),
+            "Warning",
+            "Cannot save file: " + file.errorString());
+        return false;
+    }
+
+    QTextStream out(&file);
+    out << editor->toPlainText();
+    file.close();
+
+    editor->setFileName(fileName);
+    editor->isSaved = true;
+    return true;
+}
+
 bool TabManager::confirmCloseUnsaved(MyCodeEditor* editor)
 {
     if (!editor || editor->checkSaved()) {
@@ -262,7 +294,7 @@ bool TabManager::confirmCloseUnsaved(MyCodeEditor* editor)
         QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
 
     if (result == QMessageBox::Yes) {
-        return editor->saveFile(); // Return save result
+        return saveEditorToFile(editor, false); // Return save result
     } else if (result == QMessageBox::No) {
         return true; // Don't save, but allow close
     }

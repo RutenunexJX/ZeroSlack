@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Alternate-command execution now routes through coordinators.
-`MyCodeEditor` resolves alternate-mode command text into `AlternateCommandAction` requests only; `EditorCoordinator` forwards those requests to `FileCommandCoordinator`, which owns file/edit command execution.
+Tab save persistence now lives in `TabManager`.
+`MyCodeEditor` no longer owns save/save-as dialogs or file writes; `TabManager` writes editor text, updates file names/titles, marks `DocumentModel` state saved, and emits save notifications.
 
 ## Current Architecture Snapshot
 
@@ -39,6 +39,7 @@ Alternate-command execution now routes through coordinators.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, alternate-command action routing, navigation commands, reference/relationship panel requests, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode, definition navigation, source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command execution, commands, and close-event unsaved-change confirmation.
+- `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
 - `NavigationManager` owns navigation view cache/refresh state and delegates semantic navigation reads to `NavigationService`.
@@ -57,4 +58,4 @@ Alternate-command execution now routes through coordinators.
 - `RelationshipService` owns feature-facing relationship queries, filtering, sorting, and reports over `SemanticIndex`.
 - `NavigationService` owns module hierarchy, symbol outline, and module target semantic assembly for the navigation pane.
 - `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
-- Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
+- Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, tab save persistence, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.

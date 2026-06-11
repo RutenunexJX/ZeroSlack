@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextStream>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QtTest/QTest>
@@ -786,6 +787,50 @@ int main(int argc, char** argv)
                    && window.tabManager->editorCount()
                        == editorCountBeforeNewAction + 1,
                true);
+    QTemporaryDir saveDir;
+    expectBool("save temp dir valid", saveDir.isValid(), true);
+    MyCodeEditor* saveEditor = window.tabManager->getCurrentEditor();
+    expectBool("save editor exists", saveEditor != nullptr, true);
+    if (saveDir.isValid() && saveEditor) {
+        const QString savePath = saveDir.filePath(QStringLiteral("saved_tab.sv"));
+        QFile seedFile(savePath);
+        expectBool("save target seed opens",
+                   seedFile.open(QIODevice::WriteOnly | QFile::Text),
+                   true);
+        seedFile.close();
+
+        const QString savedText =
+            QStringLiteral("module saved_tab;\nendmodule\n");
+        saveEditor->setFileName(savePath);
+        saveEditor->setPlainText(savedText);
+        saveEditor->isSaved = false;
+        QSignalSpy fileSavedSpy(window.tabManager.get(), &TabManager::fileSaved);
+        expectBool("tab manager saves current tab",
+                   window.tabManager->saveCurrentTab(),
+                   true);
+        QFile savedFile(savePath);
+        expectBool("saved file reopens",
+                   savedFile.open(QIODevice::ReadOnly | QFile::Text),
+                   true);
+        const QString savedFileText = QTextStream(&savedFile).readAll();
+        savedFile.close();
+        expectBool("tab manager writes editor text",
+                   savedFileText == savedText,
+                   true);
+        expectBool("tab manager marks editor saved",
+                   saveEditor->checkSaved(),
+                   true);
+        expectBool("tab manager emits fileSaved",
+                   fileSavedSpy.count() == 1,
+                   true);
+        const DocumentSnapshot savedDoc =
+            window.tabManager->getDocumentModel()
+                ? window.tabManager->getDocumentModel()->documentForEditor(saveEditor)
+                : DocumentSnapshot();
+        expectBool("document model marks saved tab clean",
+                   savedDoc.saved && !savedDoc.dirty,
+                   true);
+    }
 
     const bool workspaceOpened = window.workspaceManager->openWorkspace(workspacePath);
     expectBool("open workspace", workspaceOpened, true);
