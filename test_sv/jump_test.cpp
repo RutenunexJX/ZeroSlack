@@ -631,10 +631,27 @@ int main(int argc, char** argv) {
                editorActionPos >= 0,
                true);
     QTextCursor editorActionCursor = ed.textCursor();
-    editorActionCursor.setPosition(qMax(0, editorActionPos));
+    editorActionCursor.setPosition(qMax(0, editorActionPos + 2));
+    const EditorSemanticContext editorActionSemanticContext =
+        ed.editorSemanticContextForPosition(editorActionCursor.position(), true);
+    expectBool("Editor semantic context has document text",
+               editorActionSemanticContext.documentText == content,
+               true);
+    expectEq("Editor semantic context line",
+             editorActionSemanticContext.lineText.trimmed(),
+             QStringLiteral("counter <= 8'd0;"));
+    expectBool("Editor semantic context cursor fields",
+               editorActionSemanticContext.cursorLine > 0
+                   && editorActionSemanticContext.cursorPosition
+                       == editorActionCursor.position()
+                   && editorActionSemanticContext.column >= 0
+                   && editorActionSemanticContext.lineUpToCursor
+                       == editorActionSemanticContext.lineText.left(
+                           editorActionSemanticContext.column),
+               true);
     const SourceSymbolActionContext editorActionContext =
         EditorSemanticContextService::getInstance()->sourceSymbolActionContext(
-            ed.editorSemanticContextForPosition(editorActionCursor.position()));
+            editorActionSemanticContext);
     expectBool("Editor symbol action available",
                editorActionContext.available,
                true);

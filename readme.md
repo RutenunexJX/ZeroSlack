@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Command-mode completion highlight now uses completion state directly.
-`MyCodeEditor` uses `CommandModeCompletionState::prefixPosition` for command highlighting, removes stale completion helper methods/state, and avoids a duplicate command-mode match read during rendering.
+Editor semantic context assembly is now shared across completion workflows.
+`MyCodeEditor::editorSemanticContextForPosition` provides the common file/module/line/cursor context for text-change triggers and autocomplete, with optional document text only on paths that need full content.
 
 ## Current Architecture Snapshot
 

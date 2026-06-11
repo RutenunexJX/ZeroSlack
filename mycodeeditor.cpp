@@ -207,7 +207,8 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 }
 
 EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
-    int cursorPosition) const
+    int cursorPosition,
+    bool includeDocumentText) const
 {
     const int semanticPosition = cursorPosition >= 0
         ? cursorPosition
@@ -216,6 +217,8 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     EditorSemanticContext context;
     context.fileName = getFileName();
     context.moduleName = currentModuleNameAt(semanticPosition);
+    if (includeDocumentText)
+        context.documentText = document()->toPlainText();
     context.cursorPosition = semanticPosition;
 
     const QTextBlock block = document()->findBlock(semanticPosition);
@@ -332,14 +335,9 @@ void MyCodeEditor::onTextChanged()
 
     autoCompleteTimer->stop();
 
-    QTextCursor cursor = textCursor();
-    QTextBlock currentBlock = cursor.block();
-    QString lineText = currentBlock.text();
-    int positionInLine = cursor.position() - currentBlock.position();
-    QString lineUpToCursor = lineText.left(positionInLine);
-
-    EditorSemanticContext context;
-    context.lineUpToCursor = lineUpToCursor;
+    const QTextCursor cursor = textCursor();
+    EditorSemanticContext context =
+        editorSemanticContextForPosition(cursor.position());
     context.moduleName = currentModuleNameAt(cursor.position() - 1);
     const CommandModeInputState commandInputState =
         EditorSemanticContextService::getInstance()->commandModeInputState(context);
@@ -554,11 +552,8 @@ void MyCodeEditor::showAutoComplete()
 
 void MyCodeEditor::onAutoCompleteTimer()
 {
-    QTextCursor cursor = textCursor();
-    QTextBlock currentBlock = cursor.block();
-    QString lineText = currentBlock.text();
-    int positionInLine = cursor.position() - currentBlock.position();
-    QString lineUpToCursor = lineText.left(positionInLine);
+    const QTextCursor cursor = textCursor();
+    const QTextBlock currentBlock = cursor.block();
 
     static int lastLineNumber = -1;
     int currentLineNumber = currentBlock.blockNumber();
@@ -567,13 +562,8 @@ void MyCodeEditor::onAutoCompleteTimer()
         lastLineNumber = currentLineNumber;
     }
 
-    EditorSemanticContext context;
-    context.lineUpToCursor = lineUpToCursor;
-    context.fileName = getFileName();
-    context.moduleName = currentModuleNameAt(cursor.position());
-    context.documentText = document()->toPlainText();
-    context.cursorLine = cursor.block().blockNumber() + 1;
-    context.cursorPosition = cursor.position();
+    EditorSemanticContext context =
+        editorSemanticContextForPosition(cursor.position(), true);
 
     const CommandModeCompletionState commandState =
         EditorSemanticContextService::getInstance()
@@ -618,7 +608,7 @@ void MyCodeEditor::onAutoCompleteTimer()
     isInCustomCommandMode = false;
 
     if (isInAlternateMode) {
-        processAlternateModeInput(lineUpToCursor);
+        processAlternateModeInput(context.lineUpToCursor);
         return;
     }
 

@@ -74,7 +74,9 @@ private:
     int getLineNumberWidgetWidth();
 
     QString currentModuleNameAt(int charPos) const;
-    EditorSemanticContext editorSemanticContextForPosition(int cursorPosition = -1) const;
+    EditorSemanticContext editorSemanticContextForPosition(
+        int cursorPosition = -1,
+        bool includeDocumentText = false) const;
     QString getWordUnderCursor();
 
     LineNumberWidget *lineNumberWidget;
