@@ -68,7 +68,11 @@ signals:
     void diagnosticsRefreshRequested(const QString& fileName);
     void relationshipDataInvalidated();
     void relationshipDataRefreshRequested();
+    void fileSymbolAnalysisFinished(const QString& fileName, int symbolCount);
     void workspaceSymbolAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
+    void workspaceSymbolAnalysisProgress(const QString& fileName,
+                                         int filesDone,
+                                         int totalFiles);
     void workspaceSymbolAnalysisFinished(const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols);
     void relationshipAnalysisProgress(const QString& fileName, int relationshipsFound);
     void relationshipAnalysisError(const QString& fileName, const QString& error);

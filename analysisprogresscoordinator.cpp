@@ -2,7 +2,6 @@
 
 #include "analysisscheduler.h"
 #include "relationshipprogressdialog.h"
-#include "symbolanalyzer.h"
 
 #include <QFileInfo>
 #include <QTimer>
@@ -83,36 +82,26 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             &AnalysisProgressCoordinator::showRelationshipCancelled);
 }
 
-void AnalysisProgressCoordinator::connectToSymbolAnalyzer(SymbolAnalyzer* analyzer)
+void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
+    int filesDone,
+    int totalFiles,
+    const QString& currentFileName)
 {
-    if (symbolAnalyzer == analyzer)
-        return;
-    if (symbolAnalyzer)
-        disconnect(symbolAnalyzer, nullptr, this, nullptr);
-
-    symbolAnalyzer = analyzer;
-    if (!symbolAnalyzer)
+    if (!progressDialog || totalFiles <= 0)
         return;
 
-    connect(symbolAnalyzer,
-            &SymbolAnalyzer::batchProgress,
-            this,
-            [this](int filesDone, int totalFiles, const QString& currentFileName) {
-                if (!progressDialog || totalFiles <= 0)
-                    return;
-                progressDialog->progressBar->setValue(filesDone);
-                progressDialog->progressBar->setMaximum(totalFiles);
-                progressDialog->setSymbolAnalysisProgress(filesDone, totalFiles);
+    progressDialog->progressBar->setValue(filesDone);
+    progressDialog->progressBar->setMaximum(totalFiles);
+    progressDialog->setSymbolAnalysisProgress(filesDone, totalFiles);
 
-                QString shortName = QFileInfo(currentFileName).fileName();
-                if (shortName.length() > 45)
-                    shortName = "..." + shortName.right(42);
-                progressDialog->currentFileLabel->setText(
-                    QString("Symbol analysis: %1 / %2 - %3")
-                        .arg(filesDone)
-                        .arg(totalFiles)
-                        .arg(shortName));
-            });
+    QString shortName = QFileInfo(currentFileName).fileName();
+    if (shortName.length() > 45)
+        shortName = "..." + shortName.right(42);
+    progressDialog->currentFileLabel->setText(
+        QString("Symbol analysis: %1 / %2 - %3")
+            .arg(filesDone)
+            .arg(totalFiles)
+            .arg(shortName));
 }
 
 bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const

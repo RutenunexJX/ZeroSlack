@@ -161,8 +161,17 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
         return;
 
     connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
-            this, [this](const QString& fileName, int) {
+            this, [this](const QString& fileName, int symbolCount) {
+                emit fileSymbolAnalysisFinished(fileName, symbolCount);
                 scheduleDiagnosticsRefresh(fileName);
+            });
+    connect(symbolAnalyzer,
+            &SymbolAnalyzer::batchProgress,
+            this,
+            [this](int filesDone, int totalFiles, const QString& currentFileName) {
+                emit workspaceSymbolAnalysisProgress(currentFileName,
+                                                     filesDone,
+                                                     totalFiles);
             });
     connect(symbolAnalyzer,
             &SymbolAnalyzer::batchAnalysisCompleted,

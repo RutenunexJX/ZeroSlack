@@ -8,7 +8,6 @@
 
 class AnalysisScheduler;
 class RelationshipProgressDialog;
-class SymbolAnalyzer;
 class QWidget;
 struct WorkspaceRelationshipAnalysisResult;
 
@@ -21,7 +20,9 @@ public:
     ~AnalysisProgressCoordinator() override;
 
     void connectToScheduler(AnalysisScheduler* scheduler);
-    void connectToSymbolAnalyzer(SymbolAnalyzer* analyzer);
+    void handleWorkspaceSymbolProgress(int filesDone,
+                                       int totalFiles,
+                                       const QString& currentFileName);
     bool isSymbolAnalysisCancelled() const;
 
 signals:
@@ -32,7 +33,6 @@ private:
     QWidget* dialogParent = nullptr;
     RelationshipProgressDialog* progressDialog = nullptr;
     AnalysisScheduler* scheduler = nullptr;
-    SymbolAnalyzer* symbolAnalyzer = nullptr;
     std::atomic<bool> symbolAnalysisCancelled{false};
 
     void showAnalysisProgress(const QStringList& files);

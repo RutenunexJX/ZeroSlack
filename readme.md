@@ -25,17 +25,17 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-`SymbolAnalyzer` runtime ownership now lives in `SemanticRuntimeCoordinator`.
-`MainWindow` no longer constructs or owns the analyzer; analysis wiring receives the runtime-owned analyzer while GUI/perf tests observe analyzer signals through the semantic runtime boundary.
+`SymbolAnalyzer` event fan-out now terminates at `AnalysisScheduler`.
+`AnalysisCoordinator` receives scheduler-level symbol events for file completion, workspace progress, and workspace completion, then routes navigation/editor/progress UI updates without connecting directly to the analyzer.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
-- `AnalysisScheduler` owns analysis timing, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
+- `AnalysisScheduler` owns analysis timing, `SymbolAnalyzer` execution/signal adaptation, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
-- `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
-- `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing, navigation analysis refresh routing, and active-editor refresh policy.
+- `AnalysisProgressCoordinator` owns workspace analysis progress dialog rendering policy and cancel state.
+- `AnalysisCoordinator` owns scheduler/progress/workspace signal routing, symbol analysis event routing from scheduler-level events, navigation analysis refresh routing, runtime dependency configuration, and active-editor refresh policy.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, text-change completion workflow state, command-mode completion refresh workflow state, alternate-mode key workflow state, alternate-mode completion display workflow state, source-navigation hover/click workflow state, source-symbol shortcut workflow state, source-symbol menu/action workflow state, completion activation/popup mode query assembly, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.

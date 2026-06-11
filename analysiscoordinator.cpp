@@ -4,7 +4,7 @@
 #include "analysisscheduler.h"
 #include "mycodeeditor.h"
 #include "navigationmanager.h"
-#include "symbolanalyzer.h"
+#include "semanticruntimecoordinator.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
@@ -16,22 +16,18 @@
 AnalysisCoordinator::AnalysisCoordinator(
     AnalysisScheduler* scheduler,
     AnalysisProgressCoordinator* progressCoordinator,
-    SymbolAnalyzer* symbolAnalyzer,
+    SemanticRuntimeCoordinator* semanticRuntime,
     TabManager* tabManager,
     WorkspaceManager* workspaceManager,
     NavigationManager* navigationManager,
-    SymbolRelationshipEngine* relationshipEngine,
-    SmartRelationshipBuilder* relationshipBuilder,
     QObject* parent)
     : QObject(parent)
     , scheduler(scheduler)
     , progressCoordinator(progressCoordinator)
-    , symbolAnalyzer(symbolAnalyzer)
+    , semanticRuntime(semanticRuntime)
     , tabManager(tabManager)
     , workspaceManager(workspaceManager)
     , navigationManager(navigationManager)
-    , relationshipEngine(relationshipEngine)
-    , relationshipBuilder(relationshipBuilder)
 {
 }
 
@@ -61,7 +57,6 @@ void AnalysisCoordinator::connectSignals()
     connectSchedulerSignals();
     connectProgressSignals();
     connectWorkspaceSignals();
-    connectSymbolSignals();
 
     signalsConnected = true;
 }
@@ -73,7 +68,7 @@ void AnalysisCoordinator::configureScheduler()
 
     scheduler->setDocumentModel(tabManager ? tabManager->getDocumentModel() : nullptr);
     scheduler->setProjectModel(workspaceManager ? workspaceManager->getProjectModel() : nullptr);
-    scheduler->setSymbolAnalyzer(symbolAnalyzer);
+    scheduler->setSymbolAnalyzer(semanticRuntime ? semanticRuntime->symbolAnalyzer() : nullptr);
     scheduler->setOpenFileContentProvider([this](const QString& fileName) {
         return tabManager ? tabManager->getPlainTextFromOpenFile(fileName) : QString();
     });
@@ -83,8 +78,8 @@ void AnalysisCoordinator::configureScheduler()
     scheduler->setWorkspaceSymbolCancelProvider([this]() {
         return progressCoordinator && progressCoordinator->isSymbolAnalysisCancelled();
     });
-    scheduler->setRelationshipEngine(relationshipEngine);
-    scheduler->setRelationshipBuilder(relationshipBuilder);
+    scheduler->setRelationshipEngine(semanticRuntime ? semanticRuntime->relationshipEngine() : nullptr);
+    scheduler->setRelationshipBuilder(semanticRuntime ? semanticRuntime->relationshipBuilder() : nullptr);
 }
 
 void AnalysisCoordinator::connectSchedulerSignals()
@@ -96,6 +91,34 @@ void AnalysisCoordinator::connectSchedulerSignals()
             this, [this]() {
                 if (navigationManager)
                     navigationManager->refreshCurrentView();
+            });
+    connect(scheduler, &AnalysisScheduler::fileSymbolAnalysisFinished,
+            this, [this](const QString& fileName, int symbolCount) {
+                if (navigationManager)
+                    navigationManager->onSymbolAnalysisCompleted(fileName,
+                                                                 symbolCount);
+                refreshActiveEditorForFile(fileName);
+            });
+    connect(scheduler,
+            &AnalysisScheduler::workspaceSymbolAnalysisProgress,
+            this,
+            [this](const QString& fileName, int filesDone, int totalFiles) {
+                if (progressCoordinator) {
+                    progressCoordinator->handleWorkspaceSymbolProgress(
+                        filesDone,
+                        totalFiles,
+                        fileName);
+                }
+            });
+    connect(scheduler,
+            &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+            this,
+            [this](const ProjectSnapshot&, int filesAnalyzed, int totalSymbols) {
+                if (navigationManager) {
+                    navigationManager->onBatchSymbolAnalysisCompleted(
+                        filesAnalyzed,
+                        totalSymbols);
+                }
             });
     connect(scheduler, &AnalysisScheduler::relationshipAnalysisFinished,
             this, [this](const SingleFileRelationshipAnalysisResult& result) {
@@ -117,7 +140,6 @@ void AnalysisCoordinator::connectProgressSignals()
         return;
 
     progressCoordinator->connectToScheduler(scheduler);
-    progressCoordinator->connectToSymbolAnalyzer(symbolAnalyzer);
     connect(progressCoordinator,
             &AnalysisProgressCoordinator::statusMessageRequested,
             this,
@@ -142,30 +164,6 @@ void AnalysisCoordinator::connectWorkspaceSignals()
             this, [this](const QString& filePath) {
                 if (scheduler)
                     scheduler->handleExternalFileChanged(filePath, fileChangeDebounceMs);
-            });
-}
-
-void AnalysisCoordinator::connectSymbolSignals()
-{
-    if (!symbolAnalyzer)
-        return;
-
-    connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
-            this, [this](const QString& fileName, int symbolCount) {
-                if (navigationManager)
-                    navigationManager->onSymbolAnalysisCompleted(fileName,
-                                                                 symbolCount);
-                refreshActiveEditorForFile(fileName);
-            });
-    connect(symbolAnalyzer,
-            &SymbolAnalyzer::batchAnalysisCompleted,
-            this,
-            [this](int filesAnalyzed, int totalSymbols) {
-                if (navigationManager) {
-                    navigationManager->onBatchSymbolAnalysisCompleted(
-                        filesAnalyzed,
-                        totalSymbols);
-                }
             });
 }
 

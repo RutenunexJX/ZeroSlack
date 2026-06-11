@@ -1268,6 +1268,36 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     documentCloseScheduler.setSymbolAnalyzer(&documentCloseAnalyzer);
     documentCloseScheduler.setDocumentModel(&documentCloseModel);
 
+    QString routedSymbolFile;
+    int routedSymbolCount = -1;
+    QObject::connect(&documentCloseScheduler,
+                     &AnalysisScheduler::fileSymbolAnalysisFinished,
+                     [&](const QString& fileName, int symbolCount) {
+                         routedSymbolFile = fileName;
+                         routedSymbolCount = symbolCount;
+                     });
+    QString routedProgressFile;
+    int routedProgressDone = -1;
+    int routedProgressTotal = -1;
+    QObject::connect(&documentCloseScheduler,
+                     &AnalysisScheduler::workspaceSymbolAnalysisProgress,
+                     [&](const QString& fileName, int filesDone, int totalFiles) {
+                         routedProgressFile = fileName;
+                         routedProgressDone = filesDone;
+                         routedProgressTotal = totalFiles;
+                     });
+    documentCloseAnalyzer.analysisCompleted(QStringLiteral("scheduler_route.sv"), 7);
+    documentCloseAnalyzer.batchProgress(3, 5, QStringLiteral("scheduler_progress.sv"));
+    expectBool("scheduler routes symbol analysis completion",
+               routedSymbolFile == QStringLiteral("scheduler_route.sv")
+                   && routedSymbolCount == 7,
+               true);
+    expectBool("scheduler routes symbol progress",
+               routedProgressFile == QStringLiteral("scheduler_progress.sv")
+                   && routedProgressDone == 3
+                   && routedProgressTotal == 5,
+               true);
+
     QString documentCloseAnalysisName;
     int documentCloseSymbols = -1;
     QObject::connect(&documentCloseAnalyzer,

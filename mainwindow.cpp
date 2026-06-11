@@ -69,12 +69,10 @@ void MainWindow::setupManagerConnections()
     analysisCoordinator = std::make_unique<AnalysisCoordinator>(
         analysisScheduler.get(),
         analysisProgressCoordinator.get(),
-        semanticRuntime ? semanticRuntime->symbolAnalyzer() : nullptr,
+        semanticRuntime.get(),
         tabManager.get(),
         workspaceManager.get(),
         navigationManager.get(),
-        semanticRuntime ? semanticRuntime->relationshipEngine() : nullptr,
-        semanticRuntime ? semanticRuntime->relationshipBuilder() : nullptr,
         this);
     analysisCoordinator->setFileChangeDebounceMs(kFileChangeDebounceMs);
     analysisCoordinator->setProblemsRefreshHandler(

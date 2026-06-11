@@ -10,9 +10,7 @@ class AnalysisProgressCoordinator;
 class AnalysisScheduler;
 class MyCodeEditor;
 class NavigationManager;
-class SmartRelationshipBuilder;
-class SymbolAnalyzer;
-class SymbolRelationshipEngine;
+class SemanticRuntimeCoordinator;
 class TabManager;
 class WorkspaceManager;
 
@@ -23,12 +21,10 @@ class AnalysisCoordinator : public QObject
 public:
     explicit AnalysisCoordinator(AnalysisScheduler* scheduler,
                                  AnalysisProgressCoordinator* progressCoordinator,
-                                 SymbolAnalyzer* symbolAnalyzer,
+                                 SemanticRuntimeCoordinator* semanticRuntime,
                                  TabManager* tabManager,
                                  WorkspaceManager* workspaceManager,
                                  NavigationManager* navigationManager,
-                                 SymbolRelationshipEngine* relationshipEngine,
-                                 SmartRelationshipBuilder* relationshipBuilder,
                                  QObject* parent = nullptr);
 
     void setFileChangeDebounceMs(int debounceMs);
@@ -40,12 +36,10 @@ public:
 private:
     AnalysisScheduler* scheduler = nullptr;
     AnalysisProgressCoordinator* progressCoordinator = nullptr;
-    SymbolAnalyzer* symbolAnalyzer = nullptr;
+    SemanticRuntimeCoordinator* semanticRuntime = nullptr;
     TabManager* tabManager = nullptr;
     WorkspaceManager* workspaceManager = nullptr;
     NavigationManager* navigationManager = nullptr;
-    SymbolRelationshipEngine* relationshipEngine = nullptr;
-    SmartRelationshipBuilder* relationshipBuilder = nullptr;
     int fileChangeDebounceMs = 350;
     bool signalsConnected = false;
 
@@ -56,7 +50,6 @@ private:
     void connectSchedulerSignals();
     void connectProgressSignals();
     void connectWorkspaceSignals();
-    void connectSymbolSignals();
     void refreshActiveEditorForFile(const QString& fileName) const;
     void showRelationshipAnalysisCompleted(const QString& fileName, int relationshipsFound) const;
     void showRelationshipAnalysisError(const QString& error) const;
