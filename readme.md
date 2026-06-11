@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Source-symbol panel actions now route through one editor action signal.
-`MyCodeEditor` emits `SourceSymbolAction` plus context for references and relationships; `EditorCoordinator` owns routing those actions to semantic panels, removing separate editor panel request signals.
+Definition Ctrl+Click navigation now routes through coordinators.
+`MyCodeEditor` emits a definition navigation request with editor semantic context; `EditorCoordinator` resolves the definition target, and `NavigationCommandCoordinator` owns the local/cross-file cursor placement path.
 
 ## Current Architecture Snapshot
 
@@ -36,11 +36,11 @@ Source-symbol panel actions now route through one editor action signal.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
-- `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, navigation commands, source-symbol panel action routing, and semantic panel refresh requests.
+- `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol panel action routing, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode, definition navigation, source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command execution, commands, and close-event unsaved-change confirmation.
 - `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
-- `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
+- `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
 - `NavigationManager` owns navigation view cache/refresh state and delegates semantic navigation reads to `NavigationService`.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.

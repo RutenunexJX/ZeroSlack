@@ -853,8 +853,10 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
         }
 
         if (target.matched && !target.text.isEmpty()) {
-            jumpToDefinition(target.text,
-                             target.identifierTarget ? target.cursorPosition : -1);
+            emit definitionNavigationRequested(
+                target.text,
+                editorSemanticContextForPosition(
+                    target.identifierTarget ? target.cursorPosition : -1));
             event->accept();
             return;
         }
@@ -955,34 +957,6 @@ QString MyCodeEditor::getWordAtTextPosition(int position)
         EditorSemanticContextService::getInstance()->sourceIdentifierTarget(
             editorSemanticContextForPosition(position));
     return identifierTarget.matched ? identifierTarget.identifier : QString();
-}
-
-void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPosition)
-{
-    if (symbolName.isEmpty())
-        return;
-
-    const DefinitionNavigationTarget target =
-        EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
-            symbolName,
-            editorSemanticContextForPosition(cursorPosition));
-    if (!target.found)
-        return;
-
-    if (target.localFile) {
-        QTextCursor cursor = textCursor();
-        cursor.movePosition(QTextCursor::Start);
-        const int downLines = (target.line > 0) ? target.line - 1 : 0;
-        const int rightCols = (target.column > 0) ? target.column - 1 : 0;
-        cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, downLines);
-        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, rightCols);
-        setTextCursor(cursor);
-        centerCursor();
-        moveMouseToCursor();
-        return;
-    }
-
-    emit definitionJumpRequested(target.symbolName, target.fileName, target.line);
 }
 
 void MyCodeEditor::moveMouseToCursor()

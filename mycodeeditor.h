@@ -137,7 +137,6 @@ private:
     void clearSourceNavigationHover();
 
     QString getWordAtTextPosition(int position);
-    void jumpToDefinition(const QString& symbolName, int cursorPosition = -1);
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
     void clearHoveredSymbolHighlight();
     bool canJumpToDefinition(const QString& symbolName);
@@ -148,7 +147,8 @@ private:
 
     bool commandModeExitedByDoubleSpace = false;
 signals:
-    void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
+    void definitionNavigationRequested(const QString& symbolName,
+                                       const EditorSemanticContext& context);
     void alternateCommandActionRequested(AlternateCommandAction action);
     void includeOpenRequested(const QString& includePath, const QString& currentFile);
     void sourceSymbolActionRequested(SourceSymbolAction action,

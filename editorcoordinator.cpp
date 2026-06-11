@@ -1,5 +1,6 @@
 #include "editorcoordinator.h"
 
+#include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
 #include "modemanager.h"
 #include "mycodeeditor.h"
@@ -54,10 +55,10 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
         return;
 
     applyAlternateMode(editor);
-    connect(editor, &MyCodeEditor::definitionJumpRequested,
-            this, [this](const QString&, const QString& file, int line) {
-                if (navigationCommandCoordinator)
-                    navigationCommandCoordinator->navigateToFileAndLine(file, line);
+    connect(editor, &MyCodeEditor::definitionNavigationRequested,
+            this, [this, editor](const QString& symbolName,
+                                 const EditorSemanticContext& context) {
+                handleDefinitionNavigationRequested(editor, symbolName, context);
             });
     connect(editor, &MyCodeEditor::alternateCommandActionRequested,
             this, [this, editor](AlternateCommandAction action) {
@@ -124,6 +125,32 @@ void EditorCoordinator::handleIncludeOpenRequested(
 
     if (tabManager)
         tabManager->openFileInTab(targetPath);
+}
+
+void EditorCoordinator::handleDefinitionNavigationRequested(
+    MyCodeEditor* editor,
+    const QString& symbolName,
+    const EditorSemanticContext& context) const
+{
+    if (!navigationCommandCoordinator || symbolName.isEmpty())
+        return;
+
+    const DefinitionNavigationTarget target =
+        EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+            symbolName, context);
+    if (!target.found)
+        return;
+
+    if (target.localFile) {
+        navigationCommandCoordinator->navigateEditorToLine(
+            editor, target.line, target.column);
+        return;
+    }
+
+    const QString targetFile =
+        target.fileName.isEmpty() ? context.fileName : target.fileName;
+    navigationCommandCoordinator->navigateToFileAndLine(
+        targetFile, target.line, target.column);
 }
 
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)

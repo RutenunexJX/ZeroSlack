@@ -1,5 +1,5 @@
 // Headless jump-resolution test. Builds sym_list from Slang, constructs a MyCodeEditor offscreen
-// (no window shown), sets its file/text/cursor, and drives canJumpToDefinition / jumpToDefinition.
+// (no window shown), sets its file/text/cursor, and drives canJumpToDefinition / target resolution.
 #include <QApplication>
 #include <QFile>
 #include <QTextStream>
@@ -609,20 +609,29 @@ int main(int argc, char** argv) {
              editorActionContext.moduleName,
              QStringLiteral("top"));
 
-    // Local jump landing: jumpToDefinition moves the caret to the definition.
+    // Local definition target: editor context resolves to the definition location.
     sym_list::SymbolInfo counter;
     for (const auto& s : sym_list::getInstance()->findSymbolsByName("counter"))
         if (s.symbolType == sym_list::sym_reg) counter = s;
     placeCursor(ed, 95);
-    ed.jumpToDefinition("counter", ed.textCursor().position());
-    printf("-- jump(counter): landed block=%d, symbol.startLine=%d (1-based) --\n",
-           ed.textCursor().blockNumber(), counter.startLine);
+    const DefinitionNavigationTarget counterTarget =
+        EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+            QStringLiteral("counter"),
+            ed.editorSemanticContextForPosition(ed.textCursor().position()));
+    printf("-- target(counter): found=%d local=%d line=%d, symbol.startLine=%d --\n",
+           counterTarget.found,
+           counterTarget.localFile,
+           counterTarget.line,
+           counter.startLine);
     ++g_checks;
-    if (ed.textCursor().blockNumber() != counter.startLine - 1) ++g_fails;
-    printf("[%s] local jump(counter) lands on block startLine-1\n",
-           ed.textCursor().blockNumber() == counter.startLine - 1 ? "PASS" : "FAIL");
+    bool counterOk = counterTarget.found
+        && counterTarget.localFile
+        && counterTarget.line == counter.startLine;
+    if (!counterOk) ++g_fails;
+    printf("[%s] local target(counter) resolves to startLine\n",
+           counterOk ? "PASS" : "FAIL");
 
-    // --- cross-file jump: target defined in a second file; capture the emitted (file,line) ---
+    // --- cross-file target: definition is resolved in a second file. ---
     // Derive helper path from the main file's directory (robust to the run cwd).
     QString helperPath = QFileInfo(path).dir().filePath(QStringLiteral("helper_mod.sv"));
     QFile hf(helperPath);
@@ -633,25 +642,27 @@ int main(int argc, char** argv) {
         hf.close();
         sym_list::getInstance()->setSymbolsForFile(helperPath, mgr.extractSymbols(helperPath, hc), hc);
 
-        int emittedLine = -1;
-        QString emittedFile;
-        QObject::connect(&ed, &MyCodeEditor::definitionJumpRequested,
-                         [&](const QString&, const QString& file, int line) {
-                             emittedFile = file; emittedLine = line;
-                         });
-
         int helperStartLine = -1;
         for (const auto& s : sym_list::getInstance()->findSymbolsByName("helper_mod"))
             if (s.symbolType == sym_list::sym_module) helperStartLine = s.startLine;
 
         placeCursor(ed, 29);  // outside any module in test_symbols.sv -> no scope filter
-        ed.jumpToDefinition("helper_mod", ed.textCursor().position());
-        printf("-- cross-file jump(helper_mod): emitted file=%s line=%d, startLine=%d --\n",
-               emittedFile.toLocal8Bit().constData(), emittedLine, helperStartLine);
+        const DefinitionNavigationTarget helperTarget =
+            EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+                QStringLiteral("helper_mod"),
+                ed.editorSemanticContextForPosition(ed.textCursor().position()));
+        printf("-- cross-file target(helper_mod): file=%s line=%d, startLine=%d --\n",
+               helperTarget.fileName.toLocal8Bit().constData(),
+               helperTarget.line,
+               helperStartLine);
         ++g_checks;
-        bool ok = (emittedLine == helperStartLine) && emittedFile.endsWith("helper_mod.sv");
+        bool ok = helperTarget.found
+            && !helperTarget.localFile
+            && helperTarget.line == helperStartLine
+            && helperTarget.fileName.endsWith("helper_mod.sv");
         if (!ok) ++g_fails;
-        printf("[%s] cross-file emits 1-based startLine of definition\n", ok ? "PASS" : "FAIL");
+        printf("[%s] cross-file target resolves to definition file/startLine\n",
+               ok ? "PASS" : "FAIL");
     }
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);

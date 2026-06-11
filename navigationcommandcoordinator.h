@@ -7,6 +7,7 @@
 #include <QString>
 
 class NavigationManager;
+class MyCodeEditor;
 class TabManager;
 
 class NavigationCommandCoordinator : public QObject
@@ -22,6 +23,9 @@ public:
     void navigateToFileAndLine(const QString& filePath,
                                int lineNumber = -1,
                                int columnNumber = -1);
+    void navigateEditorToLine(MyCodeEditor* editor,
+                              int lineNumber,
+                              int columnNumber = -1);
     void navigateToSymbol(const sym_list::SymbolInfo& symbol);
 
 private:

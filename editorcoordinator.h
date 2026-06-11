@@ -5,6 +5,7 @@
 #include <QString>
 
 class FileCommandCoordinator;
+struct EditorSemanticContext;
 class ModeManager;
 class MyCodeEditor;
 class NavigationCommandCoordinator;
@@ -36,6 +37,10 @@ private:
     void handleIncludeOpenRequested(MyCodeEditor* editor,
                                     const QString& includePath,
                                     const QString& currentFile) const;
+    void handleDefinitionNavigationRequested(
+        MyCodeEditor* editor,
+        const QString& symbolName,
+        const EditorSemanticContext& context) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);
 
     TabManager* tabManager = nullptr;

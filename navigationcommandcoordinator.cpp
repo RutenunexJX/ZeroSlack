@@ -51,11 +51,18 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
     if (lineNumber <= 0)
         return;
 
-    MyCodeEditor* currentEditor = tabManager->getCurrentEditor();
-    if (!currentEditor)
+    navigateEditorToLine(tabManager->getCurrentEditor(), lineNumber, columnNumber);
+}
+
+void NavigationCommandCoordinator::navigateEditorToLine(
+    MyCodeEditor* editor,
+    int lineNumber,
+    int columnNumber)
+{
+    if (!editor || lineNumber <= 0)
         return;
 
-    QTextCursor cursor = currentEditor->textCursor();
+    QTextCursor cursor = editor->textCursor();
     cursor.movePosition(QTextCursor::Start);
     for (int i = 1; i < lineNumber; ++i)
         cursor.movePosition(QTextCursor::Down);
@@ -64,10 +71,10 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
                             QTextCursor::MoveAnchor,
                             columnNumber - 1);
     }
-    currentEditor->setTextCursor(cursor);
-    currentEditor->centerCursor();
-    currentEditor->setFocus();
-    currentEditor->moveMouseToCursor();
+    editor->setTextCursor(cursor);
+    editor->centerCursor();
+    editor->setFocus();
+    editor->moveMouseToCursor();
 }
 
 void NavigationCommandCoordinator::navigateToSymbol(const sym_list::SymbolInfo& symbol)
