@@ -364,18 +364,15 @@ void MyCodeEditor::hideAutoComplete()
 void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 {
     CompletionModel::CompletionItem item = completionModel->getItem(index);
-    CompletionActivationQuery activationQuery;
-    activationQuery.selectable = completionModel->isSelectableIndex(index);
-    activationQuery.itemText = item.text;
-    activationQuery.defaultValue = item.defaultValue;
-    activationQuery.mode = isInAlternateMode
-        ? CompletionActivationMode::AlternateMode
-        : (isInCustomCommandMode
-               ? CompletionActivationMode::CommandMode
-               : CompletionActivationMode::EditorWord);
+    EditorCompletionActivationContext activationContext;
+    activationContext.selectable = completionModel->isSelectableIndex(index);
+    activationContext.alternateModeActive = isInAlternateMode;
+    activationContext.commandModeActive = isInCustomCommandMode;
+    activationContext.itemText = item.text;
+    activationContext.defaultValue = item.defaultValue;
     const CompletionActivationState activationState =
         EditorSemanticContextService::getInstance()
-            ->completionActivationState(activationQuery);
+            ->completionActivationState(activationContext);
 
     if (activationState.action == CompletionActivationAction::None)
         return;
@@ -489,13 +486,10 @@ bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
     if (!completer->popup()->isVisible())
         return false;
 
-    CompletionPopupKeyQuery query;
+    EditorCompletionPopupKeyContext query;
     query.key = event->key();
-    query.mode = isInAlternateMode
-        ? CompletionActivationMode::AlternateMode
-        : (isInCustomCommandMode
-               ? CompletionActivationMode::CommandMode
-               : CompletionActivationMode::EditorWord);
+    query.alternateModeActive = isInAlternateMode;
+    query.commandModeActive = isInCustomCommandMode;
     query.currentIndexValid = completer->popup()->currentIndex().isValid();
     query.hasRows = completionModel->rowCount() > 0;
     query.alternateBufferEmpty = alternateCommandBuffer.isEmpty();

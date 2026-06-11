@@ -23,6 +23,23 @@ struct EditorSemanticContext {
     bool commandModeActive = false;
 };
 
+struct EditorCompletionActivationContext {
+    bool selectable = false;
+    bool alternateModeActive = false;
+    bool commandModeActive = false;
+    QString itemText;
+    QString defaultValue;
+};
+
+struct EditorCompletionPopupKeyContext {
+    int key = 0;
+    bool alternateModeActive = false;
+    bool commandModeActive = false;
+    bool currentIndexValid = false;
+    bool hasRows = false;
+    bool alternateBufferEmpty = true;
+};
+
 class EditorSemanticContextService
 {
 public:
@@ -75,7 +92,11 @@ public:
     EditorCompletionState editorCompletionState(
         const EditorSemanticContext& context) const;
     CompletionActivationState completionActivationState(
+        const EditorCompletionActivationContext& context) const;
+    CompletionActivationState completionActivationState(
         const CompletionActivationQuery& query) const;
+    CompletionPopupKeyState completionPopupKeyState(
+        const EditorCompletionPopupKeyContext& context) const;
     CompletionPopupKeyState completionPopupKeyState(
         const CompletionPopupKeyQuery& query) const;
 

@@ -451,6 +451,37 @@ int main(int argc, char** argv) {
            alternateActivationOk ? "PASS" : "FAIL",
            "CompletionService activate alt",
            alternateActivationState.text.toLocal8Bit().constData());
+    EditorCompletionActivationContext contextCommandActivation;
+    contextCommandActivation.selectable = true;
+    contextCommandActivation.commandModeActive = true;
+    contextCommandActivation.itemText = QStringLiteral("clk");
+    contextCommandActivation.defaultValue = QStringLiteral("logic clk");
+    const CompletionActivationState contextCommandActivationState =
+        EditorSemanticContextService::getInstance()
+            ->completionActivationState(contextCommandActivation);
+    expectBool("EditorContext command activation",
+               contextCommandActivationState.action
+                       == CompletionActivationAction::ReplaceLine
+                   && contextCommandActivationState.text
+                       == QStringLiteral("logic clk")
+                   && contextCommandActivationState.clearCommandMode
+                   && contextCommandActivationState.hidePopup,
+               true);
+    EditorCompletionActivationContext contextAlternateActivation;
+    contextAlternateActivation.selectable = true;
+    contextAlternateActivation.alternateModeActive = true;
+    contextAlternateActivation.commandModeActive = true;
+    contextAlternateActivation.itemText = QStringLiteral("save");
+    const CompletionActivationState contextAlternateActivationState =
+        EditorSemanticContextService::getInstance()
+            ->completionActivationState(contextAlternateActivation);
+    expectBool("EditorContext alternate activation",
+               contextAlternateActivationState.action
+                       == CompletionActivationAction::ExecuteAlternateCommand
+                   && contextAlternateActivationState.text
+                       == QStringLiteral("save")
+                   && !contextAlternateActivationState.clearCommandMode,
+               true);
 
     CompletionActivationQuery inactiveActivationQuery;
     inactiveActivationQuery.selectable = false;
@@ -502,6 +533,16 @@ int main(int argc, char** argv) {
                        ->completionPopupKeyState(popupQuery)
                        .action
                    == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
+               true);
+    EditorCompletionPopupKeyContext contextPopupQuery;
+    contextPopupQuery.key = Qt::Key_Escape;
+    contextPopupQuery.alternateModeActive = true;
+    contextPopupQuery.commandModeActive = true;
+    expectBool("EditorContext alternate popup clears",
+               EditorSemanticContextService::getInstance()
+                       ->completionPopupKeyState(contextPopupQuery)
+                       .action
+                   == CompletionPopupKeyAction::HidePopupAndClearAlternate,
                true);
 
     CompletionPopupKeyQuery alternatePopupQuery;

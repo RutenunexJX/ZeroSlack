@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Completion popup key policy now goes through `EditorSemanticContextService`.
-`MyCodeEditor` builds popup key queries and performs UI actions, while the editor semantic context facade owns the route to `CompletionService` policy.
+Editor completion mode query assembly now lives in `EditorSemanticContextService`.
+`MyCodeEditor` passes UI state for completion activation and popup keys, while the editor semantic context facade maps editor/command/alternate modes into `CompletionService` policy queries.
 
 ## Current Architecture Snapshot
 
@@ -37,7 +37,7 @@ Completion popup key policy now goes through `EditorSemanticContextService`.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
-- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, popup key policy routing, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
+- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, completion activation/popup mode query assembly, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.
 - `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.

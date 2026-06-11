@@ -3,6 +3,19 @@
 std::unique_ptr<EditorSemanticContextService>
     EditorSemanticContextService::instance = nullptr;
 
+namespace {
+CompletionActivationMode completionModeForEditorState(
+    bool alternateModeActive,
+    bool commandModeActive)
+{
+    if (alternateModeActive)
+        return CompletionActivationMode::AlternateMode;
+    if (commandModeActive)
+        return CompletionActivationMode::CommandMode;
+    return CompletionActivationMode::EditorWord;
+}
+}
+
 EditorSemanticContextService* EditorSemanticContextService::getInstance()
 {
     if (!instance)
@@ -191,9 +204,36 @@ EditorCompletionState EditorSemanticContextService::editorCompletionState(
 }
 
 CompletionActivationState EditorSemanticContextService::completionActivationState(
+    const EditorCompletionActivationContext& context) const
+{
+    CompletionActivationQuery query;
+    query.selectable = context.selectable;
+    query.mode = completionModeForEditorState(
+        context.alternateModeActive,
+        context.commandModeActive);
+    query.itemText = context.itemText;
+    query.defaultValue = context.defaultValue;
+    return completionActivationState(query);
+}
+
+CompletionActivationState EditorSemanticContextService::completionActivationState(
     const CompletionActivationQuery& query) const
 {
     return CompletionService::getInstance()->completionActivationState(query);
+}
+
+CompletionPopupKeyState EditorSemanticContextService::completionPopupKeyState(
+    const EditorCompletionPopupKeyContext& context) const
+{
+    CompletionPopupKeyQuery query;
+    query.key = context.key;
+    query.mode = completionModeForEditorState(
+        context.alternateModeActive,
+        context.commandModeActive);
+    query.currentIndexValid = context.currentIndexValid;
+    query.hasRows = context.hasRows;
+    query.alternateBufferEmpty = context.alternateBufferEmpty;
+    return completionPopupKeyState(query);
 }
 
 CompletionPopupKeyState EditorSemanticContextService::completionPopupKeyState(
