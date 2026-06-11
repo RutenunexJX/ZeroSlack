@@ -121,6 +121,22 @@ CompletionTriggerState EditorSemanticContextService::completionTriggerState(
         completionTriggerQuery(context));
 }
 
+EditorCompletionTextChangeState
+EditorSemanticContextService::completionTextChangeState(
+    const EditorSemanticContext& context) const
+{
+    EditorCompletionTextChangeState state;
+    state.commandInput = commandModeInputState(context);
+    state.commandModeActive = state.commandInput.matched;
+
+    EditorSemanticContext triggerContext = context;
+    triggerContext.commandModeActive = state.commandModeActive;
+    state.trigger = completionTriggerState(triggerContext);
+    state.startCompletionTimer = state.trigger.continueCompletion;
+    state.hidePopup = state.trigger.hidePopup;
+    return state;
+}
+
 CompletionQuery EditorSemanticContextService::completionQuery(
     const QString& prefix,
     const EditorSemanticContext& context) const

@@ -40,6 +40,14 @@ struct EditorCompletionPopupKeyContext {
     bool alternateBufferEmpty = true;
 };
 
+struct EditorCompletionTextChangeState {
+    bool commandModeActive = false;
+    bool startCompletionTimer = false;
+    bool hidePopup = false;
+    CommandModeInputState commandInput;
+    CompletionTriggerState trigger;
+};
+
 class EditorSemanticContextService
 {
 public:
@@ -72,6 +80,8 @@ public:
     CompletionTriggerQuery completionTriggerQuery(
         const EditorSemanticContext& context) const;
     CompletionTriggerState completionTriggerState(
+        const EditorSemanticContext& context) const;
+    EditorCompletionTextChangeState completionTextChangeState(
         const EditorSemanticContext& context) const;
     CompletionQuery completionQuery(const QString& prefix,
                                     const EditorSemanticContext& context) const;

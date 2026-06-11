@@ -338,16 +338,14 @@ void MyCodeEditor::onTextChanged()
     EditorSemanticContext context =
         editorSemanticContextForPosition(cursor.position());
     context.moduleName = currentModuleNameAt(cursor.position() - 1);
-    const CommandModeInputState commandInputState =
-        EditorSemanticContextService::getInstance()->commandModeInputState(context);
-    isInCustomCommandMode = commandInputState.matched;
-    context.commandModeActive = isInCustomCommandMode;
-    const CompletionTriggerState triggerState =
-        EditorSemanticContextService::getInstance()->completionTriggerState(context);
+    const EditorCompletionTextChangeState completionState =
+        EditorSemanticContextService::getInstance()
+            ->completionTextChangeState(context);
+    isInCustomCommandMode = completionState.commandModeActive;
 
-    if (triggerState.continueCompletion) {
+    if (completionState.startCompletionTimer) {
         autoCompleteTimer->start();
-    } else if (triggerState.hidePopup) {
+    } else if (completionState.hidePopup) {
         hideAutoComplete();
     }
 }

@@ -4,9 +4,9 @@ Use `readme.md` for handoff state and `goal.md` for stable product/architecture 
 
 ## Next Architecture Blocks
 
-Choose one medium-sized block:
+Choose one medium-sized block that completes a small workflow boundary:
 
-1. Move a related group of UI/editor/completion semantic reads or analysis policy checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`.
+1. Move a related group of UI/editor/completion semantic reads or analysis policy checks behind `SemanticIndex`, Query Services, models, or `AnalysisScheduler`; prefer a complete workflow such as mode state plus activation plus popup-key policy plus tests over a single call-site relay.
 2. Extract another complete `MainWindow` coordination responsibility into a focused coordinator or existing scheduler/model boundary.
 3. Thin one editor/completion workflow end-to-end without changing visible behavior.
 

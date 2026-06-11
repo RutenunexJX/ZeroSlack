@@ -1011,6 +1011,26 @@ int main(int argc, char** argv) {
     expectBool("EditorSemanticContext command input",
                contextInputState.matched,
                true);
+    const EditorCompletionTextChangeState contextTextChangeState =
+        EditorSemanticContextService::getInstance()
+            ->completionTextChangeState(commandContext);
+    expectBool("EditorSemanticContext text-change command",
+               contextTextChangeState.commandModeActive
+                   && contextTextChangeState.commandInput.matched
+                   && contextTextChangeState.startCompletionTimer
+                   && !contextTextChangeState.hidePopup,
+               true);
+    EditorSemanticContext plainTextChangeContext;
+    plainTextChangeContext.lineUpToCursor = QStringLiteral("assign value ");
+    plainTextChangeContext.moduleName = QStringLiteral("top");
+    const EditorCompletionTextChangeState plainTextChangeState =
+        EditorSemanticContextService::getInstance()
+            ->completionTextChangeState(plainTextChangeContext);
+    expectBool("EditorSemanticContext text-change hide",
+               !plainTextChangeState.commandModeActive
+                   && !plainTextChangeState.startCompletionTimer
+                   && plainTextChangeState.hidePopup,
+               true);
     const CommandModeMatch contextCommandMatch =
         EditorSemanticContextService::getInstance()
             ->commandModeMatch(commandContext);
