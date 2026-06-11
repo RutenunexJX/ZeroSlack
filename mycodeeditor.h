@@ -132,14 +132,10 @@ private:
     void applySourceNavigationHover(const EditorNavigationTarget& target);
     void clearSourceNavigationHover();
 
-    QString getWordAtTextPosition(int position);
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
     void clearHoveredSymbolHighlight();
-    bool canJumpToDefinition(const QString& symbolName);
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();
-
-    void showSymbolTooltip(const QString& symbolName, const QPoint& position);
 
     bool commandModeExitedByDoubleSpace = false;
 signals:

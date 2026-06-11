@@ -1,5 +1,5 @@
 // Headless jump-resolution test. Builds sym_list from Slang, constructs a MyCodeEditor offscreen
-// (no window shown), sets its file/text/cursor, and drives canJumpToDefinition / target resolution.
+// (no window shown), sets its file/text/cursor, and drives definition availability / target resolution.
 #include <QApplication>
 #include <QFile>
 #include <QTextStream>
@@ -81,14 +81,37 @@ int main(int argc, char** argv) {
     // Caret inside module `top` (top spans ~line 66..end; block 95 is well inside).
     placeCursor(ed, 95);
     printf("-- caret inside top --\n");
-    expectBool("canJump(counter) [module var]",      ed.canJumpToDefinition("counter"), true);
-    expectBool("canJump(clk) [module port]",         ed.canJumpToDefinition("clk"),     true);
-    expectBool("canJump(DATA_WIDTH) [module param]", ed.canJumpToDefinition("DATA_WIDTH"), true);
-    expectBool("canJump(a) [only in adder] isolated",ed.canJumpToDefinition("a"),       false);
-    expectBool("canJump(nonexistent)",               ed.canJumpToDefinition("nope_xyz"),false);
+    const EditorSemanticContext topContext =
+        ed.editorSemanticContextForPosition(ed.textCursor().position());
+    expectBool("canResolve(counter) [module var]",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("counter"), topContext),
+               true);
+    expectBool("canResolve(clk) [module port]",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("clk"), topContext),
+               true);
+    expectBool("canResolve(DATA_WIDTH) [module param]",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("DATA_WIDTH"), topContext),
+               true);
+    expectBool("canResolve(a) [only in adder] isolated",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("a"), topContext),
+               false);
+    expectBool("canResolve(nonexistent)",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("nope_xyz"), topContext),
+               false);
     // Type-name-scoped symbols (current behavior - surfaces the moduleScope vs module filter):
-    expectBool("canJump(STATE_IDLE) [enum value]",   ed.canJumpToDefinition("STATE_IDLE"), true);
-    expectBool("canJump(red) [struct member]",       ed.canJumpToDefinition("red"),     true);
+    expectBool("canResolve(STATE_IDLE) [enum value]",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("STATE_IDLE"), topContext),
+               true);
+    expectBool("canResolve(red) [struct member]",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("red"), topContext),
+               true);
 
     const QString syntheticFile =
         QFileInfo(path).dir().filePath(QStringLiteral("definition_service_member_context.sv"));
@@ -479,6 +502,21 @@ int main(int argc, char** argv) {
                contextEditorTarget.matched
                    && contextEditorTarget.identifierTarget
                    && contextEditorTarget.jumpable,
+               true);
+    EditorSemanticContext definitionSourceContext;
+    definitionSourceContext.fileName = path;
+    definitionSourceContext.moduleName = QStringLiteral("top");
+    definitionSourceContext.lineText = QStringLiteral("      counter <= 8'd0;");
+    definitionSourceContext.column =
+        definitionSourceContext.lineText.indexOf(QStringLiteral("counter")) + 2;
+    const SourceEditorNavigationTarget definitionEditorTarget =
+        EditorSemanticContextService::getInstance()
+            ->definitionSourceNavigationTarget(definitionSourceContext);
+    expectBool("EditorSemanticContext returns definition-aware source navigation target",
+               definitionEditorTarget.matched
+                   && definitionEditorTarget.identifierTarget
+                   && definitionEditorTarget.text == QStringLiteral("counter")
+                   && definitionEditorTarget.jumpable,
                true);
     const SourceSymbolActionContext contextSymbolAction =
         EditorSemanticContextService::getInstance()

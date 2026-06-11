@@ -35,6 +35,8 @@ public:
     SourceEditorNavigationTarget sourceNavigationTarget(
         const EditorSemanticContext& context,
         const std::function<bool(const QString&)>& canResolveIdentifier) const;
+    SourceEditorNavigationTarget definitionSourceNavigationTarget(
+        const EditorSemanticContext& context) const;
     SourceIdentifierTarget sourceIdentifierTarget(
         const EditorSemanticContext& context) const;
     DefinitionNavigationQuery definitionNavigationQuery(

@@ -34,6 +34,17 @@ SourceEditorNavigationTarget EditorSemanticContextService::sourceNavigationTarge
         canResolveIdentifier);
 }
 
+SourceEditorNavigationTarget
+EditorSemanticContextService::definitionSourceNavigationTarget(
+    const EditorSemanticContext& context) const
+{
+    return sourceNavigationTarget(
+        context,
+        [this, context](const QString& symbolName) {
+            return canResolveDefinitionTarget(symbolName, context);
+        });
+}
+
 SourceIdentifierTarget EditorSemanticContextService::sourceIdentifierTarget(
     const EditorSemanticContext& context) const
 {

@@ -19,7 +19,6 @@
 
 #include <QAbstractItemView>
 #include <QCompleter>
-#include <QToolTip>
 #include <QCursor>
 #include <QPixmap>
 #include <QPen>
@@ -875,11 +874,9 @@ MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
         return editorTarget;
 
     const SourceEditorNavigationTarget sourceTarget =
-        EditorSemanticContextService::getInstance()->sourceNavigationTarget(
-            editorSemanticContextForPosition(cursor.position()),
-            [this](const QString& symbolName) {
-                return canJumpToDefinition(symbolName);
-            });
+        EditorSemanticContextService::getInstance()
+            ->definitionSourceNavigationTarget(
+                editorSemanticContextForPosition(cursor.position()));
     if (!sourceTarget.matched)
         return editorTarget;
 
@@ -922,14 +919,6 @@ void MyCodeEditor::clearSourceNavigationHover()
     viewport()->setCursor(Qt::IBeamCursor);
     clearHoveredSymbolHighlight();
     hoveredWord.clear();
-}
-
-QString MyCodeEditor::getWordAtTextPosition(int position)
-{
-    const SourceIdentifierTarget identifierTarget =
-        EditorSemanticContextService::getInstance()->sourceIdentifierTarget(
-            editorSemanticContextForPosition(position));
-    return identifierTarget.matched ? identifierTarget.identifier : QString();
 }
 
 void MyCodeEditor::moveMouseToCursor()
@@ -987,31 +976,6 @@ void MyCodeEditor::clearHoveredSymbolHighlight()
 
     hoveredWordStartPos = -1;
     hoveredWordEndPos = -1;
-}
-
-
-void MyCodeEditor::showSymbolTooltip(const QString& symbolName, const QPoint& position)
-{
-    if (symbolName.isEmpty()) return;
-
-    const QString tooltipText =
-        EditorSemanticContextService::getInstance()->definitionTooltipText(
-            symbolName,
-            editorSemanticContextForPosition());
-    if (tooltipText.isEmpty())
-        return;
-
-    QToolTip::showText(mapToGlobal(position), tooltipText, this);
-}
-
-bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
-{
-    if (symbolName.isEmpty())
-        return false;
-
-    return EditorSemanticContextService::getInstance()->canResolveDefinitionTarget(
-        symbolName,
-        editorSemanticContextForPosition());
 }
 
 QCursor MyCodeEditor::createJumpableCursor()
