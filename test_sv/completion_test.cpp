@@ -1005,6 +1005,48 @@ int main(int argc, char** argv) {
                contextCommandState.matched
                    && contextCommandState.prefixPosition == 0,
                true);
+    const EditorCommandModeCompletionRefreshState contextRefreshState =
+        EditorSemanticContextService::getInstance()
+            ->commandModeCompletionRefreshState(commandContext, false);
+    expectBool("EditorSemanticContext command refresh show",
+               contextRefreshState.matched
+                   && contextRefreshState.commandModeActive
+                   && contextRefreshState.highlightCommand
+                   && contextRefreshState.showCompletions
+                   && !contextRefreshState.hidePopup
+                   && contextRefreshState.completion.completionPrefix
+                       == QStringLiteral("ena"),
+               true);
+    const EditorCommandModeCompletionRefreshState suppressedRefreshState =
+        EditorSemanticContextService::getInstance()
+            ->commandModeCompletionRefreshState(commandContext, true);
+    expectBool("EditorSemanticContext command refresh suppress",
+               suppressedRefreshState.matched
+                   && suppressedRefreshState.commandModeActive
+                   && suppressedRefreshState.suppressAfterExit
+                   && !suppressedRefreshState.showCompletions,
+               true);
+    EditorSemanticContext commandExitContext;
+    commandExitContext.lineUpToCursor = QStringLiteral("l  ");
+    const EditorCommandModeCompletionRefreshState contextExitRefreshState =
+        EditorSemanticContextService::getInstance()
+            ->commandModeCompletionRefreshState(commandExitContext, false);
+    expectBool("EditorSemanticContext command refresh exit",
+               contextExitRefreshState.matched
+                   && !contextExitRefreshState.commandModeActive
+                   && contextExitRefreshState.exitRequested
+                   && contextExitRefreshState.markExitedByDoubleSpace
+                   && contextExitRefreshState.clearCommandHighlight,
+               true);
+    EditorSemanticContext noCommandRefreshContext;
+    noCommandRefreshContext.lineUpToCursor = QStringLiteral("assign value");
+    const EditorCommandModeCompletionRefreshState noCommandRefreshState =
+        EditorSemanticContextService::getInstance()
+            ->commandModeCompletionRefreshState(noCommandRefreshContext, true);
+    expectBool("EditorSemanticContext command refresh reset",
+               !noCommandRefreshState.matched
+                   && noCommandRefreshState.resetExitedByDoubleSpace,
+               true);
     const CommandModeInputState contextInputState =
         EditorSemanticContextService::getInstance()
             ->commandModeInputState(commandContext);

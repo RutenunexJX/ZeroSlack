@@ -48,6 +48,20 @@ struct EditorCompletionTextChangeState {
     CompletionTriggerState trigger;
 };
 
+struct EditorCommandModeCompletionRefreshState {
+    bool matched = false;
+    bool commandModeActive = false;
+    bool resetExitedByDoubleSpace = false;
+    bool suppressAfterExit = false;
+    bool exitRequested = false;
+    bool markExitedByDoubleSpace = false;
+    bool clearCommandHighlight = false;
+    bool highlightCommand = false;
+    bool hidePopup = false;
+    bool showCompletions = false;
+    CommandModeCompletionState completion;
+};
+
 class EditorSemanticContextService
 {
 public:
@@ -91,6 +105,9 @@ public:
         const EditorSemanticContext& context) const;
     CommandModeCompletionState commandModeCompletionState(
         const EditorSemanticContext& context) const;
+    EditorCommandModeCompletionRefreshState commandModeCompletionRefreshState(
+        const EditorSemanticContext& context,
+        bool exitedByDoubleSpace) const;
     CommandModeInputState commandModeInputState(
         const EditorSemanticContext& context) const;
     CommandModeMatch commandModeMatch(

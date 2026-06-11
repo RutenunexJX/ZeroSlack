@@ -568,26 +568,30 @@ void MyCodeEditor::onAutoCompleteTimer()
     EditorSemanticContext context =
         editorSemanticContextForPosition(cursor.position(), true);
 
-    const CommandModeCompletionState commandState =
+    const EditorCommandModeCompletionRefreshState commandState =
         EditorSemanticContextService::getInstance()
-            ->commandModeCompletionState(context);
+            ->commandModeCompletionRefreshState(
+                context,
+                commandModeExitedByDoubleSpace);
     if (commandState.matched) {
-        isInCustomCommandMode = true;
-        if (commandModeExitedByDoubleSpace) {
+        isInCustomCommandMode = commandState.commandModeActive;
+        if (commandState.suppressAfterExit) {
             return;
         }
 
         if (commandState.exitRequested) {
-            clearCommandHighlight();
-            isInCustomCommandMode = false;
-            commandModeExitedByDoubleSpace = true;
+            if (commandState.clearCommandHighlight)
+                clearCommandHighlight();
+            if (commandState.markExitedByDoubleSpace)
+                commandModeExitedByDoubleSpace = true;
             if (completer->popup()->isVisible()) {
                 completer->popup()->hide();
             }
             return;
         }
 
-        highlightCommandText(commandState.prefixPosition);
+        if (commandState.highlightCommand)
+            highlightCommandText(commandState.completion.prefixPosition);
 
         if (commandState.hidePopup) {
             if (completer->popup()->isVisible())
@@ -597,15 +601,16 @@ void MyCodeEditor::onAutoCompleteTimer()
 
         if (commandState.showCompletions) {
             completionModel->updateSymbolCompletions(
-                commandState.symbols,
-                commandState.completionPrefix,
-                commandState.command.symbolType);
+                commandState.completion.symbols,
+                commandState.completion.completionPrefix,
+                commandState.completion.command.symbolType);
             showAutoComplete();
         }
         return;
     }
 
-    commandModeExitedByDoubleSpace = false;
+    if (commandState.resetExitedByDoubleSpace)
+        commandModeExitedByDoubleSpace = false;
 
     clearCommandHighlight();
     isInCustomCommandMode = false;

@@ -178,6 +178,41 @@ CommandModeCompletionState EditorSemanticContextService::commandModeCompletionSt
         commandModeCompletionQuery(context));
 }
 
+EditorCommandModeCompletionRefreshState
+EditorSemanticContextService::commandModeCompletionRefreshState(
+    const EditorSemanticContext& context,
+    bool exitedByDoubleSpace) const
+{
+    EditorCommandModeCompletionRefreshState state;
+    state.completion = commandModeCompletionState(context);
+    state.matched = state.completion.matched;
+
+    if (!state.matched) {
+        state.resetExitedByDoubleSpace = true;
+        return state;
+    }
+
+    state.commandModeActive = true;
+
+    if (exitedByDoubleSpace) {
+        state.suppressAfterExit = true;
+        return state;
+    }
+
+    if (state.completion.exitRequested) {
+        state.commandModeActive = false;
+        state.exitRequested = true;
+        state.markExitedByDoubleSpace = true;
+        state.clearCommandHighlight = true;
+        return state;
+    }
+
+    state.highlightCommand = state.completion.prefixPosition >= 0;
+    state.hidePopup = state.completion.hidePopup;
+    state.showCompletions = state.completion.showCompletions;
+    return state;
+}
+
 CommandModeInputState EditorSemanticContextService::commandModeInputState(
     const EditorSemanticContext& context) const
 {
