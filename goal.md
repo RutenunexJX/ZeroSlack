@@ -19,10 +19,10 @@ ProjectModel
   Owns workspace inputs: root, file list, include dirs, defines, top, ignored paths.
 
 DocumentModel
-  Owns open document state: text version, dirty state, cursor, live module, Tree-sitter document.
+  Owns open document state: file identity, text snapshot/version, dirty/saved state, cursor, live module, and eventually Tree-sitter document ownership.
 
 AnalysisScheduler
-  Owns analysis timing: Slang runs, relationship runs, cancellation, debounce, refresh requests, lifecycle.
+  Owns analysis timing: scheduled semantic runs, relationship runs, cancellation, debounce, refresh requests, lifecycle, and analysis event routing.
 
 SemanticIndex
   Owns semantic facts: symbols, definitions, relationships, references, diagnostics, cached content.
@@ -48,7 +48,7 @@ Tree-sitter and Slang split:
 - Analysis triggers belong in AnalysisScheduler.
 - UI panels should render service/model output, not derive semantic policy from widgets.
 - MainWindow should compose and coordinate windows, not own analysis event routing, panel rendering, or editor workflow policy.
-- MyCodeEditor should provide editor UI and live syntax behavior, not project semantic decisions.
+- MyCodeEditor should provide editor UI and live syntax behavior while document state and project semantic decisions move toward models, services, scheduler, runtime, and coordinators.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
 

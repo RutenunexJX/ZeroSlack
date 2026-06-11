@@ -32,30 +32,11 @@ Editor document state updates now route through `DocumentModel`.
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document snapshots, cached open-document text, dirty/saved state, cursor/file-name refresh events, and live module names.
-- `AnalysisScheduler` owns analysis timing, `SymbolAnalyzer` execution/signal adaptation, open-document content reads from `DocumentModel`, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
-- `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
-- `AnalysisProgressCoordinator` owns workspace analysis progress dialog rendering policy and cancel state.
-- `AnalysisCoordinator` owns scheduler/progress/workspace signal routing, symbol analysis event routing from scheduler-level events, navigation analysis refresh routing, runtime dependency configuration, and active-editor refresh policy.
-- `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
-- `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, text-change completion workflow state, command-mode completion refresh workflow state, alternate-mode key workflow state, alternate-mode completion display workflow state, source-navigation hover/click workflow state, source-symbol shortcut workflow state, source-symbol menu/action workflow state, completion activation/popup mode query assembly, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
-- `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.
-- `TabManager` owns tab lifecycle, file reads/writes, tab titles, and `DocumentModel` registration/save updates while querying open-document state through `DocumentModel`.
-- `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.
-- `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` tab/workspace input wiring.
-- `NavigationManager` owns navigation view cache/refresh state, accepts analysis refresh events from coordinators, and delegates semantic navigation reads to `NavigationService`.
-- `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
-- `SemanticDockCoordinator` owns Problems, References, and Relationships dock creation, placement, and semantic refresh coordinator assembly.
+- `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and scheduler-level analysis events.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes, `SymbolAnalyzer`, and dependency injection into `SemanticIndex`.
-- `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
-- `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
-- `CompletionService` owns module/global/command/editor completion results over `SemanticIndex`, command-mode completion state, completion trigger/activation/popup-key policy, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completion presentation, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates.
-- `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, command membership checks, command action classification, and command completion state.
-- `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, and source navigation target primitives.
-- `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
-- `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
-- `SearchService` owns feature-facing symbol search queries over `SemanticIndex`.
-- `DefinitionService` owns feature-facing definition queries and editor/member context handling over `SemanticIndex`.
-- `RelationshipService` owns feature-facing relationship queries, filtering, sorting, and reports over `SemanticIndex`.
-- `NavigationService` owns module hierarchy, symbol outline, and module target semantic assembly for the navigation pane.
-- `DefinitionNavigationService` owns editor-facing definition query assembly, jump targets, availability, and tooltip text over `DefinitionService`.
-- Problems, References, Relationships, Navigation pane, editor/tab/mode workflows, tab save persistence, analysis commands, analysis event routing, file/edit/workspace commands, and semantic runtime setup are out of `MainWindow`.
+- `AnalysisCoordinator` owns scheduler/progress/workspace signal routing and active-editor refresh policy.
+- `SemanticIndex` owns semantic facts, snapshot publication, relationship lifecycle data, diagnostics, and shared semantic read helpers.
+- Query services own feature-specific reads for completion, definition, relationship, hierarchy, references, diagnostics, search, and source navigation.
+- Coordinators own UI/editor command routing, dock/panel refresh, progress policy, navigation commands, file commands, mode commands, and semantic runtime setup.
+- `TabManager` owns tab lifecycle, file reads/writes, tab titles, and `DocumentModel` registration/save updates.
+- `MyCodeEditor` owns editor UI behavior and live syntax state; project semantic decisions should stay in models, services, scheduler, runtime, and coordinators.
