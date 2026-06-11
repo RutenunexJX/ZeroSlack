@@ -61,10 +61,11 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                                  const EditorSemanticContext& context) {
                 handleDefinitionNavigationRequested(editor, symbolName, context);
             });
-    connect(editor, &MyCodeEditor::alternateCommandActionRequested,
-            this, [this, editor](AlternateCommandAction action) {
+    connect(editor, &MyCodeEditor::alternateCommandRequested,
+            this, [this, editor](const QString& command) {
                 if (fileCommandCoordinator)
-                    fileCommandCoordinator->executeAlternateCommand(editor, action);
+                    fileCommandCoordinator->executeAlternateCommandText(
+                        editor, command);
             });
     connect(editor, &MyCodeEditor::includeOpenRequested,
             this, [this, editor](const QString& includePath,

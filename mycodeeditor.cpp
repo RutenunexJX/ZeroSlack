@@ -778,13 +778,8 @@ void MyCodeEditor::showAlternateModeCommands(const QString &filter)
 
 void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 {
-    AlternateCommandService* alternateCommandService =
-        AlternateCommandService::getInstance();
-    const AlternateCommandAction action =
-        alternateCommandService->commandAction(command);
-    if (action != AlternateCommandAction::None)
-        emit alternateCommandActionRequested(action);
-
+    if (!command.trimmed().isEmpty())
+        emit alternateCommandRequested(command);
     clearAlternateModeBuffer();
     hideAutoComplete();
 }

@@ -2,7 +2,6 @@
 #define MYCODEEDITOR_H
 
 #include "syminfo.h"
-#include "alternatecommandservice.h"
 #include "completionmodel.h"
 #include "editorsemanticcontextservice.h"
 #include "tsdocument.h"
@@ -141,7 +140,7 @@ private:
 signals:
     void definitionNavigationRequested(const QString& symbolName,
                                        const EditorSemanticContext& context);
-    void alternateCommandActionRequested(AlternateCommandAction action);
+    void alternateCommandRequested(const QString& command);
     void includeOpenRequested(const QString& includePath, const QString& currentFile);
     void sourceSymbolActionRequested(SourceSymbolAction action,
                                      const EditorSemanticContext& context);

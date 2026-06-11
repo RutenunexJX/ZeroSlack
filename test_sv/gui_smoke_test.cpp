@@ -27,6 +27,7 @@
 #define private public
 #include "mainwindow.h"
 #include "analysisscheduler.h"
+#include "alternatecommandservice.h"
 #include "documentmodel.h"
 #include "filecommandcoordinator.h"
 #include "navigationwidget.h"
@@ -479,20 +480,27 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    && lastSourceActionContext.moduleName == QStringLiteral("ref_top"),
                true);
 
-    AlternateCommandAction emittedAlternateAction = AlternateCommandAction::None;
+    QString emittedAlternateCommand;
     QObject::connect(&shortcutEditor,
-                     &MyCodeEditor::alternateCommandActionRequested,
+                     &MyCodeEditor::alternateCommandRequested,
                      &shortcutEditor,
-                     [&](AlternateCommandAction action) {
-                         emittedAlternateAction = action;
+                     [&](const QString& command) {
+                         emittedAlternateCommand = command;
                      });
     shortcutEditor.executeAlternateModeCommand(QStringLiteral("save"));
-    expectBool("alternate command emits action request",
-               emittedAlternateAction == AlternateCommandAction::Save,
+    expectBool("alternate command emits command request",
+               emittedAlternateCommand == QStringLiteral("save"),
                true);
 
     shortcutEditor.clear();
     FileCommandCoordinator editorCommandCoordinator(nullptr, nullptr);
+    editorCommandCoordinator.executeAlternateCommandText(
+        &shortcutEditor, QStringLiteral("comment"));
+    expectBool("file coordinator executes command text",
+               shortcutEditor.toPlainText() == QStringLiteral("// "),
+               true);
+
+    shortcutEditor.clear();
     editorCommandCoordinator.executeAlternateCommand(&shortcutEditor,
                                                     AlternateCommandAction::Comment);
     expectBool("file coordinator executes editor command",

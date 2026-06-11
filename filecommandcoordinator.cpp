@@ -134,6 +134,16 @@ void FileCommandCoordinator::executeAlternateCommand(MyCodeEditor* editor,
     }
 }
 
+void FileCommandCoordinator::executeAlternateCommandText(
+    MyCodeEditor* editor,
+    const QString& command)
+{
+    const AlternateCommandAction action =
+        AlternateCommandService::getInstance()->commandAction(command);
+    if (action != AlternateCommandAction::None)
+        executeAlternateCommand(editor, action);
+}
+
 void FileCommandCoordinator::openDirectoryAsWorkspace()
 {
     if (workspaceManager)
