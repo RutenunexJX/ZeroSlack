@@ -749,19 +749,21 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
-        const EditorNavigationTarget target =
+        const EditorSourceNavigationTarget target =
             sourceNavigationTargetAtPosition(event->pos());
-        if (target.includeTarget) {
-            emit includeOpenRequested(target.text, getFileName());
-            event->accept();
-            return;
+        const EditorSourceNavigationClickState clickState =
+            EditorSemanticContextService::getInstance()
+                ->sourceNavigationClickState(target);
+        if (clickState.action == EditorSourceNavigationClickAction::OpenInclude) {
+            emit includeOpenRequested(clickState.text, getFileName());
+        } else if (clickState.action
+                   == EditorSourceNavigationClickAction::NavigateToDefinition) {
+            emit definitionNavigationRequested(
+                clickState.text,
+                editorSemanticContextForPosition(clickState.contextCursorPosition));
         }
 
-        if (target.matched && !target.text.isEmpty()) {
-            emit definitionNavigationRequested(
-                target.text,
-                editorSemanticContextForPosition(
-                    target.identifierTarget ? target.cursorPosition : -1));
+        if (clickState.acceptEvent) {
             event->accept();
             return;
         }
@@ -797,35 +799,22 @@ void MyCodeEditor::leaveEvent(QEvent *event)
     QPlainTextEdit::leaveEvent(event);
 }
 
-MyCodeEditor::EditorNavigationTarget
+EditorSourceNavigationTarget
 MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
 {
-    EditorNavigationTarget editorTarget;
     QTextCursor cursor = cursorForPosition(position);
     QTextBlock block = cursor.block();
     if (!block.isValid())
-        return editorTarget;
+        return {};
 
-    const SourceEditorNavigationTarget sourceTarget =
-        EditorSemanticContextService::getInstance()
-            ->definitionSourceNavigationTarget(
-                editorSemanticContextForPosition(cursor.position()));
-    if (!sourceTarget.matched)
-        return editorTarget;
-
-    editorTarget.matched = true;
-    editorTarget.text = sourceTarget.text;
-    editorTarget.startPos = block.position() + sourceTarget.startColumn;
-    editorTarget.endPos = block.position() + sourceTarget.endColumn;
-    editorTarget.cursorPosition = block.position() + sourceTarget.cursorColumn;
-    editorTarget.includeTarget = sourceTarget.includeTarget;
-    editorTarget.identifierTarget = sourceTarget.identifierTarget;
-    editorTarget.jumpable = sourceTarget.jumpable;
-    return editorTarget;
+    return EditorSemanticContextService::getInstance()
+        ->editorSourceNavigationTarget(
+            editorSemanticContextForPosition(cursor.position()),
+            block.position());
 }
 
 void MyCodeEditor::applySourceNavigationHover(
-    const EditorNavigationTarget& target)
+    const EditorSourceNavigationTarget& target)
 {
     if (!target.matched) {
         clearSourceNavigationHover();

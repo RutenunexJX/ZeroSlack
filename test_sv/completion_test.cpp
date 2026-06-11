@@ -1151,6 +1151,94 @@ int main(int argc, char** argv) {
                contextActivationState.action == CompletionActivationAction::ReplaceWord,
                true);
 
+    EditorSemanticContext includeNavigationContext;
+    includeNavigationContext.lineText = QStringLiteral("`include \"defs.svh\"");
+    includeNavigationContext.column =
+        includeNavigationContext.lineText.indexOf(QStringLiteral("defs"));
+    const EditorSourceNavigationTarget includeNavigationTarget =
+        EditorSemanticContextService::getInstance()
+            ->editorSourceNavigationTarget(includeNavigationContext, 100);
+    expectBool("EditorSemanticContext nav include target",
+               includeNavigationTarget.matched
+                   && includeNavigationTarget.includeTarget
+                   && includeNavigationTarget.jumpable
+                   && includeNavigationTarget.text == QStringLiteral("defs.svh")
+                   && includeNavigationTarget.startPos > 100,
+               true);
+    const EditorSourceNavigationClickState includeClickState =
+        EditorSemanticContextService::getInstance()
+            ->sourceNavigationClickState(includeNavigationTarget);
+    expectBool("EditorSemanticContext nav include click",
+               includeClickState.action
+                       == EditorSourceNavigationClickAction::OpenInclude
+                   && includeClickState.text == QStringLiteral("defs.svh")
+                   && includeClickState.acceptEvent,
+               true);
+
+    sym_list::SymbolInfo navSymbol =
+        makeSymbol(QStringLiteral("jump_sig"),
+                   sym_list::sym_logic,
+                   QStringLiteral("top"),
+                   QStringLiteral("logic"),
+                   2100);
+    navSymbol.fileName = path;
+    SemanticIndex::getInstance()->setSnapshot(
+        std::make_shared<SemanticIndexSnapshot>(
+            QList<sym_list::SymbolInfo>{navSymbol},
+            QList<SemanticRelationship>{},
+            QList<SemanticDiagnostic>{},
+            QHash<QString, QString>{{path, content}}));
+    EditorSemanticContext identifierNavigationContext;
+    identifierNavigationContext.fileName = path;
+    identifierNavigationContext.moduleName = QStringLiteral("top");
+    identifierNavigationContext.lineText = QStringLiteral("assign jump_sig = 1'b1;");
+    identifierNavigationContext.column =
+        identifierNavigationContext.lineText.indexOf(QStringLiteral("jump_sig"));
+    const EditorSourceNavigationTarget identifierNavigationTarget =
+        EditorSemanticContextService::getInstance()
+            ->editorSourceNavigationTarget(identifierNavigationContext, 200);
+    expectBool("EditorSemanticContext nav identifier target",
+               identifierNavigationTarget.matched
+                   && identifierNavigationTarget.identifierTarget
+                   && identifierNavigationTarget.jumpable
+                   && identifierNavigationTarget.text == QStringLiteral("jump_sig")
+                   && identifierNavigationTarget.cursorPosition
+                       == 200 + identifierNavigationContext.column,
+               true);
+    const EditorSourceNavigationClickState identifierClickState =
+        EditorSemanticContextService::getInstance()
+            ->sourceNavigationClickState(identifierNavigationTarget);
+    expectBool("EditorSemanticContext nav identifier click",
+               identifierClickState.action
+                       == EditorSourceNavigationClickAction::NavigateToDefinition
+                   && identifierClickState.contextCursorPosition
+                       == identifierNavigationTarget.cursorPosition
+                   && identifierClickState.acceptEvent,
+               true);
+
+    identifierNavigationContext.lineText =
+        QStringLiteral("assign missing_sig = 1'b1;");
+    identifierNavigationContext.column =
+        identifierNavigationContext.lineText.indexOf(QStringLiteral("missing_sig"));
+    const EditorSourceNavigationTarget unresolvedNavigationTarget =
+        EditorSemanticContextService::getInstance()
+            ->editorSourceNavigationTarget(identifierNavigationContext, 300);
+    expectBool("EditorSemanticContext nav unresolved target",
+               unresolvedNavigationTarget.matched
+                   && unresolvedNavigationTarget.identifierTarget
+                   && !unresolvedNavigationTarget.jumpable
+                   && unresolvedNavigationTarget.text
+                       == QStringLiteral("missing_sig"),
+               true);
+    const EditorSourceNavigationClickState emptyClickState =
+        EditorSemanticContextService::getInstance()
+            ->sourceNavigationClickState(EditorSourceNavigationTarget{});
+    expectBool("EditorSemanticContext nav empty click",
+               emptyClickState.action == EditorSourceNavigationClickAction::None
+                   && !emptyClickState.acceptEvent,
+               true);
+    SemanticIndex::getInstance()->clearSnapshot();
+
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
     commandQuery.moduleName = "top";

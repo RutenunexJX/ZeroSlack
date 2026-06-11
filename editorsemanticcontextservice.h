@@ -85,6 +85,31 @@ struct EditorAlternateModeKeyState {
     bool clearBuffer = false;
 };
 
+struct EditorSourceNavigationTarget {
+    bool matched = false;
+    bool jumpable = false;
+    bool includeTarget = false;
+    bool identifierTarget = false;
+    QString text;
+    int startPos = -1;
+    int endPos = -1;
+    int cursorPosition = -1;
+};
+
+enum class EditorSourceNavigationClickAction {
+    None,
+    OpenInclude,
+    NavigateToDefinition
+};
+
+struct EditorSourceNavigationClickState {
+    EditorSourceNavigationClickAction action =
+        EditorSourceNavigationClickAction::None;
+    QString text;
+    int contextCursorPosition = -1;
+    bool acceptEvent = false;
+};
+
 class EditorSemanticContextService
 {
 public:
@@ -100,6 +125,11 @@ public:
         const std::function<bool(const QString&)>& canResolveIdentifier) const;
     SourceEditorNavigationTarget definitionSourceNavigationTarget(
         const EditorSemanticContext& context) const;
+    EditorSourceNavigationTarget editorSourceNavigationTarget(
+        const EditorSemanticContext& context,
+        int blockPosition) const;
+    EditorSourceNavigationClickState sourceNavigationClickState(
+        const EditorSourceNavigationTarget& target) const;
     SourceIdentifierTarget sourceIdentifierTarget(
         const EditorSemanticContext& context) const;
     DefinitionNavigationQuery definitionNavigationQuery(

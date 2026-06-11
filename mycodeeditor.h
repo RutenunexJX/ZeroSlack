@@ -110,19 +110,10 @@ private:
     int hoveredWordStartPos = -1;
     int hoveredWordEndPos = -1;
 
-    struct EditorNavigationTarget {
-        bool matched = false;
-        bool jumpable = false;
-        bool includeTarget = false;
-        bool identifierTarget = false;
-        QString text;
-        int startPos = -1;
-        int endPos = -1;
-        int cursorPosition = -1;
-    };
-
-    EditorNavigationTarget sourceNavigationTargetAtPosition(const QPoint& position);
-    void applySourceNavigationHover(const EditorNavigationTarget& target);
+    EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
+        const QPoint& position);
+    void applySourceNavigationHover(
+        const EditorSourceNavigationTarget& target);
     void clearSourceNavigationHover();
 
     void highlightHoveredSymbol(const QString& word, int startPos, int endPos);

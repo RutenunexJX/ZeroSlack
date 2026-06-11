@@ -60,6 +60,49 @@ EditorSemanticContextService::definitionSourceNavigationTarget(
         });
 }
 
+EditorSourceNavigationTarget
+EditorSemanticContextService::editorSourceNavigationTarget(
+    const EditorSemanticContext& context,
+    int blockPosition) const
+{
+    EditorSourceNavigationTarget editorTarget;
+    const SourceEditorNavigationTarget sourceTarget =
+        definitionSourceNavigationTarget(context);
+    if (!sourceTarget.matched)
+        return editorTarget;
+
+    editorTarget.matched = true;
+    editorTarget.jumpable = sourceTarget.jumpable;
+    editorTarget.includeTarget = sourceTarget.includeTarget;
+    editorTarget.identifierTarget = sourceTarget.identifierTarget;
+    editorTarget.text = sourceTarget.text;
+    editorTarget.startPos = blockPosition + sourceTarget.startColumn;
+    editorTarget.endPos = blockPosition + sourceTarget.endColumn;
+    editorTarget.cursorPosition = blockPosition + sourceTarget.cursorColumn;
+    return editorTarget;
+}
+
+EditorSourceNavigationClickState
+EditorSemanticContextService::sourceNavigationClickState(
+    const EditorSourceNavigationTarget& target) const
+{
+    EditorSourceNavigationClickState state;
+    if (!target.matched || target.text.isEmpty())
+        return state;
+
+    state.text = target.text;
+    state.acceptEvent = true;
+    if (target.includeTarget) {
+        state.action = EditorSourceNavigationClickAction::OpenInclude;
+        return state;
+    }
+
+    state.action = EditorSourceNavigationClickAction::NavigateToDefinition;
+    state.contextCursorPosition =
+        target.identifierTarget ? target.cursorPosition : -1;
+    return state;
+}
+
 SourceIdentifierTarget EditorSemanticContextService::sourceIdentifierTarget(
     const EditorSemanticContext& context) const
 {
