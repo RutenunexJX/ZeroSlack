@@ -7,6 +7,7 @@
 #include "sourcenavigationservice.h"
 
 #include <QString>
+#include <QList>
 #include <memory>
 #include <functional>
 
@@ -123,6 +124,23 @@ struct EditorSourceSymbolShortcutState {
     EditorSemanticContext semanticContext;
 };
 
+struct EditorSourceSymbolMenuItemState {
+    SourceSymbolAction action = SourceSymbolAction::FindReferences;
+    bool enabled = false;
+};
+
+struct EditorSourceSymbolContextMenuState {
+    QList<EditorSourceSymbolMenuItemState> items;
+};
+
+struct EditorSourceSymbolActionRequestState {
+    bool available = false;
+    SourceSymbolAction action = SourceSymbolAction::FindReferences;
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+};
+
 class EditorSemanticContextService
 {
 public:
@@ -135,6 +153,11 @@ public:
         const EditorSemanticContext& context) const;
     EditorSourceSymbolShortcutState sourceSymbolShortcutState(
         const EditorSourceSymbolShortcutContext& context) const;
+    EditorSourceSymbolContextMenuState sourceSymbolContextMenuState(
+        const EditorSemanticContext& context) const;
+    EditorSourceSymbolActionRequestState sourceSymbolActionRequestState(
+        SourceSymbolAction action,
+        const EditorSemanticContext& context) const;
     SourceEditorNavigationTarget sourceNavigationTarget(
         const EditorSemanticContext& context,
         const std::function<bool(const QString&)>& canResolveIdentifier) const;

@@ -68,6 +68,45 @@ EditorSemanticContextService::sourceSymbolShortcutState(
     return state;
 }
 
+EditorSourceSymbolContextMenuState
+EditorSemanticContextService::sourceSymbolContextMenuState(
+    const EditorSemanticContext& context) const
+{
+    const SourceSymbolActionContext actionContext =
+        sourceSymbolActionContext(context);
+
+    EditorSourceSymbolContextMenuState state;
+    state.items.append({
+        SourceSymbolAction::FindReferences,
+        actionContext.available
+    });
+    state.items.append({
+        SourceSymbolAction::ShowRelationships,
+        actionContext.available
+    });
+    return state;
+}
+
+EditorSourceSymbolActionRequestState
+EditorSemanticContextService::sourceSymbolActionRequestState(
+    SourceSymbolAction action,
+    const EditorSemanticContext& context) const
+{
+    const SourceSymbolActionContext actionContext =
+        sourceSymbolActionContext(context);
+
+    EditorSourceSymbolActionRequestState state;
+    state.action = action;
+    if (!actionContext.available)
+        return state;
+
+    state.available = true;
+    state.symbolName = actionContext.symbolName;
+    state.fileName = actionContext.fileName;
+    state.moduleName = actionContext.moduleName;
+    return state;
+}
+
 SourceEditorNavigationTarget EditorSemanticContextService::sourceNavigationTarget(
     const EditorSemanticContext& context,
     const std::function<bool(const QString&)>& canResolveIdentifier) const

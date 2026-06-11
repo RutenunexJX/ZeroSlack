@@ -12,6 +12,19 @@
 #include <QMessageBox>
 #include <QMenu>
 
+namespace {
+QString sourceSymbolActionText(SourceSymbolAction action)
+{
+    switch (action) {
+    case SourceSymbolAction::FindReferences:
+        return QStringLiteral("Find References");
+    case SourceSymbolAction::ShowRelationships:
+        return QStringLiteral("Show Relationships");
+    }
+    return QString();
+}
+}
+
 EditorCoordinator::EditorCoordinator(TabManager* tabManager,
                                      ModeManager* modeManager,
                                      QObject* parent)
@@ -151,23 +164,24 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
     if (!semanticPanelRefresh)
         return;
 
-    const SourceSymbolActionContext actionContext =
-        EditorSemanticContextService::getInstance()->sourceSymbolActionContext(context);
-    if (!actionContext.available)
+    const EditorSourceSymbolActionRequestState requestState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(action, context);
+    if (!requestState.available)
         return;
 
-    switch (action) {
+    switch (requestState.action) {
     case SourceSymbolAction::FindReferences:
         semanticPanelRefresh->showReferencesForSymbol(
-            actionContext.symbolName,
-            actionContext.fileName,
-            actionContext.moduleName);
+            requestState.symbolName,
+            requestState.fileName,
+            requestState.moduleName);
         break;
     case SourceSymbolAction::ShowRelationships:
         semanticPanelRefresh->showRelationshipsForSymbol(
-            actionContext.symbolName,
-            actionContext.fileName,
-            actionContext.moduleName);
+            requestState.symbolName,
+            requestState.fileName,
+            requestState.moduleName);
         break;
     }
 }
@@ -179,23 +193,18 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     if (!menu)
         return;
 
-    const SourceSymbolActionContext actionContext =
-        EditorSemanticContextService::getInstance()->sourceSymbolActionContext(context);
+    const EditorSourceSymbolContextMenuState menuState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolContextMenuState(context);
 
     menu->addSeparator();
-    QAction* findReferencesAction =
-        menu->addAction(QStringLiteral("Find References"));
-    findReferencesAction->setEnabled(actionContext.available);
-    connect(findReferencesAction, &QAction::triggered, this, [this, context]() {
-        handleSourceSymbolActionRequested(SourceSymbolAction::FindReferences, context);
-    });
-
-    QAction* showRelationshipsAction =
-        menu->addAction(QStringLiteral("Show Relationships"));
-    showRelationshipsAction->setEnabled(actionContext.available);
-    connect(showRelationshipsAction, &QAction::triggered, this, [this, context]() {
-        handleSourceSymbolActionRequested(SourceSymbolAction::ShowRelationships, context);
-    });
+    for (const EditorSourceSymbolMenuItemState& item : menuState.items) {
+        QAction* action = menu->addAction(sourceSymbolActionText(item.action));
+        action->setEnabled(item.enabled);
+        connect(action, &QAction::triggered, this, [this, context, item]() {
+            handleSourceSymbolActionRequested(item.action, context);
+        });
+    }
 }
 
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)

@@ -1283,6 +1283,67 @@ int main(int argc, char** argv) {
                !plainControlRState.matched && !plainControlRState.acceptEvent,
                true);
 
+    EditorSemanticContext sourceSymbolContext;
+    sourceSymbolContext.fileName = path;
+    sourceSymbolContext.moduleName = QStringLiteral("top");
+    sourceSymbolContext.lineText = QStringLiteral("assign menu_sig = 1'b1;");
+    sourceSymbolContext.column =
+        sourceSymbolContext.lineText.indexOf(QStringLiteral("menu_sig"));
+    const EditorSourceSymbolContextMenuState sourceMenuState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolContextMenuState(sourceSymbolContext);
+    expectBool("EditorSemanticContext source menu enabled",
+               sourceMenuState.items.size() == 2
+                   && sourceMenuState.items.at(0).enabled
+                   && sourceMenuState.items.at(0).action
+                       == SourceSymbolAction::FindReferences
+                   && sourceMenuState.items.at(1).enabled
+                   && sourceMenuState.items.at(1).action
+                       == SourceSymbolAction::ShowRelationships,
+               true);
+    const EditorSourceSymbolActionRequestState sourceRefsRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::FindReferences,
+                sourceSymbolContext);
+    expectBool("EditorSemanticContext source refs request",
+               sourceRefsRequest.available
+                   && sourceRefsRequest.action == SourceSymbolAction::FindReferences
+                   && sourceRefsRequest.symbolName == QStringLiteral("menu_sig")
+                   && sourceRefsRequest.fileName == path
+                   && sourceRefsRequest.moduleName == QStringLiteral("top"),
+               true);
+    const EditorSourceSymbolActionRequestState sourceRelsRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowRelationships,
+                sourceSymbolContext);
+    expectBool("EditorSemanticContext source rels request",
+               sourceRelsRequest.available
+                   && sourceRelsRequest.action
+                       == SourceSymbolAction::ShowRelationships
+                   && sourceRelsRequest.symbolName == QStringLiteral("menu_sig"),
+               true);
+    EditorSemanticContext unavailableSourceSymbolContext;
+    unavailableSourceSymbolContext.lineText = sourceSymbolContext.lineText;
+    unavailableSourceSymbolContext.column = sourceSymbolContext.column;
+    const EditorSourceSymbolContextMenuState disabledSourceMenuState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolContextMenuState(unavailableSourceSymbolContext);
+    expectBool("EditorSemanticContext source menu disabled",
+               disabledSourceMenuState.items.size() == 2
+                   && !disabledSourceMenuState.items.at(0).enabled
+                   && !disabledSourceMenuState.items.at(1).enabled,
+               true);
+    const EditorSourceSymbolActionRequestState unavailableSourceRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::FindReferences,
+                unavailableSourceSymbolContext);
+    expectBool("EditorSemanticContext source request unavailable",
+               !unavailableSourceRequest.available,
+               true);
+
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
     commandQuery.moduleName = "top";
