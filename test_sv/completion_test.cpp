@@ -494,6 +494,15 @@ int main(int argc, char** argv) {
                        ->completionPopupKeyState(popupQuery)
                        .action == CompletionPopupKeyAction::HidePopup,
                true);
+    popupQuery.key = Qt::Key_Return;
+    popupQuery.hasRows = true;
+    popupQuery.currentIndexValid = false;
+    expectBool("EditorContext popup activates selectable",
+               EditorSemanticContextService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action
+                   == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
+               true);
 
     CompletionPopupKeyQuery alternatePopupQuery;
     alternatePopupQuery.mode = CompletionActivationMode::AlternateMode;

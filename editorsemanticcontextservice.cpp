@@ -195,3 +195,9 @@ CompletionActivationState EditorSemanticContextService::completionActivationStat
 {
     return CompletionService::getInstance()->completionActivationState(query);
 }
+
+CompletionPopupKeyState EditorSemanticContextService::completionPopupKeyState(
+    const CompletionPopupKeyQuery& query) const
+{
+    return CompletionService::getInstance()->completionPopupKeyState(query);
+}

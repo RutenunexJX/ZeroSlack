@@ -76,6 +76,8 @@ public:
         const EditorSemanticContext& context) const;
     CompletionActivationState completionActivationState(
         const CompletionActivationQuery& query) const;
+    CompletionPopupKeyState completionPopupKeyState(
+        const CompletionPopupKeyQuery& query) const;
 
 private:
     static std::unique_ptr<EditorSemanticContextService> instance;

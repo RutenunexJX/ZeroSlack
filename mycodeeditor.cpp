@@ -501,7 +501,8 @@ bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
     query.alternateBufferEmpty = alternateCommandBuffer.isEmpty();
 
     const CompletionPopupKeyState state =
-        CompletionService::getInstance()->completionPopupKeyState(query);
+        EditorSemanticContextService::getInstance()
+            ->completionPopupKeyState(query);
 
     switch (state.action) {
     case CompletionPopupKeyAction::ForwardToPopup:
