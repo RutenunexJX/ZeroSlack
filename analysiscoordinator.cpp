@@ -152,8 +152,20 @@ void AnalysisCoordinator::connectSymbolSignals()
 
     connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
             this, [this](const QString& fileName, int symbolCount) {
-                Q_UNUSED(symbolCount)
+                if (navigationManager)
+                    navigationManager->onSymbolAnalysisCompleted(fileName,
+                                                                 symbolCount);
                 refreshActiveEditorForFile(fileName);
+            });
+    connect(symbolAnalyzer,
+            &SymbolAnalyzer::batchAnalysisCompleted,
+            this,
+            [this](int filesAnalyzed, int totalSymbols) {
+                if (navigationManager) {
+                    navigationManager->onBatchSymbolAnalysisCompleted(
+                        filesAnalyzed,
+                        totalSymbols);
+                }
             });
 }
 

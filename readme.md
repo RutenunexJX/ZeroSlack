@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Alternate-mode completion display workflow state now lives in `EditorSemanticContextService`.
-`MyCodeEditor` applies one editor-facing display state for alternate input normalization, command matches, buffer updates, popup visibility, normal key input, empty Backspace refresh, popup Backspace, and timer-driven alternate completion refresh.
+Navigation analysis refresh routing now flows through `AnalysisCoordinator`.
+`NavigationManager` no longer connects directly to `SymbolAnalyzer`; single-file and batch analysis completion events are routed by the analysis coordinator into navigation refresh slots while the navigation pane only wires tab/workspace inputs.
 
 ## Current Architecture Snapshot
 
@@ -35,14 +35,14 @@ Alternate-mode completion display workflow state now lives in `EditorSemanticCon
 - `AnalysisScheduler` owns analysis timing, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
-- `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
+- `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing, navigation analysis refresh routing, and active-editor refresh policy.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, definition navigation target routing, source-symbol menu/shortcut action routing, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, text-change completion workflow state, command-mode completion refresh workflow state, alternate-mode key workflow state, alternate-mode completion display workflow state, source-navigation hover/click workflow state, source-symbol shortcut workflow state, source-symbol menu/action workflow state, completion activation/popup mode query assembly, alternate-command completion reads, command mode state/ranges, definition navigation, definition-aware source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command text classification/execution, commands, and close-event unsaved-change confirmation.
 - `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and local/cross-file editor cursor placement.
-- `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
-- `NavigationManager` owns navigation view cache/refresh state and delegates semantic navigation reads to `NavigationService`.
+- `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` tab/workspace input wiring.
+- `NavigationManager` owns navigation view cache/refresh state, accepts analysis refresh events from coordinators, and delegates semantic navigation reads to `NavigationService`.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticDockCoordinator` owns Problems, References, and Relationships dock creation, placement, and semantic refresh coordinator assembly.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.

@@ -2,7 +2,6 @@
 #include "navigationwidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
-#include "symbolanalyzer.h"
 #include "navigationservice.h"
 #include <utility>
 
@@ -118,36 +117,6 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     } else if (currentView == SymbolHierarchyView && currentFileName == filePath) {
                         symbolOutlineCache.clear();
                         refreshSymbolHierarchy();
-                    }
-                });
-    }
-}
-
-void NavigationManager::connectToSymbolAnalyzer(SymbolAnalyzer* symbolAnalyzer)
-{
-    if (connectedSymbolAnalyzer == symbolAnalyzer) return;
-
-    // Drop connections from the previous analyzer.
-    if (connectedSymbolAnalyzer) {
-        disconnect(connectedSymbolAnalyzer, nullptr, this, nullptr);
-    }
-
-    connectedSymbolAnalyzer = symbolAnalyzer;
-
-    if (connectedSymbolAnalyzer) {
-        // Wire symbol analysis results into navigation refreshes.
-        connect(connectedSymbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
-                this, &NavigationManager::onSymbolAnalysisCompleted);
-
-        connect(connectedSymbolAnalyzer, &SymbolAnalyzer::batchAnalysisCompleted,
-                this, [this](int filesAnalyzed, int totalSymbols) {
-                    Q_UNUSED(filesAnalyzed)
-                    Q_UNUSED(totalSymbols)
-                    // Batch analysis can change module hierarchy and symbol outline data.
-                    if (currentView == ModuleHierarchyView || currentView == SymbolHierarchyView) {
-                        symbolOutlineCache.clear();
-                        moduleHierarchyCache.clear();
-                        refreshCurrentView();
                     }
                 });
     }
@@ -308,6 +277,21 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
             refreshSymbolHierarchy();
         }
         break;
+    }
+}
+
+void NavigationManager::onBatchSymbolAnalysisCompleted(
+    int filesAnalyzed,
+    int totalSymbols)
+{
+    Q_UNUSED(filesAnalyzed)
+    Q_UNUSED(totalSymbols)
+
+    // Batch analysis can change module hierarchy and symbol outline data.
+    if (currentView == ModuleHierarchyView || currentView == SymbolHierarchyView) {
+        symbolOutlineCache.clear();
+        moduleHierarchyCache.clear();
+        refreshCurrentView();
     }
 }
 

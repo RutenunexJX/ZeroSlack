@@ -27,15 +27,13 @@ void NavigationPaneCoordinator::attachNavigationManager(NavigationManager* manag
 
 void NavigationPaneCoordinator::connectNavigationInputs(
     TabManager* tabManager,
-    WorkspaceManager* workspaceManager,
-    SymbolAnalyzer* symbolAnalyzer)
+    WorkspaceManager* workspaceManager)
 {
     if (!navigationManager)
         return;
 
     navigationManager->connectToTabManager(tabManager);
     navigationManager->connectToWorkspaceManager(workspaceManager);
-    navigationManager->connectToSymbolAnalyzer(symbolAnalyzer);
 }
 
 void NavigationPaneCoordinator::toggleVisible()

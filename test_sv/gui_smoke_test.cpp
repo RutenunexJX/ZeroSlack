@@ -1148,6 +1148,18 @@ int main(int argc, char** argv)
         window.navigationManager->setActiveView(NavigationManager::ModuleHierarchyView);
         window.navigationManager->refreshCurrentView();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QSignalSpy analysisNavigationRefreshSpy(
+            window.navigationManager.get(),
+            &NavigationManager::dataRefreshed);
+        window.symbolAnalyzer->analysisCompleted(normalizedSymbolFixturePath, 0);
+        expectBool("analysis routes navigation refresh",
+                   waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
+                   true);
+        analysisNavigationRefreshSpy.clear();
+        window.symbolAnalyzer->batchAnalysisCompleted(1, 0);
+        expectBool("batch analysis routes navigation refresh",
+                   waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
+                   true);
 
         QTreeWidget* moduleTree = nullptr;
         QTreeWidgetItem* moduleItem = nullptr;

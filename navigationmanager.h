@@ -13,7 +13,6 @@ class NavigationWidget;
 class NavigationService;
 class TabManager;
 class WorkspaceManager;
-class SymbolAnalyzer;
 
 class NavigationManager : public QObject
 {
@@ -39,7 +38,6 @@ public:
     // Manager connections
     void connectToTabManager(TabManager* tabManager);
     void connectToWorkspaceManager(WorkspaceManager* workspaceManager);
-    void connectToSymbolAnalyzer(SymbolAnalyzer* symbolAnalyzer);
 
     // Data refresh operations
     void refreshFileHierarchy();
@@ -69,6 +67,7 @@ public slots:
     void onTabChanged(const QString& fileName);
     void onWorkspaceChanged(const QString& workspacePath);
     void onSymbolAnalysisCompleted(const QString& fileName, int symbolCount);
+    void onBatchSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
 
 private slots:
     void onFileTreeDoubleClicked(const QString& filePath);
@@ -85,7 +84,6 @@ private:
 
     TabManager* connectedTabManager = nullptr;
     WorkspaceManager* connectedWorkspaceManager = nullptr;
-    SymbolAnalyzer* connectedSymbolAnalyzer = nullptr;
 
     // Current state tracking
     QString currentFileName;

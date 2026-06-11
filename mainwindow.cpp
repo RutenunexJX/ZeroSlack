@@ -100,8 +100,7 @@ void MainWindow::setupNavigationPane()
     navigationPane->attachNavigationManager(navigationManager.get());
     navigationPane->connectNavigationInputs(
         tabManager.get(),
-        workspaceManager.get(),
-        symbolAnalyzer.get());
+        workspaceManager.get());
     addDockWidget(Qt::LeftDockWidgetArea, navigationPane->dock());
 }
 

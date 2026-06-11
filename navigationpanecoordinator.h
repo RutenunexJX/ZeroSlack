@@ -5,7 +5,6 @@
 
 class NavigationManager;
 class NavigationWidget;
-class SymbolAnalyzer;
 class TabManager;
 class QWidget;
 class WorkspaceManager;
@@ -17,8 +16,7 @@ public:
 
     void attachNavigationManager(NavigationManager* manager);
     void connectNavigationInputs(TabManager* tabManager,
-                                 WorkspaceManager* workspaceManager,
-                                 SymbolAnalyzer* symbolAnalyzer);
+                                 WorkspaceManager* workspaceManager);
     void toggleVisible();
 
     QDockWidget* dock() const { return navigationDock; }
