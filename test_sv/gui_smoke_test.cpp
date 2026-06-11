@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QtTest/QTest>
 
@@ -24,13 +25,13 @@
 
 #define private public
 #include "mainwindow.h"
+#include "analysisscheduler.h"
 #include "documentmodel.h"
 #include "navigationwidget.h"
 #include "navigationmanager.h"
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
-#include "analysiscommandcoordinator.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticdockcoordinator.h"
@@ -285,8 +286,18 @@ static void drainRelationshipWork(MainWindow& window)
         : nullptr;
     if (builder)
         builder->cancelAnalysis();
-    if (window.analysisCommandCoordinator)
-        window.analysisCommandCoordinator->cancelRelationshipWork();
+    if (window.analysisScheduler) {
+        for (QTimer* timer : window.analysisScheduler->relationshipAnalysisTimers) {
+            if (timer) {
+                timer->stop();
+                timer->deleteLater();
+            }
+        }
+        window.analysisScheduler->relationshipAnalysisTimers.clear();
+        window.analysisScheduler->pendingRelationshipAnalysisContent.clear();
+        window.analysisScheduler->cancelRelationshipAnalysis();
+        window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
+    }
 }
 
 static void runReferenceDockRegression(MainWindow& window, const QString& fixturePath)
@@ -825,8 +836,7 @@ int main(int argc, char** argv)
         expectBool("document model increments version",
                    afterEditDoc.textVersion > beforeEditDoc.textVersion, true);
         expectBool("document model tracks cursor line", afterEditDoc.cursorLine > 0, true);
-        if (largeEditor->relationshipAnalysisDebounceTimer)
-            largeEditor->relationshipAnalysisDebounceTimer->stop();
+        drainRelationshipWork(window);
     }
 
     bool symbolFixtureAnalyzed = false;
@@ -975,8 +985,7 @@ int main(int argc, char** argv)
                    true);
         if (completer)
             completer->popup()->hide();
-        if (editor->relationshipAnalysisDebounceTimer)
-            editor->relationshipAnalysisDebounceTimer->stop();
+        drainRelationshipWork(window);
 
         QTextBlock jumpBlock = findBlockContaining(editor->document(),
                                                    QStringLiteral("counter       <= add_one(counter)"));

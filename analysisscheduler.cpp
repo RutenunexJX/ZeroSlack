@@ -104,6 +104,8 @@ AnalysisScheduler::~AnalysisScheduler()
         timer->deleteLater();
     for (QTimer* timer : fileChangeDebounceTimers)
         timer->deleteLater();
+    for (QTimer* timer : relationshipAnalysisTimers)
+        timer->deleteLater();
 }
 
 void AnalysisScheduler::setDocumentModel(DocumentModel* model)
@@ -278,6 +280,48 @@ void AnalysisScheduler::cancelScheduledOpenFileAnalysis(const QString& fileName)
     openFileAnalysisTimers.erase(it);
 }
 
+void AnalysisScheduler::scheduleRelationshipAnalysis(const QString& fileName,
+                                                     const QString& content,
+                                                     int delayMs)
+{
+    if (fileName.isEmpty() || content.isEmpty() || !relationshipBuilder)
+        return;
+
+    const QString pendingContent =
+        pendingRelationshipAnalysisContent.value(fileName);
+    const QString lastContent = pendingContent.isNull()
+        ? lastRelationshipAnalysisContent.value(fileName)
+        : pendingContent;
+    if (!lastContent.isNull()
+        && !contentDiffersBeyondWhitespace(lastContent, content)) {
+        return;
+    }
+
+    pendingRelationshipAnalysisContent.insert(fileName, content);
+
+    if (relationshipAnalysisTimers.contains(fileName)) {
+        QTimer* oldTimer = relationshipAnalysisTimers.take(fileName);
+        oldTimer->stop();
+        oldTimer->deleteLater();
+    }
+
+    QTimer* timer = new QTimer(this);
+    timer->setSingleShot(true);
+    timer->setInterval(delayMs);
+    connect(timer, &QTimer::timeout, this, [this, fileName, timer]() {
+        if (relationshipAnalysisTimers.value(fileName) == timer)
+            relationshipAnalysisTimers.remove(fileName);
+        timer->deleteLater();
+
+        const QString content = contentForOpenFile(fileName);
+        pendingRelationshipAnalysisContent.remove(fileName);
+        if (!content.isNull())
+            requestRelationshipAnalysis(fileName, content);
+    });
+    relationshipAnalysisTimers[fileName] = timer;
+    timer->start();
+}
+
 void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, const QString& content)
 {
     if (fileName.isEmpty()
@@ -405,6 +449,12 @@ void AnalysisScheduler::handleExternalFileChanged(const QString& fileName, int d
 void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 {
     cancelScheduledOpenFileAnalysis(fileName);
+    if (relationshipAnalysisTimers.contains(fileName)) {
+        QTimer* oldTimer = relationshipAnalysisTimers.take(fileName);
+        oldTimer->stop();
+        oldTimer->deleteLater();
+    }
+    pendingRelationshipAnalysisContent.remove(fileName);
     lastRelationshipAnalysisContent.remove(fileName);
     analyzeOpenDocumentsNow();
 
@@ -419,10 +469,20 @@ void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
 
 void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
 {
-    if (snapshot.fileName.isEmpty() || isWorkspaceOpen())
+    if (snapshot.fileName.isEmpty())
         return;
 
     const QString content = contentForOpenFile(snapshot.fileName);
+    if (content.isNull())
+        return;
+
+    scheduleRelationshipAnalysis(snapshot.fileName,
+                                 content,
+                                 kOpenDocumentRelationshipAnalysisDebounceMs);
+
+    if (isWorkspaceOpen())
+        return;
+
     if (lineContainsStructuralKeyword(content, snapshot.cursorLine))
         scheduleOpenFileAnalysis(snapshot.fileName, 1000);
 }
@@ -690,4 +750,20 @@ bool AnalysisScheduler::lineContainsStructuralKeyword(const QString& content, in
             return true;
     }
     return false;
+}
+
+bool AnalysisScheduler::contentDiffersBeyondWhitespace(const QString& oldContent,
+                                                       const QString& newContent)
+{
+    auto withoutWhitespace = [](const QString& content) {
+        QString compact;
+        compact.reserve(content.size());
+        for (QChar ch : content) {
+            if (!ch.isSpace())
+                compact.append(ch);
+        }
+        return compact;
+    };
+
+    return withoutWhitespace(oldContent) != withoutWhitespace(newContent);
 }

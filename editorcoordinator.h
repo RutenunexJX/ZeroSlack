@@ -4,7 +4,6 @@
 #include <QObject>
 #include <QString>
 
-class AnalysisCommandCoordinator;
 class FileCommandCoordinator;
 class ModeManager;
 class MyCodeEditor;
@@ -26,7 +25,6 @@ public:
         WorkspaceManager* workspaceManager,
         FileCommandCoordinator* fileCommandCoordinator,
         NavigationCommandCoordinator* navigationCommandCoordinator,
-        AnalysisCommandCoordinator* analysisCommandCoordinator,
         SemanticPanelRefreshCoordinator* semanticPanelRefresh);
 
     void connectSignals();
@@ -42,7 +40,6 @@ private:
     WorkspaceManager* workspaceManager = nullptr;
     FileCommandCoordinator* fileCommandCoordinator = nullptr;
     NavigationCommandCoordinator* navigationCommandCoordinator = nullptr;
-    AnalysisCommandCoordinator* analysisCommandCoordinator = nullptr;
     SemanticPanelRefreshCoordinator* semanticPanelRefresh = nullptr;
     bool signalsConnected = false;
 };

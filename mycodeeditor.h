@@ -103,13 +103,8 @@ private:
     QString currentWord;
     int wordStartPos;
 
-    QTimer *relationshipAnalysisDebounceTimer;
-    static const int RelationshipAnalysisDebounceMs = 2000;
-
     // Coalesce current-line selection refresh after cursor/text changes.
     QTimer *scopeRefreshTimer = nullptr;
-
-    bool m_lastEditWasWhitespaceInsertion = false;
 
     QString textUnderCursor() const;
 
@@ -163,7 +158,6 @@ private:
     bool commandModeExitedByDoubleSpace = false;
 signals:
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
-    void relationshipAnalysisRequested(const QString& fileName, const QString& content);
     void saveFileRequested();
     void saveFileAsRequested();
     void openFileRequested();

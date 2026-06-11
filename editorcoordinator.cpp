@@ -1,6 +1,5 @@
 #include "editorcoordinator.h"
 
-#include "analysiscommandcoordinator.h"
 #include "filecommandcoordinator.h"
 #include "modemanager.h"
 #include "mycodeeditor.h"
@@ -22,13 +21,11 @@ void EditorCoordinator::setWorkflowDependencies(
     WorkspaceManager* newWorkspaceManager,
     FileCommandCoordinator* newFileCommandCoordinator,
     NavigationCommandCoordinator* newNavigationCommandCoordinator,
-    AnalysisCommandCoordinator* newAnalysisCommandCoordinator,
     SemanticPanelRefreshCoordinator* newSemanticPanelRefresh)
 {
     workspaceManager = newWorkspaceManager;
     fileCommandCoordinator = newFileCommandCoordinator;
     navigationCommandCoordinator = newNavigationCommandCoordinator;
-    analysisCommandCoordinator = newAnalysisCommandCoordinator;
     semanticPanelRefresh = newSemanticPanelRefresh;
 }
 
@@ -68,13 +65,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
             this, [this](const QString&, const QString& file, int line) {
                 if (navigationCommandCoordinator)
                     navigationCommandCoordinator->navigateToFileAndLine(file, line);
-            });
-    connect(editor, &MyCodeEditor::relationshipAnalysisRequested,
-            this, [this](const QString& fileName, const QString& content) {
-                if (analysisCommandCoordinator) {
-                    analysisCommandCoordinator->requestSingleFileRelationshipAnalysis(
-                        fileName, content);
-                }
             });
     connect(editor, &MyCodeEditor::saveFileRequested,
             this, [this]() {

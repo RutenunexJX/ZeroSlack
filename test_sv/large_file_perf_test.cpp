@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QSignalSpy>
 #include <QTextCursor>
+#include <QTimer>
 #include <QtTest/QTest>
 
 #include <algorithm>
@@ -15,7 +16,7 @@
 
 #define private public
 #include "mainwindow.h"
-#include "analysiscommandcoordinator.h"
+#include "analysisscheduler.h"
 #include "mycodeeditor.h"
 #include "semanticruntimecoordinator.h"
 #include "smartrelationshipbuilder.h"
@@ -76,8 +77,33 @@ static void drainRelationshipWork(MainWindow& window)
         : nullptr;
     if (builder)
         builder->cancelAnalysis();
-    if (window.analysisCommandCoordinator)
-        window.analysisCommandCoordinator->cancelRelationshipWork();
+    if (window.analysisScheduler) {
+        for (QTimer* timer : window.analysisScheduler->relationshipAnalysisTimers) {
+            if (timer) {
+                timer->stop();
+                timer->deleteLater();
+            }
+        }
+        window.analysisScheduler->relationshipAnalysisTimers.clear();
+        window.analysisScheduler->pendingRelationshipAnalysisContent.clear();
+        window.analysisScheduler->cancelRelationshipAnalysis();
+        window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
+    }
+}
+
+static QString normalizedPath(const QString& fileName)
+{
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+static bool hasActiveRelationshipDebounce(MainWindow& window, const QString& fileName)
+{
+    if (!window.analysisScheduler)
+        return false;
+
+    QTimer* timer =
+        window.analysisScheduler->relationshipAnalysisTimers.value(normalizedPath(fileName), nullptr);
+    return timer && timer->isActive();
 }
 
 int main(int argc, char** argv)
@@ -148,8 +174,7 @@ int main(int argc, char** argv)
         editor->setTextCursor(cursor);
 
         QSignalSpy symbolAnalysisStarted(window.symbolAnalyzer.get(), &SymbolAnalyzer::analysisStarted);
-        if (editor->relationshipAnalysisDebounceTimer)
-            editor->relationshipAnalysisDebounceTimer->stop();
+        drainRelationshipWork(window);
 
         const int beforeLength = editor->toPlainText().size();
         QTest::keyClick(editor, Qt::Key_Return);
@@ -162,8 +187,7 @@ int main(int argc, char** argv)
 
         expectBool("whitespace edit applied", editor->toPlainText().size() >= beforeLength + 3, true);
         expectBool("whitespace edit does not start relationship debounce",
-                   editor->relationshipAnalysisDebounceTimer
-                       && editor->relationshipAnalysisDebounceTimer->isActive(),
+                   hasActiveRelationshipDebounce(window, largeFile),
                    false);
         expectInt("whitespace edit queues no symbol analysis",
                   symbolAnalysisStarted.count(), 0);
@@ -173,11 +197,9 @@ int main(int argc, char** argv)
         QTest::keyClicks(editor, "x");
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("non-whitespace edit still starts relationship debounce",
-                   editor->relationshipAnalysisDebounceTimer
-                       && editor->relationshipAnalysisDebounceTimer->isActive(),
+                   hasActiveRelationshipDebounce(window, largeFile),
                    true);
-        if (editor->relationshipAnalysisDebounceTimer)
-            editor->relationshipAnalysisDebounceTimer->stop();
+        drainRelationshipWork(window);
     }
 
     drainRelationshipWork(window);

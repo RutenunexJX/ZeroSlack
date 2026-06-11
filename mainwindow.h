@@ -5,7 +5,6 @@
 #include <memory>
 
 class AnalysisProgressCoordinator;
-class AnalysisCommandCoordinator;
 class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
@@ -52,7 +51,6 @@ private:
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
-    std::unique_ptr<AnalysisCommandCoordinator> analysisCommandCoordinator;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
@@ -64,7 +62,6 @@ private:
 
     void setupNavigationPane();
     void setupSemanticDocks();
-    void setupAnalysisCommandCoordinator();
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupModeCommandCoordinator();

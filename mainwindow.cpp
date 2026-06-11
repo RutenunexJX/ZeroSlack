@@ -8,7 +8,6 @@
 #include "modemanager.h"
 #include "symbolanalyzer.h"
 #include "analysisscheduler.h"
-#include "analysiscommandcoordinator.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
 #include "editorcoordinator.h"
@@ -42,7 +41,6 @@ MainWindow::MainWindow(QWidget *parent)
         std::unique_ptr<AnalysisProgressCoordinator>(new AnalysisProgressCoordinator(this, this));
 
     setupSemanticRuntime();
-    setupAnalysisCommandCoordinator();
     setupNavigationPane();
     setupNavigationCommandCoordinator();
     setupSemanticDocks();
@@ -130,12 +128,6 @@ void MainWindow::setupSemanticDocks()
     semanticDocks->setup();
 }
 
-void MainWindow::setupAnalysisCommandCoordinator()
-{
-    analysisCommandCoordinator =
-        std::make_unique<AnalysisCommandCoordinator>(analysisScheduler.get(), this);
-}
-
 void MainWindow::setupFileCommandCoordinator()
 {
     fileCommandCoordinator = std::make_unique<FileCommandCoordinator>(
@@ -168,7 +160,6 @@ void MainWindow::setupEditorCoordinator()
         workspaceManager.get(),
         fileCommandCoordinator.get(),
         navigationCommandCoordinator.get(),
-        analysisCommandCoordinator.get(),
         semanticDocks ? semanticDocks->refreshCoordinator() : nullptr);
     editorCoordinator->connectSignals();
 }

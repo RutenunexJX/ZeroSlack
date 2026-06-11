@@ -52,6 +52,9 @@ public:
 
     void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
     void cancelScheduledOpenFileAnalysis(const QString& fileName);
+    void scheduleRelationshipAnalysis(const QString& fileName,
+                                      const QString& content,
+                                      int delayMs);
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
     void cancelRelationshipAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
@@ -92,6 +95,8 @@ private:
 
     QMap<QString, QTimer*> openFileAnalysisTimers;
     QMap<QString, QTimer*> fileChangeDebounceTimers;
+    QMap<QString, QTimer*> relationshipAnalysisTimers;
+    QMap<QString, QString> pendingRelationshipAnalysisContent;
     QMap<QString, QString> lastRelationshipAnalysisContent;
     QString pendingDiagnosticsRefreshFileName;
     QTimer* diagnosticsRefreshTimer = nullptr;
@@ -101,6 +106,7 @@ private:
     ProjectSnapshot activeWorkspaceProject;
     bool workspaceSymbolAnalysisActive = false;
     bool projectSemanticStateCleared = true;
+    static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
 
     void onDocumentOpened(const DocumentSnapshot& snapshot);
     void onDocumentEdited(const DocumentSnapshot& snapshot);
@@ -125,6 +131,8 @@ private:
     QString contentForOpenFile(const QString& fileName) const;
     bool isWorkspaceOpen() const;
     bool lineContainsStructuralKeyword(const QString& content, int oneBasedLine) const;
+    static bool contentDiffersBeyondWhitespace(const QString& oldContent,
+                                               const QString& newContent);
 };
 
 #endif // ANALYSISSCHEDULER_H

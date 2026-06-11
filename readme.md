@@ -25,19 +25,18 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor completion state now lives behind `EditorSemanticContextService`.
-`MyCodeEditor` delegates completion trigger, completion names, command-mode state, editor completion state, activation policy, source navigation, definition navigation, and tooltip reads to the editor semantic facade instead of reaching into feature services directly.
+Open-document relationship debounce now lives in `AnalysisScheduler`.
+`MyCodeEditor` no longer owns relationship-analysis timers or analysis request signals; document edits flow through `DocumentModel` into scheduler-owned debounce/cancel policy, and the obsolete `AnalysisCommandCoordinator` forwarding layer is gone.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document state.
-- `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
+- `AnalysisScheduler` owns analysis timing, open-document relationship debounce, debounce/cancel policy, relationship background work, diagnostics refresh requests, lifecycle cleanup, and relationship data refresh requests.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
-- `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
-- `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, relationship analysis requests, and semantic panel refresh requests.
+- `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, reference/relationship panel requests, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode, definition navigation, source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.

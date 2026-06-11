@@ -429,14 +429,6 @@ void MyCodeEditor::initAutoComplete()
     autoCompleteTimer = new QTimer(this);
     autoCompleteTimer->setSingleShot(true);
     autoCompleteTimer->setInterval(0);
-
-    relationshipAnalysisDebounceTimer = new QTimer(this);
-    relationshipAnalysisDebounceTimer->setSingleShot(true);
-    relationshipAnalysisDebounceTimer->setInterval(RelationshipAnalysisDebounceMs);
-    connect(relationshipAnalysisDebounceTimer, &QTimer::timeout, this, [this]() {
-        if (!getFileName().isEmpty())
-            emit relationshipAnalysisRequested(getFileName(), toPlainText());
-    });
     connect(autoCompleteTimer, &QTimer::timeout, this, &MyCodeEditor::onAutoCompleteTimer);
     connect(completer, QOverload<const QModelIndex &>::of(&QCompleter::activated),
             this, &MyCodeEditor::onCompletionActivated);
@@ -447,16 +439,6 @@ void MyCodeEditor::initAutoComplete()
 void MyCodeEditor::onTextChanged()
 {
     updateSaveState();
-
-    const bool skipRelationshipAnalysis = m_lastEditWasWhitespaceInsertion;
-    m_lastEditWasWhitespaceInsertion = false;
-
-    // Plain whitespace edits (spaces/tabs/newlines) cannot change symbol relationships, but the
-    // old path still queued a delayed full-document toPlainText() copy on large files.
-    if (!skipRelationshipAnalysis && !getFileName().isEmpty()) {
-        relationshipAnalysisDebounceTimer->stop();
-        relationshipAnalysisDebounceTimer->start();
-    }
 
     autoCompleteTimer->stop();
 
@@ -560,8 +542,6 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
-    m_lastEditWasWhitespaceInsertion = false;
-
     if (event->key() == Qt::Key_Control && !ctrlPressed) {
         ctrlPressed = true;
 
@@ -678,15 +658,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
             return;
         }
     }
-
-    const Qt::KeyboardModifiers semanticNeutralModifiers =
-        Qt::ShiftModifier | Qt::KeypadModifier;
-    const Qt::KeyboardModifiers modifiers = event->modifiers() & ~semanticNeutralModifiers;
-    const QString insertedText = event->text();
-    m_lastEditWasWhitespaceInsertion =
-        modifiers == Qt::NoModifier &&
-        !insertedText.isEmpty() &&
-        insertedText.trimmed().isEmpty();
 
     QPlainTextEdit::keyPressEvent(event);
 }

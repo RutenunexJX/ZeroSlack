@@ -44,7 +44,6 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 # =========================================================
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ sources ---
-    analysiscommandcoordinator.cpp
     analysiscoordinator.cpp
     analysisprogresscoordinator.cpp
     analysisscheduler.cpp
@@ -95,7 +94,6 @@ set(ZEROSLACK_CORE_SOURCES
     workspacemanager.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
-    analysiscommandcoordinator.h
     analysiscoordinator.h
     analysisprogresscoordinator.h
     analysisscheduler.h
