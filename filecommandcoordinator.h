@@ -3,9 +3,11 @@
 
 #include <QObject>
 
+enum class AlternateCommandAction;
 class QAction;
 class QCloseEvent;
 class QWidget;
+class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 
@@ -27,6 +29,8 @@ public:
     void cut();
     void undo();
     void redo();
+    void executeAlternateCommand(MyCodeEditor* editor,
+                                 AlternateCommandAction action);
     void openDirectoryAsWorkspace();
     void handleCloseEvent(QCloseEvent* event, QWidget* dialogParent);
     void connectActions(QAction* newFileAction,

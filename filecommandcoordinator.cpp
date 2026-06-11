@@ -1,5 +1,6 @@
 #include "filecommandcoordinator.h"
 
+#include "alternatecommandservice.h"
 #include "mycodeeditor.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -75,6 +76,62 @@ void FileCommandCoordinator::redo()
     MyCodeEditor* codeEditor = tabManager ? tabManager->getCurrentEditor() : nullptr;
     if (codeEditor)
         codeEditor->redo();
+}
+
+void FileCommandCoordinator::executeAlternateCommand(MyCodeEditor* editor,
+                                                     AlternateCommandAction action)
+{
+    switch (action) {
+    case AlternateCommandAction::Save:
+        saveFile();
+        break;
+    case AlternateCommandAction::SaveAs:
+        saveFileAs();
+        break;
+    case AlternateCommandAction::Open:
+        openFile();
+        break;
+    case AlternateCommandAction::NewFile:
+        newFile();
+        break;
+    case AlternateCommandAction::Copy:
+        if (editor)
+            editor->copy();
+        break;
+    case AlternateCommandAction::Paste:
+        if (editor)
+            editor->paste();
+        break;
+    case AlternateCommandAction::Cut:
+        if (editor)
+            editor->cut();
+        break;
+    case AlternateCommandAction::Undo:
+        if (editor)
+            editor->undo();
+        break;
+    case AlternateCommandAction::Redo:
+        if (editor)
+            editor->redo();
+        break;
+    case AlternateCommandAction::SelectAll:
+        if (editor)
+            editor->selectAll();
+        break;
+    case AlternateCommandAction::Comment:
+        if (editor)
+            editor->insertPlainText(QStringLiteral("// "));
+        break;
+    case AlternateCommandAction::Close:
+    case AlternateCommandAction::Find:
+    case AlternateCommandAction::Replace:
+    case AlternateCommandAction::GotoLine:
+    case AlternateCommandAction::Uncomment:
+    case AlternateCommandAction::Indent:
+    case AlternateCommandAction::Unindent:
+    case AlternateCommandAction::None:
+        break;
+    }
 }
 
 void FileCommandCoordinator::openDirectoryAsWorkspace()

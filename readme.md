@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Open-document relationship debounce now lives in `AnalysisScheduler`.
-`MyCodeEditor` no longer owns relationship-analysis timers or analysis request signals; document edits flow through `DocumentModel` into scheduler-owned debounce/cancel policy, and the obsolete `AnalysisCommandCoordinator` forwarding layer is gone.
+Alternate-command execution now routes through coordinators.
+`MyCodeEditor` resolves alternate-mode command text into `AlternateCommandAction` requests only; `EditorCoordinator` forwards those requests to `FileCommandCoordinator`, which owns file/edit command execution.
 
 ## Current Architecture Snapshot
 
@@ -36,9 +36,9 @@ Open-document relationship debounce now lives in `AnalysisScheduler`.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
-- `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, reference/relationship panel requests, and semantic panel refresh requests.
+- `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, alternate-command action routing, navigation commands, reference/relationship panel requests, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode, definition navigation, source navigation target, and source symbol action reads.
-- `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
+- `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command execution, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
 - `NavigationManager` owns navigation view cache/refresh state and delegates semantic navigation reads to `NavigationService`.

@@ -66,25 +66,10 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 if (navigationCommandCoordinator)
                     navigationCommandCoordinator->navigateToFileAndLine(file, line);
             });
-    connect(editor, &MyCodeEditor::saveFileRequested,
-            this, [this]() {
+    connect(editor, &MyCodeEditor::alternateCommandActionRequested,
+            this, [this, editor](AlternateCommandAction action) {
                 if (fileCommandCoordinator)
-                    fileCommandCoordinator->saveFile();
-            });
-    connect(editor, &MyCodeEditor::saveFileAsRequested,
-            this, [this]() {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->saveFileAs();
-            });
-    connect(editor, &MyCodeEditor::openFileRequested,
-            this, [this]() {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->openFile();
-            });
-    connect(editor, &MyCodeEditor::newFileRequested,
-            this, [this]() {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->newFile();
+                    fileCommandCoordinator->executeAlternateCommand(editor, action);
             });
     connect(editor, &MyCodeEditor::referenceSearchRequested,
             this, [this](const QString& symbolName,

@@ -2,6 +2,7 @@
 #define MYCODEEDITOR_H
 
 #include "syminfo.h"
+#include "alternatecommandservice.h"
 #include "completionmodel.h"
 #include "editorsemanticcontextservice.h"
 #include "tsdocument.h"
@@ -158,10 +159,7 @@ private:
     bool commandModeExitedByDoubleSpace = false;
 signals:
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
-    void saveFileRequested();
-    void saveFileAsRequested();
-    void openFileRequested();
-    void newFileRequested();
+    void alternateCommandActionRequested(AlternateCommandAction action);
     void referenceSearchRequested(const QString& symbolName,
                                   const QString& fileName,
                                   const QString& moduleName);

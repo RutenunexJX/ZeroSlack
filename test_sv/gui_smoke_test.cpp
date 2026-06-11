@@ -27,6 +27,7 @@
 #include "mainwindow.h"
 #include "analysisscheduler.h"
 #include "documentmodel.h"
+#include "filecommandcoordinator.h"
 #include "navigationwidget.h"
 #include "navigationmanager.h"
 #include "problemspanelcoordinator.h"
@@ -470,6 +471,26 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    args.at(0).toString() == QStringLiteral("target_ref"),
                    true);
     }
+
+    AlternateCommandAction emittedAlternateAction = AlternateCommandAction::None;
+    QObject::connect(&shortcutEditor,
+                     &MyCodeEditor::alternateCommandActionRequested,
+                     &shortcutEditor,
+                     [&](AlternateCommandAction action) {
+                         emittedAlternateAction = action;
+                     });
+    shortcutEditor.executeAlternateModeCommand(QStringLiteral("save"));
+    expectBool("alternate command emits action request",
+               emittedAlternateAction == AlternateCommandAction::Save,
+               true);
+
+    shortcutEditor.clear();
+    FileCommandCoordinator editorCommandCoordinator(nullptr, nullptr);
+    editorCommandCoordinator.executeAlternateCommand(&shortcutEditor,
+                                                    AlternateCommandAction::Comment);
+    expectBool("file coordinator executes editor command",
+               shortcutEditor.toPlainText() == QStringLiteral("// "),
+               true);
 
     semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),
                                                              fixturePath,

@@ -886,50 +886,10 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 {
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();
-    switch (alternateCommandService->commandAction(command)) {
-    case AlternateCommandAction::Save:
-        emit saveFileRequested();
-        break;
-    case AlternateCommandAction::SaveAs:
-        emit saveFileAsRequested();
-        break;
-    case AlternateCommandAction::Open:
-        emit openFileRequested();
-        break;
-    case AlternateCommandAction::NewFile:
-        emit newFileRequested();
-        break;
-    case AlternateCommandAction::Copy:
-        copy();
-        break;
-    case AlternateCommandAction::Paste:
-        paste();
-        break;
-    case AlternateCommandAction::Cut:
-        cut();
-        break;
-    case AlternateCommandAction::Undo:
-        undo();
-        break;
-    case AlternateCommandAction::Redo:
-        redo();
-        break;
-    case AlternateCommandAction::SelectAll:
-        selectAll();
-        break;
-    case AlternateCommandAction::Comment:
-        insertPlainText("// ");
-        break;
-    case AlternateCommandAction::Close:
-    case AlternateCommandAction::Find:
-    case AlternateCommandAction::Replace:
-    case AlternateCommandAction::GotoLine:
-    case AlternateCommandAction::Uncomment:
-    case AlternateCommandAction::Indent:
-    case AlternateCommandAction::Unindent:
-    case AlternateCommandAction::None:
-        break;
-    }
+    const AlternateCommandAction action =
+        alternateCommandService->commandAction(command);
+    if (action != AlternateCommandAction::None)
+        emit alternateCommandActionRequested(action);
 
     clearAlternateModeBuffer();
     hideAutoComplete();
