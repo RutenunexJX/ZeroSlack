@@ -12,12 +12,14 @@
 #include "semanticindex.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
+#include "symbolanalyzer.h"
 #include "symbolrelationshipengine.h"
 
 SemanticRuntimeCoordinator::SemanticRuntimeCoordinator(QObject* parent)
     : QObject(parent)
 {
     relationshipEngineInstance = std::make_unique<SymbolRelationshipEngine>(this);
+    symbolAnalyzerInstance = std::make_unique<SymbolAnalyzer>(this);
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     configureQueryServices(semanticIndex);
@@ -43,6 +45,11 @@ SymbolRelationshipEngine* SemanticRuntimeCoordinator::relationshipEngine() const
 SmartRelationshipBuilder* SemanticRuntimeCoordinator::relationshipBuilder() const
 {
     return relationshipBuilderInstance.get();
+}
+
+SymbolAnalyzer* SemanticRuntimeCoordinator::symbolAnalyzer() const
+{
+    return symbolAnalyzerInstance.get();
 }
 
 SlangManager* SemanticRuntimeCoordinator::slangManager() const

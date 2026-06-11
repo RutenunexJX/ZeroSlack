@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Navigation analysis refresh routing now flows through `AnalysisCoordinator`.
-`NavigationManager` no longer connects directly to `SymbolAnalyzer`; single-file and batch analysis completion events are routed by the analysis coordinator into navigation refresh slots while the navigation pane only wires tab/workspace inputs.
+`SymbolAnalyzer` runtime ownership now lives in `SemanticRuntimeCoordinator`.
+`MainWindow` no longer constructs or owns the analyzer; analysis wiring receives the runtime-owned analyzer while GUI/perf tests observe analyzer signals through the semantic runtime boundary.
 
 ## Current Architecture Snapshot
 
@@ -45,7 +45,7 @@ Navigation analysis refresh routing now flows through `AnalysisCoordinator`.
 - `NavigationManager` owns navigation view cache/refresh state, accepts analysis refresh events from coordinators, and delegates semantic navigation reads to `NavigationService`.
 - `ModeCommandCoordinator` owns mode key event routing and navigation-pane toggle routing.
 - `SemanticDockCoordinator` owns Problems, References, and Relationships dock creation, placement, and semantic refresh coordinator assembly.
-- `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into `SemanticIndex`.
+- `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes, `SymbolAnalyzer`, and dependency injection into `SemanticIndex`.
 - `SemanticRuntimeCoordinator` configures query service singleton dependencies on the shared `SemanticIndex`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command/editor completion results over `SemanticIndex`, command-mode completion state, completion trigger/activation/popup-key policy, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completion presentation, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates.

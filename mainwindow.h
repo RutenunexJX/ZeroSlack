@@ -9,7 +9,6 @@ class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 class ModeManager;
-class SymbolAnalyzer;
 class NavigationCommandCoordinator;
 class NavigationManager;
 class NavigationPaneCoordinator;
@@ -36,7 +35,6 @@ public:
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<WorkspaceManager> workspaceManager;
     std::unique_ptr<ModeManager> modeManager;
-    std::unique_ptr<SymbolAnalyzer> symbolAnalyzer;
     std::unique_ptr<NavigationManager> navigationManager;
     std::unique_ptr<AnalysisScheduler> analysisScheduler;
     std::unique_ptr<AnalysisProgressCoordinator> analysisProgressCoordinator;

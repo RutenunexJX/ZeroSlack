@@ -6,7 +6,6 @@
 #include "workspacemanager.h"
 #include "projectmodel.h"
 #include "modemanager.h"
-#include "symbolanalyzer.h"
 #include "analysisscheduler.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
@@ -34,7 +33,6 @@ MainWindow::MainWindow(QWidget *parent)
     tabManager = std::unique_ptr<TabManager>(new TabManager(ui->tabWidget, this));
     workspaceManager = std::unique_ptr<WorkspaceManager>(new WorkspaceManager(this));
     modeManager = std::unique_ptr<ModeManager>(new ModeManager(ui->tabWidget, this));
-    symbolAnalyzer = std::unique_ptr<SymbolAnalyzer>(new SymbolAnalyzer(this));
     navigationManager = std::unique_ptr<NavigationManager>(new NavigationManager(this));  // NEW
     analysisScheduler = std::unique_ptr<AnalysisScheduler>(new AnalysisScheduler(this));
     analysisProgressCoordinator =
@@ -71,7 +69,7 @@ void MainWindow::setupManagerConnections()
     analysisCoordinator = std::make_unique<AnalysisCoordinator>(
         analysisScheduler.get(),
         analysisProgressCoordinator.get(),
-        symbolAnalyzer.get(),
+        semanticRuntime ? semanticRuntime->symbolAnalyzer() : nullptr,
         tabManager.get(),
         workspaceManager.get(),
         navigationManager.get(),

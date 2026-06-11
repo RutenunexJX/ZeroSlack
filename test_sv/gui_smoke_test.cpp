@@ -780,7 +780,7 @@ int main(int argc, char** argv)
 
     MainWindow window;
     bool workspaceSymbolsDone = false;
-    QObject::connect(window.symbolAnalyzer.get(), &SymbolAnalyzer::batchAnalysisCompleted,
+    QObject::connect(window.semanticRuntime->symbolAnalyzer(), &SymbolAnalyzer::batchAnalysisCompleted,
                      &window, [&](int filesAnalyzed, int totalSymbols) {
                          Q_UNUSED(filesAnalyzed)
                          Q_UNUSED(totalSymbols)
@@ -975,7 +975,7 @@ int main(int argc, char** argv)
     }
 
     bool symbolFixtureAnalyzed = false;
-    QObject::connect(window.symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
+    QObject::connect(window.semanticRuntime->symbolAnalyzer(), &SymbolAnalyzer::analysisCompleted,
                      &window, [&](const QString& fileName, int symbolsFound) {
                          if (QFileInfo(fileName).absoluteFilePath()
                              == QFileInfo(symbolFixturePath).absoluteFilePath() && symbolsFound > 0) {
@@ -1016,7 +1016,7 @@ int main(int argc, char** argv)
     }
 
     bool diagnosticFixtureAnalyzed = false;
-    QObject::connect(window.symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
+    QObject::connect(window.semanticRuntime->symbolAnalyzer(), &SymbolAnalyzer::analysisCompleted,
                      &window, [&](const QString& fileName, int) {
                          if (QFileInfo(fileName).absoluteFilePath()
                              == QFileInfo(diagnosticPath).absoluteFilePath()) {
@@ -1054,7 +1054,7 @@ int main(int argc, char** argv)
     }
 
     bool cleanDiagnosticFixtureAnalyzed = false;
-    QObject::connect(window.symbolAnalyzer.get(), &SymbolAnalyzer::analysisCompleted,
+    QObject::connect(window.semanticRuntime->symbolAnalyzer(), &SymbolAnalyzer::analysisCompleted,
                      &window, [&](const QString& fileName, int) {
                          if (QFileInfo(fileName).absoluteFilePath()
                              == QFileInfo(cleanDiagnosticPath).absoluteFilePath()) {
@@ -1151,12 +1151,13 @@ int main(int argc, char** argv)
         QSignalSpy analysisNavigationRefreshSpy(
             window.navigationManager.get(),
             &NavigationManager::dataRefreshed);
-        window.symbolAnalyzer->analysisCompleted(normalizedSymbolFixturePath, 0);
+        window.semanticRuntime->symbolAnalyzer()->analysisCompleted(
+            normalizedSymbolFixturePath, 0);
         expectBool("analysis routes navigation refresh",
                    waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
                    true);
         analysisNavigationRefreshSpy.clear();
-        window.symbolAnalyzer->batchAnalysisCompleted(1, 0);
+        window.semanticRuntime->symbolAnalyzer()->batchAnalysisCompleted(1, 0);
         expectBool("batch analysis routes navigation refresh",
                    waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
                    true);
