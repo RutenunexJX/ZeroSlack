@@ -69,6 +69,13 @@ struct EditorAlternateModeKeyContext {
     QString buffer;
 };
 
+struct EditorAlternateModeCompletionDisplayState {
+    bool updateCompletions = false;
+    bool showPopup = false;
+    QString normalizedInput;
+    QStringList matches;
+};
+
 enum class EditorAlternateModeKeyAction {
     Consume,
     UpdateInput,
@@ -84,6 +91,7 @@ struct EditorAlternateModeKeyState {
     QString command;
     bool hidePopup = false;
     bool clearBuffer = false;
+    EditorAlternateModeCompletionDisplayState completion;
 };
 
 struct EditorSourceNavigationTarget {
@@ -203,6 +211,8 @@ public:
         const EditorSemanticContext& context) const;
     CommandModeMatch commandModeMatch(
         const EditorSemanticContext& context) const;
+    EditorAlternateModeCompletionDisplayState
+        alternateModeCompletionDisplayState(const QString& input) const;
     EditorAlternateModeKeyState alternateModeKeyState(
         const EditorAlternateModeKeyContext& context) const;
     AlternateCommandCompletionState alternateCommandCompletionState(

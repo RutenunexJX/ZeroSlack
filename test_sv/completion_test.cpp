@@ -248,6 +248,28 @@ int main(int argc, char** argv) {
     expectList("EditorContext alternate matches",
                contextAlternateState.matches,
                {"save", "save_as", "select_all"});
+    const EditorAlternateModeCompletionDisplayState alternateDisplayState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeCompletionDisplayState(QStringLiteral(" S "));
+    expectBool("EditorContext alternate display",
+               alternateDisplayState.updateCompletions
+                   && alternateDisplayState.showPopup
+                   && alternateDisplayState.normalizedInput == QStringLiteral("s")
+                   && alternateDisplayState.matches
+                       == QStringList{QStringLiteral("save"),
+                                      QStringLiteral("save_as"),
+                                      QStringLiteral("select_all")},
+               true);
+    const EditorAlternateModeCompletionDisplayState alternateNoMatchDisplayState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeCompletionDisplayState(QStringLiteral("zz"));
+    expectBool("EditorContext alternate display no match",
+               alternateNoMatchDisplayState.updateCompletions
+                   && !alternateNoMatchDisplayState.showPopup
+                   && alternateNoMatchDisplayState.normalizedInput
+                       == QStringLiteral("zz")
+                   && alternateNoMatchDisplayState.matches.isEmpty(),
+               true);
     EditorAlternateModeKeyContext alternateKeyContext;
     alternateKeyContext.key = Qt::Key_Backspace;
     alternateKeyContext.buffer = QStringLiteral("sav");
@@ -257,7 +279,14 @@ int main(int argc, char** argv) {
     expectBool("EditorContext alternate key backspace",
                alternateBackspaceState.action
                        == EditorAlternateModeKeyAction::UpdateInput
-                   && alternateBackspaceState.nextInput == QStringLiteral("sa"),
+                   && alternateBackspaceState.nextInput == QStringLiteral("sa")
+                   && alternateBackspaceState.completion.updateCompletions
+                   && alternateBackspaceState.completion.showPopup
+                   && alternateBackspaceState.completion.normalizedInput
+                       == QStringLiteral("sa")
+                   && alternateBackspaceState.completion.matches
+                       == QStringList{QStringLiteral("save"),
+                                      QStringLiteral("save_as")},
                true);
     alternateKeyContext.buffer.clear();
     const EditorAlternateModeKeyState alternateEmptyBackspaceState =
@@ -266,7 +295,11 @@ int main(int argc, char** argv) {
     expectBool("EditorContext alternate key empty backspace",
                alternateEmptyBackspaceState.action
                        == EditorAlternateModeKeyAction::RefreshCompletions
-                   && alternateEmptyBackspaceState.nextInput.isEmpty(),
+                   && alternateEmptyBackspaceState.nextInput.isEmpty()
+                   && alternateEmptyBackspaceState.completion.updateCompletions
+                   && alternateEmptyBackspaceState.completion.showPopup
+                   && alternateEmptyBackspaceState.completion.matches.size()
+                       == alternateCommandService->commands().size(),
                true);
     alternateKeyContext.key = Qt::Key_Escape;
     alternateKeyContext.buffer = QStringLiteral("save");
@@ -297,7 +330,13 @@ int main(int argc, char** argv) {
     expectBool("EditorContext alternate key printable",
                alternatePrintableState.action
                        == EditorAlternateModeKeyAction::UpdateInput
-                   && alternatePrintableState.nextInput == QStringLiteral("sa"),
+                   && alternatePrintableState.nextInput == QStringLiteral("sa")
+                   && alternatePrintableState.completion.updateCompletions
+                   && alternatePrintableState.completion.normalizedInput
+                       == QStringLiteral("sa")
+                   && alternatePrintableState.completion.matches
+                       == QStringList{QStringLiteral("save"),
+                                      QStringLiteral("save_as")},
                true);
     alternateKeyContext.key = Qt::Key_F1;
     alternateKeyContext.text.clear();

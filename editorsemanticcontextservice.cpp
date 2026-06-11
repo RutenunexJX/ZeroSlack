@@ -340,6 +340,21 @@ CommandModeMatch EditorSemanticContextService::commandModeMatch(
         context.lineUpToCursor);
 }
 
+EditorAlternateModeCompletionDisplayState
+EditorSemanticContextService::alternateModeCompletionDisplayState(
+    const QString& input) const
+{
+    const AlternateCommandCompletionState completion =
+        alternateCommandCompletionState(input);
+
+    EditorAlternateModeCompletionDisplayState state;
+    state.updateCompletions = true;
+    state.showPopup = completion.showCompletions;
+    state.normalizedInput = completion.normalizedInput;
+    state.matches = completion.matches;
+    return state;
+}
+
 EditorAlternateModeKeyState EditorSemanticContextService::alternateModeKeyState(
     const EditorAlternateModeKeyContext& context) const
 {
@@ -353,6 +368,7 @@ EditorAlternateModeKeyState EditorSemanticContextService::alternateModeKeyState(
             state.action = EditorAlternateModeKeyAction::UpdateInput;
             state.nextInput = context.buffer.left(context.buffer.size() - 1);
         }
+        state.completion = alternateModeCompletionDisplayState(state.nextInput);
         return state;
     }
 
@@ -374,6 +390,7 @@ EditorAlternateModeKeyState EditorSemanticContextService::alternateModeKeyState(
     if (!context.text.isEmpty() && context.text.at(0).isPrint()) {
         state.action = EditorAlternateModeKeyAction::UpdateInput;
         state.nextInput = context.buffer + context.text;
+        state.completion = alternateModeCompletionDisplayState(state.nextInput);
         return state;
     }
 

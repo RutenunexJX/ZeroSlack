@@ -449,10 +449,9 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
         switch (alternateKeyState.action) {
         case EditorAlternateModeKeyAction::UpdateInput:
-            processAlternateModeInput(alternateKeyState.nextInput);
-            break;
         case EditorAlternateModeKeyAction::RefreshCompletions:
-            showAlternateModeCommands(alternateKeyState.nextInput);
+            applyAlternateModeCompletionDisplayState(
+                alternateKeyState.completion);
             break;
         case EditorAlternateModeKeyAction::ExecuteCommand:
             executeAlternateModeCommand(alternateKeyState.command);
@@ -519,8 +518,12 @@ bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
         return true;
     case CompletionPopupKeyAction::BackspaceAlternateInput:
         if (!alternateCommandBuffer.isEmpty()) {
-            alternateCommandBuffer.chop(1);
-            processAlternateModeInput(alternateCommandBuffer);
+            const EditorAlternateModeCompletionDisplayState completionState =
+                EditorSemanticContextService::getInstance()
+                    ->alternateModeCompletionDisplayState(
+                        alternateCommandBuffer.left(
+                            alternateCommandBuffer.size() - 1));
+            applyAlternateModeCompletionDisplayState(completionState);
         } else {
             hideAutoComplete();
         }
@@ -694,20 +697,24 @@ void MyCodeEditor::processAlternateModeInput(const QString &input)
 {
     if (!isInAlternateMode) return;
 
-    showAlternateModeCommands(input);
+    const EditorAlternateModeCompletionDisplayState completionState =
+        EditorSemanticContextService::getInstance()
+            ->alternateModeCompletionDisplayState(input);
+    applyAlternateModeCompletionDisplayState(completionState);
 }
 
-void MyCodeEditor::showAlternateModeCommands(const QString &filter)
+void MyCodeEditor::applyAlternateModeCompletionDisplayState(
+    const EditorAlternateModeCompletionDisplayState& state)
 {
-    const AlternateCommandCompletionState completionState =
-        EditorSemanticContextService::getInstance()
-            ->alternateCommandCompletionState(filter);
-    alternateCommandBuffer = completionState.normalizedInput;
-    completionModel->updateCommandCompletions(
-        completionState.matches,
-        completionState.normalizedInput);
+    if (!state.updateCompletions)
+        return;
 
-    if (completionState.showCompletions) {
+    alternateCommandBuffer = state.normalizedInput;
+    completionModel->updateCommandCompletions(
+        state.matches,
+        state.normalizedInput);
+
+    if (state.showPopup) {
         showAutoComplete();
     }
 }

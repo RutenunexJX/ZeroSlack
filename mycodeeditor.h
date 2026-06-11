@@ -102,7 +102,8 @@ private:
     QString alternateCommandBuffer;
 
     void executeAlternateModeCommand(const QString &command);
-    void showAlternateModeCommands(const QString &filter = QString());
+    void applyAlternateModeCompletionDisplayState(
+        const EditorAlternateModeCompletionDisplayState& state);
     bool handleCompletionPopupKey(QKeyEvent *event);
 
     bool ctrlPressed = false;
