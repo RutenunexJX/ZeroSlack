@@ -10,7 +10,6 @@
 #include <QScrollBar>
 #include <QFileInfo>
 #include <QDir>
-#include <QMessageBox>
 
 #include <QKeyEvent>
 #include <QMenu>
@@ -26,7 +25,6 @@
 #include <QPen>
 #include <QBrush>
 #include <memory>
-#include <utility>
 
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 {
@@ -145,17 +143,6 @@ void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 void MyCodeEditor::setAlternateModeEnabled(bool enabled)
 {
     isInAlternateMode = enabled;
-}
-
-void MyCodeEditor::setIncludePathResolver(
-    std::function<QString(const QString& includePath, const QString& currentFile)> resolver)
-{
-    includePathResolver = std::move(resolver);
-}
-
-void MyCodeEditor::setFileOpenHandler(std::function<bool(const QString& filePath)> handler)
-{
-    fileOpenHandler = std::move(handler);
 }
 
 QString MyCodeEditor::currentModuleNameAt(int charPos) const
@@ -874,11 +861,8 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
         const EditorNavigationTarget target =
             sourceNavigationTargetAtPosition(event->pos());
         if (target.includeTarget) {
-            if (openIncludeFile(target.text)) {
-                event->accept();
-                return;
-            }
-            QPlainTextEdit::mousePressEvent(event);
+            emit includeOpenRequested(target.text, getFileName());
+            event->accept();
             return;
         }
 
@@ -1138,29 +1122,4 @@ QCursor MyCodeEditor::createNonJumpableCursor()
     painter.drawLine(15, 5, 5, 15);
 
     return QCursor(pixmap, 10, 10);
-}
-
-bool MyCodeEditor::openIncludeFile(const QString& includePath)
-{
-    if (includePath.isEmpty()) {
-        return false;
-    }
-
-    const QString currentFile = getFileName();
-    QString targetPath;
-    if (includePathResolver)
-        targetPath = includePathResolver(includePath, currentFile);
-
-    if (targetPath.isEmpty()) {
-        QMessageBox::warning(this,
-                             tr("Include not found"),
-                             tr("Can not locate include file:\n%1").arg(includePath));
-        return false;
-    }
-
-    if (!fileOpenHandler) {
-        return false;
-    }
-
-    return fileOpenHandler(targetPath);
 }

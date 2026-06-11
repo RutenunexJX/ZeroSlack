@@ -8,6 +8,8 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
+#include <QMessageBox>
+
 EditorCoordinator::EditorCoordinator(TabManager* tabManager,
                                      ModeManager* modeManager,
                                      QObject* parent)
@@ -52,15 +54,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
         return;
 
     applyAlternateMode(editor);
-    editor->setIncludePathResolver(
-        [this](const QString& includePath, const QString& currentFile) {
-            return workspaceManager
-                ? workspaceManager->resolveIncludePath(includePath, currentFile)
-                : QString();
-        });
-    editor->setFileOpenHandler([this](const QString& filePath) {
-        return tabManager && tabManager->openFileInTab(filePath);
-    });
     connect(editor, &MyCodeEditor::definitionJumpRequested,
             this, [this](const QString&, const QString& file, int line) {
                 if (navigationCommandCoordinator)
@@ -70,6 +63,11 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
             this, [this, editor](AlternateCommandAction action) {
                 if (fileCommandCoordinator)
                     fileCommandCoordinator->executeAlternateCommand(editor, action);
+            });
+    connect(editor, &MyCodeEditor::includeOpenRequested,
+            this, [this, editor](const QString& includePath,
+                                 const QString& currentFile) {
+                handleIncludeOpenRequested(editor, includePath, currentFile);
             });
     connect(editor, &MyCodeEditor::referenceSearchRequested,
             this, [this](const QString& symbolName,
@@ -105,6 +103,28 @@ void EditorCoordinator::applyAlternateModeToOpenEditors() const
 
     for (int i = 0; i < tabManager->editorCount(); ++i)
         applyAlternateMode(tabManager->getEditorAt(i));
+}
+
+void EditorCoordinator::handleIncludeOpenRequested(
+    MyCodeEditor* editor,
+    const QString& includePath,
+    const QString& currentFile) const
+{
+    if (includePath.isEmpty())
+        return;
+
+    const QString targetPath = workspaceManager
+        ? workspaceManager->resolveIncludePath(includePath, currentFile)
+        : QString();
+    if (targetPath.isEmpty()) {
+        QMessageBox::warning(editor,
+                             tr("Include not found"),
+                             tr("Can not locate include file:\n%1").arg(includePath));
+        return;
+    }
+
+    if (tabManager)
+        tabManager->openFileInTab(targetPath);
 }
 
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)

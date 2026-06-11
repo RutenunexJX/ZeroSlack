@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Tab save persistence now lives in `TabManager`.
-`MyCodeEditor` no longer owns save/save-as dialogs or file writes; `TabManager` writes editor text, updates file names/titles, marks `DocumentModel` state saved, and emits save notifications.
+Include Ctrl+Click routing now lives behind `EditorCoordinator`.
+`MyCodeEditor` emits include-open requests only; `EditorCoordinator` resolves include paths through `WorkspaceManager` and opens targets through `TabManager`, removing editor-owned include resolver/open callbacks.
 
 ## Current Architecture Snapshot
 
@@ -36,7 +36,7 @@ Tab save persistence now lives in `TabManager`.
 - `SemanticIndex` owns semantic facts, analysis write-back, snapshot publication, relationship-analysis snapshot lifecycle, definition candidate resolution, relationship endpoint enrichment, generic symbol search, relationship-driven/enum/module-port/typed completion symbol candidate reads, and shared semantic read helpers for symbols, relationships, diagnostics, current module lookup, module-internal symbols, and scope scoring.
 - `AnalysisProgressCoordinator` owns workspace analysis progress dialog policy and cancel state.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
-- `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, alternate-command action routing, navigation commands, reference/relationship panel requests, and semantic panel refresh requests.
+- `EditorCoordinator` owns editor signal routing, alternate-mode application, include-open routing, alternate-command action routing, navigation commands, reference/relationship panel requests, and semantic panel refresh requests.
 - `EditorSemanticContextService` owns editor-context-to-query assembly and editor-facing completion, command mode, definition navigation, source navigation target, and source symbol action reads.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, alternate-command execution, commands, and close-event unsaved-change confirmation.
 - `TabManager` owns tab lifecycle, open-file reads, tab save persistence, tab titles, open-document text lookup, and `DocumentModel` registration/save updates.

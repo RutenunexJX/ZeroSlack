@@ -33,6 +33,9 @@ public:
 private:
     void applyAlternateMode(MyCodeEditor* editor) const;
     void applyAlternateModeToOpenEditors() const;
+    void handleIncludeOpenRequested(MyCodeEditor* editor,
+                                    const QString& includePath,
+                                    const QString& currentFile) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);
 
     TabManager* tabManager = nullptr;

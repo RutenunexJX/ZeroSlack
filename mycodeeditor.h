@@ -11,7 +11,6 @@
 #include <QCompleter>
 #include <QTimer>
 #include <QMouseEvent>
-#include <functional>
 
 class LineNumberWidget;
 class MyHighlighter;
@@ -37,9 +36,6 @@ public:
     void hideAutoComplete();
     void refreshScopeAndCurrentLineHighlight();
     void setAlternateModeEnabled(bool enabled);
-    void setIncludePathResolver(
-        std::function<QString(const QString& includePath, const QString& currentFile)> resolver);
-    void setFileOpenHandler(std::function<bool(const QString& filePath)> handler);
 
     void moveMouseToCursor();
 
@@ -90,8 +86,6 @@ private:
 
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
-    std::function<QString(const QString& includePath, const QString& currentFile)> includePathResolver;
-    std::function<bool(const QString& filePath)> fileOpenHandler;
 
     TSDocument m_tsdoc;
     MyHighlighter *m_highlighter = nullptr;
@@ -150,14 +144,13 @@ private:
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();
 
-    bool openIncludeFile(const QString& includePath);
-
     void showSymbolTooltip(const QString& symbolName, const QPoint& position);
 
     bool commandModeExitedByDoubleSpace = false;
 signals:
     void definitionJumpRequested(const QString& symbolName, const QString& fileName, int line);
     void alternateCommandActionRequested(AlternateCommandAction action);
+    void includeOpenRequested(const QString& includePath, const QString& currentFile);
     void referenceSearchRequested(const QString& symbolName,
                                   const QString& fileName,
                                   const QString& moduleName);

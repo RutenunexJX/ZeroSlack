@@ -860,6 +860,61 @@ int main(int argc, char** argv)
                QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(resolvedCurrentFileInclude).absoluteFilePath()))
                    == QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(svFiles.first()).absoluteFilePath())),
                true);
+    const QString includeSourcePath =
+        QDir(workspacePath).absoluteFilePath(QStringLiteral("_svh.svh"));
+    const QString includeTargetPath =
+        QDir(workspacePath).absoluteFilePath(QStringLiteral("SVH_interface.sv"));
+    expectBool("include source fixture exists",
+               QFileInfo(includeSourcePath).isFile(),
+               true);
+    expectBool("include target fixture exists",
+               QFileInfo(includeTargetPath).isFile(),
+               true);
+    const int editorCountBeforeIncludeClick = window.tabManager->editorCount();
+    if (QFileInfo(includeSourcePath).isFile()
+        && QFileInfo(includeTargetPath).isFile()
+        && window.tabManager->openFileInTab(includeSourcePath)) {
+        MyCodeEditor* includeEditor = window.tabManager->getCurrentEditor();
+        expectBool("include source editor opens", includeEditor != nullptr, true);
+        if (includeEditor) {
+            QTextBlock includeBlock =
+                findBlockContaining(includeEditor->document(),
+                                    QStringLiteral("SVH_interface.sv"));
+            expectBool("include directive block found",
+                       includeBlock.isValid(),
+                       true);
+            if (includeBlock.isValid()) {
+                const int includeClickPosition =
+                    includeBlock.position()
+                    + includeBlock.text().indexOf(QStringLiteral("SVH_interface"));
+                QTextCursor includeCursor(includeEditor->document());
+                includeCursor.setPosition(includeClickPosition);
+                includeEditor->setTextCursor(includeCursor);
+                includeEditor->centerCursor();
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                const QPoint includeClickPoint =
+                    includeEditor->cursorRect(includeCursor).center();
+                QTest::mouseClick(includeEditor->viewport(),
+                                  Qt::LeftButton,
+                                  Qt::ControlModifier,
+                                  includeClickPoint);
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                MyCodeEditor* openedIncludeEditor =
+                    window.tabManager->getCurrentEditor();
+                expectBool("Ctrl+Click include opens target",
+                           openedIncludeEditor
+                               && QDir::cleanPath(QDir::fromNativeSeparators(
+                                      QFileInfo(openedIncludeEditor->getFileName())
+                                          .absoluteFilePath()))
+                                      == QDir::cleanPath(QDir::fromNativeSeparators(
+                                             QFileInfo(includeTargetPath)
+                                                 .absoluteFilePath()))
+                               && window.tabManager->editorCount()
+                                      == editorCountBeforeIncludeClick + 2,
+                           true);
+            }
+        }
+    }
 
     expectBool("workspace symbol analysis completes",
                waitUntil([&]() { return workspaceSymbolsDone; }, 60000), true);
