@@ -16,6 +16,7 @@
 #include "syminfo.h"
 #include "completionmodel.h"
 #include "definitionservice.h"
+#include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
 #include "semanticindexsnapshot.h"
 // Test-only: reach the editor's private jump methods. Non-virtual, so ABI is unaffected and the
@@ -454,6 +455,52 @@ int main(int argc, char** argv) {
                                                  QStringLiteral("top"))
                    .available,
                false);
+
+    EditorSemanticContext editorSemanticContext;
+    editorSemanticContext.fileName = path;
+    editorSemanticContext.moduleName = QStringLiteral("top");
+    editorSemanticContext.lineText = identifierLine;
+    editorSemanticContext.column =
+        identifierLine.indexOf(QStringLiteral("current_value")) + 3;
+    const SourceIdentifierTarget contextIdentifierTarget =
+        EditorSemanticContextService::getInstance()
+            ->sourceIdentifierTarget(editorSemanticContext);
+    expectBool("EditorSemanticContext returns identifier target",
+               contextIdentifierTarget.matched
+                   && contextIdentifierTarget.identifier == QStringLiteral("current_value"),
+               true);
+    const SourceEditorNavigationTarget contextEditorTarget =
+        EditorSemanticContextService::getInstance()
+            ->sourceNavigationTarget(editorSemanticContext,
+                                     [](const QString& symbolName) {
+                                         return symbolName == QStringLiteral("current_value");
+                                     });
+    expectBool("EditorSemanticContext returns source navigation target",
+               contextEditorTarget.matched
+                   && contextEditorTarget.identifierTarget
+                   && contextEditorTarget.jumpable,
+               true);
+    const SourceSymbolActionContext contextSymbolAction =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionContext(editorSemanticContext);
+    expectBool("EditorSemanticContext returns symbol action context",
+               contextSymbolAction.available
+                   && contextSymbolAction.symbolName == QStringLiteral("current_value")
+                   && contextSymbolAction.fileName == path
+                   && contextSymbolAction.moduleName == QStringLiteral("top"),
+               true);
+    EditorSemanticContext definitionContext;
+    definitionContext.fileName = path;
+    definitionContext.moduleName = QStringLiteral("top");
+    expectBool("EditorSemanticContext resolves definition target",
+               EditorSemanticContextService::getInstance()
+                   ->canResolveDefinitionTarget(QStringLiteral("counter"), definitionContext),
+               true);
+    expectBool("EditorSemanticContext returns definition tooltip",
+               !EditorSemanticContextService::getInstance()
+                    ->definitionTooltipText(QStringLiteral("counter"), definitionContext)
+                    .isEmpty(),
+               true);
 
     const SourceNavigationTarget includePriorityTarget =
         sourceNavigationService->targetAtColumn(

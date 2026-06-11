@@ -3,9 +3,7 @@
 #include "myhighlighter.h"
 #include "completionmodel.h"
 #include "completionservice.h"
-#include "definitionnavigationservice.h"
 #include "editorsemanticcontextservice.h"
-#include "sourcenavigationservice.h"
 
 #include "syminfo.h"
 
@@ -240,17 +238,8 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 SourceSymbolActionContext MyCodeEditor::sourceSymbolActionContextForCursor(
     const QTextCursor& cursor) const
 {
-    const QTextBlock block = document()->findBlock(cursor.position());
-    if (!block.isValid())
-        return {};
-
-    EditorSemanticContext context;
-    context.fileName = getFileName();
-    context.moduleName = currentModuleNameAt(cursor.position());
-    context.lineText = block.text();
-    context.column = cursor.position() - block.position();
     return EditorSemanticContextService::getInstance()
-        ->sourceSymbolActionContext(context);
+        ->sourceSymbolActionContext(editorSemanticContextForPosition(cursor.position()));
 }
 
 bool MyCodeEditor::emitReferenceSearchForCursor(const QTextCursor& cursor)
@@ -279,8 +268,7 @@ bool MyCodeEditor::emitRelationshipBrowseForCursor(const QTextCursor& cursor)
     return true;
 }
 
-DefinitionNavigationQuery MyCodeEditor::definitionNavigationQuery(
-    const QString& symbolName,
+EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     int cursorPosition) const
 {
     const int semanticPosition = cursorPosition >= 0
@@ -290,16 +278,17 @@ DefinitionNavigationQuery MyCodeEditor::definitionNavigationQuery(
     EditorSemanticContext context;
     context.fileName = getFileName();
     context.moduleName = currentModuleNameAt(semanticPosition);
-    if (cursorPosition >= 0) {
-        const QTextBlock block = document()->findBlock(cursorPosition);
-        if (block.isValid()) {
-            context.lineText = block.text();
-            context.column = cursorPosition - block.position();
-        }
+    context.cursorPosition = semanticPosition;
+
+    const QTextBlock block = document()->findBlock(semanticPosition);
+    if (block.isValid()) {
+        context.lineText = block.text();
+        context.column = semanticPosition - block.position();
+        context.cursorLine = block.blockNumber() + 1;
+        context.lineUpToCursor = context.lineText.left(context.column);
     }
 
-    return EditorSemanticContextService::getInstance()
-        ->definitionNavigationQuery(symbolName, context);
+    return context;
 }
 
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
@@ -1065,11 +1054,9 @@ MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
     if (!block.isValid())
         return editorTarget;
 
-    const int posInLine = cursor.position() - block.position();
     const SourceEditorNavigationTarget sourceTarget =
-        SourceNavigationService::getInstance()->editorNavigationTargetAtColumn(
-            block.text(),
-            posInLine,
+        EditorSemanticContextService::getInstance()->sourceNavigationTarget(
+            editorSemanticContextForPosition(cursor.position()),
             [this](const QString& symbolName) {
                 return canJumpToDefinition(symbolName);
             });
@@ -1119,14 +1106,9 @@ void MyCodeEditor::clearSourceNavigationHover()
 
 QString MyCodeEditor::getWordAtTextPosition(int position)
 {
-    const QTextBlock block = document()->findBlock(position);
-    if (!block.isValid())
-        return QString();
-
     const SourceIdentifierTarget identifierTarget =
-        SourceNavigationService::getInstance()->identifierAtColumn(
-            block.text(),
-            position - block.position());
+        EditorSemanticContextService::getInstance()->sourceIdentifierTarget(
+            editorSemanticContextForPosition(position));
     return identifierTarget.matched ? identifierTarget.identifier : QString();
 }
 
@@ -1136,8 +1118,9 @@ void MyCodeEditor::jumpToDefinition(const QString& symbolName, int cursorPositio
         return;
 
     const DefinitionNavigationTarget target =
-        DefinitionNavigationService::getInstance()->resolveTarget(
-            definitionNavigationQuery(symbolName, cursorPosition));
+        EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+            symbolName,
+            editorSemanticContextForPosition(cursorPosition));
     if (!target.found)
         return;
 
@@ -1220,8 +1203,9 @@ void MyCodeEditor::showSymbolTooltip(const QString& symbolName, const QPoint& po
     if (symbolName.isEmpty()) return;
 
     const QString tooltipText =
-        DefinitionNavigationService::getInstance()->tooltipText(
-            definitionNavigationQuery(symbolName));
+        EditorSemanticContextService::getInstance()->definitionTooltipText(
+            symbolName,
+            editorSemanticContextForPosition());
     if (tooltipText.isEmpty())
         return;
 
@@ -1233,8 +1217,9 @@ bool MyCodeEditor::canJumpToDefinition(const QString& symbolName)
     if (symbolName.isEmpty())
         return false;
 
-    return DefinitionNavigationService::getInstance()->canResolveTarget(
-        definitionNavigationQuery(symbolName));
+    return EditorSemanticContextService::getInstance()->canResolveDefinitionTarget(
+        symbolName,
+        editorSemanticContextForPosition());
 }
 
 QCursor MyCodeEditor::createJumpableCursor()

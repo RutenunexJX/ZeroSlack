@@ -24,6 +24,24 @@ SourceSymbolActionContext EditorSemanticContextService::sourceSymbolActionContex
         context.moduleName);
 }
 
+SourceEditorNavigationTarget EditorSemanticContextService::sourceNavigationTarget(
+    const EditorSemanticContext& context,
+    const std::function<bool(const QString&)>& canResolveIdentifier) const
+{
+    return SourceNavigationService::getInstance()->editorNavigationTargetAtColumn(
+        context.lineText,
+        context.column,
+        canResolveIdentifier);
+}
+
+SourceIdentifierTarget EditorSemanticContextService::sourceIdentifierTarget(
+    const EditorSemanticContext& context) const
+{
+    return SourceNavigationService::getInstance()->identifierAtColumn(
+        context.lineText,
+        context.column);
+}
+
 DefinitionNavigationQuery EditorSemanticContextService::definitionNavigationQuery(
     const QString& symbolName,
     const EditorSemanticContext& context) const
@@ -36,6 +54,30 @@ DefinitionNavigationQuery EditorSemanticContextService::definitionNavigationQuer
     navigationContext.column = context.column;
     return DefinitionNavigationService::getInstance()
         ->navigationQueryForContext(navigationContext);
+}
+
+DefinitionNavigationTarget EditorSemanticContextService::resolveDefinitionTarget(
+    const QString& symbolName,
+    const EditorSemanticContext& context) const
+{
+    return DefinitionNavigationService::getInstance()->resolveTarget(
+        definitionNavigationQuery(symbolName, context));
+}
+
+bool EditorSemanticContextService::canResolveDefinitionTarget(
+    const QString& symbolName,
+    const EditorSemanticContext& context) const
+{
+    return DefinitionNavigationService::getInstance()->canResolveTarget(
+        definitionNavigationQuery(symbolName, context));
+}
+
+QString EditorSemanticContextService::definitionTooltipText(
+    const QString& symbolName,
+    const EditorSemanticContext& context) const
+{
+    return DefinitionNavigationService::getInstance()->tooltipText(
+        definitionNavigationQuery(symbolName, context));
 }
 
 CompletionTriggerQuery EditorSemanticContextService::completionTriggerQuery(

@@ -7,6 +7,7 @@
 
 #include <QString>
 #include <memory>
+#include <functional>
 
 struct EditorSemanticContext {
     QString fileName;
@@ -31,7 +32,21 @@ public:
 
     SourceSymbolActionContext sourceSymbolActionContext(
         const EditorSemanticContext& context) const;
+    SourceEditorNavigationTarget sourceNavigationTarget(
+        const EditorSemanticContext& context,
+        const std::function<bool(const QString&)>& canResolveIdentifier) const;
+    SourceIdentifierTarget sourceIdentifierTarget(
+        const EditorSemanticContext& context) const;
     DefinitionNavigationQuery definitionNavigationQuery(
+        const QString& symbolName,
+        const EditorSemanticContext& context) const;
+    DefinitionNavigationTarget resolveDefinitionTarget(
+        const QString& symbolName,
+        const EditorSemanticContext& context) const;
+    bool canResolveDefinitionTarget(
+        const QString& symbolName,
+        const EditorSemanticContext& context) const;
+    QString definitionTooltipText(
         const QString& symbolName,
         const EditorSemanticContext& context) const;
     CompletionTriggerQuery completionTriggerQuery(

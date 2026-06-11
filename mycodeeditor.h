@@ -3,7 +3,7 @@
 
 #include "syminfo.h"
 #include "completionmodel.h"
-#include "definitionnavigationservice.h"
+#include "editorsemanticcontextservice.h"
 #include "tsdocument.h"
 
 #include <QPlainTextEdit>
@@ -84,9 +84,7 @@ private:
         const QTextCursor& cursor) const;
     bool emitReferenceSearchForCursor(const QTextCursor& cursor);
     bool emitRelationshipBrowseForCursor(const QTextCursor& cursor);
-    DefinitionNavigationQuery definitionNavigationQuery(
-        const QString& symbolName,
-        int cursorPosition = -1) const;
+    EditorSemanticContext editorSemanticContextForPosition(int cursorPosition = -1) const;
     QString getWordUnderCursor();
     QStringList getCompletionSuggestions(const QString &prefix);
     bool isInCommentArea();

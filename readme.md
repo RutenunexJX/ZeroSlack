@@ -34,8 +34,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Navigation module target resolution now lives behind `NavigationService`.
-`NavigationManager` depends on the navigation facade for module hierarchy, symbol outline, and module double-click targets instead of reaching into definition services directly.
+Editor source/definition navigation context now lives behind `EditorSemanticContextService`.
+`MyCodeEditor` builds editor context once and delegates source target, identifier, symbol action, definition target, and tooltip reads to the editor semantic facade instead of reaching into source/definition services directly.
 
 ## Current Architecture Snapshot
 
@@ -47,7 +47,7 @@ Navigation module target resolution now lives behind `NavigationService`.
 - `AnalysisCoordinator` owns scheduler/progress/workspace/symbol signal routing and active-editor refresh policy.
 - `AnalysisCommandCoordinator` owns editor-originated analysis commands and relationship-work cancellation.
 - `EditorCoordinator` owns editor signal routing, alternate-mode application, include/open-file handlers, file commands, navigation commands, relationship analysis requests, and semantic panel refresh requests.
-- `EditorSemanticContextService` owns editor-context-to-query assembly for completion, command mode, definition navigation, and source symbol actions.
+- `EditorSemanticContextService` owns editor-context-to-query assembly for completion, command mode, definition navigation, source navigation targets, and source symbol actions.
 - `FileCommandCoordinator` owns file/edit/workspace action routing, commands, and close-event unsaved-change confirmation.
 - `NavigationCommandCoordinator` owns navigation signal routing, tab activation/opening, and editor cursor placement.
 - `NavigationPaneCoordinator` owns the navigation dock/widget and `NavigationManager` input wiring.
@@ -59,7 +59,7 @@ Navigation module target resolution now lives behind `NavigationService`.
 - `SemanticPanelRefreshCoordinator` owns semantic panel provider/navigation/status wiring and refresh commands.
 - `CompletionService` owns module/global/command/editor completion results over `SemanticIndex`, command-mode completion state, completion trigger and activation state, row scoring, symbol display descriptions, command-mode catalog/matching/input/exit policy and symbol presentation, smart/all-symbol scoring, typed symbol scoring and `SymbolInfo` completion presentation, keyword/abbreviation scoring, context-aware completion assembly, struct member parsing/completion, scope completion orchestration, and relationship-driven completion candidates.
 - `AlternateCommandService` owns alternate-mode command catalog, filtering, normalization, command membership checks, command action classification, and command completion state.
-- `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, source navigation target selection, editor source-navigation target assembly, and editor symbol action context assembly.
+- `SourceNavigationService` owns SystemVerilog include directive, package-import, identifier hit-testing, and source navigation target primitives.
 - `CompletionModel` renders editor completion items, owns selectable-row policy, and uses `CompletionService` for command symbol presentation and scoring.
 - `CompletionManager` is now a stateless compatibility facade over `CompletionService`.
 - `SearchService` owns feature-facing symbol search queries over `SemanticIndex`.
