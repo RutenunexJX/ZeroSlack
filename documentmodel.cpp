@@ -75,6 +75,7 @@ void DocumentModel::markSaved(MyCodeEditor* editor)
     DocumentSnapshot snapshot = refreshTrackedDocument(editor);
     snapshot.dirty = false;
     snapshot.saved = true;
+    snapshot.savedTextVersion = snapshot.textVersion;
     documentsByEditor[editor].snapshot = snapshot;
     emit documentSaved(snapshot);
 }

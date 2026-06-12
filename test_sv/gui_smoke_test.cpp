@@ -856,6 +856,9 @@ int main(int argc, char** argv)
         expectBool("document model marks saved tab clean",
                    savedDoc.saved && !savedDoc.dirty,
                    true);
+        expectBool("document model records saved version",
+                   savedDoc.savedTextVersion == savedDoc.textVersion,
+                   true);
     }
 
     const bool workspaceOpened = window.workspaceManager->openWorkspace(workspacePath);
@@ -965,6 +968,9 @@ int main(int argc, char** argv)
                        == beforeEditDoc.documentId,
                    true);
         expectBool("opened document starts saved", beforeEditDoc.saved, true);
+        expectBool("opened document saved version matches text version",
+                   beforeEditDoc.savedTextVersion == beforeEditDoc.textVersion,
+                   true);
         expectBool("document model caches opened text",
                    documents
                        && documents->documentTextForFile(largeFile)
@@ -999,6 +1005,10 @@ int main(int argc, char** argv)
         expectBool("document model marks edit dirty", afterEditDoc.dirty, true);
         expectBool("document model increments version",
                    afterEditDoc.textVersion > beforeEditDoc.textVersion, true);
+        expectBool("document model keeps saved version across edit",
+                   afterEditDoc.savedTextVersion == beforeEditDoc.savedTextVersion
+                       && afterEditDoc.savedTextVersion < afterEditDoc.textVersion,
+                   true);
         expectBool("document model tracks cursor line", afterEditDoc.cursorLine > 0, true);
         expectBool("tab manager active snapshot tracks edit",
                    window.tabManager->getCurrentDocument().textVersion
