@@ -19,7 +19,7 @@ ProjectModel
   Owns workspace inputs: root, file list, include dirs, defines, top, ignored paths.
 
 DocumentModel
-  Owns open document state: file identity, text snapshot/version, saved text version, dirty/saved state, cursor, live module, and eventually Tree-sitter document ownership.
+  Owns open document state: file identity, text snapshot/version, saved text version, dirty/saved state, cursor, live module, registry-backed text queries, and eventually Tree-sitter document ownership.
 
 AnalysisScheduler
   Owns analysis timing: scheduled semantic runs, relationship runs, cancellation, debounce, refresh requests, lifecycle, and analysis event routing.
@@ -49,7 +49,8 @@ Tree-sitter and Slang split:
 - Analysis triggers belong in AnalysisScheduler.
 - UI panels should render service/model output, not derive semantic policy from widgets.
 - MainWindow should compose and coordinate windows, not own analysis event routing, panel rendering, or editor workflow policy.
-- MyCodeEditor should provide editor UI and live syntax behavior while document state and project semantic decisions move toward models, services, scheduler, runtime, and coordinators.
+- MyCodeEditor should provide editor UI, stable editor adapters, event flow, and live syntax behavior while document state and project semantic decisions stay in models, services, scheduler, runtime, and coordinators.
+- Test code should prefer stable production-facing APIs over private-access macros.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
 - Verification may be batched across independent architecture blocks, but commits remain coherent by block.
@@ -61,6 +62,7 @@ The foundation is healthy when:
 - new feature reads mainly use ProjectModel, DocumentModel, AnalysisScheduler, SemanticIndex, and Query Services
 - MainWindow is mostly UI composition and high-level callback wiring
 - MyCodeEditor is mostly editor UI plus Tree-sitter live syntax
+- editor-facing tests exercise stable APIs instead of broad private access
 - UI/services can read stable snapshot-backed semantic data
 - all CTest targets pass
 - real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
