@@ -1393,6 +1393,23 @@ struct MyCodeEditorState
         clearSourceNavigationHover(editor);
     }
 
+    void handleSourceSymbolContextMenu(
+        MyCodeEditor* editor,
+        QContextMenuEvent *event)
+    {
+        std::unique_ptr<QMenu> menu(
+            editor->createStandardContextMenu(event->pos()));
+        const QTextCursor cursorAtPos = editor->cursorForPosition(event->pos());
+        emit editor->sourceSymbolContextMenuRequested(
+            menu.get(),
+            semanticContextForPosition(
+                editor,
+                cursorAtPos.position(),
+                false));
+
+        menu->exec(event->globalPos());
+    }
+
 };
 
 LineNumberWidget::LineNumberWidget(MyCodeEditor *editor)
@@ -1478,13 +1495,6 @@ void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* servi
     state->semantic.setService(service);
 }
 
-QString MyCodeEditor::currentModuleNameAt(int charPos) const
-{
-    // Live, error-tolerant enclosing module from the tree-sitter tree (A3). The editor keeps
-    // syntax synced on every edit, so this is never stale (unlike the debounced Slang path).
-    return state->currentModuleNameAt(charPos);
-}
-
 qreal MyCodeEditor::getBlockTopY(int blockNumber) const
 {
     return state->geometry.blockTopY(this, blockNumber);
@@ -1518,13 +1528,7 @@ void MyCodeEditor::resizeEvent(QResizeEvent *event)
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 {
-    std::unique_ptr<QMenu> menu(createStandardContextMenu(event->pos()));
-    const QTextCursor cursorAtPos = cursorForPosition(event->pos());
-    emit sourceSymbolContextMenuRequested(
-        menu.get(),
-        editorSemanticContextForPosition(cursorAtPos.position()));
-
-    menu->exec(event->globalPos());
+    state->handleSourceSymbolContextMenu(this, event);
 }
 
 EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
@@ -1534,16 +1538,6 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     return state->semanticContextForPosition(
         this,
         cursorPosition,
-        includeDocumentText);
-}
-
-EditorSemanticContext MyCodeEditor::semanticContextForCursor(
-    const QTextCursor& cursor,
-    bool includeDocumentText) const
-{
-    return state->semanticContextForCursor(
-        this,
-        cursor,
         includeDocumentText);
 }
 
@@ -1644,33 +1638,6 @@ void MyCodeEditor::leaveEvent(QEvent *event)
     state->handleLeave(this);
 
     QPlainTextEdit::leaveEvent(event);
-}
-
-EditorSourceNavigationTarget
-MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
-{
-    return state->sourceNavigationTargetAtPosition(this, position);
-}
-
-bool MyCodeEditor::requestSourceNavigationAtPosition(const QPoint& position)
-{
-    return state->requestSourceNavigationAtPosition(this, position);
-}
-
-void MyCodeEditor::refreshSourceNavigationHoverAt(const QPoint& position)
-{
-    state->refreshSourceNavigationHoverAt(this, position);
-}
-
-void MyCodeEditor::applySourceNavigationHover(
-    const EditorSourceNavigationTarget& target)
-{
-    state->applySourceNavigationHover(this, target);
-}
-
-void MyCodeEditor::clearSourceNavigationHover()
-{
-    state->clearSourceNavigationHover(this);
 }
 
 void MyCodeEditor::moveMouseToCursor()

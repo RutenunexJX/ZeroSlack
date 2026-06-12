@@ -12,13 +12,11 @@ class NavigationCommandCoordinator;
 class QModelIndex;
 class QMenu;
 class QMouseEvent;
-class QPoint;
 class QRect;
 class QContextMenuEvent;
 class QKeyEvent;
 class QResizeEvent;
 class ScopeBandWidget;
-class QTextCursor;
 class EditorSemanticContextService;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
@@ -64,7 +62,6 @@ private:
     void setFileName(QString fileName);
     QString getFileName() const;
     QString currentModuleName() const;
-    QString currentModuleNameAt(int charPos) const;
     void refreshScopeAndCurrentLineHighlight();
     void setAlternateModeEnabled(bool enabled);
     void setSemanticContextService(EditorSemanticContextService* service);
@@ -73,23 +70,12 @@ private:
     qreal getBlockTopY(int blockNumber) const;
     qreal getBlockHeight(int blockNumber) const;
     qreal getDocumentHeightPx() const;
-    EditorSemanticContext semanticContextForCursor(
-        const QTextCursor& cursor,
-        bool includeDocumentText = false) const;
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
     std::unique_ptr<MyCodeEditorState> state;
 
     void executeAlternateModeCommand(const QString &command);
-
-    EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
-        const QPoint& position);
-    bool requestSourceNavigationAtPosition(const QPoint& position);
-    void refreshSourceNavigationHoverAt(const QPoint& position);
-    void applySourceNavigationHover(
-        const EditorSourceNavigationTarget& target);
-    void clearSourceNavigationHover();
 
 signals:
     void fileNameChanged(const QString& fileName);
