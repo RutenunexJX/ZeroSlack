@@ -2,6 +2,7 @@
 #define ANALYSISSCHEDULER_H
 
 #include "documentmodel.h"
+#include "opendocumentanalysiscontroller.h"
 #include "projectmodel.h"
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
@@ -91,6 +92,7 @@ private:
     DocumentModel* documentModel = nullptr;
     ProjectModel* projectModel = nullptr;
     SymbolAnalyzer* symbolAnalyzer = nullptr;
+    OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
 
     std::function<QString(const QString&)> openFileContentProvider;
     std::function<bool()> workspaceOpenProvider;
@@ -98,8 +100,6 @@ private:
     SymbolRelationshipEngine* relationshipEngine = nullptr;
     SmartRelationshipBuilder* relationshipBuilder = nullptr;
 
-    QMap<QString, QTimer*> openFileAnalysisTimers;
-    QMap<QString, QTimer*> fileChangeDebounceTimers;
     QMap<QString, QTimer*> relationshipAnalysisTimers;
     QMap<QString, QString> pendingRelationshipAnalysisContent;
     QMap<QString, QString> lastRelationshipAnalysisContent;
@@ -119,8 +119,6 @@ private:
     void onProjectChanged(const ProjectSnapshot& project);
     void clearProjectSemanticState();
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
-    void analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged);
-    void analyzeOpenDocumentsNow();
     void scheduleDiagnosticsRefresh(const QString& fileName);
     void scheduleRelationshipDataRefresh();
     bool applySingleFileRelationshipResult(const SingleFileRelationshipAnalysisResult& result);
@@ -134,8 +132,6 @@ private:
         std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const;
 
     QString contentForOpenFile(const QString& fileName) const;
-    bool isWorkspaceOpen() const;
-    bool lineContainsStructuralKeyword(const QString& content, int oneBasedLine) const;
     static bool contentDiffersBeyondWhitespace(const QString& oldContent,
                                                const QString& newContent);
 };

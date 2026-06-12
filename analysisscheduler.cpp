@@ -7,7 +7,6 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
 #include <QFuture>
-#include <QRegularExpression>
 #include <QTextStream>
 #include <QTimer>
 #include <utility>
@@ -30,6 +29,20 @@ QList<SemanticRelationship> toSemanticRelationships(
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
 {
+    openDocumentAnalysis = new OpenDocumentAnalysisController(this);
+    connect(openDocumentAnalysis,
+            &OpenDocumentAnalysisController::documentRefreshRequested,
+            this,
+            &AnalysisScheduler::documentRefreshRequested);
+    connect(openDocumentAnalysis,
+            &OpenDocumentAnalysisController::relationshipAnalysisRequested,
+            this,
+            &AnalysisScheduler::requestRelationshipAnalysis);
+    connect(openDocumentAnalysis,
+            &OpenDocumentAnalysisController::relationshipAnalysisScheduled,
+            this,
+            &AnalysisScheduler::scheduleRelationshipAnalysis);
+
     diagnosticsRefreshTimer = new QTimer(this);
     diagnosticsRefreshTimer->setSingleShot(true);
     diagnosticsRefreshTimer->setInterval(100);
@@ -100,10 +113,6 @@ AnalysisScheduler::~AnalysisScheduler()
 {
     cancelRelationshipAnalysis();
     cancelWorkspaceRelationshipAnalysis();
-    for (QTimer* timer : openFileAnalysisTimers)
-        timer->deleteLater();
-    for (QTimer* timer : fileChangeDebounceTimers)
-        timer->deleteLater();
     for (QTimer* timer : relationshipAnalysisTimers)
         timer->deleteLater();
 }
@@ -116,6 +125,8 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
         disconnect(documentModel, nullptr, this, nullptr);
 
     documentModel = model;
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->setDocumentModel(model);
     if (!documentModel)
         return;
 
@@ -157,6 +168,8 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
         disconnect(symbolAnalyzer, nullptr, this, nullptr);
 
     symbolAnalyzer = analyzer;
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->setSymbolAnalyzer(analyzer);
     if (!symbolAnalyzer)
         return;
 
@@ -189,11 +202,15 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
 {
     openFileContentProvider = std::move(provider);
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->setOpenFileContentProvider(openFileContentProvider);
 }
 
 void AnalysisScheduler::setWorkspaceOpenProvider(std::function<bool()> provider)
 {
     workspaceOpenProvider = std::move(provider);
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->setWorkspaceOpenProvider(workspaceOpenProvider);
 }
 
 void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> provider)
@@ -260,37 +277,14 @@ void AnalysisScheduler::setRelationshipBuilder(SmartRelationshipBuilder* builder
 
 void AnalysisScheduler::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
 {
-    if (fileName.isEmpty() || !symbolAnalyzer)
-        return;
-
-    cancelScheduledOpenFileAnalysis(fileName);
-
-    QTimer* timer = new QTimer(this);
-    timer->setSingleShot(true);
-    timer->setInterval(delayMs);
-    connect(timer, &QTimer::timeout, this, [this, fileName, timer]() {
-        const QString content = contentForOpenFile(fileName);
-        if (!content.isNull())
-            symbolAnalyzer->analyzeFileContentAsync(fileName, content);
-        if (openFileAnalysisTimers.value(fileName) == timer)
-            openFileAnalysisTimers.remove(fileName);
-        timer->deleteLater();
-    });
-    openFileAnalysisTimers[fileName] = timer;
-    timer->start();
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->scheduleOpenFileAnalysis(fileName, delayMs);
 }
 
 void AnalysisScheduler::cancelScheduledOpenFileAnalysis(const QString& fileName)
 {
-    auto it = openFileAnalysisTimers.find(fileName);
-    if (it == openFileAnalysisTimers.end())
-        return;
-
-    if (it.value()) {
-        it.value()->stop();
-        it.value()->deleteLater();
-    }
-    openFileAnalysisTimers.erase(it);
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->cancelScheduledOpenFileAnalysis(fileName);
 }
 
 void AnalysisScheduler::scheduleRelationshipAnalysis(const QString& fileName,
@@ -432,36 +426,14 @@ void AnalysisScheduler::cancelWorkspaceRelationshipAnalysis()
 
 void AnalysisScheduler::handleExternalFileChanged(const QString& fileName, int debounceMs)
 {
-    if (fileName.isEmpty() || !symbolAnalyzer)
-        return;
-
-    if (fileChangeDebounceTimers.contains(fileName)) {
-        QTimer* oldTimer = fileChangeDebounceTimers.take(fileName);
-        oldTimer->stop();
-        oldTimer->deleteLater();
-    }
-
-    QTimer* timer = new QTimer(this);
-    timer->setSingleShot(true);
-    connect(timer, &QTimer::timeout, this, [this, timer, fileName]() {
-        fileChangeDebounceTimers.remove(fileName);
-        timer->deleteLater();
-
-        symbolAnalyzer->analyzeFile(fileName);
-
-        QFile file(fileName);
-        if (!file.open(QIODevice::ReadOnly | QFile::Text))
-            return;
-        const QString content = QTextStream(&file).readAll();
-        requestRelationshipAnalysis(fileName, content);
-    });
-    fileChangeDebounceTimers[fileName] = timer;
-    timer->start(debounceMs);
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->handleExternalFileChanged(fileName, debounceMs);
 }
 
 void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 {
-    cancelScheduledOpenFileAnalysis(fileName);
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->handleDocumentClosed(fileName);
     if (relationshipAnalysisTimers.contains(fileName)) {
         QTimer* oldTimer = relationshipAnalysisTimers.take(fileName);
         oldTimer->stop();
@@ -469,7 +441,8 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
     }
     pendingRelationshipAnalysisContent.remove(fileName);
     lastRelationshipAnalysisContent.remove(fileName);
-    analyzeOpenDocumentsNow();
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->analyzeOpenDocumentsNow();
 
     if (relationshipEngine && !fileName.isEmpty())
         relationshipEngine->invalidateFileRelationships(fileName);
@@ -477,32 +450,23 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 
 void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
 {
-    analyzeOpenDocumentNow(snapshot, false);
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, false);
 }
 
 void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
 {
-    if (snapshot.fileName.isEmpty())
-        return;
-
-    const QString content = contentForOpenFile(snapshot.fileName);
-    if (content.isNull())
-        return;
-
-    scheduleRelationshipAnalysis(snapshot.fileName,
-                                 content,
-                                 kOpenDocumentRelationshipAnalysisDebounceMs);
-
-    if (isWorkspaceOpen())
-        return;
-
-    if (lineContainsStructuralKeyword(content, snapshot.cursorLine))
-        scheduleOpenFileAnalysis(snapshot.fileName, 1000);
+    if (openDocumentAnalysis) {
+        openDocumentAnalysis->handleDocumentEdited(
+            snapshot,
+            kOpenDocumentRelationshipAnalysisDebounceMs);
+    }
 }
 
 void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
 {
-    analyzeOpenDocumentNow(snapshot, true);
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, true);
 }
 
 void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
@@ -551,45 +515,6 @@ void AnalysisScheduler::onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, in
 
     emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
     requestWorkspaceRelationshipAnalysis(project);
-}
-
-void AnalysisScheduler::analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged)
-{
-    if (snapshot.fileName.isEmpty() || !symbolAnalyzer)
-        return;
-
-    const QString content = contentForOpenFile(snapshot.fileName);
-    if (content.isEmpty())
-        return;
-
-    if (skipUnchanged
-        && !SemanticIndex::getInstance()->contentAffectsSymbols(snapshot.fileName, content)) {
-        emit documentRefreshRequested(snapshot.fileName);
-        return;
-    }
-
-    symbolAnalyzer->analyzeFileContent(snapshot.fileName, content);
-    emit documentRefreshRequested(snapshot.fileName);
-    requestRelationshipAnalysis(snapshot.fileName, content);
-}
-
-void AnalysisScheduler::analyzeOpenDocumentsNow()
-{
-    if (!documentModel || !symbolAnalyzer)
-        return;
-
-    QList<OpenDocumentContent> documents;
-    for (const DocumentSnapshot& snapshot : documentModel->openDocuments()) {
-        if (snapshot.fileName.isEmpty())
-            continue;
-
-        const QString content = contentForOpenFile(snapshot.fileName);
-        if (content.isNull())
-            continue;
-        documents.append({snapshot.fileName, content});
-    }
-
-    symbolAnalyzer->analyzeOpenDocuments(documents);
 }
 
 void AnalysisScheduler::scheduleDiagnosticsRefresh(const QString& fileName)
@@ -724,51 +649,9 @@ WorkspaceRelationshipAnalysisResult AnalysisScheduler::analyzeWorkspaceRelations
 
 QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const
 {
-    if (documentModel) {
-        const QString modelText = documentModel->documentTextForFile(fileName);
-        if (!modelText.isNull())
-            return modelText;
-    }
-
-    if (openFileContentProvider)
-        return openFileContentProvider(fileName);
-    return QString();
-}
-
-bool AnalysisScheduler::isWorkspaceOpen() const
-{
-    return workspaceOpenProvider ? workspaceOpenProvider() : false;
-}
-
-bool AnalysisScheduler::lineContainsStructuralKeyword(const QString& content, int oneBasedLine) const
-{
-    if (content.isEmpty() || oneBasedLine <= 0)
-        return false;
-
-    const QStringList lines = content.split(QLatin1Char('\n'));
-    if (oneBasedLine > lines.size())
-        return false;
-
-    static const QStringList keywords = {
-        QLatin1String("module"),
-        QLatin1String("endmodule"),
-        QLatin1String("reg"),
-        QLatin1String("wire"),
-        QLatin1String("logic"),
-        QLatin1String("task"),
-        QLatin1String("endtask"),
-        QLatin1String("function"),
-        QLatin1String("endfunction"),
-    };
-
-    const QString line = lines[oneBasedLine - 1];
-    for (const QString& keyword : keywords) {
-        const QRegularExpression word(QStringLiteral("\\b%1\\b")
-                                          .arg(QRegularExpression::escape(keyword)));
-        if (line.contains(word))
-            return true;
-    }
-    return false;
+    return openDocumentAnalysis
+        ? openDocumentAnalysis->contentForOpenFile(fileName)
+        : QString();
 }
 
 bool AnalysisScheduler::contentDiffersBeyondWhitespace(const QString& oldContent,

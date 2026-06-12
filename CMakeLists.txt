@@ -82,6 +82,7 @@ set(ZEROSLACK_CORE_SOURCES
     modemanager.cpp
     mycodeeditor.cpp
     myhighlighter.cpp
+    opendocumentanalysiscontroller.cpp
     navigationcommandcoordinator.cpp
     navigationmanager.cpp
     navigationpanecoordinator.cpp
@@ -157,6 +158,7 @@ set(ZEROSLACK_CORE_SOURCES
     modemanager.h
     mycodeeditor.h
     myhighlighter.h
+    opendocumentanalysiscontroller.h
     modulehierarchymodel.h
     navigationcommandcoordinator.h
     navigationmanager.h
