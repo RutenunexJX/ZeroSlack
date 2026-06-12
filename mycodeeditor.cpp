@@ -1,6 +1,6 @@
 #include "mycodeeditor.h"
-#include "completionmodel.h"
 #include "editorappearance.h"
+#include "editorcompletionui.h"
 #include "editorcursornavigation.h"
 #include "editorfileidentity.h"
 #include "editorgeometry.h"
@@ -24,12 +24,10 @@
 #include <QTextBlock>
 #include <QApplication>
 #include <QRect>
-#include <QTimer>
 #include <QWheelEvent>
 #include <QWidget>
 
 #include <QAbstractItemView>
-#include <QCompleter>
 #include <QPixmap>
 #include <QPen>
 #include <QBrush>
@@ -51,171 +49,7 @@ struct MyCodeEditorState
     EditorSemanticRuntime semantic;
     EditorModeState modes;
 
-    struct CompletionUi {
-        QCompleter *completer = nullptr;
-        CompletionModel *model = nullptr;
-        QTimer *timer = nullptr;
-        int wordStartPos = 0;
-
-        void init(MyCodeEditor* editor)
-        {
-            model = new CompletionModel(editor);
-            completer = new QCompleter(editor);
-            completer->setModel(model);
-            completer->setWidget(editor);
-            completer->setCompletionMode(QCompleter::PopupCompletion);
-            completer->setCaseSensitivity(Qt::CaseInsensitive);
-            completer->setMaxVisibleItems(15);
-            timer = new QTimer(editor);
-            timer->setSingleShot(true);
-            timer->setInterval(0);
-        }
-
-        void attachToEditor(MyCodeEditor* editor, MyCodeEditorState* state)
-        {
-            init(editor);
-            QObject::connect(
-                timer,
-                &QTimer::timeout,
-                editor,
-                [state, editor]() {
-                    state->handleAutoCompleteTimer(editor);
-                });
-            QObject::connect(
-                completer,
-                QOverload<const QModelIndex &>::of(&QCompleter::activated),
-                editor,
-                [state, editor](const QModelIndex& index) {
-                    state->handleCompletionActivated(editor, index);
-                });
-            QObject::connect(
-                editor,
-                &QPlainTextEdit::textChanged,
-                editor,
-                [state, editor]() {
-                    state->handleTextChanged(editor);
-                });
-        }
-
-        QAbstractItemView* popup() const { return completer->popup(); }
-        bool popupVisible() const { return popup()->isVisible(); }
-        void hidePopup() const { popup()->hide(); }
-        void startTimer() const { timer->start(); }
-        void stopTimer() const { timer->stop(); }
-        int rowCount() const { return model->rowCount(); }
-        bool hasRows() const { return rowCount() > 0; }
-        QModelIndex currentIndex() const { return popup()->currentIndex(); }
-        QModelIndex firstSelectableIndex() const
-        {
-            return model->firstSelectableIndex();
-        }
-        void activateIndex(const QModelIndex& index) const
-        {
-            emit completer->activated(index);
-        }
-
-        EditorCompletionActivationContext activationContextForIndex(
-            const QModelIndex& index,
-            const EditorModeState& modes) const
-        {
-            const CompletionModel::CompletionItem item = model->getItem(index);
-            EditorCompletionActivationContext context;
-            context.selectable = model->isSelectableIndex(index);
-            context.alternateModeActive = modes.alternateModeActive;
-            context.commandModeActive = modes.commandModeActive;
-            context.itemText = item.text;
-            context.defaultValue = item.defaultValue;
-            return context;
-        }
-
-        EditorCompletionPopupKeyContext popupKeyContextForEvent(
-            QKeyEvent *event,
-            const EditorModeState& modes) const
-        {
-            EditorCompletionPopupKeyContext context;
-            context.key = event->key();
-            context.alternateModeActive = modes.alternateModeActive;
-            context.commandModeActive = modes.commandModeActive;
-            context.currentIndexValid = currentIndex().isValid();
-            context.hasRows = hasRows();
-            context.alternateBufferEmpty = modes.alternateBuffer.isEmpty();
-            return context;
-        }
-
-        void updateCommandModeCompletions(
-            const EditorCommandModeCompletionRefreshState& commandState) const
-        {
-            model->updateSymbolCompletions(
-                commandState.completion.symbols,
-                commandState.completion.completionPrefix,
-                commandState.completion.command.symbolType);
-        }
-
-        void updateSymbolCompletions(
-            const EditorCompletionState& completionState) const
-        {
-            model->updateCompletions(
-                completionState.completion.names,
-                completionState.completion.symbols,
-                completionState.prefix,
-                CompletionModel::SymbolCompletion);
-        }
-
-        void updateAlternateModeCompletions(
-            const EditorAlternateModeCompletionDisplayState& displayState) const
-        {
-            model->updateCommandCompletions(
-                displayState.matches,
-                displayState.normalizedInput);
-        }
-
-        void setReplacementStart(
-            int blockPosition,
-            int replacementStartColumn)
-        {
-            wordStartPos = blockPosition + replacementStartColumn;
-        }
-
-        QString wordUnderCursor(MyCodeEditor* editor)
-        {
-            QTextCursor cursor = editor->textCursor();
-            const int currentPosition = cursor.position();
-            cursor.movePosition(QTextCursor::StartOfWord);
-            wordStartPos = cursor.position();
-            cursor.setPosition(currentPosition);
-            cursor.movePosition(QTextCursor::EndOfWord);
-            cursor.setPosition(wordStartPos);
-            cursor.setPosition(currentPosition, QTextCursor::KeepAnchor);
-            return cursor.selectedText();
-        }
-
-        void replaceWordAtCursor(MyCodeEditor* editor, const QString& text) const
-        {
-            QTextCursor cursor = editor->textCursor();
-            cursor.setPosition(wordStartPos);
-            cursor.setPosition(
-                editor->textCursor().position(),
-                QTextCursor::KeepAnchor);
-            cursor.insertText(text);
-        }
-
-        void showForCursor(const QRect& cursorRectangle,
-                           bool selectFirstCompletion) const
-        {
-            if (!hasRows())
-                return;
-
-            QRect popupRectangle = cursorRectangle;
-            popupRectangle.setWidth(popup()->sizeHintForColumn(0) + 20);
-            if (selectFirstCompletion) {
-                const QModelIndex selectableIndex = firstSelectableIndex();
-                if (selectableIndex.isValid())
-                    popup()->setCurrentIndex(selectableIndex);
-            }
-
-            completer->complete(popupRectangle);
-        }
-    } completion;
+    EditorCompletionUi completion;
 
     EditorHighlightRefresh highlightRefresh;
 
@@ -364,7 +198,17 @@ struct MyCodeEditorState
         attachEditorConnections(editor);
         appearance.apply(editor);
         syntax.attachToEditor(editor);
-        completion.attachToEditor(editor, this);
+        completion.attachToEditor(
+            editor,
+            [this, editor]() {
+                handleAutoCompleteTimer(editor);
+            },
+            [this, editor](const QModelIndex& index) {
+                handleCompletionActivated(editor, index);
+            },
+            [this, editor]() {
+                handleTextChanged(editor);
+            });
         selections.highlightCurrentLine(editor);
         gutter.updateViewportMargins(editor);
     }
