@@ -69,21 +69,16 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
         return;
 
     applyAlternateMode(editor);
-    connect(editor, &MyCodeEditor::definitionNavigationRequested,
-            this, [this, editor](const QString& symbolName,
-                                 const EditorSemanticContext& context) {
-                handleDefinitionNavigationRequested(editor, symbolName, context);
-            });
     connect(editor, &MyCodeEditor::alternateCommandRequested,
             this, [this, editor](const QString& command) {
                 if (fileCommandCoordinator)
                     fileCommandCoordinator->executeAlternateCommandText(
                         editor, command);
             });
-    connect(editor, &MyCodeEditor::includeOpenRequested,
-            this, [this, editor](const QString& includePath,
-                                 const QString& currentFile) {
-                handleIncludeOpenRequested(editor, includePath, currentFile);
+    connect(editor, &MyCodeEditor::sourceNavigationRequested,
+            this, [this, editor](const EditorSourceNavigationTarget& target,
+                                 const EditorSemanticContext& context) {
+                handleSourceNavigationRequested(editor, target, context);
             });
     connect(editor, &MyCodeEditor::sourceSymbolActionRequested,
             this, &EditorCoordinator::handleSourceSymbolActionRequested);
@@ -155,6 +150,28 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
         target.fileName.isEmpty() ? context.fileName : target.fileName;
     navigationCommandCoordinator->navigateToFileAndLine(
         targetFile, target.line, target.column);
+}
+
+void EditorCoordinator::handleSourceNavigationRequested(
+    MyCodeEditor* editor,
+    const EditorSourceNavigationTarget& target,
+    const EditorSemanticContext& context) const
+{
+    const EditorSourceNavigationClickState clickState =
+        EditorSemanticContextService::getInstance()
+            ->sourceNavigationClickState(target);
+    if (!clickState.acceptEvent)
+        return;
+
+    if (clickState.action == EditorSourceNavigationClickAction::OpenInclude) {
+        handleIncludeOpenRequested(editor, clickState.text, context.fileName);
+        return;
+    }
+
+    if (clickState.action
+        == EditorSourceNavigationClickAction::NavigateToDefinition) {
+        handleDefinitionNavigationRequested(editor, clickState.text, context);
+    }
 }
 
 void EditorCoordinator::handleSourceSymbolActionRequested(

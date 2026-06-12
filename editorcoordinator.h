@@ -6,6 +6,7 @@
 
 class FileCommandCoordinator;
 struct EditorSemanticContext;
+struct EditorSourceNavigationTarget;
 enum class SourceSymbolAction;
 class ModeManager;
 class MyCodeEditor;
@@ -42,6 +43,10 @@ private:
     void handleDefinitionNavigationRequested(
         MyCodeEditor* editor,
         const QString& symbolName,
+        const EditorSemanticContext& context) const;
+    void handleSourceNavigationRequested(
+        MyCodeEditor* editor,
+        const EditorSourceNavigationTarget& target,
         const EditorSemanticContext& context) const;
     void handleSourceSymbolActionRequested(
         SourceSymbolAction action,

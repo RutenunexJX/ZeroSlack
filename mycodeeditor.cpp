@@ -754,18 +754,11 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
         const EditorSourceNavigationTarget target =
             sourceNavigationTargetAtPosition(event->pos());
-        const EditorSourceNavigationClickState clickState =
-            contextService()->sourceNavigationClickState(target);
-        if (clickState.action == EditorSourceNavigationClickAction::OpenInclude) {
-            emit includeOpenRequested(clickState.text, getFileName());
-        } else if (clickState.action
-                   == EditorSourceNavigationClickAction::NavigateToDefinition) {
-            emit definitionNavigationRequested(
-                clickState.text,
-                editorSemanticContextForPosition(clickState.contextCursorPosition));
-        }
+        emit sourceNavigationRequested(
+            target,
+            editorSemanticContextForPosition(target.cursorPosition));
 
-        if (clickState.acceptEvent) {
+        if (target.matched && !target.text.isEmpty()) {
             event->accept();
             return;
         }

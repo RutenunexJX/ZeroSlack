@@ -125,10 +125,9 @@ private:
     bool commandModeExitedByDoubleSpace = false;
 signals:
     void fileNameChanged(const QString& fileName);
-    void definitionNavigationRequested(const QString& symbolName,
-                                       const EditorSemanticContext& context);
     void alternateCommandRequested(const QString& command);
-    void includeOpenRequested(const QString& includePath, const QString& currentFile);
+    void sourceNavigationRequested(const EditorSourceNavigationTarget& target,
+                                   const EditorSemanticContext& context);
     void sourceSymbolActionRequested(SourceSymbolAction action,
                                      const EditorSemanticContext& context);
     void sourceSymbolContextMenuRequested(QMenu* menu,
