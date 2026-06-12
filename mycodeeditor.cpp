@@ -288,7 +288,14 @@ struct MyCodeEditorState
                 editor->document(),
                 &QTextDocument::contentsChange,
                 editor,
-                &MyCodeEditor::onTsContentsChange);
+                [this, editor](int position,
+                               int charsRemoved,
+                               int charsAdded) {
+                    applyEdit(position,
+                              charsRemoved,
+                              charsAdded,
+                              editor->document()->toPlainText());
+                });
             createHighlighter(editor->document());
         }
 
@@ -456,24 +463,30 @@ struct MyCodeEditorState
             timer->setInterval(0);
         }
 
-        void attachToEditor(MyCodeEditor* editor)
+        void attachToEditor(MyCodeEditor* editor, MyCodeEditorState* state)
         {
             init(editor);
             QObject::connect(
                 timer,
                 &QTimer::timeout,
                 editor,
-                &MyCodeEditor::onAutoCompleteTimer);
+                [state, editor]() {
+                    state->handleAutoCompleteTimer(editor);
+                });
             QObject::connect(
                 completer,
                 QOverload<const QModelIndex &>::of(&QCompleter::activated),
                 editor,
-                &MyCodeEditor::onCompletionActivated);
+                [state, editor](const QModelIndex& index) {
+                    state->handleCompletionActivated(editor, index);
+                });
             QObject::connect(
                 editor,
                 &QPlainTextEdit::textChanged,
                 editor,
-                &MyCodeEditor::onTextChanged);
+                [state, editor]() {
+                    state->handleTextChanged(editor);
+                });
         }
 
         QAbstractItemView* popup() const { return completer->popup(); }
@@ -610,14 +623,16 @@ struct MyCodeEditorState
             timer->start(0);
         }
 
-        void attachToEditor(MyCodeEditor* editor)
+        void attachToEditor(MyCodeEditor* editor, MyCodeEditorState* state)
         {
             init(editor);
             QObject::connect(
                 timer,
                 &QTimer::timeout,
                 editor,
-                &MyCodeEditor::highlightCurrentLine);
+                [state, editor]() {
+                    state->selections.highlightCurrentLine(editor);
+                });
 
             auto scheduleHighlightRefresh = [this]() { schedule(); };
             QObject::connect(
@@ -888,17 +903,21 @@ struct MyCodeEditorState
 
     void attachEditorConnections(MyCodeEditor* editor)
     {
-        highlightRefresh.attachToEditor(editor);
+        highlightRefresh.attachToEditor(editor, this);
         QObject::connect(
             editor,
             &QPlainTextEdit::blockCountChanged,
             editor,
-            &MyCodeEditor::updateLineNumberWidgetWidth);
+            [this, editor]() {
+                gutter.updateViewportMargins(editor);
+            });
         QObject::connect(
             editor,
             &QPlainTextEdit::updateRequest,
             editor,
-            &MyCodeEditor::updateLineNumberWidget);
+            [this, editor](const QRect& rect, int dy) {
+                gutter.handleUpdateRequest(editor, rect, dy);
+            });
     }
 
     EditorSemanticContextService* semanticService() const
@@ -1451,9 +1470,9 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     state->attachEditorConnections(this);
     state->appearance.apply(this);
     state->syntax.attachToEditor(this);
-    state->completion.attachToEditor(this);
+    state->completion.attachToEditor(this, state.get());
 
-    highlightCurrentLine();
+    state->selections.highlightCurrentLine(this);
     state->gutter.updateViewportMargins(this);
 
     setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -1465,24 +1484,9 @@ MyCodeEditor::~MyCodeEditor()
     state->shutdown();
 }
 
-void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
-{
-    // Incrementally update the tree-sitter model (syntax keeps the pre-edit text, so it can derive
-    // the old end point itself). Runs before the highlighter's reformat (connected later).
-    state->syntax.applyEdit(position,
-                            charsRemoved,
-                            charsAdded,
-                            document()->toPlainText());
-}
-
-void MyCodeEditor::highlightCurrentLine()
-{
-    state->selections.highlightCurrentLine(this);
-}
-
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 {
-    highlightCurrentLine();
+    state->selections.highlightCurrentLine(this);
 }
 
 void MyCodeEditor::setAlternateModeEnabled(bool enabled)
@@ -1508,16 +1512,6 @@ qreal MyCodeEditor::getBlockHeight(int blockNumber) const
 qreal MyCodeEditor::getDocumentHeightPx() const
 {
     return state->geometry.documentHeightPx(this);
-}
-
-void MyCodeEditor::updateLineNumberWidget(QRect rect, int dy)
-{
-    state->gutter.handleUpdateRequest(this, rect, dy);
-}
-
-void MyCodeEditor::updateLineNumberWidgetWidth()
-{
-    state->gutter.updateViewportMargins(this);
 }
 
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
@@ -1559,16 +1553,6 @@ QString MyCodeEditor::currentModuleName() const
     return state->currentModuleName(this);
 }
 
-void MyCodeEditor::onTextChanged()
-{
-    state->handleTextChanged(this);
-}
-
-void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
-{
-    state->handleCompletionActivated(this, index);
-}
-
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
     state->handleControlKeyPress(this, event);
@@ -1590,11 +1574,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         return;
 
     QPlainTextEdit::keyPressEvent(event);
-}
-
-void MyCodeEditor::onAutoCompleteTimer()
-{
-    state->handleAutoCompleteTimer(this);
 }
 
 void MyCodeEditor::executeAlternateModeCommand(const QString &command)

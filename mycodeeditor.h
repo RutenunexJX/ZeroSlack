@@ -9,7 +9,6 @@ class AnalysisCoordinator;
 class DocumentModel;
 class EditorCoordinator;
 class NavigationCommandCoordinator;
-class QModelIndex;
 class QMenu;
 class QMouseEvent;
 class QRect;
@@ -32,14 +31,6 @@ public:
     ~MyCodeEditor();
 
 private:
-    void highlightCurrentLine();
-    void updateLineNumberWidget(QRect rect, int dy);
-    void updateLineNumberWidgetWidth();
-    void onTextChanged();
-    void onAutoCompleteTimer();
-    void onCompletionActivated(const QModelIndex &index);
-    void onTsContentsChange(int position, int charsRemoved, int charsAdded);
-
 protected:
     void keyPressEvent(QKeyEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
