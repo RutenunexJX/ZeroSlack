@@ -19,14 +19,151 @@ SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
     ProblemsPanelCoordinator* problemsPanel,
     ReferencesPanelCoordinator* referencesPanel,
     RelationshipsPanelCoordinator* relationshipsPanel)
-    : tabManager(tabManager)
-    , workspaceManager(workspaceManager)
-    , navigationManager(navigationManager)
-    , navigationCommandCoordinator(navigationCommandCoordinator)
-    , problemsPanel(problemsPanel)
-    , referencesPanel(referencesPanel)
-    , relationshipsPanel(relationshipsPanel)
 {
+    dependencies.set(tabManager,
+                     workspaceManager,
+                     navigationManager,
+                     navigationCommandCoordinator);
+    panels.set(problemsPanel, referencesPanel, relationshipsPanel);
+}
+
+void SemanticPanelRefreshCoordinator::ContextDependencies::set(
+    TabManager* newTabManager,
+    WorkspaceManager* newWorkspaceManager,
+    NavigationManager* newNavigationManager,
+    NavigationCommandCoordinator* newNavigationCommandCoordinator)
+{
+    tabManager = newTabManager;
+    workspaceManager = newWorkspaceManager;
+    navigationManager = newNavigationManager;
+    navigationCommandCoordinator = newNavigationCommandCoordinator;
+}
+
+QString SemanticPanelRefreshCoordinator::ContextDependencies::currentFileName() const
+{
+    return tabManager ? tabManager->getCurrentDocument().fileName : QString();
+}
+
+QStringList SemanticPanelRefreshCoordinator::ContextDependencies::workspaceFiles() const
+{
+    return workspaceManager ? workspaceManager->getSystemVerilogFiles() : QStringList();
+}
+
+void SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLine(
+    const QString& fileName,
+    int line,
+    int column) const
+{
+    if (navigationCommandCoordinator)
+        navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
+}
+
+void SemanticPanelRefreshCoordinator::ContextDependencies::handleActiveEditorChanged(
+    MyCodeEditor* editor) const
+{
+    const DocumentSnapshot document =
+        tabManager ? tabManager->getDocumentForEditor(editor) : DocumentSnapshot();
+    if (editor && navigationManager)
+        navigationManager->onTabChanged(document.fileName);
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::set(
+    ProblemsPanelCoordinator* newProblemsPanel,
+    ReferencesPanelCoordinator* newReferencesPanel,
+    RelationshipsPanelCoordinator* newRelationshipsPanel)
+{
+    problemsPanel = newProblemsPanel;
+    referencesPanel = newReferencesPanel;
+    relationshipsPanel = newRelationshipsPanel;
+}
+
+bool SemanticPanelRefreshCoordinator::PanelSet::isConfigured() const
+{
+    return configured;
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::markConfigured()
+{
+    configured = true;
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::configureProblemsPanel(
+    const CurrentFileProvider& currentFileProvider,
+    const WorkspaceFilesProvider& workspaceFilesProvider,
+    const NavigationHandler& navigationHandler) const
+{
+    if (!problemsPanel)
+        return;
+
+    problemsPanel->setCurrentFileProvider(currentFileProvider);
+    problemsPanel->setWorkspaceFilesProvider(workspaceFilesProvider);
+    problemsPanel->setNavigationHandler(navigationHandler);
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::configureReferencesPanel(
+    const WorkspaceFilesProvider& workspaceFilesProvider,
+    const NavigationHandler& navigationHandler,
+    const StatusMessageHandler& statusMessageHandler) const
+{
+    if (!referencesPanel)
+        return;
+
+    referencesPanel->setWorkspaceFilesProvider(workspaceFilesProvider);
+    referencesPanel->setNavigationHandler(navigationHandler);
+    referencesPanel->setStatusMessageHandler(statusMessageHandler);
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::configureRelationshipsPanel(
+    const NavigationHandler& navigationHandler,
+    const StatusMessageHandler& statusMessageHandler) const
+{
+    if (!relationshipsPanel)
+        return;
+
+    relationshipsPanel->setNavigationHandler(navigationHandler);
+    relationshipsPanel->setStatusMessageHandler(statusMessageHandler);
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::updateProblemsPanel(
+    const QString& fileName) const
+{
+    if (problemsPanel)
+        problemsPanel->update(fileName);
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::showReferencesForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (referencesPanel)
+        referencesPanel->showReferencesForSymbol(symbolName, fileName, moduleName);
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::refreshReferencesPanel() const
+{
+    if (referencesPanel)
+        referencesPanel->refresh();
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::showRelationshipsForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (relationshipsPanel)
+        relationshipsPanel->showRelationshipsForSymbol(symbolName, fileName, moduleName);
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::refreshRelationshipsPanel() const
+{
+    if (relationshipsPanel)
+        relationshipsPanel->refresh();
+}
+
+bool SemanticPanelRefreshCoordinator::PanelSet::problemsPanelShowsCurrentFile() const
+{
+    return problemsPanel && problemsPanel->showsCurrentFileScope();
 }
 
 void SemanticPanelRefreshCoordinator::setStatusMessageHandler(
@@ -37,54 +174,38 @@ void SemanticPanelRefreshCoordinator::setStatusMessageHandler(
 
 void SemanticPanelRefreshCoordinator::configurePanels()
 {
-    if (panelsConfigured)
+    if (panels.isConfigured())
         return;
 
-    if (problemsPanel) {
-        problemsPanel->setCurrentFileProvider([this]() {
-            return currentFileName();
-        });
-        problemsPanel->setWorkspaceFilesProvider([this]() {
-            return workspaceFiles();
-        });
-        problemsPanel->setNavigationHandler(
-            [this](const QString& fileName, int line, int column) {
-                navigateToFileAndLine(fileName, line, column);
-            });
-    }
+    const CurrentFileProvider currentFileProvider = [this]() {
+        return currentFileName();
+    };
+    const WorkspaceFilesProvider workspaceFilesProvider = [this]() {
+        return workspaceFiles();
+    };
+    const NavigationHandler navigationHandler =
+        [this](const QString& fileName, int line, int column) {
+            navigateToFileAndLine(fileName, line, column);
+        };
+    const StatusMessageHandler statusMessageHandler =
+        [this](const QString& message, int timeoutMs) {
+            showStatusMessage(message, timeoutMs);
+        };
 
-    if (referencesPanel) {
-        referencesPanel->setWorkspaceFilesProvider([this]() {
-            return workspaceFiles();
-        });
-        referencesPanel->setNavigationHandler(
-            [this](const QString& fileName, int line, int column) {
-                navigateToFileAndLine(fileName, line, column);
-            });
-        referencesPanel->setStatusMessageHandler(
-            [this](const QString& message, int timeoutMs) {
-                showStatusMessage(message, timeoutMs);
-            });
-    }
-
-    if (relationshipsPanel) {
-        relationshipsPanel->setNavigationHandler(
-            [this](const QString& fileName, int line, int column) {
-                navigateToFileAndLine(fileName, line, column);
-            });
-        relationshipsPanel->setStatusMessageHandler(
-            [this](const QString& message, int timeoutMs) {
-                showStatusMessage(message, timeoutMs);
-            });
-    }
-
-    panelsConfigured = true;
+    panels.configureProblemsPanel(currentFileProvider,
+                                  workspaceFilesProvider,
+                                  navigationHandler);
+    panels.configureReferencesPanel(workspaceFilesProvider,
+                                    navigationHandler,
+                                    statusMessageHandler);
+    panels.configureRelationshipsPanel(navigationHandler,
+                                       statusMessageHandler);
+    panels.markConfigured();
 }
 
 void SemanticPanelRefreshCoordinator::updateProblemsPanel(const QString& fileName)
 {
-    if (problemsPanel)
-        problemsPanel->update(fileName);
+    panels.updateProblemsPanel(fileName);
 }
 
 void SemanticPanelRefreshCoordinator::showReferencesForSymbol(
@@ -92,14 +213,12 @@ void SemanticPanelRefreshCoordinator::showReferencesForSymbol(
     const QString& fileName,
     const QString& moduleName)
 {
-    if (referencesPanel)
-        referencesPanel->showReferencesForSymbol(symbolName, fileName, moduleName);
+    panels.showReferencesForSymbol(symbolName, fileName, moduleName);
 }
 
 void SemanticPanelRefreshCoordinator::refreshReferencesPanel()
 {
-    if (referencesPanel)
-        referencesPanel->refresh();
+    panels.refreshReferencesPanel();
 }
 
 void SemanticPanelRefreshCoordinator::showRelationshipsForSymbol(
@@ -107,34 +226,29 @@ void SemanticPanelRefreshCoordinator::showRelationshipsForSymbol(
     const QString& fileName,
     const QString& moduleName)
 {
-    if (relationshipsPanel)
-        relationshipsPanel->showRelationshipsForSymbol(symbolName, fileName, moduleName);
+    panels.showRelationshipsForSymbol(symbolName, fileName, moduleName);
 }
 
 void SemanticPanelRefreshCoordinator::refreshRelationshipsPanel()
 {
-    if (relationshipsPanel)
-        relationshipsPanel->refresh();
+    panels.refreshRelationshipsPanel();
 }
 
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
-    const DocumentSnapshot document =
-        tabManager ? tabManager->getDocumentForEditor(editor) : DocumentSnapshot();
-    if (editor && navigationManager)
-        navigationManager->onTabChanged(document.fileName);
+    dependencies.handleActiveEditorChanged(editor);
     if (problemsPanelShowsCurrentFile())
         updateProblemsPanel();
 }
 
 QString SemanticPanelRefreshCoordinator::currentFileName() const
 {
-    return tabManager ? tabManager->getCurrentDocument().fileName : QString();
+    return dependencies.currentFileName();
 }
 
 QStringList SemanticPanelRefreshCoordinator::workspaceFiles() const
 {
-    return workspaceManager ? workspaceManager->getSystemVerilogFiles() : QStringList();
+    return dependencies.workspaceFiles();
 }
 
 void SemanticPanelRefreshCoordinator::navigateToFileAndLine(
@@ -142,8 +256,7 @@ void SemanticPanelRefreshCoordinator::navigateToFileAndLine(
     int line,
     int column) const
 {
-    if (navigationCommandCoordinator)
-        navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
+    dependencies.navigateToFileAndLine(fileName, line, column);
 }
 
 void SemanticPanelRefreshCoordinator::showStatusMessage(
@@ -156,5 +269,5 @@ void SemanticPanelRefreshCoordinator::showStatusMessage(
 
 bool SemanticPanelRefreshCoordinator::problemsPanelShowsCurrentFile() const
 {
-    return problemsPanel && problemsPanel->showsCurrentFileScope();
+    return panels.problemsPanelShowsCurrentFile();
 }

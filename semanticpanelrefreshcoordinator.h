@@ -41,20 +41,73 @@ public:
     void handleActiveEditorChanged(MyCodeEditor* editor);
 
 private:
+    using CurrentFileProvider = std::function<QString()>;
+    using WorkspaceFilesProvider = std::function<QStringList()>;
+    using NavigationHandler =
+        std::function<void(const QString&, int, int)>;
+    using StatusMessageHandler =
+        std::function<void(const QString&, int)>;
+
+    struct ContextDependencies {
+        TabManager* tabManager = nullptr;
+        WorkspaceManager* workspaceManager = nullptr;
+        NavigationManager* navigationManager = nullptr;
+        NavigationCommandCoordinator* navigationCommandCoordinator = nullptr;
+
+        void set(TabManager* tabManager,
+                 WorkspaceManager* workspaceManager,
+                 NavigationManager* navigationManager,
+                 NavigationCommandCoordinator* navigationCommandCoordinator);
+        QString currentFileName() const;
+        QStringList workspaceFiles() const;
+        void navigateToFileAndLine(const QString& fileName,
+                                   int line,
+                                   int column) const;
+        void handleActiveEditorChanged(MyCodeEditor* editor) const;
+    };
+
+    struct PanelSet {
+        ProblemsPanelCoordinator* problemsPanel = nullptr;
+        ReferencesPanelCoordinator* referencesPanel = nullptr;
+        RelationshipsPanelCoordinator* relationshipsPanel = nullptr;
+        bool configured = false;
+
+        void set(ProblemsPanelCoordinator* problemsPanel,
+                 ReferencesPanelCoordinator* referencesPanel,
+                 RelationshipsPanelCoordinator* relationshipsPanel);
+        bool isConfigured() const;
+        void markConfigured();
+        void configureProblemsPanel(
+            const CurrentFileProvider& currentFileProvider,
+            const WorkspaceFilesProvider& workspaceFilesProvider,
+            const NavigationHandler& navigationHandler) const;
+        void configureReferencesPanel(
+            const WorkspaceFilesProvider& workspaceFilesProvider,
+            const NavigationHandler& navigationHandler,
+            const StatusMessageHandler& statusMessageHandler) const;
+        void configureRelationshipsPanel(
+            const NavigationHandler& navigationHandler,
+            const StatusMessageHandler& statusMessageHandler) const;
+        void updateProblemsPanel(const QString& fileName) const;
+        void showReferencesForSymbol(const QString& symbolName,
+                                     const QString& fileName,
+                                     const QString& moduleName) const;
+        void refreshReferencesPanel() const;
+        void showRelationshipsForSymbol(const QString& symbolName,
+                                        const QString& fileName,
+                                        const QString& moduleName) const;
+        void refreshRelationshipsPanel() const;
+        bool problemsPanelShowsCurrentFile() const;
+    };
+
     QString currentFileName() const;
     QStringList workspaceFiles() const;
     void navigateToFileAndLine(const QString& fileName, int line, int column) const;
     void showStatusMessage(const QString& message, int timeoutMs) const;
     bool problemsPanelShowsCurrentFile() const;
 
-    TabManager* tabManager = nullptr;
-    WorkspaceManager* workspaceManager = nullptr;
-    NavigationManager* navigationManager = nullptr;
-    NavigationCommandCoordinator* navigationCommandCoordinator = nullptr;
-    ProblemsPanelCoordinator* problemsPanel = nullptr;
-    ReferencesPanelCoordinator* referencesPanel = nullptr;
-    RelationshipsPanelCoordinator* relationshipsPanel = nullptr;
-    bool panelsConfigured = false;
+    ContextDependencies dependencies;
+    PanelSet panels;
 
     std::function<void(const QString&, int)> statusMessageHandler;
 };
