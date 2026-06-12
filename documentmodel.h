@@ -119,6 +119,7 @@ private:
         DocumentSnapshot snapshotForFile(const QString& fileName) const;
         MyCodeEditor* editorForFile(const QString& fileName) const;
         QString textForDocumentId(const QString& documentId) const;
+        QString textForFile(const QString& fileName) const;
         QString textForEditor(MyCodeEditor* editor) const;
     };
 

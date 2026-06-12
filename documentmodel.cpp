@@ -244,6 +244,12 @@ QString DocumentModel::DocumentRegistry::textForDocumentId(
     return documents.textForEditor(editor);
 }
 
+QString DocumentModel::DocumentRegistry::textForFile(
+    const QString& fileName) const
+{
+    return documents.textForEditor(indexes.editorForFileName(fileName));
+}
+
 QString DocumentModel::DocumentRegistry::textForEditor(
     MyCodeEditor* editor) const
 {
@@ -435,10 +441,8 @@ QString DocumentModel::documentText(const QString& documentId) const
 
 QString DocumentModel::documentTextForFile(const QString& fileName) const
 {
-    const DocumentSnapshot snapshot = documentForFile(fileName);
-    return snapshot.documentId.isEmpty()
-        ? QString()
-        : documentText(snapshot.documentId);
+    const QString normalized = snapshotReader.normalizedFileName(fileName);
+    return registry.textForFile(normalized);
 }
 
 QString DocumentModel::documentTextForEditor(MyCodeEditor* editor) const
