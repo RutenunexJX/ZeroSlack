@@ -1,9 +1,10 @@
 #include "mycodeeditor.h"
-#include "myhighlighter.h"
 #include "completionmodel.h"
+#include "editorgutter.h"
+#include "editorselection.h"
+#include "editorsyntaxstate.h"
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
-#include "tsdocument.h"
 
 #include "syminfo.h"
 
@@ -16,6 +17,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QTextCursor>
+#include <QTextBlock>
 #include <QApplication>
 #include <QRect>
 #include <QTimer>
@@ -30,56 +32,6 @@
 #include <QBrush>
 #include <memory>
 
-namespace {
-constexpr int kPrimarySelectionProperty = QTextFormat::UserProperty;
-constexpr int kScopeBackgroundSelectionMarker = 997;
-constexpr int kCurrentLineSelectionMarker = 998;
-constexpr int kCommandSelectionProperty = kPrimarySelectionProperty;
-constexpr int kCommandSelectionMarker = 999;
-constexpr int kHoveredSymbolSelectionProperty = QTextFormat::UserProperty + 1;
-constexpr int kHoveredSymbolSelectionMarker = 1001;
-
-void removeSelectionsByProperty(
-    QList<QTextEdit::ExtraSelection>& selections,
-    int property,
-    int value)
-{
-    selections.erase(
-        std::remove_if(selections.begin(), selections.end(),
-            [property, value](const QTextEdit::ExtraSelection& selection) {
-                return selection.format.property(property).toInt() == value;
-            }),
-        selections.end());
-}
-
-QList<QTextEdit::ExtraSelection> editorSelectionsWithout(
-    QPlainTextEdit* editor,
-    int property,
-    int value)
-{
-    QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
-    removeSelectionsByProperty(selections, property, value);
-    return selections;
-}
-}
-
-class LineNumberWidget : public QWidget
-{
-public:
-    explicit LineNumberWidget(
-        MyCodeEditor *editor = nullptr,
-        MyCodeEditorState *editorState = nullptr);
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
-
-private:
-    MyCodeEditor *codeEditor = nullptr;
-    MyCodeEditorState *state = nullptr;
-};
-
 struct MyCodeEditorState
 {
     struct EditorAppearance {
@@ -93,119 +45,7 @@ struct MyCodeEditorState
         }
     } appearance;
 
-    struct GutterUi {
-        LineNumberWidget *widget = nullptr;
-
-        void init(MyCodeEditor* editor, MyCodeEditorState* state)
-        {
-            widget = new LineNumberWidget(editor, state);
-        }
-
-        void destroy()
-        {
-            delete widget;
-            widget = nullptr;
-        }
-
-        int widthFor(MyCodeEditor* editor) const
-        {
-            return 8
-                + QString::number(editor->blockCount() + 1).length()
-                    * editor->fontMetrics().horizontalAdvance(QChar('0'));
-        }
-
-        void refresh(const QRect& rect, int dy, int width) const
-        {
-            if (!widget)
-                return;
-
-            if (dy)
-                widget->scroll(0, dy);
-            else
-                widget->update(0, rect.y(), width, rect.height());
-        }
-
-        void handleUpdateRequest(
-            MyCodeEditor* editor,
-            const QRect& rect,
-            int dy) const
-        {
-            refresh(rect, dy, widthFor(editor));
-        }
-
-        void updateViewportMargins(MyCodeEditor* editor) const
-        {
-            editor->setViewportMargins(widthFor(editor), 0, 0, 0);
-        }
-
-        void resizeTo(MyCodeEditor* editor, const QRect& contentsRect) const
-        {
-            if (widget)
-                widget->setGeometry(
-                    0,
-                    0,
-                    widthFor(editor),
-                    contentsRect.height());
-        }
-
-        void paint(MyCodeEditor* editor, QPaintEvent *event) const
-        {
-            QPainter painter(widget);
-            painter.fillRect(event->rect(), QColor(100, 100, 100, 20));
-
-            QTextBlock block = editor->firstVisibleBlock();
-            int blockNumber = block.blockNumber();
-            const int cursorTop = editor->blockBoundingGeometry(
-                editor->textCursor().block()).translated(
-                    editor->contentOffset()).top();
-            int top = editor->blockBoundingGeometry(block).translated(
-                editor->contentOffset()).top();
-            int bottom = top + editor->blockBoundingRect(block).height();
-
-            while (block.isValid() && top <= event->rect().bottom()) {
-                painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
-                painter.drawText(
-                    0,
-                    top,
-                    widthFor(editor) - 3,
-                    bottom - top,
-                    Qt::AlignRight,
-                    QString::number(blockNumber + 1));
-
-                block = block.next();
-                top = bottom;
-                bottom = top + editor->blockBoundingRect(block).height();
-                blockNumber++;
-            }
-        }
-
-        void handleMousePress(MyCodeEditor* editor, QMouseEvent *event) const
-        {
-            QTextBlock block = editor->document()->findBlockByLineNumber(
-                static_cast<int>(event->position().y())
-                    / editor->fontMetrics().height()
-                + editor->verticalScrollBar()->value());
-            editor->setTextCursor(QTextCursor(block));
-        }
-
-        void handleWheel(MyCodeEditor* editor, QWheelEvent *event) const
-        {
-            const QPoint angle = event->angleDelta();
-            if (!angle.isNull()) {
-                const int dy = angle.y();
-                const int dx = angle.x();
-                if (dy != 0) {
-                    QScrollBar* bar = editor->verticalScrollBar();
-                    bar->setValue(bar->value() - dy);
-                } else if (dx != 0) {
-                    QScrollBar* bar = editor->horizontalScrollBar();
-                    bar->setValue(bar->value() - dx);
-                }
-            }
-
-            event->accept();
-        }
-    } gutter;
+    EditorGutter gutter;
 
     struct DocumentGeometry {
         EditorBlockGeometry blockGeometry(
@@ -260,59 +100,7 @@ struct MyCodeEditorState
         }
     } cursorNavigation;
 
-    struct SyntaxTreeState {
-        std::unique_ptr<TSDocument> document;
-        MyHighlighter *highlighter = nullptr;
-
-        void init()
-        {
-            document = std::make_unique<TSDocument>();
-        }
-
-        void syncText(const QString& text)
-        {
-            document->setText(text);
-        }
-
-        void createHighlighter(QTextDocument* textDocument)
-        {
-            highlighter = new MyHighlighter(textDocument, document.get());
-        }
-
-        void attachToEditor(MyCodeEditor* editor)
-        {
-            syncText(editor->document()->toPlainText());
-            QObject::connect(
-                editor->document(),
-                &QTextDocument::contentsChange,
-                editor,
-                [this, editor](int position,
-                               int charsRemoved,
-                               int charsAdded) {
-                    applyEdit(position,
-                              charsRemoved,
-                              charsAdded,
-                              editor->document()->toPlainText());
-                });
-            createHighlighter(editor->document());
-        }
-
-        void applyEdit(int position,
-                       int charsRemoved,
-                       int charsAdded,
-                       const QString& text)
-        {
-            document->applyEditChars(position,
-                                     position + charsRemoved,
-                                     position + charsAdded,
-                                     text);
-        }
-
-        QString moduleNameAt(int charPos) const
-        {
-            return document->enclosingModuleName(charPos < 0 ? 0 : charPos);
-        }
-    } syntax;
+    EditorSyntaxState syntax;
 
     struct FileIdentity {
         QString fileName;
@@ -607,44 +395,7 @@ struct MyCodeEditorState
         }
     } completion;
 
-    struct HighlightRefresh {
-        QTimer *timer = nullptr;
-
-        void init(MyCodeEditor* editor)
-        {
-            timer = new QTimer(editor);
-            timer->setSingleShot(true);
-        }
-
-        void schedule() const
-        {
-            timer->start(0);
-        }
-
-        void attachToEditor(MyCodeEditor* editor, MyCodeEditorState* state)
-        {
-            init(editor);
-            QObject::connect(
-                timer,
-                &QTimer::timeout,
-                editor,
-                [state, editor]() {
-                    state->refreshScopeAndCurrentLineHighlight(editor);
-                });
-
-            auto scheduleHighlightRefresh = [this]() { schedule(); };
-            QObject::connect(
-                editor,
-                &QPlainTextEdit::cursorPositionChanged,
-                editor,
-                scheduleHighlightRefresh);
-            QObject::connect(
-                editor,
-                &QPlainTextEdit::textChanged,
-                editor,
-                scheduleHighlightRefresh);
-        }
-    } highlightRefresh;
+    EditorHighlightRefresh highlightRefresh;
 
     struct SourceNavigationHover {
         bool ctrlPressed = false;
@@ -748,148 +499,13 @@ struct MyCodeEditorState
         }
     } sourceHover;
 
-    struct SelectionUi {
-        void highlightCurrentLine(MyCodeEditor* editor)
-        {
-            QList<QTextEdit::ExtraSelection> selections =
-                editor->extraSelections();
-            selections.erase(
-                std::remove_if(selections.begin(), selections.end(),
-                    [](const QTextEdit::ExtraSelection& selection) {
-                        const int property = selection.format
-                            .property(kPrimarySelectionProperty)
-                            .toInt();
-                        return property == kScopeBackgroundSelectionMarker
-                            || property == kCurrentLineSelectionMarker;
-                    }),
-                selections.end());
-
-            QTextEdit::ExtraSelection currentLine;
-            currentLine.format.setBackground(QColor(0, 100, 100, 20));
-            currentLine.format.setProperty(
-                QTextFormat::FullWidthSelection,
-                true);
-            currentLine.format.setProperty(
-                kPrimarySelectionProperty,
-                kCurrentLineSelectionMarker);
-            currentLine.cursor = editor->textCursor();
-            selections.append(currentLine);
-
-            clampSelectionsToDocument(editor->document(), selections);
-            editor->setExtraSelections(selections);
-        }
-
-        void removeByProperty(QPlainTextEdit* editor, int property, int value)
-        {
-            QList<QTextEdit::ExtraSelection> selections =
-                editorSelectionsWithout(editor, property, value);
-            editor->setExtraSelections(selections);
-        }
-
-        void highlightCommand(MyCodeEditor* editor, int prefixPosition)
-        {
-            if (prefixPosition < 0)
-                return;
-
-            QList<QTextEdit::ExtraSelection> selections =
-                editorSelectionsWithout(
-                    editor,
-                    kCommandSelectionProperty,
-                    kCommandSelectionMarker);
-
-            QTextEdit::ExtraSelection commandSelection;
-            commandSelection.format.setBackground(QColor(60, 60, 60, 180));
-            commandSelection.format.setForeground(QColor(255, 255, 255));
-            commandSelection.format.setProperty(
-                kCommandSelectionProperty,
-                kCommandSelectionMarker);
-
-            QTextCursor commandCursor = editor->textCursor();
-            const int commandStartPosition =
-                commandCursor.block().position() + prefixPosition;
-            commandCursor.setPosition(commandStartPosition);
-            commandCursor.setPosition(
-                editor->textCursor().position(),
-                QTextCursor::KeepAnchor);
-            commandSelection.cursor = commandCursor;
-
-            selections.append(commandSelection);
-            editor->setExtraSelections(selections);
-        }
-
-        void clearCommand(QPlainTextEdit* editor)
-        {
-            removeByProperty(
-                editor,
-                kCommandSelectionProperty,
-                kCommandSelectionMarker);
-        }
-
-        void highlightHoveredSymbol(
-            MyCodeEditor* editor,
-            const EditorSourceNavigationTarget& target)
-        {
-            if (target.text.isEmpty()
-                || target.startPos < 0
-                || target.endPos <= target.startPos) {
-                return;
-            }
-
-            QTextEdit::ExtraSelection highlight;
-            highlight.cursor = editor->textCursor();
-            highlight.cursor.setPosition(target.startPos);
-            highlight.cursor.setPosition(
-                target.endPos,
-                QTextCursor::KeepAnchor);
-            highlight.format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
-            highlight.format.setUnderlineColor(QColor(0, 100, 200));
-            highlight.format.setForeground(QColor(0, 100, 200));
-            highlight.format.setProperty(
-                kHoveredSymbolSelectionProperty,
-                kHoveredSymbolSelectionMarker);
-
-            QList<QTextEdit::ExtraSelection> selections =
-                editorSelectionsWithout(
-                    editor,
-                    kHoveredSymbolSelectionProperty,
-                    kHoveredSymbolSelectionMarker);
-            selections.append(highlight);
-            editor->setExtraSelections(selections);
-        }
-
-        void clearHoveredSymbol(
-            QPlainTextEdit* editor,
-            SourceNavigationHover& hover)
-        {
-            removeByProperty(
-                editor,
-                kHoveredSymbolSelectionProperty,
-                kHoveredSymbolSelectionMarker);
-            hover.clearRange();
-        }
-
-    private:
-        void clampSelectionsToDocument(
-            QTextDocument* document,
-            QList<QTextEdit::ExtraSelection>& selections)
-        {
-            const int docLen = document->characterCount();
-            const int docEnd = (docLen > 0) ? docLen - 1 : 0;
-            for (auto& selection : selections) {
-                QTextCursor& cursor = selection.cursor;
-                const int pos = qBound(0, cursor.position(), docEnd);
-                const int anchor = qBound(0, cursor.anchor(), docEnd);
-                cursor.setPosition(anchor);
-                cursor.setPosition(pos, QTextCursor::KeepAnchor);
-            }
-        }
-    } selections;
+    EditorSelection selections;
 
     void initializeCore(MyCodeEditor* editor)
     {
         semantic.init();
         syntax.init();
-        gutter.init(editor, this);
+        gutter.init(editor);
         identity.set(QString());
         editor->setMouseTracking(true);
     }
@@ -901,7 +517,9 @@ struct MyCodeEditorState
 
     void attachEditorConnections(MyCodeEditor* editor)
     {
-        highlightRefresh.attachToEditor(editor, this);
+        highlightRefresh.attachToEditor(editor, [this, editor]() {
+            refreshScopeAndCurrentLineHighlight(editor);
+        });
         QObject::connect(
             editor,
             &QPlainTextEdit::blockCountChanged,
@@ -1347,7 +965,7 @@ struct MyCodeEditorState
         }
 
         if (!sourceHover.matches(target)) {
-            selections.clearHoveredSymbol(editor, sourceHover);
+            selections.clearHoveredSymbol(editor);
             sourceHover.setTarget(target);
             selections.highlightHoveredSymbol(editor, target);
         }
@@ -1358,7 +976,7 @@ struct MyCodeEditorState
     void clearSourceNavigationHover(MyCodeEditor* editor)
     {
         editor->viewport()->setCursor(Qt::IBeamCursor);
-        selections.clearHoveredSymbol(editor, sourceHover);
+        selections.clearHoveredSymbol(editor);
         sourceHover.clearTarget();
     }
 
@@ -1489,21 +1107,6 @@ struct MyCodeEditorState
         handleLeave(editor);
     }
 
-    void paintGutter(MyCodeEditor* editor, QPaintEvent *event) const
-    {
-        gutter.paint(editor, event);
-    }
-
-    void handleGutterMousePress(MyCodeEditor* editor, QMouseEvent *event) const
-    {
-        gutter.handleMousePress(editor, event);
-    }
-
-    void handleGutterWheel(MyCodeEditor* editor, QWheelEvent *event) const
-    {
-        gutter.handleWheel(editor, event);
-    }
-
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor)
     {
         selections.highlightCurrentLine(editor);
@@ -1552,39 +1155,6 @@ struct MyCodeEditorState
     }
 
 };
-
-LineNumberWidget::LineNumberWidget(
-    MyCodeEditor *editor,
-    MyCodeEditorState *editorState)
-    : QWidget(editor)
-    , codeEditor(editor)
-    , state(editorState)
-{
-}
-
-void LineNumberWidget::paintEvent(QPaintEvent *event)
-{
-    if (!codeEditor || !state)
-        return;
-
-    state->paintGutter(codeEditor, event);
-}
-
-void LineNumberWidget::mousePressEvent(QMouseEvent *event)
-{
-    if (!codeEditor || !state)
-        return;
-
-    state->handleGutterMousePress(codeEditor, event);
-}
-
-void LineNumberWidget::wheelEvent(QWheelEvent *event)
-{
-    if (!codeEditor || !state)
-        return;
-
-    state->handleGutterWheel(codeEditor, event);
-}
 
 MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)

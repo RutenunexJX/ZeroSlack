@@ -11,6 +11,7 @@ class QContextMenuEvent;
 class QKeyEvent;
 class QResizeEvent;
 class EditorSemanticContextService;
+class EditorGutter;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -54,6 +55,7 @@ protected:
     void leaveEvent(QEvent *event) override;
 
 private:
+    friend class EditorGutter;
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;

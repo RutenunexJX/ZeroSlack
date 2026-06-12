@@ -1,0 +1,34 @@
+#ifndef EDITORSYNTAXSTATE_H
+#define EDITORSYNTAXSTATE_H
+
+#include <QString>
+
+#include <memory>
+
+class MyCodeEditor;
+class MyHighlighter;
+class QTextDocument;
+class TSDocument;
+
+class EditorSyntaxState
+{
+public:
+    EditorSyntaxState();
+    ~EditorSyntaxState();
+
+    void init();
+    void syncText(const QString& text);
+    void createHighlighter(QTextDocument* textDocument);
+    void attachToEditor(MyCodeEditor* editor);
+    void applyEdit(int position,
+                   int charsRemoved,
+                   int charsAdded,
+                   const QString& text);
+    QString moduleNameAt(int charPos) const;
+
+private:
+    std::unique_ptr<TSDocument> document;
+    MyHighlighter* highlighter = nullptr;
+};
+
+#endif // EDITORSYNTAXSTATE_H
