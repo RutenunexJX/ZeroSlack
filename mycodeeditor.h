@@ -81,9 +81,6 @@ private:
     int getLineNumberWidgetWidth();
     EditorSemanticContextService* contextService() const;
 
-    void lineNumberWidgetPaintEvent(QPaintEvent *event);
-    void lineNumberWidgetMousePressEvent(QMouseEvent *event);
-    void lineNumberWidgetWheelEvent(QWheelEvent *event);
     void showAutoComplete();
     void hideAutoComplete();
     void clearAlternateModeBuffer();

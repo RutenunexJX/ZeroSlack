@@ -75,17 +75,60 @@ public:
 protected:
     void paintEvent(QPaintEvent *event) override
     {
-        codeEditor->lineNumberWidgetPaintEvent(event);
+        QPainter painter(this);
+        painter.fillRect(event->rect(), QColor(100, 100, 100, 20));
+
+        QTextBlock block = codeEditor->firstVisibleBlock();
+        int blockNumber = block.blockNumber();
+        const int cursorTop = codeEditor->blockBoundingGeometry(
+            codeEditor->textCursor().block()).translated(
+                codeEditor->contentOffset()).top();
+        int top = codeEditor->blockBoundingGeometry(block).translated(
+            codeEditor->contentOffset()).top();
+        int bottom = top + codeEditor->blockBoundingRect(block).height();
+
+        while (block.isValid() && top <= event->rect().bottom()) {
+            painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
+            painter.drawText(
+                0,
+                top,
+                codeEditor->getLineNumberWidgetWidth() - 3,
+                bottom - top,
+                Qt::AlignRight,
+                QString::number(blockNumber + 1));
+
+            block = block.next();
+            top = bottom;
+            bottom = top + codeEditor->blockBoundingRect(block).height();
+            blockNumber++;
+        }
     }
 
     void mousePressEvent(QMouseEvent *event) override
     {
-        codeEditor->lineNumberWidgetMousePressEvent(event);
+        QTextBlock block = codeEditor->document()->findBlockByLineNumber(
+            static_cast<int>(event->position().y())
+                / codeEditor->fontMetrics().height()
+            + codeEditor->verticalScrollBar()->value());
+        codeEditor->setTextCursor(QTextCursor(block));
     }
 
     void wheelEvent(QWheelEvent *event) override
     {
-        codeEditor->lineNumberWidgetWheelEvent(event);
+        const QPoint angle = event->angleDelta();
+        if (!angle.isNull()) {
+            const int dy = angle.y();
+            const int dx = angle.x();
+            if (dy != 0) {
+                QScrollBar* bar = codeEditor->verticalScrollBar();
+                bar->setValue(bar->value() - dy);
+            } else if (dx != 0) {
+                QScrollBar* bar = codeEditor->horizontalScrollBar();
+                bar->setValue(bar->value() - dx);
+            }
+        }
+
+        event->accept();
     }
 
 private:
@@ -519,62 +562,6 @@ EditorSemanticContext MyCodeEditor::semanticContextForCursor(
     bool includeDocumentText) const
 {
     return editorSemanticContextForPosition(cursor.position(), includeDocumentText);
-}
-
-void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
-{
-    QPainter painter(state->lineNumberWidget);
-    painter.fillRect(event->rect(),QColor(100,100,100,20));
-
-    QTextBlock block = firstVisibleBlock();
-
-    int blockNumber = block.blockNumber();
-
-    int cursorTop = blockBoundingGeometry(textCursor().block()).translated(contentOffset()).top();
-
-    int top = blockBoundingGeometry(block).translated(contentOffset()).top();
-
-    int bottom = top + blockBoundingRect(block).height();
-
-    while(block.isValid() && top <= event->rect().bottom()){
-        painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
-        painter.drawText(0,top,getLineNumberWidgetWidth() - 3,bottom - top,Qt::AlignRight,QString::number(blockNumber+1));
-
-        block = block.next();
-
-        top = bottom;
-        bottom = top + blockBoundingRect(block).height();
-        blockNumber++;
-    }
-}
-
-void MyCodeEditor::lineNumberWidgetMousePressEvent(QMouseEvent *event)
-{
-    QTextBlock block = document()->findBlockByLineNumber(static_cast<int>(event->position().y()) / fontMetrics().height() + verticalScrollBar()->value());
-    setTextCursor(QTextCursor(block));
-}
-
-void MyCodeEditor::lineNumberWidgetWheelEvent(QWheelEvent *event)
-{
-    QPoint angle = event->angleDelta();
-
-    // In Qt6, use angleDelta().y() for vertical scrolling and x() for horizontal.
-    // Standard mouse wheels usually provide a y component.
-    if (!angle.isNull()) {
-        int dy = angle.y();
-        int dx = angle.x();
-
-        // Handle vertical scrolling (standard wheel)
-        if (dy != 0) {
-            verticalScrollBar()->setValue(verticalScrollBar()->value() - dy);
-        }
-        // Handle horizontal scrolling (if available/supported by input device)
-        else if (dx != 0) {
-            horizontalScrollBar()->setValue(horizontalScrollBar()->value() - dx);
-        }
-    }
-
-    event->accept();
 }
 
 void MyCodeEditor::setFileName(QString fileName)
