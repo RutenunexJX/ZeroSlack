@@ -103,6 +103,13 @@ private:
     QString normalizedFileName(const QString& fileName) const;
     TrackedDocument makeTrackedDocument(MyCodeEditor* editor,
                                         const DocumentSnapshot* previous = nullptr) const;
+    void connectEditorSignals(MyCodeEditor* editor);
+    void handleEditorTextChanged(MyCodeEditor* editor);
+    void handleEditorCursorChanged(MyCodeEditor* editor);
+    void handleEditorFileNameChanged(MyCodeEditor* editor);
+    DocumentSnapshot replaceTrackedDocument(MyCodeEditor* editor,
+                                            const TrackedDocument& tracked,
+                                            const DocumentSnapshot& previous);
     DocumentSnapshot refreshTrackedDocument(MyCodeEditor* editor);
 };
 
