@@ -516,6 +516,37 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   .totalCount,
               1);
 
+    sym_list injectedRelationshipSymbols;
+    const QString injectedRelationshipPath =
+        normalizedPath(fixtureDir.filePath(QStringLiteral("injected_relationships.sv")));
+    sym_list::SymbolInfo injectedModule;
+    injectedModule.fileName = injectedRelationshipPath;
+    injectedModule.symbolName = QStringLiteral("injected_top");
+    injectedModule.symbolType = sym_list::sym_module;
+    injectedModule.startLine = 1;
+    injectedModule.endLine = 9;
+    injectedModule.symbolId = 7201;
+
+    sym_list::SymbolInfo injectedSignal;
+    injectedSignal.fileName = injectedRelationshipPath;
+    injectedSignal.symbolName = QStringLiteral("injected_signal");
+    injectedSignal.symbolType = sym_list::sym_logic;
+    injectedSignal.startLine = 3;
+    injectedSignal.endLine = 3;
+    injectedSignal.symbolId = 7202;
+    injectedRelationshipSymbols.setSymbolsForFile(
+        injectedRelationshipPath,
+        {injectedModule, injectedSignal});
+
+    SymbolRelationshipEngine injectedRelationshipEngine(&injectedRelationshipSymbols);
+    injectedRelationshipEngine.buildFileRelationships(injectedRelationshipPath);
+    expectBool("relationship engine uses injected symbol db",
+               injectedRelationshipEngine.hasRelationship(
+                   injectedModule.symbolId,
+                   injectedSignal.symbolId,
+                   SymbolRelationshipEngine::CONTAINS),
+               true);
+
     SearchService searchService(&index);
     SearchQuery moduleSearchQuery;
     moduleSearchQuery.text = QStringLiteral("rel_");

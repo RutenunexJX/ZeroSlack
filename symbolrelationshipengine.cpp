@@ -14,8 +14,19 @@ SymbolRelationshipEngine::SymbolRelationshipEngine(QObject *parent)
     queryCache.reserve(500);
 }
 
+SymbolRelationshipEngine::SymbolRelationshipEngine(sym_list* symbols, QObject *parent)
+    : SymbolRelationshipEngine(parent)
+{
+    setSymbolDatabase(symbols);
+}
+
 SymbolRelationshipEngine::~SymbolRelationshipEngine()
 {
+}
+
+void SymbolRelationshipEngine::setSymbolDatabase(sym_list* symbols)
+{
+    symbolDatabase = symbols;
 }
 
 void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
@@ -309,8 +320,7 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
     beginUpdate();
     invalidateFileRelationships(fileName);
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> fileSymbols = symbolList->findSymbolsByFileName(fileName);
+    QList<sym_list::SymbolInfo> fileSymbols = symbols()->findSymbolsByFileName(fileName);
 
     for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
         if (symbol.symbolType == sym_list::sym_module) {
@@ -350,8 +360,7 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
 {
     clearAllRelationships();
 
-    sym_list* symbolList = sym_list::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = symbolList->getAllSymbols();
+    QList<sym_list::SymbolInfo> allSymbols = symbols()->getAllSymbols();
 
     QHash<QString, QList<sym_list::SymbolInfo>> symbolsByFile;
     for (const sym_list::SymbolInfo& symbol : std::as_const(allSymbols)) {
@@ -427,6 +436,11 @@ void SymbolRelationshipEngine::removeFromTypeIndex(int fromId, int toId, Relatio
     if (relationshipsByType.contains(type)) {
         relationshipsByType[type].removeAll(qMakePair(fromId, toId));
     }
+}
+
+sym_list* SymbolRelationshipEngine::symbols() const
+{
+    return symbolDatabase ? symbolDatabase : sym_list::getInstance();
 }
 
 QString SymbolRelationshipEngine::relationshipTypeToString(RelationType type) const
