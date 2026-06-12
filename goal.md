@@ -19,7 +19,7 @@ ProjectModel
   Owns workspace inputs: root, file list, include dirs, defines, top, ignored paths.
 
 DocumentModel
-  Owns open document state: file identity, text snapshot/version, dirty/saved state, cursor, live module, and eventually Tree-sitter document ownership.
+  Owns open document state: file identity, text snapshot/version, saved text version, dirty/saved state, cursor, live module, and eventually Tree-sitter document ownership.
 
 AnalysisScheduler
   Owns analysis timing: scheduled semantic runs, relationship runs, cancellation, debounce, refresh requests, lifecycle, and analysis event routing.
@@ -28,7 +28,7 @@ SemanticIndex
   Owns semantic facts: symbols, definitions, relationships, references, diagnostics, cached content.
 
 Query Services
-  Own feature-specific reads: definition, completion, relationship, hierarchy, reference, diagnostics, search.
+  Own feature-specific reads and panel query shaping: definition, completion, relationship, hierarchy, reference, diagnostics, search.
 
 Coordinators
   Own UI/editor command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and other workflow glue.
@@ -45,6 +45,7 @@ Tree-sitter and Slang split:
 ## Architecture Principles
 
 - New semantic reads should go through SemanticIndex or Query Services.
+- Panel filters and UI read policy should become service options, not scattered widget-derived query logic.
 - Analysis triggers belong in AnalysisScheduler.
 - UI panels should render service/model output, not derive semantic policy from widgets.
 - MainWindow should compose and coordinate windows, not own analysis event routing, panel rendering, or editor workflow policy.
