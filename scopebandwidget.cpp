@@ -99,7 +99,7 @@ void ScopeBandWidget::refresh()
 {
     if (!m_editor || !m_scene || !m_view) return;
 
-    const qreal docHeight = m_editor->getDocumentHeightPx();
+    const qreal docHeight = m_editor->documentHeightPx();
     if (docHeight <= 0) {
         m_scene->clear();
         m_scene->setSceneRect(0, 0, kBandWidth, 1);
@@ -122,8 +122,12 @@ void ScopeBandWidget::refresh()
         const sym_list::SymbolInfo& mod = module.symbol;
         const int endLine = module.endLine;
 
-        qreal top = m_editor->getBlockTopY(mod.startLine);
-        qreal bottom = m_editor->getBlockTopY(endLine) + m_editor->getBlockHeight(endLine);
+        const EditorBlockGeometry startGeometry =
+            m_editor->blockGeometry(mod.startLine);
+        const EditorBlockGeometry endGeometry =
+            m_editor->blockGeometry(endLine);
+        qreal top = startGeometry.top;
+        qreal bottom = endGeometry.top + endGeometry.height;
         qreal h = qMax(qreal(1), bottom - top);
 
         ModuleScopeItem* item = new ModuleScopeItem();
@@ -143,13 +147,18 @@ void ScopeBandWidget::refresh()
         for (const ModuleItemInfo& mi : moduleInfos) {
             if (mi.startLine <= startLine && endLine <= mi.endLine) {
                 parentModule = mi.item;
-                parentTop = m_editor->getBlockTopY(mi.startLine);
+                parentTop = m_editor->blockGeometry(mi.startLine).top;
                 break;
             }
         }
 
-        qreal logicTop = m_editor->getBlockTopY(startLine);
-        qreal logicBottom = m_editor->getBlockTopY(endLine) + m_editor->getBlockHeight(endLine);
+        const EditorBlockGeometry logicStartGeometry =
+            m_editor->blockGeometry(startLine);
+        const EditorBlockGeometry logicEndGeometry =
+            m_editor->blockGeometry(endLine);
+        qreal logicTop = logicStartGeometry.top;
+        qreal logicBottom =
+            logicEndGeometry.top + logicEndGeometry.height;
         qreal logicH = qMax(qreal(1), logicBottom - logicTop);
 
         if (parentModule) {

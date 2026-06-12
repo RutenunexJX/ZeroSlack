@@ -20,12 +20,7 @@
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
 #include "semanticindexsnapshot.h"
-// Test-only: reach the editor's private jump methods. Non-virtual, so ABI is unaffected and the
-// calls bind to the real symbols in the already-compiled mycodeeditor.cpp.obj. Qt headers are
-// included above (under normal access) so the macro only affects mycodeeditor.h.
-#define private public
 #include "mycodeeditor.h"
-#undef private
 
 static int g_checks = 0, g_fails = 0;
 

@@ -208,23 +208,17 @@ struct MyCodeEditorState
     } gutter;
 
     struct DocumentGeometry {
-        qreal blockTopY(const MyCodeEditor* editor, int blockNumber) const
+        EditorBlockGeometry blockGeometry(
+            const MyCodeEditor* editor,
+            int blockNumber) const
         {
             QTextBlock block = editor->document()->findBlockByNumber(blockNumber);
             if (!block.isValid())
-                return 0;
+                return {0, qreal(editor->fontMetrics().height())};
 
-            return editor->blockBoundingGeometry(block).translated(
+            const qreal top = editor->blockBoundingGeometry(block).translated(
                 editor->contentOffset()).top();
-        }
-
-        qreal blockHeight(const MyCodeEditor* editor, int blockNumber) const
-        {
-            QTextBlock block = editor->document()->findBlockByNumber(blockNumber);
-            if (!block.isValid())
-                return editor->fontMetrics().height();
-
-            return editor->blockBoundingRect(block).height();
+            return {top, editor->blockBoundingRect(block).height()};
         }
 
         qreal documentHeightPx(const MyCodeEditor* editor) const
@@ -1506,17 +1500,12 @@ void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* servi
     state->semantic.setService(service);
 }
 
-qreal MyCodeEditor::getBlockTopY(int blockNumber) const
+EditorBlockGeometry MyCodeEditor::blockGeometry(int blockNumber) const
 {
-    return state->geometry.blockTopY(this, blockNumber);
+    return state->geometry.blockGeometry(this, blockNumber);
 }
 
-qreal MyCodeEditor::getBlockHeight(int blockNumber) const
-{
-    return state->geometry.blockHeight(this, blockNumber);
-}
-
-qreal MyCodeEditor::getDocumentHeightPx() const
+qreal MyCodeEditor::documentHeightPx() const
 {
     return state->geometry.documentHeightPx(this);
 }
@@ -1624,11 +1613,6 @@ void MyCodeEditor::leaveEvent(QEvent *event)
     state->handleLeave(this);
 
     QPlainTextEdit::leaveEvent(event);
-}
-
-void MyCodeEditor::moveMouseToCursor()
-{
-    state->cursorNavigation.moveMouseToCursor(this);
 }
 
 void MyCodeEditor::applyLineNavigationTarget(

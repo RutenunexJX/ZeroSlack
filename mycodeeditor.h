@@ -5,23 +5,24 @@
 #include <memory>
 
 class LineNumberWidget;
-class AnalysisCoordinator;
 class DocumentModel;
-class EditorCoordinator;
-class NavigationCommandCoordinator;
 class QMenu;
 class QMouseEvent;
 class QRect;
 class QContextMenuEvent;
 class QKeyEvent;
 class QResizeEvent;
-class ScopeBandWidget;
 class EditorSemanticContextService;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
 enum class SourceSymbolAction;
 struct MyCodeEditorState;
+
+struct EditorBlockGeometry {
+    qreal top = 0;
+    qreal height = 0;
+};
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -30,7 +31,16 @@ public:
     explicit MyCodeEditor(QWidget *parent = nullptr);
     ~MyCodeEditor();
 
-private:
+    void applyLineNavigationTarget(const SourceLineNavigationTarget& target);
+    EditorBlockGeometry blockGeometry(int blockNumber) const;
+    qreal documentHeightPx() const;
+    void refreshScopeAndCurrentLineHighlight();
+    void setAlternateModeEnabled(bool enabled);
+    void setSemanticContextService(EditorSemanticContextService* service);
+    EditorSemanticContext editorSemanticContextForPosition(
+        int cursorPosition = -1,
+        bool includeDocumentText = false) const;
+
 protected:
     void keyPressEvent(QKeyEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -42,27 +52,12 @@ protected:
     void leaveEvent(QEvent *event) override;
 
 private:
-    friend class AnalysisCoordinator;
     friend class DocumentModel;
-    friend class EditorCoordinator;
-    friend class NavigationCommandCoordinator;
-    friend class ScopeBandWidget;
     friend struct MyCodeEditorState;
 
     void setFileName(QString fileName);
     QString getFileName() const;
     QString currentModuleName() const;
-    void refreshScopeAndCurrentLineHighlight();
-    void setAlternateModeEnabled(bool enabled);
-    void setSemanticContextService(EditorSemanticContextService* service);
-    void applyLineNavigationTarget(const SourceLineNavigationTarget& target);
-    void moveMouseToCursor();
-    qreal getBlockTopY(int blockNumber) const;
-    qreal getBlockHeight(int blockNumber) const;
-    qreal getDocumentHeightPx() const;
-    EditorSemanticContext editorSemanticContextForPosition(
-        int cursorPosition = -1,
-        bool includeDocumentText = false) const;
     std::unique_ptr<MyCodeEditorState> state;
 
     void executeAlternateModeCommand(const QString &command);
