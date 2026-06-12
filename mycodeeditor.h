@@ -7,23 +7,19 @@
 #include <memory>
 
 class LineNumberWidget;
-class MyHighlighter;
 class AnalysisCoordinator;
-class CompletionModel;
 class DocumentModel;
 class EditorCoordinator;
 class NavigationCommandCoordinator;
-class QCompleter;
 class QModelIndex;
 class QMenu;
 class QMouseEvent;
 class QPaintEvent;
 class QRect;
 class ScopeBandWidget;
-class QTimer;
 class QWheelEvent;
 struct SourceLineNavigationTarget;
-class TSDocument;
+struct MyCodeEditorState;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -111,41 +107,18 @@ private:
         QKeyEvent *event) const;
     bool applyCompletionPopupKeyState(
         QKeyEvent *event,
-        const CompletionPopupKeyState& state);
+        const CompletionPopupKeyState& popupState);
 
-    LineNumberWidget *lineNumberWidget;
-    QString mFileName;
-
-    std::unique_ptr<TSDocument> m_tsdoc;
-    MyHighlighter *m_highlighter = nullptr;
-
-    QCompleter *completer;
-    CompletionModel *completionModel;
-    EditorSemanticContextService* semanticContextService = nullptr;
-    QTimer *autoCompleteTimer;
-    int wordStartPos;
-
-    // Coalesce current-line selection refresh after cursor/text changes.
-    QTimer *scopeRefreshTimer = nullptr;
-
-    bool isInCustomCommandMode = false;
+    std::unique_ptr<MyCodeEditorState> state;
 
     void removeExtraSelectionsByProperty(int property, int value);
     void highlightCommandText(int prefixPosition);
     void clearCommandHighlight();
 
-    bool isInAlternateMode = false;
-    QString alternateCommandBuffer;
-
     void executeAlternateModeCommand(const QString &command);
     void applyAlternateModeCompletionDisplayState(
-        const EditorAlternateModeCompletionDisplayState& state);
+        const EditorAlternateModeCompletionDisplayState& displayState);
     bool handleCompletionPopupKey(QKeyEvent *event);
-
-    bool ctrlPressed = false;
-    QString hoveredWord;
-    int hoveredWordStartPos = -1;
-    int hoveredWordEndPos = -1;
 
     EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
         const QPoint& position);
@@ -159,8 +132,6 @@ private:
     void clearHoveredSymbolHighlight();
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();
-
-    bool commandModeExitedByDoubleSpace = false;
 signals:
     void fileNameChanged(const QString& fileName);
     void alternateCommandRequested(const QString& command);

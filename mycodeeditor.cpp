@@ -82,12 +82,41 @@ private:
     MyCodeEditor *codeEditor = nullptr;
 };
 
+struct MyCodeEditorState
+{
+    LineNumberWidget *lineNumberWidget = nullptr;
+    QString fileName;
+    std::unique_ptr<TSDocument> tsdoc;
+    MyHighlighter *highlighter = nullptr;
+
+    QCompleter *completer = nullptr;
+    CompletionModel *completionModel = nullptr;
+    EditorSemanticContextService* semanticContextService = nullptr;
+    QTimer *autoCompleteTimer = nullptr;
+    int wordStartPos = 0;
+
+    // Coalesce current-line selection refresh after cursor/text changes.
+    QTimer *scopeRefreshTimer = nullptr;
+
+    bool isInCustomCommandMode = false;
+    bool isInAlternateMode = false;
+    QString alternateCommandBuffer;
+
+    bool ctrlPressed = false;
+    QString hoveredWord;
+    int hoveredWordStartPos = -1;
+    int hoveredWordEndPos = -1;
+
+    bool commandModeExitedByDoubleSpace = false;
+};
+
 MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
-    , m_tsdoc(std::make_unique<TSDocument>())
+    , state(std::make_unique<MyCodeEditorState>())
 {
-    semanticContextService = EditorSemanticContextService::getInstance();
-    lineNumberWidget = new LineNumberWidget(this);
+    state->semanticContextService = EditorSemanticContextService::getInstance();
+    state->tsdoc = std::make_unique<TSDocument>();
+    state->lineNumberWidget = new LineNumberWidget(this);
 
     initConnection();
     initFont();
@@ -99,28 +128,24 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
 
     setLineWrapMode(QPlainTextEdit::NoWrap);
 
-    mFileName = "";
-
-    ctrlPressed = false;
-    hoveredWordStartPos = -1;
-    hoveredWordEndPos = -1;
+    state->fileName = "";
 
     setMouseTracking(true);
 }
 
 MyCodeEditor::~MyCodeEditor()
 {
-    delete lineNumberWidget;
+    delete state->lineNumberWidget;
 }
 
 void MyCodeEditor::initConnection()
 {
-    scopeRefreshTimer = new QTimer(this);
-    scopeRefreshTimer->setSingleShot(true);
-    connect(scopeRefreshTimer, &QTimer::timeout, this, &MyCodeEditor::highlightCurrentLine);
+    state->scopeRefreshTimer = new QTimer(this);
+    state->scopeRefreshTimer->setSingleShot(true);
+    connect(state->scopeRefreshTimer, &QTimer::timeout, this, &MyCodeEditor::highlightCurrentLine);
 
     // Coalesce cursor/text changes into one selection refresh per event loop.
-    auto scheduleHighlightRefresh = [this]() { scopeRefreshTimer->start(0); };
+    auto scheduleHighlightRefresh = [this]() { state->scopeRefreshTimer->start(0); };
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, scheduleHighlightRefresh);
     connect(this, &QPlainTextEdit::textChanged, this, scheduleHighlightRefresh);
 
@@ -143,26 +168,26 @@ void MyCodeEditor::initHighlighter()
     syncTreeSitterDocumentText();
     connect(document(), &QTextDocument::contentsChange,
             this, &MyCodeEditor::onTsContentsChange);
-    m_highlighter = new MyHighlighter(document(), m_tsdoc.get());
+    state->highlighter = new MyHighlighter(document(), state->tsdoc.get());
 }
 
 void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
 {
-    // Incrementally update the tree-sitter model (m_tsdoc keeps the pre-edit text, so it can derive
+    // Incrementally update the tree-sitter model (state->tsdoc keeps the pre-edit text, so it can derive
     // the old end point itself). Runs before the highlighter's reformat (connected later).
     applyTreeSitterEdit(position, charsRemoved, charsAdded);
 }
 
 void MyCodeEditor::syncTreeSitterDocumentText()
 {
-    m_tsdoc->setText(document()->toPlainText());
+    state->tsdoc->setText(document()->toPlainText());
 }
 
 void MyCodeEditor::applyTreeSitterEdit(int position,
                                        int charsRemoved,
                                        int charsAdded)
 {
-    m_tsdoc->applyEditChars(position,
+    state->tsdoc->applyEditChars(position,
                             position + charsRemoved,
                             position + charsAdded,
                             document()->toPlainText());
@@ -170,7 +195,7 @@ void MyCodeEditor::applyTreeSitterEdit(int position,
 
 QString MyCodeEditor::treeSitterModuleNameAt(int charPos) const
 {
-    return m_tsdoc->enclosingModuleName(charPos < 0 ? 0 : charPos);
+    return state->tsdoc->enclosingModuleName(charPos < 0 ? 0 : charPos);
 }
 
 int MyCodeEditor::getLineNumberWidgetWidth()
@@ -221,27 +246,27 @@ void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 
 void MyCodeEditor::setAlternateModeEnabled(bool enabled)
 {
-    isInAlternateMode = enabled;
+    state->isInAlternateMode = enabled;
 }
 
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)
 {
-    semanticContextService = service
+    state->semanticContextService = service
         ? service
         : EditorSemanticContextService::getInstance();
 }
 
 EditorSemanticContextService* MyCodeEditor::contextService() const
 {
-    return semanticContextService
-        ? semanticContextService
+    return state->semanticContextService
+        ? state->semanticContextService
         : EditorSemanticContextService::getInstance();
 }
 
 QString MyCodeEditor::currentModuleNameAt(int charPos) const
 {
     // Live, error-tolerant enclosing module from the tree-sitter tree (A3). The editor keeps
-    // m_tsdoc synced on every edit, so this is never stale (unlike the debounced Slang path).
+    // state->tsdoc synced on every edit, so this is never stale (unlike the debounced Slang path).
     return treeSitterModuleNameAt(charPos);
 }
 
@@ -268,9 +293,9 @@ qreal MyCodeEditor::getDocumentHeightPx() const
 void MyCodeEditor::updateLineNumberWidget(QRect rect, int dy)
 {
     if(dy)
-        lineNumberWidget->scroll(0,dy);
+        state->lineNumberWidget->scroll(0,dy);
     else
-        lineNumberWidget->update(0,rect.y(),getLineNumberWidgetWidth(),rect.height());
+        state->lineNumberWidget->update(0,rect.y(),getLineNumberWidgetWidth(),rect.height());
 }
 
 void MyCodeEditor::updateLineNumberWidgetWidth()
@@ -281,7 +306,7 @@ void MyCodeEditor::updateLineNumberWidgetWidth()
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
-    lineNumberWidget->setGeometry(0, 0, getLineNumberWidgetWidth(), contentsRect().height());
+    state->lineNumberWidget->setGeometry(0, 0, getLineNumberWidgetWidth(), contentsRect().height());
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -330,7 +355,7 @@ EditorSemanticContext MyCodeEditor::semanticContextForCursor(
 
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
 {
-    QPainter painter(lineNumberWidget);
+    QPainter painter(state->lineNumberWidget);
     painter.fillRect(event->rect(),QColor(100,100,100,20));
 
     QTextBlock block = firstVisibleBlock();
@@ -389,16 +414,16 @@ void MyCodeEditor::setFileName(QString fileName)
     const QString normalizedFileName = fileName.isEmpty()
         ? QString()
         : QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
-    if (mFileName == normalizedFileName)
+    if (state->fileName == normalizedFileName)
         return;
 
-    mFileName = normalizedFileName;
-    emit fileNameChanged(mFileName);
+    state->fileName = normalizedFileName;
+    emit fileNameChanged(state->fileName);
 }
 
 QString MyCodeEditor::getFileName() const
 {
-    return mFileName;
+    return state->fileName;
 }
 
 QString MyCodeEditor::currentModuleName() const
@@ -408,18 +433,18 @@ QString MyCodeEditor::currentModuleName() const
 
 void MyCodeEditor::initAutoComplete()
 {
-    completionModel = new CompletionModel(this);
-    completer = new QCompleter(this);
-    completer->setModel(completionModel);
-    completer->setWidget(this);
-    completer->setCompletionMode(QCompleter::PopupCompletion);
-    completer->setCaseSensitivity(Qt::CaseInsensitive);
-    completer->setMaxVisibleItems(15);
-    autoCompleteTimer = new QTimer(this);
-    autoCompleteTimer->setSingleShot(true);
-    autoCompleteTimer->setInterval(0);
-    connect(autoCompleteTimer, &QTimer::timeout, this, &MyCodeEditor::onAutoCompleteTimer);
-    connect(completer, QOverload<const QModelIndex &>::of(&QCompleter::activated),
+    state->completionModel = new CompletionModel(this);
+    state->completer = new QCompleter(this);
+    state->completer->setModel(state->completionModel);
+    state->completer->setWidget(this);
+    state->completer->setCompletionMode(QCompleter::PopupCompletion);
+    state->completer->setCaseSensitivity(Qt::CaseInsensitive);
+    state->completer->setMaxVisibleItems(15);
+    state->autoCompleteTimer = new QTimer(this);
+    state->autoCompleteTimer->setSingleShot(true);
+    state->autoCompleteTimer->setInterval(0);
+    connect(state->autoCompleteTimer, &QTimer::timeout, this, &MyCodeEditor::onAutoCompleteTimer);
+    connect(state->completer, QOverload<const QModelIndex &>::of(&QCompleter::activated),
             this, &MyCodeEditor::onCompletionActivated);
 
     connect(this, &QPlainTextEdit::textChanged, this, &MyCodeEditor::onTextChanged);
@@ -427,7 +452,7 @@ void MyCodeEditor::initAutoComplete()
 
 void MyCodeEditor::onTextChanged()
 {
-    autoCompleteTimer->stop();
+    state->autoCompleteTimer->stop();
     updateCompletionTriggerForTextChange(textCursor());
 }
 
@@ -438,10 +463,10 @@ void MyCodeEditor::updateCompletionTriggerForTextChange(const QTextCursor& curso
     context.moduleName = currentModuleNameAt(cursor.position() - 1);
     const EditorCompletionTextChangeState completionState =
         contextService()->completionTextChangeState(context);
-    isInCustomCommandMode = completionState.commandModeActive;
+    state->isInCustomCommandMode = completionState.commandModeActive;
 
     if (completionState.startCompletionTimer) {
-        autoCompleteTimer->start();
+        state->autoCompleteTimer->start();
     } else if (completionState.hidePopup) {
         hideAutoComplete();
     }
@@ -449,20 +474,20 @@ void MyCodeEditor::updateCompletionTriggerForTextChange(const QTextCursor& curso
 
 void MyCodeEditor::hideAutoComplete()
 {
-    completer->popup()->hide();
+    state->completer->popup()->hide();
 
-    if (isInCustomCommandMode) {
+    if (state->isInCustomCommandMode) {
         clearCommandHighlight();
     }
 }
 
 void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 {
-    CompletionModel::CompletionItem item = completionModel->getItem(index);
+    CompletionModel::CompletionItem item = state->completionModel->getItem(index);
     EditorCompletionActivationContext activationContext;
-    activationContext.selectable = completionModel->isSelectableIndex(index);
-    activationContext.alternateModeActive = isInAlternateMode;
-    activationContext.commandModeActive = isInCustomCommandMode;
+    activationContext.selectable = state->completionModel->isSelectableIndex(index);
+    activationContext.alternateModeActive = state->isInAlternateMode;
+    activationContext.commandModeActive = state->isInCustomCommandMode;
     activationContext.itemText = item.text;
     activationContext.defaultValue = item.defaultValue;
     const CompletionActivationState activationState =
@@ -490,11 +515,11 @@ void MyCodeEditor::applyCompletionActivationState(
         cursor.insertText(activationState.text);
 
         if (activationState.clearCommandMode) {
-            isInCustomCommandMode = false;
+            state->isInCustomCommandMode = false;
             clearCommandHighlight();
         }
     } else if (activationState.action == CompletionActivationAction::ReplaceWord) {
-        cursor.setPosition(wordStartPos);
+        cursor.setPosition(state->wordStartPos);
         cursor.setPosition(textCursor().position(), QTextCursor::KeepAnchor);
         cursor.insertText(activationState.text);
     }
@@ -505,8 +530,8 @@ void MyCodeEditor::applyCompletionActivationState(
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Control && !ctrlPressed) {
-        ctrlPressed = true;
+    if (event->key() == Qt::Key_Control && !state->ctrlPressed) {
+        state->ctrlPressed = true;
 
         QPoint mousePos = mapFromGlobal(QCursor::pos());
         if (rect().contains(mousePos)) {
@@ -522,7 +547,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         return;
     }
 
-    if (isInAlternateMode) {
+    if (state->isInAlternateMode) {
         handleAlternateModeKey(event);
         return;
     }
@@ -561,7 +586,7 @@ bool MyCodeEditor::handleAlternateModeKey(QKeyEvent *event)
     EditorAlternateModeKeyContext alternateKeyContext;
     alternateKeyContext.key = event->key();
     alternateKeyContext.text = event->text();
-    alternateKeyContext.buffer = alternateCommandBuffer;
+    alternateKeyContext.buffer = state->alternateCommandBuffer;
     const EditorAlternateModeKeyState alternateKeyState =
         contextService()->alternateModeKeyState(alternateKeyContext);
     applyAlternateModeKeyState(alternateKeyState);
@@ -592,13 +617,13 @@ void MyCodeEditor::applyAlternateModeKeyState(
 
 bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
 {
-    if (!completer->popup()->isVisible())
+    if (!state->completer->popup()->isVisible())
         return false;
 
-    const CompletionPopupKeyState state =
+    const CompletionPopupKeyState popupState =
         contextService()->completionPopupKeyState(
             completionPopupKeyContextForEvent(event));
-    return applyCompletionPopupKeyState(event, state);
+    return applyCompletionPopupKeyState(event, popupState);
 }
 
 EditorCompletionPopupKeyContext
@@ -606,33 +631,33 @@ MyCodeEditor::completionPopupKeyContextForEvent(QKeyEvent *event) const
 {
     EditorCompletionPopupKeyContext query;
     query.key = event->key();
-    query.alternateModeActive = isInAlternateMode;
-    query.commandModeActive = isInCustomCommandMode;
-    query.currentIndexValid = completer->popup()->currentIndex().isValid();
-    query.hasRows = completionModel->rowCount() > 0;
-    query.alternateBufferEmpty = alternateCommandBuffer.isEmpty();
+    query.alternateModeActive = state->isInAlternateMode;
+    query.commandModeActive = state->isInCustomCommandMode;
+    query.currentIndexValid = state->completer->popup()->currentIndex().isValid();
+    query.hasRows = state->completionModel->rowCount() > 0;
+    query.alternateBufferEmpty = state->alternateCommandBuffer.isEmpty();
     return query;
 }
 
 bool MyCodeEditor::applyCompletionPopupKeyState(
     QKeyEvent *event,
-    const CompletionPopupKeyState& state)
+    const CompletionPopupKeyState& popupState)
 {
-    switch (state.action) {
+    switch (popupState.action) {
     case CompletionPopupKeyAction::ForwardToPopup:
-        QApplication::sendEvent(completer->popup(), event);
+        QApplication::sendEvent(state->completer->popup(), event);
         return true;
     case CompletionPopupKeyAction::ActivateCurrent:
-        if (completer->popup()->currentIndex().isValid())
-            emit completer->activated(completer->popup()->currentIndex());
+        if (state->completer->popup()->currentIndex().isValid())
+            emit state->completer->activated(state->completer->popup()->currentIndex());
         return true;
     case CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable:
         {
-            QModelIndex currentIndex = completer->popup()->currentIndex();
-            if (!currentIndex.isValid() && completionModel->rowCount() > 0)
-                currentIndex = completionModel->firstSelectableIndex();
+            QModelIndex currentIndex = state->completer->popup()->currentIndex();
+            if (!currentIndex.isValid() && state->completionModel->rowCount() > 0)
+                currentIndex = state->completionModel->firstSelectableIndex();
             if (currentIndex.isValid())
-                emit completer->activated(currentIndex);
+                emit state->completer->activated(currentIndex);
         }
         return true;
     case CompletionPopupKeyAction::HidePopup:
@@ -643,11 +668,11 @@ bool MyCodeEditor::applyCompletionPopupKeyState(
         clearAlternateModeBuffer();
         return true;
     case CompletionPopupKeyAction::BackspaceAlternateInput:
-        if (!alternateCommandBuffer.isEmpty()) {
+        if (!state->alternateCommandBuffer.isEmpty()) {
             const EditorAlternateModeCompletionDisplayState completionState =
                 contextService()->alternateModeCompletionDisplayState(
-                    alternateCommandBuffer.left(
-                        alternateCommandBuffer.size() - 1));
+                    state->alternateCommandBuffer.left(
+                        state->alternateCommandBuffer.size() - 1));
             applyAlternateModeCompletionDisplayState(completionState);
         } else {
             hideAutoComplete();
@@ -664,17 +689,17 @@ bool MyCodeEditor::applyCompletionPopupKeyState(
 
 void MyCodeEditor::showAutoComplete()
 {
-    if (completionModel->rowCount() > 0) {
+    if (state->completionModel->rowCount() > 0) {
         QTextCursor cursor = textCursor();
         QRect rect = cursorRect(cursor);
-        rect.setWidth(completer->popup()->sizeHintForColumn(0) + 20);
-        if (isInCustomCommandMode) {
-            const QModelIndex selectableIndex = completionModel->firstSelectableIndex();
+        rect.setWidth(state->completer->popup()->sizeHintForColumn(0) + 20);
+        if (state->isInCustomCommandMode) {
+            const QModelIndex selectableIndex = state->completionModel->firstSelectableIndex();
             if (selectableIndex.isValid())
-                completer->popup()->setCurrentIndex(selectableIndex);
+                state->completer->popup()->setCurrentIndex(selectableIndex);
         }
 
-        completer->complete(rect);
+        state->completer->complete(rect);
     }
 }
 
@@ -686,7 +711,7 @@ void MyCodeEditor::onAutoCompleteTimer()
     static int lastLineNumber = -1;
     int currentLineNumber = currentBlock.blockNumber();
     if (currentLineNumber != lastLineNumber) {
-        commandModeExitedByDoubleSpace = false;
+        state->commandModeExitedByDoubleSpace = false;
         lastLineNumber = currentLineNumber;
     }
 
@@ -696,7 +721,7 @@ void MyCodeEditor::onAutoCompleteTimer()
     if (refreshCommandModeCompletion(context))
         return;
 
-    if (isInAlternateMode) {
+    if (state->isInAlternateMode) {
         processAlternateModeInput(context.lineUpToCursor);
         return;
     }
@@ -710,9 +735,9 @@ bool MyCodeEditor::refreshCommandModeCompletion(
     const EditorCommandModeCompletionRefreshState commandState =
         contextService()->commandModeCompletionRefreshState(
             context,
-            commandModeExitedByDoubleSpace);
+            state->commandModeExitedByDoubleSpace);
     if (commandState.matched) {
-        isInCustomCommandMode = commandState.commandModeActive;
+        state->isInCustomCommandMode = commandState.commandModeActive;
         if (commandState.suppressAfterExit) {
             return true;
         }
@@ -721,9 +746,9 @@ bool MyCodeEditor::refreshCommandModeCompletion(
             if (commandState.clearCommandHighlight)
                 clearCommandHighlight();
             if (commandState.markExitedByDoubleSpace)
-                commandModeExitedByDoubleSpace = true;
-            if (completer->popup()->isVisible()) {
-                completer->popup()->hide();
+                state->commandModeExitedByDoubleSpace = true;
+            if (state->completer->popup()->isVisible()) {
+                state->completer->popup()->hide();
             }
             return true;
         }
@@ -732,13 +757,13 @@ bool MyCodeEditor::refreshCommandModeCompletion(
             highlightCommandText(commandState.completion.prefixPosition);
 
         if (commandState.hidePopup) {
-            if (completer->popup()->isVisible())
-                completer->popup()->hide();
+            if (state->completer->popup()->isVisible())
+                state->completer->popup()->hide();
             return true;
         }
 
         if (commandState.showCompletions) {
-            completionModel->updateSymbolCompletions(
+            state->completionModel->updateSymbolCompletions(
                 commandState.completion.symbols,
                 commandState.completion.completionPrefix,
                 commandState.completion.command.symbolType);
@@ -748,10 +773,10 @@ bool MyCodeEditor::refreshCommandModeCompletion(
     }
 
     if (commandState.resetExitedByDoubleSpace)
-        commandModeExitedByDoubleSpace = false;
+        state->commandModeExitedByDoubleSpace = false;
 
     clearCommandHighlight();
-    isInCustomCommandMode = false;
+    state->isInCustomCommandMode = false;
 
     return false;
 }
@@ -764,11 +789,11 @@ void MyCodeEditor::refreshSymbolCompletion(
     const EditorCompletionState completionState =
         contextService()->editorCompletionState(context);
     if (completionState.available) {
-        completionModel->updateCompletions(completionState.completion.names,
+        state->completionModel->updateCompletions(completionState.completion.names,
                                            completionState.completion.symbols,
                                            completionState.prefix,
                                            CompletionModel::SymbolCompletion);
-        wordStartPos =
+        state->wordStartPos =
             currentBlock.position() + completionState.replacementStartColumn;
         showAutoComplete();
     }
@@ -814,10 +839,10 @@ QString MyCodeEditor::getWordUnderCursor()
     QTextCursor cursor = textCursor();
     int currentPos = cursor.position();
     cursor.movePosition(QTextCursor::StartOfWord, QTextCursor::MoveAnchor);
-    wordStartPos = cursor.position();
+    state->wordStartPos = cursor.position();
     cursor.setPosition(currentPos);
     cursor.movePosition(QTextCursor::EndOfWord, QTextCursor::MoveAnchor);
-    cursor.setPosition(wordStartPos, QTextCursor::MoveAnchor);
+    cursor.setPosition(state->wordStartPos, QTextCursor::MoveAnchor);
     cursor.setPosition(currentPos, QTextCursor::KeepAnchor);
 
     return cursor.selectedText();
@@ -825,7 +850,7 @@ QString MyCodeEditor::getWordUnderCursor()
 
 void MyCodeEditor::processAlternateModeInput(const QString &input)
 {
-    if (!isInAlternateMode) return;
+    if (!state->isInAlternateMode) return;
 
     const EditorAlternateModeCompletionDisplayState completionState =
         contextService()->alternateModeCompletionDisplayState(input);
@@ -833,17 +858,17 @@ void MyCodeEditor::processAlternateModeInput(const QString &input)
 }
 
 void MyCodeEditor::applyAlternateModeCompletionDisplayState(
-    const EditorAlternateModeCompletionDisplayState& state)
+    const EditorAlternateModeCompletionDisplayState& displayState)
 {
-    if (!state.updateCompletions)
+    if (!displayState.updateCompletions)
         return;
 
-    alternateCommandBuffer = state.normalizedInput;
-    completionModel->updateCommandCompletions(
-        state.matches,
-        state.normalizedInput);
+    state->alternateCommandBuffer = displayState.normalizedInput;
+    state->completionModel->updateCommandCompletions(
+        displayState.matches,
+        displayState.normalizedInput);
 
-    if (state.showPopup) {
+    if (displayState.showPopup) {
         showAutoComplete();
     }
 }
@@ -858,13 +883,13 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 
 void MyCodeEditor::clearAlternateModeBuffer()
 {
-    alternateCommandBuffer.clear();
+    state->alternateCommandBuffer.clear();
 }
 
 void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Control && ctrlPressed) {
-        ctrlPressed = false;
+    if (event->key() == Qt::Key_Control && state->ctrlPressed) {
+        state->ctrlPressed = false;
         clearSourceNavigationHover();
     }
 
@@ -873,7 +898,7 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
         return;
     }
 
-    if (isInAlternateMode) {
+    if (state->isInAlternateMode) {
         return;
     }
 
@@ -896,15 +921,15 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
     bool isCtrlPressed = (event->modifiers() & Qt::ControlModifier);
 
-    if (isCtrlPressed != ctrlPressed) {
-        ctrlPressed = isCtrlPressed;
+    if (isCtrlPressed != state->ctrlPressed) {
+        state->ctrlPressed = isCtrlPressed;
 
-        if (ctrlPressed) {
+        if (state->ctrlPressed) {
             refreshSourceNavigationHoverAt(event->pos());
         } else {
             clearSourceNavigationHover();
         }
-    } else if (ctrlPressed) {
+    } else if (state->ctrlPressed) {
         refreshSourceNavigationHoverAt(event->pos());
     }
 
@@ -913,7 +938,7 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 
 void MyCodeEditor::leaveEvent(QEvent *event)
 {
-    ctrlPressed = false;
+    state->ctrlPressed = false;
     clearSourceNavigationHover();
 
     QPlainTextEdit::leaveEvent(event);
@@ -956,13 +981,13 @@ void MyCodeEditor::applySourceNavigationHover(
         return;
     }
 
-    if (hoveredWord != target.text
-        || hoveredWordStartPos != target.startPos
-        || hoveredWordEndPos != target.endPos) {
+    if (state->hoveredWord != target.text
+        || state->hoveredWordStartPos != target.startPos
+        || state->hoveredWordEndPos != target.endPos) {
         clearHoveredSymbolHighlight();
-        hoveredWord = target.text;
-        hoveredWordStartPos = target.startPos;
-        hoveredWordEndPos = target.endPos;
+        state->hoveredWord = target.text;
+        state->hoveredWordStartPos = target.startPos;
+        state->hoveredWordEndPos = target.endPos;
         highlightHoveredSymbol(target.text, target.startPos, target.endPos);
     }
 
@@ -974,7 +999,7 @@ void MyCodeEditor::clearSourceNavigationHover()
 {
     viewport()->setCursor(Qt::IBeamCursor);
     clearHoveredSymbolHighlight();
-    hoveredWord.clear();
+    state->hoveredWord.clear();
 }
 
 void MyCodeEditor::moveMouseToCursor()
@@ -1036,8 +1061,8 @@ void MyCodeEditor::clearHoveredSymbolHighlight()
     removeExtraSelectionsByProperty(
         kHoveredSymbolSelectionProperty,
         kHoveredSymbolSelectionMarker);
-    hoveredWordStartPos = -1;
-    hoveredWordEndPos = -1;
+    state->hoveredWordStartPos = -1;
+    state->hoveredWordEndPos = -1;
 }
 
 void MyCodeEditor::removeExtraSelectionsByProperty(int property, int value)
