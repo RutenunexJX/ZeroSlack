@@ -10,6 +10,7 @@
 
 class QTabWidget;
 class MainWindow;
+class QWidget;
 
 class ModeManager : public QObject
 {
@@ -25,7 +26,7 @@ public:
     ~ModeManager();
 
     // Mode management
-    AppMode getCurrentMode() const { return currentMode; }
+    AppMode getCurrentMode() const;
     void switchMode();
     void setMode(AppMode mode);
 
@@ -38,25 +39,50 @@ signals:
     void modeSwitchTriggered();
     void navigationToggleRequested();
 
-private slots:
+private:
     void onShiftTimeout();
     void onDoubleClickTimeout();
 
-private:
-    AppMode currentMode = NormalMode;
-    QTabWidget* tabWidget;
+    struct ModeState {
+        AppMode currentMode = NormalMode;
 
-    // Shift detection for mode switching
-    bool shiftPressed = false;
-    QTimer* shiftDoubleClickTimer;
-    QTimer* shiftReleaseTimer;
-    int shiftClickCount = 0;
-    static const int DOUBLE_CLICK_INTERVAL = 300;
-    static const int SHIFT_TIMEOUT = 1000;
+        void toggle();
+        bool set(AppMode mode);
+        bool isNormal() const;
+        bool isAlternate() const;
+    };
 
-    // Shortcuts
-    std::array<std::unique_ptr<QShortcut>, 10> normalModeShortcuts;
-    std::array<std::unique_ptr<QShortcut>, 10> alternateModeShortcuts;
+    enum class ShiftReleaseAction {
+        NotHandled,
+        Handled,
+        SwitchMode
+    };
+
+    struct ShiftGesture {
+        bool pressed = false;
+        QTimer* doubleClickTimer = nullptr;
+        QTimer* releaseTimer = nullptr;
+        int clickCount = 0;
+
+        void init(ModeManager* owner);
+        bool handlePress(QKeyEvent* event);
+        ShiftReleaseAction handleRelease(QKeyEvent* event);
+        void handleTimeout();
+        void resetDoubleClick();
+    };
+
+    struct ShortcutSets {
+        std::array<std::unique_ptr<QShortcut>, 10> normalModeShortcuts;
+        std::array<std::unique_ptr<QShortcut>, 10> alternateModeShortcuts;
+
+        void setup(ModeManager* owner, QWidget* parent);
+        void updateForMode(const ModeState& modeState);
+    };
+
+    ModeState modeState;
+    QTabWidget* tabWidget = nullptr;
+    ShiftGesture shiftGesture;
+    ShortcutSets shortcuts;
 
     // Helper methods
     void setupModeShortcuts(QWidget* parent);
