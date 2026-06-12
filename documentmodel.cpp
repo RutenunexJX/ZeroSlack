@@ -147,6 +147,109 @@ QString DocumentModel::DocumentStore::textForEditor(MyCodeEditor* editor) const
     return tracked ? tracked->text : QString();
 }
 
+bool DocumentModel::DocumentRegistry::contains(MyCodeEditor* editor) const
+{
+    return documents.contains(editor);
+}
+
+void DocumentModel::DocumentRegistry::add(
+    MyCodeEditor* editor,
+    const TrackedDocument& tracked)
+{
+    documents.insert(editor, tracked);
+    indexes.add(editor, tracked.snapshot);
+}
+
+DocumentModel::TrackedDocument DocumentModel::DocumentRegistry::take(
+    MyCodeEditor* editor)
+{
+    const TrackedDocument tracked = documents.take(editor);
+    indexes.remove(editor, tracked.snapshot);
+    return tracked;
+}
+
+DocumentModel::TrackedDocument DocumentModel::DocumentRegistry::value(
+    MyCodeEditor* editor) const
+{
+    return documents.value(editor);
+}
+
+DocumentModel::TrackedDocument* DocumentModel::DocumentRegistry::find(
+    MyCodeEditor* editor)
+{
+    return documents.find(editor);
+}
+
+const DocumentModel::TrackedDocument* DocumentModel::DocumentRegistry::find(
+    MyCodeEditor* editor) const
+{
+    return documents.find(editor);
+}
+
+bool DocumentModel::DocumentRegistry::markEdited(
+    MyCodeEditor* editor,
+    const DocumentSnapshot& previous,
+    DocumentSnapshot* snapshot)
+{
+    return documents.markEdited(editor, previous, snapshot);
+}
+
+bool DocumentModel::DocumentRegistry::markSaved(
+    MyCodeEditor* editor,
+    TrackedDocument* tracked)
+{
+    return documents.markSaved(editor, tracked);
+}
+
+DocumentSnapshot DocumentModel::DocumentRegistry::replace(
+    MyCodeEditor* editor,
+    const TrackedDocument& tracked,
+    const DocumentSnapshot& previous)
+{
+    documents.insert(editor, tracked);
+    indexes.remove(editor, previous);
+    indexes.add(editor, tracked.snapshot);
+    return tracked.snapshot;
+}
+
+QList<DocumentSnapshot> DocumentModel::DocumentRegistry::snapshots() const
+{
+    return documents.snapshots();
+}
+
+DocumentSnapshot DocumentModel::DocumentRegistry::snapshotForEditor(
+    MyCodeEditor* editor) const
+{
+    const TrackedDocument* tracked = documents.find(editor);
+    return tracked ? tracked->snapshot : DocumentSnapshot();
+}
+
+DocumentSnapshot DocumentModel::DocumentRegistry::snapshotForFile(
+    const QString& fileName) const
+{
+    MyCodeEditor* editor = indexes.editorForFileName(fileName);
+    return snapshotForEditor(editor);
+}
+
+MyCodeEditor* DocumentModel::DocumentRegistry::editorForFile(
+    const QString& fileName) const
+{
+    return indexes.editorForFileName(fileName);
+}
+
+QString DocumentModel::DocumentRegistry::textForDocumentId(
+    const QString& documentId) const
+{
+    MyCodeEditor* editor = indexes.editorForDocumentId(documentId);
+    return documents.textForEditor(editor);
+}
+
+QString DocumentModel::DocumentRegistry::textForEditor(
+    MyCodeEditor* editor) const
+{
+    return documents.textForEditor(editor);
+}
+
 QString DocumentModel::DocumentSnapshotReader::normalizedFileName(
     const QString& fileName) const
 {
@@ -204,7 +307,7 @@ DocumentModel::TrackedDocument DocumentModel::DocumentSnapshotReader::capture(
 
 void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName)
 {
-    if (!editor || documents.contains(editor))
+    if (!editor || registry.contains(editor))
         return;
 
     if (!fileName.isEmpty())
@@ -212,8 +315,7 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
 
     TrackedDocument tracked;
     tracked = makeTrackedDocument(editor);
-    documents.insert(editor, tracked);
-    indexes.add(editor, tracked.snapshot);
+    registry.add(editor, tracked);
 
     connectEditorSignals(editor);
     emit documentOpened(tracked.snapshot);
@@ -237,19 +339,19 @@ void DocumentModel::connectEditorSignals(MyCodeEditor* editor)
 
 void DocumentModel::handleEditorTextChanged(MyCodeEditor* editor)
 {
-    const TrackedDocument* tracked = documents.find(editor);
+    const TrackedDocument* tracked = registry.find(editor);
     if (!tracked)
         return;
 
     const DocumentSnapshot previous = tracked->snapshot;
     DocumentSnapshot snapshot = refreshTrackedDocument(editor);
-    documents.markEdited(editor, previous, &snapshot);
+    registry.markEdited(editor, previous, &snapshot);
     emit documentEdited(snapshot);
 }
 
 void DocumentModel::handleEditorCursorChanged(MyCodeEditor* editor)
 {
-    if (!documents.contains(editor))
+    if (!registry.contains(editor))
         return;
 
     emit cursorChanged(refreshTrackedDocument(editor));
@@ -262,11 +364,10 @@ void DocumentModel::handleEditorFileNameChanged(MyCodeEditor* editor)
 
 void DocumentModel::unregisterEditor(MyCodeEditor* editor)
 {
-    if (!editor || !documents.contains(editor))
+    if (!editor || !registry.contains(editor))
         return;
 
-    const TrackedDocument tracked = documents.take(editor);
-    indexes.remove(editor, tracked.snapshot);
+    const TrackedDocument tracked = registry.take(editor);
     emit documentClosed(tracked.snapshot.documentId, tracked.snapshot.fileName);
 }
 
@@ -275,7 +376,7 @@ void DocumentModel::setDocumentFileName(MyCodeEditor* editor, const QString& fil
     if (!editor)
         return;
 
-    if (!documents.contains(editor)) {
+    if (!registry.contains(editor)) {
         registerEditor(editor, fileName);
         return;
     }
@@ -288,20 +389,20 @@ void DocumentModel::markSaved(MyCodeEditor* editor)
 {
     if (!editor)
         return;
-    if (!documents.contains(editor)) {
+    if (!registry.contains(editor)) {
         registerEditor(editor);
         return;
     }
 
-    const DocumentSnapshot previous = documents.value(editor).snapshot;
+    const DocumentSnapshot previous = registry.value(editor).snapshot;
     TrackedDocument tracked = makeTrackedDocument(editor, &previous);
-    documents.markSaved(editor, &tracked);
+    registry.markSaved(editor, &tracked);
     emit documentSaved(tracked.snapshot);
 }
 
 void DocumentModel::refreshEditorState(MyCodeEditor* editor)
 {
-    if (!editor || !documents.contains(editor))
+    if (!editor || !registry.contains(editor))
         return;
 
     refreshTrackedDocument(editor);
@@ -309,32 +410,28 @@ void DocumentModel::refreshEditorState(MyCodeEditor* editor)
 
 QList<DocumentSnapshot> DocumentModel::openDocuments() const
 {
-    return documents.snapshots();
+    return registry.snapshots();
 }
 
 DocumentSnapshot DocumentModel::documentForEditor(MyCodeEditor* editor) const
 {
-    const TrackedDocument* tracked = documents.find(editor);
-    return tracked ? tracked->snapshot : DocumentSnapshot();
+    return registry.snapshotForEditor(editor);
 }
 
 DocumentSnapshot DocumentModel::documentForFile(const QString& fileName) const
 {
     const QString normalized = normalizedFileName(fileName);
-    MyCodeEditor* editor = indexes.editorForFileName(normalized);
-    const TrackedDocument* tracked = documents.find(editor);
-    return tracked ? tracked->snapshot : DocumentSnapshot();
+    return registry.snapshotForFile(normalized);
 }
 
 MyCodeEditor* DocumentModel::editorForFile(const QString& fileName) const
 {
-    return indexes.editorForFileName(normalizedFileName(fileName));
+    return registry.editorForFile(normalizedFileName(fileName));
 }
 
 QString DocumentModel::documentText(const QString& documentId) const
 {
-    MyCodeEditor* editor = indexes.editorForDocumentId(documentId);
-    return documents.textForEditor(editor);
+    return registry.textForDocumentId(documentId);
 }
 
 QString DocumentModel::documentTextForFile(const QString& fileName) const
@@ -347,7 +444,7 @@ QString DocumentModel::documentTextForFile(const QString& fileName) const
 
 QString DocumentModel::documentTextForEditor(MyCodeEditor* editor) const
 {
-    return documents.textForEditor(editor);
+    return registry.textForEditor(editor);
 }
 
 QString DocumentModel::normalizedFileName(const QString& fileName) const
@@ -362,24 +459,13 @@ DocumentModel::TrackedDocument DocumentModel::makeTrackedDocument(
     return snapshotReader.capture(editor, previous);
 }
 
-DocumentSnapshot DocumentModel::replaceTrackedDocument(
-    MyCodeEditor* editor,
-    const TrackedDocument& tracked,
-    const DocumentSnapshot& previous)
-{
-    documents.insert(editor, tracked);
-    indexes.remove(editor, previous);
-    indexes.add(editor, tracked.snapshot);
-    return tracked.snapshot;
-}
-
 DocumentSnapshot DocumentModel::refreshTrackedDocument(MyCodeEditor* editor)
 {
-    if (!editor || !documents.contains(editor))
+    if (!editor || !registry.contains(editor))
         return DocumentSnapshot();
 
-    TrackedDocument tracked = documents.value(editor);
+    TrackedDocument tracked = registry.value(editor);
     const DocumentSnapshot previous = tracked.snapshot;
     tracked = makeTrackedDocument(editor, &previous);
-    return replaceTrackedDocument(editor, tracked, previous);
+    return registry.replace(editor, tracked, previous);
 }

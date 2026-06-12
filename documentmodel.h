@@ -96,8 +96,33 @@ private:
             const DocumentSnapshot* previous = nullptr) const;
     };
 
-    DocumentStore documents;
-    DocumentIndexes indexes;
+    struct DocumentRegistry {
+        DocumentStore documents;
+        DocumentIndexes indexes;
+
+        bool contains(MyCodeEditor* editor) const;
+        void add(MyCodeEditor* editor, const TrackedDocument& tracked);
+        TrackedDocument take(MyCodeEditor* editor);
+        TrackedDocument value(MyCodeEditor* editor) const;
+        TrackedDocument* find(MyCodeEditor* editor);
+        const TrackedDocument* find(MyCodeEditor* editor) const;
+        bool markEdited(MyCodeEditor* editor,
+                        const DocumentSnapshot& previous,
+                        DocumentSnapshot* snapshot);
+        bool markSaved(MyCodeEditor* editor,
+                       TrackedDocument* tracked);
+        DocumentSnapshot replace(MyCodeEditor* editor,
+                                 const TrackedDocument& tracked,
+                                 const DocumentSnapshot& previous);
+        QList<DocumentSnapshot> snapshots() const;
+        DocumentSnapshot snapshotForEditor(MyCodeEditor* editor) const;
+        DocumentSnapshot snapshotForFile(const QString& fileName) const;
+        MyCodeEditor* editorForFile(const QString& fileName) const;
+        QString textForDocumentId(const QString& documentId) const;
+        QString textForEditor(MyCodeEditor* editor) const;
+    };
+
+    DocumentRegistry registry;
     DocumentSnapshotReader snapshotReader;
 
     QString normalizedFileName(const QString& fileName) const;
@@ -107,9 +132,6 @@ private:
     void handleEditorTextChanged(MyCodeEditor* editor);
     void handleEditorCursorChanged(MyCodeEditor* editor);
     void handleEditorFileNameChanged(MyCodeEditor* editor);
-    DocumentSnapshot replaceTrackedDocument(MyCodeEditor* editor,
-                                            const TrackedDocument& tracked,
-                                            const DocumentSnapshot& previous);
     DocumentSnapshot refreshTrackedDocument(MyCodeEditor* editor);
 };
 
