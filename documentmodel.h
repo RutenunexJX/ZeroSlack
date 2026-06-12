@@ -1,14 +1,16 @@
 #ifndef DOCUMENTMODEL_H
 #define DOCUMENTMODEL_H
 
-#include "documentregistry.h"
 #include "documentsnapshot.h"
 
 #include <QObject>
 #include <QList>
 #include <QString>
 
+#include <memory>
+
 class MyCodeEditor;
+struct DocumentModelState;
 
 class DocumentModel : public QObject
 {
@@ -41,8 +43,7 @@ signals:
     void cursorChanged(const DocumentSnapshot& snapshot);
 
 private:
-    DocumentRegistry registry;
-    DocumentSnapshotReader snapshotReader;
+    std::unique_ptr<DocumentModelState> state;
 
     void connectEditorSignals(MyCodeEditor* editor);
     void handleEditorTextChanged(MyCodeEditor* editor);
