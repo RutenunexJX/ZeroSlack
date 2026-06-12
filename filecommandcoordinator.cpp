@@ -14,68 +14,150 @@ FileCommandCoordinator::FileCommandCoordinator(TabManager* tabManager,
                                                WorkspaceManager* workspaceManager,
                                                QObject* parent)
     : QObject(parent)
-    , tabManager(tabManager)
-    , workspaceManager(workspaceManager)
 {
+    targets.set(tabManager, workspaceManager);
 }
 
-void FileCommandCoordinator::newFile()
+void FileCommandCoordinator::CommandTargets::set(
+    TabManager* newTabManager,
+    WorkspaceManager* newWorkspaceManager)
+{
+    tabManager = newTabManager;
+    workspaceManager = newWorkspaceManager;
+}
+
+void FileCommandCoordinator::CommandTargets::createNewTab() const
 {
     if (tabManager)
         tabManager->createNewTab();
 }
 
-void FileCommandCoordinator::openFile()
+void FileCommandCoordinator::CommandTargets::openFile() const
 {
     if (tabManager)
         tabManager->openFileInTab(QString());
 }
 
-void FileCommandCoordinator::saveFile()
+void FileCommandCoordinator::CommandTargets::saveCurrentTab() const
 {
     if (tabManager)
         tabManager->saveCurrentTab();
 }
 
-void FileCommandCoordinator::saveFileAs()
+void FileCommandCoordinator::CommandTargets::saveAsCurrentTab() const
 {
     if (tabManager)
         tabManager->saveAsCurrentTab();
 }
 
+void FileCommandCoordinator::CommandTargets::openWorkspace() const
+{
+    if (workspaceManager)
+        workspaceManager->openWorkspace(QString());
+}
+
+bool FileCommandCoordinator::CommandTargets::hasUnsavedChanges() const
+{
+    return tabManager && tabManager->hasUnsavedChanges();
+}
+
+MyCodeEditor* FileCommandCoordinator::CommandTargets::currentEditor() const
+{
+    return tabManager ? tabManager->getCurrentEditor() : nullptr;
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::copy(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->copy();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::paste(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->paste();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::cut(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->cut();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::undo(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->undo();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::redo(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->redo();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::selectAll(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->selectAll();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::comment(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->insertPlainText(QStringLiteral("// "));
+}
+
+void FileCommandCoordinator::newFile()
+{
+    targets.createNewTab();
+}
+
+void FileCommandCoordinator::openFile()
+{
+    targets.openFile();
+}
+
+void FileCommandCoordinator::saveFile()
+{
+    targets.saveCurrentTab();
+}
+
+void FileCommandCoordinator::saveFileAs()
+{
+    targets.saveAsCurrentTab();
+}
+
 void FileCommandCoordinator::copy()
 {
-    MyCodeEditor* codeEditor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    if (codeEditor)
-        codeEditor->copy();
+    editorCommands.copy(targets.currentEditor());
 }
 
 void FileCommandCoordinator::paste()
 {
-    MyCodeEditor* codeEditor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    if (codeEditor)
-        codeEditor->paste();
+    editorCommands.paste(targets.currentEditor());
 }
 
 void FileCommandCoordinator::cut()
 {
-    MyCodeEditor* codeEditor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    if (codeEditor)
-        codeEditor->cut();
+    editorCommands.cut(targets.currentEditor());
 }
 
 void FileCommandCoordinator::undo()
 {
-    MyCodeEditor* codeEditor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    if (codeEditor)
-        codeEditor->undo();
+    editorCommands.undo(targets.currentEditor());
 }
 
 void FileCommandCoordinator::redo()
 {
-    MyCodeEditor* codeEditor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    if (codeEditor)
-        codeEditor->redo();
+    editorCommands.redo(targets.currentEditor());
 }
 
 void FileCommandCoordinator::executeAlternateCommand(MyCodeEditor* editor,
@@ -95,32 +177,25 @@ void FileCommandCoordinator::executeAlternateCommand(MyCodeEditor* editor,
         newFile();
         break;
     case AlternateCommandAction::Copy:
-        if (editor)
-            editor->copy();
+        editorCommands.copy(editor);
         break;
     case AlternateCommandAction::Paste:
-        if (editor)
-            editor->paste();
+        editorCommands.paste(editor);
         break;
     case AlternateCommandAction::Cut:
-        if (editor)
-            editor->cut();
+        editorCommands.cut(editor);
         break;
     case AlternateCommandAction::Undo:
-        if (editor)
-            editor->undo();
+        editorCommands.undo(editor);
         break;
     case AlternateCommandAction::Redo:
-        if (editor)
-            editor->redo();
+        editorCommands.redo(editor);
         break;
     case AlternateCommandAction::SelectAll:
-        if (editor)
-            editor->selectAll();
+        editorCommands.selectAll(editor);
         break;
     case AlternateCommandAction::Comment:
-        if (editor)
-            editor->insertPlainText(QStringLiteral("// "));
+        editorCommands.comment(editor);
         break;
     case AlternateCommandAction::Close:
     case AlternateCommandAction::Find:
@@ -146,8 +221,7 @@ void FileCommandCoordinator::executeAlternateCommandText(
 
 void FileCommandCoordinator::openDirectoryAsWorkspace()
 {
-    if (workspaceManager)
-        workspaceManager->openWorkspace(QString());
+    targets.openWorkspace();
 }
 
 void FileCommandCoordinator::connectActions(
@@ -199,7 +273,7 @@ void FileCommandCoordinator::handleCloseEvent(QCloseEvent* event, QWidget* dialo
     if (!event)
         return;
 
-    if (!tabManager || !tabManager->hasUnsavedChanges()) {
+    if (!targets.hasUnsavedChanges()) {
         event->accept();
         return;
     }

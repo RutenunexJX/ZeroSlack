@@ -48,8 +48,33 @@ public:
                         QAction* openWorkspaceAction);
 
 private:
-    TabManager* tabManager = nullptr;
-    WorkspaceManager* workspaceManager = nullptr;
+    struct CommandTargets {
+        TabManager* tabManager = nullptr;
+        WorkspaceManager* workspaceManager = nullptr;
+
+        void set(TabManager* tabManager,
+                 WorkspaceManager* workspaceManager);
+        void createNewTab() const;
+        void openFile() const;
+        void saveCurrentTab() const;
+        void saveAsCurrentTab() const;
+        void openWorkspace() const;
+        bool hasUnsavedChanges() const;
+        MyCodeEditor* currentEditor() const;
+    };
+
+    struct EditorCommandDispatcher {
+        void copy(MyCodeEditor* editor) const;
+        void paste(MyCodeEditor* editor) const;
+        void cut(MyCodeEditor* editor) const;
+        void undo(MyCodeEditor* editor) const;
+        void redo(MyCodeEditor* editor) const;
+        void selectAll(MyCodeEditor* editor) const;
+        void comment(MyCodeEditor* editor) const;
+    };
+
+    CommandTargets targets;
+    EditorCommandDispatcher editorCommands;
 };
 
 #endif // FILECOMMANDCOORDINATOR_H
