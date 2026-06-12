@@ -66,70 +66,12 @@ QList<QTextEdit::ExtraSelection> editorSelectionsWithout(
 class LineNumberWidget : public QWidget
 {
 public:
-    explicit LineNumberWidget(MyCodeEditor *editor = nullptr)
-        : QWidget(editor)
-        , codeEditor(editor)
-    {
-    }
+    explicit LineNumberWidget(MyCodeEditor *editor = nullptr);
 
 protected:
-    void paintEvent(QPaintEvent *event) override
-    {
-        QPainter painter(this);
-        painter.fillRect(event->rect(), QColor(100, 100, 100, 20));
-
-        QTextBlock block = codeEditor->firstVisibleBlock();
-        int blockNumber = block.blockNumber();
-        const int cursorTop = codeEditor->blockBoundingGeometry(
-            codeEditor->textCursor().block()).translated(
-                codeEditor->contentOffset()).top();
-        int top = codeEditor->blockBoundingGeometry(block).translated(
-            codeEditor->contentOffset()).top();
-        int bottom = top + codeEditor->blockBoundingRect(block).height();
-
-        while (block.isValid() && top <= event->rect().bottom()) {
-            painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
-            painter.drawText(
-                0,
-                top,
-                codeEditor->getLineNumberWidgetWidth() - 3,
-                bottom - top,
-                Qt::AlignRight,
-                QString::number(blockNumber + 1));
-
-            block = block.next();
-            top = bottom;
-            bottom = top + codeEditor->blockBoundingRect(block).height();
-            blockNumber++;
-        }
-    }
-
-    void mousePressEvent(QMouseEvent *event) override
-    {
-        QTextBlock block = codeEditor->document()->findBlockByLineNumber(
-            static_cast<int>(event->position().y())
-                / codeEditor->fontMetrics().height()
-            + codeEditor->verticalScrollBar()->value());
-        codeEditor->setTextCursor(QTextCursor(block));
-    }
-
-    void wheelEvent(QWheelEvent *event) override
-    {
-        const QPoint angle = event->angleDelta();
-        if (!angle.isNull()) {
-            const int dy = angle.y();
-            const int dx = angle.x();
-            if (dy != 0) {
-                QScrollBar* bar = codeEditor->verticalScrollBar();
-                bar->setValue(bar->value() - dy);
-            } else if (dx != 0) {
-                QScrollBar* bar = codeEditor->horizontalScrollBar();
-                bar->setValue(bar->value() - dx);
-            }
-        }
-
-        event->accept();
-    }
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
 private:
     MyCodeEditor *codeEditor = nullptr;
@@ -174,7 +116,124 @@ struct MyCodeEditorState
             if (widget)
                 widget->setGeometry(0, 0, width, contentsRect.height());
         }
+
+        void paint(MyCodeEditor* editor, QPaintEvent *event) const
+        {
+            QPainter painter(widget);
+            painter.fillRect(event->rect(), QColor(100, 100, 100, 20));
+
+            QTextBlock block = editor->firstVisibleBlock();
+            int blockNumber = block.blockNumber();
+            const int cursorTop = editor->blockBoundingGeometry(
+                editor->textCursor().block()).translated(
+                    editor->contentOffset()).top();
+            int top = editor->blockBoundingGeometry(block).translated(
+                editor->contentOffset()).top();
+            int bottom = top + editor->blockBoundingRect(block).height();
+
+            while (block.isValid() && top <= event->rect().bottom()) {
+                painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
+                painter.drawText(
+                    0,
+                    top,
+                    widthFor(editor) - 3,
+                    bottom - top,
+                    Qt::AlignRight,
+                    QString::number(blockNumber + 1));
+
+                block = block.next();
+                top = bottom;
+                bottom = top + editor->blockBoundingRect(block).height();
+                blockNumber++;
+            }
+        }
+
+        void handleMousePress(MyCodeEditor* editor, QMouseEvent *event) const
+        {
+            QTextBlock block = editor->document()->findBlockByLineNumber(
+                static_cast<int>(event->position().y())
+                    / editor->fontMetrics().height()
+                + editor->verticalScrollBar()->value());
+            editor->setTextCursor(QTextCursor(block));
+        }
+
+        void handleWheel(MyCodeEditor* editor, QWheelEvent *event) const
+        {
+            const QPoint angle = event->angleDelta();
+            if (!angle.isNull()) {
+                const int dy = angle.y();
+                const int dx = angle.x();
+                if (dy != 0) {
+                    QScrollBar* bar = editor->verticalScrollBar();
+                    bar->setValue(bar->value() - dy);
+                } else if (dx != 0) {
+                    QScrollBar* bar = editor->horizontalScrollBar();
+                    bar->setValue(bar->value() - dx);
+                }
+            }
+
+            event->accept();
+        }
     } gutter;
+
+    struct DocumentGeometry {
+        qreal blockTopY(const MyCodeEditor* editor, int blockNumber) const
+        {
+            QTextBlock block = editor->document()->findBlockByNumber(blockNumber);
+            if (!block.isValid())
+                return 0;
+
+            return editor->blockBoundingGeometry(block).translated(
+                editor->contentOffset()).top();
+        }
+
+        qreal blockHeight(const MyCodeEditor* editor, int blockNumber) const
+        {
+            QTextBlock block = editor->document()->findBlockByNumber(blockNumber);
+            if (!block.isValid())
+                return editor->fontMetrics().height();
+
+            return editor->blockBoundingRect(block).height();
+        }
+
+        qreal documentHeightPx(const MyCodeEditor* editor) const
+        {
+            QAbstractTextDocumentLayout* layout =
+                editor->document()->documentLayout();
+            return layout ? layout->documentSize().height() : 0;
+        }
+    } geometry;
+
+    struct CursorNavigation {
+        void moveMouseToCursor(MyCodeEditor* editor) const
+        {
+            if (editor->viewport() && editor->viewport()->isVisible()) {
+                QCursor::setPos(
+                    editor->viewport()->mapToGlobal(
+                        editor->cursorRect().center()));
+            }
+        }
+
+        void applyLineTarget(
+            MyCodeEditor* editor,
+            const SourceLineNavigationTarget& target) const
+        {
+            QTextCursor cursor = editor->textCursor();
+            cursor.movePosition(QTextCursor::Start);
+            for (int i = 0; i < target.lineMoves; ++i)
+                cursor.movePosition(QTextCursor::Down);
+            if (target.columnMoves > 0) {
+                cursor.movePosition(
+                    QTextCursor::Right,
+                    QTextCursor::MoveAnchor,
+                    target.columnMoves);
+            }
+            editor->setTextCursor(cursor);
+            editor->centerCursor();
+            editor->setFocus();
+            moveMouseToCursor(editor);
+        }
+    } cursorNavigation;
 
     struct SyntaxTreeState {
         std::unique_ptr<TSDocument> document;
@@ -735,6 +794,36 @@ struct MyCodeEditorState
 
 };
 
+LineNumberWidget::LineNumberWidget(MyCodeEditor *editor)
+    : QWidget(editor)
+    , codeEditor(editor)
+{
+}
+
+void LineNumberWidget::paintEvent(QPaintEvent *event)
+{
+    if (!codeEditor)
+        return;
+
+    codeEditor->state->gutter.paint(codeEditor, event);
+}
+
+void LineNumberWidget::mousePressEvent(QMouseEvent *event)
+{
+    if (!codeEditor)
+        return;
+
+    codeEditor->state->gutter.handleMousePress(codeEditor, event);
+}
+
+void LineNumberWidget::wheelEvent(QWheelEvent *event)
+{
+    if (!codeEditor)
+        return;
+
+    codeEditor->state->gutter.handleWheel(codeEditor, event);
+}
+
 MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
     , state(std::make_unique<MyCodeEditorState>())
@@ -847,22 +936,17 @@ QString MyCodeEditor::currentModuleNameAt(int charPos) const
 
 qreal MyCodeEditor::getBlockTopY(int blockNumber) const
 {
-    QTextBlock block = document()->findBlockByNumber(blockNumber);
-    if (!block.isValid()) return 0;
-    return blockBoundingGeometry(block).translated(contentOffset()).top();
+    return state->geometry.blockTopY(this, blockNumber);
 }
 
 qreal MyCodeEditor::getBlockHeight(int blockNumber) const
 {
-    QTextBlock block = document()->findBlockByNumber(blockNumber);
-    if (!block.isValid()) return fontMetrics().height();
-    return blockBoundingRect(block).height();
+    return state->geometry.blockHeight(this, blockNumber);
 }
 
 qreal MyCodeEditor::getDocumentHeightPx() const
 {
-    QAbstractTextDocumentLayout* layout = document()->documentLayout();
-    return layout ? layout->documentSize().height() : 0;
+    return state->geometry.documentHeightPx(this);
 }
 
 void MyCodeEditor::updateLineNumberWidget(QRect rect, int dy)
@@ -1411,25 +1495,11 @@ void MyCodeEditor::clearSourceNavigationHover()
 
 void MyCodeEditor::moveMouseToCursor()
 {
-    if (viewport() && viewport()->isVisible()) {
-        QCursor::setPos(viewport()->mapToGlobal(cursorRect().center()));
-    }
+    state->cursorNavigation.moveMouseToCursor(this);
 }
 
 void MyCodeEditor::applyLineNavigationTarget(
     const SourceLineNavigationTarget& target)
 {
-    QTextCursor cursor = textCursor();
-    cursor.movePosition(QTextCursor::Start);
-    for (int i = 0; i < target.lineMoves; ++i)
-        cursor.movePosition(QTextCursor::Down);
-    if (target.columnMoves > 0) {
-        cursor.movePosition(QTextCursor::Right,
-                            QTextCursor::MoveAnchor,
-                            target.columnMoves);
-    }
-    setTextCursor(cursor);
-    centerCursor();
-    setFocus();
-    moveMouseToCursor();
+    state->cursorNavigation.applyLineTarget(this, target);
 }

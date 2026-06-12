@@ -67,6 +67,7 @@ private:
     friend class LineNumberWidget;
     friend class NavigationCommandCoordinator;
     friend class ScopeBandWidget;
+    friend struct MyCodeEditorState;
 
     void initConnection();
     void initFont();
