@@ -18,15 +18,17 @@ Thin UI consumers
 - Do not restore `.claude/` or Claude local config.
 - Do not restore SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
 - Keep source, tests, UI strings, CMake, and these docs English / ASCII.
-- Auto-create a local commit after each completed medium-sized coherent architecture block passes the agreed build/test/hygiene gates.
+- Batch architecture work, verify once, then commit each coherent block separately.
 - Do not push unless explicitly asked.
 - Keep commit messages concise and architecture-oriented.
 - Never discard user changes or use destructive git commands unless explicitly requested.
 
-## Latest Verified Block
+## Current Workflow
 
-Active-tab document events now publish `DocumentModel` snapshots.
-`TabManager` emits `activeDocumentChanged(DocumentSnapshot)` alongside the legacy editor signal, and `NavigationManager` consumes the snapshot event so active-file navigation state follows model-owned document identity.
+Prefer batches of three or more medium-sized, clearly themed architecture blocks.
+After each block, run only light sanity checks such as affected build, focused tests, `git diff --check`, or static boundary scans.
+After two or three blocks, run full Ninja, full `ctest --output-on-failure`, hygiene scans, and the forbidden-file guard.
+When full verification passes, create separate local commits for each block. Reduce batch size when blocks touch the same core files or unsettled API boundary.
 
 ## Current Architecture Snapshot
 

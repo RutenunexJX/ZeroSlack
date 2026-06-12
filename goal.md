@@ -51,6 +51,7 @@ Tree-sitter and Slang split:
 - MyCodeEditor should provide editor UI and live syntax behavior while document state and project semantic decisions move toward models, services, scheduler, runtime, and coordinators.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
+- Verification may be batched across independent architecture blocks, but commits remain coherent by block.
 
 ## Definition Of Done
 
@@ -62,4 +63,6 @@ The foundation is healthy when:
 - UI/services can read stable snapshot-backed semantic data
 - all CTest targets pass
 - real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
+- batched work passes full Ninja, full `ctest --output-on-failure`, hygiene scans, and forbidden-file guard before block commits are created
+- local commits stay separated by coherent architecture block
 - handoff docs are short enough for a new session to read without wasting context
