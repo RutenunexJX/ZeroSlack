@@ -79,6 +79,16 @@ private:
 
 struct MyCodeEditorState
 {
+    struct EditorAppearance {
+        void apply(MyCodeEditor* editor) const
+        {
+            editor->setFont(QFont("Consolas", 14));
+            const int tabWidth =
+                editor->fontMetrics().horizontalAdvance(' ') * 4;
+            editor->setTabStopDistance(tabWidth);
+        }
+    } appearance;
+
     struct GutterUi {
         LineNumberWidget *widget = nullptr;
 
@@ -254,6 +264,17 @@ struct MyCodeEditorState
             highlighter = new MyHighlighter(textDocument, document.get());
         }
 
+        void attachToEditor(MyCodeEditor* editor)
+        {
+            syncText(editor->document()->toPlainText());
+            QObject::connect(
+                editor->document(),
+                &QTextDocument::contentsChange,
+                editor,
+                &MyCodeEditor::onTsContentsChange);
+            createHighlighter(editor->document());
+        }
+
         void applyEdit(int position,
                        int charsRemoved,
                        int charsAdded,
@@ -418,6 +439,26 @@ struct MyCodeEditorState
             timer->setInterval(0);
         }
 
+        void attachToEditor(MyCodeEditor* editor)
+        {
+            init(editor);
+            QObject::connect(
+                timer,
+                &QTimer::timeout,
+                editor,
+                &MyCodeEditor::onAutoCompleteTimer);
+            QObject::connect(
+                completer,
+                QOverload<const QModelIndex &>::of(&QCompleter::activated),
+                editor,
+                &MyCodeEditor::onCompletionActivated);
+            QObject::connect(
+                editor,
+                &QPlainTextEdit::textChanged,
+                editor,
+                &MyCodeEditor::onTextChanged);
+        }
+
         QAbstractItemView* popup() const { return completer->popup(); }
         bool popupVisible() const { return popup()->isVisible(); }
         void hidePopup() const { popup()->hide(); }
@@ -550,6 +591,28 @@ struct MyCodeEditorState
         void schedule() const
         {
             timer->start(0);
+        }
+
+        void attachToEditor(MyCodeEditor* editor)
+        {
+            init(editor);
+            QObject::connect(
+                timer,
+                &QTimer::timeout,
+                editor,
+                &MyCodeEditor::highlightCurrentLine);
+
+            auto scheduleHighlightRefresh = [this]() { schedule(); };
+            QObject::connect(
+                editor,
+                &QPlainTextEdit::cursorPositionChanged,
+                editor,
+                scheduleHighlightRefresh);
+            QObject::connect(
+                editor,
+                &QPlainTextEdit::textChanged,
+                editor,
+                scheduleHighlightRefresh);
         }
     } highlightRefresh;
 
@@ -792,6 +855,134 @@ struct MyCodeEditorState
         }
     } selections;
 
+    void initializeCore(MyCodeEditor* editor)
+    {
+        semantic.init();
+        syntax.init();
+        gutter.init(editor);
+        identity.set(QString());
+        editor->setMouseTracking(true);
+    }
+
+    void shutdown()
+    {
+        gutter.destroy();
+    }
+
+    void attachEditorConnections(MyCodeEditor* editor)
+    {
+        highlightRefresh.attachToEditor(editor);
+        QObject::connect(
+            editor,
+            &QPlainTextEdit::blockCountChanged,
+            editor,
+            &MyCodeEditor::updateLineNumberWidgetWidth);
+        QObject::connect(
+            editor,
+            &QPlainTextEdit::updateRequest,
+            editor,
+            &MyCodeEditor::updateLineNumberWidget);
+    }
+
+    QString currentModuleNameAt(int charPos) const
+    {
+        return syntax.moduleNameAt(charPos);
+    }
+
+    QString currentModuleName(const MyCodeEditor* editor) const
+    {
+        return currentModuleNameAt(editor->textCursor().position());
+    }
+
+    EditorSemanticContext semanticContextForPosition(
+        const MyCodeEditor* editor,
+        int cursorPosition,
+        bool includeDocumentText) const
+    {
+        const int semanticPosition = cursorPosition >= 0
+            ? cursorPosition
+            : editor->textCursor().position();
+
+        return semantic.contextForDocument(
+            editor->document(),
+            identity.fileName,
+            currentModuleNameAt(semanticPosition),
+            semanticPosition,
+            includeDocumentText);
+    }
+
+    EditorSemanticContext semanticContextForCursor(
+        const MyCodeEditor* editor,
+        const QTextCursor& cursor,
+        bool includeDocumentText) const
+    {
+        return semanticContextForPosition(
+            editor,
+            cursor.position(),
+            includeDocumentText);
+    }
+
+    EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
+        MyCodeEditor* editor,
+        const QPoint& position) const
+    {
+        QTextCursor cursor = editor->cursorForPosition(position);
+        QTextBlock block = cursor.block();
+        if (!block.isValid())
+            return {};
+
+        return semantic.contextService()->editorSourceNavigationTarget(
+            semanticContextForPosition(editor, cursor.position(), false),
+            block.position());
+    }
+
+    bool requestSourceNavigationAtPosition(
+        MyCodeEditor* editor,
+        const QPoint& position) const
+    {
+        const EditorSourceNavigationTarget target =
+            sourceNavigationTargetAtPosition(editor, position);
+        emit editor->sourceNavigationRequested(
+            target,
+            semanticContextForPosition(editor, target.cursorPosition, false));
+        return target.matched && !target.text.isEmpty();
+    }
+
+    void refreshSourceNavigationHoverAt(
+        MyCodeEditor* editor,
+        const QPoint& position)
+    {
+        applySourceNavigationHover(
+            editor,
+            sourceNavigationTargetAtPosition(editor, position));
+    }
+
+    void applySourceNavigationHover(
+        MyCodeEditor* editor,
+        const EditorSourceNavigationTarget& target)
+    {
+        if (!target.matched) {
+            clearSourceNavigationHover(editor);
+            editor->viewport()->setCursor(sourceHover.nonJumpableCursor());
+            return;
+        }
+
+        if (!sourceHover.matches(target)) {
+            selections.clearHoveredSymbol(editor, sourceHover);
+            sourceHover.setTarget(target);
+            selections.highlightHoveredSymbol(editor, target);
+        }
+
+        editor->viewport()->setCursor(sourceHover.cursorForTarget(target));
+    }
+
+    void clearSourceNavigationHover(MyCodeEditor* editor)
+    {
+        editor->viewport()->setCursor(Qt::IBeamCursor);
+        selections.clearHoveredSymbol(editor, sourceHover);
+        sourceHover.clearTarget();
+    }
+
 };
 
 LineNumberWidget::LineNumberWidget(MyCodeEditor *editor)
@@ -828,9 +1019,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
     , state(std::make_unique<MyCodeEditorState>())
 {
-    state->semantic.init();
-    state->syntax.init();
-    state->gutter.init(this);
+    state->initializeCore(this);
 
     initConnection();
     initFont();
@@ -842,49 +1031,26 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
 
     setLineWrapMode(QPlainTextEdit::NoWrap);
 
-    state->identity.set(QString());
-
-    setMouseTracking(true);
 }
 
 MyCodeEditor::~MyCodeEditor()
 {
-    state->gutter.destroy();
+    state->shutdown();
 }
 
 void MyCodeEditor::initConnection()
 {
-    state->highlightRefresh.init(this);
-    connect(state->highlightRefresh.timer, &QTimer::timeout,
-            this, &MyCodeEditor::highlightCurrentLine);
-
-    // Coalesce cursor/text changes into one selection refresh per event loop.
-    auto scheduleHighlightRefresh = [this]() { state->highlightRefresh.schedule(); };
-    connect(this, &QPlainTextEdit::cursorPositionChanged, this, scheduleHighlightRefresh);
-    connect(this, &QPlainTextEdit::textChanged, this, scheduleHighlightRefresh);
-
-    connect(this, &QPlainTextEdit::blockCountChanged,
-            this, &MyCodeEditor::updateLineNumberWidgetWidth);
-    connect(this, &QPlainTextEdit::updateRequest,
-            this, &MyCodeEditor::updateLineNumberWidget);
+    state->attachEditorConnections(this);
 }
 
 void MyCodeEditor::initFont()
 {
-    this->setFont(QFont("Consolas",14));
-    int tabWidth = fontMetrics().horizontalAdvance(' ') * 4;
-    setTabStopDistance(tabWidth);
+    state->appearance.apply(this);
 }
 
 void MyCodeEditor::initHighlighter()
 {
-    // Seed the live tree with current content, then connect contentsChange BEFORE creating the
-    // highlighter so our incremental tree update runs first; the highlighter then reads the fresh
-    // tree when QSyntaxHighlighter reformats the changed blocks.
-    state->syntax.syncText(document()->toPlainText());
-    connect(document(), &QTextDocument::contentsChange,
-            this, &MyCodeEditor::onTsContentsChange);
-    state->syntax.createHighlighter(document());
+    state->syntax.attachToEditor(this);
 }
 
 void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
@@ -931,7 +1097,7 @@ QString MyCodeEditor::currentModuleNameAt(int charPos) const
 {
     // Live, error-tolerant enclosing module from the tree-sitter tree (A3). The editor keeps
     // syntax synced on every edit, so this is never stale (unlike the debounced Slang path).
-    return state->syntax.moduleNameAt(charPos);
+    return state->currentModuleNameAt(charPos);
 }
 
 qreal MyCodeEditor::getBlockTopY(int blockNumber) const
@@ -980,15 +1146,9 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     int cursorPosition,
     bool includeDocumentText) const
 {
-    const int semanticPosition = cursorPosition >= 0
-        ? cursorPosition
-        : textCursor().position();
-
-    return state->semantic.contextForDocument(
-        document(),
-        getFileName(),
-        currentModuleNameAt(semanticPosition),
-        semanticPosition,
+    return state->semanticContextForPosition(
+        this,
+        cursorPosition,
         includeDocumentText);
 }
 
@@ -996,7 +1156,10 @@ EditorSemanticContext MyCodeEditor::semanticContextForCursor(
     const QTextCursor& cursor,
     bool includeDocumentText) const
 {
-    return editorSemanticContextForPosition(cursor.position(), includeDocumentText);
+    return state->semanticContextForCursor(
+        this,
+        cursor,
+        includeDocumentText);
 }
 
 void MyCodeEditor::setFileName(QString fileName)
@@ -1014,17 +1177,12 @@ QString MyCodeEditor::getFileName() const
 
 QString MyCodeEditor::currentModuleName() const
 {
-    return currentModuleNameAt(textCursor().position());
+    return state->currentModuleName(this);
 }
 
 void MyCodeEditor::initAutoComplete()
 {
-    state->completion.init(this);
-    connect(state->completion.timer, &QTimer::timeout, this, &MyCodeEditor::onAutoCompleteTimer);
-    connect(state->completion.completer, QOverload<const QModelIndex &>::of(&QCompleter::activated),
-            this, &MyCodeEditor::onCompletionActivated);
-
-    connect(this, &QPlainTextEdit::textChanged, this, &MyCodeEditor::onTextChanged);
+    state->completion.attachToEditor(this);
 }
 
 void MyCodeEditor::onTextChanged()
@@ -1443,54 +1601,28 @@ void MyCodeEditor::leaveEvent(QEvent *event)
 EditorSourceNavigationTarget
 MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
 {
-    QTextCursor cursor = cursorForPosition(position);
-    QTextBlock block = cursor.block();
-    if (!block.isValid())
-        return {};
-
-    return contextService()->editorSourceNavigationTarget(
-            editorSemanticContextForPosition(cursor.position()),
-            block.position());
+    return state->sourceNavigationTargetAtPosition(this, position);
 }
 
 bool MyCodeEditor::requestSourceNavigationAtPosition(const QPoint& position)
 {
-    const EditorSourceNavigationTarget target =
-        sourceNavigationTargetAtPosition(position);
-    emit sourceNavigationRequested(
-        target,
-        editorSemanticContextForPosition(target.cursorPosition));
-    return target.matched && !target.text.isEmpty();
+    return state->requestSourceNavigationAtPosition(this, position);
 }
 
 void MyCodeEditor::refreshSourceNavigationHoverAt(const QPoint& position)
 {
-    applySourceNavigationHover(sourceNavigationTargetAtPosition(position));
+    state->refreshSourceNavigationHoverAt(this, position);
 }
 
 void MyCodeEditor::applySourceNavigationHover(
     const EditorSourceNavigationTarget& target)
 {
-    if (!target.matched) {
-        clearSourceNavigationHover();
-        viewport()->setCursor(state->sourceHover.nonJumpableCursor());
-        return;
-    }
-
-    if (!state->sourceHover.matches(target)) {
-        state->selections.clearHoveredSymbol(this, state->sourceHover);
-        state->sourceHover.setTarget(target);
-        state->selections.highlightHoveredSymbol(this, target);
-    }
-
-    viewport()->setCursor(state->sourceHover.cursorForTarget(target));
+    state->applySourceNavigationHover(this, target);
 }
 
 void MyCodeEditor::clearSourceNavigationHover()
 {
-    viewport()->setCursor(Qt::IBeamCursor);
-    state->selections.clearHoveredSymbol(this, state->sourceHover);
-    state->sourceHover.clearTarget();
+    state->clearSourceNavigationHover(this);
 }
 
 void MyCodeEditor::moveMouseToCursor()
