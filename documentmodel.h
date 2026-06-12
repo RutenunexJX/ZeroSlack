@@ -58,17 +58,24 @@ private:
         QString text;
     };
 
+    struct DocumentIndexes {
+        QHash<QString, MyCodeEditor*> byDocumentId;
+        QHash<QString, MyCodeEditor*> byFileName;
+
+        void add(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
+        void remove(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
+        MyCodeEditor* editorForDocumentId(const QString& documentId) const;
+        MyCodeEditor* editorForFileName(const QString& fileName) const;
+    };
+
     QHash<MyCodeEditor*, TrackedDocument> documentsByEditor;
-    QHash<QString, MyCodeEditor*> editorByDocumentId;
-    QHash<QString, MyCodeEditor*> editorByFileName;
+    DocumentIndexes indexes;
 
     QString documentIdForEditor(MyCodeEditor* editor) const;
     QString normalizedFileName(const QString& fileName) const;
     TrackedDocument makeTrackedDocument(MyCodeEditor* editor,
                                         const DocumentSnapshot* previous = nullptr) const;
     DocumentSnapshot refreshTrackedDocument(MyCodeEditor* editor);
-    void indexDocument(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
-    void removeIndexes(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
 };
 
 Q_DECLARE_METATYPE(DocumentSnapshot)

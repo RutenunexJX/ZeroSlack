@@ -15,6 +15,45 @@ DocumentModel::DocumentModel(QObject* parent)
 
 DocumentModel::~DocumentModel() = default;
 
+void DocumentModel::DocumentIndexes::add(
+    MyCodeEditor* editor,
+    const DocumentSnapshot& snapshot)
+{
+    if (!editor)
+        return;
+
+    byDocumentId[snapshot.documentId] = editor;
+    if (!snapshot.fileName.isEmpty())
+        byFileName[snapshot.fileName] = editor;
+}
+
+void DocumentModel::DocumentIndexes::remove(
+    MyCodeEditor* editor,
+    const DocumentSnapshot& snapshot)
+{
+    if (!editor)
+        return;
+
+    if (byDocumentId.value(snapshot.documentId, nullptr) == editor)
+        byDocumentId.remove(snapshot.documentId);
+    if (!snapshot.fileName.isEmpty()
+        && byFileName.value(snapshot.fileName, nullptr) == editor) {
+        byFileName.remove(snapshot.fileName);
+    }
+}
+
+MyCodeEditor* DocumentModel::DocumentIndexes::editorForDocumentId(
+    const QString& documentId) const
+{
+    return byDocumentId.value(documentId, nullptr);
+}
+
+MyCodeEditor* DocumentModel::DocumentIndexes::editorForFileName(
+    const QString& fileName) const
+{
+    return byFileName.value(fileName, nullptr);
+}
+
 void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName)
 {
     if (!editor || documentsByEditor.contains(editor))
@@ -26,7 +65,7 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
     TrackedDocument tracked;
     tracked = makeTrackedDocument(editor);
     documentsByEditor.insert(editor, tracked);
-    indexDocument(editor, tracked.snapshot);
+    indexes.add(editor, tracked.snapshot);
 
     connect(editor, &QObject::destroyed, this, [this, editor]() {
         unregisterEditor(editor);
@@ -61,7 +100,7 @@ void DocumentModel::unregisterEditor(MyCodeEditor* editor)
         return;
 
     const TrackedDocument tracked = documentsByEditor.take(editor);
-    removeIndexes(editor, tracked.snapshot);
+    indexes.remove(editor, tracked.snapshot);
     emit documentClosed(tracked.snapshot.documentId, tracked.snapshot.fileName);
 }
 
@@ -124,18 +163,18 @@ DocumentSnapshot DocumentModel::documentForEditor(MyCodeEditor* editor) const
 DocumentSnapshot DocumentModel::documentForFile(const QString& fileName) const
 {
     const QString normalized = normalizedFileName(fileName);
-    MyCodeEditor* editor = editorByFileName.value(normalized, nullptr);
+    MyCodeEditor* editor = indexes.editorForFileName(normalized);
     return editor ? documentsByEditor.value(editor).snapshot : DocumentSnapshot();
 }
 
 MyCodeEditor* DocumentModel::editorForFile(const QString& fileName) const
 {
-    return editorByFileName.value(normalizedFileName(fileName), nullptr);
+    return indexes.editorForFileName(normalizedFileName(fileName));
 }
 
 QString DocumentModel::documentText(const QString& documentId) const
 {
-    MyCodeEditor* editor = editorByDocumentId.value(documentId, nullptr);
+    MyCodeEditor* editor = indexes.editorForDocumentId(documentId);
     return editor && documentsByEditor.contains(editor)
         ? documentsByEditor.value(editor).text
         : QString();
@@ -216,28 +255,7 @@ DocumentSnapshot DocumentModel::refreshTrackedDocument(MyCodeEditor* editor)
     const DocumentSnapshot previous = tracked.snapshot;
     tracked = makeTrackedDocument(editor, &previous);
     documentsByEditor[editor] = tracked;
-    removeIndexes(editor, previous);
-    indexDocument(editor, tracked.snapshot);
+    indexes.remove(editor, previous);
+    indexes.add(editor, tracked.snapshot);
     return tracked.snapshot;
-}
-
-void DocumentModel::indexDocument(MyCodeEditor* editor, const DocumentSnapshot& snapshot)
-{
-    if (!editor)
-        return;
-
-    editorByDocumentId[snapshot.documentId] = editor;
-    if (!snapshot.fileName.isEmpty())
-        editorByFileName[snapshot.fileName] = editor;
-}
-
-void DocumentModel::removeIndexes(MyCodeEditor* editor, const DocumentSnapshot& snapshot)
-{
-    if (!editor)
-        return;
-
-    if (editorByDocumentId.value(snapshot.documentId, nullptr) == editor)
-        editorByDocumentId.remove(snapshot.documentId);
-    if (!snapshot.fileName.isEmpty() && editorByFileName.value(snapshot.fileName, nullptr) == editor)
-        editorByFileName.remove(snapshot.fileName);
 }
