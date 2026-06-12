@@ -214,3 +214,8 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
             problemsDock->show();
     }
 }
+
+bool ProblemsPanelCoordinator::showsCurrentFileScope() const
+{
+    return !problemsScopeCombo || problemsScopeCombo->currentData().toInt() == 0;
+}

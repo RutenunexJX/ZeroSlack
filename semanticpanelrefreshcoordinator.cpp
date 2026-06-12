@@ -9,8 +9,6 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
-#include <QComboBox>
-
 #include <utility>
 
 SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
@@ -158,7 +156,5 @@ void SemanticPanelRefreshCoordinator::showStatusMessage(
 
 bool SemanticPanelRefreshCoordinator::problemsPanelShowsCurrentFile() const
 {
-    return problemsPanel
-        && problemsPanel->scopeCombo()
-        && problemsPanel->scopeCombo()->currentData().toInt() == 0;
+    return problemsPanel && problemsPanel->showsCurrentFileScope();
 }

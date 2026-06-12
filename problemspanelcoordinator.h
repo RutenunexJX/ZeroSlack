@@ -23,6 +23,7 @@ public:
     QTreeWidget* tree() const { return problemsTree; }
     QComboBox* scopeCombo() const { return problemsScopeCombo; }
     QComboBox* severityCombo() const { return problemsSeverityCombo; }
+    bool showsCurrentFileScope() const;
 
 private:
     QDockWidget* problemsDock = nullptr;
