@@ -165,22 +165,14 @@ QString TabManager::getPlainTextFromOpenFile(const QString& fileName) const
 QStringList TabManager::getAllOpenFileNames() const
 {
     QStringList fileNames;
-    if (documentModel) {
-        const QList<DocumentSnapshot> documents = documentModel->openDocuments();
-        fileNames.reserve(documents.size());
-        for (const DocumentSnapshot& document : documents) {
-            if (!document.fileName.isEmpty())
-                fileNames.append(document.fileName);
-        }
+    if (!documentModel)
         return fileNames;
-    }
 
-    fileNames.reserve(tabWidget->count());
-    for (int i = 0; i < tabWidget->count(); ++i) {
-        MyCodeEditor *codeEditor = getEditorAt(i);
-        if (codeEditor && !codeEditor->getFileName().isEmpty()) {
-            fileNames.append(codeEditor->getFileName());
-        }
+    const QList<DocumentSnapshot> documents = documentModel->openDocuments();
+    fileNames.reserve(documents.size());
+    for (const DocumentSnapshot& document : documents) {
+        if (!document.fileName.isEmpty())
+            fileNames.append(document.fileName);
     }
     return fileNames;
 }
@@ -230,19 +222,12 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
 
 bool TabManager::hasUnsavedChanges() const
 {
-    if (documentModel) {
-        for (const DocumentSnapshot& document : documentModel->openDocuments()) {
-            if (document.dirty || !document.saved)
-                return true;
-        }
+    if (!documentModel)
         return false;
-    }
 
-    for (int i = 0; i < tabWidget->count(); ++i) {
-        MyCodeEditor *codeEditor = getEditorAt(i);
-        if (codeEditor && !codeEditor->checkSaved()) {
+    for (const DocumentSnapshot& document : documentModel->openDocuments()) {
+        if (document.dirty || !document.saved)
             return true;
-        }
     }
     return false;
 }
