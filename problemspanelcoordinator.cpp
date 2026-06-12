@@ -42,6 +42,34 @@ QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
     return item;
 }
 
+DiagnosticPanelScope diagnosticPanelScopeFromValue(int value)
+{
+    switch (value) {
+    case 1:
+        return DiagnosticPanelScope::WorkspaceFiles;
+    case 2:
+        return DiagnosticPanelScope::AllFiles;
+    case 0:
+    default:
+        return DiagnosticPanelScope::CurrentFile;
+    }
+}
+
+DiagnosticSeverityFilter diagnosticSeverityFilterFromValue(int value)
+{
+    switch (value) {
+    case 1:
+        return DiagnosticSeverityFilter::Errors;
+    case 2:
+        return DiagnosticSeverityFilter::Warnings;
+    case 3:
+        return DiagnosticSeverityFilter::Info;
+    case 0:
+    default:
+        return DiagnosticSeverityFilter::All;
+    }
+}
+
 } // namespace
 
 ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
@@ -134,30 +162,24 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
     if (!problemsTree)
         return;
 
-    DiagnosticQuery query;
-    const bool currentFileOnly =
-        !problemsScopeCombo || problemsScopeCombo->currentData().toInt() == 0;
-    const bool workspaceFilesOnly =
-        problemsScopeCombo && problemsScopeCombo->currentData().toInt() == 1;
-    if (currentFileOnly) {
-        query.fileName = fileName;
-        if (query.fileName.isEmpty() && currentFileProvider)
-            query.fileName = currentFileProvider();
-    }
-    query.workspaceFilesOnly = workspaceFilesOnly;
-    if (workspaceFilesOnly && workspaceFilesProvider)
-        query.workspaceFiles = workspaceFilesProvider();
+    DiagnosticPanelQueryOptions queryOptions;
+    queryOptions.scope = diagnosticPanelScopeFromValue(
+        problemsScopeCombo ? problemsScopeCombo->currentData().toInt() : 0);
+    queryOptions.severity = diagnosticSeverityFilterFromValue(
+        problemsSeverityCombo ? problemsSeverityCombo->currentData().toInt() : 0);
+    queryOptions.requestedFileName = fileName;
+    if (currentFileProvider)
+        queryOptions.currentFileName = currentFileProvider();
+    if (workspaceFilesProvider)
+        queryOptions.workspaceFiles = workspaceFilesProvider();
 
-    const int severityFilter =
-        problemsSeverityCombo ? problemsSeverityCombo->currentData().toInt() : 0;
-    query.includeErrors = severityFilter == 0 || severityFilter == 1;
-    query.includeWarnings = severityFilter == 0 || severityFilter == 2;
-    query.includeInfo = severityFilter == 0 || severityFilter == 3;
-
-    const DiagnosticReport report =
-        DiagnosticService::getInstance()->findDiagnosticReport(query);
+    DiagnosticService* diagnosticService = DiagnosticService::getInstance();
+    const DiagnosticQuery query = diagnosticService->queryForPanel(queryOptions);
+    const DiagnosticReport report = diagnosticService->findDiagnosticReport(query);
     const QList<DiagnosticResult>& diagnostics = report.diagnostics;
 
+    const bool currentFileOnly =
+        queryOptions.scope == DiagnosticPanelScope::CurrentFile;
     const bool hadExpandableItems = SemanticPanelUtils::treeHasExpandableItems(problemsTree);
     const QSet<QString> expandedKeys = SemanticPanelUtils::collectExpandedKeys(problemsTree);
     problemsTree->clear();

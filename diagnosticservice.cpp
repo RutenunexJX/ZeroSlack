@@ -129,6 +129,33 @@ bool DiagnosticService::hasDiagnostics(const DiagnosticQuery& query) const
     return !findDiagnostics(query).isEmpty();
 }
 
+DiagnosticQuery DiagnosticService::queryForPanel(
+    const DiagnosticPanelQueryOptions& options) const
+{
+    DiagnosticQuery query;
+    switch (options.scope) {
+    case DiagnosticPanelScope::CurrentFile:
+        query.fileName = options.requestedFileName.isEmpty()
+            ? options.currentFileName
+            : options.requestedFileName;
+        break;
+    case DiagnosticPanelScope::WorkspaceFiles:
+        query.workspaceFilesOnly = true;
+        query.workspaceFiles = options.workspaceFiles;
+        break;
+    case DiagnosticPanelScope::AllFiles:
+        break;
+    }
+
+    query.includeErrors = options.severity == DiagnosticSeverityFilter::All
+        || options.severity == DiagnosticSeverityFilter::Errors;
+    query.includeWarnings = options.severity == DiagnosticSeverityFilter::All
+        || options.severity == DiagnosticSeverityFilter::Warnings;
+    query.includeInfo = options.severity == DiagnosticSeverityFilter::All
+        || options.severity == DiagnosticSeverityFilter::Info;
+    return query;
+}
+
 SemanticIndex* DiagnosticService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();

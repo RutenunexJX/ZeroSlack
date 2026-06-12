@@ -18,6 +18,27 @@ struct DiagnosticQuery {
     bool includeErrors = true;
 };
 
+enum class DiagnosticPanelScope {
+    CurrentFile,
+    WorkspaceFiles,
+    AllFiles
+};
+
+enum class DiagnosticSeverityFilter {
+    All,
+    Errors,
+    Warnings,
+    Info
+};
+
+struct DiagnosticPanelQueryOptions {
+    DiagnosticPanelScope scope = DiagnosticPanelScope::CurrentFile;
+    DiagnosticSeverityFilter severity = DiagnosticSeverityFilter::All;
+    QString requestedFileName;
+    QString currentFileName;
+    QStringList workspaceFiles;
+};
+
 struct DiagnosticResult {
     SemanticDiagnostic diagnostic;
 };
@@ -51,6 +72,7 @@ public:
     QList<DiagnosticResult> findDiagnostics(const DiagnosticQuery& query = {}) const;
     DiagnosticReport findDiagnosticReport(const DiagnosticQuery& query = {}) const;
     bool hasDiagnostics(const DiagnosticQuery& query = {}) const;
+    DiagnosticQuery queryForPanel(const DiagnosticPanelQueryOptions& options) const;
 
 private:
     SemanticIndex* index = nullptr;

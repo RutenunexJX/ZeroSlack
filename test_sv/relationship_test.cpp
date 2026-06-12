@@ -464,6 +464,57 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         fixtureDir.filePath(QStringLiteral("not_in_workspace.sv")))};
     expectBool("diagnostic service rejects missing workspace file",
                diagnosticReportService.hasDiagnostics(workspaceOnlyDiagnosticQuery), false);
+    DiagnosticPanelQueryOptions currentFilePanelOptions;
+    currentFilePanelOptions.scope = DiagnosticPanelScope::CurrentFile;
+    currentFilePanelOptions.severity = DiagnosticSeverityFilter::Warnings;
+    currentFilePanelOptions.currentFileName = topPath;
+    const DiagnosticQuery currentFilePanelQuery =
+        diagnosticReportService.queryForPanel(currentFilePanelOptions);
+    expectBool("diagnostic panel query selects current file",
+               currentFilePanelQuery.fileName == topPath
+                   && !currentFilePanelQuery.workspaceFilesOnly
+                   && !currentFilePanelQuery.includeErrors
+                   && currentFilePanelQuery.includeWarnings
+                   && !currentFilePanelQuery.includeInfo,
+               true);
+    expectInt("diagnostic panel current warning count",
+              diagnosticReportService
+                  .findDiagnosticReport(currentFilePanelQuery)
+                  .totalCount,
+              1);
+
+    DiagnosticPanelQueryOptions workspacePanelOptions;
+    workspacePanelOptions.scope = DiagnosticPanelScope::WorkspaceFiles;
+    workspacePanelOptions.workspaceFiles = {stagePath};
+    const DiagnosticQuery workspacePanelQuery =
+        diagnosticReportService.queryForPanel(workspacePanelOptions);
+    expectBool("diagnostic panel query selects workspace files",
+               workspacePanelQuery.workspaceFilesOnly
+                   && workspacePanelQuery.workspaceFiles == QStringList{stagePath},
+               true);
+    expectInt("diagnostic panel workspace count",
+              diagnosticReportService
+                  .findDiagnosticReport(workspacePanelQuery)
+                  .totalCount,
+              1);
+
+    DiagnosticPanelQueryOptions allFilesPanelOptions;
+    allFilesPanelOptions.scope = DiagnosticPanelScope::AllFiles;
+    allFilesPanelOptions.severity = DiagnosticSeverityFilter::Info;
+    const DiagnosticQuery allFilesPanelQuery =
+        diagnosticReportService.queryForPanel(allFilesPanelOptions);
+    expectBool("diagnostic panel query selects all info",
+               allFilesPanelQuery.fileName.isEmpty()
+                   && !allFilesPanelQuery.workspaceFilesOnly
+                   && !allFilesPanelQuery.includeErrors
+                   && !allFilesPanelQuery.includeWarnings
+                   && allFilesPanelQuery.includeInfo,
+               true);
+    expectInt("diagnostic panel all info count",
+              diagnosticReportService
+                  .findDiagnosticReport(allFilesPanelQuery)
+                  .totalCount,
+              1);
 
     SearchService searchService(&index);
     SearchQuery moduleSearchQuery;
