@@ -54,9 +54,74 @@ MyCodeEditor* DocumentModel::DocumentIndexes::editorForFileName(
     return byFileName.value(fileName, nullptr);
 }
 
+bool DocumentModel::DocumentStore::contains(MyCodeEditor* editor) const
+{
+    return byEditor.contains(editor);
+}
+
+void DocumentModel::DocumentStore::insert(
+    MyCodeEditor* editor,
+    const TrackedDocument& tracked)
+{
+    byEditor.insert(editor, tracked);
+}
+
+DocumentModel::TrackedDocument DocumentModel::DocumentStore::take(
+    MyCodeEditor* editor)
+{
+    return byEditor.take(editor);
+}
+
+DocumentModel::TrackedDocument DocumentModel::DocumentStore::value(
+    MyCodeEditor* editor) const
+{
+    return byEditor.value(editor);
+}
+
+DocumentModel::TrackedDocument* DocumentModel::DocumentStore::find(
+    MyCodeEditor* editor)
+{
+    auto it = byEditor.find(editor);
+    return it == byEditor.end() ? nullptr : &it.value();
+}
+
+const DocumentModel::TrackedDocument* DocumentModel::DocumentStore::find(
+    MyCodeEditor* editor) const
+{
+    auto it = byEditor.constFind(editor);
+    return it == byEditor.constEnd() ? nullptr : &it.value();
+}
+
+bool DocumentModel::DocumentStore::updateSnapshot(
+    MyCodeEditor* editor,
+    const DocumentSnapshot& snapshot)
+{
+    TrackedDocument* tracked = find(editor);
+    if (!tracked)
+        return false;
+
+    tracked->snapshot = snapshot;
+    return true;
+}
+
+QList<DocumentSnapshot> DocumentModel::DocumentStore::snapshots() const
+{
+    QList<DocumentSnapshot> result;
+    result.reserve(byEditor.size());
+    for (const TrackedDocument& tracked : byEditor)
+        result.append(tracked.snapshot);
+    return result;
+}
+
+QString DocumentModel::DocumentStore::textForEditor(MyCodeEditor* editor) const
+{
+    const TrackedDocument* tracked = find(editor);
+    return tracked ? tracked->text : QString();
+}
+
 void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName)
 {
-    if (!editor || documentsByEditor.contains(editor))
+    if (!editor || documents.contains(editor))
         return;
 
     if (!fileName.isEmpty())
@@ -64,26 +129,27 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
 
     TrackedDocument tracked;
     tracked = makeTrackedDocument(editor);
-    documentsByEditor.insert(editor, tracked);
+    documents.insert(editor, tracked);
     indexes.add(editor, tracked.snapshot);
 
     connect(editor, &QObject::destroyed, this, [this, editor]() {
         unregisterEditor(editor);
     });
     connect(editor, &QPlainTextEdit::textChanged, this, [this, editor]() {
-        if (!documentsByEditor.contains(editor))
+        const TrackedDocument* tracked = documents.find(editor);
+        if (!tracked)
             return;
 
-        const DocumentSnapshot previous = documentsByEditor.value(editor).snapshot;
+        const DocumentSnapshot previous = tracked->snapshot;
         DocumentSnapshot snapshot = refreshTrackedDocument(editor);
         snapshot.textVersion = previous.textVersion + 1;
         snapshot.dirty = true;
         snapshot.saved = false;
-        documentsByEditor[editor].snapshot = snapshot;
+        documents.updateSnapshot(editor, snapshot);
         emit documentEdited(snapshot);
     });
     connect(editor, &QPlainTextEdit::cursorPositionChanged, this, [this, editor]() {
-        if (!documentsByEditor.contains(editor))
+        if (!documents.contains(editor))
             return;
 
         emit cursorChanged(refreshTrackedDocument(editor));
@@ -96,10 +162,10 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
 
 void DocumentModel::unregisterEditor(MyCodeEditor* editor)
 {
-    if (!editor || !documentsByEditor.contains(editor))
+    if (!editor || !documents.contains(editor))
         return;
 
-    const TrackedDocument tracked = documentsByEditor.take(editor);
+    const TrackedDocument tracked = documents.take(editor);
     indexes.remove(editor, tracked.snapshot);
     emit documentClosed(tracked.snapshot.documentId, tracked.snapshot.fileName);
 }
@@ -109,7 +175,7 @@ void DocumentModel::setDocumentFileName(MyCodeEditor* editor, const QString& fil
     if (!editor)
         return;
 
-    if (!documentsByEditor.contains(editor)) {
+    if (!documents.contains(editor)) {
         registerEditor(editor, fileName);
         return;
     }
@@ -122,23 +188,23 @@ void DocumentModel::markSaved(MyCodeEditor* editor)
 {
     if (!editor)
         return;
-    if (!documentsByEditor.contains(editor)) {
+    if (!documents.contains(editor)) {
         registerEditor(editor);
         return;
     }
 
-    const DocumentSnapshot previous = documentsByEditor.value(editor).snapshot;
+    const DocumentSnapshot previous = documents.value(editor).snapshot;
     TrackedDocument tracked = makeTrackedDocument(editor, &previous);
     tracked.snapshot.dirty = false;
     tracked.snapshot.saved = true;
     tracked.snapshot.savedTextVersion = tracked.snapshot.textVersion;
-    documentsByEditor[editor] = tracked;
+    documents.insert(editor, tracked);
     emit documentSaved(tracked.snapshot);
 }
 
 void DocumentModel::refreshEditorState(MyCodeEditor* editor)
 {
-    if (!editor || !documentsByEditor.contains(editor))
+    if (!editor || !documents.contains(editor))
         return;
 
     refreshTrackedDocument(editor);
@@ -146,25 +212,21 @@ void DocumentModel::refreshEditorState(MyCodeEditor* editor)
 
 QList<DocumentSnapshot> DocumentModel::openDocuments() const
 {
-    QList<DocumentSnapshot> result;
-    result.reserve(documentsByEditor.size());
-    for (const TrackedDocument& tracked : documentsByEditor)
-        result.append(tracked.snapshot);
-    return result;
+    return documents.snapshots();
 }
 
 DocumentSnapshot DocumentModel::documentForEditor(MyCodeEditor* editor) const
 {
-    if (!editor || !documentsByEditor.contains(editor))
-        return DocumentSnapshot();
-    return documentsByEditor.value(editor).snapshot;
+    const TrackedDocument* tracked = documents.find(editor);
+    return tracked ? tracked->snapshot : DocumentSnapshot();
 }
 
 DocumentSnapshot DocumentModel::documentForFile(const QString& fileName) const
 {
     const QString normalized = normalizedFileName(fileName);
     MyCodeEditor* editor = indexes.editorForFileName(normalized);
-    return editor ? documentsByEditor.value(editor).snapshot : DocumentSnapshot();
+    const TrackedDocument* tracked = documents.find(editor);
+    return tracked ? tracked->snapshot : DocumentSnapshot();
 }
 
 MyCodeEditor* DocumentModel::editorForFile(const QString& fileName) const
@@ -175,9 +237,7 @@ MyCodeEditor* DocumentModel::editorForFile(const QString& fileName) const
 QString DocumentModel::documentText(const QString& documentId) const
 {
     MyCodeEditor* editor = indexes.editorForDocumentId(documentId);
-    return editor && documentsByEditor.contains(editor)
-        ? documentsByEditor.value(editor).text
-        : QString();
+    return documents.textForEditor(editor);
 }
 
 QString DocumentModel::documentTextForFile(const QString& fileName) const
@@ -190,9 +250,7 @@ QString DocumentModel::documentTextForFile(const QString& fileName) const
 
 QString DocumentModel::documentTextForEditor(MyCodeEditor* editor) const
 {
-    if (!editor || !documentsByEditor.contains(editor))
-        return QString();
-    return documentsByEditor.value(editor).text;
+    return documents.textForEditor(editor);
 }
 
 QString DocumentModel::documentIdForEditor(MyCodeEditor* editor) const
@@ -248,13 +306,13 @@ DocumentModel::TrackedDocument DocumentModel::makeTrackedDocument(
 
 DocumentSnapshot DocumentModel::refreshTrackedDocument(MyCodeEditor* editor)
 {
-    if (!editor || !documentsByEditor.contains(editor))
+    if (!editor || !documents.contains(editor))
         return DocumentSnapshot();
 
-    TrackedDocument tracked = documentsByEditor.value(editor);
+    TrackedDocument tracked = documents.value(editor);
     const DocumentSnapshot previous = tracked.snapshot;
     tracked = makeTrackedDocument(editor, &previous);
-    documentsByEditor[editor] = tracked;
+    documents.insert(editor, tracked);
     indexes.remove(editor, previous);
     indexes.add(editor, tracked.snapshot);
     return tracked.snapshot;

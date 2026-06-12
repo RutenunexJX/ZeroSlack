@@ -68,7 +68,22 @@ private:
         MyCodeEditor* editorForFileName(const QString& fileName) const;
     };
 
-    QHash<MyCodeEditor*, TrackedDocument> documentsByEditor;
+    struct DocumentStore {
+        QHash<MyCodeEditor*, TrackedDocument> byEditor;
+
+        bool contains(MyCodeEditor* editor) const;
+        void insert(MyCodeEditor* editor, const TrackedDocument& tracked);
+        TrackedDocument take(MyCodeEditor* editor);
+        TrackedDocument value(MyCodeEditor* editor) const;
+        TrackedDocument* find(MyCodeEditor* editor);
+        const TrackedDocument* find(MyCodeEditor* editor) const;
+        bool updateSnapshot(MyCodeEditor* editor,
+                            const DocumentSnapshot& snapshot);
+        QList<DocumentSnapshot> snapshots() const;
+        QString textForEditor(MyCodeEditor* editor) const;
+    };
+
+    DocumentStore documents;
     DocumentIndexes indexes;
 
     QString documentIdForEditor(MyCodeEditor* editor) const;
