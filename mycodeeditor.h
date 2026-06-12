@@ -2,9 +2,9 @@
 #define MYCODEEDITOR_H
 
 #include "editorsemanticcontextservice.h"
-#include "tsdocument.h"
 
 #include <QPlainTextEdit>
+#include <memory>
 
 class LineNumberWidget;
 class MyHighlighter;
@@ -23,6 +23,7 @@ class ScopeBandWidget;
 class QTimer;
 class QWheelEvent;
 struct SourceLineNavigationTarget;
+class TSDocument;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -62,6 +63,11 @@ private:
     void initFont();
     void initHighlighter();
     void initAutoComplete();
+    void syncTreeSitterDocumentText();
+    void applyTreeSitterEdit(int position,
+                             int charsRemoved,
+                             int charsAdded);
+    QString treeSitterModuleNameAt(int charPos) const;
     int getLineNumberWidgetWidth();
     EditorSemanticContextService* contextService() const;
 
@@ -110,7 +116,7 @@ private:
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
 
-    TSDocument m_tsdoc;
+    std::unique_ptr<TSDocument> m_tsdoc;
     MyHighlighter *m_highlighter = nullptr;
 
     QCompleter *completer;
@@ -164,28 +170,6 @@ signals:
                                      const EditorSemanticContext& context);
     void sourceSymbolContextMenuRequested(QMenu* menu,
                                           const EditorSemanticContext& context);
-};
-
-class LineNumberWidget : public QWidget
-{
-public:
-    explicit LineNumberWidget(MyCodeEditor *editor = nullptr) : QWidget(editor) {
-        codeEditor = editor;
-    }
-
-protected:
-    void paintEvent(QPaintEvent *event) override {
-        codeEditor->lineNumberWidgetPaintEvent(event);
-    }
-    void mousePressEvent(QMouseEvent *event) override {
-        codeEditor->lineNumberWidgetMousePressEvent(event);
-    }
-    void wheelEvent(QWheelEvent *event) override {
-        codeEditor->lineNumberWidgetWheelEvent(event);
-    }
-
-private:
-    MyCodeEditor *codeEditor;
 };
 
 #endif // MYCODEEDITOR_H

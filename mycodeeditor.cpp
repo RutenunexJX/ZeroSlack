@@ -3,6 +3,7 @@
 #include "completionmodel.h"
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
+#include "tsdocument.h"
 
 #include "syminfo.h"
 
@@ -19,6 +20,7 @@
 #include <QRect>
 #include <QTimer>
 #include <QWheelEvent>
+#include <QWidget>
 
 #include <QAbstractItemView>
 #include <QCompleter>
@@ -51,7 +53,38 @@ void removeSelectionsByProperty(
 }
 }
 
-MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
+class LineNumberWidget : public QWidget
+{
+public:
+    explicit LineNumberWidget(MyCodeEditor *editor = nullptr)
+        : QWidget(editor)
+        , codeEditor(editor)
+    {
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        codeEditor->lineNumberWidgetPaintEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        codeEditor->lineNumberWidgetMousePressEvent(event);
+    }
+
+    void wheelEvent(QWheelEvent *event) override
+    {
+        codeEditor->lineNumberWidgetWheelEvent(event);
+    }
+
+private:
+    MyCodeEditor *codeEditor = nullptr;
+};
+
+MyCodeEditor::MyCodeEditor(QWidget *parent)
+    : QPlainTextEdit(parent)
+    , m_tsdoc(std::make_unique<TSDocument>())
 {
     semanticContextService = EditorSemanticContextService::getInstance();
     lineNumberWidget = new LineNumberWidget(this);
@@ -107,18 +140,37 @@ void MyCodeEditor::initHighlighter()
     // Seed the live tree with current content, then connect contentsChange BEFORE creating the
     // highlighter so our incremental tree update runs first; the highlighter then reads the fresh
     // tree when QSyntaxHighlighter reformats the changed blocks.
-    m_tsdoc.setText(document()->toPlainText());
+    syncTreeSitterDocumentText();
     connect(document(), &QTextDocument::contentsChange,
             this, &MyCodeEditor::onTsContentsChange);
-    m_highlighter = new MyHighlighter(document(), &m_tsdoc);
+    m_highlighter = new MyHighlighter(document(), m_tsdoc.get());
 }
 
 void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
 {
     // Incrementally update the tree-sitter model (m_tsdoc keeps the pre-edit text, so it can derive
     // the old end point itself). Runs before the highlighter's reformat (connected later).
-    m_tsdoc.applyEditChars(position, position + charsRemoved, position + charsAdded,
-                           document()->toPlainText());
+    applyTreeSitterEdit(position, charsRemoved, charsAdded);
+}
+
+void MyCodeEditor::syncTreeSitterDocumentText()
+{
+    m_tsdoc->setText(document()->toPlainText());
+}
+
+void MyCodeEditor::applyTreeSitterEdit(int position,
+                                       int charsRemoved,
+                                       int charsAdded)
+{
+    m_tsdoc->applyEditChars(position,
+                            position + charsRemoved,
+                            position + charsAdded,
+                            document()->toPlainText());
+}
+
+QString MyCodeEditor::treeSitterModuleNameAt(int charPos) const
+{
+    return m_tsdoc->enclosingModuleName(charPos < 0 ? 0 : charPos);
 }
 
 int MyCodeEditor::getLineNumberWidgetWidth()
@@ -190,7 +242,7 @@ QString MyCodeEditor::currentModuleNameAt(int charPos) const
 {
     // Live, error-tolerant enclosing module from the tree-sitter tree (A3). The editor keeps
     // m_tsdoc synced on every edit, so this is never stale (unlike the debounced Slang path).
-    return m_tsdoc.enclosingModuleName(charPos < 0 ? 0 : charPos);
+    return treeSitterModuleNameAt(charPos);
 }
 
 qreal MyCodeEditor::getBlockTopY(int blockNumber) const
