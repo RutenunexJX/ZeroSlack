@@ -10,23 +10,75 @@ NavigationCommandCoordinator::NavigationCommandCoordinator(
     NavigationManager* navigationManager,
     QObject* parent)
     : QObject(parent)
-    , tabManager(tabManager)
-    , navigationManager(navigationManager)
 {
+    targets.set(tabManager, navigationManager);
+}
+
+void NavigationCommandCoordinator::NavigationTargets::set(
+    TabManager* newTabManager,
+    NavigationManager* newNavigationManager)
+{
+    tabManager = newTabManager;
+    navigationManager = newNavigationManager;
+}
+
+bool NavigationCommandCoordinator::NavigationTargets::hasNavigationManager() const
+{
+    return navigationManager != nullptr;
+}
+
+NavigationManager*
+NavigationCommandCoordinator::NavigationTargets::navigationManagerObject() const
+{
+    return navigationManager;
+}
+
+bool NavigationCommandCoordinator::NavigationTargets::activateOrOpenFile(
+    const QString& filePath) const
+{
+    if (!tabManager || filePath.isEmpty())
+        return false;
+
+    return tabManager->activateOpenFile(filePath)
+        || tabManager->openFileInTab(filePath);
+}
+
+MyCodeEditor* NavigationCommandCoordinator::NavigationTargets::currentEditor() const
+{
+    return tabManager ? tabManager->getCurrentEditor() : nullptr;
+}
+
+bool NavigationCommandCoordinator::LineNavigationResolver::applyToEditor(
+    MyCodeEditor* editor,
+    int lineNumber,
+    int columnNumber) const
+{
+    if (!editor)
+        return false;
+
+    const SourceLineNavigationTarget target =
+        SourceNavigationService::getInstance()->lineNavigationTarget(
+            lineNumber,
+            columnNumber);
+    if (!target.matched)
+        return false;
+
+    editor->applyLineNavigationTarget(target);
+    return true;
 }
 
 void NavigationCommandCoordinator::connectSignals()
 {
-    if (signalsConnected || !navigationManager)
+    if (signalsConnected || !targets.hasNavigationManager())
         return;
 
-    connect(navigationManager,
+    connect(targets.navigationManagerObject(),
             &NavigationManager::navigationRequested,
             this,
             [this](const QString& filePath, int lineNumber) {
                 navigateToFileAndLine(filePath, lineNumber);
             });
-    connect(navigationManager,
+    connect(targets.navigationManagerObject(),
             &NavigationManager::symbolNavigationRequested,
             this,
             &NavigationCommandCoordinator::navigateToSymbol);
@@ -39,18 +91,13 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
     int lineNumber,
     int columnNumber)
 {
-    if (!tabManager || filePath.isEmpty())
+    if (!targets.activateOrOpenFile(filePath))
         return;
-
-    if (!tabManager->activateOpenFile(filePath)) {
-        if (!tabManager->openFileInTab(filePath))
-            return;
-    }
 
     if (lineNumber <= 0)
         return;
 
-    navigateEditorToLine(tabManager->getCurrentEditor(), lineNumber, columnNumber);
+    navigateEditorToLine(targets.currentEditor(), lineNumber, columnNumber);
 }
 
 void NavigationCommandCoordinator::navigateEditorToLine(
@@ -58,17 +105,7 @@ void NavigationCommandCoordinator::navigateEditorToLine(
     int lineNumber,
     int columnNumber)
 {
-    if (!editor)
-        return;
-
-    const SourceLineNavigationTarget target =
-        SourceNavigationService::getInstance()->lineNavigationTarget(
-            lineNumber,
-            columnNumber);
-    if (!target.matched)
-        return;
-
-    editor->applyLineNavigationTarget(target);
+    lineResolver.applyToEditor(editor, lineNumber, columnNumber);
 }
 
 void NavigationCommandCoordinator::navigateToSymbol(const sym_list::SymbolInfo& symbol)

@@ -29,8 +29,26 @@ public:
     void navigateToSymbol(const sym_list::SymbolInfo& symbol);
 
 private:
-    TabManager* tabManager = nullptr;
-    NavigationManager* navigationManager = nullptr;
+    struct NavigationTargets {
+        TabManager* tabManager = nullptr;
+        NavigationManager* navigationManager = nullptr;
+
+        void set(TabManager* tabManager,
+                 NavigationManager* navigationManager);
+        bool hasNavigationManager() const;
+        NavigationManager* navigationManagerObject() const;
+        bool activateOrOpenFile(const QString& filePath) const;
+        MyCodeEditor* currentEditor() const;
+    };
+
+    struct LineNavigationResolver {
+        bool applyToEditor(MyCodeEditor* editor,
+                           int lineNumber,
+                           int columnNumber) const;
+    };
+
+    NavigationTargets targets;
+    LineNavigationResolver lineResolver;
     bool signalsConnected = false;
 };
 
