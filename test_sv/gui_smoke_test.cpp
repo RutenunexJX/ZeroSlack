@@ -818,7 +818,6 @@ int main(int argc, char** argv)
             QStringLiteral("module saved_tab;\nendmodule\n");
         saveEditor->setFileName(savePath);
         saveEditor->setPlainText(savedText);
-        saveEditor->markDocumentDirty();
         DocumentModel* saveDocuments = window.tabManager->getDocumentModel();
         expectBool("document model caches save editor text",
                    saveDocuments
@@ -840,8 +839,9 @@ int main(int argc, char** argv)
         expectBool("tab manager writes editor text",
                    savedFileText == savedText,
                    true);
-        expectBool("tab manager marks editor saved",
-                   saveEditor->checkSaved(),
+        expectBool("tab manager marks document saved",
+                   saveDocuments
+                       && saveDocuments->documentForEditor(saveEditor).saved,
                    true);
         expectBool("tab manager emits fileSaved",
                    fileSavedSpy.count() == 1,

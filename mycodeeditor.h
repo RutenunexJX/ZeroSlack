@@ -28,10 +28,6 @@ public:
 
     void setFileName(QString fileName);
     QString getFileName() const;
-    bool checkSaved() const;
-    bool isDocumentSaved() const;
-    void markDocumentSaved();
-    void markDocumentDirty();
     QString currentModuleName() const;
 
     void showAutoComplete();
@@ -52,7 +48,6 @@ private slots:
     void highlighCurrentLine();
     void updateLineNumberWidget(QRect rect, int dy);
     void updateLineNumberWidgetWidth();
-    void updateSaveState();
     void onTextChanged();
     void onAutoCompleteTimer();
     void onCompletionActivated(const QModelIndex &index);
@@ -125,10 +120,8 @@ private:
     QCursor createNonJumpableCursor();
 
     bool commandModeExitedByDoubleSpace = false;
-    bool isSaved = false;
 signals:
     void fileNameChanged(const QString& fileName);
-    void savedStateChanged(bool saved);
     void definitionNavigationRequested(const QString& symbolName,
                                        const EditorSemanticContext& context);
     void alternateCommandRequested(const QString& command);

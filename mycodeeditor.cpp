@@ -38,7 +38,6 @@ MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 
     setLineWrapMode(QPlainTextEdit::NoWrap);
 
-    isSaved = true;
     mFileName = "";
 
     ctrlPressed = false;
@@ -64,7 +63,6 @@ void MyCodeEditor::initConnection()
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, scheduleHighlightRefresh);
     connect(this, &QPlainTextEdit::textChanged, this, scheduleHighlightRefresh);
 
-    connect(this, &QPlainTextEdit::textChanged, this, &MyCodeEditor::updateSaveState);
     connect(this, SIGNAL(blockCountChanged(int)), this, SLOT(updateLineNumberWidgetWidth()));
     connect(this, SIGNAL(updateRequest(QRect,int)), this, SLOT(updateLineNumberWidget(QRect,int)));
 }
@@ -183,11 +181,6 @@ void MyCodeEditor::updateLineNumberWidgetWidth()
     setViewportMargins(getLineNumberWidgetWidth(),0,0,0);
 }
 
-void MyCodeEditor::updateSaveState()
-{
-    markDocumentDirty();
-}
-
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
@@ -304,34 +297,6 @@ QString MyCodeEditor::getFileName() const
     return mFileName;
 }
 
-bool MyCodeEditor::checkSaved() const
-{
-    return isDocumentSaved();
-}
-
-bool MyCodeEditor::isDocumentSaved() const
-{
-    return isSaved;
-}
-
-void MyCodeEditor::markDocumentSaved()
-{
-    if (isSaved)
-        return;
-
-    isSaved = true;
-    emit savedStateChanged(isSaved);
-}
-
-void MyCodeEditor::markDocumentDirty()
-{
-    if (!isSaved)
-        return;
-
-    isSaved = false;
-    emit savedStateChanged(isSaved);
-}
-
 QString MyCodeEditor::currentModuleName() const
 {
     return currentModuleNameAt(textCursor().position());
@@ -358,8 +323,6 @@ void MyCodeEditor::initAutoComplete()
 
 void MyCodeEditor::onTextChanged()
 {
-    updateSaveState();
-
     autoCompleteTimer->stop();
 
     const QTextCursor cursor = textCursor();

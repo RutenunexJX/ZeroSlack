@@ -58,7 +58,6 @@ bool TabManager::openFileInTab(const QString& fileName)
     MyCodeEditor* editorPtr = codeEditor.get();
     editorPtr->setPlainText(text);
     editorPtr->setFileName(fileToOpen);
-    editorPtr->markDocumentSaved();
     tabWidget->addTab(codeEditor.release(), getDisplayName(fileToOpen));
     documentModel->registerEditor(editorPtr);
     tabWidget->setCurrentIndex(tabWidget->count() - 1);

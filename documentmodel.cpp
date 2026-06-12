@@ -35,6 +35,8 @@ void DocumentModel::registerEditor(MyCodeEditor* editor)
         const DocumentSnapshot previous = documentsByEditor.value(editor).snapshot;
         DocumentSnapshot snapshot = refreshTrackedDocument(editor);
         snapshot.textVersion = previous.textVersion + 1;
+        snapshot.dirty = true;
+        snapshot.saved = false;
         documentsByEditor[editor].snapshot = snapshot;
         emit documentEdited(snapshot);
     });
@@ -47,10 +49,6 @@ void DocumentModel::registerEditor(MyCodeEditor* editor)
     connect(editor, &MyCodeEditor::fileNameChanged, this, [this, editor]() {
         refreshTrackedDocument(editor);
     });
-    connect(editor, &MyCodeEditor::savedStateChanged, this, [this, editor](bool) {
-        refreshTrackedDocument(editor);
-    });
-
     emit documentOpened(tracked.snapshot);
 }
 
@@ -73,13 +71,13 @@ void DocumentModel::markSaved(MyCodeEditor* editor)
         return;
     }
 
-    editor->markDocumentSaved();
-    DocumentSnapshot snapshot = refreshTrackedDocument(editor);
-    snapshot.dirty = false;
-    snapshot.saved = true;
-    snapshot.savedTextVersion = snapshot.textVersion;
-    documentsByEditor[editor].snapshot = snapshot;
-    emit documentSaved(snapshot);
+    const DocumentSnapshot previous = documentsByEditor.value(editor).snapshot;
+    TrackedDocument tracked = makeTrackedDocument(editor, &previous);
+    tracked.snapshot.dirty = false;
+    tracked.snapshot.saved = true;
+    tracked.snapshot.savedTextVersion = tracked.snapshot.textVersion;
+    documentsByEditor[editor] = tracked;
+    emit documentSaved(tracked.snapshot);
 }
 
 void DocumentModel::refreshEditorState(MyCodeEditor* editor)
@@ -177,9 +175,6 @@ DocumentModel::TrackedDocument DocumentModel::makeTrackedDocument(
     tracked.snapshot.documentId = tracked.snapshot.fileName.isEmpty()
         ? tracked.snapshot.documentId
         : tracked.snapshot.fileName;
-    tracked.snapshot.saved = editor->isDocumentSaved();
-    tracked.snapshot.dirty = !tracked.snapshot.saved;
-
     const QTextCursor cursor = editor->textCursor();
     const QTextBlock block = cursor.block();
     tracked.snapshot.cursorPosition = cursor.position();
