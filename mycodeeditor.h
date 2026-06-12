@@ -24,10 +24,7 @@ class QTextCursor;
 class QWheelEvent;
 class EditorSemanticContextService;
 struct CompletionActivationState;
-struct CompletionPopupKeyState;
-struct EditorAlternateModeCompletionDisplayState;
 struct EditorAlternateModeKeyState;
-struct EditorCompletionPopupKeyContext;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -69,17 +66,9 @@ private:
     friend class ScopeBandWidget;
     friend struct MyCodeEditorState;
 
-    void initConnection();
-    void initFont();
-    void initHighlighter();
-    void initAutoComplete();
     int getLineNumberWidgetWidth();
-    EditorSemanticContextService* contextService() const;
 
-    void showAutoComplete();
     void hideAutoComplete();
-    void clearAlternateModeBuffer();
-    void processAlternateModeInput(const QString &input);
 
     void setFileName(QString fileName);
     QString getFileName() const;
@@ -99,7 +88,6 @@ private:
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
-    QString getWordUnderCursor();
     void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
     bool refreshCommandModeCompletion(const EditorSemanticContext& context);
     void refreshSymbolCompletion(EditorSemanticContext context,
@@ -109,17 +97,9 @@ private:
     void applyAlternateModeKeyState(const EditorAlternateModeKeyState& state);
     void applyCompletionActivationState(
         const CompletionActivationState& activationState);
-    EditorCompletionPopupKeyContext completionPopupKeyContextForEvent(
-        QKeyEvent *event) const;
-    bool applyCompletionPopupKeyState(
-        QKeyEvent *event,
-        const CompletionPopupKeyState& popupState);
-
     std::unique_ptr<MyCodeEditorState> state;
 
     void executeAlternateModeCommand(const QString &command);
-    void applyAlternateModeCompletionDisplayState(
-        const EditorAlternateModeCompletionDisplayState& displayState);
     bool handleCompletionPopupKey(QKeyEvent *event);
 
     EditorSourceNavigationTarget sourceNavigationTargetAtPosition(

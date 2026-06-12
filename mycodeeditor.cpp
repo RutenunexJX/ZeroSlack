@@ -884,6 +884,11 @@ struct MyCodeEditorState
             &MyCodeEditor::updateLineNumberWidget);
     }
 
+    EditorSemanticContextService* semanticService() const
+    {
+        return semantic.contextService();
+    }
+
     QString currentModuleNameAt(int charPos) const
     {
         return syntax.moduleNameAt(charPos);
@@ -922,6 +927,106 @@ struct MyCodeEditorState
             includeDocumentText);
     }
 
+    void hideAutoComplete(MyCodeEditor* editor)
+    {
+        completion.hidePopup();
+
+        if (modes.commandModeActive)
+            selections.clearCommand(editor);
+    }
+
+    void showAutoComplete(MyCodeEditor* editor)
+    {
+        completion.showForCursor(
+            editor->cursorRect(editor->textCursor()),
+            modes.commandModeActive);
+    }
+
+    void applyAlternateModeCompletionDisplayState(
+        MyCodeEditor* editor,
+        const EditorAlternateModeCompletionDisplayState& displayState)
+    {
+        if (!displayState.updateCompletions)
+            return;
+
+        modes.setAlternateBuffer(displayState.normalizedInput);
+        completion.updateAlternateModeCompletions(displayState);
+
+        if (displayState.showPopup)
+            showAutoComplete(editor);
+    }
+
+    void processAlternateModeInput(MyCodeEditor* editor, const QString& input)
+    {
+        if (!modes.alternateModeActive)
+            return;
+
+        const EditorAlternateModeCompletionDisplayState completionState =
+            semanticService()->alternateModeCompletionDisplayState(input);
+        applyAlternateModeCompletionDisplayState(editor, completionState);
+    }
+
+    bool handleCompletionPopupKey(MyCodeEditor* editor, QKeyEvent *event)
+    {
+        if (!completion.popupVisible())
+            return false;
+
+        const CompletionPopupKeyState popupState =
+            semanticService()->completionPopupKeyState(
+                completion.popupKeyContextForEvent(event, modes));
+        return applyCompletionPopupKeyState(editor, event, popupState);
+    }
+
+    bool applyCompletionPopupKeyState(
+        MyCodeEditor* editor,
+        QKeyEvent *event,
+        const CompletionPopupKeyState& popupState)
+    {
+        switch (popupState.action) {
+        case CompletionPopupKeyAction::ForwardToPopup:
+            QApplication::sendEvent(completion.popup(), event);
+            return true;
+        case CompletionPopupKeyAction::ActivateCurrent:
+            if (completion.currentIndex().isValid())
+                completion.activateIndex(completion.currentIndex());
+            return true;
+        case CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable:
+            {
+                QModelIndex currentIndex = completion.currentIndex();
+                if (!currentIndex.isValid() && completion.hasRows())
+                    currentIndex = completion.firstSelectableIndex();
+                if (currentIndex.isValid())
+                    completion.activateIndex(currentIndex);
+            }
+            return true;
+        case CompletionPopupKeyAction::HidePopup:
+            hideAutoComplete(editor);
+            return true;
+        case CompletionPopupKeyAction::HidePopupAndClearAlternate:
+            hideAutoComplete(editor);
+            modes.clearAlternateBuffer();
+            return true;
+        case CompletionPopupKeyAction::BackspaceAlternateInput:
+            if (!modes.alternateBuffer.isEmpty()) {
+                const EditorAlternateModeCompletionDisplayState completionState =
+                    semanticService()->alternateModeCompletionDisplayState(
+                        modes.alternateBufferWithoutLastChar());
+                applyAlternateModeCompletionDisplayState(
+                    editor,
+                    completionState);
+            } else {
+                hideAutoComplete(editor);
+            }
+            return true;
+        case CompletionPopupKeyAction::Consume:
+            return true;
+        case CompletionPopupKeyAction::None:
+            return false;
+        }
+
+        return false;
+    }
+
     EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
         MyCodeEditor* editor,
         const QPoint& position) const
@@ -931,7 +1036,7 @@ struct MyCodeEditorState
         if (!block.isValid())
             return {};
 
-        return semantic.contextService()->editorSourceNavigationTarget(
+        return semanticService()->editorSourceNavigationTarget(
             semanticContextForPosition(editor, cursor.position(), false),
             block.position());
     }
@@ -1021,10 +1126,10 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
 {
     state->initializeCore(this);
 
-    initConnection();
-    initFont();
-    initHighlighter();
-    initAutoComplete();
+    state->attachEditorConnections(this);
+    state->appearance.apply(this);
+    state->syntax.attachToEditor(this);
+    state->completion.attachToEditor(this);
 
     highlightCurrentLine();
     updateLineNumberWidgetWidth();
@@ -1036,21 +1141,6 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
 MyCodeEditor::~MyCodeEditor()
 {
     state->shutdown();
-}
-
-void MyCodeEditor::initConnection()
-{
-    state->attachEditorConnections(this);
-}
-
-void MyCodeEditor::initFont()
-{
-    state->appearance.apply(this);
-}
-
-void MyCodeEditor::initHighlighter()
-{
-    state->syntax.attachToEditor(this);
 }
 
 void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
@@ -1086,11 +1176,6 @@ void MyCodeEditor::setAlternateModeEnabled(bool enabled)
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)
 {
     state->semantic.setService(service);
-}
-
-EditorSemanticContextService* MyCodeEditor::contextService() const
-{
-    return state->semantic.contextService();
 }
 
 QString MyCodeEditor::currentModuleNameAt(int charPos) const
@@ -1180,11 +1265,6 @@ QString MyCodeEditor::currentModuleName() const
     return state->currentModuleName(this);
 }
 
-void MyCodeEditor::initAutoComplete()
-{
-    state->completion.attachToEditor(this);
-}
-
 void MyCodeEditor::onTextChanged()
 {
     state->completion.stopTimer();
@@ -1197,7 +1277,7 @@ void MyCodeEditor::updateCompletionTriggerForTextChange(const QTextCursor& curso
         semanticContextForCursor(cursor);
     context.moduleName = currentModuleNameAt(cursor.position() - 1);
     const EditorCompletionTextChangeState completionState =
-        contextService()->completionTextChangeState(context);
+        state->semanticService()->completionTextChangeState(context);
     state->modes.setCommandModeActive(completionState.commandModeActive);
 
     if (completionState.startCompletionTimer) {
@@ -1209,11 +1289,7 @@ void MyCodeEditor::updateCompletionTriggerForTextChange(const QTextCursor& curso
 
 void MyCodeEditor::hideAutoComplete()
 {
-    state->completion.hidePopup();
-
-    if (state->modes.commandModeActive) {
-        state->selections.clearCommand(this);
-    }
+    state->hideAutoComplete(this);
 }
 
 void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
@@ -1221,7 +1297,7 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
     const EditorCompletionActivationContext activationContext =
         state->completion.activationContextForIndex(index, state->modes);
     const CompletionActivationState activationState =
-        contextService()->completionActivationState(activationContext);
+        state->semanticService()->completionActivationState(activationContext);
     applyCompletionActivationState(activationState);
 }
 
@@ -1293,7 +1369,7 @@ bool MyCodeEditor::handleSourceSymbolShortcut(QKeyEvent *event)
     sourceShortcutContext.semanticContext =
         editorSemanticContextForPosition(textCursor().position());
     const EditorSourceSymbolShortcutState sourceShortcutState =
-        contextService()->sourceSymbolShortcutState(sourceShortcutContext);
+        state->semanticService()->sourceSymbolShortcutState(sourceShortcutContext);
     if (!sourceShortcutState.matched)
         return false;
 
@@ -1315,7 +1391,7 @@ bool MyCodeEditor::handleAlternateModeKey(QKeyEvent *event)
     alternateKeyContext.text = event->text();
     alternateKeyContext.buffer = state->modes.alternateBuffer;
     const EditorAlternateModeKeyState alternateKeyState =
-        contextService()->alternateModeKeyState(alternateKeyContext);
+        state->semanticService()->alternateModeKeyState(alternateKeyContext);
     applyAlternateModeKeyState(alternateKeyState);
     return true;
 }
@@ -1326,7 +1402,9 @@ void MyCodeEditor::applyAlternateModeKeyState(
     switch (keyState.action) {
     case EditorAlternateModeKeyAction::UpdateInput:
     case EditorAlternateModeKeyAction::RefreshCompletions:
-        applyAlternateModeCompletionDisplayState(keyState.completion);
+        state->applyAlternateModeCompletionDisplayState(
+            this,
+            keyState.completion);
         break;
     case EditorAlternateModeKeyAction::ExecuteCommand:
         executeAlternateModeCommand(keyState.command);
@@ -1335,7 +1413,7 @@ void MyCodeEditor::applyAlternateModeKeyState(
         if (keyState.hidePopup)
             hideAutoComplete();
         if (keyState.clearBuffer)
-            clearAlternateModeBuffer();
+            state->modes.clearAlternateBuffer();
         break;
     case EditorAlternateModeKeyAction::Consume:
         break;
@@ -1344,73 +1422,7 @@ void MyCodeEditor::applyAlternateModeKeyState(
 
 bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
 {
-    if (!state->completion.popupVisible())
-        return false;
-
-    const CompletionPopupKeyState popupState =
-        contextService()->completionPopupKeyState(
-            completionPopupKeyContextForEvent(event));
-    return applyCompletionPopupKeyState(event, popupState);
-}
-
-EditorCompletionPopupKeyContext
-MyCodeEditor::completionPopupKeyContextForEvent(QKeyEvent *event) const
-{
-    return state->completion.popupKeyContextForEvent(event, state->modes);
-}
-
-bool MyCodeEditor::applyCompletionPopupKeyState(
-    QKeyEvent *event,
-    const CompletionPopupKeyState& popupState)
-{
-    switch (popupState.action) {
-    case CompletionPopupKeyAction::ForwardToPopup:
-        QApplication::sendEvent(state->completion.popup(), event);
-        return true;
-    case CompletionPopupKeyAction::ActivateCurrent:
-        if (state->completion.currentIndex().isValid())
-            state->completion.activateIndex(state->completion.currentIndex());
-        return true;
-    case CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable:
-        {
-            QModelIndex currentIndex = state->completion.currentIndex();
-            if (!currentIndex.isValid() && state->completion.hasRows())
-                currentIndex = state->completion.firstSelectableIndex();
-            if (currentIndex.isValid())
-                state->completion.activateIndex(currentIndex);
-        }
-        return true;
-    case CompletionPopupKeyAction::HidePopup:
-        hideAutoComplete();
-        return true;
-    case CompletionPopupKeyAction::HidePopupAndClearAlternate:
-        hideAutoComplete();
-        clearAlternateModeBuffer();
-        return true;
-    case CompletionPopupKeyAction::BackspaceAlternateInput:
-        if (!state->modes.alternateBuffer.isEmpty()) {
-            const EditorAlternateModeCompletionDisplayState completionState =
-                contextService()->alternateModeCompletionDisplayState(
-                    state->modes.alternateBufferWithoutLastChar());
-            applyAlternateModeCompletionDisplayState(completionState);
-        } else {
-            hideAutoComplete();
-        }
-        return true;
-    case CompletionPopupKeyAction::Consume:
-        return true;
-    case CompletionPopupKeyAction::None:
-        return false;
-    }
-
-    return false;
-}
-
-void MyCodeEditor::showAutoComplete()
-{
-    state->completion.showForCursor(
-        cursorRect(textCursor()),
-        state->modes.commandModeActive);
+    return state->handleCompletionPopupKey(this, event);
 }
 
 void MyCodeEditor::onAutoCompleteTimer()
@@ -1427,7 +1439,7 @@ void MyCodeEditor::onAutoCompleteTimer()
         return;
 
     if (state->modes.alternateModeActive) {
-        processAlternateModeInput(context.lineUpToCursor);
+        state->processAlternateModeInput(this, context.lineUpToCursor);
         return;
     }
 
@@ -1438,7 +1450,7 @@ bool MyCodeEditor::refreshCommandModeCompletion(
     const EditorSemanticContext& context)
 {
     const EditorCommandModeCompletionRefreshState commandState =
-        contextService()->commandModeCompletionRefreshState(
+        state->semanticService()->commandModeCompletionRefreshState(
             context,
             state->modes.commandModeExitedByDoubleSpace);
     if (commandState.matched) {
@@ -1471,7 +1483,7 @@ bool MyCodeEditor::refreshCommandModeCompletion(
 
         if (commandState.showCompletions) {
             state->completion.updateCommandModeCompletions(commandState);
-            showAutoComplete();
+            state->showAutoComplete(this);
         }
         return true;
     }
@@ -1489,43 +1501,15 @@ void MyCodeEditor::refreshSymbolCompletion(
     EditorSemanticContext context,
     const QTextBlock& currentBlock)
 {
-    context.wordPrefix = getWordUnderCursor();
+    context.wordPrefix = state->completion.wordUnderCursor(this);
     const EditorCompletionState completionState =
-        contextService()->editorCompletionState(context);
+        state->semanticService()->editorCompletionState(context);
     if (completionState.available) {
         state->completion.updateSymbolCompletions(completionState);
         state->completion.setReplacementStart(
             currentBlock.position(),
             completionState.replacementStartColumn);
-        showAutoComplete();
-    }
-}
-
-QString MyCodeEditor::getWordUnderCursor()
-{
-    return state->completion.wordUnderCursor(this);
-}
-
-void MyCodeEditor::processAlternateModeInput(const QString &input)
-{
-    if (!state->modes.alternateModeActive) return;
-
-    const EditorAlternateModeCompletionDisplayState completionState =
-        contextService()->alternateModeCompletionDisplayState(input);
-    applyAlternateModeCompletionDisplayState(completionState);
-}
-
-void MyCodeEditor::applyAlternateModeCompletionDisplayState(
-    const EditorAlternateModeCompletionDisplayState& displayState)
-{
-    if (!displayState.updateCompletions)
-        return;
-
-    state->modes.setAlternateBuffer(displayState.normalizedInput);
-    state->completion.updateAlternateModeCompletions(displayState);
-
-    if (displayState.showPopup) {
-        showAutoComplete();
+        state->showAutoComplete(this);
     }
 }
 
@@ -1533,13 +1517,8 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 {
     if (!command.trimmed().isEmpty())
         emit alternateCommandRequested(command);
-    clearAlternateModeBuffer();
-    hideAutoComplete();
-}
-
-void MyCodeEditor::clearAlternateModeBuffer()
-{
     state->modes.clearAlternateBuffer();
+    hideAutoComplete();
 }
 
 void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
