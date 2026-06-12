@@ -34,6 +34,7 @@ public:
     void hideAutoComplete();
     void refreshScopeAndCurrentLineHighlight();
     void setAlternateModeEnabled(bool enabled);
+    void setSemanticContextService(EditorSemanticContextService* service);
 
     void moveMouseToCursor();
 
@@ -69,6 +70,7 @@ private:
     void initHighlighter();
     void initAutoComplete();
     int getLineNumberWidgetWidth();
+    EditorSemanticContextService* contextService() const;
 
     QString currentModuleNameAt(int charPos) const;
     EditorSemanticContext editorSemanticContextForPosition(
@@ -84,6 +86,7 @@ private:
 
     QCompleter *completer;
     CompletionModel *completionModel;
+    EditorSemanticContextService* semanticContextService = nullptr;
     QTimer *autoCompleteTimer;
     int wordStartPos;
 
