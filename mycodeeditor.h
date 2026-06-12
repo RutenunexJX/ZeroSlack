@@ -16,7 +16,6 @@ class QPaintEvent;
 class QPoint;
 class QRect;
 class QContextMenuEvent;
-class QCursor;
 class QKeyEvent;
 class QResizeEvent;
 class ScopeBandWidget;
@@ -130,8 +129,6 @@ private:
         const EditorSourceNavigationTarget& target);
     void clearSourceNavigationHover();
 
-    QCursor createJumpableCursor();
-    QCursor createNonJumpableCursor();
 signals:
     void fileNameChanged(const QString& fileName);
     void alternateCommandRequested(const QString& command);

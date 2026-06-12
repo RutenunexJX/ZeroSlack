@@ -431,6 +431,36 @@ struct MyCodeEditorState
                 displayState.normalizedInput);
         }
 
+        void setReplacementStart(
+            int blockPosition,
+            int replacementStartColumn)
+        {
+            wordStartPos = blockPosition + replacementStartColumn;
+        }
+
+        QString wordUnderCursor(MyCodeEditor* editor)
+        {
+            QTextCursor cursor = editor->textCursor();
+            const int currentPosition = cursor.position();
+            cursor.movePosition(QTextCursor::StartOfWord);
+            wordStartPos = cursor.position();
+            cursor.setPosition(currentPosition);
+            cursor.movePosition(QTextCursor::EndOfWord);
+            cursor.setPosition(wordStartPos);
+            cursor.setPosition(currentPosition, QTextCursor::KeepAnchor);
+            return cursor.selectedText();
+        }
+
+        void replaceWordAtCursor(MyCodeEditor* editor, const QString& text) const
+        {
+            QTextCursor cursor = editor->textCursor();
+            cursor.setPosition(wordStartPos);
+            cursor.setPosition(
+                editor->textCursor().position(),
+                QTextCursor::KeepAnchor);
+            cursor.insertText(text);
+        }
+
         void showForCursor(const QRect& cursorRectangle,
                            bool selectFirstCompletion) const
         {
@@ -484,6 +514,18 @@ struct MyCodeEditorState
             return ctrlPressed;
         }
 
+        QCursor cursorForTarget(
+            const EditorSourceNavigationTarget& target) const
+        {
+            return target.jumpable ? createJumpableCursor()
+                                   : createNonJumpableCursor();
+        }
+
+        QCursor nonJumpableCursor() const
+        {
+            return createNonJumpableCursor();
+        }
+
         bool matches(const EditorSourceNavigationTarget& target) const
         {
             return word == target.text
@@ -509,9 +551,82 @@ struct MyCodeEditorState
             startPos = -1;
             endPos = -1;
         }
+
+    private:
+        QCursor createJumpableCursor() const
+        {
+            QPixmap pixmap(24, 24);
+            pixmap.fill(Qt::transparent);
+
+            QPainter painter(&pixmap);
+            if (!painter.isActive())
+                return QCursor(Qt::PointingHandCursor);
+
+            painter.setRenderHint(QPainter::Antialiasing);
+
+            QPen pen(QColor(0, 255, 0), 4);
+            pen.setCapStyle(Qt::RoundCap);
+            pen.setJoinStyle(Qt::RoundJoin);
+            painter.setPen(pen);
+
+            painter.drawLine(7, 12, 11, 16);
+            painter.drawLine(11, 16, 18, 6);
+
+            painter.end();
+
+            return QCursor(pixmap, 12, 12);
+        }
+
+        QCursor createNonJumpableCursor() const
+        {
+            QPixmap pixmap(20, 20);
+            pixmap.fill(Qt::transparent);
+
+            QPainter painter(&pixmap);
+            painter.setRenderHint(QPainter::Antialiasing);
+
+            QPen pen(QColor(255, 0, 0), 3);
+            pen.setCapStyle(Qt::RoundCap);
+            painter.setPen(pen);
+
+            painter.drawLine(5, 5, 15, 15);
+            painter.drawLine(15, 5, 5, 15);
+
+            return QCursor(pixmap, 10, 10);
+        }
     } sourceHover;
 
     struct SelectionUi {
+        void highlightCurrentLine(MyCodeEditor* editor)
+        {
+            QList<QTextEdit::ExtraSelection> selections =
+                editor->extraSelections();
+            selections.erase(
+                std::remove_if(selections.begin(), selections.end(),
+                    [](const QTextEdit::ExtraSelection& selection) {
+                        const int property = selection.format
+                            .property(kPrimarySelectionProperty)
+                            .toInt();
+                        return property == kScopeBackgroundSelectionMarker
+                            || property == kCurrentLineSelectionMarker;
+                    }),
+                selections.end());
+
+            QTextEdit::ExtraSelection currentLine;
+            currentLine.format.setBackground(QColor(0, 100, 100, 20));
+            currentLine.format.setProperty(
+                QTextFormat::FullWidthSelection,
+                true);
+            currentLine.format.setProperty(
+                kPrimarySelectionProperty,
+                kCurrentLineSelectionMarker);
+            currentLine.cursor = editor->textCursor();
+            selections.append(currentLine);
+
+            clampSelectionsToDocument(editor->document(), selections);
+            editor->setExtraSelections(selections);
+        }
+
         void removeByProperty(QPlainTextEdit* editor, int property, int value)
         {
             QList<QTextEdit::ExtraSelection> selections =
@@ -600,6 +715,22 @@ struct MyCodeEditorState
                 kHoveredSymbolSelectionMarker);
             hover.clearRange();
         }
+
+    private:
+        void clampSelectionsToDocument(
+            QTextDocument* document,
+            QList<QTextEdit::ExtraSelection>& selections)
+        {
+            const int docLen = document->characterCount();
+            const int docEnd = (docLen > 0) ? docLen - 1 : 0;
+            for (auto& selection : selections) {
+                QTextCursor& cursor = selection.cursor;
+                const int pos = qBound(0, cursor.position(), docEnd);
+                const int anchor = qBound(0, cursor.anchor(), docEnd);
+                cursor.setPosition(anchor);
+                cursor.setPosition(pos, QTextCursor::KeepAnchor);
+            }
+        }
     } selections;
 
 };
@@ -684,38 +815,7 @@ int MyCodeEditor::getLineNumberWidgetWidth()
 
 void MyCodeEditor::highlightCurrentLine()
 {
-    // Drop previous scope-background (997) and current-line (998) selections, then re-add only the
-    // current-line highlight. The scope-background shading was a debug visualization and has been
-    // removed (it forced expensive full-viewport repaints via large full-width ExtraSelections).
-    QList<QTextEdit::ExtraSelection> list = extraSelections();
-    list.erase(
-        std::remove_if(list.begin(), list.end(),
-            [](const QTextEdit::ExtraSelection& s) {
-                int p = s.format.property(kPrimarySelectionProperty).toInt();
-                return p == kScopeBackgroundSelectionMarker
-                    || p == kCurrentLineSelectionMarker;
-            }),
-        list.end());
-
-    QTextEdit::ExtraSelection currentLine;
-    currentLine.format.setBackground(QColor(0,100,100,20));
-    currentLine.format.setProperty(QTextFormat::FullWidthSelection, true);
-    currentLine.format.setProperty(
-        kPrimarySelectionProperty,
-        kCurrentLineSelectionMarker);
-    currentLine.cursor = textCursor();
-    list.append(currentLine);
-
-    const int docLen = document()->characterCount();
-    const int docEnd = (docLen > 0) ? docLen - 1 : 0;
-    for (auto& sel : list) {
-        QTextCursor& c = sel.cursor;
-        int pos = qBound(0, c.position(), docEnd);
-        int anchor = qBound(0, c.anchor(), docEnd);
-        c.setPosition(anchor);
-        c.setPosition(pos, QTextCursor::KeepAnchor);
-    }
-    setExtraSelections(list);
+    state->selections.highlightCurrentLine(this);
 }
 
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
@@ -907,9 +1007,7 @@ void MyCodeEditor::applyCompletionActivationState(
             state->selections.clearCommand(this);
         }
     } else if (activationState.action == CompletionActivationAction::ReplaceWord) {
-        cursor.setPosition(state->completion.wordStartPos);
-        cursor.setPosition(textCursor().position(), QTextCursor::KeepAnchor);
-        cursor.insertText(activationState.text);
+        state->completion.replaceWordAtCursor(this, activationState.text);
     }
 
     if (activationState.hidePopup)
@@ -1154,24 +1252,16 @@ void MyCodeEditor::refreshSymbolCompletion(
         contextService()->editorCompletionState(context);
     if (completionState.available) {
         state->completion.updateSymbolCompletions(completionState);
-        state->completion.wordStartPos =
-            currentBlock.position() + completionState.replacementStartColumn;
+        state->completion.setReplacementStart(
+            currentBlock.position(),
+            completionState.replacementStartColumn);
         showAutoComplete();
     }
 }
 
 QString MyCodeEditor::getWordUnderCursor()
 {
-    QTextCursor cursor = textCursor();
-    int currentPos = cursor.position();
-    cursor.movePosition(QTextCursor::StartOfWord, QTextCursor::MoveAnchor);
-    state->completion.wordStartPos = cursor.position();
-    cursor.setPosition(currentPos);
-    cursor.movePosition(QTextCursor::EndOfWord, QTextCursor::MoveAnchor);
-    cursor.setPosition(state->completion.wordStartPos, QTextCursor::MoveAnchor);
-    cursor.setPosition(currentPos, QTextCursor::KeepAnchor);
-
-    return cursor.selectedText();
+    return state->completion.wordUnderCursor(this);
 }
 
 void MyCodeEditor::processAlternateModeInput(const QString &input)
@@ -1299,7 +1389,7 @@ void MyCodeEditor::applySourceNavigationHover(
 {
     if (!target.matched) {
         clearSourceNavigationHover();
-        viewport()->setCursor(createNonJumpableCursor());
+        viewport()->setCursor(state->sourceHover.nonJumpableCursor());
         return;
     }
 
@@ -1309,8 +1399,7 @@ void MyCodeEditor::applySourceNavigationHover(
         state->selections.highlightHoveredSymbol(this, target);
     }
 
-    viewport()->setCursor(
-        target.jumpable ? createJumpableCursor() : createNonJumpableCursor());
+    viewport()->setCursor(state->sourceHover.cursorForTarget(target));
 }
 
 void MyCodeEditor::clearSourceNavigationHover()
@@ -1343,47 +1432,4 @@ void MyCodeEditor::applyLineNavigationTarget(
     centerCursor();
     setFocus();
     moveMouseToCursor();
-}
-
-QCursor MyCodeEditor::createJumpableCursor()
-{
-    QPixmap pixmap(24, 24);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    if (!painter.isActive()) {
-        return QCursor(Qt::PointingHandCursor);
-    }
-
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    QPen pen(QColor(0, 255, 0), 4);
-    pen.setCapStyle(Qt::RoundCap);
-    pen.setJoinStyle(Qt::RoundJoin);
-    painter.setPen(pen);
-
-    painter.drawLine(7, 12, 11, 16);
-    painter.drawLine(11, 16, 18, 6);
-
-    painter.end();
-
-    return QCursor(pixmap, 12, 12);
-}
-
-QCursor MyCodeEditor::createNonJumpableCursor()
-{
-    QPixmap pixmap(20, 20);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    QPen pen(QColor(255, 0, 0), 3);
-    pen.setCapStyle(Qt::RoundCap);
-    painter.setPen(pen);
-
-    painter.drawLine(5, 5, 15, 15);
-    painter.drawLine(15, 5, 5, 15);
-
-    return QCursor(pixmap, 10, 10);
 }
