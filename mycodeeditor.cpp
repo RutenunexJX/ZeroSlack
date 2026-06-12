@@ -1,5 +1,8 @@
 #include "mycodeeditor.h"
 #include "completionmodel.h"
+#include "editorcursornavigation.h"
+#include "editorfileidentity.h"
+#include "editorgeometry.h"
 #include "editorgutter.h"
 #include "editorselection.h"
 #include "editorsyntaxstate.h"
@@ -10,8 +13,6 @@
 
 #include <QPainter>
 #include <QScrollBar>
-#include <QFileInfo>
-#include <QDir>
 
 #include <QKeyEvent>
 #include <QMenu>
@@ -26,7 +27,6 @@
 
 #include <QAbstractItemView>
 #include <QCompleter>
-#include <QCursor>
 #include <QPixmap>
 #include <QPen>
 #include <QBrush>
@@ -47,82 +47,12 @@ struct MyCodeEditorState
 
     EditorGutter gutter;
 
-    struct DocumentGeometry {
-        EditorBlockGeometry blockGeometry(
-            const MyCodeEditor* editor,
-            int blockNumber) const
-        {
-            QTextBlock block = editor->document()->findBlockByNumber(blockNumber);
-            if (!block.isValid())
-                return {0, qreal(editor->fontMetrics().height())};
-
-            const qreal top = editor->blockBoundingGeometry(block).translated(
-                editor->contentOffset()).top();
-            return {top, editor->blockBoundingRect(block).height()};
-        }
-
-        qreal documentHeightPx(const MyCodeEditor* editor) const
-        {
-            QAbstractTextDocumentLayout* layout =
-                editor->document()->documentLayout();
-            return layout ? layout->documentSize().height() : 0;
-        }
-    } geometry;
-
-    struct CursorNavigation {
-        void moveMouseToCursor(MyCodeEditor* editor) const
-        {
-            if (editor->viewport() && editor->viewport()->isVisible()) {
-                QCursor::setPos(
-                    editor->viewport()->mapToGlobal(
-                        editor->cursorRect().center()));
-            }
-        }
-
-        void applyLineTarget(
-            MyCodeEditor* editor,
-            const SourceLineNavigationTarget& target) const
-        {
-            QTextCursor cursor = editor->textCursor();
-            cursor.movePosition(QTextCursor::Start);
-            for (int i = 0; i < target.lineMoves; ++i)
-                cursor.movePosition(QTextCursor::Down);
-            if (target.columnMoves > 0) {
-                cursor.movePosition(
-                    QTextCursor::Right,
-                    QTextCursor::MoveAnchor,
-                    target.columnMoves);
-            }
-            editor->setTextCursor(cursor);
-            editor->centerCursor();
-            editor->setFocus();
-            moveMouseToCursor(editor);
-        }
-    } cursorNavigation;
+    EditorDocumentGeometry geometry;
+    EditorCursorNavigation cursorNavigation;
 
     EditorSyntaxState syntax;
 
-    struct FileIdentity {
-        QString fileName;
-
-        static QString normalized(QString fileName)
-        {
-            return fileName.isEmpty()
-                ? QString()
-                : QDir::cleanPath(QDir::fromNativeSeparators(
-                    QFileInfo(fileName).absoluteFilePath()));
-        }
-
-        bool set(QString nextFileName)
-        {
-            const QString normalizedFileName = normalized(nextFileName);
-            if (fileName == normalizedFileName)
-                return false;
-
-            fileName = normalizedFileName;
-            return true;
-        }
-    } identity;
+    EditorFileIdentity identity;
 
     struct SemanticRuntime {
         EditorSemanticContextService* service = nullptr;
@@ -573,7 +503,7 @@ struct MyCodeEditorState
 
         return semantic.contextForDocument(
             editor->document(),
-            identity.fileName,
+            identity.current(),
             currentModuleNameAt(semanticPosition),
             semanticPosition,
             includeDocumentText);
@@ -1139,12 +1069,12 @@ struct MyCodeEditorState
         if (!identity.set(fileName))
             return;
 
-        emit editor->fileNameChanged(identity.fileName);
+        emit editor->fileNameChanged(identity.current());
     }
 
     QString documentFileName() const
     {
-        return identity.fileName;
+        return identity.current();
     }
 
     void applyLineNavigationTarget(

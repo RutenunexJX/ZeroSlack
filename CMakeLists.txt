@@ -57,6 +57,9 @@ set(ZEROSLACK_CORE_SOURCES
     diagnosticservice.cpp
     documentmodel.cpp
     editorcoordinator.cpp
+    editorcursornavigation.cpp
+    editorfileidentity.cpp
+    editorgeometry.cpp
     editorgutter.cpp
     editorselection.cpp
     editorsemanticcontextservice.cpp
@@ -113,6 +116,9 @@ set(ZEROSLACK_CORE_SOURCES
     diagnosticservice.h
     documentmodel.h
     editorcoordinator.h
+    editorcursornavigation.h
+    editorfileidentity.h
+    editorgeometry.h
     editorgutter.h
     editorselection.h
     editorsemanticcontextservice.h

@@ -10,6 +10,7 @@ class QRect;
 class QContextMenuEvent;
 class QKeyEvent;
 class QResizeEvent;
+class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
 struct EditorSemanticContext;
@@ -55,6 +56,7 @@ protected:
     void leaveEvent(QEvent *event) override;
 
 private:
+    friend class EditorDocumentGeometry;
     friend class EditorGutter;
     friend struct MyCodeEditorState;
 
