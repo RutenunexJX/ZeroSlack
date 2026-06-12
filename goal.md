@@ -50,7 +50,7 @@ Tree-sitter and Slang split:
 - UI panels should render service/model output, not derive semantic policy from widgets.
 - MainWindow should compose and coordinate windows, not own analysis event routing, panel rendering, or editor workflow policy.
 - MyCodeEditor should provide editor UI, stable editor adapters, event flow, and live syntax behavior while document state and project semantic decisions stay in models, services, scheduler, runtime, and coordinators.
-- Test code should prefer stable production-facing APIs over private-access macros.
+- New test code should prefer stable production-facing APIs; existing private-access test debt should shrink only when replacement APIs are real production boundaries.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
 - Verification may be batched across independent architecture blocks, but commits remain coherent by block.
@@ -62,7 +62,7 @@ The foundation is healthy when:
 - new feature reads mainly use ProjectModel, DocumentModel, AnalysisScheduler, SemanticIndex, and Query Services
 - MainWindow is mostly UI composition and high-level callback wiring
 - MyCodeEditor is mostly editor UI plus Tree-sitter live syntax
-- editor-facing tests exercise stable APIs instead of broad private access
+- private-access test debt is isolated and shrinking as stable production APIs appear
 - UI/services can read stable snapshot-backed semantic data
 - all CTest targets pass
 - real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
