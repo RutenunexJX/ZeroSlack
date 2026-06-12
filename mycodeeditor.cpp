@@ -137,8 +137,44 @@ private:
 
 struct MyCodeEditorState
 {
-    LineNumberWidget *lineNumberWidget = nullptr;
-    QString fileName;
+    struct GutterUi {
+        LineNumberWidget *widget = nullptr;
+
+        void init(MyCodeEditor* editor)
+        {
+            widget = new LineNumberWidget(editor);
+        }
+
+        void destroy()
+        {
+            delete widget;
+            widget = nullptr;
+        }
+
+        int widthFor(MyCodeEditor* editor) const
+        {
+            return 8
+                + QString::number(editor->blockCount() + 1).length()
+                    * editor->fontMetrics().horizontalAdvance(QChar('0'));
+        }
+
+        void refresh(const QRect& rect, int dy, int width) const
+        {
+            if (!widget)
+                return;
+
+            if (dy)
+                widget->scroll(0, dy);
+            else
+                widget->update(0, rect.y(), width, rect.height());
+        }
+
+        void resizeTo(const QRect& contentsRect, int width) const
+        {
+            if (widget)
+                widget->setGeometry(0, 0, width, contentsRect.height());
+        }
+    } gutter;
 
     struct SyntaxTreeState {
         std::unique_ptr<TSDocument> document;
@@ -175,6 +211,76 @@ struct MyCodeEditorState
             return document->enclosingModuleName(charPos < 0 ? 0 : charPos);
         }
     } syntax;
+
+    struct FileIdentity {
+        QString fileName;
+
+        static QString normalized(QString fileName)
+        {
+            return fileName.isEmpty()
+                ? QString()
+                : QDir::cleanPath(QDir::fromNativeSeparators(
+                    QFileInfo(fileName).absoluteFilePath()));
+        }
+
+        bool set(QString nextFileName)
+        {
+            const QString normalizedFileName = normalized(nextFileName);
+            if (fileName == normalizedFileName)
+                return false;
+
+            fileName = normalizedFileName;
+            return true;
+        }
+    } identity;
+
+    struct SemanticRuntime {
+        EditorSemanticContextService* service = nullptr;
+
+        void init()
+        {
+            service = EditorSemanticContextService::getInstance();
+        }
+
+        void setService(EditorSemanticContextService* nextService)
+        {
+            service = nextService
+                ? nextService
+                : EditorSemanticContextService::getInstance();
+        }
+
+        EditorSemanticContextService* contextService() const
+        {
+            return service
+                ? service
+                : EditorSemanticContextService::getInstance();
+        }
+
+        EditorSemanticContext contextForDocument(
+            QTextDocument* document,
+            const QString& fileName,
+            const QString& moduleName,
+            int cursorPosition,
+            bool includeDocumentText) const
+        {
+            EditorSemanticContext context;
+            context.fileName = fileName;
+            context.moduleName = moduleName;
+            if (includeDocumentText)
+                context.documentText = document->toPlainText();
+            context.cursorPosition = cursorPosition;
+
+            const QTextBlock block = document->findBlock(cursorPosition);
+            if (block.isValid()) {
+                context.lineText = block.text();
+                context.column = cursorPosition - block.position();
+                context.cursorLine = block.blockNumber() + 1;
+                context.lineUpToCursor = context.lineText.left(context.column);
+            }
+
+            return context;
+        }
+    } semantic;
 
     struct CompletionUi {
         QCompleter *completer = nullptr;
@@ -214,8 +320,6 @@ struct MyCodeEditorState
         }
         void complete(const QRect& rect) const { completer->complete(rect); }
     } completion;
-
-    EditorSemanticContextService* semanticContextService = nullptr;
 
     struct HighlightRefresh {
         QTimer *timer = nullptr;
@@ -371,9 +475,9 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
     , state(std::make_unique<MyCodeEditorState>())
 {
-    state->semanticContextService = EditorSemanticContextService::getInstance();
+    state->semantic.init();
     state->syntax.init();
-    state->lineNumberWidget = new LineNumberWidget(this);
+    state->gutter.init(this);
 
     initConnection();
     initFont();
@@ -385,14 +489,14 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
 
     setLineWrapMode(QPlainTextEdit::NoWrap);
 
-    state->fileName = "";
+    state->identity.set(QString());
 
     setMouseTracking(true);
 }
 
 MyCodeEditor::~MyCodeEditor()
 {
-    delete state->lineNumberWidget;
+    state->gutter.destroy();
 }
 
 void MyCodeEditor::initConnection()
@@ -442,7 +546,7 @@ void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsA
 
 int MyCodeEditor::getLineNumberWidgetWidth()
 {
-    return 8+QString::number(blockCount()+1).length()*fontMetrics().horizontalAdvance(QChar('0'));
+    return state->gutter.widthFor(this);
 }
 
 void MyCodeEditor::highlightCurrentLine()
@@ -493,16 +597,12 @@ void MyCodeEditor::setAlternateModeEnabled(bool enabled)
 
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)
 {
-    state->semanticContextService = service
-        ? service
-        : EditorSemanticContextService::getInstance();
+    state->semantic.setService(service);
 }
 
 EditorSemanticContextService* MyCodeEditor::contextService() const
 {
-    return state->semanticContextService
-        ? state->semanticContextService
-        : EditorSemanticContextService::getInstance();
+    return state->semantic.contextService();
 }
 
 QString MyCodeEditor::currentModuleNameAt(int charPos) const
@@ -534,10 +634,7 @@ qreal MyCodeEditor::getDocumentHeightPx() const
 
 void MyCodeEditor::updateLineNumberWidget(QRect rect, int dy)
 {
-    if(dy)
-        state->lineNumberWidget->scroll(0,dy);
-    else
-        state->lineNumberWidget->update(0,rect.y(),getLineNumberWidgetWidth(),rect.height());
+    state->gutter.refresh(rect, dy, getLineNumberWidgetWidth());
 }
 
 void MyCodeEditor::updateLineNumberWidgetWidth()
@@ -548,7 +645,7 @@ void MyCodeEditor::updateLineNumberWidgetWidth()
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
-    state->lineNumberWidget->setGeometry(0, 0, getLineNumberWidgetWidth(), contentsRect().height());
+    state->gutter.resizeTo(contentsRect(), getLineNumberWidgetWidth());
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -570,22 +667,12 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
         ? cursorPosition
         : textCursor().position();
 
-    EditorSemanticContext context;
-    context.fileName = getFileName();
-    context.moduleName = currentModuleNameAt(semanticPosition);
-    if (includeDocumentText)
-        context.documentText = document()->toPlainText();
-    context.cursorPosition = semanticPosition;
-
-    const QTextBlock block = document()->findBlock(semanticPosition);
-    if (block.isValid()) {
-        context.lineText = block.text();
-        context.column = semanticPosition - block.position();
-        context.cursorLine = block.blockNumber() + 1;
-        context.lineUpToCursor = context.lineText.left(context.column);
-    }
-
-    return context;
+    return state->semantic.contextForDocument(
+        document(),
+        getFileName(),
+        currentModuleNameAt(semanticPosition),
+        semanticPosition,
+        includeDocumentText);
 }
 
 EditorSemanticContext MyCodeEditor::semanticContextForCursor(
@@ -597,19 +684,15 @@ EditorSemanticContext MyCodeEditor::semanticContextForCursor(
 
 void MyCodeEditor::setFileName(QString fileName)
 {
-    const QString normalizedFileName = fileName.isEmpty()
-        ? QString()
-        : QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
-    if (state->fileName == normalizedFileName)
+    if (!state->identity.set(fileName))
         return;
 
-    state->fileName = normalizedFileName;
-    emit fileNameChanged(state->fileName);
+    emit fileNameChanged(state->identity.fileName);
 }
 
 QString MyCodeEditor::getFileName() const
 {
-    return state->fileName;
+    return state->identity.fileName;
 }
 
 QString MyCodeEditor::currentModuleName() const
