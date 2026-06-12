@@ -64,6 +64,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorfileidentity.cpp
     editorgeometry.cpp
     editorgutter.cpp
+    editorruntime.cpp
     editorselection.cpp
     editorsemanticcontextservice.cpp
     editorsemanticruntime.cpp
@@ -130,6 +131,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorfileidentity.h
     editorgeometry.h
     editorgutter.h
+    editorruntime.h
     editorselection.h
     editorsemanticcontextservice.h
     editorsemanticruntime.h
