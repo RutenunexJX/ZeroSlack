@@ -1382,6 +1382,32 @@ struct MyCodeEditorState
         }
     }
 
+    bool handleKeyPress(MyCodeEditor* editor, QKeyEvent *event)
+    {
+        handleControlKeyPress(editor, event);
+
+        if (handleSourceSymbolShortcut(editor, event))
+            return true;
+
+        if (event->key() == Qt::Key_Shift) {
+            event->ignore();
+            return true;
+        }
+
+        if (modes.alternateModeActive) {
+            handleAlternateModeKey(editor, event);
+            return true;
+        }
+
+        return handleCompletionPopupKey(editor, event);
+    }
+
+    bool handleKeyRelease(MyCodeEditor* editor, QKeyEvent *event)
+    {
+        handleControlKeyRelease(editor, event);
+        return event->key() != Qt::Key_Shift && modes.alternateModeActive;
+    }
+
     bool handleSourceNavigationMousePress(
         MyCodeEditor* editor,
         QMouseEvent *event)
@@ -1551,22 +1577,7 @@ QString MyCodeEditor::currentModuleName() const
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
-    state->handleControlKeyPress(this, event);
-
-    if (state->handleSourceSymbolShortcut(this, event))
-        return;
-
-    if (event->key() == Qt::Key_Shift) {
-        event->ignore();
-        return;
-    }
-
-    if (state->modes.alternateModeActive) {
-        state->handleAlternateModeKey(this, event);
-        return;
-    }
-
-    if (state->handleCompletionPopupKey(this, event))
+    if (state->handleKeyPress(this, event))
         return;
 
     QPlainTextEdit::keyPressEvent(event);
@@ -1579,16 +1590,8 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 
 void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 {
-    state->handleControlKeyRelease(this, event);
-
-    if (event->key() == Qt::Key_Shift) {
-        QPlainTextEdit::keyReleaseEvent(event);
+    if (state->handleKeyRelease(this, event))
         return;
-    }
-
-    if (state->modes.alternateModeActive) {
-        return;
-    }
 
     QPlainTextEdit::keyReleaseEvent(event);
 }
