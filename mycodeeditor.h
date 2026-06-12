@@ -45,7 +45,6 @@ private:
     friend class AnalysisCoordinator;
     friend class DocumentModel;
     friend class EditorCoordinator;
-    friend class LineNumberWidget;
     friend class NavigationCommandCoordinator;
     friend class ScopeBandWidget;
     friend struct MyCodeEditorState;

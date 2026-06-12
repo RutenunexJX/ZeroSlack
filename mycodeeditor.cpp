@@ -66,7 +66,9 @@ QList<QTextEdit::ExtraSelection> editorSelectionsWithout(
 class LineNumberWidget : public QWidget
 {
 public:
-    explicit LineNumberWidget(MyCodeEditor *editor = nullptr);
+    explicit LineNumberWidget(
+        MyCodeEditor *editor = nullptr,
+        MyCodeEditorState *editorState = nullptr);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -75,6 +77,7 @@ protected:
 
 private:
     MyCodeEditor *codeEditor = nullptr;
+    MyCodeEditorState *state = nullptr;
 };
 
 struct MyCodeEditorState
@@ -93,9 +96,9 @@ struct MyCodeEditorState
     struct GutterUi {
         LineNumberWidget *widget = nullptr;
 
-        void init(MyCodeEditor* editor)
+        void init(MyCodeEditor* editor, MyCodeEditorState* state)
         {
-            widget = new LineNumberWidget(editor);
+            widget = new LineNumberWidget(editor, state);
         }
 
         void destroy()
@@ -892,7 +895,7 @@ struct MyCodeEditorState
     {
         semantic.init();
         syntax.init();
-        gutter.init(editor);
+        gutter.init(editor, this);
         identity.set(QString());
         editor->setMouseTracking(true);
     }
@@ -1443,34 +1446,37 @@ struct MyCodeEditorState
 
 };
 
-LineNumberWidget::LineNumberWidget(MyCodeEditor *editor)
+LineNumberWidget::LineNumberWidget(
+    MyCodeEditor *editor,
+    MyCodeEditorState *editorState)
     : QWidget(editor)
     , codeEditor(editor)
+    , state(editorState)
 {
 }
 
 void LineNumberWidget::paintEvent(QPaintEvent *event)
 {
-    if (!codeEditor)
+    if (!codeEditor || !state)
         return;
 
-    codeEditor->state->gutter.paint(codeEditor, event);
+    state->gutter.paint(codeEditor, event);
 }
 
 void LineNumberWidget::mousePressEvent(QMouseEvent *event)
 {
-    if (!codeEditor)
+    if (!codeEditor || !state)
         return;
 
-    codeEditor->state->gutter.handleMousePress(codeEditor, event);
+    state->gutter.handleMousePress(codeEditor, event);
 }
 
 void LineNumberWidget::wheelEvent(QWheelEvent *event)
 {
-    if (!codeEditor)
+    if (!codeEditor || !state)
         return;
 
-    codeEditor->state->gutter.handleWheel(codeEditor, event);
+    state->gutter.handleWheel(codeEditor, event);
 }
 
 MyCodeEditor::MyCodeEditor(QWidget *parent)
