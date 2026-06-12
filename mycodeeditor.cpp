@@ -1531,7 +1531,7 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
         includeDocumentText);
 }
 
-void MyCodeEditor::setFileName(QString fileName)
+void MyCodeEditor::setDocumentFileName(QString fileName)
 {
     if (!state->identity.set(fileName))
         return;
@@ -1539,7 +1539,7 @@ void MyCodeEditor::setFileName(QString fileName)
     emit fileNameChanged(state->identity.fileName);
 }
 
-QString MyCodeEditor::getFileName() const
+QString MyCodeEditor::documentFileName() const
 {
     return state->identity.fileName;
 }

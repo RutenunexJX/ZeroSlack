@@ -4,8 +4,6 @@
 #include <QPlainTextEdit>
 #include <memory>
 
-class LineNumberWidget;
-class DocumentModel;
 class QMenu;
 class QMouseEvent;
 class QRect;
@@ -37,6 +35,9 @@ public:
     void refreshScopeAndCurrentLineHighlight();
     void setAlternateModeEnabled(bool enabled);
     void setSemanticContextService(EditorSemanticContextService* service);
+    void setDocumentFileName(QString fileName);
+    QString documentFileName() const;
+    QString currentModuleName() const;
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
@@ -52,12 +53,8 @@ protected:
     void leaveEvent(QEvent *event) override;
 
 private:
-    friend class DocumentModel;
     friend struct MyCodeEditorState;
 
-    void setFileName(QString fileName);
-    QString getFileName() const;
-    QString currentModuleName() const;
     std::unique_ptr<MyCodeEditorState> state;
 
     void executeAlternateModeCommand(const QString &command);

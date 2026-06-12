@@ -265,7 +265,7 @@ QString DocumentModel::DocumentSnapshotReader::documentIdForEditor(
     if (!editor)
         return QString();
 
-    const QString fileName = normalizedFileName(editor->getFileName());
+    const QString fileName = normalizedFileName(editor->documentFileName());
     if (!fileName.isEmpty())
         return fileName;
 
@@ -285,7 +285,7 @@ DocumentModel::TrackedDocument DocumentModel::DocumentSnapshotReader::capture(
     if (previous)
         tracked.snapshot = *previous;
 
-    tracked.snapshot.fileName = normalizedFileName(editor->getFileName());
+    tracked.snapshot.fileName = normalizedFileName(editor->documentFileName());
     tracked.snapshot.documentId = tracked.snapshot.fileName.isEmpty()
         ? tracked.snapshot.documentId
         : tracked.snapshot.fileName;
@@ -311,7 +311,7 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
         return;
 
     if (!fileName.isEmpty())
-        editor->setFileName(fileName);
+        editor->setDocumentFileName(fileName);
 
     TrackedDocument tracked;
     tracked = makeTrackedDocument(editor);
@@ -381,7 +381,7 @@ void DocumentModel::setDocumentFileName(MyCodeEditor* editor, const QString& fil
         return;
     }
 
-    editor->setFileName(fileName);
+    editor->setDocumentFileName(fileName);
     refreshTrackedDocument(editor);
 }
 
