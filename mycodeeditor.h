@@ -27,8 +27,6 @@ public:
     void lineNumberWidgetMousePressEvent(QMouseEvent *event);
     void lineNumberWidgetWheelEvent(QWheelEvent *event);
 
-    QString currentModuleName() const;
-
     void showAutoComplete();
     void hideAutoComplete();
     void refreshScopeAndCurrentLineHighlight();
@@ -75,6 +73,7 @@ private:
 
     void setFileName(QString fileName);
     QString getFileName() const;
+    QString currentModuleName() const;
     QString currentModuleNameAt(int charPos) const;
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
