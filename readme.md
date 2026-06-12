@@ -23,12 +23,13 @@ Thin UI consumers
 - Keep commit messages concise and architecture-oriented.
 - Never discard user changes or use destructive git commands unless explicitly requested.
 
-## Current Workflow
+## Current Development Workflow
 
-Prefer batches of three or more medium-sized, clearly themed architecture blocks.
-After each block, run only light sanity checks such as affected build, focused tests, `git diff --check`, or static boundary scans.
+Use batch progress with unified verification and split commits.
+Prefer three or more medium-sized, clearly themed architecture blocks when their files and API boundaries do not overlap.
+After each block, run light sanity only: affected build or compile, focused tests, `git diff --check`, or static boundary scans.
 After two or three blocks, run full Ninja, full `ctest --output-on-failure`, hygiene scans, and the forbidden-file guard.
-When full verification passes, create separate local commits for each block. Reduce batch size when blocks touch the same core files or unsettled API boundary.
+When full verification passes, create one local commit per coherent block. Reduce batch size when blocks share core files or unsettled API boundaries.
 
 ## Current Architecture Snapshot
 

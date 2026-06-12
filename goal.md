@@ -64,6 +64,7 @@ The foundation is healthy when:
 - UI/services can read stable snapshot-backed semantic data
 - all CTest targets pass
 - real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
+- verification may be batched across independent blocks, but product quality and fixture coverage do not shrink
 - batched work passes full Ninja, full `ctest --output-on-failure`, hygiene scans, and forbidden-file guard before block commits are created
 - local commits stay separated by coherent architecture block
 - handoff docs are short enough for a new session to read without wasting context

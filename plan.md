@@ -43,13 +43,14 @@ Avoid:
 - regex relationship analysis
 - long-lived perflog
 
-## Validation Policy
+## Validation And Commit Rhythm
 
 For code/test changes:
 
 - after each block, run light sanity only: affected target build or compile, focused CTest, `git diff --check`, and relevant `rg` or static boundary scans
 - after two or three blocks, run full Ninja, full `ctest --output-on-failure`, changed/new source/doc ASCII and trailing-whitespace scans, and the forbidden-file guard
 - if a block touches risky lifecycle, snapshot publication, or unsettled API shape, run full verification before continuing the batch
+- after unified verification passes, commit each coherent block separately
 
 For docs-only cleanup:
 
