@@ -1919,6 +1919,55 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("reference report workspace filter hides other file",
               referenceService.findReferenceReport(workspaceStageReferenceQuery).totalCount, 0);
 
+    ReferencePanelQueryOptions currentFileReferenceOptions;
+    currentFileReferenceOptions.symbolName = QStringLiteral("rel_stage");
+    currentFileReferenceOptions.fileName = topPath;
+    currentFileReferenceOptions.scope = ReferencePanelScope::CurrentFile;
+    currentFileReferenceOptions.typeFilter =
+        static_cast<int>(SymbolRelationshipEngine::INSTANTIATES);
+    const ReferenceQuery currentFileReferencePanelQuery =
+        referenceService.queryForPanel(currentFileReferenceOptions);
+    expectBool("reference panel query selects current file/type",
+               currentFileReferencePanelQuery.currentFileOnly
+                   && !currentFileReferencePanelQuery.workspaceFilesOnly
+                   && currentFileReferencePanelQuery.fileName == topPath
+                   && currentFileReferencePanelQuery.types
+                       == QList<SymbolRelationshipEngine::RelationType>{
+                              SymbolRelationshipEngine::INSTANTIATES},
+               true);
+    expectInt("reference panel current file count",
+              referenceService
+                  .findReferenceReport(currentFileReferencePanelQuery)
+                  .totalCount,
+              1);
+
+    ReferencePanelQueryOptions workspaceReferenceOptions = currentFileReferenceOptions;
+    workspaceReferenceOptions.scope = ReferencePanelScope::WorkspaceFiles;
+    workspaceReferenceOptions.workspaceFiles = {stagePath};
+    const ReferenceQuery workspaceReferencePanelQuery =
+        referenceService.queryForPanel(workspaceReferenceOptions);
+    expectBool("reference panel query selects workspace files",
+               workspaceReferencePanelQuery.workspaceFilesOnly
+                   && !workspaceReferencePanelQuery.currentFileOnly
+                   && workspaceReferencePanelQuery.workspaceFiles == QStringList{stagePath},
+               true);
+    expectInt("reference panel workspace count",
+              referenceService
+                  .findReferenceReport(workspaceReferencePanelQuery)
+                  .totalCount,
+              0);
+
+    ReferencePanelQueryOptions allReferenceOptions = currentFileReferenceOptions;
+    allReferenceOptions.scope = ReferencePanelScope::AllFiles;
+    allReferenceOptions.typeFilter = -1;
+    const ReferenceQuery allReferencePanelQuery =
+        referenceService.queryForPanel(allReferenceOptions);
+    expectBool("reference panel query selects all refs",
+               !allReferencePanelQuery.workspaceFilesOnly
+                   && !allReferencePanelQuery.currentFileOnly
+                   && allReferencePanelQuery.types.isEmpty(),
+               true);
+
     ReferenceQuery reqValidReferenceQuery;
     reqValidReferenceQuery.symbolId = reqValidId;
     reqValidReferenceQuery.types = {SymbolRelationshipEngine::READS_FROM};

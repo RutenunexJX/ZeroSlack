@@ -29,6 +29,19 @@ QTreeWidgetItem* createReferenceItem(QTreeWidgetItem* parent,
     return item;
 }
 
+ReferencePanelScope referencePanelScopeFromValue(int value)
+{
+    switch (value) {
+    case 1:
+        return ReferencePanelScope::WorkspaceFiles;
+    case 2:
+        return ReferencePanelScope::CurrentFile;
+    case 0:
+    default:
+        return ReferencePanelScope::AllFiles;
+    }
+}
+
 } // namespace
 
 ReferencesPanelCoordinator::ReferencesPanelCoordinator(QWidget* parent)
@@ -154,29 +167,21 @@ void ReferencesPanelCoordinator::refresh()
     if (!referencesTree || currentReferenceSymbolName.isEmpty())
         return;
 
-    ReferenceQuery query;
-    query.symbolName = currentReferenceSymbolName;
-    query.fileName = currentReferenceFileName;
-    query.moduleName = currentReferenceModuleName;
-    const int typeFilter = referenceTypeCombo
+    ReferencePanelQueryOptions queryOptions;
+    queryOptions.symbolName = currentReferenceSymbolName;
+    queryOptions.fileName = currentReferenceFileName;
+    queryOptions.moduleName = currentReferenceModuleName;
+    queryOptions.scope = referencePanelScopeFromValue(
+        referenceScopeCombo ? referenceScopeCombo->currentData().toInt() : 0);
+    queryOptions.typeFilter = referenceTypeCombo
         ? referenceTypeCombo->currentData().toInt()
         : -1;
-    if (typeFilter >= 0) {
-        query.types = {
-            static_cast<SymbolRelationshipEngine::RelationType>(typeFilter)
-        };
-    }
+    if (workspaceFilesProvider)
+        queryOptions.workspaceFiles = workspaceFilesProvider();
 
-    const int scopeFilter = referenceScopeCombo
-        ? referenceScopeCombo->currentData().toInt()
-        : 0;
-    query.workspaceFilesOnly = scopeFilter == 1;
-    query.currentFileOnly = scopeFilter == 2;
-    if (query.workspaceFilesOnly && workspaceFilesProvider)
-        query.workspaceFiles = workspaceFilesProvider();
-
-    const ReferenceReport report =
-        ReferenceService::getInstance()->findReferenceReport(query);
+    ReferenceService* referenceService = ReferenceService::getInstance();
+    const ReferenceQuery query = referenceService->queryForPanel(queryOptions);
+    const ReferenceReport report = referenceService->findReferenceReport(query);
     const QString subjectName = report.subjectSymbol.symbolName.isEmpty()
         ? currentReferenceSymbolName
         : report.subjectSymbol.symbolName;

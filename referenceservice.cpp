@@ -141,6 +141,24 @@ bool ReferenceService::hasReferences(const ReferenceQuery& query) const
     return !findReferences(query).isEmpty();
 }
 
+ReferenceQuery ReferenceService::queryForPanel(
+    const ReferencePanelQueryOptions& options) const
+{
+    ReferenceQuery query;
+    query.symbolName = options.symbolName;
+    query.fileName = options.fileName;
+    query.moduleName = options.moduleName;
+    query.workspaceFiles = options.workspaceFiles;
+    query.workspaceFilesOnly = options.scope == ReferencePanelScope::WorkspaceFiles;
+    query.currentFileOnly = options.scope == ReferencePanelScope::CurrentFile;
+    if (options.typeFilter >= 0) {
+        query.types = {
+            static_cast<SymbolRelationshipEngine::RelationType>(options.typeFilter)
+        };
+    }
+    return query;
+}
+
 SemanticIndex* ReferenceService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();

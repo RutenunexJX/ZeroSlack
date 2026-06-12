@@ -20,6 +20,21 @@ struct ReferenceQuery {
     QList<SymbolRelationshipEngine::RelationType> types;
 };
 
+enum class ReferencePanelScope {
+    AllFiles,
+    WorkspaceFiles,
+    CurrentFile
+};
+
+struct ReferencePanelQueryOptions {
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+    ReferencePanelScope scope = ReferencePanelScope::AllFiles;
+    QStringList workspaceFiles;
+    int typeFilter = -1;
+};
+
 struct ReferenceResult {
     RelationshipResult relationship;
     sym_list::SymbolInfo referencingSymbol;
@@ -64,6 +79,7 @@ public:
     QList<ReferenceResult> findReferences(const ReferenceQuery& query) const;
     ReferenceReport findReferenceReport(const ReferenceQuery& query) const;
     bool hasReferences(const ReferenceQuery& query) const;
+    ReferenceQuery queryForPanel(const ReferencePanelQueryOptions& options) const;
 
 private:
     SemanticIndex* index = nullptr;
