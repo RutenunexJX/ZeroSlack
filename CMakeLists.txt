@@ -79,6 +79,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipservice.cpp
     relationshipprogressdialog.cpp
     searchservice.cpp
+    scopebandservice.cpp
     semanticpanelutils.cpp
     semanticpanelrefreshcoordinator.cpp
     semanticdockcoordinator.cpp
@@ -132,6 +133,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipservice.h
     relationshipprogressdialog.h
     searchservice.h
+    scopebandservice.h
     semanticpanelutils.h
     semanticpanelrefreshcoordinator.h
     semanticdockcoordinator.h

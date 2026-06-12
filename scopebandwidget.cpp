@@ -1,6 +1,6 @@
 #include "scopebandwidget.h"
 #include "mycodeeditor.h"
-#include "semanticindex.h"
+#include "scopebandservice.h"
 #include <QScrollBar>
 #include <QResizeEvent>
 #include <QTimer>
@@ -102,22 +102,17 @@ void ScopeBandWidget::refresh()
     m_scene->clear();
     m_scene->setSceneRect(0, 0, kBandWidth, docHeight);
 
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    QList<sym_list::SymbolInfo> allSymbols = semanticIndex->getSymbols(fileName);
-    QList<sym_list::SymbolInfo> modules;
-    QList<sym_list::SymbolInfo> logics;
-    for (const auto& s : allSymbols) {
-        if (s.symbolType == sym_list::sym_module) modules.append(s);
-        else if (s.symbolType == sym_list::sym_logic) logics.append(s);
-    }
+    ScopeBandQuery query;
+    query.fileName = fileName;
+    const ScopeBandReport report =
+        ScopeBandService::getInstance()->scopeBands(query);
 
     struct ModuleItemInfo { ModuleScopeItem* item; int startLine; int endLine; };
     QVector<ModuleItemInfo> moduleInfos;
 
-    for (const sym_list::SymbolInfo& mod : modules) {
-        if (!semanticIndex->isValidModuleName(mod.symbolName)) continue;
-        int endLine = semanticIndex->findEndModuleLine(fileName, mod);
-        if (endLine < 0) continue;
+    for (const ScopeBandSymbolRange& module : report.modules) {
+        const sym_list::SymbolInfo& mod = module.symbol;
+        const int endLine = module.endLine;
 
         qreal top = m_editor->getBlockTopY(mod.startLine);
         qreal bottom = m_editor->getBlockTopY(endLine) + m_editor->getBlockHeight(endLine);
@@ -130,10 +125,10 @@ void ScopeBandWidget::refresh()
         moduleInfos.append({ item, mod.startLine, endLine });
     }
 
-    for (const sym_list::SymbolInfo& logic : logics) {
+    for (const ScopeBandSymbolRange& logicRange : report.logics) {
+        const sym_list::SymbolInfo& logic = logicRange.symbol;
         int startLine = logic.startLine;
-        int endLine = logic.endLine;
-        if (endLine < startLine) endLine = startLine;
+        int endLine = logicRange.endLine;
 
         ModuleScopeItem* parentModule = nullptr;
         qreal parentTop = 0;

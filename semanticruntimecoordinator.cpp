@@ -10,6 +10,7 @@
 #include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
+#include "scopebandservice.h"
 #include "semanticindex.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
@@ -73,5 +74,6 @@ void SemanticRuntimeCoordinator::configureQueryServices(SemanticIndex* semanticI
     ReferenceService::getInstance()->setSemanticIndex(semanticIndex);
     HierarchyService::getInstance()->setSemanticIndex(semanticIndex);
     SearchService::getInstance()->setSemanticIndex(semanticIndex);
+    ScopeBandService::getInstance()->setSemanticIndex(semanticIndex);
     NavigationService::getInstance()->setSemanticIndex(semanticIndex);
 }
