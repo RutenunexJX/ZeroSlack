@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Semantic runtime injection now stops at the scheduler boundary.
-`SemanticRuntimeCoordinator` keeps ownership of `SymbolAnalyzer`, relationship engine, and relationship builder, configures `AnalysisScheduler` directly, and no longer exposes the analyzer to coordinator or GUI tests. `AnalysisScheduler` now routes symbol analysis started/finished/progress events for consumers.
+Open-document file identity now routes through `DocumentModel`.
+`DocumentModel` exposes normalized file-to-editor lookup, `TabManager` activates open files and reads open-file text through the model cache, and basename-only text lookups no longer fall back to ambiguous editor suffix matching.
 
 ## Current Architecture Snapshot
 

@@ -110,6 +110,11 @@ DocumentSnapshot DocumentModel::documentForFile(const QString& fileName) const
     return editor ? documentsByEditor.value(editor).snapshot : DocumentSnapshot();
 }
 
+MyCodeEditor* DocumentModel::editorForFile(const QString& fileName) const
+{
+    return editorByFileName.value(normalizedFileName(fileName), nullptr);
+}
+
 QString DocumentModel::documentText(const QString& documentId) const
 {
     MyCodeEditor* editor = editorByDocumentId.value(documentId, nullptr);

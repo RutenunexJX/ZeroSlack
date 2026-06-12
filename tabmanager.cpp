@@ -3,7 +3,6 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QFileInfo>
-#include <QDir>
 #include <QTextStream>
 
 TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
@@ -125,17 +124,16 @@ MyCodeEditor* TabManager::getEditorAt(int index) const
 
 bool TabManager::activateOpenFile(const QString& fileName)
 {
-    if (!tabWidget)
+    if (!tabWidget || !documentModel)
         return false;
 
-    for (int i = 0; i < tabWidget->count(); ++i) {
-        MyCodeEditor* editor = getEditorAt(i);
-        if (editor && editor->getFileName() == fileName) {
-            tabWidget->setCurrentIndex(i);
-            return true;
-        }
-    }
-    return false;
+    MyCodeEditor* editor = documentModel->editorForFile(fileName);
+    const int index = editor ? tabWidget->indexOf(editor) : -1;
+    if (index < 0)
+        return false;
+
+    tabWidget->setCurrentIndex(index);
+    return true;
 }
 
 QString TabManager::getPlainTextFromCurrentTab() const
@@ -146,26 +144,7 @@ QString TabManager::getPlainTextFromCurrentTab() const
 
 QString TabManager::getPlainTextFromOpenFile(const QString& fileName) const
 {
-    const QString requestedPath = QDir::cleanPath(
-        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
-    const QString modelText = documentModel
-        ? documentModel->documentTextForFile(requestedPath)
-        : QString();
-    if (!modelText.isNull())
-        return modelText;
-
-    for (int i = 0; i < tabWidget->count(); ++i) {
-        MyCodeEditor *codeEditor = getEditorAt(i);
-        if (!codeEditor)
-            continue;
-
-        const QString editorPath = QDir::cleanPath(
-            QDir::fromNativeSeparators(QFileInfo(codeEditor->getFileName()).absoluteFilePath()));
-        if (editorPath == requestedPath || codeEditor->getFileName().endsWith(fileName)) {
-            return codeEditor->toPlainText();
-        }
-    }
-    return QString();
+    return documentModel ? documentModel->documentTextForFile(fileName) : QString();
 }
 
 QStringList TabManager::getAllOpenFileNames() const

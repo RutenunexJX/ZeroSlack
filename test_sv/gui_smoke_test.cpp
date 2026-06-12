@@ -1002,6 +1002,75 @@ int main(int argc, char** argv)
         drainRelationshipWork(window);
     }
 
+    QTemporaryDir identityDir;
+    expectBool("document identity temp dir valid", identityDir.isValid(), true);
+    if (identityDir.isValid()) {
+        QDir identityRoot(identityDir.path());
+        expectBool("document identity dir A created",
+                   identityRoot.mkpath(QStringLiteral("a")),
+                   true);
+        expectBool("document identity dir B created",
+                   identityRoot.mkpath(QStringLiteral("b")),
+                   true);
+        const QString sameNameA =
+            identityRoot.filePath(QStringLiteral("a/same_name.sv"));
+        const QString sameNameB =
+            identityRoot.filePath(QStringLiteral("b/same_name.sv"));
+        QFile sameFileA(sameNameA);
+        expectBool("same-name file A writable",
+                   sameFileA.open(QIODevice::WriteOnly | QIODevice::Text),
+                   true);
+        if (sameFileA.isOpen()) {
+            sameFileA.write("module same_name_a; logic from_a; endmodule\n");
+            sameFileA.close();
+        }
+        QFile sameFileB(sameNameB);
+        expectBool("same-name file B writable",
+                   sameFileB.open(QIODevice::WriteOnly | QIODevice::Text),
+                   true);
+        if (sameFileB.isOpen()) {
+            sameFileB.write("module same_name_b; logic from_b; endmodule\n");
+            sameFileB.close();
+        }
+
+        expectBool("open same-name file A",
+                   window.tabManager->openFileInTab(sameNameA),
+                   true);
+        MyCodeEditor* sameEditorA = window.tabManager->getCurrentEditor();
+        expectBool("same-name editor A exists", sameEditorA != nullptr, true);
+        expectBool("open same-name file B",
+                   window.tabManager->openFileInTab(sameNameB),
+                   true);
+        MyCodeEditor* sameEditorB = window.tabManager->getCurrentEditor();
+        DocumentModel* documents = window.tabManager->getDocumentModel();
+        expectBool("same-name editor B exists", sameEditorB != nullptr, true);
+        expectBool("document model resolves native path to editor",
+                   sameEditorA
+                       && documents
+                       && documents->editorForFile(QDir::toNativeSeparators(sameNameA))
+                              == sameEditorA,
+                   true);
+        expectBool("tab manager activates model-indexed file",
+                   sameEditorA
+                       && window.tabManager->activateOpenFile(QDir::toNativeSeparators(sameNameA))
+                       && window.tabManager->getCurrentEditor() == sameEditorA,
+                   true);
+        expectBool("tab manager keeps same-name file A text distinct",
+                   window.tabManager->getPlainTextFromOpenFile(sameNameA)
+                       .contains(QStringLiteral("from_a")),
+                   true);
+        expectBool("tab manager keeps same-name file B text distinct",
+                   window.tabManager->getPlainTextFromOpenFile(sameNameB)
+                       .contains(QStringLiteral("from_b")),
+                   true);
+        expectBool("tab manager rejects basename-only open-file text lookup",
+                   window.tabManager
+                       ->getPlainTextFromOpenFile(QStringLiteral("same_name.sv"))
+                       .isNull(),
+                   true);
+        drainRelationshipWork(window);
+    }
+
     bool symbolFixtureAnalyzed = false;
     QObject::connect(window.analysisScheduler.get(), &AnalysisScheduler::fileSymbolAnalysisFinished,
                      &window, [&](const QString& fileName, int symbolsFound) {

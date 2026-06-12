@@ -37,6 +37,7 @@ public:
     QList<DocumentSnapshot> openDocuments() const;
     DocumentSnapshot documentForEditor(MyCodeEditor* editor) const;
     DocumentSnapshot documentForFile(const QString& fileName) const;
+    MyCodeEditor* editorForFile(const QString& fileName) const;
     QString documentText(const QString& documentId) const;
     QString documentTextForFile(const QString& fileName) const;
 
