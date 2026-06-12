@@ -31,11 +31,11 @@ EditorCoordinator::EditorCoordinator(TabManager* tabManager,
     : QObject(parent)
     , tabManager(tabManager)
     , modeManager(modeManager)
-    , semanticContextService(EditorSemanticContextService::getInstance())
 {
+    semanticRuntime.init();
 }
 
-void EditorCoordinator::setWorkflowDependencies(
+void EditorCoordinator::WorkflowDependencies::set(
     WorkspaceManager* newWorkspaceManager,
     FileCommandCoordinator* newFileCommandCoordinator,
     NavigationCommandCoordinator* newNavigationCommandCoordinator,
@@ -45,6 +45,101 @@ void EditorCoordinator::setWorkflowDependencies(
     fileCommandCoordinator = newFileCommandCoordinator;
     navigationCommandCoordinator = newNavigationCommandCoordinator;
     semanticPanelRefresh = newSemanticPanelRefresh;
+}
+
+QString EditorCoordinator::WorkflowDependencies::resolveIncludePath(
+    const QString& includePath,
+    const QString& currentFile) const
+{
+    return workspaceManager
+        ? workspaceManager->resolveIncludePath(includePath, currentFile)
+        : QString();
+}
+
+void EditorCoordinator::WorkflowDependencies::executeAlternateCommand(
+    MyCodeEditor* editor,
+    const QString& command) const
+{
+    if (fileCommandCoordinator)
+        fileCommandCoordinator->executeAlternateCommandText(editor, command);
+}
+
+void EditorCoordinator::WorkflowDependencies::navigateEditorToLine(
+    MyCodeEditor* editor,
+    int line,
+    int column) const
+{
+    if (navigationCommandCoordinator)
+        navigationCommandCoordinator->navigateEditorToLine(editor, line, column);
+}
+
+void EditorCoordinator::WorkflowDependencies::navigateToFileAndLine(
+    const QString& fileName,
+    int line,
+    int column) const
+{
+    if (navigationCommandCoordinator)
+        navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
+}
+
+void EditorCoordinator::WorkflowDependencies::showReferencesForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (semanticPanelRefresh)
+        semanticPanelRefresh->showReferencesForSymbol(symbolName, fileName, moduleName);
+}
+
+void EditorCoordinator::WorkflowDependencies::showRelationshipsForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (semanticPanelRefresh)
+        semanticPanelRefresh->showRelationshipsForSymbol(symbolName, fileName, moduleName);
+}
+
+void EditorCoordinator::WorkflowDependencies::handleActiveEditorChanged(
+    MyCodeEditor* editor) const
+{
+    if (semanticPanelRefresh)
+        semanticPanelRefresh->handleActiveEditorChanged(editor);
+}
+
+bool EditorCoordinator::WorkflowDependencies::canNavigate() const
+{
+    return navigationCommandCoordinator != nullptr;
+}
+
+bool EditorCoordinator::WorkflowDependencies::hasSemanticPanelRefresh() const
+{
+    return semanticPanelRefresh != nullptr;
+}
+
+void EditorCoordinator::SemanticRuntime::init()
+{
+    service = EditorSemanticContextService::getInstance();
+}
+
+EditorSemanticContextService*
+EditorCoordinator::SemanticRuntime::contextService() const
+{
+    return service
+        ? service
+        : EditorSemanticContextService::getInstance();
+}
+
+void EditorCoordinator::setWorkflowDependencies(
+    WorkspaceManager* newWorkspaceManager,
+    FileCommandCoordinator* newFileCommandCoordinator,
+    NavigationCommandCoordinator* newNavigationCommandCoordinator,
+    SemanticPanelRefreshCoordinator* newSemanticPanelRefresh)
+{
+    dependencies.set(newWorkspaceManager,
+                     newFileCommandCoordinator,
+                     newNavigationCommandCoordinator,
+                     newSemanticPanelRefresh);
 }
 
 void EditorCoordinator::connectSignals()
@@ -73,9 +168,7 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     applyAlternateMode(editor);
     connect(editor, &MyCodeEditor::alternateCommandRequested,
             this, [this, editor](const QString& command) {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->executeAlternateCommandText(
-                        editor, command);
+                dependencies.executeAlternateCommand(editor, command);
             });
     connect(editor, &MyCodeEditor::sourceNavigationRequested,
             this, [this, editor](const EditorSourceNavigationTarget& target,
@@ -99,9 +192,7 @@ void EditorCoordinator::applyAlternateMode(MyCodeEditor* editor) const
 
 EditorSemanticContextService* EditorCoordinator::contextService() const
 {
-    return semanticContextService
-        ? semanticContextService
-        : EditorSemanticContextService::getInstance();
+    return semanticRuntime.contextService();
 }
 
 void EditorCoordinator::applyAlternateModeToOpenEditors() const
@@ -121,9 +212,8 @@ void EditorCoordinator::handleIncludeOpenRequested(
     if (includePath.isEmpty())
         return;
 
-    const QString targetPath = workspaceManager
-        ? workspaceManager->resolveIncludePath(includePath, currentFile)
-        : QString();
+    const QString targetPath =
+        dependencies.resolveIncludePath(includePath, currentFile);
     if (targetPath.isEmpty()) {
         QMessageBox::warning(editor,
                              tr("Include not found"),
@@ -140,7 +230,7 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
     const QString& symbolName,
     const EditorSemanticContext& context) const
 {
-    if (!navigationCommandCoordinator || symbolName.isEmpty())
+    if (!dependencies.canNavigate() || symbolName.isEmpty())
         return;
 
     const DefinitionNavigationTarget target =
@@ -150,15 +240,13 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
         return;
 
     if (target.localFile) {
-        navigationCommandCoordinator->navigateEditorToLine(
-            editor, target.line, target.column);
+        dependencies.navigateEditorToLine(editor, target.line, target.column);
         return;
     }
 
     const QString targetFile =
         target.fileName.isEmpty() ? context.fileName : target.fileName;
-    navigationCommandCoordinator->navigateToFileAndLine(
-        targetFile, target.line, target.column);
+    dependencies.navigateToFileAndLine(targetFile, target.line, target.column);
 }
 
 void EditorCoordinator::handleSourceNavigationRequested(
@@ -186,7 +274,7 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
     SourceSymbolAction action,
     const EditorSemanticContext& context) const
 {
-    if (!semanticPanelRefresh)
+    if (!dependencies.hasSemanticPanelRefresh())
         return;
 
     const EditorSourceSymbolActionRequestState requestState =
@@ -196,13 +284,13 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
 
     switch (requestState.action) {
     case SourceSymbolAction::FindReferences:
-        semanticPanelRefresh->showReferencesForSymbol(
+        dependencies.showReferencesForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName);
         break;
     case SourceSymbolAction::ShowRelationships:
-        semanticPanelRefresh->showRelationshipsForSymbol(
+        dependencies.showRelationshipsForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName);
@@ -233,6 +321,5 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
     applyAlternateMode(editor);
-    if (semanticPanelRefresh)
-        semanticPanelRefresh->handleActiveEditorChanged(editor);
+    dependencies.handleActiveEditorChanged(editor);
 }

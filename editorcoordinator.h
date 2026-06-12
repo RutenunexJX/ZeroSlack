@@ -36,6 +36,44 @@ public:
     void attachEditor(MyCodeEditor* editor);
 
 private:
+    struct WorkflowDependencies {
+        WorkspaceManager* workspaceManager = nullptr;
+        FileCommandCoordinator* fileCommandCoordinator = nullptr;
+        NavigationCommandCoordinator* navigationCommandCoordinator = nullptr;
+        SemanticPanelRefreshCoordinator* semanticPanelRefresh = nullptr;
+
+        void set(WorkspaceManager* workspaceManager,
+                 FileCommandCoordinator* fileCommandCoordinator,
+                 NavigationCommandCoordinator* navigationCommandCoordinator,
+                 SemanticPanelRefreshCoordinator* semanticPanelRefresh);
+        QString resolveIncludePath(const QString& includePath,
+                                   const QString& currentFile) const;
+        void executeAlternateCommand(MyCodeEditor* editor,
+                                     const QString& command) const;
+        void navigateEditorToLine(MyCodeEditor* editor,
+                                  int line,
+                                  int column) const;
+        void navigateToFileAndLine(const QString& fileName,
+                                   int line,
+                                   int column) const;
+        void showReferencesForSymbol(const QString& symbolName,
+                                     const QString& fileName,
+                                     const QString& moduleName) const;
+        void showRelationshipsForSymbol(const QString& symbolName,
+                                        const QString& fileName,
+                                        const QString& moduleName) const;
+        void handleActiveEditorChanged(MyCodeEditor* editor) const;
+        bool canNavigate() const;
+        bool hasSemanticPanelRefresh() const;
+    };
+
+    struct SemanticRuntime {
+        EditorSemanticContextService* service = nullptr;
+
+        void init();
+        EditorSemanticContextService* contextService() const;
+    };
+
     EditorSemanticContextService* contextService() const;
     void applyAlternateMode(MyCodeEditor* editor) const;
     void applyAlternateModeToOpenEditors() const;
@@ -60,11 +98,8 @@ private:
 
     TabManager* tabManager = nullptr;
     ModeManager* modeManager = nullptr;
-    WorkspaceManager* workspaceManager = nullptr;
-    FileCommandCoordinator* fileCommandCoordinator = nullptr;
-    NavigationCommandCoordinator* navigationCommandCoordinator = nullptr;
-    SemanticPanelRefreshCoordinator* semanticPanelRefresh = nullptr;
-    EditorSemanticContextService* semanticContextService = nullptr;
+    WorkflowDependencies dependencies;
+    SemanticRuntime semanticRuntime;
     bool signalsConnected = false;
 };
 
