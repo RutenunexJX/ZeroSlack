@@ -78,6 +78,31 @@ private slots:
     void onSearchFilterChanged(const QString &filter);
 
 private:
+    struct NavigationContext {
+        QString currentFileName;
+        QString currentWorkspacePath;
+        QString searchFilter;
+
+        void setCurrentFileName(const QString& fileName);
+        void clearCurrentFileName();
+        void setCurrentWorkspacePath(const QString& workspacePath);
+        void clearCurrentWorkspacePath();
+        void setSearchFilter(const QString& filter);
+        void clearSearchFilter();
+    };
+
+    struct NavigationCaches {
+        QStringList fileList;
+        QList<ModuleHierarchyGroup> moduleHierarchy;
+        QList<SymbolOutlineGroup> symbolOutline;
+
+        void reserveDefaults();
+        void clearFileList();
+        void clearModuleHierarchy();
+        void clearSymbolOutline();
+        void clearAll();
+    };
+
     NavigationWidget* navigationWidget = nullptr;
     NavigationService* navigationService = nullptr;
     NavigationView currentView = FileHierarchyView;
@@ -85,15 +110,8 @@ private:
     TabManager* connectedTabManager = nullptr;
     WorkspaceManager* connectedWorkspaceManager = nullptr;
 
-    // Current state tracking
-    QString currentFileName;
-    QString currentWorkspacePath;
-    QString searchFilter;
-
-    // Data caches
-    QStringList cachedFileList;
-    QList<ModuleHierarchyGroup> moduleHierarchyCache;
-    QList<SymbolOutlineGroup> symbolOutlineCache;
+    NavigationContext context;
+    NavigationCaches caches;
 
     // Helper methods
     void setupConnections();

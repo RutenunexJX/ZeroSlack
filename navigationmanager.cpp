@@ -9,11 +9,68 @@ NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
 {
     navigationService = NavigationService::getInstance();
+    caches.reserveDefaults();
+}
 
-    // Reserve common cache sizes for the navigation views.
-    cachedFileList.reserve(100);
-    moduleHierarchyCache.reserve(50);
-    symbolOutlineCache.reserve(10);
+void NavigationManager::NavigationContext::setCurrentFileName(
+    const QString& fileName)
+{
+    currentFileName = fileName;
+}
+
+void NavigationManager::NavigationContext::clearCurrentFileName()
+{
+    currentFileName.clear();
+}
+
+void NavigationManager::NavigationContext::setCurrentWorkspacePath(
+    const QString& workspacePath)
+{
+    currentWorkspacePath = workspacePath;
+}
+
+void NavigationManager::NavigationContext::clearCurrentWorkspacePath()
+{
+    currentWorkspacePath.clear();
+}
+
+void NavigationManager::NavigationContext::setSearchFilter(const QString& filter)
+{
+    searchFilter = filter.trimmed();
+}
+
+void NavigationManager::NavigationContext::clearSearchFilter()
+{
+    searchFilter.clear();
+}
+
+void NavigationManager::NavigationCaches::reserveDefaults()
+{
+    fileList.reserve(100);
+    moduleHierarchy.reserve(50);
+    symbolOutline.reserve(10);
+}
+
+void NavigationManager::NavigationCaches::clearFileList()
+{
+    fileList.clear();
+}
+
+void NavigationManager::NavigationCaches::clearModuleHierarchy()
+{
+    moduleHierarchy.clear();
+}
+
+void NavigationManager::NavigationCaches::clearSymbolOutline()
+{
+    symbolOutline.clear();
+}
+
+void NavigationManager::NavigationCaches::clearAll()
+{
+    clearFileList();
+    clearModuleHierarchy();
+    clearSymbolOutline();
 }
 
 NavigationManager::~NavigationManager()
@@ -34,8 +91,8 @@ void NavigationManager::setNavigationWidget(NavigationWidget* widget)
 void NavigationManager::setNavigationService(NavigationService* service)
 {
     navigationService = service ? service : NavigationService::getInstance();
-    moduleHierarchyCache.clear();
-    symbolOutlineCache.clear();
+    caches.clearModuleHierarchy();
+    caches.clearSymbolOutline();
     refreshCurrentView();
 }
 
@@ -54,8 +111,8 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
         // Wire tab lifecycle events into navigation refreshes.
         connect(connectedTabManager, &TabManager::activeDocumentChanged,
                 this, [this](const DocumentSnapshot& document) {
-                    currentFileName = document.fileName;
-                    onTabChanged(currentFileName);
+                    context.setCurrentFileName(document.fileName);
+                    onTabChanged(context.currentFileName);
                 });
 
         connect(connectedTabManager, &TabManager::tabCreated,
@@ -92,17 +149,17 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 
         connect(connectedWorkspaceManager, &WorkspaceManager::workspaceClosed,
                 this, [this]() {
-                    currentWorkspacePath.clear();
-                    cachedFileList.clear();
-                    moduleHierarchyCache.clear();
+                    context.clearCurrentWorkspacePath();
+                    caches.clearFileList();
+                    caches.clearModuleHierarchy();
                     refreshCurrentView();
                 });
 
         connect(connectedWorkspaceManager, &WorkspaceManager::filesScanned,
                 this, [this](const QStringList&) {
                     // A rescan can affect every navigation view.
-                    cachedFileList.clear();
-                    moduleHierarchyCache.clear();
+                    caches.clearFileList();
+                    caches.clearModuleHierarchy();
                     refreshCurrentView();
                 });
 
@@ -110,10 +167,11 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                 this, [this](const QString& filePath) {
                     // Module hierarchy depends on global relationship edges, so refresh it as a whole.
                     if (currentView == ModuleHierarchyView) {
-                        moduleHierarchyCache.clear();
+                        caches.clearModuleHierarchy();
                         refreshModuleHierarchy();
-                    } else if (currentView == SymbolHierarchyView && currentFileName == filePath) {
-                        symbolOutlineCache.clear();
+                    } else if (currentView == SymbolHierarchyView
+                               && context.currentFileName == filePath) {
+                        caches.clearSymbolOutline();
                         refreshSymbolHierarchy();
                     }
                 });
@@ -123,13 +181,13 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 void NavigationManager::refreshFileHierarchy()
 {
     if (!shouldRefreshCache()) {
-        cachedFileList.clear();
+        caches.clearFileList();
     }
 
     updateFileHierarchyData();
 
     if (navigationWidget) {
-        navigationWidget->updateFileHierarchy(cachedFileList);
+        navigationWidget->updateFileHierarchy(caches.fileList);
     }
 
     emit dataRefreshed(FileHierarchyView);
@@ -140,7 +198,7 @@ void NavigationManager::refreshModuleHierarchy()
     updateModuleHierarchyData();
 
     if (navigationWidget) {
-        navigationWidget->updateModuleHierarchy(moduleHierarchyCache);
+        navigationWidget->updateModuleHierarchy(caches.moduleHierarchy);
     }
 
     emit dataRefreshed(ModuleHierarchyView);
@@ -151,7 +209,7 @@ void NavigationManager::refreshSymbolHierarchy()
     updateSymbolHierarchyData();
 
     if (navigationWidget) {
-        navigationWidget->updateSymbolHierarchy(symbolOutlineCache);
+        navigationWidget->updateSymbolHierarchy(caches.symbolOutline);
     }
 
     emit dataRefreshed(SymbolHierarchyView);
@@ -197,7 +255,7 @@ void NavigationManager::navigateToModule(const QString& moduleName)
 
 void NavigationManager::setSearchFilter(const QString& filter)
 {
-    searchFilter = filter.trimmed();
+    context.setSearchFilter(filter);
 
     // Reapply the current search filter.
     refreshCurrentView();
@@ -205,15 +263,15 @@ void NavigationManager::setSearchFilter(const QString& filter)
 
 void NavigationManager::clearSearchFilter()
 {
-    searchFilter.clear();
+    context.clearSearchFilter();
     refreshCurrentView();
 }
 
 void NavigationManager::highlightCurrentFileInTree()
 {
-    if (!navigationWidget || currentFileName.isEmpty()) return;
+    if (!navigationWidget || context.currentFileName.isEmpty()) return;
 
-    navigationWidget->highlightFile(currentFileName);
+    navigationWidget->highlightFile(context.currentFileName);
 }
 
 void NavigationManager::syncWithActiveEditor()
@@ -221,25 +279,24 @@ void NavigationManager::syncWithActiveEditor()
     highlightCurrentFileInTree();
 
     // Keep the symbol view aligned with the active editor.
-    if (currentView == SymbolHierarchyView && !currentFileName.isEmpty()) {
+    if (currentView == SymbolHierarchyView
+        && !context.currentFileName.isEmpty()) {
         refreshSymbolHierarchy();
     }
 }
 
 void NavigationManager::onTabChanged(const QString& fileName)
 {
-    currentFileName = fileName;
+    context.setCurrentFileName(fileName);
     syncWithActiveEditor();
 }
 
 void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 {
-    currentWorkspacePath = workspacePath;
+    context.setCurrentWorkspacePath(workspacePath);
 
     // Clear caches and refresh the active view.
-    cachedFileList.clear();
-    moduleHierarchyCache.clear();
-    symbolOutlineCache.clear();
+    caches.clearAll();
 
     refreshCurrentView();
 }
@@ -264,14 +321,14 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
         // The file list is unchanged.
         break;
     case ModuleHierarchyView: {
-        moduleHierarchyCache.clear();
+        caches.clearModuleHierarchy();
         refreshModuleHierarchy();
         break;
     }
     case SymbolHierarchyView:
         // The symbol view follows the current file.
-        if (currentFileName == fileName) {
-            symbolOutlineCache.clear();
+        if (context.currentFileName == fileName) {
+            caches.clearSymbolOutline();
             refreshSymbolHierarchy();
         }
         break;
@@ -287,8 +344,8 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
 
     // Batch analysis can change module hierarchy and symbol outline data.
     if (currentView == ModuleHierarchyView || currentView == SymbolHierarchyView) {
-        symbolOutlineCache.clear();
-        moduleHierarchyCache.clear();
+        caches.clearSymbolOutline();
+        caches.clearModuleHierarchy();
         refreshCurrentView();
     }
 }
@@ -347,15 +404,15 @@ void NavigationManager::setupConnections()
 
 void NavigationManager::updateFileHierarchyData()
 {
-    if (!cachedFileList.isEmpty() && !shouldRefreshCache()) {
+    if (!caches.fileList.isEmpty() && !shouldRefreshCache()) {
         return; // Use cached data.
     }
 
-    cachedFileList = getSystemVerilogFiles();
+    caches.fileList = getSystemVerilogFiles();
 
     // Apply the search filter.
-    if (!searchFilter.isEmpty()) {
-        cachedFileList = filterFiles(cachedFileList, searchFilter);
+    if (!context.searchFilter.isEmpty()) {
+        caches.fileList = filterFiles(caches.fileList, context.searchFilter);
     }
 }
 
@@ -365,8 +422,8 @@ void NavigationManager::updateModuleHierarchyData()
         return;
 
     NavigationModuleQuery query;
-    query.filter = searchFilter;
-    moduleHierarchyCache = navigationService->findModuleHierarchy(query);
+    query.filter = context.searchFilter;
+    caches.moduleHierarchy = navigationService->findModuleHierarchy(query);
 }
 
 void NavigationManager::updateSymbolHierarchyData()
@@ -375,22 +432,22 @@ void NavigationManager::updateSymbolHierarchyData()
         return;
 
     NavigationSymbolOutlineQuery query;
-    query.fileName = currentFileName;
-    query.filter = searchFilter;
-    symbolOutlineCache = navigationService->findSymbolOutline(query);
+    query.fileName = context.currentFileName;
+    query.filter = context.searchFilter;
+    caches.symbolOutline = navigationService->findSymbolOutline(query);
 }
 
 bool NavigationManager::shouldRefreshCache() const
 {
     // Workspace mode owns the file list.
     if (connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceOpen()) {
-        return cachedFileList.isEmpty();
+        return caches.fileList.isEmpty();
     }
 
     // Without a workspace, derive the file list from open tabs.
     if (connectedTabManager) {
         QStringList openFiles = connectedTabManager->getOpenSystemVerilogFiles();
-        return cachedFileList != openFiles;
+        return caches.fileList != openFiles;
     }
 
     return true;
