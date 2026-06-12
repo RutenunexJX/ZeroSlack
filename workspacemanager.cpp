@@ -9,11 +9,109 @@ WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
     , projectModel(std::make_unique<ProjectModel>(this))
 {
-    allFiles.reserve(500);
-    svFiles.reserve(100);
+    files.reserveDefaults();
 
     connect(projectModel.get(), &ProjectModel::projectChanged,
             this, &WorkspaceManager::projectChanged);
+}
+
+void WorkspaceManager::WorkspaceFiles::reserveDefaults()
+{
+    allFiles.reserve(500);
+    systemVerilogFiles.reserve(100);
+}
+
+void WorkspaceManager::WorkspaceFiles::clear()
+{
+    allFiles.clear();
+    systemVerilogFiles.clear();
+}
+
+void WorkspaceManager::WorkspaceFiles::setScannedFiles(
+    ProjectModel* projectModel,
+    const QStringList& scannedFiles)
+{
+    if (!projectModel) {
+        clear();
+        return;
+    }
+
+    projectModel->setScannedFiles(scannedFiles);
+    allFiles = projectModel->allFiles();
+    systemVerilogFiles = projectModel->systemVerilogFiles();
+}
+
+QStringList WorkspaceManager::WorkspaceFiles::filesByExtension(
+    const QString& extension) const
+{
+    QStringList filteredFiles;
+    const QString lowerExt = extension.toLower();
+
+    filteredFiles.reserve(allFiles.size() / 10);
+
+    for (const QString& filePath : std::as_const(allFiles)) {
+        if (QFileInfo(filePath).suffix().toLower() == lowerExt)
+            filteredFiles.append(filePath);
+    }
+    return filteredFiles;
+}
+
+void WorkspaceManager::WorkspaceWatcher::ensure(WorkspaceManager* owner)
+{
+    if (watcher)
+        return;
+
+    watcher = std::make_unique<QFileSystemWatcher>(owner);
+    QObject::connect(watcher.get(), &QFileSystemWatcher::fileChanged,
+                     owner, &WorkspaceManager::onFileChanged);
+    QObject::connect(watcher.get(), &QFileSystemWatcher::directoryChanged,
+                     owner, &WorkspaceManager::onDirectoryChanged);
+}
+
+void WorkspaceManager::WorkspaceWatcher::clear()
+{
+    if (!watcher)
+        return;
+
+    const QStringList watchedFiles = watcher->files();
+    const QStringList watchedDirs = watcher->directories();
+
+    if (!watchedFiles.isEmpty())
+        watcher->removePaths(watchedFiles);
+    if (!watchedDirs.isEmpty())
+        watcher->removePaths(watchedDirs);
+}
+
+void WorkspaceManager::WorkspaceWatcher::watchWorkspace(
+    const QString& workspacePath,
+    const QStringList& files)
+{
+    if (!watcher)
+        return;
+
+    clear();
+
+    if (!files.isEmpty())
+        watcher->addPaths(files);
+    watcher->addPath(workspacePath);
+}
+
+void WorkspaceManager::WorkspaceWatcher::updateFiles(const QStringList& files)
+{
+    if (!watcher)
+        return;
+
+    const QStringList watchedFiles = watcher->files();
+    if (!watchedFiles.isEmpty())
+        watcher->removePaths(watchedFiles);
+
+    if (!files.isEmpty())
+        watcher->addPaths(files);
+}
+
+bool WorkspaceManager::WorkspaceWatcher::active() const
+{
+    return watcher != nullptr;
 }
 
 WorkspaceManager::~WorkspaceManager()
@@ -40,7 +138,7 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
     startFileWatching();
 
     emit workspaceOpened(workspacePath);
-    emit filesScanned(svFiles);
+    emit filesScanned(files.systemVerilogFiles);
 
     return true;
 }
@@ -50,8 +148,7 @@ void WorkspaceManager::closeWorkspace()
     if (!isWorkspaceOpen()) return;
     stopFileWatching();
     workspacePath.clear();
-    allFiles.clear();
-    svFiles.clear();
+    files.clear();
     projectModel->closeProject();
 
     emit workspaceClosed();
@@ -79,27 +176,17 @@ ProjectSnapshot WorkspaceManager::projectSnapshot() const
 
 QStringList WorkspaceManager::getAllFiles() const
 {
-    return allFiles;
+    return files.allFiles;
 }
 
 QStringList WorkspaceManager::getSystemVerilogFiles() const
 {
-    return svFiles;
+    return files.systemVerilogFiles;
 }
 
 QStringList WorkspaceManager::getFilesByExtension(const QString& extension) const
 {
-    QStringList filteredFiles;
-    const QString lowerExt = extension.toLower();
-
-    filteredFiles.reserve(allFiles.size() / 10);
-
-    for (const QString& filePath : std::as_const(allFiles)) {
-        if (QFileInfo(filePath).suffix().toLower() == lowerExt) {
-            filteredFiles.append(filePath);
-        }
-    }
-    return filteredFiles;
+    return files.filesByExtension(extension);
 }
 
 QString WorkspaceManager::resolveIncludePath(const QString& includePath,
@@ -123,7 +210,7 @@ QString WorkspaceManager::resolveIncludePath(const QString& includePath,
         return candidate;
 
     const QString includeFileName = QFileInfo(includePath).fileName();
-    for (const QString& filePath : allFiles) {
+    for (const QString& filePath : files.allFiles) {
         if (QFileInfo(filePath).fileName() == includeFileName)
             return filePath;
     }
@@ -134,43 +221,13 @@ void WorkspaceManager::startFileWatching()
 {
     if (!isWorkspaceOpen()) return;
 
-    if (!fileWatcher) {
-        fileWatcher = std::make_unique<QFileSystemWatcher>(this);
-        connect(fileWatcher.get(), &QFileSystemWatcher::fileChanged,
-                this, &WorkspaceManager::onFileChanged);
-        connect(fileWatcher.get(), &QFileSystemWatcher::directoryChanged,
-                this, &WorkspaceManager::onDirectoryChanged);
-    }
-
-    const QStringList watchedFiles = fileWatcher->files();
-    const QStringList watchedDirs = fileWatcher->directories();
-
-    if (!watchedFiles.isEmpty()) {
-        fileWatcher->removePaths(watchedFiles);
-    }
-    if (!watchedDirs.isEmpty()) {
-        fileWatcher->removePaths(watchedDirs);
-    }
-
-    if (!allFiles.isEmpty()) {
-        fileWatcher->addPaths(allFiles);
-    }
-    fileWatcher->addPath(workspacePath);
+    watcher.ensure(this);
+    watcher.watchWorkspace(workspacePath, files.allFiles);
 }
 
 void WorkspaceManager::stopFileWatching()
 {
-    if (!fileWatcher) return;
-
-    const QStringList watchedFiles = fileWatcher->files();
-    const QStringList watchedDirs = fileWatcher->directories();
-
-    if (!watchedFiles.isEmpty()) {
-        fileWatcher->removePaths(watchedFiles);
-    }
-    if (!watchedDirs.isEmpty()) {
-        fileWatcher->removePaths(watchedDirs);
-    }
+    watcher.clear();
 }
 
 void WorkspaceManager::onFileChanged(const QString& path)
@@ -184,11 +241,11 @@ void WorkspaceManager::onDirectoryChanged(const QString& path)
 {
     if (path != workspacePath) return;
 
-    QStringList oldFiles = allFiles;
+    QStringList oldFiles = files.allFiles;
     scanDirectory(workspacePath);
-    if (allFiles != oldFiles) {
+    if (files.allFiles != oldFiles) {
         updateFileWatcher();
-        emit filesScanned(svFiles);
+        emit filesScanned(files.systemVerilogFiles);
     }
 
     emit directoryChanged(path);
@@ -196,31 +253,22 @@ void WorkspaceManager::onDirectoryChanged(const QString& path)
 
 void WorkspaceManager::scanDirectory(const QString& path)
 {
-    allFiles.clear();
-    allFiles.reserve(500);
+    QStringList scannedFiles;
+    scannedFiles.reserve(500);
 
     QDirIterator iterator(path, QDir::Files, QDirIterator::Subdirectories);
     while (iterator.hasNext()) {
-        allFiles.append(iterator.next());
+        scannedFiles.append(iterator.next());
     }
 
-    projectModel->setScannedFiles(allFiles);
-    allFiles = projectModel->allFiles();
-    svFiles = projectModel->systemVerilogFiles();
+    files.setScannedFiles(projectModel.get(), scannedFiles);
 }
 
 void WorkspaceManager::updateFileWatcher()
 {
-    if (!fileWatcher || !isWorkspaceOpen()) return;
+    if (!watcher.active() || !isWorkspaceOpen()) return;
 
-    const QStringList watchedFiles = fileWatcher->files();
-    if (!watchedFiles.isEmpty()) {
-        fileWatcher->removePaths(watchedFiles);
-    }
-
-    if (!allFiles.isEmpty()) {
-        fileWatcher->addPaths(allFiles);
-    }
+    watcher.updateFiles(files.allFiles);
 }
 
 bool WorkspaceManager::isSystemVerilogFile(const QString& fileName) const
@@ -230,16 +278,4 @@ bool WorkspaceManager::isSystemVerilogFile(const QString& fileName) const
     static const QStringList svExtensions = {"sv", "v", "vh", "svh", "vp", "svp"};
     const QString suffix = QFileInfo(fileName).suffix().toLower();
     return svExtensions.contains(suffix);
-}
-
-void WorkspaceManager::filterSystemVerilogFiles()
-{
-    svFiles.clear();
-    svFiles.reserve(allFiles.size() / 10);
-
-    for (const QString& filePath : std::as_const(allFiles)) {
-        if (isSystemVerilogFile(filePath)) {
-            svFiles.append(filePath);
-        }
-    }
 }

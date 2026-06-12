@@ -48,17 +48,37 @@ private slots:
     void onDirectoryChanged(const QString& path);
 
 private:
+    struct WorkspaceFiles {
+        QStringList allFiles;
+        QStringList systemVerilogFiles;
+
+        void reserveDefaults();
+        void clear();
+        void setScannedFiles(ProjectModel* projectModel,
+                             const QStringList& scannedFiles);
+        QStringList filesByExtension(const QString& extension) const;
+    };
+
+    struct WorkspaceWatcher {
+        std::unique_ptr<QFileSystemWatcher> watcher;
+
+        void ensure(WorkspaceManager* owner);
+        void clear();
+        void watchWorkspace(const QString& workspacePath,
+                            const QStringList& files);
+        void updateFiles(const QStringList& files);
+        bool active() const;
+    };
+
     QString workspacePath;
-    QStringList allFiles;
-    QStringList svFiles;
-    std::unique_ptr<QFileSystemWatcher> fileWatcher;
+    WorkspaceFiles files;
+    WorkspaceWatcher watcher;
     std::unique_ptr<ProjectModel> projectModel;
 
     // Helper methods
     void scanDirectory(const QString& path);
     void updateFileWatcher();
     bool isSystemVerilogFile(const QString& fileName) const;
-    void filterSystemVerilogFiles();
 };
 
 #endif // WORKSPACEMANAGER_H
