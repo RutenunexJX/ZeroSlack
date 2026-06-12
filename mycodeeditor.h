@@ -13,6 +13,7 @@
 
 class LineNumberWidget;
 class MyHighlighter;
+class DocumentModel;
 class QMenu;
 
 class MyCodeEditor : public QPlainTextEdit
@@ -26,8 +27,6 @@ public:
     void lineNumberWidgetMousePressEvent(QMouseEvent *event);
     void lineNumberWidgetWheelEvent(QWheelEvent *event);
 
-    void setFileName(QString fileName);
-    QString getFileName() const;
     QString currentModuleName() const;
 
     void showAutoComplete();
@@ -65,6 +64,8 @@ protected:
     void leaveEvent(QEvent *event) override;
 
 private:
+    friend class DocumentModel;
+
     void initConnection();
     void initFont();
     void initHighlighter();
@@ -72,6 +73,8 @@ private:
     int getLineNumberWidgetWidth();
     EditorSemanticContextService* contextService() const;
 
+    void setFileName(QString fileName);
+    QString getFileName() const;
     QString currentModuleNameAt(int charPos) const;
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,

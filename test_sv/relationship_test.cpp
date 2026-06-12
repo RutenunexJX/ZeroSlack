@@ -5,6 +5,7 @@
 #include "analysisscheduler.h"
 #include "semanticindex.h"
 #include "diagnosticservice.h"
+#include "documentmodel.h"
 #include "hierarchyservice.h"
 #include "navigationservice.h"
 #include "referenceservice.h"
@@ -1326,12 +1327,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         QStringLiteral("module document_close_closed; endmodule\n");
     const QString documentCloseRemainingContent =
         QStringLiteral("module document_close_remaining; logic keep_signal; endmodule\n");
-    closedDocumentEditor.setFileName(documentCloseClosedPath);
     closedDocumentEditor.setPlainText(documentCloseClosedContent);
-    remainingDocumentEditor.setFileName(documentCloseRemainingPath);
     remainingDocumentEditor.setPlainText(documentCloseRemainingContent);
-    documentCloseModel.registerEditor(&closedDocumentEditor);
-    documentCloseModel.registerEditor(&remainingDocumentEditor);
+    documentCloseModel.registerEditor(&closedDocumentEditor,
+                                      documentCloseClosedPath);
+    documentCloseModel.registerEditor(&remainingDocumentEditor,
+                                      documentCloseRemainingPath);
 
     bool requestedClosedDocumentContent = false;
     bool requestedRemainingDocumentContent = false;

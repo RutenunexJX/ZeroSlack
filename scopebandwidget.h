@@ -7,6 +7,7 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QPointer>
+#include <QString>
 
 /**
  */
@@ -20,6 +21,7 @@ public:
     ~ScopeBandWidget();
 
     void setEditor(MyCodeEditor* editor);
+    void setDocumentFileName(const QString& fileName);
     MyCodeEditor* editor() const { return m_editor.data(); }
 
     void refresh();
@@ -37,6 +39,7 @@ private:
     void syncScrollFromEditor();
 
     QPointer<MyCodeEditor> m_editor;
+    QString m_fileName;
     QGraphicsScene* m_scene = nullptr;
     QGraphicsView* m_view = nullptr;
     bool m_refreshScheduled = false;

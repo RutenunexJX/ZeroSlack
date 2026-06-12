@@ -15,6 +15,7 @@
 #include "slangmanager.h"
 #include "syminfo.h"
 #include "completionmodel.h"
+#include "documentmodel.h"
 #include "definitionservice.h"
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
@@ -75,8 +76,9 @@ int main(int argc, char** argv) {
            xScope == QStringLiteral("add_one") ? "PASS" : "FAIL");
 
     MyCodeEditor ed;
-    ed.setFileName(path);
     ed.setPlainText(content);
+    DocumentModel documentModel;
+    documentModel.registerEditor(&ed, path);
 
     // Caret inside module `top` (top spans ~line 66..end; block 95 is well inside).
     placeCursor(ed, 95);

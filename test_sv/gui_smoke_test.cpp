@@ -438,11 +438,12 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     }
 
     MyCodeEditor shortcutEditor;
-    shortcutEditor.setFileName(fixturePath);
     shortcutEditor.setPlainText(
         "module ref_top;\n"
         "  logic target_ref;\n"
         "endmodule\n");
+    DocumentModel shortcutDocumentModel;
+    shortcutDocumentModel.registerEditor(&shortcutEditor, fixturePath);
     const int targetOffset = shortcutEditor.toPlainText().indexOf(QStringLiteral("target_ref")) + 2;
     QTextCursor shortcutCursor(shortcutEditor.document());
     shortcutCursor.setPosition(targetOffset);

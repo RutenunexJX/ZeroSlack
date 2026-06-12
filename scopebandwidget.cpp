@@ -35,6 +35,15 @@ void ScopeBandWidget::setEditor(MyCodeEditor* editor)
     refresh();
 }
 
+void ScopeBandWidget::setDocumentFileName(const QString& fileName)
+{
+    if (m_fileName == fileName)
+        return;
+
+    m_fileName = fileName;
+    refresh();
+}
+
 void ScopeBandWidget::connectEditor()
 {
     if (!m_editor) return;
@@ -90,7 +99,6 @@ void ScopeBandWidget::refresh()
 {
     if (!m_editor || !m_scene || !m_view) return;
 
-    const QString fileName = m_editor->getFileName();
     const qreal docHeight = m_editor->getDocumentHeightPx();
     if (docHeight <= 0) {
         m_scene->clear();
@@ -103,7 +111,7 @@ void ScopeBandWidget::refresh()
     m_scene->setSceneRect(0, 0, kBandWidth, docHeight);
 
     ScopeBandQuery query;
-    query.fileName = fileName;
+    query.fileName = m_fileName;
     const ScopeBandReport report =
         ScopeBandService::getInstance()->scopeBands(query);
 
