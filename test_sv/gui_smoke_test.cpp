@@ -29,6 +29,7 @@
 #include "analysisscheduler.h"
 #include "alternatecommandservice.h"
 #include "documentmodel.h"
+#include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
 #include "navigationwidget.h"
 #include "navigationmanager.h"

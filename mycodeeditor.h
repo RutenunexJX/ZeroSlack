@@ -1,8 +1,6 @@
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
 
-#include "editorsemanticcontextservice.h"
-
 #include <QPlainTextEdit>
 #include <memory>
 
@@ -15,10 +13,26 @@ class QModelIndex;
 class QMenu;
 class QMouseEvent;
 class QPaintEvent;
+class QPoint;
 class QRect;
+class QContextMenuEvent;
+class QCursor;
+class QKeyEvent;
+class QResizeEvent;
 class ScopeBandWidget;
+class QTextBlock;
+class QTextCursor;
 class QWheelEvent;
+class EditorSemanticContextService;
+struct CompletionActivationState;
+struct CompletionPopupKeyState;
+struct EditorAlternateModeCompletionDisplayState;
+struct EditorAlternateModeKeyState;
+struct EditorCompletionPopupKeyContext;
+struct EditorSemanticContext;
+struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
+enum class SourceSymbolAction;
 struct MyCodeEditorState;
 
 class MyCodeEditor : public QPlainTextEdit
