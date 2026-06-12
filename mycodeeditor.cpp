@@ -51,6 +51,16 @@ void removeSelectionsByProperty(
             }),
         selections.end());
 }
+
+QList<QTextEdit::ExtraSelection> editorSelectionsWithout(
+    QPlainTextEdit* editor,
+    int property,
+    int value)
+{
+    QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
+    removeSelectionsByProperty(selections, property, value);
+    return selections;
+}
 }
 
 class LineNumberWidget : public QWidget
@@ -177,6 +187,94 @@ struct MyCodeEditorState
             endPos = -1;
         }
     } sourceHover;
+
+    struct SelectionUi {
+        void removeByProperty(QPlainTextEdit* editor, int property, int value)
+        {
+            QList<QTextEdit::ExtraSelection> selections =
+                editorSelectionsWithout(editor, property, value);
+            editor->setExtraSelections(selections);
+        }
+
+        void highlightCommand(MyCodeEditor* editor, int prefixPosition)
+        {
+            if (prefixPosition < 0)
+                return;
+
+            QList<QTextEdit::ExtraSelection> selections =
+                editorSelectionsWithout(
+                    editor,
+                    kCommandSelectionProperty,
+                    kCommandSelectionMarker);
+
+            QTextEdit::ExtraSelection commandSelection;
+            commandSelection.format.setBackground(QColor(60, 60, 60, 180));
+            commandSelection.format.setForeground(QColor(255, 255, 255));
+            commandSelection.format.setProperty(
+                kCommandSelectionProperty,
+                kCommandSelectionMarker);
+
+            QTextCursor commandCursor = editor->textCursor();
+            const int commandStartPosition =
+                commandCursor.block().position() + prefixPosition;
+            commandCursor.setPosition(commandStartPosition);
+            commandCursor.setPosition(
+                editor->textCursor().position(),
+                QTextCursor::KeepAnchor);
+            commandSelection.cursor = commandCursor;
+
+            selections.append(commandSelection);
+            editor->setExtraSelections(selections);
+        }
+
+        void clearCommand(QPlainTextEdit* editor)
+        {
+            removeByProperty(
+                editor,
+                kCommandSelectionProperty,
+                kCommandSelectionMarker);
+        }
+
+        void highlightHoveredSymbol(
+            MyCodeEditor* editor,
+            const QString& word,
+            int startPos,
+            int endPos)
+        {
+            if (word.isEmpty() || startPos < 0 || endPos <= startPos)
+                return;
+
+            QTextEdit::ExtraSelection highlight;
+            highlight.cursor = editor->textCursor();
+            highlight.cursor.setPosition(startPos);
+            highlight.cursor.setPosition(endPos, QTextCursor::KeepAnchor);
+            highlight.format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+            highlight.format.setUnderlineColor(QColor(0, 100, 200));
+            highlight.format.setForeground(QColor(0, 100, 200));
+            highlight.format.setProperty(
+                kHoveredSymbolSelectionProperty,
+                kHoveredSymbolSelectionMarker);
+
+            QList<QTextEdit::ExtraSelection> selections =
+                editorSelectionsWithout(
+                    editor,
+                    kHoveredSymbolSelectionProperty,
+                    kHoveredSymbolSelectionMarker);
+            selections.append(highlight);
+            editor->setExtraSelections(selections);
+        }
+
+        void clearHoveredSymbol(
+            QPlainTextEdit* editor,
+            SourceNavigationHover& hover)
+        {
+            removeByProperty(
+                editor,
+                kHoveredSymbolSelectionProperty,
+                kHoveredSymbolSelectionMarker);
+            hover.clearRange();
+        }
+    } selections;
 
 };
 
@@ -538,7 +636,7 @@ void MyCodeEditor::hideAutoComplete()
     state->completion.hidePopup();
 
     if (state->modes.commandModeActive) {
-        clearCommandHighlight();
+        state->selections.clearCommand(this);
     }
 }
 
@@ -577,7 +675,7 @@ void MyCodeEditor::applyCompletionActivationState(
 
         if (activationState.clearCommandMode) {
             state->modes.commandModeActive = false;
-            clearCommandHighlight();
+            state->selections.clearCommand(this);
         }
     } else if (activationState.action == CompletionActivationAction::ReplaceWord) {
         cursor.setPosition(state->completion.wordStartPos);
@@ -806,7 +904,7 @@ bool MyCodeEditor::refreshCommandModeCompletion(
 
         if (commandState.exitRequested) {
             if (commandState.clearCommandHighlight)
-                clearCommandHighlight();
+                state->selections.clearCommand(this);
             if (commandState.markExitedByDoubleSpace)
                 state->modes.commandModeExitedByDoubleSpace = true;
             if (state->completion.popupVisible()) {
@@ -816,7 +914,9 @@ bool MyCodeEditor::refreshCommandModeCompletion(
         }
 
         if (commandState.highlightCommand)
-            highlightCommandText(commandState.completion.prefixPosition);
+            state->selections.highlightCommand(
+                this,
+                commandState.completion.prefixPosition);
 
         if (commandState.hidePopup) {
             if (state->completion.popupVisible())
@@ -837,7 +937,7 @@ bool MyCodeEditor::refreshCommandModeCompletion(
     if (commandState.resetExitedByDoubleSpace)
         state->modes.commandModeExitedByDoubleSpace = false;
 
-    clearCommandHighlight();
+    state->selections.clearCommand(this);
     state->modes.commandModeActive = false;
 
     return false;
@@ -859,41 +959,6 @@ void MyCodeEditor::refreshSymbolCompletion(
             currentBlock.position() + completionState.replacementStartColumn;
         showAutoComplete();
     }
-}
-
-void MyCodeEditor::highlightCommandText(int prefixPosition)
-{
-    if (prefixPosition < 0)
-        return;
-
-    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
-    removeSelectionsByProperty(
-        extraSelections,
-        kCommandSelectionProperty,
-        kCommandSelectionMarker);
-
-    QTextEdit::ExtraSelection commandSelection;
-    commandSelection.format.setBackground(QColor(60, 60, 60, 180));
-    commandSelection.format.setForeground(QColor(255, 255, 255));
-    commandSelection.format.setProperty(
-        kCommandSelectionProperty,
-        kCommandSelectionMarker);
-
-    QTextCursor commandCursor = textCursor();
-    const int commandStartPosition = commandCursor.block().position() + prefixPosition;
-    commandCursor.setPosition(commandStartPosition);
-    commandCursor.setPosition(textCursor().position(), QTextCursor::KeepAnchor);
-    commandSelection.cursor = commandCursor;
-
-    extraSelections.append(commandSelection);
-    setExtraSelections(extraSelections);
-}
-
-void MyCodeEditor::clearCommandHighlight()
-{
-    removeExtraSelectionsByProperty(
-        kCommandSelectionProperty,
-        kCommandSelectionMarker);
 }
 
 QString MyCodeEditor::getWordUnderCursor()
@@ -1044,9 +1109,13 @@ void MyCodeEditor::applySourceNavigationHover(
     }
 
     if (!state->sourceHover.matches(target)) {
-        clearHoveredSymbolHighlight();
+        state->selections.clearHoveredSymbol(this, state->sourceHover);
         state->sourceHover.setTarget(target);
-        highlightHoveredSymbol(target.text, target.startPos, target.endPos);
+        state->selections.highlightHoveredSymbol(
+            this,
+            target.text,
+            target.startPos,
+            target.endPos);
     }
 
     viewport()->setCursor(
@@ -1056,7 +1125,7 @@ void MyCodeEditor::applySourceNavigationHover(
 void MyCodeEditor::clearSourceNavigationHover()
 {
     viewport()->setCursor(Qt::IBeamCursor);
-    clearHoveredSymbolHighlight();
+    state->selections.clearHoveredSymbol(this, state->sourceHover);
     state->sourceHover.clearTarget();
 }
 
@@ -1083,50 +1152,6 @@ void MyCodeEditor::applyLineNavigationTarget(
     centerCursor();
     setFocus();
     moveMouseToCursor();
-}
-
-void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int endPos)
-{
-    if (word.isEmpty() || startPos < 0 || endPos <= startPos) {
-        return;
-    }
-
-    QTextEdit::ExtraSelection highlight;
-    highlight.cursor = textCursor();
-    highlight.cursor.setPosition(startPos);
-    highlight.cursor.setPosition(endPos, QTextCursor::KeepAnchor);
-
-    highlight.format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
-    highlight.format.setUnderlineColor(QColor(0, 100, 200));
-    highlight.format.setForeground(QColor(0, 100, 200));
-
-    highlight.format.setProperty(
-        kHoveredSymbolSelectionProperty,
-        kHoveredSymbolSelectionMarker);
-
-    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
-    removeSelectionsByProperty(
-        extraSelections,
-        kHoveredSymbolSelectionProperty,
-        kHoveredSymbolSelectionMarker);
-
-    extraSelections.append(highlight);
-    setExtraSelections(extraSelections);
-}
-
-void MyCodeEditor::clearHoveredSymbolHighlight()
-{
-    removeExtraSelectionsByProperty(
-        kHoveredSymbolSelectionProperty,
-        kHoveredSymbolSelectionMarker);
-    state->sourceHover.clearRange();
-}
-
-void MyCodeEditor::removeExtraSelectionsByProperty(int property, int value)
-{
-    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
-    removeSelectionsByProperty(extraSelections, property, value);
-    setExtraSelections(extraSelections);
 }
 
 QCursor MyCodeEditor::createJumpableCursor()

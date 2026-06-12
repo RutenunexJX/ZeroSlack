@@ -125,10 +125,6 @@ private:
 
     std::unique_ptr<MyCodeEditorState> state;
 
-    void removeExtraSelectionsByProperty(int property, int value);
-    void highlightCommandText(int prefixPosition);
-    void clearCommandHighlight();
-
     void executeAlternateModeCommand(const QString &command);
     void applyAlternateModeCompletionDisplayState(
         const EditorAlternateModeCompletionDisplayState& displayState);
@@ -142,8 +138,6 @@ private:
         const EditorSourceNavigationTarget& target);
     void clearSourceNavigationHover();
 
-    void highlightHoveredSymbol(const QString& word, int startPos, int endPos);
-    void clearHoveredSymbolHighlight();
     QCursor createJumpableCursor();
     QCursor createNonJumpableCursor();
 signals:
