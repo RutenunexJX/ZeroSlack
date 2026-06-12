@@ -73,11 +73,6 @@ private:
     void initFont();
     void initHighlighter();
     void initAutoComplete();
-    void syncTreeSitterDocumentText();
-    void applyTreeSitterEdit(int position,
-                             int charsRemoved,
-                             int charsAdded);
-    QString treeSitterModuleNameAt(int charPos) const;
     int getLineNumberWidgetWidth();
     EditorSemanticContextService* contextService() const;
 

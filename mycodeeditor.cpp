@@ -139,8 +139,42 @@ struct MyCodeEditorState
 {
     LineNumberWidget *lineNumberWidget = nullptr;
     QString fileName;
-    std::unique_ptr<TSDocument> tsdoc;
-    MyHighlighter *highlighter = nullptr;
+
+    struct SyntaxTreeState {
+        std::unique_ptr<TSDocument> document;
+        MyHighlighter *highlighter = nullptr;
+
+        void init()
+        {
+            document = std::make_unique<TSDocument>();
+        }
+
+        void syncText(const QString& text)
+        {
+            document->setText(text);
+        }
+
+        void createHighlighter(QTextDocument* textDocument)
+        {
+            highlighter = new MyHighlighter(textDocument, document.get());
+        }
+
+        void applyEdit(int position,
+                       int charsRemoved,
+                       int charsAdded,
+                       const QString& text)
+        {
+            document->applyEditChars(position,
+                                     position + charsRemoved,
+                                     position + charsAdded,
+                                     text);
+        }
+
+        QString moduleNameAt(int charPos) const
+        {
+            return document->enclosingModuleName(charPos < 0 ? 0 : charPos);
+        }
+    } syntax;
 
     struct CompletionUi {
         QCompleter *completer = nullptr;
@@ -326,7 +360,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     , state(std::make_unique<MyCodeEditorState>())
 {
     state->semanticContextService = EditorSemanticContextService::getInstance();
-    state->tsdoc = std::make_unique<TSDocument>();
+    state->syntax.init();
     state->lineNumberWidget = new LineNumberWidget(this);
 
     initConnection();
@@ -376,37 +410,20 @@ void MyCodeEditor::initHighlighter()
     // Seed the live tree with current content, then connect contentsChange BEFORE creating the
     // highlighter so our incremental tree update runs first; the highlighter then reads the fresh
     // tree when QSyntaxHighlighter reformats the changed blocks.
-    syncTreeSitterDocumentText();
+    state->syntax.syncText(document()->toPlainText());
     connect(document(), &QTextDocument::contentsChange,
             this, &MyCodeEditor::onTsContentsChange);
-    state->highlighter = new MyHighlighter(document(), state->tsdoc.get());
+    state->syntax.createHighlighter(document());
 }
 
 void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsAdded)
 {
-    // Incrementally update the tree-sitter model (state->tsdoc keeps the pre-edit text, so it can derive
+    // Incrementally update the tree-sitter model (syntax keeps the pre-edit text, so it can derive
     // the old end point itself). Runs before the highlighter's reformat (connected later).
-    applyTreeSitterEdit(position, charsRemoved, charsAdded);
-}
-
-void MyCodeEditor::syncTreeSitterDocumentText()
-{
-    state->tsdoc->setText(document()->toPlainText());
-}
-
-void MyCodeEditor::applyTreeSitterEdit(int position,
-                                       int charsRemoved,
-                                       int charsAdded)
-{
-    state->tsdoc->applyEditChars(position,
-                            position + charsRemoved,
-                            position + charsAdded,
+    state->syntax.applyEdit(position,
+                            charsRemoved,
+                            charsAdded,
                             document()->toPlainText());
-}
-
-QString MyCodeEditor::treeSitterModuleNameAt(int charPos) const
-{
-    return state->tsdoc->enclosingModuleName(charPos < 0 ? 0 : charPos);
 }
 
 int MyCodeEditor::getLineNumberWidgetWidth()
@@ -477,8 +494,8 @@ EditorSemanticContextService* MyCodeEditor::contextService() const
 QString MyCodeEditor::currentModuleNameAt(int charPos) const
 {
     // Live, error-tolerant enclosing module from the tree-sitter tree (A3). The editor keeps
-    // state->tsdoc synced on every edit, so this is never stale (unlike the debounced Slang path).
-    return treeSitterModuleNameAt(charPos);
+    // syntax synced on every edit, so this is never stale (unlike the debounced Slang path).
+    return state->syntax.moduleNameAt(charPos);
 }
 
 qreal MyCodeEditor::getBlockTopY(int blockNumber) const
