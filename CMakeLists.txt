@@ -56,6 +56,7 @@ set(ZEROSLACK_CORE_SOURCES
     definitionservice.cpp
     diagnosticservice.cpp
     documentmodel.cpp
+    documentregistry.cpp
     editorappearance.cpp
     editorcompletionui.cpp
     editorcompletionworkflow.cpp
@@ -123,6 +124,8 @@ set(ZEROSLACK_CORE_SOURCES
     definitionservice.h
     diagnosticservice.h
     documentmodel.h
+    documentregistry.h
+    documentsnapshot.h
     editorappearance.h
     editorcompletionui.h
     editorcompletionworkflow.h
