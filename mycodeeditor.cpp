@@ -1464,6 +1464,31 @@ struct MyCodeEditorState
         menu->exec(event->globalPos());
     }
 
+    void handleResize(MyCodeEditor* editor) const
+    {
+        gutter.resizeTo(editor, editor->contentsRect());
+    }
+
+    void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent *event)
+    {
+        handleSourceSymbolContextMenu(editor, event);
+    }
+
+    bool handleMousePress(MyCodeEditor* editor, QMouseEvent *event)
+    {
+        return handleSourceNavigationMousePress(editor, event);
+    }
+
+    void handleMouseMove(MyCodeEditor* editor, QMouseEvent *event)
+    {
+        handleSourceNavigationMouseMove(editor, event);
+    }
+
+    void handleLeaveEvent(MyCodeEditor* editor)
+    {
+        handleLeave(editor);
+    }
+
 };
 
 LineNumberWidget::LineNumberWidget(
@@ -1539,12 +1564,12 @@ qreal MyCodeEditor::documentHeightPx() const
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
-    state->gutter.resizeTo(this, contentsRect());
+    state->handleResize(this);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 {
-    state->handleSourceSymbolContextMenu(this, event);
+    state->handleContextMenu(this, event);
 }
 
 EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
@@ -1598,7 +1623,7 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
-    if (state->handleSourceNavigationMousePress(this, event))
+    if (state->handleMousePress(this, event))
         return;
 
     QPlainTextEdit::mousePressEvent(event);
@@ -1606,14 +1631,14 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
-    state->handleSourceNavigationMouseMove(this, event);
+    state->handleMouseMove(this, event);
 
     QPlainTextEdit::mouseMoveEvent(event);
 }
 
 void MyCodeEditor::leaveEvent(QEvent *event)
 {
-    state->handleLeave(this);
+    state->handleLeaveEvent(this);
 
     QPlainTextEdit::leaveEvent(event);
 }
