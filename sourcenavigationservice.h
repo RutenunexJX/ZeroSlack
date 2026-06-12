@@ -64,6 +64,14 @@ struct SourceEditorNavigationTarget {
     int cursorColumn = -1;
 };
 
+struct SourceLineNavigationTarget {
+    bool matched = false;
+    int lineNumber = -1;
+    int columnNumber = -1;
+    int lineMoves = 0;
+    int columnMoves = 0;
+};
+
 class SourceNavigationService
 {
 public:
@@ -89,6 +97,9 @@ public:
         const QString& lineText,
         int column,
         const std::function<bool(const QString&)>& canResolveIdentifier) const;
+    SourceLineNavigationTarget lineNavigationTarget(
+        int lineNumber,
+        int columnNumber = -1) const;
 
 private:
     static std::unique_ptr<SourceNavigationService> instance;

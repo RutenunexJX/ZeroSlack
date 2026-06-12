@@ -234,3 +234,19 @@ SourceEditorNavigationTarget SourceNavigationService::editorNavigationTargetAtCo
             && canResolveIdentifier(editorTarget.text));
     return editorTarget;
 }
+
+SourceLineNavigationTarget SourceNavigationService::lineNavigationTarget(
+    int lineNumber,
+    int columnNumber) const
+{
+    SourceLineNavigationTarget target;
+    if (lineNumber <= 0)
+        return target;
+
+    target.matched = true;
+    target.lineNumber = lineNumber;
+    target.columnNumber = columnNumber > 1 ? columnNumber : -1;
+    target.lineMoves = lineNumber - 1;
+    target.columnMoves = target.columnNumber > 1 ? target.columnNumber - 1 : 0;
+    return target;
+}

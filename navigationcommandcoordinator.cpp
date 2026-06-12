@@ -2,6 +2,7 @@
 
 #include "mycodeeditor.h"
 #include "navigationmanager.h"
+#include "sourcenavigationservice.h"
 #include "tabmanager.h"
 
 #include <QTextCursor>
@@ -59,17 +60,24 @@ void NavigationCommandCoordinator::navigateEditorToLine(
     int lineNumber,
     int columnNumber)
 {
-    if (!editor || lineNumber <= 0)
+    if (!editor)
+        return;
+
+    const SourceLineNavigationTarget target =
+        SourceNavigationService::getInstance()->lineNavigationTarget(
+            lineNumber,
+            columnNumber);
+    if (!target.matched)
         return;
 
     QTextCursor cursor = editor->textCursor();
     cursor.movePosition(QTextCursor::Start);
-    for (int i = 1; i < lineNumber; ++i)
+    for (int i = 0; i < target.lineMoves; ++i)
         cursor.movePosition(QTextCursor::Down);
-    if (columnNumber > 1) {
+    if (target.columnMoves > 0) {
         cursor.movePosition(QTextCursor::Right,
                             QTextCursor::MoveAnchor,
-                            columnNumber - 1);
+                            target.columnMoves);
     }
     editor->setTextCursor(cursor);
     editor->centerCursor();

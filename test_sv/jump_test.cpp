@@ -624,6 +624,29 @@ int main(int argc, char** argv) {
                         [](const QString&) { return false; })
                     .jumpable,
                true);
+    const SourceLineNavigationTarget lineNavigationTarget =
+        sourceNavigationService->lineNavigationTarget(12, 4);
+    expectBool("SourceNavigation line target valid",
+               lineNavigationTarget.matched,
+               true);
+    ++g_checks;
+    const bool lineNavigationMovesOk =
+        lineNavigationTarget.lineMoves == 11
+        && lineNavigationTarget.columnMoves == 3;
+    if (!lineNavigationMovesOk)
+        ++g_fails;
+    printf("[%s] SourceNavigation line target move counts\n",
+           lineNavigationMovesOk ? "PASS" : "FAIL");
+    expectBool("SourceNavigation rejects invalid line target",
+               sourceNavigationService->lineNavigationTarget(0, 4).matched,
+               false);
+    ++g_checks;
+    const bool defaultColumnOk =
+        sourceNavigationService->lineNavigationTarget(3).columnMoves == 0;
+    if (!defaultColumnOk)
+        ++g_fails;
+    printf("[%s] SourceNavigation line target default column\n",
+           defaultColumnOk ? "PASS" : "FAIL");
 
     const int editorActionPos =
         content.indexOf(QStringLiteral("counter <= 8'd0"));
