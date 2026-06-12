@@ -238,6 +238,26 @@ bool RelationshipService::hasRelationship(
     return false;
 }
 
+bool RelationshipService::hasNamedRelationship(
+    const QString& fromSymbolName,
+    const QString& toSymbolName,
+    SymbolRelationshipEngine::RelationType type) const
+{
+    if (fromSymbolName.isEmpty() || toSymbolName.isEmpty())
+        return false;
+
+    RelationshipQuery query;
+    query.symbolName = fromSymbolName;
+    query.outgoing = true;
+    query.types = {type};
+    const QList<RelationshipResult> relationships = findRelationships(query);
+    for (const RelationshipResult& relationship : relationships) {
+        if (relationship.toSymbol.symbolName == toSymbolName)
+            return true;
+    }
+    return false;
+}
+
 bool RelationshipService::hasRelationships(const RelationshipQuery& query) const
 {
     return !findRelationships(query).isEmpty();

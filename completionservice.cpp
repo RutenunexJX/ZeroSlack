@@ -1475,32 +1475,33 @@ int CompletionService::calculateRelationshipScore(
         return 0;
 
     RelationshipService relationships(semanticIndex());
-    auto hasNamedRelationship = [&relationships](const QString& fromName,
-                                                 const QString& toName,
-                                                 SymbolRelationshipEngine::RelationType type) {
-        RelationshipQuery query;
-        query.symbolName = fromName;
-        query.outgoing = true;
-        query.types = {type};
-        const QList<RelationshipResult> results =
-            relationships.findRelationships(query);
-        for (const RelationshipResult& result : results) {
-            if (result.toSymbol.symbolName == toName)
-                return true;
-        }
-        return false;
-    };
 
-    if (hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CONTAINS))
+    if (relationships.hasNamedRelationship(
+            currentContext,
+            symbol,
+            SymbolRelationshipEngine::CONTAINS)) {
         return 40;
+    }
 
-    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::REFERENCES)
-        || hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::REFERENCES)) {
+    if (relationships.hasNamedRelationship(
+            symbol,
+            currentContext,
+            SymbolRelationshipEngine::REFERENCES)
+        || relationships.hasNamedRelationship(
+            currentContext,
+            symbol,
+            SymbolRelationshipEngine::REFERENCES)) {
         return 30;
     }
 
-    if (hasNamedRelationship(symbol, currentContext, SymbolRelationshipEngine::CALLS)
-        || hasNamedRelationship(currentContext, symbol, SymbolRelationshipEngine::CALLS)) {
+    if (relationships.hasNamedRelationship(
+            symbol,
+            currentContext,
+            SymbolRelationshipEngine::CALLS)
+        || relationships.hasNamedRelationship(
+            currentContext,
+            symbol,
+            SymbolRelationshipEngine::CALLS)) {
         return 25;
     }
 

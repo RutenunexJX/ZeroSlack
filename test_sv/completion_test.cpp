@@ -6,6 +6,7 @@
 #include "completionmodel.h"
 #include "completionservice.h"
 #include "editorsemanticcontextservice.h"
+#include "relationshipservice.h"
 #include "semanticindexsnapshot.h"
 #include "syminfo.h"
 #include <QApplication>
@@ -1622,6 +1623,19 @@ int main(int argc, char** argv) {
             QList<SemanticDiagnostic>{},
             snapshotFileContents));
     CompletionService snapshotCompletionService(&snapshotIndex);
+    RelationshipService snapshotRelationshipService(&snapshotIndex);
+    expectBool("RelationshipService named contains",
+               snapshotRelationshipService.hasNamedRelationship(
+                   QStringLiteral("snap_top"),
+                   QStringLiteral("snap_enable"),
+                   SymbolRelationshipEngine::CONTAINS),
+               true);
+    expectBool("RelationshipService named rejects missing",
+               snapshotRelationshipService.hasNamedRelationship(
+                   QStringLiteral("snap_enable"),
+                   QStringLiteral("snap_top"),
+                   SymbolRelationshipEngine::CONTAINS),
+               false);
     expectEq("snapshot struct prefers module",
              snapshotCompletionService.getStructTypeForVariable("snap_pixel", "snap_top"),
              "snap_pixel_t");

@@ -100,6 +100,9 @@ public:
     bool hasRelationship(int fromSymbolId,
                          int toSymbolId,
                          SymbolRelationshipEngine::RelationType type) const;
+    bool hasNamedRelationship(const QString& fromSymbolName,
+                              const QString& toSymbolName,
+                              SymbolRelationshipEngine::RelationType type) const;
     bool hasRelationships(const RelationshipQuery& query) const;
 
 private:
