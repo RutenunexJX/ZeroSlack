@@ -268,10 +268,12 @@ std::unique_ptr<MyCodeEditor> TabManager::createEditor()
 
 bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
 {
-    if (!editor)
+    if (!editor || !documentModel)
         return false;
 
-    QString fileName = editor->getFileName();
+    const DocumentSnapshot snapshot = getDocumentForEditor(editor);
+    const QString documentText = documentModel->documentTextForEditor(editor);
+    QString fileName = snapshot.fileName;
     if (forceSaveAs || fileName.isEmpty() || !QFile::exists(fileName)) {
         fileName = QFileDialog::getSaveFileName(
             qobject_cast<QWidget*>(parent()),
@@ -290,7 +292,7 @@ bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
     }
 
     QTextStream out(&file);
-    out << editor->toPlainText();
+    out << documentText;
     file.close();
 
     editor->setFileName(fileName);

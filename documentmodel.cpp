@@ -131,6 +131,13 @@ QString DocumentModel::documentTextForFile(const QString& fileName) const
         : documentText(snapshot.documentId);
 }
 
+QString DocumentModel::documentTextForEditor(MyCodeEditor* editor) const
+{
+    if (!editor || !documentsByEditor.contains(editor))
+        return QString();
+    return documentsByEditor.value(editor).text;
+}
+
 QString DocumentModel::documentIdForEditor(MyCodeEditor* editor) const
 {
     if (!editor)

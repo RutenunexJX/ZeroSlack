@@ -819,9 +819,14 @@ int main(int argc, char** argv)
         saveEditor->setFileName(savePath);
         saveEditor->setPlainText(savedText);
         saveEditor->markDocumentDirty();
+        DocumentModel* saveDocuments = window.tabManager->getDocumentModel();
+        expectBool("document model caches save editor text",
+                   saveDocuments
+                       && saveDocuments->documentTextForEditor(saveEditor) == savedText,
+                   true);
         QSignalSpy fileSavedSpy(window.tabManager.get(), &TabManager::fileSaved);
         QSignalSpy documentSavedSpy(
-            window.tabManager->getDocumentModel(),
+            saveDocuments,
             &DocumentModel::documentSaved);
         expectBool("tab manager saves current tab",
                    window.tabManager->saveCurrentTab(),

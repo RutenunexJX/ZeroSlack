@@ -40,6 +40,7 @@ public:
     MyCodeEditor* editorForFile(const QString& fileName) const;
     QString documentText(const QString& documentId) const;
     QString documentTextForFile(const QString& fileName) const;
+    QString documentTextForEditor(MyCodeEditor* editor) const;
 
 signals:
     void documentOpened(const DocumentSnapshot& snapshot);

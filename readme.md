@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Active document state now routes through `DocumentModel` snapshots.
-`TabManager` exposes current/editor `DocumentSnapshot` queries and reads current-tab text from the model cache, while navigation, semantic panel refresh, tab titles, close/save notifications, and active-editor analysis refresh use snapshot file identity instead of direct editor file-name state.
+Save transactions now write from `DocumentModel` text snapshots.
+`DocumentModel` exposes editor text lookup, and `TabManager` uses model snapshots for save file identity and model-cached text for file writes, keeping save behavior aligned with the document-state boundary.
 
 ## Current Architecture Snapshot
 
