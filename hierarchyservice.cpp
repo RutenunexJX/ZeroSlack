@@ -226,6 +226,36 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
     return report;
 }
 
+HierarchyQuery HierarchyService::queryForPanel(
+    const HierarchyPanelQueryOptions& options) const
+{
+    HierarchyQuery query;
+    query.symbolName = options.symbolName;
+    query.fileName = options.fileName;
+    query.moduleName = options.moduleName;
+    query.maxDepth = options.maxDepth;
+    switch (options.direction) {
+    case HierarchyPanelDirection::Outgoing:
+        query.direction = HierarchyQuery::Children;
+        break;
+    case HierarchyPanelDirection::Incoming:
+        query.direction = HierarchyQuery::Parents;
+        break;
+    case HierarchyPanelDirection::All:
+    default:
+        query.direction = HierarchyQuery::Both;
+        break;
+    }
+    if (options.typeFilter >= 0) {
+        query.types = {
+            static_cast<SymbolRelationshipEngine::RelationType>(options.typeFilter)
+        };
+    } else {
+        query.types = allRelationshipTypes();
+    }
+    return query;
+}
+
 SemanticIndex* HierarchyService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();

@@ -22,6 +22,21 @@ struct HierarchyQuery {
     QList<SymbolRelationshipEngine::RelationType> types;
 };
 
+enum class HierarchyPanelDirection {
+    All,
+    Outgoing,
+    Incoming
+};
+
+struct HierarchyPanelQueryOptions {
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+    int maxDepth = 2;
+    HierarchyPanelDirection direction = HierarchyPanelDirection::All;
+    int typeFilter = -1;
+};
+
 struct HierarchyNode {
     sym_list::SymbolInfo symbol;
     int depth = 0;
@@ -63,6 +78,7 @@ public:
     QList<HierarchyNode> getParents(const HierarchyQuery& query) const;
     QList<HierarchyNode> getHierarchy(const HierarchyQuery& query) const;
     HierarchyReport getHierarchyReport(const HierarchyQuery& query) const;
+    HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
 
 private:
     SemanticIndex* index = nullptr;

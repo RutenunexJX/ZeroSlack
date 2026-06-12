@@ -1614,6 +1614,48 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
                true);
+    RelationshipPanelQueryOptions outgoingPanelRelationshipOptions;
+    outgoingPanelRelationshipOptions.symbolName = QStringLiteral("rel_top");
+    outgoingPanelRelationshipOptions.fileName = topPath;
+    outgoingPanelRelationshipOptions.direction = RelationshipPanelDirection::Outgoing;
+    outgoingPanelRelationshipOptions.typeFilter =
+        static_cast<int>(SymbolRelationshipEngine::CALLS);
+    const RelationshipBrowseQuery outgoingPanelRelationshipQuery =
+        relationshipService.queryForPanel(outgoingPanelRelationshipOptions);
+    expectBool("relationship panel query selects outgoing type",
+               outgoingPanelRelationshipQuery.symbolName == QStringLiteral("rel_top")
+                   && outgoingPanelRelationshipQuery.includeOutgoing
+                   && !outgoingPanelRelationshipQuery.includeIncoming
+                   && outgoingPanelRelationshipQuery.types
+                       == QList<SymbolRelationshipEngine::RelationType>{
+                              SymbolRelationshipEngine::CALLS},
+               true);
+    expectInt("relationship panel outgoing count",
+              relationshipService
+                  .findRelationshipReport(outgoingPanelRelationshipQuery)
+                  .totalCount,
+              1);
+
+    RelationshipPanelQueryOptions incomingPanelRelationshipOptions;
+    incomingPanelRelationshipOptions.symbolName = QStringLiteral("rel_stage");
+    incomingPanelRelationshipOptions.fileName = stagePath;
+    incomingPanelRelationshipOptions.direction = RelationshipPanelDirection::Incoming;
+    incomingPanelRelationshipOptions.typeFilter =
+        static_cast<int>(SymbolRelationshipEngine::INSTANTIATES);
+    const RelationshipBrowseQuery incomingPanelRelationshipQuery =
+        relationshipService.queryForPanel(incomingPanelRelationshipOptions);
+    expectBool("relationship panel query selects incoming type",
+               !incomingPanelRelationshipQuery.includeOutgoing
+                   && incomingPanelRelationshipQuery.includeIncoming
+                   && incomingPanelRelationshipQuery.types
+                       == QList<SymbolRelationshipEngine::RelationType>{
+                              SymbolRelationshipEngine::INSTANTIATES},
+               true);
+    expectInt("relationship panel incoming count",
+              relationshipService
+                  .findRelationshipReport(incomingPanelRelationshipQuery)
+                  .totalCount,
+              1);
 
     RelationshipBrowseQuery callsOnlyBrowseQuery;
     callsOnlyBrowseQuery.symbolId = topId;
@@ -1804,6 +1846,42 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                parentTreeFoundRoot, true);
     expectBool("hierarchy service parent tree finds incoming parent",
                parentTreeFoundTop, true);
+    HierarchyPanelQueryOptions incomingHierarchyPanelOptions;
+    incomingHierarchyPanelOptions.symbolName = QStringLiteral("rel_stage");
+    incomingHierarchyPanelOptions.fileName = stagePath;
+    incomingHierarchyPanelOptions.maxDepth = 1;
+    incomingHierarchyPanelOptions.direction = HierarchyPanelDirection::Incoming;
+    incomingHierarchyPanelOptions.typeFilter =
+        static_cast<int>(SymbolRelationshipEngine::INSTANTIATES);
+    const HierarchyQuery incomingHierarchyPanelQuery =
+        hierarchyService.queryForPanel(incomingHierarchyPanelOptions);
+    expectBool("hierarchy panel query selects incoming type",
+               incomingHierarchyPanelQuery.symbolName == QStringLiteral("rel_stage")
+                   && incomingHierarchyPanelQuery.direction == HierarchyQuery::Parents
+                   && incomingHierarchyPanelQuery.maxDepth == 1
+                   && incomingHierarchyPanelQuery.types
+                       == QList<SymbolRelationshipEngine::RelationType>{
+                              SymbolRelationshipEngine::INSTANTIATES},
+               true);
+    expectInt("hierarchy panel incoming count",
+              hierarchyService
+                  .getHierarchyReport(incomingHierarchyPanelQuery)
+                  .rootDirectionCounts.value(HierarchyQuery::Parents),
+              1);
+
+    HierarchyPanelQueryOptions allHierarchyPanelOptions;
+    allHierarchyPanelOptions.symbolName = QStringLiteral("rel_top");
+    allHierarchyPanelOptions.fileName = topPath;
+    allHierarchyPanelOptions.maxDepth = 2;
+    allHierarchyPanelOptions.direction = HierarchyPanelDirection::All;
+    allHierarchyPanelOptions.typeFilter = -1;
+    const HierarchyQuery allHierarchyPanelQuery =
+        hierarchyService.queryForPanel(allHierarchyPanelOptions);
+    expectBool("hierarchy panel query selects all tree types",
+               allHierarchyPanelQuery.direction == HierarchyQuery::Both
+                   && allHierarchyPanelQuery.types.contains(SymbolRelationshipEngine::READS_FROM)
+                   && allHierarchyPanelQuery.types.contains(SymbolRelationshipEngine::INSTANTIATES),
+               true);
 
     engine.addRelationship(stageId, topId, SymbolRelationshipEngine::INSTANTIATES,
                            QStringLiteral("cycle guard probe"));

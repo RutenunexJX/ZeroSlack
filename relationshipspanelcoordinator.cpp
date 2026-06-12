@@ -78,6 +78,32 @@ QTreeWidgetItem* createHierarchyItem(QTreeWidgetItem* parent,
     return item;
 }
 
+RelationshipPanelDirection relationshipPanelDirectionFromValue(int value)
+{
+    switch (value) {
+    case 1:
+        return RelationshipPanelDirection::Outgoing;
+    case 2:
+        return RelationshipPanelDirection::Incoming;
+    case 0:
+    default:
+        return RelationshipPanelDirection::All;
+    }
+}
+
+HierarchyPanelDirection hierarchyPanelDirectionFromValue(int value)
+{
+    switch (value) {
+    case 1:
+        return HierarchyPanelDirection::Outgoing;
+    case 2:
+        return HierarchyPanelDirection::Incoming;
+    case 0:
+    default:
+        return HierarchyPanelDirection::All;
+    }
+}
+
 } // namespace
 
 RelationshipsPanelCoordinator::RelationshipsPanelCoordinator(QWidget* parent)
@@ -231,45 +257,29 @@ void RelationshipsPanelCoordinator::refresh()
     if (!relationshipsTree || currentRelationshipSymbolName.isEmpty())
         return;
 
-    RelationshipQuery query;
-    query.symbolName = currentRelationshipSymbolName;
-    query.fileName = currentRelationshipFileName;
-    query.moduleName = currentRelationshipModuleName;
-
     const int typeFilter = relationshipTypeCombo
         ? relationshipTypeCombo->currentData().toInt()
         : -1;
-    if (typeFilter >= 0) {
-        query.types = {
-            static_cast<SymbolRelationshipEngine::RelationType>(typeFilter)
-        };
-    }
 
     const bool treeMode = relationshipViewCombo
         && relationshipViewCombo->currentData().toInt() == 1;
     if (treeMode) {
-        HierarchyQuery hierarchyQuery;
-        hierarchyQuery.symbolName = currentRelationshipSymbolName;
-        hierarchyQuery.fileName = currentRelationshipFileName;
-        hierarchyQuery.moduleName = currentRelationshipModuleName;
-        hierarchyQuery.maxDepth = relationshipDepthCombo
+        HierarchyPanelQueryOptions hierarchyOptions;
+        hierarchyOptions.symbolName = currentRelationshipSymbolName;
+        hierarchyOptions.fileName = currentRelationshipFileName;
+        hierarchyOptions.moduleName = currentRelationshipModuleName;
+        hierarchyOptions.maxDepth = relationshipDepthCombo
             ? relationshipDepthCombo->currentData().toInt()
             : 2;
-        hierarchyQuery.types = query.types.isEmpty()
-            ? HierarchyService::allRelationshipTypes()
-            : query.types;
-        const int directionFilter = relationshipDirectionCombo
-            ? relationshipDirectionCombo->currentData().toInt()
-            : 0;
-        if (directionFilter == 1)
-            hierarchyQuery.direction = HierarchyQuery::Children;
-        else if (directionFilter == 2)
-            hierarchyQuery.direction = HierarchyQuery::Parents;
-        else
-            hierarchyQuery.direction = HierarchyQuery::Both;
+        hierarchyOptions.typeFilter = typeFilter;
+        hierarchyOptions.direction = hierarchyPanelDirectionFromValue(
+            relationshipDirectionCombo ? relationshipDirectionCombo->currentData().toInt() : 0);
 
+        HierarchyService* hierarchyService = HierarchyService::getInstance();
+        const HierarchyQuery hierarchyQuery =
+            hierarchyService->queryForPanel(hierarchyOptions);
         const HierarchyReport report =
-            HierarchyService::getInstance()->getHierarchyReport(hierarchyQuery);
+            hierarchyService->getHierarchyReport(hierarchyQuery);
 
         const bool hadExpandableItems =
             SemanticPanelUtils::treeHasExpandableItems(relationshipsTree);
@@ -339,20 +349,19 @@ void RelationshipsPanelCoordinator::refresh()
         return;
     }
 
-    const int directionFilter = relationshipDirectionCombo
-        ? relationshipDirectionCombo->currentData().toInt()
-        : 0;
+    RelationshipPanelQueryOptions browseOptions;
+    browseOptions.symbolName = currentRelationshipSymbolName;
+    browseOptions.fileName = currentRelationshipFileName;
+    browseOptions.moduleName = currentRelationshipModuleName;
+    browseOptions.typeFilter = typeFilter;
+    browseOptions.direction = relationshipPanelDirectionFromValue(
+        relationshipDirectionCombo ? relationshipDirectionCombo->currentData().toInt() : 0);
 
-    RelationshipBrowseQuery browseQuery;
-    browseQuery.symbolName = query.symbolName;
-    browseQuery.fileName = query.fileName;
-    browseQuery.moduleName = query.moduleName;
-    browseQuery.types = query.types;
-    browseQuery.includeOutgoing = directionFilter == 0 || directionFilter == 1;
-    browseQuery.includeIncoming = directionFilter == 0 || directionFilter == 2;
-
+    RelationshipService* relationshipService = RelationshipService::getInstance();
+    const RelationshipBrowseQuery browseQuery =
+        relationshipService->queryForPanel(browseOptions);
     const RelationshipReport report =
-        RelationshipService::getInstance()->findRelationshipReport(browseQuery);
+        relationshipService->findRelationshipReport(browseQuery);
     const QString subjectName = report.subjectSymbol.symbolName.isEmpty()
         ? currentRelationshipSymbolName
         : report.subjectSymbol.symbolName;

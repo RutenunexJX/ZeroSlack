@@ -195,6 +195,25 @@ QList<int> RelationshipService::findRelatedSymbolIds(const RelationshipQuery& qu
     return result;
 }
 
+RelationshipBrowseQuery RelationshipService::queryForPanel(
+    const RelationshipPanelQueryOptions& options) const
+{
+    RelationshipBrowseQuery query;
+    query.symbolName = options.symbolName;
+    query.fileName = options.fileName;
+    query.moduleName = options.moduleName;
+    query.includeOutgoing = options.direction == RelationshipPanelDirection::All
+        || options.direction == RelationshipPanelDirection::Outgoing;
+    query.includeIncoming = options.direction == RelationshipPanelDirection::All
+        || options.direction == RelationshipPanelDirection::Incoming;
+    if (options.typeFilter >= 0) {
+        query.types = {
+            static_cast<SymbolRelationshipEngine::RelationType>(options.typeFilter)
+        };
+    }
+    return query;
+}
+
 bool RelationshipService::hasRelationship(
     int fromSymbolId,
     int toSymbolId,

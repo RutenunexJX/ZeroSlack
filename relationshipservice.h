@@ -29,6 +29,20 @@ struct RelationshipBrowseQuery {
     QList<SymbolRelationshipEngine::RelationType> types;
 };
 
+enum class RelationshipPanelDirection {
+    All,
+    Outgoing,
+    Incoming
+};
+
+struct RelationshipPanelQueryOptions {
+    QString symbolName;
+    QString fileName;
+    QString moduleName;
+    RelationshipPanelDirection direction = RelationshipPanelDirection::All;
+    int typeFilter = -1;
+};
+
 struct DirectedRelationshipResult {
     enum Direction {
         Outgoing,
@@ -81,6 +95,8 @@ public:
     QList<RelationshipResult> findIncomingRelationships(const RelationshipQuery& query) const;
     RelationshipReport findRelationshipReport(const RelationshipBrowseQuery& query) const;
     QList<int> findRelatedSymbolIds(const RelationshipQuery& query) const;
+    RelationshipBrowseQuery queryForPanel(
+        const RelationshipPanelQueryOptions& options) const;
     bool hasRelationship(int fromSymbolId,
                          int toSymbolId,
                          SymbolRelationshipEngine::RelationType type) const;
