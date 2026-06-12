@@ -86,6 +86,7 @@ struct MyCodeEditorState
             const int tabWidth =
                 editor->fontMetrics().horizontalAdvance(' ') * 4;
             editor->setTabStopDistance(tabWidth);
+            editor->setLineWrapMode(QPlainTextEdit::NoWrap);
         }
     } appearance;
 
@@ -920,6 +921,17 @@ struct MyCodeEditorState
             });
     }
 
+    void attachToEditor(MyCodeEditor* editor)
+    {
+        initializeCore(editor);
+        attachEditorConnections(editor);
+        appearance.apply(editor);
+        syntax.attachToEditor(editor);
+        completion.attachToEditor(editor, this);
+        selections.highlightCurrentLine(editor);
+        gutter.updateViewportMargins(editor);
+    }
+
     EditorSemanticContextService* semanticService() const
     {
         return semantic.contextService();
@@ -1465,18 +1477,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
     , state(std::make_unique<MyCodeEditorState>())
 {
-    state->initializeCore(this);
-
-    state->attachEditorConnections(this);
-    state->appearance.apply(this);
-    state->syntax.attachToEditor(this);
-    state->completion.attachToEditor(this, state.get());
-
-    state->selections.highlightCurrentLine(this);
-    state->gutter.updateViewportMargins(this);
-
-    setLineWrapMode(QPlainTextEdit::NoWrap);
-
+    state->attachToEditor(this);
 }
 
 MyCodeEditor::~MyCodeEditor()
