@@ -7,6 +7,7 @@
 #include "editorgutter.h"
 #include "editorselection.h"
 #include "editorsemanticruntime.h"
+#include "editorsourcehover.h"
 #include "editorsyntaxstate.h"
 #include "editorsemanticcontextservice.h"
 #include "editormodestate.h"
@@ -14,7 +15,6 @@
 
 #include "syminfo.h"
 
-#include <QPainter>
 #include <QScrollBar>
 
 #include <QKeyEvent>
@@ -28,9 +28,6 @@
 #include <QWidget>
 
 #include <QAbstractItemView>
-#include <QPixmap>
-#include <QPen>
-#include <QBrush>
 #include <memory>
 
 struct MyCodeEditorState
@@ -53,107 +50,7 @@ struct MyCodeEditorState
 
     EditorHighlightRefresh highlightRefresh;
 
-    struct SourceNavigationHover {
-        bool ctrlPressed = false;
-        QString word;
-        int startPos = -1;
-        int endPos = -1;
-
-        bool setCtrlPressed(bool pressed)
-        {
-            if (ctrlPressed == pressed)
-                return false;
-
-            ctrlPressed = pressed;
-            return true;
-        }
-
-        bool isCtrlPressed() const
-        {
-            return ctrlPressed;
-        }
-
-        QCursor cursorForTarget(
-            const EditorSourceNavigationTarget& target) const
-        {
-            return target.jumpable ? createJumpableCursor()
-                                   : createNonJumpableCursor();
-        }
-
-        QCursor nonJumpableCursor() const
-        {
-            return createNonJumpableCursor();
-        }
-
-        bool matches(const EditorSourceNavigationTarget& target) const
-        {
-            return word == target.text
-                && startPos == target.startPos
-                && endPos == target.endPos;
-        }
-
-        void setTarget(const EditorSourceNavigationTarget& target)
-        {
-            word = target.text;
-            startPos = target.startPos;
-            endPos = target.endPos;
-        }
-
-        void clearTarget()
-        {
-            word.clear();
-            clearRange();
-        }
-
-        void clearRange()
-        {
-            startPos = -1;
-            endPos = -1;
-        }
-
-    private:
-        QCursor createJumpableCursor() const
-        {
-            QPixmap pixmap(24, 24);
-            pixmap.fill(Qt::transparent);
-
-            QPainter painter(&pixmap);
-            if (!painter.isActive())
-                return QCursor(Qt::PointingHandCursor);
-
-            painter.setRenderHint(QPainter::Antialiasing);
-
-            QPen pen(QColor(0, 255, 0), 4);
-            pen.setCapStyle(Qt::RoundCap);
-            pen.setJoinStyle(Qt::RoundJoin);
-            painter.setPen(pen);
-
-            painter.drawLine(7, 12, 11, 16);
-            painter.drawLine(11, 16, 18, 6);
-
-            painter.end();
-
-            return QCursor(pixmap, 12, 12);
-        }
-
-        QCursor createNonJumpableCursor() const
-        {
-            QPixmap pixmap(20, 20);
-            pixmap.fill(Qt::transparent);
-
-            QPainter painter(&pixmap);
-            painter.setRenderHint(QPainter::Antialiasing);
-
-            QPen pen(QColor(255, 0, 0), 3);
-            pen.setCapStyle(Qt::RoundCap);
-            painter.setPen(pen);
-
-            painter.drawLine(5, 5, 15, 15);
-            painter.drawLine(15, 5, 5, 15);
-
-            return QCursor(pixmap, 10, 10);
-        }
-    } sourceHover;
+    EditorSourceHover sourceHover;
 
     EditorSelection selections;
 

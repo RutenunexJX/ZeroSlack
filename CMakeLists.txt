@@ -66,6 +66,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorselection.cpp
     editorsemanticcontextservice.cpp
     editorsemanticruntime.cpp
+    editorsourcehover.cpp
     editorsyntaxstate.cpp
     editormodestate.cpp
     filecommandcoordinator.cpp
@@ -129,6 +130,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorselection.h
     editorsemanticcontextservice.h
     editorsemanticruntime.h
+    editorsourcehover.h
     editorsyntaxstate.h
     editormodestate.h
     filecommandcoordinator.h
