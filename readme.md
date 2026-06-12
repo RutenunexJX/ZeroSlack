@@ -18,18 +18,18 @@ Thin UI consumers
 - Do not restore `.claude/` or Claude local config.
 - Do not restore SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
 - Keep source, tests, UI strings, CMake, and these docs English / ASCII.
-- Batch architecture work, verify once, then commit each coherent block separately.
+- Batch architecture work, verify once, then create one large local commit for the completed turn.
 - Do not push unless explicitly asked.
 - Keep commit messages concise and architecture-oriented.
 - Never discard user changes or use destructive git commands unless explicitly requested.
 
 ## Current Development Workflow
 
-Use batch progress with unified verification and split commits.
+Use batch progress with unified verification and one commit per completed turn.
 Prefer three or more medium-sized, clearly themed architecture blocks when their files and API boundaries do not overlap.
 After each block, run light sanity only: affected build or compile, focused tests, `git diff --check`, or static boundary scans.
 After two or three blocks, run full Ninja, full `ctest --output-on-failure`, hygiene scans, and the forbidden-file guard.
-When full verification passes, create one local commit per coherent block. Reduce batch size when blocks share core files or unsettled API boundaries.
+When full verification passes, create one local commit containing the verified work. Reduce batch size when blocks share core files or unsettled API boundaries.
 
 ## Current Architecture Snapshot
 

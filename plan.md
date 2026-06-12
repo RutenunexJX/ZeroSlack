@@ -53,7 +53,7 @@ For code/test changes:
 - after each block, run light sanity only: affected target build or compile, focused CTest, `git diff --check`, and relevant `rg` or static boundary scans
 - after two or three blocks, run full Ninja, full `ctest --output-on-failure`, changed/new source/doc ASCII and trailing-whitespace scans, and the forbidden-file guard
 - if a block touches risky lifecycle, snapshot publication, or unsettled API shape, run full verification before continuing the batch
-- after unified verification passes, commit each coherent block separately
+- after unified verification passes, create one large local commit for the completed turn
 
 For docs-only cleanup:
 
@@ -63,8 +63,8 @@ For docs-only cleanup:
 
 ## Commit Policy
 
-- Keep work organized so each block can be committed separately.
-- After batched full verification passes, create one local commit per coherent block, not one giant commit.
+- Keep work organized so each turn remains reviewable as a coherent architecture increment.
+- After batched full verification passes, create one large local commit for the completed turn.
 - Do not push unless explicitly asked.
 - Keep commit messages concise and architecture-oriented.
 - Docs-only cleanup gets one local docs commit after docs-only hygiene passes.

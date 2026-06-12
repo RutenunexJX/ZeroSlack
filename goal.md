@@ -53,7 +53,7 @@ Tree-sitter and Slang split:
 - New test code should prefer stable production-facing APIs; existing private-access test debt should shrink only when replacement APIs are real production boundaries.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
-- Verification may be batched across independent architecture blocks, but commits remain coherent by block.
+- Verification may be batched across independent architecture blocks, with one large coherent commit for the completed turn.
 
 ## Definition Of Done
 
@@ -68,5 +68,5 @@ The foundation is healthy when:
 - real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
 - verification may be batched across independent blocks, but product quality and fixture coverage do not shrink
 - batched work passes full Ninja, full `ctest --output-on-failure`, hygiene scans, and forbidden-file guard before block commits are created
-- local commits stay separated by coherent architecture block
+- local commits stay coherent and architecture-oriented
 - handoff docs are short enough for a new session to read without wasting context

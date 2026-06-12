@@ -108,6 +108,8 @@ set(ZEROSLACK_CORE_SOURCES
     syminfo.cpp
     tabfileio.cpp
     tabmanager.cpp
+    tabsavecontroller.cpp
+    tabtitlecontroller.cpp
     workspacemanager.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
@@ -180,6 +182,8 @@ set(ZEROSLACK_CORE_SOURCES
     syminfo.h
     tabfileio.h
     tabmanager.h
+    tabsavecontroller.h
+    tabtitlecontroller.h
     workspacemanager.h
 
     # --- UI files ---

@@ -7,6 +7,8 @@
 #include "documentmodel.h"
 #include "mycodeeditor.h"
 #include "tabfileio.h"
+#include "tabsavecontroller.h"
+#include "tabtitlecontroller.h"
 
 class TabManager : public QObject
 {
@@ -55,11 +57,11 @@ private:
     QTabWidget* tabWidget;
     std::unique_ptr<DocumentModel> documentModel;
     TabFileIo fileIo;
+    TabSaveController saveController;
+    TabTitleController titleController;
 
     // Helper methods
     std::unique_ptr<MyCodeEditor> createEditor();
-    bool saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs);
-    bool confirmCloseUnsaved(MyCodeEditor* editor);
 };
 
 #endif // TABMANAGER_H

@@ -1,9 +1,19 @@
 #include "tabmanager.h"
 #include "documentmodel.h"
-#include <QMessageBox>
 
 TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
-    : QObject(parent), tabWidget(tabWidget), documentModel(std::make_unique<DocumentModel>(this))
+    : QObject(parent)
+    , tabWidget(tabWidget)
+    , documentModel(std::make_unique<DocumentModel>(this))
+    , saveController(
+          documentModel.get(),
+          &fileIo,
+          qobject_cast<QWidget*>(parent))
+    , titleController(
+          tabWidget,
+          documentModel.get(),
+          &fileIo,
+          qobject_cast<QWidget*>(parent))
 {
     if (!tabWidget) {
         return;
@@ -57,10 +67,10 @@ bool TabManager::saveCurrentTab()
     MyCodeEditor *codeEditor = getCurrentEditor();
     if (!codeEditor) return false;
 
-    if (saveEditorToFile(codeEditor, false)) {
-        documentModel->markSaved(codeEditor);
+    QString savedFileName;
+    if (saveController.saveEditor(codeEditor, false, &savedFileName)) {
         updateTabTitle(codeEditor);
-        emit fileSaved(getDocumentForEditor(codeEditor).fileName);
+        emit fileSaved(savedFileName);
         return true;
     }
     return false;
@@ -71,10 +81,10 @@ bool TabManager::saveAsCurrentTab()
     MyCodeEditor *codeEditor = getCurrentEditor();
     if (!codeEditor) return false;
 
-    if (saveEditorToFile(codeEditor, true)) {
-        documentModel->markSaved(codeEditor);
+    QString savedFileName;
+    if (saveController.saveEditor(codeEditor, true, &savedFileName)) {
         updateTabTitle(codeEditor);
-        emit fileSaved(getDocumentForEditor(codeEditor).fileName);
+        emit fileSaved(savedFileName);
         return true;
     }
     return false;
@@ -88,8 +98,13 @@ void TabManager::closeTab(int index)
     if (!codeEditor) return;
 
     QString fileName = getDocumentForEditor(codeEditor).fileName;
-    if (!confirmCloseUnsaved(codeEditor)) {
+    QString savedFileName;
+    if (!saveController.confirmCloseUnsaved(codeEditor, &savedFileName)) {
         return; // User cancelled or save failed
+    }
+    if (!savedFileName.isEmpty()) {
+        updateTabTitle(codeEditor);
+        emit fileSaved(savedFileName);
     }
 
     documentModel->unregisterEditor(codeEditor);
@@ -190,20 +205,7 @@ DocumentModel* TabManager::getDocumentModel() const
 
 void TabManager::updateTabTitle(MyCodeEditor* editor)
 {
-    if (!editor) return;
-    for (int i = 0; i < tabWidget->count(); ++i) {
-        if (tabWidget->widget(i) == editor) {
-            QString fileName = getDocumentForEditor(editor).fileName;
-            QString displayName = fileIo.displayName(fileName);
-            tabWidget->setTabText(i, displayName);
-            if (tabWidget->currentIndex() == i) {
-                QWidget* parentWidget = qobject_cast<QWidget*>(parent());
-                if (parentWidget)
-                    parentWidget->setWindowTitle(fileName.isEmpty() ? "untitled" : fileName);
-            }
-            break;
-        }
-    }
+    titleController.updateTitle(editor);
 }
 
 bool TabManager::hasUnsavedChanges() const
@@ -237,51 +239,4 @@ void TabManager::onCurrentTabChanged(int index)
 std::unique_ptr<MyCodeEditor> TabManager::createEditor()
 {
     return std::unique_ptr<MyCodeEditor>(new MyCodeEditor(tabWidget));
-}
-
-bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
-{
-    if (!editor || !documentModel)
-        return false;
-
-    const DocumentSnapshot snapshot = getDocumentForEditor(editor);
-    const QString documentText = documentModel->documentTextForEditor(editor);
-    const QString fileName = fileIo.resolveSaveFileName(
-        qobject_cast<QWidget*>(parent()),
-        snapshot.fileName,
-        forceSaveAs);
-    if (fileName.isEmpty())
-        return false;
-    if (!fileIo.writeTextFile(qobject_cast<QWidget*>(parent()), fileName, documentText))
-        return false;
-
-    documentModel->setDocumentFileName(editor, fileName);
-    return true;
-}
-
-bool TabManager::confirmCloseUnsaved(MyCodeEditor* editor)
-{
-    const DocumentSnapshot snapshot = getDocumentForEditor(editor);
-    if (!editor || (!snapshot.dirty && snapshot.saved)) {
-        return true; // No unsaved changes
-    }
-
-    auto result = QMessageBox::question(
-        qobject_cast<QWidget*>(parent()),
-        "Unsaved Changes",
-        "Save changes before closing?",
-        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
-
-    if (result == QMessageBox::Yes) {
-        if (!saveEditorToFile(editor, false))
-            return false;
-        documentModel->markSaved(editor);
-        updateTabTitle(editor);
-        emit fileSaved(getDocumentForEditor(editor).fileName);
-        return true;
-    } else if (result == QMessageBox::No) {
-        return true; // Don't save, but allow close
-    }
-
-    return false; // Cancel - don't close
 }
