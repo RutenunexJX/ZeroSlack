@@ -12,19 +12,14 @@ class NavigationCommandCoordinator;
 class QModelIndex;
 class QMenu;
 class QMouseEvent;
-class QPaintEvent;
 class QPoint;
 class QRect;
 class QContextMenuEvent;
 class QKeyEvent;
 class QResizeEvent;
 class ScopeBandWidget;
-class QTextBlock;
 class QTextCursor;
-class QWheelEvent;
 class EditorSemanticContextService;
-struct CompletionActivationState;
-struct EditorAlternateModeKeyState;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -68,8 +63,6 @@ private:
 
     int getLineNumberWidgetWidth();
 
-    void hideAutoComplete();
-
     void setFileName(QString fileName);
     QString getFileName() const;
     QString currentModuleName() const;
@@ -88,19 +81,9 @@ private:
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
-    void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
-    bool refreshCommandModeCompletion(const EditorSemanticContext& context);
-    void refreshSymbolCompletion(EditorSemanticContext context,
-                                 const QTextBlock& currentBlock);
-    bool handleSourceSymbolShortcut(QKeyEvent *event);
-    bool handleAlternateModeKey(QKeyEvent *event);
-    void applyAlternateModeKeyState(const EditorAlternateModeKeyState& state);
-    void applyCompletionActivationState(
-        const CompletionActivationState& activationState);
     std::unique_ptr<MyCodeEditorState> state;
 
     void executeAlternateModeCommand(const QString &command);
-    bool handleCompletionPopupKey(QKeyEvent *event);
 
     EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
         const QPoint& position);
