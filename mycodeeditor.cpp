@@ -1667,7 +1667,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     QPlainTextEdit::keyPressEvent(event);
 }
 
-void MyCodeEditor::executeAlternateModeCommand(const QString &command)
+void MyCodeEditor::executeAlternateModeCommand(const QString& command)
 {
     state->executeAlternateModeCommand(this, command);
 }

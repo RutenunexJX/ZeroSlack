@@ -313,8 +313,7 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
     if (!fileName.isEmpty())
         editor->setDocumentFileName(fileName);
 
-    TrackedDocument tracked;
-    tracked = makeTrackedDocument(editor);
+    TrackedDocument tracked = snapshotReader.capture(editor);
     registry.add(editor, tracked);
 
     connectEditorSignals(editor);
@@ -395,7 +394,7 @@ void DocumentModel::markSaved(MyCodeEditor* editor)
     }
 
     const DocumentSnapshot previous = registry.value(editor).snapshot;
-    TrackedDocument tracked = makeTrackedDocument(editor, &previous);
+    TrackedDocument tracked = snapshotReader.capture(editor, &previous);
     registry.markSaved(editor, &tracked);
     emit documentSaved(tracked.snapshot);
 }
@@ -420,13 +419,13 @@ DocumentSnapshot DocumentModel::documentForEditor(MyCodeEditor* editor) const
 
 DocumentSnapshot DocumentModel::documentForFile(const QString& fileName) const
 {
-    const QString normalized = normalizedFileName(fileName);
+    const QString normalized = snapshotReader.normalizedFileName(fileName);
     return registry.snapshotForFile(normalized);
 }
 
 MyCodeEditor* DocumentModel::editorForFile(const QString& fileName) const
 {
-    return registry.editorForFile(normalizedFileName(fileName));
+    return registry.editorForFile(snapshotReader.normalizedFileName(fileName));
 }
 
 QString DocumentModel::documentText(const QString& documentId) const
@@ -447,18 +446,6 @@ QString DocumentModel::documentTextForEditor(MyCodeEditor* editor) const
     return registry.textForEditor(editor);
 }
 
-QString DocumentModel::normalizedFileName(const QString& fileName) const
-{
-    return snapshotReader.normalizedFileName(fileName);
-}
-
-DocumentModel::TrackedDocument DocumentModel::makeTrackedDocument(
-    MyCodeEditor* editor,
-    const DocumentSnapshot* previous) const
-{
-    return snapshotReader.capture(editor, previous);
-}
-
 DocumentSnapshot DocumentModel::refreshTrackedDocument(MyCodeEditor* editor)
 {
     if (!editor || !registry.contains(editor))
@@ -466,6 +453,6 @@ DocumentSnapshot DocumentModel::refreshTrackedDocument(MyCodeEditor* editor)
 
     TrackedDocument tracked = registry.value(editor);
     const DocumentSnapshot previous = tracked.snapshot;
-    tracked = makeTrackedDocument(editor, &previous);
+    tracked = snapshotReader.capture(editor, &previous);
     return registry.replace(editor, tracked, previous);
 }

@@ -38,6 +38,7 @@ public:
     void setDocumentFileName(QString fileName);
     QString documentFileName() const;
     QString currentModuleName() const;
+    void executeAlternateModeCommand(const QString& command);
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
@@ -56,8 +57,6 @@ private:
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;
-
-    void executeAlternateModeCommand(const QString &command);
 
 signals:
     void fileNameChanged(const QString& fileName);

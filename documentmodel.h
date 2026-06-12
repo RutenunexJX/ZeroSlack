@@ -125,9 +125,6 @@ private:
     DocumentRegistry registry;
     DocumentSnapshotReader snapshotReader;
 
-    QString normalizedFileName(const QString& fileName) const;
-    TrackedDocument makeTrackedDocument(MyCodeEditor* editor,
-                                        const DocumentSnapshot* previous = nullptr) const;
     void connectEditorSignals(MyCodeEditor* editor);
     void handleEditorTextChanged(MyCodeEditor* editor);
     void handleEditorCursorChanged(MyCodeEditor* editor);
