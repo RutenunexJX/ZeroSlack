@@ -629,7 +629,7 @@ struct MyCodeEditorState
                 &QTimer::timeout,
                 editor,
                 [state, editor]() {
-                    state->selections.highlightCurrentLine(editor);
+                    state->refreshScopeAndCurrentLineHighlight(editor);
                 });
 
             auto scheduleHighlightRefresh = [this]() { schedule(); };
@@ -1489,6 +1489,68 @@ struct MyCodeEditorState
         handleLeave(editor);
     }
 
+    void paintGutter(MyCodeEditor* editor, QPaintEvent *event) const
+    {
+        gutter.paint(editor, event);
+    }
+
+    void handleGutterMousePress(MyCodeEditor* editor, QMouseEvent *event) const
+    {
+        gutter.handleMousePress(editor, event);
+    }
+
+    void handleGutterWheel(MyCodeEditor* editor, QWheelEvent *event) const
+    {
+        gutter.handleWheel(editor, event);
+    }
+
+    void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor)
+    {
+        selections.highlightCurrentLine(editor);
+    }
+
+    void setAlternateModeEnabled(bool enabled)
+    {
+        modes.setAlternateModeEnabled(enabled);
+    }
+
+    void setSemanticContextService(EditorSemanticContextService* service)
+    {
+        semantic.setService(service);
+    }
+
+    EditorBlockGeometry blockGeometry(
+        const MyCodeEditor* editor,
+        int blockNumber) const
+    {
+        return geometry.blockGeometry(editor, blockNumber);
+    }
+
+    qreal documentHeightPx(const MyCodeEditor* editor) const
+    {
+        return geometry.documentHeightPx(editor);
+    }
+
+    void setDocumentFileName(MyCodeEditor* editor, QString fileName)
+    {
+        if (!identity.set(fileName))
+            return;
+
+        emit editor->fileNameChanged(identity.fileName);
+    }
+
+    QString documentFileName() const
+    {
+        return identity.fileName;
+    }
+
+    void applyLineNavigationTarget(
+        MyCodeEditor* editor,
+        const SourceLineNavigationTarget& target) const
+    {
+        cursorNavigation.applyLineTarget(editor, target);
+    }
+
 };
 
 LineNumberWidget::LineNumberWidget(
@@ -1505,7 +1567,7 @@ void LineNumberWidget::paintEvent(QPaintEvent *event)
     if (!codeEditor || !state)
         return;
 
-    state->gutter.paint(codeEditor, event);
+    state->paintGutter(codeEditor, event);
 }
 
 void LineNumberWidget::mousePressEvent(QMouseEvent *event)
@@ -1513,7 +1575,7 @@ void LineNumberWidget::mousePressEvent(QMouseEvent *event)
     if (!codeEditor || !state)
         return;
 
-    state->gutter.handleMousePress(codeEditor, event);
+    state->handleGutterMousePress(codeEditor, event);
 }
 
 void LineNumberWidget::wheelEvent(QWheelEvent *event)
@@ -1521,7 +1583,7 @@ void LineNumberWidget::wheelEvent(QWheelEvent *event)
     if (!codeEditor || !state)
         return;
 
-    state->gutter.handleWheel(codeEditor, event);
+    state->handleGutterWheel(codeEditor, event);
 }
 
 MyCodeEditor::MyCodeEditor(QWidget *parent)
@@ -1538,27 +1600,27 @@ MyCodeEditor::~MyCodeEditor()
 
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 {
-    state->selections.highlightCurrentLine(this);
+    state->refreshScopeAndCurrentLineHighlight(this);
 }
 
 void MyCodeEditor::setAlternateModeEnabled(bool enabled)
 {
-    state->modes.setAlternateModeEnabled(enabled);
+    state->setAlternateModeEnabled(enabled);
 }
 
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)
 {
-    state->semantic.setService(service);
+    state->setSemanticContextService(service);
 }
 
 EditorBlockGeometry MyCodeEditor::blockGeometry(int blockNumber) const
 {
-    return state->geometry.blockGeometry(this, blockNumber);
+    return state->blockGeometry(this, blockNumber);
 }
 
 qreal MyCodeEditor::documentHeightPx() const
 {
-    return state->geometry.documentHeightPx(this);
+    return state->documentHeightPx(this);
 }
 
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
@@ -1584,15 +1646,12 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
 
 void MyCodeEditor::setDocumentFileName(QString fileName)
 {
-    if (!state->identity.set(fileName))
-        return;
-
-    emit fileNameChanged(state->identity.fileName);
+    state->setDocumentFileName(this, fileName);
 }
 
 QString MyCodeEditor::documentFileName() const
 {
-    return state->identity.fileName;
+    return state->documentFileName();
 }
 
 QString MyCodeEditor::currentModuleName() const
@@ -1646,5 +1705,5 @@ void MyCodeEditor::leaveEvent(QEvent *event)
 void MyCodeEditor::applyLineNavigationTarget(
     const SourceLineNavigationTarget& target)
 {
-    state->cursorNavigation.applyLineTarget(this, target);
+    state->applyLineNavigationTarget(this, target);
 }
