@@ -15,10 +15,13 @@ DocumentModel::DocumentModel(QObject* parent)
 
 DocumentModel::~DocumentModel() = default;
 
-void DocumentModel::registerEditor(MyCodeEditor* editor)
+void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName)
 {
     if (!editor || documentsByEditor.contains(editor))
         return;
+
+    if (!fileName.isEmpty())
+        editor->setFileName(fileName);
 
     TrackedDocument tracked;
     tracked = makeTrackedDocument(editor);
@@ -60,6 +63,20 @@ void DocumentModel::unregisterEditor(MyCodeEditor* editor)
     const TrackedDocument tracked = documentsByEditor.take(editor);
     removeIndexes(editor, tracked.snapshot);
     emit documentClosed(tracked.snapshot.documentId, tracked.snapshot.fileName);
+}
+
+void DocumentModel::setDocumentFileName(MyCodeEditor* editor, const QString& fileName)
+{
+    if (!editor)
+        return;
+
+    if (!documentsByEditor.contains(editor)) {
+        registerEditor(editor, fileName);
+        return;
+    }
+
+    editor->setFileName(fileName);
+    refreshTrackedDocument(editor);
 }
 
 void DocumentModel::markSaved(MyCodeEditor* editor)

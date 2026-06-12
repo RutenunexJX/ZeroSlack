@@ -29,8 +29,10 @@ public:
     explicit DocumentModel(QObject* parent = nullptr);
     ~DocumentModel() override;
 
-    void registerEditor(MyCodeEditor* editor);
+    void registerEditor(MyCodeEditor* editor,
+                        const QString& fileName = QString());
     void unregisterEditor(MyCodeEditor* editor);
+    void setDocumentFileName(MyCodeEditor* editor, const QString& fileName);
     void markSaved(MyCodeEditor* editor);
     void refreshEditorState(MyCodeEditor* editor);
 

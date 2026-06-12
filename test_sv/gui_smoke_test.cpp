@@ -816,9 +816,10 @@ int main(int argc, char** argv)
 
         const QString savedText =
             QStringLiteral("module saved_tab;\nendmodule\n");
-        saveEditor->setFileName(savePath);
-        saveEditor->setPlainText(savedText);
         DocumentModel* saveDocuments = window.tabManager->getDocumentModel();
+        if (saveDocuments)
+            saveDocuments->setDocumentFileName(saveEditor, savePath);
+        saveEditor->setPlainText(savedText);
         expectBool("document model caches save editor text",
                    saveDocuments
                        && saveDocuments->documentTextForEditor(saveEditor) == savedText,
@@ -930,10 +931,12 @@ int main(int argc, char** argv)
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
                 MyCodeEditor* openedIncludeEditor =
                     window.tabManager->getCurrentEditor();
+                const DocumentSnapshot openedIncludeDocument =
+                    window.tabManager->getDocumentForEditor(openedIncludeEditor);
                 expectBool("Ctrl+Click include opens target",
                            openedIncludeEditor
                                && QDir::cleanPath(QDir::fromNativeSeparators(
-                                      QFileInfo(openedIncludeEditor->getFileName())
+                                      QFileInfo(openedIncludeDocument.fileName)
                                           .absoluteFilePath()))
                                       == QDir::cleanPath(QDir::fromNativeSeparators(
                                              QFileInfo(includeTargetPath)
@@ -1338,7 +1341,10 @@ int main(int argc, char** argv)
             expectBool("navigation double-click jumps to module",
                        waitUntil([&]() {
                            MyCodeEditor* current = window.tabManager->getCurrentEditor();
-                           return current && current->getFileName() == normalizedSymbolFixturePath
+                           return current
+                                  && window.tabManager
+                                         ->getDocumentForEditor(current)
+                                         .fileName == normalizedSymbolFixturePath
                                   && current->textCursor().blockNumber() == 51;
                        }, 2000),
                        true);

@@ -57,9 +57,8 @@ bool TabManager::openFileInTab(const QString& fileName)
     std::unique_ptr<MyCodeEditor> codeEditor = createEditor();
     MyCodeEditor* editorPtr = codeEditor.get();
     editorPtr->setPlainText(text);
-    editorPtr->setFileName(fileToOpen);
     tabWidget->addTab(codeEditor.release(), getDisplayName(fileToOpen));
-    documentModel->registerEditor(editorPtr);
+    documentModel->registerEditor(editorPtr, fileToOpen);
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
     emit tabCreated(editorPtr);
     return true;
@@ -281,7 +280,7 @@ bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
     out << documentText;
     file.close();
 
-    editor->setFileName(fileName);
+    documentModel->setDocumentFileName(editor, fileName);
     return true;
 }
 
