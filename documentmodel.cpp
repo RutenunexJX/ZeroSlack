@@ -104,6 +104,34 @@ bool DocumentModel::DocumentStore::updateSnapshot(
     return true;
 }
 
+bool DocumentModel::DocumentStore::markEdited(
+    MyCodeEditor* editor,
+    const DocumentSnapshot& previous,
+    DocumentSnapshot* snapshot)
+{
+    if (!snapshot)
+        return false;
+
+    snapshot->textVersion = previous.textVersion + 1;
+    snapshot->dirty = true;
+    snapshot->saved = false;
+    return updateSnapshot(editor, *snapshot);
+}
+
+bool DocumentModel::DocumentStore::markSaved(
+    MyCodeEditor* editor,
+    TrackedDocument* tracked)
+{
+    if (!tracked)
+        return false;
+
+    tracked->snapshot.dirty = false;
+    tracked->snapshot.saved = true;
+    tracked->snapshot.savedTextVersion = tracked->snapshot.textVersion;
+    insert(editor, *tracked);
+    return true;
+}
+
 QList<DocumentSnapshot> DocumentModel::DocumentStore::snapshots() const
 {
     QList<DocumentSnapshot> result;
@@ -117,6 +145,61 @@ QString DocumentModel::DocumentStore::textForEditor(MyCodeEditor* editor) const
 {
     const TrackedDocument* tracked = find(editor);
     return tracked ? tracked->text : QString();
+}
+
+QString DocumentModel::DocumentSnapshotReader::normalizedFileName(
+    const QString& fileName) const
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+QString DocumentModel::DocumentSnapshotReader::documentIdForEditor(
+    MyCodeEditor* editor) const
+{
+    if (!editor)
+        return QString();
+
+    const QString fileName = normalizedFileName(editor->getFileName());
+    if (!fileName.isEmpty())
+        return fileName;
+
+    return QStringLiteral("untitled:%1")
+        .arg(QString::number(reinterpret_cast<quintptr>(editor), 16));
+}
+
+DocumentModel::TrackedDocument DocumentModel::DocumentSnapshotReader::capture(
+    MyCodeEditor* editor,
+    const DocumentSnapshot* previous) const
+{
+    TrackedDocument tracked;
+    tracked.editor = editor;
+    if (!editor)
+        return tracked;
+
+    if (previous)
+        tracked.snapshot = *previous;
+
+    tracked.snapshot.fileName = normalizedFileName(editor->getFileName());
+    tracked.snapshot.documentId = tracked.snapshot.fileName.isEmpty()
+        ? tracked.snapshot.documentId
+        : tracked.snapshot.fileName;
+
+    const QTextCursor cursor = editor->textCursor();
+    const QTextBlock block = cursor.block();
+    tracked.snapshot.cursorPosition = cursor.position();
+    tracked.snapshot.cursorLine = block.isValid() ? block.blockNumber() + 1 : 1;
+    tracked.snapshot.cursorColumn = block.isValid()
+        ? cursor.position() - block.position() + 1
+        : 1;
+    tracked.snapshot.currentModuleName = editor->currentModuleName();
+
+    if (tracked.snapshot.documentId.isEmpty())
+        tracked.snapshot.documentId = documentIdForEditor(editor);
+    tracked.text = editor->toPlainText();
+    return tracked;
 }
 
 void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName)
@@ -142,10 +225,7 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
 
         const DocumentSnapshot previous = tracked->snapshot;
         DocumentSnapshot snapshot = refreshTrackedDocument(editor);
-        snapshot.textVersion = previous.textVersion + 1;
-        snapshot.dirty = true;
-        snapshot.saved = false;
-        documents.updateSnapshot(editor, snapshot);
+        documents.markEdited(editor, previous, &snapshot);
         emit documentEdited(snapshot);
     });
     connect(editor, &QPlainTextEdit::cursorPositionChanged, this, [this, editor]() {
@@ -195,10 +275,7 @@ void DocumentModel::markSaved(MyCodeEditor* editor)
 
     const DocumentSnapshot previous = documents.value(editor).snapshot;
     TrackedDocument tracked = makeTrackedDocument(editor, &previous);
-    tracked.snapshot.dirty = false;
-    tracked.snapshot.saved = true;
-    tracked.snapshot.savedTextVersion = tracked.snapshot.textVersion;
-    documents.insert(editor, tracked);
+    documents.markSaved(editor, &tracked);
     emit documentSaved(tracked.snapshot);
 }
 
@@ -253,55 +330,16 @@ QString DocumentModel::documentTextForEditor(MyCodeEditor* editor) const
     return documents.textForEditor(editor);
 }
 
-QString DocumentModel::documentIdForEditor(MyCodeEditor* editor) const
-{
-    if (!editor)
-        return QString();
-
-    const QString fileName = normalizedFileName(editor->getFileName());
-    if (!fileName.isEmpty())
-        return fileName;
-
-    return QStringLiteral("untitled:%1")
-        .arg(QString::number(reinterpret_cast<quintptr>(editor), 16));
-}
-
 QString DocumentModel::normalizedFileName(const QString& fileName) const
 {
-    if (fileName.isEmpty())
-        return QString();
-    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    return snapshotReader.normalizedFileName(fileName);
 }
 
 DocumentModel::TrackedDocument DocumentModel::makeTrackedDocument(
     MyCodeEditor* editor,
     const DocumentSnapshot* previous) const
 {
-    TrackedDocument tracked;
-    tracked.editor = editor;
-    if (!editor)
-        return tracked;
-
-    if (previous)
-        tracked.snapshot = *previous;
-
-    tracked.snapshot.fileName = normalizedFileName(editor->getFileName());
-    tracked.snapshot.documentId = tracked.snapshot.fileName.isEmpty()
-        ? tracked.snapshot.documentId
-        : tracked.snapshot.fileName;
-    const QTextCursor cursor = editor->textCursor();
-    const QTextBlock block = cursor.block();
-    tracked.snapshot.cursorPosition = cursor.position();
-    tracked.snapshot.cursorLine = block.isValid() ? block.blockNumber() + 1 : 1;
-    tracked.snapshot.cursorColumn = block.isValid()
-        ? cursor.position() - block.position() + 1
-        : 1;
-    tracked.snapshot.currentModuleName = editor->currentModuleName();
-
-    if (tracked.snapshot.documentId.isEmpty())
-        tracked.snapshot.documentId = documentIdForEditor(editor);
-    tracked.text = editor->toPlainText();
-    return tracked;
+    return snapshotReader.capture(editor, previous);
 }
 
 DocumentSnapshot DocumentModel::refreshTrackedDocument(MyCodeEditor* editor)

@@ -79,14 +79,27 @@ private:
         const TrackedDocument* find(MyCodeEditor* editor) const;
         bool updateSnapshot(MyCodeEditor* editor,
                             const DocumentSnapshot& snapshot);
+        bool markEdited(MyCodeEditor* editor,
+                        const DocumentSnapshot& previous,
+                        DocumentSnapshot* snapshot);
+        bool markSaved(MyCodeEditor* editor,
+                       TrackedDocument* tracked);
         QList<DocumentSnapshot> snapshots() const;
         QString textForEditor(MyCodeEditor* editor) const;
     };
 
+    struct DocumentSnapshotReader {
+        QString normalizedFileName(const QString& fileName) const;
+        QString documentIdForEditor(MyCodeEditor* editor) const;
+        TrackedDocument capture(
+            MyCodeEditor* editor,
+            const DocumentSnapshot* previous = nullptr) const;
+    };
+
     DocumentStore documents;
     DocumentIndexes indexes;
+    DocumentSnapshotReader snapshotReader;
 
-    QString documentIdForEditor(MyCodeEditor* editor) const;
     QString normalizedFileName(const QString& fileName) const;
     TrackedDocument makeTrackedDocument(MyCodeEditor* editor,
                                         const DocumentSnapshot* previous = nullptr) const;
