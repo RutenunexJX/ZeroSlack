@@ -6,8 +6,8 @@
 #include "editorgeometry.h"
 #include "editorgutter.h"
 #include "editorselection.h"
+#include "editorsourcenavigation.h"
 #include "editorsemanticruntime.h"
-#include "editorsourcehover.h"
 #include "editorsyntaxstate.h"
 #include "editorsemanticcontextservice.h"
 #include "editormodestate.h"
@@ -18,7 +18,6 @@
 #include <QScrollBar>
 
 #include <QKeyEvent>
-#include <QMenu>
 #include <QMouseEvent>
 #include <QTextCursor>
 #include <QTextBlock>
@@ -50,7 +49,7 @@ struct MyCodeEditorState
 
     EditorHighlightRefresh highlightRefresh;
 
-    EditorSourceHover sourceHover;
+    EditorSourceNavigationUi sourceNavigation;
 
     EditorSelection selections;
 
@@ -113,6 +112,17 @@ struct MyCodeEditorState
     EditorSemanticContextService* semanticService() const
     {
         return semantic.contextService();
+    }
+
+    EditorSourceContextProvider sourceContextProvider(
+        const MyCodeEditor* editor) const
+    {
+        return [this, editor](int cursorPosition, bool includeDocumentText) {
+            return semanticContextForPosition(
+                editor,
+                cursorPosition,
+                includeDocumentText);
+        };
     }
 
     QString currentModuleNameAt(int charPos) const
@@ -268,29 +278,6 @@ struct MyCodeEditorState
         const CompletionActivationState activationState =
             semanticService()->completionActivationState(activationContext);
         applyCompletionActivationState(editor, activationState);
-    }
-
-    bool handleSourceSymbolShortcut(MyCodeEditor* editor, QKeyEvent *event)
-    {
-        EditorSourceSymbolShortcutContext sourceShortcutContext;
-        sourceShortcutContext.key = event->key();
-        sourceShortcutContext.modifiers = int(event->modifiers());
-        sourceShortcutContext.semanticContext =
-            semanticContextForPosition(
-                editor,
-                editor->textCursor().position(),
-                false);
-        const EditorSourceSymbolShortcutState sourceShortcutState =
-            semanticService()->sourceSymbolShortcutState(sourceShortcutContext);
-        if (!sourceShortcutState.matched)
-            return false;
-
-        emit editor->sourceSymbolActionRequested(
-            sourceShortcutState.action,
-            sourceShortcutState.semanticContext);
-        if (sourceShortcutState.acceptEvent)
-            event->accept();
-        return true;
     }
 
     void applyAlternateModeKeyState(
@@ -482,93 +469,32 @@ struct MyCodeEditorState
         refreshSymbolCompletion(editor, context, currentBlock);
     }
 
-    EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
-        MyCodeEditor* editor,
-        const QPoint& position) const
-    {
-        QTextCursor cursor = editor->cursorForPosition(position);
-        QTextBlock block = cursor.block();
-        if (!block.isValid())
-            return {};
-
-        return semanticService()->editorSourceNavigationTarget(
-            semanticContextForPosition(editor, cursor.position(), false),
-            block.position());
-    }
-
-    bool requestSourceNavigationAtPosition(
-        MyCodeEditor* editor,
-        const QPoint& position) const
-    {
-        const EditorSourceNavigationTarget target =
-            sourceNavigationTargetAtPosition(editor, position);
-        emit editor->sourceNavigationRequested(
-            target,
-            semanticContextForPosition(editor, target.cursorPosition, false));
-        return target.matched && !target.text.isEmpty();
-    }
-
-    void refreshSourceNavigationHoverAt(
-        MyCodeEditor* editor,
-        const QPoint& position)
-    {
-        applySourceNavigationHover(
-            editor,
-            sourceNavigationTargetAtPosition(editor, position));
-    }
-
-    void applySourceNavigationHover(
-        MyCodeEditor* editor,
-        const EditorSourceNavigationTarget& target)
-    {
-        if (!target.matched) {
-            clearSourceNavigationHover(editor);
-            editor->viewport()->setCursor(sourceHover.nonJumpableCursor());
-            return;
-        }
-
-        if (!sourceHover.matches(target)) {
-            selections.clearHoveredSymbol(editor);
-            sourceHover.setTarget(target);
-            selections.highlightHoveredSymbol(editor, target);
-        }
-
-        editor->viewport()->setCursor(sourceHover.cursorForTarget(target));
-    }
-
-    void clearSourceNavigationHover(MyCodeEditor* editor)
-    {
-        editor->viewport()->setCursor(Qt::IBeamCursor);
-        selections.clearHoveredSymbol(editor);
-        sourceHover.clearTarget();
-    }
-
     void handleControlKeyPress(MyCodeEditor* editor, QKeyEvent *event)
     {
-        if (event->key() != Qt::Key_Control
-            || !sourceHover.setCtrlPressed(true)) {
-            return;
-        }
-
-        const QPoint mousePos = editor->mapFromGlobal(QCursor::pos());
-        if (editor->rect().contains(mousePos))
-            refreshSourceNavigationHoverAt(editor, mousePos);
+        sourceNavigation.handleControlKeyPress(
+            editor,
+            event,
+            semanticService(),
+            sourceContextProvider(editor),
+            selections);
     }
 
     void handleControlKeyRelease(MyCodeEditor* editor, QKeyEvent *event)
     {
-        if (event->key() == Qt::Key_Control
-            && sourceHover.setCtrlPressed(false)) {
-            clearSourceNavigationHover(editor);
-        }
+        sourceNavigation.handleControlKeyRelease(editor, event, selections);
     }
 
     bool handleKeyPress(MyCodeEditor* editor, QKeyEvent *event)
     {
         handleControlKeyPress(editor, event);
 
-        if (handleSourceSymbolShortcut(editor, event))
+        if (sourceNavigation.handleSourceSymbolShortcut(
+                editor,
+                event,
+                semanticService(),
+                sourceContextProvider(editor))) {
             return true;
+        }
 
         if (event->key() == Qt::Key_Shift) {
             event->ignore();
@@ -589,62 +515,6 @@ struct MyCodeEditorState
         return event->key() != Qt::Key_Shift && modes.alternateModeActive;
     }
 
-    bool handleSourceNavigationMousePress(
-        MyCodeEditor* editor,
-        QMouseEvent *event)
-    {
-        if (event->button() != Qt::LeftButton
-            || !(event->modifiers() & Qt::ControlModifier)) {
-            return false;
-        }
-
-        if (!requestSourceNavigationAtPosition(editor, event->pos()))
-            return false;
-
-        event->accept();
-        return true;
-    }
-
-    void handleSourceNavigationMouseMove(
-        MyCodeEditor* editor,
-        QMouseEvent *event)
-    {
-        const bool isCtrlPressed =
-            (event->modifiers() & Qt::ControlModifier);
-
-        if (sourceHover.setCtrlPressed(isCtrlPressed)) {
-            if (sourceHover.isCtrlPressed())
-                refreshSourceNavigationHoverAt(editor, event->pos());
-            else
-                clearSourceNavigationHover(editor);
-        } else if (sourceHover.isCtrlPressed()) {
-            refreshSourceNavigationHoverAt(editor, event->pos());
-        }
-    }
-
-    void handleLeave(MyCodeEditor* editor)
-    {
-        sourceHover.setCtrlPressed(false);
-        clearSourceNavigationHover(editor);
-    }
-
-    void handleSourceSymbolContextMenu(
-        MyCodeEditor* editor,
-        QContextMenuEvent *event)
-    {
-        std::unique_ptr<QMenu> menu(
-            editor->createStandardContextMenu(event->pos()));
-        const QTextCursor cursorAtPos = editor->cursorForPosition(event->pos());
-        emit editor->sourceSymbolContextMenuRequested(
-            menu.get(),
-            semanticContextForPosition(
-                editor,
-                cursorAtPos.position(),
-                false));
-
-        menu->exec(event->globalPos());
-    }
-
     void handleResize(MyCodeEditor* editor) const
     {
         gutter.resizeTo(editor, editor->contentsRect());
@@ -652,22 +522,34 @@ struct MyCodeEditorState
 
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent *event)
     {
-        handleSourceSymbolContextMenu(editor, event);
+        sourceNavigation.handleContextMenu(
+            editor,
+            event,
+            sourceContextProvider(editor));
     }
 
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent *event)
     {
-        return handleSourceNavigationMousePress(editor, event);
+        return sourceNavigation.handleMousePress(
+            editor,
+            event,
+            semanticService(),
+            sourceContextProvider(editor));
     }
 
     void handleMouseMove(MyCodeEditor* editor, QMouseEvent *event)
     {
-        handleSourceNavigationMouseMove(editor, event);
+        sourceNavigation.handleMouseMove(
+            editor,
+            event,
+            semanticService(),
+            sourceContextProvider(editor),
+            selections);
     }
 
     void handleLeaveEvent(MyCodeEditor* editor)
     {
-        handleLeave(editor);
+        sourceNavigation.handleLeave(editor, selections);
     }
 
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor)

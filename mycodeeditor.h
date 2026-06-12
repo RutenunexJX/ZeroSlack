@@ -13,6 +13,7 @@ class QResizeEvent;
 class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
+class EditorSourceNavigationUi;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -58,6 +59,7 @@ protected:
 private:
     friend class EditorDocumentGeometry;
     friend class EditorGutter;
+    friend class EditorSourceNavigationUi;
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;
