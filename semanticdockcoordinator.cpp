@@ -19,67 +19,116 @@ SemanticDockCoordinator::SemanticDockCoordinator(
     WorkspaceManager* workspaceManager,
     NavigationManager* navigationManager,
     NavigationCommandCoordinator* navigationCommandCoordinator)
-    : mainWindow(mainWindow)
-    , tabManager(tabManager)
-    , workspaceManager(workspaceManager)
-    , navigationManager(navigationManager)
-    , navigationCommandCoordinator(navigationCommandCoordinator)
 {
+    dependencies.set(mainWindow,
+                     tabManager,
+                     workspaceManager,
+                     navigationManager,
+                     navigationCommandCoordinator);
 }
 
 SemanticDockCoordinator::~SemanticDockCoordinator() = default;
+
+SemanticDockCoordinator::PanelBundle::~PanelBundle() = default;
+
+void SemanticDockCoordinator::DockDependencies::set(
+    QMainWindow* newMainWindow,
+    TabManager* newTabManager,
+    WorkspaceManager* newWorkspaceManager,
+    NavigationManager* newNavigationManager,
+    NavigationCommandCoordinator* newNavigationCommandCoordinator)
+{
+    mainWindow = newMainWindow;
+    tabManager = newTabManager;
+    workspaceManager = newWorkspaceManager;
+    navigationManager = newNavigationManager;
+    navigationCommandCoordinator = newNavigationCommandCoordinator;
+}
+
+bool SemanticDockCoordinator::DockDependencies::hasMainWindow() const
+{
+    return mainWindow != nullptr;
+}
+
+void SemanticDockCoordinator::DockDependencies::addBottomDock(
+    QDockWidget* dock) const
+{
+    if (mainWindow && dock)
+        mainWindow->addDockWidget(Qt::BottomDockWidgetArea, dock);
+}
+
+void SemanticDockCoordinator::PanelBundle::createPanels(
+    const DockDependencies& dependencies)
+{
+    problemsPanel =
+        std::make_unique<ProblemsPanelCoordinator>(dependencies.mainWindow);
+    referencesPanel =
+        std::make_unique<ReferencesPanelCoordinator>(dependencies.mainWindow);
+    relationshipsPanel =
+        std::make_unique<RelationshipsPanelCoordinator>(dependencies.mainWindow);
+
+    dependencies.addBottomDock(problemsPanel->dock());
+    dependencies.addBottomDock(referencesPanel->dock());
+    dependencies.addBottomDock(relationshipsPanel->dock());
+}
+
+void SemanticDockCoordinator::PanelBundle::createRefreshCoordinator(
+    const DockDependencies& dependencies,
+    const std::function<void(const QString&, int)>& statusMessageHandler)
+{
+    semanticPanelRefresh = std::make_unique<SemanticPanelRefreshCoordinator>(
+        dependencies.tabManager,
+        dependencies.workspaceManager,
+        dependencies.navigationManager,
+        dependencies.navigationCommandCoordinator,
+        problemsPanel.get(),
+        referencesPanel.get(),
+        relationshipsPanel.get());
+    setStatusMessageHandler(statusMessageHandler);
+    semanticPanelRefresh->configurePanels();
+}
+
+void SemanticDockCoordinator::PanelBundle::setStatusMessageHandler(
+    const std::function<void(const QString&, int)>& statusMessageHandler)
+{
+    if (semanticPanelRefresh)
+        semanticPanelRefresh->setStatusMessageHandler(statusMessageHandler);
+}
 
 void SemanticDockCoordinator::setStatusMessageHandler(
     std::function<void(const QString&, int)> handler)
 {
     statusMessageHandler = std::move(handler);
-    if (semanticPanelRefresh)
-        semanticPanelRefresh->setStatusMessageHandler(statusMessageHandler);
+    panels.setStatusMessageHandler(statusMessageHandler);
 }
 
 void SemanticDockCoordinator::setup()
 {
-    if (configured || !mainWindow)
+    if (configured || !dependencies.hasMainWindow())
         return;
 
-    problemsPanel = std::make_unique<ProblemsPanelCoordinator>(mainWindow);
-    referencesPanel = std::make_unique<ReferencesPanelCoordinator>(mainWindow);
-    relationshipsPanel = std::make_unique<RelationshipsPanelCoordinator>(mainWindow);
-
-    mainWindow->addDockWidget(Qt::BottomDockWidgetArea, problemsPanel->dock());
-    mainWindow->addDockWidget(Qt::BottomDockWidgetArea, referencesPanel->dock());
-    mainWindow->addDockWidget(Qt::BottomDockWidgetArea, relationshipsPanel->dock());
-
-    semanticPanelRefresh = std::make_unique<SemanticPanelRefreshCoordinator>(
-        tabManager,
-        workspaceManager,
-        navigationManager,
-        navigationCommandCoordinator,
-        problemsPanel.get(),
-        referencesPanel.get(),
-        relationshipsPanel.get());
-    semanticPanelRefresh->setStatusMessageHandler(statusMessageHandler);
-    semanticPanelRefresh->configurePanels();
+    panels.createPanels(dependencies);
+    panels.createRefreshCoordinator(dependencies, statusMessageHandler);
 
     configured = true;
 }
 
 SemanticPanelRefreshCoordinator* SemanticDockCoordinator::refreshCoordinator() const
 {
-    return semanticPanelRefresh.get();
+    return panels.semanticPanelRefresh.get();
 }
 
 ProblemsPanelCoordinator* SemanticDockCoordinator::problemsPanelCoordinator() const
 {
-    return problemsPanel.get();
+    return panels.problemsPanel.get();
 }
 
 ReferencesPanelCoordinator* SemanticDockCoordinator::referencesPanelCoordinator() const
 {
-    return referencesPanel.get();
+    return panels.referencesPanel.get();
 }
 
 RelationshipsPanelCoordinator* SemanticDockCoordinator::relationshipsPanelCoordinator() const
 {
-    return relationshipsPanel.get();
+    return panels.relationshipsPanel.get();
 }
