@@ -217,8 +217,20 @@ struct MyCodeEditorState
 
     EditorSemanticContextService* semanticContextService = nullptr;
 
-    // Coalesce current-line selection refresh after cursor/text changes.
-    QTimer *scopeRefreshTimer = nullptr;
+    struct HighlightRefresh {
+        QTimer *timer = nullptr;
+
+        void init(MyCodeEditor* editor)
+        {
+            timer = new QTimer(editor);
+            timer->setSingleShot(true);
+        }
+
+        void schedule() const
+        {
+            timer->start(0);
+        }
+    } highlightRefresh;
 
     struct ModeState {
         bool commandModeActive = false;
@@ -385,17 +397,19 @@ MyCodeEditor::~MyCodeEditor()
 
 void MyCodeEditor::initConnection()
 {
-    state->scopeRefreshTimer = new QTimer(this);
-    state->scopeRefreshTimer->setSingleShot(true);
-    connect(state->scopeRefreshTimer, &QTimer::timeout, this, &MyCodeEditor::highlightCurrentLine);
+    state->highlightRefresh.init(this);
+    connect(state->highlightRefresh.timer, &QTimer::timeout,
+            this, &MyCodeEditor::highlightCurrentLine);
 
     // Coalesce cursor/text changes into one selection refresh per event loop.
-    auto scheduleHighlightRefresh = [this]() { state->scopeRefreshTimer->start(0); };
+    auto scheduleHighlightRefresh = [this]() { state->highlightRefresh.schedule(); };
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, scheduleHighlightRefresh);
     connect(this, &QPlainTextEdit::textChanged, this, scheduleHighlightRefresh);
 
-    connect(this, SIGNAL(blockCountChanged(int)), this, SLOT(updateLineNumberWidgetWidth()));
-    connect(this, SIGNAL(updateRequest(QRect,int)), this, SLOT(updateLineNumberWidget(QRect,int)));
+    connect(this, &QPlainTextEdit::blockCountChanged,
+            this, &MyCodeEditor::updateLineNumberWidgetWidth);
+    connect(this, &QPlainTextEdit::updateRequest,
+            this, &MyCodeEditor::updateLineNumberWidget);
 }
 
 void MyCodeEditor::initFont()

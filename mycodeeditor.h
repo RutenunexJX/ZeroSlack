@@ -42,7 +42,7 @@ public:
     explicit MyCodeEditor(QWidget *parent = nullptr);
     ~MyCodeEditor();
 
-private slots:
+private:
     void highlightCurrentLine();
     void updateLineNumberWidget(QRect rect, int dy);
     void updateLineNumberWidgetWidth();
