@@ -55,16 +55,23 @@ signals:
     void projectClosed();
 
 private:
+    struct ProjectPathRules {
+        QString normalizePath(const QString& path) const;
+        QStringList normalizePathList(const QStringList& paths) const;
+        QStringList uniqueSorted(QStringList values) const;
+        QStringList defaultIncludeDirsForFiles(
+            const QString& workspaceRoot,
+            const QStringList& files) const;
+        bool isIgnored(const QString& filePath,
+                       const QStringList& ignoredPaths) const;
+        bool isSystemVerilogFile(const QString& filePath) const;
+    };
+
     ProjectSnapshot current;
     QStringList rawScannedFiles;
     bool includeDirsExplicit = false;
+    ProjectPathRules pathRules;
 
-    QString normalizePath(const QString& path) const;
-    QStringList normalizePathList(const QStringList& paths) const;
-    QStringList uniqueSorted(QStringList values) const;
-    QStringList defaultIncludeDirsForFiles(const QStringList& files) const;
-    bool isIgnored(const QString& filePath) const;
-    bool isSystemVerilogFile(const QString& filePath) const;
     void publishChanged();
 };
 

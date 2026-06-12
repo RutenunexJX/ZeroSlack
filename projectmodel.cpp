@@ -13,7 +13,7 @@ ProjectModel::~ProjectModel() = default;
 
 void ProjectModel::setWorkspaceRoot(const QString& rootPath)
 {
-    const QString normalized = normalizePath(rootPath);
+    const QString normalized = pathRules.normalizePath(rootPath);
     if (current.workspaceRoot == normalized)
         return;
 
@@ -37,33 +37,36 @@ void ProjectModel::closeProject()
 
 void ProjectModel::setScannedFiles(const QStringList& files)
 {
-    rawScannedFiles = uniqueSorted(normalizePathList(files));
+    rawScannedFiles = pathRules.uniqueSorted(pathRules.normalizePathList(files));
     QStringList acceptedFiles;
     acceptedFiles.reserve(rawScannedFiles.size());
     for (const QString& filePath : std::as_const(rawScannedFiles)) {
-        if (!isIgnored(filePath))
+        if (!pathRules.isIgnored(filePath, current.ignoredPaths))
             acceptedFiles.append(filePath);
     }
-    acceptedFiles = uniqueSorted(acceptedFiles);
+    acceptedFiles = pathRules.uniqueSorted(acceptedFiles);
 
     QStringList svFiles;
     svFiles.reserve(acceptedFiles.size());
     for (const QString& filePath : std::as_const(acceptedFiles)) {
-        if (isSystemVerilogFile(filePath))
+        if (pathRules.isSystemVerilogFile(filePath))
             svFiles.append(filePath);
     }
 
     current.allFiles = acceptedFiles;
     current.systemVerilogFiles = svFiles;
     if (!includeDirsExplicit)
-        current.includeDirs = defaultIncludeDirsForFiles(acceptedFiles);
+        current.includeDirs = pathRules.defaultIncludeDirsForFiles(
+            current.workspaceRoot,
+            acceptedFiles);
     publishChanged();
 }
 
 void ProjectModel::setIncludeDirs(const QStringList& dirs)
 {
     includeDirsExplicit = true;
-    current.includeDirs = uniqueSorted(normalizePathList(dirs));
+    current.includeDirs =
+        pathRules.uniqueSorted(pathRules.normalizePathList(dirs));
     publishChanged();
 }
 
@@ -75,7 +78,7 @@ void ProjectModel::setDefines(const QHash<QString, QString>& newDefines)
 
 void ProjectModel::setFilelistPath(const QString& path)
 {
-    current.filelistPath = normalizePath(path);
+    current.filelistPath = pathRules.normalizePath(path);
     publishChanged();
 }
 
@@ -87,7 +90,8 @@ void ProjectModel::setTopModule(const QString& moduleName)
 
 void ProjectModel::setIgnoredPaths(const QStringList& paths)
 {
-    current.ignoredPaths = uniqueSorted(normalizePathList(paths));
+    current.ignoredPaths =
+        pathRules.uniqueSorted(pathRules.normalizePathList(paths));
     setScannedFiles(rawScannedFiles);
 }
 
@@ -143,17 +147,18 @@ bool ProjectModel::isOpen() const
 
 bool ProjectModel::containsFile(const QString& filePath) const
 {
-    return current.allFiles.contains(normalizePath(filePath));
+    return current.allFiles.contains(pathRules.normalizePath(filePath));
 }
 
-QString ProjectModel::normalizePath(const QString& path) const
+QString ProjectModel::ProjectPathRules::normalizePath(const QString& path) const
 {
     if (path.isEmpty())
         return QString();
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
 }
 
-QStringList ProjectModel::normalizePathList(const QStringList& paths) const
+QStringList ProjectModel::ProjectPathRules::normalizePathList(
+    const QStringList& paths) const
 {
     QStringList normalized;
     normalized.reserve(paths.size());
@@ -165,18 +170,20 @@ QStringList ProjectModel::normalizePathList(const QStringList& paths) const
     return normalized;
 }
 
-QStringList ProjectModel::uniqueSorted(QStringList values) const
+QStringList ProjectModel::ProjectPathRules::uniqueSorted(QStringList values) const
 {
     values.removeDuplicates();
     values.sort(Qt::CaseInsensitive);
     return values;
 }
 
-QStringList ProjectModel::defaultIncludeDirsForFiles(const QStringList& files) const
+QStringList ProjectModel::ProjectPathRules::defaultIncludeDirsForFiles(
+    const QString& workspaceRoot,
+    const QStringList& files) const
 {
     QStringList dirs;
-    if (!current.workspaceRoot.isEmpty())
-        dirs.append(current.workspaceRoot);
+    if (!workspaceRoot.isEmpty())
+        dirs.append(workspaceRoot);
 
     for (const QString& filePath : files) {
         const QString suffix = QFileInfo(filePath).suffix().toLower();
@@ -186,17 +193,20 @@ QStringList ProjectModel::defaultIncludeDirsForFiles(const QStringList& files) c
     return uniqueSorted(dirs);
 }
 
-bool ProjectModel::isIgnored(const QString& filePath) const
+bool ProjectModel::ProjectPathRules::isIgnored(
+    const QString& filePath,
+    const QStringList& ignoredPaths) const
 {
     const QString normalized = normalizePath(filePath);
-    for (const QString& ignored : current.ignoredPaths) {
+    for (const QString& ignored : ignoredPaths) {
         if (normalized == ignored || normalized.startsWith(ignored + QLatin1Char('/')))
             return true;
     }
     return false;
 }
 
-bool ProjectModel::isSystemVerilogFile(const QString& filePath) const
+bool ProjectModel::ProjectPathRules::isSystemVerilogFile(
+    const QString& filePath) const
 {
     if (filePath.isEmpty())
         return false;
