@@ -121,16 +121,17 @@ void SemanticPanelRefreshCoordinator::refreshRelationshipsPanel()
 
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
+    const DocumentSnapshot document =
+        tabManager ? tabManager->getDocumentForEditor(editor) : DocumentSnapshot();
     if (editor && navigationManager)
-        navigationManager->onTabChanged(editor->getFileName());
+        navigationManager->onTabChanged(document.fileName);
     if (problemsPanelShowsCurrentFile())
         updateProblemsPanel();
 }
 
 QString SemanticPanelRefreshCoordinator::currentFileName() const
 {
-    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    return editor ? editor->getFileName() : QString();
+    return tabManager ? tabManager->getCurrentDocument().fileName : QString();
 }
 
 QStringList SemanticPanelRefreshCoordinator::workspaceFiles() const

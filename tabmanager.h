@@ -4,9 +4,8 @@
 #include <QObject>
 #include <QTabWidget>
 #include <memory>
+#include "documentmodel.h"
 #include "mycodeeditor.h"
-
-class DocumentModel;
 
 class TabManager : public QObject
 {
@@ -26,6 +25,8 @@ public:
     // Tab queries
     MyCodeEditor* getCurrentEditor() const;
     MyCodeEditor* getEditorAt(int index) const;
+    DocumentSnapshot getCurrentDocument() const;
+    DocumentSnapshot getDocumentForEditor(MyCodeEditor* editor) const;
     bool activateOpenFile(const QString& fileName);
     QString getPlainTextFromCurrentTab() const;
     QString getPlainTextFromOpenFile(const QString& fileName) const;

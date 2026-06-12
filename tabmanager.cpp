@@ -74,7 +74,7 @@ bool TabManager::saveCurrentTab()
     if (saveEditorToFile(codeEditor, false)) {
         documentModel->markSaved(codeEditor);
         updateTabTitle(codeEditor);
-        emit fileSaved(codeEditor->getFileName());
+        emit fileSaved(getDocumentForEditor(codeEditor).fileName);
         return true;
     }
     return false;
@@ -88,7 +88,7 @@ bool TabManager::saveAsCurrentTab()
     if (saveEditorToFile(codeEditor, true)) {
         documentModel->markSaved(codeEditor);
         updateTabTitle(codeEditor);
-        emit fileSaved(codeEditor->getFileName());
+        emit fileSaved(getDocumentForEditor(codeEditor).fileName);
         return true;
     }
     return false;
@@ -101,7 +101,7 @@ void TabManager::closeTab(int index)
     MyCodeEditor *codeEditor = getEditorAt(index);
     if (!codeEditor) return;
 
-    QString fileName = codeEditor->getFileName();
+    QString fileName = getDocumentForEditor(codeEditor).fileName;
     if (!confirmCloseUnsaved(codeEditor)) {
         return; // User cancelled or save failed
     }
@@ -122,6 +122,16 @@ MyCodeEditor* TabManager::getEditorAt(int index) const
     return qobject_cast<MyCodeEditor*>(tabWidget->widget(index));
 }
 
+DocumentSnapshot TabManager::getCurrentDocument() const
+{
+    return getDocumentForEditor(getCurrentEditor());
+}
+
+DocumentSnapshot TabManager::getDocumentForEditor(MyCodeEditor* editor) const
+{
+    return documentModel ? documentModel->documentForEditor(editor) : DocumentSnapshot();
+}
+
 bool TabManager::activateOpenFile(const QString& fileName)
 {
     if (!tabWidget || !documentModel)
@@ -138,8 +148,13 @@ bool TabManager::activateOpenFile(const QString& fileName)
 
 QString TabManager::getPlainTextFromCurrentTab() const
 {
-    MyCodeEditor *codeEditor = getCurrentEditor();
-    return codeEditor ? codeEditor->toPlainText() : QString();
+    if (!documentModel)
+        return QString();
+
+    const DocumentSnapshot snapshot = getCurrentDocument();
+    return snapshot.documentId.isEmpty()
+        ? QString()
+        : documentModel->documentText(snapshot.documentId);
 }
 
 QString TabManager::getPlainTextFromOpenFile(const QString& fileName) const
@@ -200,7 +215,7 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
     if (!editor) return;
     for (int i = 0; i < tabWidget->count(); ++i) {
         if (tabWidget->widget(i) == editor) {
-            QString fileName = editor->getFileName();
+            QString fileName = getDocumentForEditor(editor).fileName;
             QString displayName = fileName.isEmpty() ? "untitled" : getDisplayName(fileName);
             tabWidget->setTabText(i, displayName);
             if (tabWidget->currentIndex() == i) {
@@ -284,7 +299,8 @@ bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
 
 bool TabManager::confirmCloseUnsaved(MyCodeEditor* editor)
 {
-    if (!editor || editor->checkSaved()) {
+    const DocumentSnapshot snapshot = getDocumentForEditor(editor);
+    if (!editor || (!snapshot.dirty && snapshot.saved)) {
         return true; // No unsaved changes
     }
 
@@ -299,7 +315,7 @@ bool TabManager::confirmCloseUnsaved(MyCodeEditor* editor)
             return false;
         documentModel->markSaved(editor);
         updateTabTitle(editor);
-        emit fileSaved(editor->getFileName());
+        emit fileSaved(getDocumentForEditor(editor).fileName);
         return true;
     } else if (result == QMessageBox::No) {
         return true; // Don't save, but allow close

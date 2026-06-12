@@ -55,7 +55,9 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
         connect(connectedTabManager, &TabManager::activeTabChanged,
                 this, [this](MyCodeEditor* editor) {
                     if (editor) {
-                        currentFileName = editor->getFileName();
+                        const DocumentSnapshot document =
+                            connectedTabManager->getDocumentForEditor(editor);
+                        currentFileName = document.fileName;
                         onTabChanged(currentFileName);
                     }
                 });

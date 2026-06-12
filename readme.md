@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Open-document file identity now routes through `DocumentModel`.
-`DocumentModel` exposes normalized file-to-editor lookup, `TabManager` activates open files and reads open-file text through the model cache, and basename-only text lookups no longer fall back to ambiguous editor suffix matching.
+Active document state now routes through `DocumentModel` snapshots.
+`TabManager` exposes current/editor `DocumentSnapshot` queries and reads current-tab text from the model cache, while navigation, semantic panel refresh, tab titles, close/save notifications, and active-editor analysis refresh use snapshot file identity instead of direct editor file-name state.
 
 ## Current Architecture Snapshot
 

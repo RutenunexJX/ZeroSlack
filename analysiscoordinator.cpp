@@ -166,7 +166,9 @@ void AnalysisCoordinator::connectWorkspaceSignals()
 void AnalysisCoordinator::refreshActiveEditorForFile(const QString& fileName) const
 {
     MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    if (!editor || editor->getFileName() != fileName)
+    const DocumentSnapshot document =
+        tabManager ? tabManager->getCurrentDocument() : DocumentSnapshot();
+    if (!editor || document.fileName != fileName)
         return;
 
     editor->refreshScopeAndCurrentLineHighlight();

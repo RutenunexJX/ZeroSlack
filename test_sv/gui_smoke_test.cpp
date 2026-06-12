@@ -955,6 +955,10 @@ int main(int argc, char** argv)
         expectBool("document model tracks large file",
                    beforeEditDoc.fileName == QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(largeFile).absoluteFilePath())),
                    true);
+        expectBool("tab manager exposes active document snapshot",
+                   window.tabManager->getCurrentDocument().documentId
+                       == beforeEditDoc.documentId,
+                   true);
         expectBool("opened document starts saved", beforeEditDoc.saved, true);
         expectBool("document model caches opened text",
                    documents
@@ -963,6 +967,10 @@ int main(int argc, char** argv)
                    true);
         expectBool("tab manager reads model open-file text",
                    window.tabManager->getPlainTextFromOpenFile(largeFile)
+                       == largeEditor->toPlainText(),
+                   true);
+        expectBool("tab manager reads model current-tab text",
+                   window.tabManager->getPlainTextFromCurrentTab()
                        == largeEditor->toPlainText(),
                    true);
 
@@ -987,10 +995,19 @@ int main(int argc, char** argv)
         expectBool("document model increments version",
                    afterEditDoc.textVersion > beforeEditDoc.textVersion, true);
         expectBool("document model tracks cursor line", afterEditDoc.cursorLine > 0, true);
+        expectBool("tab manager active snapshot tracks edit",
+                   window.tabManager->getCurrentDocument().textVersion
+                       == afterEditDoc.textVersion
+                       && window.tabManager->getCurrentDocument().dirty,
+                   true);
         expectBool("document model updates cached text",
                    documents
                        && documents->documentTextForFile(largeFile)
                            == largeEditor->toPlainText(),
+                   true);
+        expectBool("tab manager current text follows model cache",
+                   window.tabManager->getPlainTextFromCurrentTab()
+                       == largeEditor->toPlainText(),
                    true);
         const EditorDocumentState editorState = largeEditor->documentState(true);
         expectBool("editor exposes document state",
