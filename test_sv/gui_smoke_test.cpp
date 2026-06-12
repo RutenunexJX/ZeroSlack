@@ -1024,12 +1024,15 @@ int main(int argc, char** argv)
                    window.tabManager->getPlainTextFromCurrentTab()
                        == largeEditor->toPlainText(),
                    true);
-        const EditorDocumentState editorState = largeEditor->documentState(true);
-        expectBool("editor exposes document state",
-                   editorState.fileName == afterEditDoc.fileName
-                       && editorState.text == largeEditor->toPlainText()
-                       && !editorState.saved
-                       && editorState.cursorLine == afterEditDoc.cursorLine,
+        expectBool("document model owns editor snapshot state",
+                   documents
+                       && afterEditDoc.fileName
+                           == QDir::cleanPath(QDir::fromNativeSeparators(
+                                  QFileInfo(largeFile).absoluteFilePath()))
+                       && documents->documentText(afterEditDoc.documentId)
+                              == largeEditor->toPlainText()
+                       && !afterEditDoc.saved
+                       && afterEditDoc.cursorLine > 0,
                    true);
         drainRelationshipWork(window);
     }

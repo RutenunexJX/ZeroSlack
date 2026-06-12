@@ -15,16 +15,6 @@ class LineNumberWidget;
 class MyHighlighter;
 class QMenu;
 
-struct EditorDocumentState {
-    QString fileName;
-    QString text;
-    bool saved = true;
-    int cursorPosition = 0;
-    int cursorLine = 1;
-    int cursorColumn = 1;
-    QString currentModuleName;
-};
-
 class MyCodeEditor : public QPlainTextEdit
 {
     Q_OBJECT
@@ -42,7 +32,6 @@ public:
     bool isDocumentSaved() const;
     void markDocumentSaved();
     void markDocumentDirty();
-    EditorDocumentState documentState(bool includeText = false) const;
     QString currentModuleName() const;
 
     void showAutoComplete();

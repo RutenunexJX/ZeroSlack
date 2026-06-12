@@ -332,25 +332,6 @@ void MyCodeEditor::markDocumentDirty()
     emit savedStateChanged(isSaved);
 }
 
-EditorDocumentState MyCodeEditor::documentState(bool includeText) const
-{
-    EditorDocumentState state;
-    state.fileName = getFileName();
-    if (includeText)
-        state.text = document()->toPlainText();
-    state.saved = isDocumentSaved();
-
-    const QTextCursor cursor = textCursor();
-    state.cursorPosition = cursor.position();
-    const QTextBlock block = cursor.block();
-    state.cursorLine = block.isValid() ? block.blockNumber() + 1 : 1;
-    state.cursorColumn = block.isValid()
-        ? cursor.position() - block.position() + 1
-        : 1;
-    state.currentModuleName = currentModuleNameAt(cursor.position());
-    return state;
-}
-
 QString MyCodeEditor::currentModuleName() const
 {
     return currentModuleNameAt(textCursor().position());

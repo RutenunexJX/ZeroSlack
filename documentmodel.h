@@ -7,7 +7,6 @@
 #include <QString>
 
 class MyCodeEditor;
-struct EditorDocumentState;
 
 struct DocumentSnapshot {
     QString documentId;
@@ -63,8 +62,6 @@ private:
 
     QString documentIdForEditor(MyCodeEditor* editor) const;
     QString normalizedFileName(const QString& fileName) const;
-    DocumentSnapshot makeSnapshot(const EditorDocumentState& state,
-                                  const DocumentSnapshot* previous = nullptr) const;
     TrackedDocument makeTrackedDocument(MyCodeEditor* editor,
                                         const DocumentSnapshot* previous = nullptr) const;
     DocumentSnapshot refreshTrackedDocument(MyCodeEditor* editor);

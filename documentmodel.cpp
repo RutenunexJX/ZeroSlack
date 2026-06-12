@@ -4,6 +4,8 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QTextBlock>
+#include <QTextCursor>
 
 DocumentModel::DocumentModel(QObject* parent)
     : QObject(parent)
@@ -159,28 +161,6 @@ QString DocumentModel::normalizedFileName(const QString& fileName) const
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-DocumentSnapshot DocumentModel::makeSnapshot(
-    const EditorDocumentState& state,
-    const DocumentSnapshot* previous) const
-{
-    DocumentSnapshot snapshot;
-    if (previous)
-        snapshot = *previous;
-
-    snapshot.fileName = normalizedFileName(state.fileName);
-    snapshot.documentId = snapshot.fileName.isEmpty()
-        ? snapshot.documentId
-        : snapshot.fileName;
-    snapshot.dirty = !state.saved;
-    snapshot.saved = state.saved;
-    snapshot.cursorPosition = state.cursorPosition;
-    snapshot.cursorLine = state.cursorLine;
-    snapshot.cursorColumn = state.cursorColumn;
-    snapshot.currentModuleName = state.currentModuleName;
-
-    return snapshot;
-}
-
 DocumentModel::TrackedDocument DocumentModel::makeTrackedDocument(
     MyCodeEditor* editor,
     const DocumentSnapshot* previous) const
@@ -190,11 +170,28 @@ DocumentModel::TrackedDocument DocumentModel::makeTrackedDocument(
     if (!editor)
         return tracked;
 
-    const EditorDocumentState state = editor->documentState(true);
-    tracked.snapshot = makeSnapshot(state, previous);
+    if (previous)
+        tracked.snapshot = *previous;
+
+    tracked.snapshot.fileName = normalizedFileName(editor->getFileName());
+    tracked.snapshot.documentId = tracked.snapshot.fileName.isEmpty()
+        ? tracked.snapshot.documentId
+        : tracked.snapshot.fileName;
+    tracked.snapshot.saved = editor->isDocumentSaved();
+    tracked.snapshot.dirty = !tracked.snapshot.saved;
+
+    const QTextCursor cursor = editor->textCursor();
+    const QTextBlock block = cursor.block();
+    tracked.snapshot.cursorPosition = cursor.position();
+    tracked.snapshot.cursorLine = block.isValid() ? block.blockNumber() + 1 : 1;
+    tracked.snapshot.cursorColumn = block.isValid()
+        ? cursor.position() - block.position() + 1
+        : 1;
+    tracked.snapshot.currentModuleName = editor->currentModuleName();
+
     if (tracked.snapshot.documentId.isEmpty())
         tracked.snapshot.documentId = documentIdForEditor(editor);
-    tracked.text = state.text;
+    tracked.text = editor->toPlainText();
     return tracked;
 }
 
