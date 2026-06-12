@@ -10,7 +10,7 @@
 #include <memory>
 
 class MyCodeEditor;
-struct DocumentModelState;
+class DocumentSessionState;
 
 class DocumentModel : public QObject
 {
@@ -43,13 +43,12 @@ signals:
     void cursorChanged(const DocumentSnapshot& snapshot);
 
 private:
-    std::unique_ptr<DocumentModelState> state;
+    std::unique_ptr<DocumentSessionState> state;
 
     void connectEditorSignals(MyCodeEditor* editor);
     void handleEditorTextChanged(MyCodeEditor* editor);
     void handleEditorCursorChanged(MyCodeEditor* editor);
     void handleEditorFileNameChanged(MyCodeEditor* editor);
-    DocumentSnapshot refreshTrackedDocument(MyCodeEditor* editor);
 };
 
 #endif // DOCUMENTMODEL_H
