@@ -106,8 +106,10 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzer.cpp
     symbolrelationshipengine.cpp
     syminfo.cpp
+    tabdocumentqueries.cpp
     tabfileio.cpp
     tabmanager.cpp
+    tabopencontroller.cpp
     tabsavecontroller.cpp
     tabtitlecontroller.cpp
     workspacemanager.cpp
@@ -180,8 +182,10 @@ set(ZEROSLACK_CORE_SOURCES
     symbolrelationshipengine.h
     symboloutlinemodel.h
     syminfo.h
+    tabdocumentqueries.h
     tabfileio.h
     tabmanager.h
+    tabopencontroller.h
     tabsavecontroller.h
     tabtitlecontroller.h
     workspacemanager.h

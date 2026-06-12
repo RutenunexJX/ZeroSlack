@@ -5,6 +5,12 @@ TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
     : QObject(parent)
     , tabWidget(tabWidget)
     , documentModel(std::make_unique<DocumentModel>(this))
+    , openController(
+          tabWidget,
+          documentModel.get(),
+          &fileIo,
+          qobject_cast<QWidget*>(parent))
+    , documentQueries(documentModel.get(), &fileIo)
     , saveController(
           documentModel.get(),
           &fileIo,
@@ -32,33 +38,18 @@ TabManager::~TabManager()
 
 void TabManager::createNewTab()
 {
-    std::unique_ptr<MyCodeEditor> newEditor = createEditor();
-    MyCodeEditor* editorPtr = newEditor.get();
-    tabWidget->addTab(newEditor.release(), "untitled");
-    documentModel->registerEditor(editorPtr);
-    tabWidget->setCurrentIndex(tabWidget->count() - 1);
-    emit tabCreated(editorPtr);
+    MyCodeEditor* editor = openController.createNewTab();
+    if (editor)
+        emit tabCreated(editor);
 }
 
 bool TabManager::openFileInTab(const QString& fileName)
 {
-    QString fileToOpen = fileName;
-    if (fileToOpen.isEmpty()) {
-        fileToOpen = fileIo.promptOpenFile(qobject_cast<QWidget*>(parent()));
-        if (fileToOpen.isEmpty()) return false; // User cancelled
-    }
-
-    QString text;
-    if (!fileIo.readTextFile(qobject_cast<QWidget*>(parent()), fileToOpen, &text))
+    MyCodeEditor* editor = openController.openFile(fileName);
+    if (!editor)
         return false;
 
-    std::unique_ptr<MyCodeEditor> codeEditor = createEditor();
-    MyCodeEditor* editorPtr = codeEditor.get();
-    editorPtr->setPlainText(text);
-    tabWidget->addTab(codeEditor.release(), fileIo.displayName(fileToOpen));
-    documentModel->registerEditor(editorPtr, fileToOpen);
-    tabWidget->setCurrentIndex(tabWidget->count() - 1);
-    emit tabCreated(editorPtr);
+    emit tabCreated(editor);
     return true;
 }
 
@@ -125,12 +116,12 @@ MyCodeEditor* TabManager::getEditorAt(int index) const
 
 DocumentSnapshot TabManager::getCurrentDocument() const
 {
-    return getDocumentForEditor(getCurrentEditor());
+    return documentQueries.currentDocument(getCurrentEditor());
 }
 
 DocumentSnapshot TabManager::getDocumentForEditor(MyCodeEditor* editor) const
 {
-    return documentModel ? documentModel->documentForEditor(editor) : DocumentSnapshot();
+    return documentQueries.documentForEditor(editor);
 }
 
 bool TabManager::activateOpenFile(const QString& fileName)
@@ -138,7 +129,7 @@ bool TabManager::activateOpenFile(const QString& fileName)
     if (!tabWidget || !documentModel)
         return false;
 
-    MyCodeEditor* editor = documentModel->editorForFile(fileName);
+    MyCodeEditor* editor = documentQueries.editorForFile(fileName);
     const int index = editor ? tabWidget->indexOf(editor) : -1;
     if (index < 0)
         return false;
@@ -149,48 +140,22 @@ bool TabManager::activateOpenFile(const QString& fileName)
 
 QString TabManager::getPlainTextFromCurrentTab() const
 {
-    if (!documentModel)
-        return QString();
-
-    const DocumentSnapshot snapshot = getCurrentDocument();
-    return snapshot.documentId.isEmpty()
-        ? QString()
-        : documentModel->documentText(snapshot.documentId);
+    return documentQueries.plainTextFromCurrent(getCurrentEditor());
 }
 
 QString TabManager::getPlainTextFromOpenFile(const QString& fileName) const
 {
-    return documentModel ? documentModel->documentTextForFile(fileName) : QString();
+    return documentQueries.plainTextFromFile(fileName);
 }
 
 QStringList TabManager::getAllOpenFileNames() const
 {
-    QStringList fileNames;
-    if (!documentModel)
-        return fileNames;
-
-    const QList<DocumentSnapshot> documents = documentModel->openDocuments();
-    fileNames.reserve(documents.size());
-    for (const DocumentSnapshot& document : documents) {
-        if (!document.fileName.isEmpty())
-            fileNames.append(document.fileName);
-    }
-    return fileNames;
+    return documentQueries.allOpenFileNames();
 }
 
 QStringList TabManager::getOpenSystemVerilogFiles() const
 {
-    QStringList svFiles;
-    const QStringList allFiles = getAllOpenFileNames();
-
-    svFiles.reserve(allFiles.size());
-
-    for (const QString& fileName : allFiles) {
-        if (fileIo.isSystemVerilogFile(fileName)) {
-            svFiles.append(fileName);
-        }
-    }
-    return svFiles;
+    return documentQueries.openSystemVerilogFiles();
 }
 
 int TabManager::editorCount() const
@@ -210,14 +175,7 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
 
 bool TabManager::hasUnsavedChanges() const
 {
-    if (!documentModel)
-        return false;
-
-    for (const DocumentSnapshot& document : documentModel->openDocuments()) {
-        if (document.dirty || !document.saved)
-            return true;
-    }
-    return false;
+    return documentQueries.hasUnsavedChanges();
 }
 
 void TabManager::onTabCloseRequested(int index)
@@ -234,9 +192,4 @@ void TabManager::onCurrentTabChanged(int index)
         emit activeTabChanged(editor);
         emit activeDocumentChanged(snapshot);
     }
-}
-
-std::unique_ptr<MyCodeEditor> TabManager::createEditor()
-{
-    return std::unique_ptr<MyCodeEditor>(new MyCodeEditor(tabWidget));
 }

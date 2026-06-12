@@ -6,7 +6,9 @@
 #include <memory>
 #include "documentmodel.h"
 #include "mycodeeditor.h"
+#include "tabdocumentqueries.h"
 #include "tabfileio.h"
+#include "tabopencontroller.h"
 #include "tabsavecontroller.h"
 #include "tabtitlecontroller.h"
 
@@ -57,11 +59,10 @@ private:
     QTabWidget* tabWidget;
     std::unique_ptr<DocumentModel> documentModel;
     TabFileIo fileIo;
+    TabOpenController openController;
+    TabDocumentQueries documentQueries;
     TabSaveController saveController;
     TabTitleController titleController;
-
-    // Helper methods
-    std::unique_ptr<MyCodeEditor> createEditor();
 };
 
 #endif // TABMANAGER_H
