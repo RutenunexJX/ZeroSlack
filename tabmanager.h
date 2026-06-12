@@ -44,6 +44,7 @@ signals:
     void tabClosed(const QString& fileName);
     void fileSaved(const QString& fileName);
     void activeTabChanged(MyCodeEditor* editor);
+    void activeDocumentChanged(const DocumentSnapshot& snapshot);
 
 private slots:
     void onTabCloseRequested(int index);

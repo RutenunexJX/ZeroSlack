@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Save transactions now write from `DocumentModel` text snapshots.
-`DocumentModel` exposes editor text lookup, and `TabManager` uses model snapshots for save file identity and model-cached text for file writes, keeping save behavior aligned with the document-state boundary.
+Active-tab document events now publish `DocumentModel` snapshots.
+`TabManager` emits `activeDocumentChanged(DocumentSnapshot)` alongside the legacy editor signal, and `NavigationManager` consumes the snapshot event so active-file navigation state follows model-owned document identity.
 
 ## Current Architecture Snapshot
 

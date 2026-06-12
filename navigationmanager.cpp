@@ -52,14 +52,10 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
 
     if (connectedTabManager) {
         // Wire tab lifecycle events into navigation refreshes.
-        connect(connectedTabManager, &TabManager::activeTabChanged,
-                this, [this](MyCodeEditor* editor) {
-                    if (editor) {
-                        const DocumentSnapshot document =
-                            connectedTabManager->getDocumentForEditor(editor);
-                        currentFileName = document.fileName;
-                        onTabChanged(currentFileName);
-                    }
+        connect(connectedTabManager, &TabManager::activeDocumentChanged,
+                this, [this](const DocumentSnapshot& document) {
+                    currentFileName = document.fileName;
+                    onTabChanged(currentFileName);
                 });
 
         connect(connectedTabManager, &TabManager::tabCreated,

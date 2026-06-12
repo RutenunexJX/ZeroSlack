@@ -257,7 +257,9 @@ void TabManager::onCurrentTabChanged(int index)
     MyCodeEditor* editor = getEditorAt(index);
     if (editor) {
         updateTabTitle(editor);
+        const DocumentSnapshot snapshot = getDocumentForEditor(editor);
         emit activeTabChanged(editor);
+        emit activeDocumentChanged(snapshot);
     }
 }
 

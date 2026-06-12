@@ -1072,10 +1072,18 @@ int main(int argc, char** argv)
                        && documents->editorForFile(QDir::toNativeSeparators(sameNameA))
                               == sameEditorA,
                    true);
+        QSignalSpy activeDocumentSpy(window.tabManager.get(),
+                                     &TabManager::activeDocumentChanged);
         expectBool("tab manager activates model-indexed file",
                    sameEditorA
                        && window.tabManager->activateOpenFile(QDir::toNativeSeparators(sameNameA))
                        && window.tabManager->getCurrentEditor() == sameEditorA,
+                   true);
+        expectBool("tab manager emits active document snapshot",
+                   activeDocumentSpy.count() == 1
+                       && activeDocumentSpy.takeFirst().at(0).value<DocumentSnapshot>().fileName
+                              == QDir::cleanPath(QDir::fromNativeSeparators(
+                                     QFileInfo(sameNameA).absoluteFilePath())),
                    true);
         expectBool("tab manager keeps same-name file A text distinct",
                    window.tabManager->getPlainTextFromOpenFile(sameNameA)
