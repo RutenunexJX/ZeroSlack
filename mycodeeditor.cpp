@@ -239,6 +239,13 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     return context;
 }
 
+EditorSemanticContext MyCodeEditor::semanticContextForCursor(
+    const QTextCursor& cursor,
+    bool includeDocumentText) const
+{
+    return editorSemanticContextForPosition(cursor.position(), includeDocumentText);
+}
+
 void MyCodeEditor::lineNumberWidgetPaintEvent(QPaintEvent *event)
 {
     QPainter painter(lineNumberWidget);
@@ -339,10 +346,13 @@ void MyCodeEditor::initAutoComplete()
 void MyCodeEditor::onTextChanged()
 {
     autoCompleteTimer->stop();
+    updateCompletionTriggerForTextChange(textCursor());
+}
 
-    const QTextCursor cursor = textCursor();
+void MyCodeEditor::updateCompletionTriggerForTextChange(const QTextCursor& cursor)
+{
     EditorSemanticContext context =
-        editorSemanticContextForPosition(cursor.position());
+        semanticContextForCursor(cursor);
     context.moduleName = currentModuleNameAt(cursor.position() - 1);
     const EditorCompletionTextChangeState completionState =
         contextService()->completionTextChangeState(context);
@@ -375,7 +385,12 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
     activationContext.defaultValue = item.defaultValue;
     const CompletionActivationState activationState =
         contextService()->completionActivationState(activationContext);
+    applyCompletionActivationState(activationState);
+}
 
+void MyCodeEditor::applyCompletionActivationState(
+    const CompletionActivationState& activationState)
+{
     if (activationState.action == CompletionActivationAction::None)
         return;
 
@@ -413,25 +428,12 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
         QPoint mousePos = mapFromGlobal(QCursor::pos());
         if (rect().contains(mousePos)) {
-            applySourceNavigationHover(sourceNavigationTargetAtPosition(mousePos));
+            refreshSourceNavigationHoverAt(mousePos);
         }
     }
 
-    EditorSourceSymbolShortcutContext sourceShortcutContext;
-    sourceShortcutContext.key = event->key();
-    sourceShortcutContext.modifiers = int(event->modifiers());
-    sourceShortcutContext.semanticContext =
-        editorSemanticContextForPosition(textCursor().position());
-    const EditorSourceSymbolShortcutState sourceShortcutState =
-        contextService()->sourceSymbolShortcutState(sourceShortcutContext);
-    if (sourceShortcutState.matched) {
-        emit sourceSymbolActionRequested(
-            sourceShortcutState.action,
-            sourceShortcutState.semanticContext);
-        if (sourceShortcutState.acceptEvent)
-            event->accept();
+    if (handleSourceSymbolShortcut(event))
         return;
-    }
 
     if (event->key() == Qt::Key_Shift) {
         event->ignore();
@@ -439,35 +441,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     }
 
     if (isInAlternateMode) {
-        if (handleCompletionPopupKey(event))
-            return;
-
-        EditorAlternateModeKeyContext alternateKeyContext;
-        alternateKeyContext.key = event->key();
-        alternateKeyContext.text = event->text();
-        alternateKeyContext.buffer = alternateCommandBuffer;
-        const EditorAlternateModeKeyState alternateKeyState =
-            contextService()->alternateModeKeyState(alternateKeyContext);
-
-        switch (alternateKeyState.action) {
-        case EditorAlternateModeKeyAction::UpdateInput:
-        case EditorAlternateModeKeyAction::RefreshCompletions:
-            applyAlternateModeCompletionDisplayState(
-                alternateKeyState.completion);
-            break;
-        case EditorAlternateModeKeyAction::ExecuteCommand:
-            executeAlternateModeCommand(alternateKeyState.command);
-            break;
-        case EditorAlternateModeKeyAction::ClearAndHide:
-            if (alternateKeyState.hidePopup)
-                hideAutoComplete();
-            if (alternateKeyState.clearBuffer)
-                clearAlternateModeBuffer();
-            break;
-        case EditorAlternateModeKeyAction::Consume:
-            break;
-        }
-
+        handleAlternateModeKey(event);
         return;
     }
 
@@ -477,11 +451,77 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     QPlainTextEdit::keyPressEvent(event);
 }
 
+bool MyCodeEditor::handleSourceSymbolShortcut(QKeyEvent *event)
+{
+    EditorSourceSymbolShortcutContext sourceShortcutContext;
+    sourceShortcutContext.key = event->key();
+    sourceShortcutContext.modifiers = int(event->modifiers());
+    sourceShortcutContext.semanticContext =
+        editorSemanticContextForPosition(textCursor().position());
+    const EditorSourceSymbolShortcutState sourceShortcutState =
+        contextService()->sourceSymbolShortcutState(sourceShortcutContext);
+    if (!sourceShortcutState.matched)
+        return false;
+
+    emit sourceSymbolActionRequested(
+        sourceShortcutState.action,
+        sourceShortcutState.semanticContext);
+    if (sourceShortcutState.acceptEvent)
+        event->accept();
+    return true;
+}
+
+bool MyCodeEditor::handleAlternateModeKey(QKeyEvent *event)
+{
+    if (handleCompletionPopupKey(event))
+        return true;
+
+    EditorAlternateModeKeyContext alternateKeyContext;
+    alternateKeyContext.key = event->key();
+    alternateKeyContext.text = event->text();
+    alternateKeyContext.buffer = alternateCommandBuffer;
+    const EditorAlternateModeKeyState alternateKeyState =
+        contextService()->alternateModeKeyState(alternateKeyContext);
+    applyAlternateModeKeyState(alternateKeyState);
+    return true;
+}
+
+void MyCodeEditor::applyAlternateModeKeyState(
+    const EditorAlternateModeKeyState& state)
+{
+    switch (state.action) {
+    case EditorAlternateModeKeyAction::UpdateInput:
+    case EditorAlternateModeKeyAction::RefreshCompletions:
+        applyAlternateModeCompletionDisplayState(state.completion);
+        break;
+    case EditorAlternateModeKeyAction::ExecuteCommand:
+        executeAlternateModeCommand(state.command);
+        break;
+    case EditorAlternateModeKeyAction::ClearAndHide:
+        if (state.hidePopup)
+            hideAutoComplete();
+        if (state.clearBuffer)
+            clearAlternateModeBuffer();
+        break;
+    case EditorAlternateModeKeyAction::Consume:
+        break;
+    }
+}
+
 bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
 {
     if (!completer->popup()->isVisible())
         return false;
 
+    const CompletionPopupKeyState state =
+        contextService()->completionPopupKeyState(
+            completionPopupKeyContextForEvent(event));
+    return applyCompletionPopupKeyState(event, state);
+}
+
+EditorCompletionPopupKeyContext
+MyCodeEditor::completionPopupKeyContextForEvent(QKeyEvent *event) const
+{
     EditorCompletionPopupKeyContext query;
     query.key = event->key();
     query.alternateModeActive = isInAlternateMode;
@@ -489,10 +529,13 @@ bool MyCodeEditor::handleCompletionPopupKey(QKeyEvent *event)
     query.currentIndexValid = completer->popup()->currentIndex().isValid();
     query.hasRows = completionModel->rowCount() > 0;
     query.alternateBufferEmpty = alternateCommandBuffer.isEmpty();
+    return query;
+}
 
-    const CompletionPopupKeyState state =
-        contextService()->completionPopupKeyState(query);
-
+bool MyCodeEditor::applyCompletionPopupKeyState(
+    QKeyEvent *event,
+    const CompletionPopupKeyState& state)
+{
     switch (state.action) {
     case CompletionPopupKeyAction::ForwardToPopup:
         QApplication::sendEvent(completer->popup(), event);
@@ -566,8 +609,22 @@ void MyCodeEditor::onAutoCompleteTimer()
     }
 
     EditorSemanticContext context =
-        editorSemanticContextForPosition(cursor.position(), true);
+        semanticContextForCursor(cursor, true);
 
+    if (refreshCommandModeCompletion(context))
+        return;
+
+    if (isInAlternateMode) {
+        processAlternateModeInput(context.lineUpToCursor);
+        return;
+    }
+
+    refreshSymbolCompletion(context, currentBlock);
+}
+
+bool MyCodeEditor::refreshCommandModeCompletion(
+    const EditorSemanticContext& context)
+{
     const EditorCommandModeCompletionRefreshState commandState =
         contextService()->commandModeCompletionRefreshState(
             context,
@@ -575,7 +632,7 @@ void MyCodeEditor::onAutoCompleteTimer()
     if (commandState.matched) {
         isInCustomCommandMode = commandState.commandModeActive;
         if (commandState.suppressAfterExit) {
-            return;
+            return true;
         }
 
         if (commandState.exitRequested) {
@@ -586,7 +643,7 @@ void MyCodeEditor::onAutoCompleteTimer()
             if (completer->popup()->isVisible()) {
                 completer->popup()->hide();
             }
-            return;
+            return true;
         }
 
         if (commandState.highlightCommand)
@@ -595,7 +652,7 @@ void MyCodeEditor::onAutoCompleteTimer()
         if (commandState.hidePopup) {
             if (completer->popup()->isVisible())
                 completer->popup()->hide();
-            return;
+            return true;
         }
 
         if (commandState.showCompletions) {
@@ -605,7 +662,7 @@ void MyCodeEditor::onAutoCompleteTimer()
                 commandState.completion.command.symbolType);
             showAutoComplete();
         }
-        return;
+        return true;
     }
 
     if (commandState.resetExitedByDoubleSpace)
@@ -614,11 +671,13 @@ void MyCodeEditor::onAutoCompleteTimer()
     clearCommandHighlight();
     isInCustomCommandMode = false;
 
-    if (isInAlternateMode) {
-        processAlternateModeInput(context.lineUpToCursor);
-        return;
-    }
+    return false;
+}
 
+void MyCodeEditor::refreshSymbolCompletion(
+    EditorSemanticContext context,
+    const QTextBlock& currentBlock)
+{
     context.wordPrefix = getWordUnderCursor();
     const EditorCompletionState completionState =
         contextService()->editorCompletionState(context);
@@ -752,13 +811,7 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
-        const EditorSourceNavigationTarget target =
-            sourceNavigationTargetAtPosition(event->pos());
-        emit sourceNavigationRequested(
-            target,
-            editorSemanticContextForPosition(target.cursorPosition));
-
-        if (target.matched && !target.text.isEmpty()) {
+        if (requestSourceNavigationAtPosition(event->pos())) {
             event->accept();
             return;
         }
@@ -775,12 +828,12 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
         ctrlPressed = isCtrlPressed;
 
         if (ctrlPressed) {
-            applySourceNavigationHover(sourceNavigationTargetAtPosition(event->pos()));
+            refreshSourceNavigationHoverAt(event->pos());
         } else {
             clearSourceNavigationHover();
         }
     } else if (ctrlPressed) {
-        applySourceNavigationHover(sourceNavigationTargetAtPosition(event->pos()));
+        refreshSourceNavigationHoverAt(event->pos());
     }
 
     QPlainTextEdit::mouseMoveEvent(event);
@@ -805,6 +858,21 @@ MyCodeEditor::sourceNavigationTargetAtPosition(const QPoint& position)
     return contextService()->editorSourceNavigationTarget(
             editorSemanticContextForPosition(cursor.position()),
             block.position());
+}
+
+bool MyCodeEditor::requestSourceNavigationAtPosition(const QPoint& position)
+{
+    const EditorSourceNavigationTarget target =
+        sourceNavigationTargetAtPosition(position);
+    emit sourceNavigationRequested(
+        target,
+        editorSemanticContextForPosition(target.cursorPosition));
+    return target.matched && !target.text.isEmpty();
+}
+
+void MyCodeEditor::refreshSourceNavigationHoverAt(const QPoint& position)
+{
+    applySourceNavigationHover(sourceNavigationTargetAtPosition(position));
 }
 
 void MyCodeEditor::applySourceNavigationHover(

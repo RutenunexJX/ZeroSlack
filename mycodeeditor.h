@@ -23,12 +23,6 @@ public:
     explicit MyCodeEditor(QWidget *parent = nullptr);
     ~MyCodeEditor();
 
-    void lineNumberWidgetPaintEvent(QPaintEvent *event);
-    void lineNumberWidgetMousePressEvent(QMouseEvent *event);
-    void lineNumberWidgetWheelEvent(QWheelEvent *event);
-
-    void showAutoComplete();
-    void hideAutoComplete();
     void refreshScopeAndCurrentLineHighlight();
     void setAlternateModeEnabled(bool enabled);
     void setSemanticContextService(EditorSemanticContextService* service);
@@ -38,9 +32,6 @@ public:
     qreal getBlockTopY(int blockNumber) const;
     qreal getBlockHeight(int blockNumber) const;
     qreal getDocumentHeightPx() const;
-
-    void clearAlternateModeBuffer();
-    void processAlternateModeInput(const QString &input);
 
 private slots:
     void highlighCurrentLine();
@@ -63,6 +54,7 @@ protected:
 
 private:
     friend class DocumentModel;
+    friend class LineNumberWidget;
 
     void initConnection();
     void initFont();
@@ -71,14 +63,39 @@ private:
     int getLineNumberWidgetWidth();
     EditorSemanticContextService* contextService() const;
 
+    void lineNumberWidgetPaintEvent(QPaintEvent *event);
+    void lineNumberWidgetMousePressEvent(QMouseEvent *event);
+    void lineNumberWidgetWheelEvent(QWheelEvent *event);
+    void showAutoComplete();
+    void hideAutoComplete();
+    void clearAlternateModeBuffer();
+    void processAlternateModeInput(const QString &input);
+
     void setFileName(QString fileName);
     QString getFileName() const;
     QString currentModuleName() const;
     QString currentModuleNameAt(int charPos) const;
+    EditorSemanticContext semanticContextForCursor(
+        const QTextCursor& cursor,
+        bool includeDocumentText = false) const;
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
     QString getWordUnderCursor();
+    void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
+    bool refreshCommandModeCompletion(const EditorSemanticContext& context);
+    void refreshSymbolCompletion(EditorSemanticContext context,
+                                 const QTextBlock& currentBlock);
+    bool handleSourceSymbolShortcut(QKeyEvent *event);
+    bool handleAlternateModeKey(QKeyEvent *event);
+    void applyAlternateModeKeyState(const EditorAlternateModeKeyState& state);
+    void applyCompletionActivationState(
+        const CompletionActivationState& activationState);
+    EditorCompletionPopupKeyContext completionPopupKeyContextForEvent(
+        QKeyEvent *event) const;
+    bool applyCompletionPopupKeyState(
+        QKeyEvent *event,
+        const CompletionPopupKeyState& state);
 
     LineNumberWidget *lineNumberWidget;
     QString mFileName;
@@ -115,6 +132,8 @@ private:
 
     EditorSourceNavigationTarget sourceNavigationTargetAtPosition(
         const QPoint& position);
+    bool requestSourceNavigationAtPosition(const QPoint& position);
+    void refreshSourceNavigationHoverAt(const QPoint& position);
     void applySourceNavigationHover(
         const EditorSourceNavigationTarget& target);
     void clearSourceNavigationHover();
