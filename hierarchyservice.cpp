@@ -256,6 +256,16 @@ HierarchyQuery HierarchyService::queryForPanel(
     return query;
 }
 
+QList<HierarchyNode> HierarchyService::moduleInstantiationChildren(
+    int moduleSymbolId) const
+{
+    HierarchyQuery query;
+    query.symbolId = moduleSymbolId;
+    query.maxDepth = 1;
+    query.types = {SymbolRelationshipEngine::INSTANTIATES};
+    return getChildren(query);
+}
+
 SemanticIndex* HierarchyService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();

@@ -172,13 +172,9 @@ QList<ModuleHierarchyGroup> NavigationService::buildModuleInstantiationHierarchy
         if (module.symbolId < 0 || module.symbolName.isEmpty())
             continue;
 
-        HierarchyQuery query;
-        query.symbolId = module.symbolId;
-        query.maxDepth = 1;
-        query.types = {SymbolRelationshipEngine::INSTANTIATES};
-
         QStringList children;
-        const QList<HierarchyNode> childNodes = hierarchyService.getChildren(query);
+        const QList<HierarchyNode> childNodes =
+            hierarchyService.moduleInstantiationChildren(module.symbolId);
         for (const HierarchyNode& node : childNodes) {
             if (node.symbol.symbolType != sym_list::sym_module
                 || node.symbol.symbolName.isEmpty()) {

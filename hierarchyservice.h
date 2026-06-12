@@ -79,6 +79,7 @@ public:
     QList<HierarchyNode> getHierarchy(const HierarchyQuery& query) const;
     HierarchyReport getHierarchyReport(const HierarchyQuery& query) const;
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
+    QList<HierarchyNode> moduleInstantiationChildren(int moduleSymbolId) const;
 
 private:
     SemanticIndex* index = nullptr;
