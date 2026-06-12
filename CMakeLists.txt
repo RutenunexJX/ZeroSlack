@@ -58,6 +58,7 @@ set(ZEROSLACK_CORE_SOURCES
     documentmodel.cpp
     editorappearance.cpp
     editorcompletionui.cpp
+    editorcompletionworkflow.cpp
     editorcoordinator.cpp
     editorcursornavigation.cpp
     editorfileidentity.cpp
@@ -123,6 +124,7 @@ set(ZEROSLACK_CORE_SOURCES
     documentmodel.h
     editorappearance.h
     editorcompletionui.h
+    editorcompletionworkflow.h
     editorcoordinator.h
     editorcursornavigation.h
     editorfileidentity.h
