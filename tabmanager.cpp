@@ -1,9 +1,6 @@
 #include "tabmanager.h"
 #include "documentmodel.h"
-#include <QFileDialog>
 #include <QMessageBox>
-#include <QFileInfo>
-#include <QTextStream>
 
 TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
     : QObject(parent), tabWidget(tabWidget), documentModel(std::make_unique<DocumentModel>(this))
@@ -37,27 +34,18 @@ bool TabManager::openFileInTab(const QString& fileName)
 {
     QString fileToOpen = fileName;
     if (fileToOpen.isEmpty()) {
-        fileToOpen = QFileDialog::getOpenFileName(
-            qobject_cast<QWidget*>(parent()), "open file");
+        fileToOpen = fileIo.promptOpenFile(qobject_cast<QWidget*>(parent()));
         if (fileToOpen.isEmpty()) return false; // User cancelled
     }
 
-    QFile file(fileToOpen);
-    if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
-        QMessageBox::warning(qobject_cast<QWidget*>(parent()),
-                            "warning",
-                            "can not open file:" + file.errorString());
+    QString text;
+    if (!fileIo.readTextFile(qobject_cast<QWidget*>(parent()), fileToOpen, &text))
         return false;
-    }
-
-    QTextStream in(&file);
-    const QString text = in.readAll();
-    file.close();
 
     std::unique_ptr<MyCodeEditor> codeEditor = createEditor();
     MyCodeEditor* editorPtr = codeEditor.get();
     editorPtr->setPlainText(text);
-    tabWidget->addTab(codeEditor.release(), getDisplayName(fileToOpen));
+    tabWidget->addTab(codeEditor.release(), fileIo.displayName(fileToOpen));
     documentModel->registerEditor(editorPtr, fileToOpen);
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
     emit tabCreated(editorPtr);
@@ -183,7 +171,7 @@ QStringList TabManager::getOpenSystemVerilogFiles() const
     svFiles.reserve(allFiles.size());
 
     for (const QString& fileName : allFiles) {
-        if (isSystemVerilogFile(fileName)) {
+        if (fileIo.isSystemVerilogFile(fileName)) {
             svFiles.append(fileName);
         }
     }
@@ -206,7 +194,7 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
     for (int i = 0; i < tabWidget->count(); ++i) {
         if (tabWidget->widget(i) == editor) {
             QString fileName = getDocumentForEditor(editor).fileName;
-            QString displayName = fileName.isEmpty() ? "untitled" : getDisplayName(fileName);
+            QString displayName = fileIo.displayName(fileName);
             tabWidget->setTabText(i, displayName);
             if (tabWidget->currentIndex() == i) {
                 QWidget* parentWidget = qobject_cast<QWidget*>(parent());
@@ -258,27 +246,14 @@ bool TabManager::saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs)
 
     const DocumentSnapshot snapshot = getDocumentForEditor(editor);
     const QString documentText = documentModel->documentTextForEditor(editor);
-    QString fileName = snapshot.fileName;
-    if (forceSaveAs || fileName.isEmpty() || !QFile::exists(fileName)) {
-        fileName = QFileDialog::getSaveFileName(
-            qobject_cast<QWidget*>(parent()),
-            forceSaveAs ? QStringLiteral("save file as ") : QStringLiteral("Save file"));
-        if (fileName.isEmpty())
-            return false;
-    }
-
-    QFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly | QFile::Text)) {
-        QMessageBox::warning(
-            qobject_cast<QWidget*>(parent()),
-            "Warning",
-            "Cannot save file: " + file.errorString());
+    const QString fileName = fileIo.resolveSaveFileName(
+        qobject_cast<QWidget*>(parent()),
+        snapshot.fileName,
+        forceSaveAs);
+    if (fileName.isEmpty())
         return false;
-    }
-
-    QTextStream out(&file);
-    out << documentText;
-    file.close();
+    if (!fileIo.writeTextFile(qobject_cast<QWidget*>(parent()), fileName, documentText))
+        return false;
 
     documentModel->setDocumentFileName(editor, fileName);
     return true;
@@ -309,18 +284,4 @@ bool TabManager::confirmCloseUnsaved(MyCodeEditor* editor)
     }
 
     return false; // Cancel - don't close
-}
-
-QString TabManager::getDisplayName(const QString& fullPath) const
-{
-    return fullPath.isEmpty() ? "untitled" : QFileInfo(fullPath).fileName();
-}
-
-bool TabManager::isSystemVerilogFile(const QString& fileName) const
-{
-    if (fileName.isEmpty()) return false;
-
-    static const QStringList svExtensions = {"sv", "v", "vh", "svh", "vp", "svp"};
-    const QString suffix = QFileInfo(fileName).suffix().toLower();
-    return svExtensions.contains(suffix);
 }

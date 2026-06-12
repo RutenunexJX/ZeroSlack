@@ -106,6 +106,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzer.cpp
     symbolrelationshipengine.cpp
     syminfo.cpp
+    tabfileio.cpp
     tabmanager.cpp
     workspacemanager.cpp
 
@@ -177,6 +178,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolrelationshipengine.h
     symboloutlinemodel.h
     syminfo.h
+    tabfileio.h
     tabmanager.h
     workspacemanager.h
 

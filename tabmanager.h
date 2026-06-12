@@ -6,6 +6,7 @@
 #include <memory>
 #include "documentmodel.h"
 #include "mycodeeditor.h"
+#include "tabfileio.h"
 
 class TabManager : public QObject
 {
@@ -53,13 +54,12 @@ private slots:
 private:
     QTabWidget* tabWidget;
     std::unique_ptr<DocumentModel> documentModel;
+    TabFileIo fileIo;
 
     // Helper methods
     std::unique_ptr<MyCodeEditor> createEditor();
     bool saveEditorToFile(MyCodeEditor* editor, bool forceSaveAs);
     bool confirmCloseUnsaved(MyCodeEditor* editor);
-    QString getDisplayName(const QString& fullPath) const;
-    bool isSystemVerilogFile(const QString& fileName) const;
 };
 
 #endif // TABMANAGER_H

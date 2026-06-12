@@ -1,0 +1,28 @@
+#ifndef TABFILEIO_H
+#define TABFILEIO_H
+
+#include <QString>
+
+class QWidget;
+
+class TabFileIo
+{
+public:
+    QString displayName(const QString& fullPath) const;
+    bool isSystemVerilogFile(const QString& fileName) const;
+    QString promptOpenFile(QWidget* parent) const;
+    QString resolveSaveFileName(
+        QWidget* parent,
+        const QString& currentFileName,
+        bool forceSaveAs) const;
+    bool readTextFile(
+        QWidget* parent,
+        const QString& fileName,
+        QString* text) const;
+    bool writeTextFile(
+        QWidget* parent,
+        const QString& fileName,
+        const QString& text) const;
+};
+
+#endif // TABFILEIO_H
