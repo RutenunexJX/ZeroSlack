@@ -118,8 +118,10 @@ int main(int argc, char** argv)
 
     MainWindow window;
     bool workspaceSymbolsDone = false;
-    QObject::connect(window.semanticRuntime->symbolAnalyzer(), &SymbolAnalyzer::batchAnalysisCompleted,
-                     &window, [&](int filesAnalyzed, int totalSymbols) {
+    QObject::connect(window.analysisScheduler.get(),
+                     &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+                     &window,
+                     [&](const ProjectSnapshot&, int filesAnalyzed, int totalSymbols) {
                          Q_UNUSED(filesAnalyzed)
                          Q_UNUSED(totalSymbols)
                          workspaceSymbolsDone = true;
@@ -137,7 +139,7 @@ int main(int argc, char** argv)
     expectBool("large file selected", QFileInfo(largeFile).size() > 20000, true);
 
     int largeFileAnalysisCount = 0;
-    QObject::connect(window.semanticRuntime->symbolAnalyzer(), &SymbolAnalyzer::analysisCompleted,
+    QObject::connect(window.analysisScheduler.get(), &AnalysisScheduler::fileSymbolAnalysisFinished,
                      &window, [&](const QString& fileName, int symbolsFound) {
                          Q_UNUSED(symbolsFound)
                          if (QFileInfo(fileName).absoluteFilePath()
@@ -173,8 +175,8 @@ int main(int argc, char** argv)
         cursor.movePosition(QTextCursor::Start);
         editor->setTextCursor(cursor);
 
-        QSignalSpy symbolAnalysisStarted(window.semanticRuntime->symbolAnalyzer(),
-                                         &SymbolAnalyzer::analysisStarted);
+        QSignalSpy symbolAnalysisStarted(window.analysisScheduler.get(),
+                                         &AnalysisScheduler::fileSymbolAnalysisStarted);
         drainRelationshipWork(window);
 
         const int beforeLength = editor->toPlainText().size();

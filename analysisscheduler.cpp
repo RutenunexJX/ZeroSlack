@@ -160,6 +160,10 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
     if (!symbolAnalyzer)
         return;
 
+    connect(symbolAnalyzer,
+            &SymbolAnalyzer::analysisStarted,
+            this,
+            &AnalysisScheduler::fileSymbolAnalysisStarted);
     connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
             this, [this](const QString& fileName, int symbolCount) {
                 emit fileSymbolAnalysisFinished(fileName, symbolCount);

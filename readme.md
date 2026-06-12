@@ -25,8 +25,8 @@ Thin UI consumers
 
 ## Latest Verified Block
 
-Editor document state updates now route through `DocumentModel`.
-`MyCodeEditor` emits file-name and saved-state changes, `DocumentModel` refreshes tracked snapshots and indexes through one helper, and `TabManager` routes successful save transactions through `DocumentModel` so file-save and document-save events stay aligned.
+Semantic runtime injection now stops at the scheduler boundary.
+`SemanticRuntimeCoordinator` keeps ownership of `SymbolAnalyzer`, relationship engine, and relationship builder, configures `AnalysisScheduler` directly, and no longer exposes the analyzer to coordinator or GUI tests. `AnalysisScheduler` now routes symbol analysis started/finished/progress events for consumers.
 
 ## Current Architecture Snapshot
 

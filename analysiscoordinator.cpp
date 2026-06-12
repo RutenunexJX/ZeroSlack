@@ -68,15 +68,14 @@ void AnalysisCoordinator::configureScheduler()
 
     scheduler->setDocumentModel(tabManager ? tabManager->getDocumentModel() : nullptr);
     scheduler->setProjectModel(workspaceManager ? workspaceManager->getProjectModel() : nullptr);
-    scheduler->setSymbolAnalyzer(semanticRuntime ? semanticRuntime->symbolAnalyzer() : nullptr);
+    if (semanticRuntime)
+        semanticRuntime->configureScheduler(scheduler);
     scheduler->setWorkspaceOpenProvider([this]() {
         return workspaceManager && workspaceManager->isWorkspaceOpen();
     });
     scheduler->setWorkspaceSymbolCancelProvider([this]() {
         return progressCoordinator && progressCoordinator->isSymbolAnalysisCancelled();
     });
-    scheduler->setRelationshipEngine(semanticRuntime ? semanticRuntime->relationshipEngine() : nullptr);
-    scheduler->setRelationshipBuilder(semanticRuntime ? semanticRuntime->relationshipBuilder() : nullptr);
 }
 
 void AnalysisCoordinator::connectSchedulerSignals()

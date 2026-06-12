@@ -1,5 +1,6 @@
 #include "semanticruntimecoordinator.h"
 
+#include "analysisscheduler.h"
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
 #include "definitionservice.h"
@@ -47,14 +48,19 @@ SmartRelationshipBuilder* SemanticRuntimeCoordinator::relationshipBuilder() cons
     return relationshipBuilderInstance.get();
 }
 
-SymbolAnalyzer* SemanticRuntimeCoordinator::symbolAnalyzer() const
-{
-    return symbolAnalyzerInstance.get();
-}
-
 SlangManager* SemanticRuntimeCoordinator::slangManager() const
 {
     return slangManagerInstance.get();
+}
+
+void SemanticRuntimeCoordinator::configureScheduler(AnalysisScheduler* scheduler) const
+{
+    if (!scheduler)
+        return;
+
+    scheduler->setSymbolAnalyzer(symbolAnalyzerInstance.get());
+    scheduler->setRelationshipEngine(relationshipEngineInstance.get());
+    scheduler->setRelationshipBuilder(relationshipBuilderInstance.get());
 }
 
 void SemanticRuntimeCoordinator::configureQueryServices(SemanticIndex* semanticIndex) const

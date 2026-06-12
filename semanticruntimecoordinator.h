@@ -6,6 +6,7 @@
 
 class SlangManager;
 class SmartRelationshipBuilder;
+class AnalysisScheduler;
 class SemanticIndex;
 class SymbolAnalyzer;
 class SymbolRelationshipEngine;
@@ -20,8 +21,8 @@ public:
 
     SymbolRelationshipEngine* relationshipEngine() const;
     SmartRelationshipBuilder* relationshipBuilder() const;
-    SymbolAnalyzer* symbolAnalyzer() const;
     SlangManager* slangManager() const;
+    void configureScheduler(AnalysisScheduler* scheduler) const;
 
 private:
     void configureQueryServices(SemanticIndex* semanticIndex) const;
