@@ -13,6 +13,7 @@ class NavigationManager;
 class SemanticRuntimeCoordinator;
 class TabManager;
 class WorkspaceManager;
+struct DocumentSnapshot;
 
 class AnalysisCoordinator : public QObject
 {
@@ -34,12 +35,45 @@ public:
     void connectSignals();
 
 private:
-    AnalysisScheduler* scheduler = nullptr;
-    AnalysisProgressCoordinator* progressCoordinator = nullptr;
-    SemanticRuntimeCoordinator* semanticRuntime = nullptr;
-    TabManager* tabManager = nullptr;
-    WorkspaceManager* workspaceManager = nullptr;
-    NavigationManager* navigationManager = nullptr;
+    struct AnalysisDependencies {
+        AnalysisScheduler* scheduler = nullptr;
+        AnalysisProgressCoordinator* progressCoordinator = nullptr;
+        SemanticRuntimeCoordinator* semanticRuntime = nullptr;
+        TabManager* tabManager = nullptr;
+        WorkspaceManager* workspaceManager = nullptr;
+        NavigationManager* navigationManager = nullptr;
+
+        void set(AnalysisScheduler* scheduler,
+                 AnalysisProgressCoordinator* progressCoordinator,
+                 SemanticRuntimeCoordinator* semanticRuntime,
+                 TabManager* tabManager,
+                 WorkspaceManager* workspaceManager,
+                 NavigationManager* navigationManager);
+        bool hasScheduler() const;
+        bool hasProgressCoordinator() const;
+        bool hasWorkspaceFileWatcher() const;
+        void configureScheduler() const;
+        void connectProgressToScheduler() const;
+        bool isWorkspaceOpen() const;
+        bool isWorkspaceSymbolAnalysisCancelled() const;
+        void refreshRelationshipDataView() const;
+        void handleFileSymbolAnalysisFinished(const QString& fileName,
+                                              int symbolCount) const;
+        void handleWorkspaceSymbolProgress(const QString& fileName,
+                                           int filesDone,
+                                           int totalFiles) const;
+        void handleWorkspaceSymbolAnalysisFinished(int filesAnalyzed,
+                                                   int totalSymbols) const;
+        void handleExternalFileChanged(const QString& filePath,
+                                       int debounceMs) const;
+        MyCodeEditor* currentEditor() const;
+        DocumentSnapshot currentDocument() const;
+        AnalysisScheduler* schedulerObject() const;
+        AnalysisProgressCoordinator* progressCoordinatorObject() const;
+        WorkspaceManager* workspaceManagerObject() const;
+    };
+
+    AnalysisDependencies dependencies;
     int fileChangeDebounceMs = 350;
     bool signalsConnected = false;
 

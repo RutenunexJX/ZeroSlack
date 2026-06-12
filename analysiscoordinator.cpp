@@ -22,13 +22,146 @@ AnalysisCoordinator::AnalysisCoordinator(
     NavigationManager* navigationManager,
     QObject* parent)
     : QObject(parent)
-    , scheduler(scheduler)
-    , progressCoordinator(progressCoordinator)
-    , semanticRuntime(semanticRuntime)
-    , tabManager(tabManager)
-    , workspaceManager(workspaceManager)
-    , navigationManager(navigationManager)
 {
+    dependencies.set(scheduler,
+                     progressCoordinator,
+                     semanticRuntime,
+                     tabManager,
+                     workspaceManager,
+                     navigationManager);
+}
+
+void AnalysisCoordinator::AnalysisDependencies::set(
+    AnalysisScheduler* newScheduler,
+    AnalysisProgressCoordinator* newProgressCoordinator,
+    SemanticRuntimeCoordinator* newSemanticRuntime,
+    TabManager* newTabManager,
+    WorkspaceManager* newWorkspaceManager,
+    NavigationManager* newNavigationManager)
+{
+    scheduler = newScheduler;
+    progressCoordinator = newProgressCoordinator;
+    semanticRuntime = newSemanticRuntime;
+    tabManager = newTabManager;
+    workspaceManager = newWorkspaceManager;
+    navigationManager = newNavigationManager;
+}
+
+bool AnalysisCoordinator::AnalysisDependencies::hasScheduler() const
+{
+    return scheduler != nullptr;
+}
+
+bool AnalysisCoordinator::AnalysisDependencies::hasProgressCoordinator() const
+{
+    return progressCoordinator != nullptr;
+}
+
+bool AnalysisCoordinator::AnalysisDependencies::hasWorkspaceFileWatcher() const
+{
+    return workspaceManager && scheduler;
+}
+
+void AnalysisCoordinator::AnalysisDependencies::configureScheduler() const
+{
+    if (!scheduler)
+        return;
+
+    scheduler->setDocumentModel(tabManager ? tabManager->getDocumentModel() : nullptr);
+    scheduler->setProjectModel(workspaceManager ? workspaceManager->getProjectModel() : nullptr);
+    if (semanticRuntime)
+        semanticRuntime->configureScheduler(scheduler);
+}
+
+void AnalysisCoordinator::AnalysisDependencies::connectProgressToScheduler() const
+{
+    if (progressCoordinator)
+        progressCoordinator->connectToScheduler(scheduler);
+}
+
+bool AnalysisCoordinator::AnalysisDependencies::isWorkspaceOpen() const
+{
+    return workspaceManager && workspaceManager->isWorkspaceOpen();
+}
+
+bool AnalysisCoordinator::AnalysisDependencies::isWorkspaceSymbolAnalysisCancelled() const
+{
+    return progressCoordinator
+        && progressCoordinator->isSymbolAnalysisCancelled();
+}
+
+void AnalysisCoordinator::AnalysisDependencies::refreshRelationshipDataView() const
+{
+    if (navigationManager)
+        navigationManager->refreshCurrentView();
+}
+
+void AnalysisCoordinator::AnalysisDependencies::handleFileSymbolAnalysisFinished(
+    const QString& fileName,
+    int symbolCount) const
+{
+    if (navigationManager)
+        navigationManager->onSymbolAnalysisCompleted(fileName, symbolCount);
+}
+
+void AnalysisCoordinator::AnalysisDependencies::handleWorkspaceSymbolProgress(
+    const QString& fileName,
+    int filesDone,
+    int totalFiles) const
+{
+    if (progressCoordinator) {
+        progressCoordinator->handleWorkspaceSymbolProgress(
+            filesDone,
+            totalFiles,
+            fileName);
+    }
+}
+
+void AnalysisCoordinator::AnalysisDependencies::handleWorkspaceSymbolAnalysisFinished(
+    int filesAnalyzed,
+    int totalSymbols) const
+{
+    if (navigationManager) {
+        navigationManager->onBatchSymbolAnalysisCompleted(
+            filesAnalyzed,
+            totalSymbols);
+    }
+}
+
+void AnalysisCoordinator::AnalysisDependencies::handleExternalFileChanged(
+    const QString& filePath,
+    int debounceMs) const
+{
+    if (scheduler)
+        scheduler->handleExternalFileChanged(filePath, debounceMs);
+}
+
+MyCodeEditor* AnalysisCoordinator::AnalysisDependencies::currentEditor() const
+{
+    return tabManager ? tabManager->getCurrentEditor() : nullptr;
+}
+
+DocumentSnapshot AnalysisCoordinator::AnalysisDependencies::currentDocument() const
+{
+    return tabManager ? tabManager->getCurrentDocument() : DocumentSnapshot();
+}
+
+AnalysisScheduler*
+AnalysisCoordinator::AnalysisDependencies::schedulerObject() const
+{
+    return scheduler;
+}
+
+AnalysisProgressCoordinator*
+AnalysisCoordinator::AnalysisDependencies::progressCoordinatorObject() const
+{
+    return progressCoordinator;
+}
+
+WorkspaceManager*
+AnalysisCoordinator::AnalysisDependencies::workspaceManagerObject() const
+{
+    return workspaceManager;
 }
 
 void AnalysisCoordinator::setFileChangeDebounceMs(int debounceMs)
@@ -63,67 +196,64 @@ void AnalysisCoordinator::connectSignals()
 
 void AnalysisCoordinator::configureScheduler()
 {
-    if (!scheduler)
+    if (!dependencies.hasScheduler())
         return;
 
-    scheduler->setDocumentModel(tabManager ? tabManager->getDocumentModel() : nullptr);
-    scheduler->setProjectModel(workspaceManager ? workspaceManager->getProjectModel() : nullptr);
-    if (semanticRuntime)
-        semanticRuntime->configureScheduler(scheduler);
+    dependencies.configureScheduler();
+    AnalysisScheduler* scheduler = dependencies.schedulerObject();
     scheduler->setWorkspaceOpenProvider([this]() {
-        return workspaceManager && workspaceManager->isWorkspaceOpen();
+        return dependencies.isWorkspaceOpen();
     });
     scheduler->setWorkspaceSymbolCancelProvider([this]() {
-        return progressCoordinator && progressCoordinator->isSymbolAnalysisCancelled();
+        return dependencies.isWorkspaceSymbolAnalysisCancelled();
     });
 }
 
 void AnalysisCoordinator::connectSchedulerSignals()
 {
-    if (!scheduler)
+    if (!dependencies.hasScheduler())
         return;
 
-    connect(scheduler, &AnalysisScheduler::relationshipDataRefreshRequested,
+    AnalysisScheduler* scheduler = dependencies.schedulerObject();
+    connect(scheduler,
+            &AnalysisScheduler::relationshipDataRefreshRequested,
             this, [this]() {
-                if (navigationManager)
-                    navigationManager->refreshCurrentView();
+                dependencies.refreshRelationshipDataView();
             });
-    connect(scheduler, &AnalysisScheduler::fileSymbolAnalysisFinished,
+    connect(scheduler,
+            &AnalysisScheduler::fileSymbolAnalysisFinished,
             this, [this](const QString& fileName, int symbolCount) {
-                if (navigationManager)
-                    navigationManager->onSymbolAnalysisCompleted(fileName,
-                                                                 symbolCount);
+                dependencies.handleFileSymbolAnalysisFinished(fileName,
+                                                              symbolCount);
                 refreshActiveEditorForFile(fileName);
             });
     connect(scheduler,
             &AnalysisScheduler::workspaceSymbolAnalysisProgress,
             this,
             [this](const QString& fileName, int filesDone, int totalFiles) {
-                if (progressCoordinator) {
-                    progressCoordinator->handleWorkspaceSymbolProgress(
-                        filesDone,
-                        totalFiles,
-                        fileName);
-                }
+                dependencies.handleWorkspaceSymbolProgress(fileName,
+                                                           filesDone,
+                                                           totalFiles);
             });
     connect(scheduler,
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int filesAnalyzed, int totalSymbols) {
-                if (navigationManager) {
-                    navigationManager->onBatchSymbolAnalysisCompleted(
-                        filesAnalyzed,
-                        totalSymbols);
-                }
+                dependencies.handleWorkspaceSymbolAnalysisFinished(
+                    filesAnalyzed,
+                    totalSymbols);
             });
-    connect(scheduler, &AnalysisScheduler::relationshipAnalysisFinished,
+    connect(scheduler,
+            &AnalysisScheduler::relationshipAnalysisFinished,
             this, [this](const SingleFileRelationshipAnalysisResult& result) {
                 showRelationshipAnalysisCompleted(result.fileName,
                                                   result.relationships.size());
             });
-    connect(scheduler, &AnalysisScheduler::documentRefreshRequested,
+    connect(scheduler,
+            &AnalysisScheduler::documentRefreshRequested,
             this, &AnalysisCoordinator::refreshActiveEditorForFile);
-    connect(scheduler, &AnalysisScheduler::diagnosticsRefreshRequested,
+    connect(scheduler,
+            &AnalysisScheduler::diagnosticsRefreshRequested,
             this, [this](const QString& fileName) {
                 if (problemsRefreshHandler)
                     problemsRefreshHandler(fileName);
@@ -132,10 +262,12 @@ void AnalysisCoordinator::connectSchedulerSignals()
 
 void AnalysisCoordinator::connectProgressSignals()
 {
-    if (!progressCoordinator)
+    if (!dependencies.hasProgressCoordinator())
         return;
 
-    progressCoordinator->connectToScheduler(scheduler);
+    dependencies.connectProgressToScheduler();
+    AnalysisProgressCoordinator* progressCoordinator =
+        dependencies.progressCoordinatorObject();
     connect(progressCoordinator,
             &AnalysisProgressCoordinator::statusMessageRequested,
             this,
@@ -153,21 +285,21 @@ void AnalysisCoordinator::connectProgressSignals()
 
 void AnalysisCoordinator::connectWorkspaceSignals()
 {
-    if (!workspaceManager || !scheduler)
+    if (!dependencies.hasWorkspaceFileWatcher())
         return;
 
-    connect(workspaceManager, &WorkspaceManager::fileChanged,
+    connect(dependencies.workspaceManagerObject(),
+            &WorkspaceManager::fileChanged,
             this, [this](const QString& filePath) {
-                if (scheduler)
-                    scheduler->handleExternalFileChanged(filePath, fileChangeDebounceMs);
+                dependencies.handleExternalFileChanged(filePath,
+                                                       fileChangeDebounceMs);
             });
 }
 
 void AnalysisCoordinator::refreshActiveEditorForFile(const QString& fileName) const
 {
-    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    const DocumentSnapshot document =
-        tabManager ? tabManager->getCurrentDocument() : DocumentSnapshot();
+    MyCodeEditor* editor = dependencies.currentEditor();
+    const DocumentSnapshot document = dependencies.currentDocument();
     if (!editor || document.fileName != fileName)
         return;
 
