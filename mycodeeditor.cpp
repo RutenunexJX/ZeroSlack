@@ -121,10 +121,27 @@ struct MyCodeEditorState
                 widget->update(0, rect.y(), width, rect.height());
         }
 
-        void resizeTo(const QRect& contentsRect, int width) const
+        void handleUpdateRequest(
+            MyCodeEditor* editor,
+            const QRect& rect,
+            int dy) const
+        {
+            refresh(rect, dy, widthFor(editor));
+        }
+
+        void updateViewportMargins(MyCodeEditor* editor) const
+        {
+            editor->setViewportMargins(widthFor(editor), 0, 0, 0);
+        }
+
+        void resizeTo(MyCodeEditor* editor, const QRect& contentsRect) const
         {
             if (widget)
-                widget->setGeometry(0, 0, width, contentsRect.height());
+                widget->setGeometry(
+                    0,
+                    0,
+                    widthFor(editor),
+                    contentsRect.height());
         }
 
         void paint(MyCodeEditor* editor, QPaintEvent *event) const
@@ -1317,6 +1334,65 @@ struct MyCodeEditorState
         sourceHover.clearTarget();
     }
 
+    void handleControlKeyPress(MyCodeEditor* editor, QKeyEvent *event)
+    {
+        if (event->key() != Qt::Key_Control
+            || !sourceHover.setCtrlPressed(true)) {
+            return;
+        }
+
+        const QPoint mousePos = editor->mapFromGlobal(QCursor::pos());
+        if (editor->rect().contains(mousePos))
+            refreshSourceNavigationHoverAt(editor, mousePos);
+    }
+
+    void handleControlKeyRelease(MyCodeEditor* editor, QKeyEvent *event)
+    {
+        if (event->key() == Qt::Key_Control
+            && sourceHover.setCtrlPressed(false)) {
+            clearSourceNavigationHover(editor);
+        }
+    }
+
+    bool handleSourceNavigationMousePress(
+        MyCodeEditor* editor,
+        QMouseEvent *event)
+    {
+        if (event->button() != Qt::LeftButton
+            || !(event->modifiers() & Qt::ControlModifier)) {
+            return false;
+        }
+
+        if (!requestSourceNavigationAtPosition(editor, event->pos()))
+            return false;
+
+        event->accept();
+        return true;
+    }
+
+    void handleSourceNavigationMouseMove(
+        MyCodeEditor* editor,
+        QMouseEvent *event)
+    {
+        const bool isCtrlPressed =
+            (event->modifiers() & Qt::ControlModifier);
+
+        if (sourceHover.setCtrlPressed(isCtrlPressed)) {
+            if (sourceHover.isCtrlPressed())
+                refreshSourceNavigationHoverAt(editor, event->pos());
+            else
+                clearSourceNavigationHover(editor);
+        } else if (sourceHover.isCtrlPressed()) {
+            refreshSourceNavigationHoverAt(editor, event->pos());
+        }
+    }
+
+    void handleLeave(MyCodeEditor* editor)
+    {
+        sourceHover.setCtrlPressed(false);
+        clearSourceNavigationHover(editor);
+    }
+
 };
 
 LineNumberWidget::LineNumberWidget(MyCodeEditor *editor)
@@ -1361,7 +1437,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     state->completion.attachToEditor(this);
 
     highlightCurrentLine();
-    updateLineNumberWidgetWidth();
+    state->gutter.updateViewportMargins(this);
 
     setLineWrapMode(QPlainTextEdit::NoWrap);
 
@@ -1380,11 +1456,6 @@ void MyCodeEditor::onTsContentsChange(int position, int charsRemoved, int charsA
                             charsRemoved,
                             charsAdded,
                             document()->toPlainText());
-}
-
-int MyCodeEditor::getLineNumberWidgetWidth()
-{
-    return state->gutter.widthFor(this);
 }
 
 void MyCodeEditor::highlightCurrentLine()
@@ -1431,18 +1502,18 @@ qreal MyCodeEditor::getDocumentHeightPx() const
 
 void MyCodeEditor::updateLineNumberWidget(QRect rect, int dy)
 {
-    state->gutter.refresh(rect, dy, getLineNumberWidgetWidth());
+    state->gutter.handleUpdateRequest(this, rect, dy);
 }
 
 void MyCodeEditor::updateLineNumberWidgetWidth()
 {
-    setViewportMargins(getLineNumberWidgetWidth(),0,0,0);
+    state->gutter.updateViewportMargins(this);
 }
 
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
-    state->gutter.resizeTo(contentsRect(), getLineNumberWidgetWidth());
+    state->gutter.resizeTo(this, contentsRect());
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -1506,13 +1577,7 @@ void MyCodeEditor::onCompletionActivated(const QModelIndex &index)
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Control
-        && state->sourceHover.setCtrlPressed(true)) {
-        QPoint mousePos = mapFromGlobal(QCursor::pos());
-        if (rect().contains(mousePos)) {
-            refreshSourceNavigationHoverAt(mousePos);
-        }
-    }
+    state->handleControlKeyPress(this, event);
 
     if (state->handleSourceSymbolShortcut(this, event))
         return;
@@ -1545,10 +1610,7 @@ void MyCodeEditor::executeAlternateModeCommand(const QString &command)
 
 void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Control
-        && state->sourceHover.setCtrlPressed(false)) {
-        clearSourceNavigationHover();
-    }
+    state->handleControlKeyRelease(this, event);
 
     if (event->key() == Qt::Key_Shift) {
         QPlainTextEdit::keyReleaseEvent(event);
@@ -1564,37 +1626,22 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
-        if (requestSourceNavigationAtPosition(event->pos())) {
-            event->accept();
-            return;
-        }
-    }
+    if (state->handleSourceNavigationMousePress(this, event))
+        return;
 
     QPlainTextEdit::mousePressEvent(event);
 }
 
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
-    bool isCtrlPressed = (event->modifiers() & Qt::ControlModifier);
-
-    if (state->sourceHover.setCtrlPressed(isCtrlPressed)) {
-        if (state->sourceHover.isCtrlPressed()) {
-            refreshSourceNavigationHoverAt(event->pos());
-        } else {
-            clearSourceNavigationHover();
-        }
-    } else if (state->sourceHover.isCtrlPressed()) {
-        refreshSourceNavigationHoverAt(event->pos());
-    }
+    state->handleSourceNavigationMouseMove(this, event);
 
     QPlainTextEdit::mouseMoveEvent(event);
 }
 
 void MyCodeEditor::leaveEvent(QEvent *event)
 {
-    state->sourceHover.setCtrlPressed(false);
-    clearSourceNavigationHover();
+    state->handleLeave(this);
 
     QPlainTextEdit::leaveEvent(event);
 }

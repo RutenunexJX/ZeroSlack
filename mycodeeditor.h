@@ -61,8 +61,6 @@ private:
     friend class ScopeBandWidget;
     friend struct MyCodeEditorState;
 
-    int getLineNumberWidgetWidth();
-
     void setFileName(QString fileName);
     QString getFileName() const;
     QString currentModuleName() const;
