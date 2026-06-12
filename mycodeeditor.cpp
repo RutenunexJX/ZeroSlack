@@ -1,12 +1,15 @@
 #include "mycodeeditor.h"
 #include "completionmodel.h"
+#include "editorappearance.h"
 #include "editorcursornavigation.h"
 #include "editorfileidentity.h"
 #include "editorgeometry.h"
 #include "editorgutter.h"
 #include "editorselection.h"
+#include "editorsemanticruntime.h"
 #include "editorsyntaxstate.h"
 #include "editorsemanticcontextservice.h"
+#include "editormodestate.h"
 #include "sourcenavigationservice.h"
 
 #include "syminfo.h"
@@ -34,16 +37,7 @@
 
 struct MyCodeEditorState
 {
-    struct EditorAppearance {
-        void apply(MyCodeEditor* editor) const
-        {
-            editor->setFont(QFont("Consolas", 14));
-            const int tabWidth =
-                editor->fontMetrics().horizontalAdvance(' ') * 4;
-            editor->setTabStopDistance(tabWidth);
-            editor->setLineWrapMode(QPlainTextEdit::NoWrap);
-        }
-    } appearance;
+    EditorAppearance appearance;
 
     EditorGutter gutter;
 
@@ -54,110 +48,8 @@ struct MyCodeEditorState
 
     EditorFileIdentity identity;
 
-    struct SemanticRuntime {
-        EditorSemanticContextService* service = nullptr;
-
-        void init()
-        {
-            service = EditorSemanticContextService::getInstance();
-        }
-
-        void setService(EditorSemanticContextService* nextService)
-        {
-            service = nextService
-                ? nextService
-                : EditorSemanticContextService::getInstance();
-        }
-
-        EditorSemanticContextService* contextService() const
-        {
-            return service
-                ? service
-                : EditorSemanticContextService::getInstance();
-        }
-
-        EditorSemanticContext contextForDocument(
-            QTextDocument* document,
-            const QString& fileName,
-            const QString& moduleName,
-            int cursorPosition,
-            bool includeDocumentText) const
-        {
-            EditorSemanticContext context;
-            context.fileName = fileName;
-            context.moduleName = moduleName;
-            if (includeDocumentText)
-                context.documentText = document->toPlainText();
-            context.cursorPosition = cursorPosition;
-
-            const QTextBlock block = document->findBlock(cursorPosition);
-            if (block.isValid()) {
-                context.lineText = block.text();
-                context.column = cursorPosition - block.position();
-                context.cursorLine = block.blockNumber() + 1;
-                context.lineUpToCursor = context.lineText.left(context.column);
-            }
-
-            return context;
-        }
-    } semantic;
-
-    struct ModeState {
-        bool commandModeActive = false;
-        bool alternateModeActive = false;
-        QString alternateBuffer;
-        bool commandModeExitedByDoubleSpace = false;
-        int completionTimerLineNumber = -1;
-
-        void setAlternateModeEnabled(bool enabled)
-        {
-            alternateModeActive = enabled;
-        }
-
-        void setCommandModeActive(bool active)
-        {
-            commandModeActive = active;
-        }
-
-        void noteCompletionTimerLine(int lineNumber)
-        {
-            if (completionTimerLineNumber == lineNumber)
-                return;
-
-            commandModeExitedByDoubleSpace = false;
-            completionTimerLineNumber = lineNumber;
-        }
-
-        void markCommandModeExitedByDoubleSpace()
-        {
-            commandModeExitedByDoubleSpace = true;
-        }
-
-        void resetCommandModeExit()
-        {
-            commandModeExitedByDoubleSpace = false;
-        }
-
-        void clearCommandMode()
-        {
-            commandModeActive = false;
-        }
-
-        void setAlternateBuffer(const QString& input)
-        {
-            alternateBuffer = input;
-        }
-
-        QString alternateBufferWithoutLastChar() const
-        {
-            return alternateBuffer.left(alternateBuffer.size() - 1);
-        }
-
-        void clearAlternateBuffer()
-        {
-            alternateBuffer.clear();
-        }
-    } modes;
+    EditorSemanticRuntime semantic;
+    EditorModeState modes;
 
     struct CompletionUi {
         QCompleter *completer = nullptr;
@@ -224,7 +116,7 @@ struct MyCodeEditorState
 
         EditorCompletionActivationContext activationContextForIndex(
             const QModelIndex& index,
-            const ModeState& modes) const
+            const EditorModeState& modes) const
         {
             const CompletionModel::CompletionItem item = model->getItem(index);
             EditorCompletionActivationContext context;
@@ -238,7 +130,7 @@ struct MyCodeEditorState
 
         EditorCompletionPopupKeyContext popupKeyContextForEvent(
             QKeyEvent *event,
-            const ModeState& modes) const
+            const EditorModeState& modes) const
         {
             EditorCompletionPopupKeyContext context;
             context.key = event->key();
