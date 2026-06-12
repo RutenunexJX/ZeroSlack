@@ -2,6 +2,7 @@
 #include "myhighlighter.h"
 #include "completionmodel.h"
 #include "editorsemanticcontextservice.h"
+#include "sourcenavigationservice.h"
 
 #include "syminfo.h"
 
@@ -12,9 +13,12 @@
 
 #include <QKeyEvent>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QTextCursor>
 #include <QApplication>
 #include <QRect>
+#include <QTimer>
+#include <QWheelEvent>
 
 #include <QAbstractItemView>
 #include <QCompleter>
@@ -25,10 +29,26 @@
 #include <memory>
 
 namespace {
-constexpr int kCommandSelectionProperty = QTextFormat::UserProperty;
+constexpr int kPrimarySelectionProperty = QTextFormat::UserProperty;
+constexpr int kScopeBackgroundSelectionMarker = 997;
+constexpr int kCurrentLineSelectionMarker = 998;
+constexpr int kCommandSelectionProperty = kPrimarySelectionProperty;
 constexpr int kCommandSelectionMarker = 999;
 constexpr int kHoveredSymbolSelectionProperty = QTextFormat::UserProperty + 1;
 constexpr int kHoveredSymbolSelectionMarker = 1001;
+
+void removeSelectionsByProperty(
+    QList<QTextEdit::ExtraSelection>& selections,
+    int property,
+    int value)
+{
+    selections.erase(
+        std::remove_if(selections.begin(), selections.end(),
+            [property, value](const QTextEdit::ExtraSelection& selection) {
+                return selection.format.property(property).toInt() == value;
+            }),
+        selections.end());
+}
 }
 
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
@@ -41,7 +61,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
     initHighlighter();
     initAutoComplete();
 
-    highlighCurrentLine();
+    highlightCurrentLine();
     updateLineNumberWidgetWidth();
 
     setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -64,7 +84,7 @@ void MyCodeEditor::initConnection()
 {
     scopeRefreshTimer = new QTimer(this);
     scopeRefreshTimer->setSingleShot(true);
-    connect(scopeRefreshTimer, &QTimer::timeout, this, &MyCodeEditor::highlighCurrentLine);
+    connect(scopeRefreshTimer, &QTimer::timeout, this, &MyCodeEditor::highlightCurrentLine);
 
     // Coalesce cursor/text changes into one selection refresh per event loop.
     auto scheduleHighlightRefresh = [this]() { scopeRefreshTimer->start(0); };
@@ -106,7 +126,7 @@ int MyCodeEditor::getLineNumberWidgetWidth()
     return 8+QString::number(blockCount()+1).length()*fontMetrics().horizontalAdvance(QChar('0'));
 }
 
-void MyCodeEditor::highlighCurrentLine()
+void MyCodeEditor::highlightCurrentLine()
 {
     // Drop previous scope-background (997) and current-line (998) selections, then re-add only the
     // current-line highlight. The scope-background shading was a debug visualization and has been
@@ -115,15 +135,18 @@ void MyCodeEditor::highlighCurrentLine()
     list.erase(
         std::remove_if(list.begin(), list.end(),
             [](const QTextEdit::ExtraSelection& s) {
-                int p = s.format.property(QTextFormat::UserProperty).toInt();
-                return p == 997 || p == 998;
+                int p = s.format.property(kPrimarySelectionProperty).toInt();
+                return p == kScopeBackgroundSelectionMarker
+                    || p == kCurrentLineSelectionMarker;
             }),
         list.end());
 
     QTextEdit::ExtraSelection currentLine;
     currentLine.format.setBackground(QColor(0,100,100,20));
     currentLine.format.setProperty(QTextFormat::FullWidthSelection, true);
-    currentLine.format.setProperty(QTextFormat::UserProperty, 998);
+    currentLine.format.setProperty(
+        kPrimarySelectionProperty,
+        kCurrentLineSelectionMarker);
     currentLine.cursor = textCursor();
     list.append(currentLine);
 
@@ -141,7 +164,7 @@ void MyCodeEditor::highlighCurrentLine()
 
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
 {
-    highlighCurrentLine();
+    highlightCurrentLine();
 }
 
 void MyCodeEditor::setAlternateModeEnabled(bool enabled)
@@ -704,10 +727,11 @@ void MyCodeEditor::highlightCommandText(int prefixPosition)
     if (prefixPosition < 0)
         return;
 
-    removeExtraSelectionsByProperty(
+    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
+    removeSelectionsByProperty(
+        extraSelections,
         kCommandSelectionProperty,
         kCommandSelectionMarker);
-    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
     QTextEdit::ExtraSelection commandSelection;
     commandSelection.format.setBackground(QColor(60, 60, 60, 180));
@@ -908,6 +932,24 @@ void MyCodeEditor::moveMouseToCursor()
     }
 }
 
+void MyCodeEditor::applyLineNavigationTarget(
+    const SourceLineNavigationTarget& target)
+{
+    QTextCursor cursor = textCursor();
+    cursor.movePosition(QTextCursor::Start);
+    for (int i = 0; i < target.lineMoves; ++i)
+        cursor.movePosition(QTextCursor::Down);
+    if (target.columnMoves > 0) {
+        cursor.movePosition(QTextCursor::Right,
+                            QTextCursor::MoveAnchor,
+                            target.columnMoves);
+    }
+    setTextCursor(cursor);
+    centerCursor();
+    setFocus();
+    moveMouseToCursor();
+}
+
 void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int endPos)
 {
     if (word.isEmpty() || startPos < 0 || endPos <= startPos) {
@@ -927,10 +969,11 @@ void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int
         kHoveredSymbolSelectionProperty,
         kHoveredSymbolSelectionMarker);
 
-    removeExtraSelectionsByProperty(
+    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
+    removeSelectionsByProperty(
+        extraSelections,
         kHoveredSymbolSelectionProperty,
         kHoveredSymbolSelectionMarker);
-    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
     extraSelections.append(highlight);
     setExtraSelections(extraSelections);
@@ -948,12 +991,7 @@ void MyCodeEditor::clearHoveredSymbolHighlight()
 void MyCodeEditor::removeExtraSelectionsByProperty(int property, int value)
 {
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
-    extraSelections.erase(
-        std::remove_if(extraSelections.begin(), extraSelections.end(),
-            [property, value](const QTextEdit::ExtraSelection& selection) {
-                return selection.format.property(property).toInt() == value;
-            }),
-        extraSelections.end());
+    removeSelectionsByProperty(extraSelections, property, value);
     setExtraSelections(extraSelections);
 }
 

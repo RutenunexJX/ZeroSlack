@@ -5,8 +5,6 @@
 #include "sourcenavigationservice.h"
 #include "tabmanager.h"
 
-#include <QTextCursor>
-
 NavigationCommandCoordinator::NavigationCommandCoordinator(
     TabManager* tabManager,
     NavigationManager* navigationManager,
@@ -70,19 +68,7 @@ void NavigationCommandCoordinator::navigateEditorToLine(
     if (!target.matched)
         return;
 
-    QTextCursor cursor = editor->textCursor();
-    cursor.movePosition(QTextCursor::Start);
-    for (int i = 0; i < target.lineMoves; ++i)
-        cursor.movePosition(QTextCursor::Down);
-    if (target.columnMoves > 0) {
-        cursor.movePosition(QTextCursor::Right,
-                            QTextCursor::MoveAnchor,
-                            target.columnMoves);
-    }
-    editor->setTextCursor(cursor);
-    editor->centerCursor();
-    editor->setFocus();
-    editor->moveMouseToCursor();
+    editor->applyLineNavigationTarget(target);
 }
 
 void NavigationCommandCoordinator::navigateToSymbol(const sym_list::SymbolInfo& symbol)

@@ -1,21 +1,28 @@
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
 
-#include "syminfo.h"
-#include "completionmodel.h"
 #include "editorsemanticcontextservice.h"
 #include "tsdocument.h"
 
 #include <QPlainTextEdit>
-#include <QCompleter>
-#include <QTimer>
-#include <QMouseEvent>
 
 class LineNumberWidget;
 class MyHighlighter;
+class AnalysisCoordinator;
+class CompletionModel;
 class DocumentModel;
+class EditorCoordinator;
+class NavigationCommandCoordinator;
+class QCompleter;
+class QModelIndex;
 class QMenu;
+class QMouseEvent;
+class QPaintEvent;
+class QRect;
 class ScopeBandWidget;
+class QTimer;
+class QWheelEvent;
+struct SourceLineNavigationTarget;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -24,14 +31,8 @@ public:
     explicit MyCodeEditor(QWidget *parent = nullptr);
     ~MyCodeEditor();
 
-    void refreshScopeAndCurrentLineHighlight();
-    void setAlternateModeEnabled(bool enabled);
-    void setSemanticContextService(EditorSemanticContextService* service);
-
-    void moveMouseToCursor();
-
 private slots:
-    void highlighCurrentLine();
+    void highlightCurrentLine();
     void updateLineNumberWidget(QRect rect, int dy);
     void updateLineNumberWidgetWidth();
     void onTextChanged();
@@ -50,8 +51,11 @@ protected:
     void leaveEvent(QEvent *event) override;
 
 private:
+    friend class AnalysisCoordinator;
     friend class DocumentModel;
+    friend class EditorCoordinator;
     friend class LineNumberWidget;
+    friend class NavigationCommandCoordinator;
     friend class ScopeBandWidget;
 
     void initConnection();
@@ -73,6 +77,11 @@ private:
     QString getFileName() const;
     QString currentModuleName() const;
     QString currentModuleNameAt(int charPos) const;
+    void refreshScopeAndCurrentLineHighlight();
+    void setAlternateModeEnabled(bool enabled);
+    void setSemanticContextService(EditorSemanticContextService* service);
+    void applyLineNavigationTarget(const SourceLineNavigationTarget& target);
+    void moveMouseToCursor();
     qreal getBlockTopY(int blockNumber) const;
     qreal getBlockHeight(int blockNumber) const;
     qreal getDocumentHeightPx() const;
