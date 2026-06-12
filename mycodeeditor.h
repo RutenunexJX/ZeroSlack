@@ -15,6 +15,7 @@ class LineNumberWidget;
 class MyHighlighter;
 class DocumentModel;
 class QMenu;
+class ScopeBandWidget;
 
 class MyCodeEditor : public QPlainTextEdit
 {
@@ -28,10 +29,6 @@ public:
     void setSemanticContextService(EditorSemanticContextService* service);
 
     void moveMouseToCursor();
-
-    qreal getBlockTopY(int blockNumber) const;
-    qreal getBlockHeight(int blockNumber) const;
-    qreal getDocumentHeightPx() const;
 
 private slots:
     void highlighCurrentLine();
@@ -55,6 +52,7 @@ protected:
 private:
     friend class DocumentModel;
     friend class LineNumberWidget;
+    friend class ScopeBandWidget;
 
     void initConnection();
     void initFont();
@@ -75,6 +73,9 @@ private:
     QString getFileName() const;
     QString currentModuleName() const;
     QString currentModuleNameAt(int charPos) const;
+    qreal getBlockTopY(int blockNumber) const;
+    qreal getBlockHeight(int blockNumber) const;
+    qreal getDocumentHeightPx() const;
     EditorSemanticContext semanticContextForCursor(
         const QTextCursor& cursor,
         bool includeDocumentText = false) const;
@@ -114,6 +115,7 @@ private:
 
     bool isInCustomCommandMode = false;
 
+    void removeExtraSelectionsByProperty(int property, int value);
     void highlightCommandText(int prefixPosition);
     void clearCommandHighlight();
 

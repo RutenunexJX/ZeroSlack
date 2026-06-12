@@ -5,6 +5,7 @@
 #include <QString>
 
 class FileCommandCoordinator;
+class EditorSemanticContextService;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 enum class SourceSymbolAction;
@@ -35,6 +36,7 @@ public:
     void attachEditor(MyCodeEditor* editor);
 
 private:
+    EditorSemanticContextService* contextService() const;
     void applyAlternateMode(MyCodeEditor* editor) const;
     void applyAlternateModeToOpenEditors() const;
     void handleIncludeOpenRequested(MyCodeEditor* editor,
@@ -62,6 +64,7 @@ private:
     FileCommandCoordinator* fileCommandCoordinator = nullptr;
     NavigationCommandCoordinator* navigationCommandCoordinator = nullptr;
     SemanticPanelRefreshCoordinator* semanticPanelRefresh = nullptr;
+    EditorSemanticContextService* semanticContextService = nullptr;
     bool signalsConnected = false;
 };
 

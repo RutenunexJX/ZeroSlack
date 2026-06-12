@@ -31,6 +31,7 @@ EditorCoordinator::EditorCoordinator(TabManager* tabManager,
     : QObject(parent)
     , tabManager(tabManager)
     , modeManager(modeManager)
+    , semanticContextService(EditorSemanticContextService::getInstance())
 {
 }
 
@@ -68,6 +69,7 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     if (!editor)
         return;
 
+    editor->setSemanticContextService(contextService());
     applyAlternateMode(editor);
     connect(editor, &MyCodeEditor::alternateCommandRequested,
             this, [this, editor](const QString& command) {
@@ -93,6 +95,13 @@ void EditorCoordinator::applyAlternateMode(MyCodeEditor* editor) const
     if (!editor || !modeManager)
         return;
     editor->setAlternateModeEnabled(modeManager->getCurrentMode() == ModeManager::AlternateMode);
+}
+
+EditorSemanticContextService* EditorCoordinator::contextService() const
+{
+    return semanticContextService
+        ? semanticContextService
+        : EditorSemanticContextService::getInstance();
 }
 
 void EditorCoordinator::applyAlternateModeToOpenEditors() const
@@ -135,7 +144,7 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
         return;
 
     const DefinitionNavigationTarget target =
-        EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+        contextService()->resolveDefinitionTarget(
             symbolName, context);
     if (!target.found)
         return;
@@ -158,8 +167,7 @@ void EditorCoordinator::handleSourceNavigationRequested(
     const EditorSemanticContext& context) const
 {
     const EditorSourceNavigationClickState clickState =
-        EditorSemanticContextService::getInstance()
-            ->sourceNavigationClickState(target);
+        contextService()->sourceNavigationClickState(target);
     if (!clickState.acceptEvent)
         return;
 
@@ -182,8 +190,7 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
         return;
 
     const EditorSourceSymbolActionRequestState requestState =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolActionRequestState(action, context);
+        contextService()->sourceSymbolActionRequestState(action, context);
     if (!requestState.available)
         return;
 
@@ -211,8 +218,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
         return;
 
     const EditorSourceSymbolContextMenuState menuState =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolContextMenuState(context);
+        contextService()->sourceSymbolContextMenuState(context);
 
     menu->addSeparator();
     for (const EditorSourceSymbolMenuItemState& item : menuState.items) {

@@ -24,6 +24,13 @@
 #include <QBrush>
 #include <memory>
 
+namespace {
+constexpr int kCommandSelectionProperty = QTextFormat::UserProperty;
+constexpr int kCommandSelectionMarker = 999;
+constexpr int kHoveredSymbolSelectionProperty = QTextFormat::UserProperty + 1;
+constexpr int kHoveredSymbolSelectionMarker = 1001;
+}
+
 MyCodeEditor::MyCodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 {
     semanticContextService = EditorSemanticContextService::getInstance();
@@ -697,20 +704,17 @@ void MyCodeEditor::highlightCommandText(int prefixPosition)
     if (prefixPosition < 0)
         return;
 
+    removeExtraSelectionsByProperty(
+        kCommandSelectionProperty,
+        kCommandSelectionMarker);
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
 
-    extraSelections.erase(
-        std::remove_if(extraSelections.begin(), extraSelections.end(),
-            [](const QTextEdit::ExtraSelection &selection) {
-                return selection.format.property(QTextFormat::UserProperty).toInt() == 999; // Custom marker
-            }),
-        extraSelections.end()
-    );
-
     QTextEdit::ExtraSelection commandSelection;
-    commandSelection.format.setBackground(QColor(60, 60, 60, 180)); // Dark background for command text
-    commandSelection.format.setForeground(QColor(255, 255, 255));   // White text
-    commandSelection.format.setProperty(QTextFormat::UserProperty, 999); // Custom marker
+    commandSelection.format.setBackground(QColor(60, 60, 60, 180));
+    commandSelection.format.setForeground(QColor(255, 255, 255));
+    commandSelection.format.setProperty(
+        kCommandSelectionProperty,
+        kCommandSelectionMarker);
 
     QTextCursor commandCursor = textCursor();
     const int commandStartPosition = commandCursor.block().position() + prefixPosition;
@@ -724,17 +728,9 @@ void MyCodeEditor::highlightCommandText(int prefixPosition)
 
 void MyCodeEditor::clearCommandHighlight()
 {
-    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
-
-    extraSelections.erase(
-        std::remove_if(extraSelections.begin(), extraSelections.end(),
-            [](const QTextEdit::ExtraSelection &selection) {
-                return selection.format.property(QTextFormat::UserProperty).toInt() == 999; // Custom marker
-            }),
-        extraSelections.end()
-    );
-
-    setExtraSelections(extraSelections);
+    removeExtraSelectionsByProperty(
+        kCommandSelectionProperty,
+        kCommandSelectionMarker);
 }
 
 QString MyCodeEditor::getWordUnderCursor()
@@ -927,17 +923,14 @@ void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int
     highlight.format.setUnderlineColor(QColor(0, 100, 200));
     highlight.format.setForeground(QColor(0, 100, 200));
 
-    highlight.format.setProperty(QTextFormat::UserProperty + 1, 1001);
+    highlight.format.setProperty(
+        kHoveredSymbolSelectionProperty,
+        kHoveredSymbolSelectionMarker);
 
+    removeExtraSelectionsByProperty(
+        kHoveredSymbolSelectionProperty,
+        kHoveredSymbolSelectionMarker);
     QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
-
-    extraSelections.erase(
-        std::remove_if(extraSelections.begin(), extraSelections.end(),
-            [](const QTextEdit::ExtraSelection &selection) {
-                return selection.format.property(QTextFormat::UserProperty + 1).toInt() == 1001;
-            }),
-        extraSelections.end()
-    );
 
     extraSelections.append(highlight);
     setExtraSelections(extraSelections);
@@ -945,21 +938,23 @@ void MyCodeEditor::highlightHoveredSymbol(const QString& word, int startPos, int
 
 void MyCodeEditor::clearHoveredSymbolHighlight()
 {
-    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
-
-    int removedCount = 0;
-    auto it = std::remove_if(extraSelections.begin(), extraSelections.end(),
-        [&removedCount](const QTextEdit::ExtraSelection &selection) {
-            bool shouldRemove = selection.format.property(QTextFormat::UserProperty + 1).toInt() == 1001;
-            if (shouldRemove) removedCount++;
-            return shouldRemove;
-        });
-
-    extraSelections.erase(it, extraSelections.end());
-    setExtraSelections(extraSelections);
-
+    removeExtraSelectionsByProperty(
+        kHoveredSymbolSelectionProperty,
+        kHoveredSymbolSelectionMarker);
     hoveredWordStartPos = -1;
     hoveredWordEndPos = -1;
+}
+
+void MyCodeEditor::removeExtraSelectionsByProperty(int property, int value)
+{
+    QList<QTextEdit::ExtraSelection> extraSelections = this->extraSelections();
+    extraSelections.erase(
+        std::remove_if(extraSelections.begin(), extraSelections.end(),
+            [property, value](const QTextEdit::ExtraSelection& selection) {
+                return selection.format.property(property).toInt() == value;
+            }),
+        extraSelections.end());
+    setExtraSelections(extraSelections);
 }
 
 QCursor MyCodeEditor::createJumpableCursor()
