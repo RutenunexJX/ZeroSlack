@@ -1,9 +1,7 @@
 #include "completionservice.h"
 
-#include "completioncommandmode.h"
 #include "completioncontexthelper.h"
 #include "completioncontextquery.h"
-#include "completionmatcher.h"
 #include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
 
@@ -99,25 +97,6 @@ QStringList CompletionService::findSymbolCompletionsByType(
     return CompletionSymbolQuery::symbolNamesFromScored(scored, maxResults);
 }
 
-bool CompletionService::matchesCompletionAbbreviation(
-    const QString& text,
-    const QString& abbreviation) const
-{
-    return CompletionMatcher::matchesAbbreviation(text, abbreviation);
-}
-
-int CompletionService::calculateCompletionMatchScore(
-    const QString& text,
-    const QString& abbreviation) const
-{
-    return CompletionMatcher::calculateContextMatchScore(text, abbreviation);
-}
-
-int CompletionService::completionItemScore(const QString& text, const QString& prefix) const
-{
-    return CompletionMatcher::completionItemScore(text, prefix);
-}
-
 QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType) const
 {
     switch (symbolType) {
@@ -144,216 +123,6 @@ QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType
     }
 }
 
-QList<CommandModeCommand> CompletionService::commandModeCommands() const
-{
-    return CompletionCommandMode::commands();
-}
-
-CommandModeMatch CompletionService::matchCommandMode(const QString& lineUpToCursor) const
-{
-    return CompletionCommandMode::matchCommandMode(lineUpToCursor);
-}
-
-CommandModeInputState CompletionService::commandModeInputState(
-    const QString& lineUpToCursor) const
-{
-    return CompletionCommandMode::inputState(lineUpToCursor);
-}
-
-CommandModeCompletionState CompletionService::commandModeCompletionState(
-    const CommandModeCompletionQuery& query) const
-{
-    const CommandModeInputState inputState =
-        commandModeInputState(query.lineUpToCursor);
-
-    CommandModeCompletionState state;
-    if (!inputState.matched)
-        return state;
-
-    state.matched = true;
-    state.exitRequested = inputState.exitRequested;
-    state.prefixPosition = inputState.prefixPosition;
-    state.input = inputState.input;
-    state.completionPrefix = inputState.input.trimmed();
-    state.command = inputState.command;
-
-    if (state.exitRequested)
-        return state;
-
-    CommandCompletionQuery completionQuery;
-    completionQuery.prefix = state.completionPrefix;
-    completionQuery.fileName = query.fileName;
-    completionQuery.moduleName = query.moduleName;
-    completionQuery.documentText = query.documentText;
-    completionQuery.symbolType = state.command.symbolType;
-
-    state.symbols = findCommandCompletionSymbols(completionQuery);
-    if (state.symbols.isEmpty()
-        && CompletionSymbolQuery::isModuleRangeSymbolType(state.command.symbolType)
-        && completionQuery.moduleName.isEmpty()) {
-        state.hidePopup = true;
-        return state;
-    }
-
-    state.showCompletions = true;
-    return state;
-}
-
-EditorCompletionState CompletionService::editorCompletionState(
-    const EditorCompletionQuery& query) const
-{
-    EditorCompletionState state;
-
-    QString variableName;
-    QString memberPrefix;
-    const QString lineForParse = query.lineUpToCursor.trimmed();
-    if (CompletionContextHelper::tryParseStructMember(
-            lineForParse, variableName, memberPrefix)) {
-        const QString structTypeName =
-            getStructTypeForVariable(variableName, query.moduleName);
-        if (!structTypeName.isEmpty()) {
-            CompletionQuery completionQuery;
-            completionQuery.prefix = memberPrefix;
-            completionQuery.fileName = query.fileName;
-            completionQuery.moduleName = query.moduleName;
-            completionQuery.structTypeNameForMember = structTypeName;
-            completionQuery.cursorLine = query.cursorLine;
-            completionQuery.cursorPosition = query.cursorPosition;
-
-            state.available = true;
-            state.prefix = memberPrefix;
-            state.replacementStartColumn =
-                query.lineUpToCursor.lastIndexOf(QLatin1Char('.')) + 1;
-            state.completion = findCompletionResult(completionQuery);
-            return state;
-        }
-    }
-
-    if (query.wordPrefix.length() < 1)
-        return state;
-
-    CompletionQuery completionQuery;
-    completionQuery.prefix = query.wordPrefix;
-    completionQuery.fileName = query.fileName;
-    completionQuery.moduleName = query.moduleName;
-    completionQuery.cursorLine = query.cursorLine;
-    completionQuery.cursorPosition = query.cursorPosition;
-
-    state.available = true;
-    state.prefix = query.wordPrefix;
-    state.replacementStartColumn =
-        qMax(0, query.lineUpToCursor.size() - query.wordPrefix.size());
-    state.completion = findCompletionResult(completionQuery);
-    return state;
-}
-
-CompletionTriggerState CompletionService::completionTriggerState(
-    const CompletionTriggerQuery& query) const
-{
-    CompletionTriggerState state;
-
-    if (query.lineUpToCursor.isEmpty()) {
-        state.hidePopup = !query.commandModeActive;
-        return state;
-    }
-
-    const QChar lastChar = query.lineUpToCursor.back();
-    if (query.commandModeActive) {
-        state.continueCompletion =
-            lastChar.isLetterOrNumber()
-            || lastChar == QLatin1Char('_')
-            || lastChar == QLatin1Char(' ');
-        state.hidePopup = false;
-        return state;
-    }
-
-    if (lastChar.isLetterOrNumber()
-        || lastChar == QLatin1Char('_')
-        || lastChar == QLatin1Char('.')) {
-        state.continueCompletion = true;
-        return state;
-    }
-
-    if (lastChar != QLatin1Char(' ')) {
-        state.hidePopup = true;
-        return state;
-    }
-
-    const QString lineBeforeSpace =
-        query.lineUpToCursor.left(query.lineUpToCursor.size() - 1).trimmed();
-    QString variableName;
-    QString memberPrefix;
-    if (!CompletionContextHelper::tryParseStructMember(
-            lineBeforeSpace, variableName, memberPrefix)) {
-        state.hidePopup = true;
-        return state;
-    }
-
-    state.continueCompletion =
-        !getStructTypeForVariable(variableName, query.moduleName).isEmpty();
-    state.hidePopup = !state.continueCompletion;
-    return state;
-}
-
-bool CompletionService::shouldContinueCompletion(
-    const CompletionTriggerQuery& query) const
-{
-    return completionTriggerState(query).continueCompletion;
-}
-
-CompletionActivationState CompletionService::completionActivationState(
-    const CompletionActivationQuery& query) const
-{
-    return CompletionCommandMode::activationState(query);
-}
-
-CompletionPopupKeyState CompletionService::completionPopupKeyState(
-    const CompletionPopupKeyQuery& query) const
-{
-    return CompletionCommandMode::popupKeyState(query);
-}
-
-CommandSymbolPresentation CompletionService::commandSymbolPresentation(
-    sym_list::sym_type_e symbolType) const
-{
-    return CompletionCommandMode::symbolPresentation(symbolType);
-}
-
-CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType,
-    const QString& prefix) const
-{
-    return CompletionCommandMode::symbolCompletionItem(symbol, requestedType, prefix);
-}
-
-QList<int> CompletionService::findCompletionAbbreviationPositions(
-    const QString& text,
-    const QString& abbreviation) const
-{
-    return CompletionMatcher::abbreviationPositions(text, abbreviation);
-}
-
-QVector<QPair<QString, int>> CompletionService::findScoredKeywordCompletions(
-    const QString& prefix) const
-{
-    return CompletionMatcher::scoredKeywordCompletions(prefix);
-}
-
-QStringList CompletionService::findKeywordCompletions(
-    const QString& prefix,
-    int maxResults) const
-{
-    return CompletionMatcher::keywordCompletions(prefix, maxResults);
-}
-
-QStringList CompletionService::findKeywordAbbreviationMatches(
-    const QStringList& candidates,
-    const QString& abbreviation) const
-{
-    return CompletionMatcher::keywordAbbreviationMatches(candidates, abbreviation);
-}
-
 bool CompletionService::relationshipCompletionsAvailable() const
 {
     return CompletionContextQuery::relationshipCompletionsAvailable(
@@ -372,24 +141,6 @@ QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
         fileName,
         cursorPosition,
         relationshipCompletionsEnabled);
-}
-
-QStringList CompletionService::findScopeCompletions(const CompletionQuery& query) const
-{
-    return CompletionSymbolQuery::scopeCompletions(
-        semanticIndex(), query.fileName, query.cursorLine, query.prefix);
-}
-
-QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const
-{
-    return CompletionSymbolQuery::namesFromSymbols(
-        CompletionSemanticQuery::commandSymbols(semanticIndex(), query));
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
-    const CommandCompletionQuery& query) const
-{
-    return CompletionSemanticQuery::commandSymbols(semanticIndex(), query);
 }
 
 QStringList CompletionService::findModuleChildCompletions(
