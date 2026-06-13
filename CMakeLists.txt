@@ -73,6 +73,7 @@ set(ZEROSLACK_CORE_SOURCES
     diagnosticservice.cpp
     documentmodel.cpp
     documentregistry.cpp
+    documentregistryreader.cpp
     documentsessionstate.cpp
     editorappearance.cpp
     editorcompletionquery.cpp
