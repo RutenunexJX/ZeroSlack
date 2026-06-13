@@ -78,6 +78,7 @@ set(ZEROSLACK_CORE_SOURCES
     documentmodel.cpp
     documentmodelconnections.cpp
     documentregistry.cpp
+    documentregistrycursor.cpp
     documentregistryqueries.cpp
     documentregistryreader.cpp
     documentregistrystate.cpp

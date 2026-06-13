@@ -4,8 +4,6 @@
 
 #include <QDir>
 #include <QFileInfo>
-#include <QTextBlock>
-#include <QTextCursor>
 
 QString DocumentSnapshotReader::normalizedFileName(
     const QString& fileName) const
@@ -46,14 +44,7 @@ TrackedDocument DocumentSnapshotReader::capture(
         ? tracked.snapshot.documentId
         : tracked.snapshot.fileName;
 
-    const QTextCursor cursor = editor->textCursor();
-    const QTextBlock block = cursor.block();
-    tracked.snapshot.cursorPosition = cursor.position();
-    tracked.snapshot.cursorLine = block.isValid() ? block.blockNumber() + 1 : 1;
-    tracked.snapshot.cursorColumn = block.isValid()
-        ? cursor.position() - block.position() + 1
-        : 1;
-    tracked.snapshot.currentModuleName = editor->currentModuleName();
+    captureCursorState(editor, &tracked.snapshot);
 
     if (tracked.snapshot.documentId.isEmpty())
         tracked.snapshot.documentId = documentIdForEditor(editor);
