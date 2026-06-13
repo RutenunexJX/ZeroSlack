@@ -136,6 +136,7 @@ set(ZEROSLACK_CORE_SOURCES
     syminfoindex.cpp
     syminfoscope.cpp
     syminfo.cpp
+    slangmanagerrelationships.cpp
     tabdocumentqueries.cpp
     tabfileio.cpp
     tabmanager.cpp
