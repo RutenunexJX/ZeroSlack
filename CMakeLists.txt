@@ -110,6 +110,7 @@ set(ZEROSLACK_CORE_SOURCES
     referencespanelcoordinator.cpp
     referenceservice.cpp
     relationshipspanelcoordinator.cpp
+    relationshipspanelrefresh.cpp
     relationshipservice.cpp
     relationshipprogressdialog.cpp
     relationshipprogressdialogui.cpp
