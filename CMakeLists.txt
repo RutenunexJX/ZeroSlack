@@ -95,6 +95,7 @@ set(ZEROSLACK_CORE_SOURCES
     editormodestate.cpp
     filecommandcoordinator.cpp
     hierarchyservice.cpp
+    hierarchyservicetraversal.cpp
     sourcenavigationservice.cpp
     tsdocument.cpp
     modecommandcoordinator.cpp

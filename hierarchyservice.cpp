@@ -1,6 +1,5 @@
 #include "hierarchyservice.h"
 
-#include <QSet>
 #include <algorithm>
 
 std::unique_ptr<HierarchyService> HierarchyService::instance = nullptr;
@@ -113,117 +112,6 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
     }
     std::sort(result.begin(), result.end(), hierarchyNodeLess);
     return result;
-}
-
-QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query) const
-{
-    const int rootId = resolveSymbolId(query);
-    if (rootId < 0)
-        return {};
-
-    const int maxDepth = query.maxDepth < 0 ? 0 : query.maxDepth;
-    QList<HierarchyNode> result;
-    struct WorkItem {
-        HierarchyNode node;
-        QSet<int> path;
-    };
-    QList<WorkItem> queue;
-    QSet<QString> emittedEdges;
-    int nextNodeId = 0;
-
-    HierarchyNode root;
-    root.symbol = semanticIndex()->getSymbolById(rootId);
-    root.depth = 0;
-    root.parentSymbolId = -1;
-    root.nodeId = nextNodeId++;
-    root.parentNodeId = -1;
-    root.direction = query.direction;
-    WorkItem rootItem;
-    rootItem.node = root;
-    rootItem.path.insert(rootId);
-    queue.append(rootItem);
-
-    while (!queue.isEmpty()) {
-        const WorkItem current = queue.takeFirst();
-        result.append(current.node);
-
-        if (current.node.depth >= maxDepth)
-            continue;
-
-        auto appendNext = [&](QList<HierarchyNode> nextNodes,
-                              HierarchyQuery::Direction edgeDirection) {
-            for (HierarchyNode child : nextNodes) {
-                if (child.symbol.symbolId < 0)
-                    continue;
-                if (current.path.contains(child.symbol.symbolId))
-                    continue;
-
-                const QString edgeKey = QStringLiteral("%1:%2:%3:%4")
-                    .arg(current.node.nodeId)
-                    .arg(static_cast<int>(edgeDirection))
-                    .arg(static_cast<int>(child.viaType))
-                    .arg(child.symbol.symbolId);
-                if (emittedEdges.contains(edgeKey))
-                    continue;
-                emittedEdges.insert(edgeKey);
-
-                child.depth = current.node.depth + 1;
-                child.parentSymbolId = current.node.symbol.symbolId;
-                child.nodeId = nextNodeId++;
-                child.parentNodeId = current.node.nodeId;
-                child.direction = edgeDirection;
-
-                WorkItem childItem;
-                childItem.node = child;
-                childItem.path = current.path;
-                childItem.path.insert(child.symbol.symbolId);
-                queue.append(childItem);
-            }
-        };
-
-        HierarchyQuery childQuery = query;
-        childQuery.symbolId = current.node.symbol.symbolId;
-        if (query.direction == HierarchyQuery::Children
-            || query.direction == HierarchyQuery::Both) {
-            appendNext(getChildren(childQuery), HierarchyQuery::Children);
-        }
-        if (query.direction == HierarchyQuery::Parents
-            || query.direction == HierarchyQuery::Both) {
-            appendNext(getParents(childQuery), HierarchyQuery::Parents);
-        }
-    }
-
-    return result;
-}
-
-HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query) const
-{
-    HierarchyReport report;
-    report.nodes = getHierarchy(query);
-    report.totalCount = report.nodes.size();
-    QMap<HierarchyQuery::Direction, int> rootDirectionGroupIndexes;
-    for (const HierarchyNode& node : report.nodes) {
-        report.depthCounts[node.depth]++;
-        if (node.depth <= 0)
-            continue;
-        report.directionCounts[node.direction]++;
-        report.typeCounts[node.viaType]++;
-        if (node.parentNodeId == 0) {
-            report.rootDirectionCounts[node.direction]++;
-            if (!rootDirectionGroupIndexes.contains(node.direction)) {
-                HierarchyRootDirectionGroup group;
-                group.direction = node.direction;
-                rootDirectionGroupIndexes.insert(node.direction,
-                                                 report.rootDirectionGroups.size());
-                report.rootDirectionGroups.append(group);
-            }
-            HierarchyRootDirectionGroup& group =
-                report.rootDirectionGroups[rootDirectionGroupIndexes.value(node.direction)];
-            group.nodes.append(node);
-            group.count++;
-        }
-    }
-    return report;
 }
 
 HierarchyQuery HierarchyService::queryForPanel(
