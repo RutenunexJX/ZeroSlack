@@ -7,10 +7,11 @@ Use `readme.md` for handoff state and `goal.md` for stable product/architecture 
 Prefer each turn to advance three or more medium-sized, clearly themed, mostly independent architecture blocks:
 
 1. Keep `SymbolAnalyzer` contained behind `SemanticRuntimeCoordinator` and `AnalysisScheduler`; new UI or navigation work should not regain direct analyzer reachability.
-2. Continue the `DocumentModel` / `MyCodeEditor` boundary migration in split blocks. Public editor adapters, document registry queries, text/version, saved-version state, cursor/live module, and Tree-sitter document ownership should remain separate commit-sized themes.
-3. Continue moving panel and editor read policy into Query Services. Coordinators should map UI state into service options, then render service reports.
-4. When touching editor or completion workflows, move the whole workflow behind the appropriate model/service/coordinator boundary instead of adding one-off relays.
-5. Remove test-only private access only when the replacement API is clearly a production boundary, not a broad test seam.
+2. Keep `SymbolAnalyzer` workspace assembly and SemanticIndex publication/write-back in their focused files; do not reintroduce publication logic into the main analyzer flow.
+3. Continue the `DocumentModel` / `MyCodeEditor` boundary migration in split blocks. Public editor adapters, document registry queries, text/version, saved-version state, cursor/live module, and Tree-sitter document ownership should remain separate themes.
+4. Continue moving panel and editor read policy into Query Services. Coordinators should map UI state into service options, then render service reports.
+5. When touching editor or completion workflows, move the whole workflow behind the appropriate model/service/coordinator boundary instead of adding one-off relays.
+6. Remove test-only private access only when the replacement API is clearly a production boundary, not a broad test seam.
 
 Prioritize production-code architecture progress. Do not use pure assertion expansion as the main increment. Add tests only as focused regression protection directly tied to a production change.
 
@@ -29,7 +30,7 @@ Poor batch candidates:
 
 - broad simultaneous changes across `TabManager`, `DocumentModel`, and `MyCodeEditor`
 - async scheduler lifecycle changes
-- `SemanticIndex` snapshot publication changes
+- `SemanticIndex` snapshot publication or analyzer write-back changes
 - migrations where signal lifetime or API shape is still unstable
 - mixed model/editor/save migrations that obscure document ownership
 - broad test rewrites that expose internals just to satisfy assertions

@@ -39,8 +39,9 @@ When full verification passes, create one local commit containing the verified w
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes, `SymbolAnalyzer`, and dependency injection into `SemanticIndex`.
 - `AnalysisCoordinator` owns scheduler/progress/workspace signal routing and active-editor refresh policy.
 - `SemanticIndex` owns semantic facts, snapshot publication, relationship lifecycle data, diagnostics, and shared semantic read helpers.
+- `SymbolAnalyzer` owns Slang extraction orchestration; workspace assembly and SemanticIndex publication/write-back are split into focused files.
 - Query services own feature-specific reads for completion, definition, relationship, hierarchy, references, diagnostics, search, source navigation, and panel query shaping.
 - Coordinators own UI/editor command routing, dock/panel refresh, progress policy, navigation commands, file commands, mode commands, and semantic runtime setup.
 - Relationship graph helpers can use injected semantic data sources in tests and runtime wiring instead of hard-coded global reads.
 - `TabManager` owns tab lifecycle, file reads/writes, tab titles, and `DocumentModel` registration/save updates.
-- `MyCodeEditor` owns editor UI behavior, public editor adapters, event flow, and live syntax state; document state and project semantic decisions stay in models, services, scheduler, runtime, and coordinators.
+- `MyCodeEditor` owns editor event flow and public editor adapters. Gutter, selection/highlight, geometry, cursor navigation, file identity, and syntax state live in focused editor subsystem files.
