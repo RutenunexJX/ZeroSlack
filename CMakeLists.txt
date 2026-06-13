@@ -201,6 +201,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabtitlecontroller.cpp
     workspacemanager.cpp
     workspacesymbolanalysiscontroller.cpp
+    workspacesymbolanalysiscontrollerlifecycle.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
     analysiscoordinator.h
