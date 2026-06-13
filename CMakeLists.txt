@@ -48,6 +48,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisprogresscoordinator.cpp
     analysisscheduler.cpp
     analysisschedulerdocuments.cpp
+    analysisschedulerrelationships.cpp
     mainwindow.cpp
     alternatecommandservice.cpp
     completioncommandmode.cpp
