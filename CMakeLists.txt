@@ -145,6 +145,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipanalysisqueue.cpp
     relationshipanalysisqueuelifecycle.cpp
     relationshipanalysiscontroller.cpp
+    relationshipanalysiscontrollerasync.cpp
     relationshipanalysisworker.cpp
     relationshipresultpublisher.cpp
     searchservice.cpp
