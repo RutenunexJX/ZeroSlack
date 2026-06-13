@@ -35,6 +35,16 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
             this,
             &AnalysisScheduler::requestRelationshipAnalysis);
 
+    relationshipResultPublisher = new RelationshipResultPublisher(this);
+    connect(relationshipResultPublisher,
+            &RelationshipResultPublisher::relationshipDataInvalidated,
+            this,
+            &AnalysisScheduler::relationshipDataInvalidated);
+    connect(relationshipResultPublisher,
+            &RelationshipResultPublisher::relationshipDataRefreshRequested,
+            this,
+            &AnalysisScheduler::relationshipDataRefreshRequested);
+
     diagnosticsRefreshTimer = new QTimer(this);
     diagnosticsRefreshTimer->setSingleShot(true);
     diagnosticsRefreshTimer->setInterval(100);
@@ -42,13 +52,6 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
         const QString fileName = pendingDiagnosticsRefreshFileName;
         pendingDiagnosticsRefreshFileName.clear();
         emit diagnosticsRefreshRequested(fileName);
-    });
-
-    relationshipRefreshTimer = new QTimer(this);
-    relationshipRefreshTimer->setSingleShot(true);
-    relationshipRefreshTimer->setInterval(400);
-    connect(relationshipRefreshTimer, &QTimer::timeout, this, [this]() {
-        emit relationshipDataRefreshRequested();
     });
 
     singleFileRelationshipWatcher =
@@ -63,8 +66,10 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
                     return;
                 const SingleFileRelationshipAnalysisResult result =
                     singleFileRelationshipWatcher->result();
-                if (!applySingleFileRelationshipResult(result))
+                if (!relationshipResultPublisher
+                    || !relationshipResultPublisher->applySingleFileResult(result)) {
                     return;
+                }
                 emit relationshipAnalysisProgress(
                     result.fileName, result.relationships.size());
                 emit relationshipAnalysisFinished(result);
@@ -83,8 +88,10 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
                 }
                 const WorkspaceRelationshipAnalysisResult result =
                     workspaceRelationshipWatcher->result();
-                if (!applyWorkspaceRelationshipResult(result))
+                if (!relationshipResultPublisher
+                    || !relationshipResultPublisher->applyWorkspaceResult(result)) {
                     return;
+                }
                 const int totalFiles = result.totalFiles > 0
                     ? result.totalFiles
                     : result.fileRelationships.size();
@@ -210,34 +217,8 @@ void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> p
 
 void AnalysisScheduler::setRelationshipEngine(SymbolRelationshipEngine* engine)
 {
-    if (relationshipEngine == engine)
-        return;
-    if (relationshipEngine)
-        disconnect(relationshipEngine, nullptr, this, nullptr);
-
-    relationshipEngine = engine;
-    if (!relationshipEngine) {
-        if (relationshipRefreshTimer)
-            relationshipRefreshTimer->stop();
-        return;
-    }
-
-    connect(relationshipEngine,
-            &SymbolRelationshipEngine::relationshipAdded,
-            this,
-            [this](int, int, SymbolRelationshipEngine::RelationType) {
-                emit relationshipDataInvalidated();
-                scheduleRelationshipDataRefresh();
-            });
-    connect(relationshipEngine,
-            &SymbolRelationshipEngine::relationshipsCleared,
-            this,
-            [this]() {
-                if (relationshipRefreshTimer)
-                    relationshipRefreshTimer->stop();
-                emit relationshipDataInvalidated();
-                emit relationshipDataRefreshRequested();
-            });
+    if (relationshipResultPublisher)
+        relationshipResultPublisher->setRelationshipEngine(engine);
 }
 
 void AnalysisScheduler::setRelationshipBuilder(SmartRelationshipBuilder* builder)
@@ -428,8 +409,8 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
     if (openDocumentAnalysis)
         openDocumentAnalysis->analyzeOpenDocumentsNow();
 
-    if (relationshipEngine && !fileName.isEmpty())
-        relationshipEngine->invalidateFileRelationships(fileName);
+    if (relationshipResultPublisher)
+        relationshipResultPublisher->invalidateFileRelationships(fileName);
 }
 
 void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
@@ -475,14 +456,8 @@ void AnalysisScheduler::clearProjectSemanticState()
     cancelWorkspaceRelationshipAnalysis();
     SemanticIndex::getInstance()->clearSnapshot();
 
-    if (relationshipEngine) {
-        relationshipEngine->clearAllRelationships();
-    } else {
-        if (relationshipRefreshTimer)
-            relationshipRefreshTimer->stop();
-        emit relationshipDataInvalidated();
-        emit relationshipDataRefreshRequested();
-    }
+    if (relationshipResultPublisher)
+        relationshipResultPublisher->clearAllRelationships();
 
     scheduleDiagnosticsRefresh(QString());
 }
@@ -506,68 +481,6 @@ void AnalysisScheduler::scheduleDiagnosticsRefresh(const QString& fileName)
     pendingDiagnosticsRefreshFileName = fileName;
     if (diagnosticsRefreshTimer)
         diagnosticsRefreshTimer->start();
-}
-
-void AnalysisScheduler::scheduleRelationshipDataRefresh()
-{
-    if (relationshipRefreshTimer)
-        relationshipRefreshTimer->start();
-}
-
-bool AnalysisScheduler::applySingleFileRelationshipResult(
-    const SingleFileRelationshipAnalysisResult& result)
-{
-    if (!relationshipEngine || !relationshipBuilder)
-        return false;
-
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    if (!semanticIndex->publishSnapshotIfCurrent(result.baseSnapshot,
-                                                 result.semanticSnapshot))
-        return false;
-
-    relationshipEngine->beginUpdate();
-    for (const RelationshipToAdd& relationship : result.relationships) {
-        if (relationship.fromId < 0 || relationship.toId < 0)
-            continue;
-        relationshipEngine->addRelationship(relationship.fromId,
-                                            relationship.toId,
-                                            relationship.type,
-                                            relationship.context,
-                                            relationship.confidence);
-    }
-    relationshipEngine->endUpdate();
-
-    scheduleRelationshipDataRefresh();
-    return true;
-}
-
-bool AnalysisScheduler::applyWorkspaceRelationshipResult(
-    const WorkspaceRelationshipAnalysisResult& result)
-{
-    if (!relationshipEngine || !relationshipBuilder)
-        return false;
-
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    if (!semanticIndex->publishSnapshotIfCurrent(result.baseSnapshot,
-                                                 result.semanticSnapshot))
-        return false;
-
-    relationshipEngine->beginUpdate();
-    for (const auto& pair : result.fileRelationships) {
-        for (const RelationshipToAdd& relationship : pair.second) {
-            if (relationship.fromId < 0 || relationship.toId < 0)
-                continue;
-            relationshipEngine->addRelationship(relationship.fromId,
-                                                relationship.toId,
-                                                relationship.type,
-                                                relationship.context,
-                                                relationship.confidence);
-        }
-    }
-    relationshipEngine->endUpdate();
-
-    scheduleRelationshipDataRefresh();
-    return true;
 }
 
 QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const

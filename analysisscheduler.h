@@ -5,6 +5,7 @@
 #include "opendocumentanalysiscontroller.h"
 #include "projectmodel.h"
 #include "relationshipanalysisqueue.h"
+#include "relationshipresultpublisher.h"
 #include "relationshipanalysisworker.h"
 #include "smartrelationshipbuilder.h"
 
@@ -84,16 +85,15 @@ private:
     SymbolAnalyzer* symbolAnalyzer = nullptr;
     OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
     RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
+    RelationshipResultPublisher* relationshipResultPublisher = nullptr;
 
     std::function<QString(const QString&)> openFileContentProvider;
     std::function<bool()> workspaceOpenProvider;
     std::function<bool()> workspaceSymbolCancelProvider;
-    SymbolRelationshipEngine* relationshipEngine = nullptr;
     SmartRelationshipBuilder* relationshipBuilder = nullptr;
 
     QString pendingDiagnosticsRefreshFileName;
     QTimer* diagnosticsRefreshTimer = nullptr;
-    QTimer* relationshipRefreshTimer = nullptr;
     QFutureWatcher<SingleFileRelationshipAnalysisResult>* singleFileRelationshipWatcher = nullptr;
     QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceRelationshipWatcher = nullptr;
     ProjectSnapshot activeWorkspaceProject;
@@ -108,9 +108,6 @@ private:
     void clearProjectSemanticState();
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void scheduleDiagnosticsRefresh(const QString& fileName);
-    void scheduleRelationshipDataRefresh();
-    bool applySingleFileRelationshipResult(const SingleFileRelationshipAnalysisResult& result);
-    bool applyWorkspaceRelationshipResult(const WorkspaceRelationshipAnalysisResult& result);
 
     QString contentForOpenFile(const QString& fileName) const;
 };

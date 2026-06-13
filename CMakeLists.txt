@@ -97,6 +97,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipprogressdialog.cpp
     relationshipanalysisqueue.cpp
     relationshipanalysisworker.cpp
+    relationshipresultpublisher.cpp
     searchservice.cpp
     scopebandservice.cpp
     semanticpanelutils.cpp
@@ -176,6 +177,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipprogressdialog.h
     relationshipanalysisqueue.h
     relationshipanalysisworker.h
+    relationshipresultpublisher.h
     searchservice.h
     scopebandservice.h
     semanticpanelutils.h
