@@ -52,6 +52,8 @@ set(ZEROSLACK_CORE_SOURCES
     completioncommandmode.cpp
     completioncontexthelper.cpp
     completioncontextquery.cpp
+    completioncontextrelationships.cpp
+    completioncontextsmart.cpp
     completionmanager.cpp
     completionmatcher.cpp
     completionmodel.cpp
