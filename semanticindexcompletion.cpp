@@ -1,5 +1,7 @@
 #include "semanticindex.h"
 
+#include "completionservice.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -221,6 +223,22 @@ QString moduleNameAtPositionInContent(const QList<sym_list::SymbolInfo>& modules
 
     return QString();
 }
+}
+
+QStringList SemanticIndex::findCompletions(const SemanticQueryContext& context) const
+{
+    CompletionQuery query;
+    query.prefix = context.prefix;
+    query.fileName = context.fileName;
+    query.moduleName = context.moduleName;
+    query.cursorLine = context.cursorLine;
+    query.cursorPosition = context.cursorPosition;
+
+    CompletionService completions(const_cast<SemanticIndex*>(this));
+    if (!context.fileName.isEmpty() && context.cursorLine > 0) {
+        return completions.findScopeCompletions(query);
+    }
+    return completions.findCompletions(query);
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::getModuleCompletionSymbols(
