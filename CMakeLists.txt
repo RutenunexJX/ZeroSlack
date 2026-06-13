@@ -143,6 +143,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipprogressdialogui.cpp
     relationshipprogressdialogupdates.cpp
     relationshipanalysisqueue.cpp
+    relationshipanalysisqueuelifecycle.cpp
     relationshipanalysiscontroller.cpp
     relationshipanalysisworker.cpp
     relationshipresultpublisher.cpp
