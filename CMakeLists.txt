@@ -76,6 +76,7 @@ set(ZEROSLACK_CORE_SOURCES
     diagnosticservice.cpp
     diagnosticsrefreshcontroller.cpp
     documentmodel.cpp
+    documentmodelconnections.cpp
     documentregistry.cpp
     documentregistryreader.cpp
     documentsessionstate.cpp
