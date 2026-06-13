@@ -80,8 +80,10 @@ set(ZEROSLACK_CORE_SOURCES
     documentregistry.cpp
     documentregistryqueries.cpp
     documentregistryreader.cpp
+    documentregistrystate.cpp
     documentsessionqueries.cpp
     documentsessionstate.cpp
+    documentsessionversions.cpp
     editorappearance.cpp
     editorcompletionquery.cpp
     editorcompletionui.cpp
