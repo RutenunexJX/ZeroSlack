@@ -134,6 +134,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolrelationshipengine.cpp
     syminfocontent.cpp
     syminfoindex.cpp
+    syminfoscope.cpp
     syminfo.cpp
     tabdocumentqueries.cpp
     tabfileio.cpp
