@@ -65,6 +65,7 @@ set(ZEROSLACK_CORE_SOURCES
     documentregistry.cpp
     documentsessionstate.cpp
     editorappearance.cpp
+    editorcompletionquery.cpp
     editorcompletionui.cpp
     editorcompletionworkflow.cpp
     editorcoordinator.cpp
@@ -153,6 +154,7 @@ set(ZEROSLACK_CORE_SOURCES
     documentsnapshot.h
     documentsessionstate.h
     editorappearance.h
+    editorcompletionquery.h
     editorcompletionui.h
     editorcompletionworkflow.h
     editorcoordinator.h

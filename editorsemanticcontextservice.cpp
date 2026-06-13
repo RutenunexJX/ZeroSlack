@@ -1,24 +1,10 @@
 #include "editorsemanticcontextservice.h"
 
+#include "editorcompletionquery.h"
 #include "editorsourcenavigationquery.h"
-
-#include <Qt>
 
 std::unique_ptr<EditorSemanticContextService>
     EditorSemanticContextService::instance = nullptr;
-
-namespace {
-CompletionActivationMode completionModeForEditorState(
-    bool alternateModeActive,
-    bool commandModeActive)
-{
-    if (alternateModeActive)
-        return CompletionActivationMode::AlternateMode;
-    if (commandModeActive)
-        return CompletionActivationMode::CommandMode;
-    return CompletionActivationMode::EditorWord;
-}
-}
 
 EditorSemanticContextService* EditorSemanticContextService::getInstance()
 {
@@ -139,75 +125,47 @@ QString EditorSemanticContextService::definitionTooltipText(
 CompletionTriggerQuery EditorSemanticContextService::completionTriggerQuery(
     const EditorSemanticContext& context) const
 {
-    CompletionTriggerQuery query;
-    query.lineUpToCursor = context.lineUpToCursor;
-    query.moduleName = context.moduleName;
-    query.commandModeActive = context.commandModeActive;
-    return query;
+    return EditorCompletionQueryHelper::completionTriggerQuery(context);
 }
 
 CompletionTriggerState EditorSemanticContextService::completionTriggerState(
     const EditorSemanticContext& context) const
 {
-    return CompletionService::getInstance()->completionTriggerState(
-        completionTriggerQuery(context));
+    return EditorCompletionQueryHelper::completionTriggerState(context);
 }
 
 EditorCompletionTextChangeState
 EditorSemanticContextService::completionTextChangeState(
     const EditorSemanticContext& context) const
 {
-    EditorCompletionTextChangeState state;
-    state.commandInput = commandModeInputState(context);
-    state.commandModeActive = state.commandInput.matched;
-
-    EditorSemanticContext triggerContext = context;
-    triggerContext.commandModeActive = state.commandModeActive;
-    state.trigger = completionTriggerState(triggerContext);
-    state.startCompletionTimer = state.trigger.continueCompletion;
-    state.hidePopup = state.trigger.hidePopup;
-    return state;
+    return EditorCompletionQueryHelper::completionTextChangeState(context);
 }
 
 CompletionQuery EditorSemanticContextService::completionQuery(
     const QString& prefix,
     const EditorSemanticContext& context) const
 {
-    CompletionQuery query;
-    query.prefix = prefix;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.cursorLine = context.cursorLine;
-    query.cursorPosition = context.cursorPosition;
-    return query;
+    return EditorCompletionQueryHelper::completionQuery(prefix, context);
 }
 
 QStringList EditorSemanticContextService::completionNames(
     const QString& prefix,
     const EditorSemanticContext& context) const
 {
-    return CompletionService::getInstance()
-        ->findCompletionResult(completionQuery(prefix, context))
-        .names;
+    return EditorCompletionQueryHelper::completionNames(prefix, context);
 }
 
 CommandModeCompletionQuery
 EditorSemanticContextService::commandModeCompletionQuery(
     const EditorSemanticContext& context) const
 {
-    CommandModeCompletionQuery query;
-    query.lineUpToCursor = context.lineUpToCursor;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.documentText = context.documentText;
-    return query;
+    return EditorCompletionQueryHelper::commandModeCompletionQuery(context);
 }
 
 CommandModeCompletionState EditorSemanticContextService::commandModeCompletionState(
     const EditorSemanticContext& context) const
 {
-    return CompletionService::getInstance()->commandModeCompletionState(
-        commandModeCompletionQuery(context));
+    return EditorCompletionQueryHelper::commandModeCompletionState(context);
 }
 
 EditorCommandModeCompletionRefreshState
@@ -215,169 +173,76 @@ EditorSemanticContextService::commandModeCompletionRefreshState(
     const EditorSemanticContext& context,
     bool exitedByDoubleSpace) const
 {
-    EditorCommandModeCompletionRefreshState state;
-    state.completion = commandModeCompletionState(context);
-    state.matched = state.completion.matched;
-
-    if (!state.matched) {
-        state.resetExitedByDoubleSpace = true;
-        return state;
-    }
-
-    state.commandModeActive = true;
-
-    if (exitedByDoubleSpace) {
-        state.suppressAfterExit = true;
-        return state;
-    }
-
-    if (state.completion.exitRequested) {
-        state.commandModeActive = false;
-        state.exitRequested = true;
-        state.markExitedByDoubleSpace = true;
-        state.clearCommandHighlight = true;
-        return state;
-    }
-
-    state.highlightCommand = state.completion.prefixPosition >= 0;
-    state.hidePopup = state.completion.hidePopup;
-    state.showCompletions = state.completion.showCompletions;
-    return state;
+    return EditorCompletionQueryHelper::commandModeCompletionRefreshState(
+        context,
+        exitedByDoubleSpace);
 }
 
 CommandModeInputState EditorSemanticContextService::commandModeInputState(
     const EditorSemanticContext& context) const
 {
-    return CompletionService::getInstance()->commandModeInputState(
-        context.lineUpToCursor);
+    return EditorCompletionQueryHelper::commandModeInputState(context);
 }
 
 CommandModeMatch EditorSemanticContextService::commandModeMatch(
     const EditorSemanticContext& context) const
 {
-    return CompletionService::getInstance()->matchCommandMode(
-        context.lineUpToCursor);
+    return EditorCompletionQueryHelper::commandModeMatch(context);
 }
 
 EditorAlternateModeCompletionDisplayState
 EditorSemanticContextService::alternateModeCompletionDisplayState(
     const QString& input) const
 {
-    const AlternateCommandCompletionState completion =
-        alternateCommandCompletionState(input);
-
-    EditorAlternateModeCompletionDisplayState state;
-    state.updateCompletions = true;
-    state.showPopup = completion.showCompletions;
-    state.normalizedInput = completion.normalizedInput;
-    state.matches = completion.matches;
-    return state;
+    return EditorCompletionQueryHelper::alternateModeCompletionDisplayState(
+        input);
 }
 
 EditorAlternateModeKeyState EditorSemanticContextService::alternateModeKeyState(
     const EditorAlternateModeKeyContext& context) const
 {
-    EditorAlternateModeKeyState state;
-
-    if (context.key == Qt::Key_Backspace) {
-        if (context.buffer.isEmpty()) {
-            state.action = EditorAlternateModeKeyAction::RefreshCompletions;
-            state.nextInput = QString();
-        } else {
-            state.action = EditorAlternateModeKeyAction::UpdateInput;
-            state.nextInput = context.buffer.left(context.buffer.size() - 1);
-        }
-        state.completion = alternateModeCompletionDisplayState(state.nextInput);
-        return state;
-    }
-
-    if (context.key == Qt::Key_Escape) {
-        state.action = EditorAlternateModeKeyAction::ClearAndHide;
-        state.hidePopup = true;
-        state.clearBuffer = true;
-        return state;
-    }
-
-    if (context.key == Qt::Key_Return || context.key == Qt::Key_Enter) {
-        if (!context.buffer.isEmpty()) {
-            state.action = EditorAlternateModeKeyAction::ExecuteCommand;
-            state.command = context.buffer;
-        }
-        return state;
-    }
-
-    if (!context.text.isEmpty() && context.text.at(0).isPrint()) {
-        state.action = EditorAlternateModeKeyAction::UpdateInput;
-        state.nextInput = context.buffer + context.text;
-        state.completion = alternateModeCompletionDisplayState(state.nextInput);
-        return state;
-    }
-
-    return state;
+    return EditorCompletionQueryHelper::alternateModeKeyState(context);
 }
 
 AlternateCommandCompletionState
 EditorSemanticContextService::alternateCommandCompletionState(
     const QString& input) const
 {
-    return AlternateCommandService::getInstance()->completionState(input);
+    return EditorCompletionQueryHelper::alternateCommandCompletionState(input);
 }
 
 EditorCompletionQuery EditorSemanticContextService::editorCompletionQuery(
     const EditorSemanticContext& context) const
 {
-    EditorCompletionQuery query;
-    query.lineUpToCursor = context.lineUpToCursor;
-    query.wordPrefix = context.wordPrefix;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.cursorLine = context.cursorLine;
-    query.cursorPosition = context.cursorPosition;
-    return query;
+    return EditorCompletionQueryHelper::editorCompletionQuery(context);
 }
 
 EditorCompletionState EditorSemanticContextService::editorCompletionState(
     const EditorSemanticContext& context) const
 {
-    return CompletionService::getInstance()->editorCompletionState(
-        editorCompletionQuery(context));
+    return EditorCompletionQueryHelper::editorCompletionState(context);
 }
 
 CompletionActivationState EditorSemanticContextService::completionActivationState(
     const EditorCompletionActivationContext& context) const
 {
-    CompletionActivationQuery query;
-    query.selectable = context.selectable;
-    query.mode = completionModeForEditorState(
-        context.alternateModeActive,
-        context.commandModeActive);
-    query.itemText = context.itemText;
-    query.defaultValue = context.defaultValue;
-    return completionActivationState(query);
+    return EditorCompletionQueryHelper::completionActivationState(context);
 }
 
 CompletionActivationState EditorSemanticContextService::completionActivationState(
     const CompletionActivationQuery& query) const
 {
-    return CompletionService::getInstance()->completionActivationState(query);
+    return EditorCompletionQueryHelper::completionActivationState(query);
 }
 
 CompletionPopupKeyState EditorSemanticContextService::completionPopupKeyState(
     const EditorCompletionPopupKeyContext& context) const
 {
-    CompletionPopupKeyQuery query;
-    query.key = context.key;
-    query.mode = completionModeForEditorState(
-        context.alternateModeActive,
-        context.commandModeActive);
-    query.currentIndexValid = context.currentIndexValid;
-    query.hasRows = context.hasRows;
-    query.alternateBufferEmpty = context.alternateBufferEmpty;
-    return completionPopupKeyState(query);
+    return EditorCompletionQueryHelper::completionPopupKeyState(context);
 }
 
 CompletionPopupKeyState EditorSemanticContextService::completionPopupKeyState(
     const CompletionPopupKeyQuery& query) const
 {
-    return CompletionService::getInstance()->completionPopupKeyState(query);
+    return EditorCompletionQueryHelper::completionPopupKeyState(query);
 }
