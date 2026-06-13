@@ -3,7 +3,7 @@
 
 #include <QObject>
 #include <QStringList>
-#include <QFutureWatcher>
+#include <QHash>
 #include <QList>
 #include <QVector>
 #include <functional>
@@ -13,6 +13,8 @@
 
 class SlangManager;
 class WorkspaceManager;
+template <typename T>
+class QFutureWatcher;
 
 struct OpenDocumentContent {
     QString fileName;

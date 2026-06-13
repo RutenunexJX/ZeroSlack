@@ -165,6 +165,7 @@ set(ZEROSLACK_CORE_SOURCES
     smartrelationshipbuildercontext.cpp
     smartrelationshipbuildertiming.cpp
     symbolanalyzer.cpp
+    symbolanalyzerasync.cpp
     symbolanalyzerpublication.cpp
     symbolanalyzerworkspace.cpp
     symbolrelationshipqueries.cpp
