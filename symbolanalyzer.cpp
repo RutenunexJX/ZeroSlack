@@ -1,6 +1,7 @@
 #include "symbolanalyzer.h"
 #include "semanticindex.h"
 #include "slangmanager.h"
+#include "symbolanalyzerworkspace.h"
 #include "workspacemanager.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFile>
@@ -56,47 +57,6 @@ void SymbolAnalyzer::analyzeOpenDocuments(const QList<OpenDocumentContent>& docu
     emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
 }
 
-static QHash<QString, QList<sym_list::SymbolInfo>> groupSymbolsByFile(const QList<sym_list::SymbolInfo>& list)
-{
-    QHash<QString, QList<sym_list::SymbolInfo>> byFile;
-    for (const sym_list::SymbolInfo& s : list) {
-        if (!s.fileName.isEmpty())
-            byFile[s.fileName].append(s);
-    }
-    return byFile;
-}
-
-static QString readTextFile(const QString& filePath)
-{
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QFile::Text))
-        return QString();
-    QTextStream stream(&file);
-    return stream.readAll();
-}
-
-static WorkspaceAnalysisResult buildWorkspaceAnalysisResult(const QStringList& svFiles,
-                                                            const QList<sym_list::SymbolInfo>& allSymbols,
-                                                            std::function<bool()> isCancelled)
-{
-    WorkspaceAnalysisResult result;
-    QHash<QString, QList<sym_list::SymbolInfo>> byFile = groupSymbolsByFile(allSymbols);
-    result.files.reserve(svFiles.size());
-
-    for (const QString& filePath : svFiles) {
-        if (isCancelled && isCancelled())
-            break;
-        WorkspaceFileAnalysis fileResult;
-        fileResult.fileName = filePath;
-        fileResult.content = readTextFile(filePath);
-        fileResult.symbols = byFile.value(filePath);
-        result.totalSymbols += fileResult.symbols.size();
-        result.files.append(std::move(fileResult));
-    }
-
-    return result;
-}
-
 void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled)
 {
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) return;
@@ -124,7 +84,11 @@ void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::functio
         return;
     }
 
-    WorkspaceAnalysisResult result = buildWorkspaceAnalysisResult(svFiles, allSymbols, isCancelled);
+    WorkspaceAnalysisResult result =
+        SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
+            svFiles,
+            allSymbols,
+            isCancelled);
     result.diagnostics = m_slangManager->extractWorkspaceDiagnostics(svFiles);
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     int filesAnalyzed = 0;
@@ -161,7 +125,11 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(const ProjectSnapshot& project, st
 
     QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([this, svFiles, isCancelled]() {
         QList<sym_list::SymbolInfo> symbols = m_slangManager->extractWorkspaceSymbols(svFiles);
-        WorkspaceAnalysisResult result = buildWorkspaceAnalysisResult(svFiles, symbols, isCancelled);
+        WorkspaceAnalysisResult result =
+            SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
+                svFiles,
+                symbols,
+                isCancelled);
         result.diagnostics = m_slangManager->extractWorkspaceDiagnostics(svFiles);
         return result;
     });

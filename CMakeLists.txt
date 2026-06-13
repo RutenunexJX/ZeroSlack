@@ -165,6 +165,7 @@ set(ZEROSLACK_CORE_SOURCES
     smartrelationshipbuildercontext.cpp
     smartrelationshipbuildertiming.cpp
     symbolanalyzer.cpp
+    symbolanalyzerworkspace.cpp
     symbolrelationshipqueries.cpp
     symbolrelationshipengine.cpp
     slangsymbolcollector.cpp
@@ -273,6 +274,7 @@ set(ZEROSLACK_CORE_SOURCES
     slangsymbolcollectorhelpers.h
     smartrelationshipbuilder.h
     symbolanalyzer.h
+    symbolanalyzerworkspace.h
     symbolrelationshipengine.h
     symboloutlinemodel.h
     syminfo.h
