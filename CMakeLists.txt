@@ -78,6 +78,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorcompletionquery.cpp
     editorcompletionui.cpp
     editorcompletionworkflow.cpp
+    editorcompletionworkflowkeys.cpp
     editorcoordinator.cpp
     editorcursornavigation.cpp
     editorfileidentity.cpp
