@@ -50,6 +50,7 @@ set(ZEROSLACK_CORE_SOURCES
     mainwindow.cpp
     alternatecommandservice.cpp
     completionmanager.cpp
+    completionmatcher.cpp
     completionmodel.cpp
     completionservice.cpp
     definitionnavigationservice.cpp
@@ -131,6 +132,7 @@ set(ZEROSLACK_CORE_SOURCES
     scope_tree.h
     version.h
     completionmodel.h
+    completionmatcher.h
     completionservice.h
     definitionnavigationservice.h
     definitionservice.h

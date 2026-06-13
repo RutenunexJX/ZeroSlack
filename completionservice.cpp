@@ -1,5 +1,6 @@
 #include "completionservice.h"
 
+#include "completionmatcher.h"
 #include "relationshipservice.h"
 
 #include <QRegularExpression>
@@ -68,7 +69,7 @@ QVector<QPair<QString, int>> CompletionService::findScoredAllSymbolCompletions(
     QVector<QPair<QString, int>> scored;
     scored.reserve(qMin(names.size(), maxResults > 0 ? maxResults : names.size()));
     for (const QString& name : std::as_const(names)) {
-        const int score = calculateContextMatchScore(name, prefix);
+        const int score = CompletionMatcher::calculateContextMatchScore(name, prefix);
         if (score > 0)
             scored.append(qMakePair(name, score));
     }
@@ -118,7 +119,7 @@ CompletionService::findScoredSymbolCompletionsByType(
     result.reserve(qMin(symbols.size(), maxResults > 0 ? maxResults : symbols.size()));
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const int score =
-            calculateSymbolTypeCompletionScore(symbol.symbolName, prefix);
+            CompletionMatcher::calculateSymbolTypeScore(symbol.symbolName, prefix);
         if (score > 0)
             result.append(qMakePair(symbol, score));
     }
@@ -162,25 +163,19 @@ bool CompletionService::matchesCompletionAbbreviation(
     const QString& text,
     const QString& abbreviation) const
 {
-    if (abbreviation.isEmpty() || text.isEmpty())
-        return false;
-
-    if (text.toLower().startsWith(abbreviation.toLower()))
-        return true;
-
-    return isValidContextAbbreviationMatch(text, abbreviation);
+    return CompletionMatcher::matchesAbbreviation(text, abbreviation);
 }
 
 int CompletionService::calculateCompletionMatchScore(
     const QString& text,
     const QString& abbreviation) const
 {
-    return calculateContextMatchScore(text, abbreviation);
+    return CompletionMatcher::calculateContextMatchScore(text, abbreviation);
 }
 
 int CompletionService::completionItemScore(const QString& text, const QString& prefix) const
 {
-    return prefix.isEmpty() ? 100 : calculateCompletionMatchScore(text, prefix);
+    return CompletionMatcher::completionItemScore(text, prefix);
 }
 
 QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType) const
@@ -546,66 +541,27 @@ QList<int> CompletionService::findCompletionAbbreviationPositions(
     const QString& text,
     const QString& abbreviation) const
 {
-    return findContextAbbreviationPositions(text, abbreviation);
+    return CompletionMatcher::abbreviationPositions(text, abbreviation);
 }
 
 QVector<QPair<QString, int>> CompletionService::findScoredKeywordCompletions(
     const QString& prefix) const
 {
-    const QStringList keywords = publicKeywordCompletions();
-    QVector<QPair<QString, int>> result;
-    result.reserve(keywords.size());
-
-    for (const QString& keyword : keywords) {
-        const int score = calculateCompletionMatchScore(keyword, prefix);
-        if (score > 0)
-            result.append(qMakePair(keyword, score));
-    }
-
-    std::sort(result.begin(), result.end(),
-              [](const QPair<QString, int>& left,
-                 const QPair<QString, int>& right) {
-                  if (left.second != right.second)
-                      return left.second > right.second;
-                  return left.first < right.first;
-              });
-
-    return result;
+    return CompletionMatcher::scoredKeywordCompletions(prefix);
 }
 
 QStringList CompletionService::findKeywordCompletions(
     const QString& prefix,
     int maxResults) const
 {
-    const QVector<QPair<QString, int>> scored =
-        findScoredKeywordCompletions(prefix);
-
-    QStringList result;
-    result.reserve(scored.size());
-    for (const auto& match : scored)
-        result.append(match.first);
-
-    if (maxResults > 0 && result.size() > maxResults)
-        result = result.mid(0, maxResults);
-
-    return result;
+    return CompletionMatcher::keywordCompletions(prefix, maxResults);
 }
 
 QStringList CompletionService::findKeywordAbbreviationMatches(
     const QStringList& candidates,
     const QString& abbreviation) const
 {
-    const QVector<QPair<QString, int>> scored =
-        findScoredKeywordCompletions(abbreviation);
-
-    QStringList result;
-    result.reserve(scored.size());
-    for (const auto& match : scored) {
-        if (candidates.contains(match.first))
-            result.append(match.first);
-    }
-
-    return result;
+    return CompletionMatcher::keywordAbbreviationMatches(candidates, abbreviation);
 }
 
 bool CompletionService::relationshipCompletionsAvailable() const
@@ -635,7 +591,7 @@ QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
     QVector<QPair<QString, int>> result;
     result.reserve(completions.size());
     for (const QString& completion : completions) {
-        const int baseScore = calculateContextMatchScore(completion, prefix);
+        const int baseScore = CompletionMatcher::calculateContextMatchScore(completion, prefix);
         const int contextScore = calculateContextScore(completion, context);
         const int relationshipScore =
             calculateRelationshipScore(completion, currentModule);
@@ -950,7 +906,7 @@ QStringList CompletionService::findContextAwareCompletions(
         || query.context.contains(QStringLiteral("wire"))
         || query.context.contains(QStringLiteral("logic"))
         || query.context.contains(QStringLiteral("var"))) {
-        result.append(svKeywordCompletions(query.prefix));
+        result.append(CompletionMatcher::svKeywordCompletions(query.prefix));
         result.append(findGlobalSymbolsByType(sym_list::sym_enum, query.prefix));
         result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
         result.append(findGlobalSymbolsByType(sym_list::sym_unpacked_struct, query.prefix));
@@ -976,7 +932,7 @@ QStringList CompletionService::findContextAwareCompletions(
         result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
         result.append(findGlobalSymbolsByType(sym_list::sym_task, query.prefix));
         result.append(findGlobalSymbolsByType(sym_list::sym_function, query.prefix));
-        result.append(svKeywordCompletions(query.prefix));
+        result.append(CompletionMatcher::svKeywordCompletions(query.prefix));
     }
 
     result.removeDuplicates();
@@ -984,7 +940,7 @@ QStringList CompletionService::findContextAwareCompletions(
     QVector<QPair<QString, int>> scoredResults;
     scoredResults.reserve(result.size());
     for (const QString& completion : std::as_const(result)) {
-        int score = calculateContextMatchScore(completion, query.prefix);
+        int score = CompletionMatcher::calculateContextMatchScore(completion, query.prefix);
         if (!query.context.isEmpty()
             && query.context != QLatin1String("general")) {
             score += calculateContextScore(completion, query.context);
@@ -1235,218 +1191,6 @@ QString CompletionService::extractModuleTypeFromContext(const QString& context) 
     if (match.hasMatch())
         return match.captured(1);
     return QString();
-}
-
-QStringList CompletionService::publicKeywordCompletions() const
-{
-    return {
-        QStringLiteral("always"), QStringLiteral("always_comb"),
-        QStringLiteral("always_ff"), QStringLiteral("assign"),
-        QStringLiteral("begin"), QStringLiteral("end"),
-        QStringLiteral("module"), QStringLiteral("endmodule"),
-        QStringLiteral("generate"), QStringLiteral("endgenerate"),
-        QStringLiteral("if"), QStringLiteral("else"),
-        QStringLiteral("for"), QStringLiteral("define"),
-        QStringLiteral("ifdef"), QStringLiteral("ifndef"),
-        QStringLiteral("task"), QStringLiteral("endtask"),
-        QStringLiteral("initial"), QStringLiteral("reg"),
-        QStringLiteral("wire"), QStringLiteral("logic"),
-        QStringLiteral("enum"), QStringLiteral("localparam"),
-        QStringLiteral("parameter"), QStringLiteral("struct"),
-        QStringLiteral("package"), QStringLiteral("endpackage"),
-        QStringLiteral("interface"), QStringLiteral("endinterface"),
-        QStringLiteral("function"), QStringLiteral("endfunction"),
-        QStringLiteral("case"), QStringLiteral("endcase"),
-        QStringLiteral("default"), QStringLiteral("posedge"),
-        QStringLiteral("negedge"), QStringLiteral("input"),
-        QStringLiteral("output"), QStringLiteral("inout")
-    };
-}
-
-QStringList CompletionService::svKeywordCompletions(const QString& prefix) const
-{
-    static const QStringList keywords = {
-        QStringLiteral("module"), QStringLiteral("endmodule"),
-        QStringLiteral("input"), QStringLiteral("output"),
-        QStringLiteral("inout"), QStringLiteral("wire"),
-        QStringLiteral("reg"), QStringLiteral("logic"),
-        QStringLiteral("bit"), QStringLiteral("byte"),
-        QStringLiteral("shortint"), QStringLiteral("int"),
-        QStringLiteral("longint"), QStringLiteral("always"),
-        QStringLiteral("always_ff"), QStringLiteral("always_comb"),
-        QStringLiteral("initial"), QStringLiteral("assign"),
-        QStringLiteral("case"), QStringLiteral("casex"),
-        QStringLiteral("casez"), QStringLiteral("default"),
-        QStringLiteral("endcase"), QStringLiteral("if"),
-        QStringLiteral("else"), QStringLiteral("for"),
-        QStringLiteral("while"), QStringLiteral("repeat"),
-        QStringLiteral("forever"), QStringLiteral("task"),
-        QStringLiteral("function"), QStringLiteral("endtask"),
-        QStringLiteral("endfunction"), QStringLiteral("typedef"),
-        QStringLiteral("enum"), QStringLiteral("struct"),
-        QStringLiteral("packed"), QStringLiteral("unpacked"),
-        QStringLiteral("interface"), QStringLiteral("endinterface"),
-        QStringLiteral("modport"), QStringLiteral("generate"),
-        QStringLiteral("endgenerate"), QStringLiteral("genvar"),
-        QStringLiteral("parameter"), QStringLiteral("localparam"),
-        QStringLiteral("`define"), QStringLiteral("`include"),
-        QStringLiteral("posedge"), QStringLiteral("negedge"),
-        QStringLiteral("and"), QStringLiteral("or"),
-        QStringLiteral("not"), QStringLiteral("xor")
-    };
-
-    QStringList result;
-    for (const QString& keyword : keywords) {
-        if (completionNameMatches(keyword, prefix))
-            result.append(keyword);
-    }
-    return result;
-}
-
-int CompletionService::calculateContextMatchScore(
-    const QString& text,
-    const QString& abbreviation) const
-{
-    if (abbreviation.isEmpty() || text.isEmpty())
-        return 0;
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbreviation = abbreviation.toLower();
-
-    if (lowerText == lowerAbbreviation)
-        return 1000;
-    if (lowerText.startsWith(lowerAbbreviation))
-        return 800 + (100 - abbreviation.length());
-    if (lowerText.contains(lowerAbbreviation))
-        return 400 + (100 - text.length());
-    if (!isValidContextAbbreviationMatch(text, abbreviation))
-        return 0;
-
-    const QList<int> positions =
-        findContextAbbreviationPositions(text, abbreviation);
-    int score = 500;
-    int wordBoundaryMatches = 0;
-    for (int position : positions) {
-        if (position == 0
-            || lowerText.at(position - 1) == QLatin1Char('_')
-            || lowerText.at(position - 1) == QLatin1Char(' ')) {
-            ++wordBoundaryMatches;
-        }
-        if (position > 0 && position < lowerText.length()) {
-            const QChar previous = text.at(position - 1);
-            const QChar current = text.at(position);
-            if (previous.isLower() && current.isUpper())
-                ++wordBoundaryMatches;
-        }
-    }
-
-    score += wordBoundaryMatches * 50;
-    score -= text.length();
-    for (int i = 1; i < positions.size(); ++i) {
-        if (positions.at(i) == positions.at(i - 1) + 1)
-            score += 10;
-    }
-    return score;
-}
-
-int CompletionService::calculateSymbolTypeCompletionScore(
-    const QString& text,
-    const QString& abbreviation) const
-{
-    if (text.isEmpty())
-        return 0;
-    if (abbreviation.isEmpty())
-        return 100;
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbreviation = abbreviation.toLower();
-    if (lowerText == lowerAbbreviation)
-        return 1000;
-    if (lowerText.startsWith(lowerAbbreviation))
-        return 800 + (100 - abbreviation.length());
-    if (lowerText.contains(lowerAbbreviation))
-        return 400 + (100 - text.length());
-    if (isValidContextAbbreviationMatch(text, abbreviation))
-        return 200;
-    return 0;
-}
-
-bool CompletionService::isValidContextAbbreviationMatch(
-    const QString& text,
-    const QString& abbreviation) const
-{
-    if (abbreviation.length() > text.length())
-        return false;
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbreviation = abbreviation.toLower();
-    int textPosition = 0;
-    int abbreviationPosition = 0;
-    while (abbreviationPosition < lowerAbbreviation.length()
-           && textPosition < text.length()) {
-        const QChar abbreviationChar = lowerAbbreviation.at(abbreviationPosition);
-        const QChar textChar = lowerText.at(textPosition);
-        if (abbreviationChar == textChar) {
-            ++abbreviationPosition;
-            ++textPosition;
-            continue;
-        }
-
-        bool separator = text.at(textPosition) == QLatin1Char('_')
-            || text.at(textPosition) == QLatin1Char(' ');
-        if (textPosition > 0) {
-            const QChar previous = text.at(textPosition - 1);
-            const QChar current = text.at(textPosition);
-            if (previous.isLower() && current.isUpper())
-                separator = true;
-        }
-        if (separator && textPosition + 1 < text.length()
-            && abbreviationChar == lowerText.at(textPosition + 1)) {
-            ++textPosition;
-            continue;
-        }
-        ++textPosition;
-    }
-    return abbreviationPosition == lowerAbbreviation.length();
-}
-
-QList<int> CompletionService::findContextAbbreviationPositions(
-    const QString& text,
-    const QString& abbreviation) const
-{
-    QList<int> positions;
-    if (!isValidContextAbbreviationMatch(text, abbreviation))
-        return positions;
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbreviation = abbreviation.toLower();
-    int textPosition = 0;
-    int abbreviationPosition = 0;
-    while (abbreviationPosition < lowerAbbreviation.length()
-           && textPosition < lowerText.length()) {
-        if (lowerAbbreviation.at(abbreviationPosition)
-            == lowerText.at(textPosition)) {
-            positions.append(textPosition);
-            ++abbreviationPosition;
-        } else {
-            bool separator = text.at(textPosition) == QLatin1Char('_')
-                || text.at(textPosition) == QLatin1Char(' ');
-            if (textPosition > 0) {
-                const QChar previous = text.at(textPosition - 1);
-                const QChar current = text.at(textPosition);
-                if (previous.isLower() && current.isUpper())
-                    separator = true;
-            }
-            if (separator && textPosition + 1 < text.length()
-                && lowerAbbreviation.at(abbreviationPosition)
-                    == lowerText.at(textPosition + 1)) {
-                ++textPosition;
-                continue;
-            }
-        }
-        ++textPosition;
-    }
-    return positions;
 }
 
 int CompletionService::calculateContextScore(

@@ -310,15 +310,6 @@ private:
     QString extractStructVariableFromContext(const QString& context) const;
     QString extractEnumVariableFromContext(const QString& context) const;
     QString extractModuleTypeFromContext(const QString& context) const;
-    QStringList publicKeywordCompletions() const;
-    QStringList svKeywordCompletions(const QString& prefix) const;
-    int calculateContextMatchScore(const QString& text, const QString& abbreviation) const;
-    int calculateSymbolTypeCompletionScore(const QString& text,
-                                           const QString& abbreviation) const;
-    bool isValidContextAbbreviationMatch(const QString& text,
-                                         const QString& abbreviation) const;
-    QList<int> findContextAbbreviationPositions(const QString& text,
-                                                const QString& abbreviation) const;
     int calculateContextScore(const QString& symbol, const QString& context) const;
     int calculateRelationshipScore(const QString& symbol,
                                    const QString& currentContext) const;
