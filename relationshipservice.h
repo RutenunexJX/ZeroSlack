@@ -52,6 +52,9 @@ struct DirectedRelationshipResult {
     RelationshipResult relationship;
     Direction direction = Outgoing;
     sym_list::SymbolInfo peerSymbol;
+    QString subjectRole;
+    QString peerRole;
+    QString explanation;
 };
 
 struct RelationshipTypeGroup {

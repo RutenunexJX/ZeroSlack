@@ -6,6 +6,77 @@ std::unique_ptr<RelationshipService> RelationshipService::instance = nullptr;
 
 using relationship_service_ordering::sortRelationshipResults;
 
+namespace {
+QString relationVerb(SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("references");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("drives");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("reads from");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("constrains");
+    }
+    return QStringLiteral("relates to");
+}
+
+QString roleFor(SymbolRelationshipEngine::RelationType type, bool sourceSide)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return sourceSide ? QStringLiteral("container") : QStringLiteral("contained");
+    case SymbolRelationshipEngine::REFERENCES:
+        return sourceSide ? QStringLiteral("referencer") : QStringLiteral("referenced");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return sourceSide ? QStringLiteral("instantiator") : QStringLiteral("instantiated");
+    case SymbolRelationshipEngine::CALLS:
+        return sourceSide ? QStringLiteral("caller") : QStringLiteral("callee");
+    case SymbolRelationshipEngine::INHERITS:
+        return sourceSide ? QStringLiteral("derived") : QStringLiteral("base");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return sourceSide ? QStringLiteral("implementation") : QStringLiteral("interface");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return sourceSide ? QStringLiteral("driver") : QStringLiteral("driven");
+    case SymbolRelationshipEngine::READS_FROM:
+        return sourceSide ? QStringLiteral("reader") : QStringLiteral("source");
+    case SymbolRelationshipEngine::CLOCKS:
+        return sourceSide ? QStringLiteral("clock") : QStringLiteral("clocked");
+    case SymbolRelationshipEngine::RESETS:
+        return sourceSide ? QStringLiteral("reset") : QStringLiteral("reset");
+    case SymbolRelationshipEngine::GENERATES:
+        return sourceSide ? QStringLiteral("generator") : QStringLiteral("generated");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return sourceSide ? QStringLiteral("constraint") : QStringLiteral("constrained");
+    }
+    return QStringLiteral("related");
+}
+
+QString symbolDisplayName(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolName.isEmpty()
+        ? QStringLiteral("<unnamed>")
+        : symbol.symbolName;
+}
+}
+
 RelationshipService* RelationshipService::getInstance()
 {
     if (!instance)
@@ -86,6 +157,22 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : relationship.fromSymbol;
             if (directed.peerSymbol.symbolId < 0)
                 continue;
+            const bool subjectIsSource =
+                direction == DirectedRelationshipResult::Outgoing;
+            directed.subjectRole =
+                roleFor(relationship.relationship.type, subjectIsSource);
+            directed.peerRole =
+                roleFor(relationship.relationship.type, !subjectIsSource);
+            const QString sourceName = subjectIsSource
+                ? symbolDisplayName(report.subjectSymbol)
+                : symbolDisplayName(directed.peerSymbol);
+            const QString targetName = subjectIsSource
+                ? symbolDisplayName(directed.peerSymbol)
+                : symbolDisplayName(report.subjectSymbol);
+            directed.explanation = QStringLiteral("%1 %2 %3")
+                                       .arg(sourceName,
+                                            relationVerb(relationship.relationship.type),
+                                            targetName);
             report.relationships.append(directed);
             report.typeCounts[relationship.relationship.type]++;
             report.directionCounts[direction]++;

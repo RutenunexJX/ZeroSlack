@@ -10,7 +10,8 @@ namespace {
 QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
                                         const QString& direction,
                                         const sym_list::SymbolInfo& symbol,
-                                        SymbolRelationshipEngine::RelationType type)
+                                        SymbolRelationshipEngine::RelationType type,
+                                        const QString& explanation)
 {
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, direction);
@@ -18,7 +19,10 @@ QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
     item->setText(2, QFileInfo(symbol.fileName).fileName());
     item->setText(3, QString::number(symbol.startLine));
     item->setText(4, SemanticPanelUtils::relationshipTypeText(type));
+    item->setToolTip(0, explanation);
+    item->setToolTip(1, explanation);
     item->setToolTip(2, symbol.fileName);
+    item->setToolTip(4, explanation);
     item->setData(0, Qt::UserRole, symbol.fileName);
     item->setData(0, Qt::UserRole + 1, symbol.startLine);
     item->setData(0, Qt::UserRole + 2, symbol.startColumn);
@@ -98,7 +102,8 @@ void RelationshipsPanelCoordinator::refresh()
                 createRelationshipItem(typeGroup,
                                        direction,
                                        directed.peerSymbol,
-                                       directed.relationship.relationship.type);
+                                       directed.relationship.relationship.type,
+                                       directed.explanation);
             }
         }
     }

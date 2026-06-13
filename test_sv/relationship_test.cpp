@@ -1638,6 +1638,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
                true);
+    expectBool("relationship report explains relationship",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().explanation
+                       == QStringLiteral("rel_top instantiates rel_stage"),
+               true);
+    expectBool("relationship report subject role",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().subjectRole
+                       == QStringLiteral("instantiator"),
+               true);
+    expectBool("relationship report peer role",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().peerRole
+                       == QStringLiteral("instantiated"),
+               true);
     RelationshipPanelQueryOptions outgoingPanelRelationshipOptions;
     outgoingPanelRelationshipOptions.symbolName = QStringLiteral("rel_top");
     outgoingPanelRelationshipOptions.fileName = topPath;
@@ -1771,6 +1786,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("relationship report incoming peer symbol",
                !incomingStageReport.relationships.isEmpty()
                    && incomingStageReport.relationships.first().peerSymbol.symbolId == topId,
+               true);
+    expectBool("relationship report incoming explanation",
+               !incomingStageReport.relationships.isEmpty()
+                   && incomingStageReport.relationships.first().explanation
+                       == QStringLiteral("rel_top instantiates rel_stage"),
+               true);
+    expectBool("relationship report incoming subject role",
+               !incomingStageReport.relationships.isEmpty()
+                   && incomingStageReport.relationships.first().subjectRole
+                       == QStringLiteral("instantiated"),
+               true);
+    expectBool("relationship report incoming peer role",
+               !incomingStageReport.relationships.isEmpty()
+                   && incomingStageReport.relationships.first().peerRole
+                       == QStringLiteral("instantiator"),
                true);
     expectBool("relationship report incoming grouped peer symbol",
                !incomingStageReport.directionGroups.isEmpty()
