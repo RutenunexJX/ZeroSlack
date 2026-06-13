@@ -7,6 +7,7 @@
 #include "diagnosticservice.h"
 #include "documentmodel.h"
 #include "hierarchyservice.h"
+#include "modulebriefservice.h"
 #include "navigationservice.h"
 #include "referenceservice.h"
 #include "relationshipservice.h"
@@ -130,6 +131,27 @@ static QString loadTextFile(const QString& path)
 static QString normalizedPath(const QString& path)
 {
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+}
+
+static sym_list::SymbolInfo makeModuleBriefSymbol(
+    int id,
+    const QString& fileName,
+    const QString& name,
+    sym_list::sym_type_e type,
+    int line,
+    const QString& moduleScope = QString())
+{
+    sym_list::SymbolInfo symbol;
+    symbol.symbolId = id;
+    symbol.fileName = fileName;
+    symbol.symbolName = name;
+    symbol.symbolType = type;
+    symbol.startLine = line;
+    symbol.endLine = line;
+    symbol.startColumn = 1;
+    symbol.endColumn = 1;
+    symbol.moduleScope = moduleScope;
+    return symbol;
 }
 
 static void runInlineRelationshipRegression(SlangManager& slang,
@@ -2199,6 +2221,143 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 }
 
+static void runModuleBriefServiceFixture()
+{
+    printf("\n-- module brief service fixture --\n");
+
+    const QString fileName = QStringLiteral("test_sv/module_brief_fixture.sv");
+    QList<sym_list::SymbolInfo> symbols;
+    sym_list::SymbolInfo module = makeModuleBriefSymbol(
+        9001,
+        fileName,
+        QStringLiteral("brief_top"),
+        sym_list::sym_module,
+        10);
+    module.endLine = 80;
+    symbols.append(module);
+    symbols.append(makeModuleBriefSymbol(
+        9002,
+        fileName,
+        QStringLiteral("WIDTH"),
+        sym_list::sym_parameter,
+        11,
+        QStringLiteral("brief_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9003,
+        fileName,
+        QStringLiteral("clk"),
+        sym_list::sym_port_input,
+        12,
+        QStringLiteral("brief_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9004,
+        fileName,
+        QStringLiteral("rst_n"),
+        sym_list::sym_port_input,
+        13,
+        QStringLiteral("brief_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9005,
+        fileName,
+        QStringLiteral("data_o"),
+        sym_list::sym_port_output,
+        14,
+        QStringLiteral("brief_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9006,
+        fileName,
+        QStringLiteral("u_stage"),
+        sym_list::sym_inst,
+        30,
+        QStringLiteral("brief_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9007,
+        fileName,
+        QStringLiteral("brief_pkg"),
+        sym_list::sym_package,
+        1));
+    symbols.append(makeModuleBriefSymbol(
+        9008,
+        fileName,
+        QStringLiteral("outside_port"),
+        sym_list::sym_port_input,
+        90,
+        QStringLiteral("other_module")));
+
+    QList<SemanticRelationship> relationships;
+    SemanticRelationship importRel;
+    importRel.fromId = 9001;
+    importRel.toId = 9007;
+    importRel.type = SymbolRelationshipEngine::REFERENCES;
+    relationships.append(importRel);
+
+    SemanticRelationship instRel;
+    instRel.fromId = 9001;
+    instRel.toId = 9006;
+    instRel.type = SymbolRelationshipEngine::INSTANTIATES;
+    relationships.append(instRel);
+
+    SemanticRelationship clockRel;
+    clockRel.fromId = 9003;
+    clockRel.toId = 9001;
+    clockRel.type = SymbolRelationshipEngine::CLOCKS;
+    relationships.append(clockRel);
+
+    QList<SemanticDiagnostic> diagnostics;
+    SemanticDiagnostic moduleDiagnostic;
+    moduleDiagnostic.fileName = fileName;
+    moduleDiagnostic.line = 32;
+    moduleDiagnostic.column = 5;
+    moduleDiagnostic.severity = SemanticDiagnostic::Warning;
+    moduleDiagnostic.message = QStringLiteral("width truncation");
+    diagnostics.append(moduleDiagnostic);
+
+    SemanticDiagnostic outsideDiagnostic;
+    outsideDiagnostic.fileName = fileName;
+    outsideDiagnostic.line = 100;
+    outsideDiagnostic.column = 1;
+    outsideDiagnostic.severity = SemanticDiagnostic::Error;
+    outsideDiagnostic.message = QStringLiteral("outside module");
+    diagnostics.append(outsideDiagnostic);
+
+    SemanticIndex index;
+    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        symbols,
+        relationships,
+        diagnostics));
+    ModuleBriefService service(&index);
+
+    ModuleBriefQuery query;
+    query.moduleName = QStringLiteral("brief_top");
+    query.fileName = fileName;
+    const ModuleBriefReport report = service.buildModuleBrief(query);
+
+    expectBool("module brief found module", report.found, true);
+    expectBool("module brief subject name",
+               report.moduleSymbol.symbolName == QStringLiteral("brief_top"), true);
+    expectInt("module brief port count", report.ports.size(), 3);
+    expectInt("module brief parameter count", report.parameters.size(), 1);
+    expectInt("module brief instance count", report.instances.size(), 1);
+    expectInt("module brief import count", report.imports.size(), 1);
+    expectInt("module brief diagnostic count", report.diagnostics.size(), 1);
+    expectBool("module brief import package",
+               !report.imports.isEmpty()
+                   && report.imports.first().symbolName == QStringLiteral("brief_pkg"),
+               true);
+    expectInt("module brief outgoing relationships",
+              report.relationshipSummary.outgoingCount, 2);
+    expectInt("module brief incoming relationships",
+              report.relationshipSummary.incomingCount, 1);
+    expectInt("module brief instantiates count",
+              report.relationshipSummary.outgoingTypeCounts.value(
+                  SymbolRelationshipEngine::INSTANTIATES),
+              1);
+    expectInt("module brief clocks count",
+              report.relationshipSummary.incomingTypeCounts.value(
+                  SymbolRelationshipEngine::CLOCKS),
+              1);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -2212,6 +2371,7 @@ int main(int argc, char** argv)
 
     runInlineRelationshipRegression(slang, db, builder);
     runMultiFileRelationshipFixture(slang, db, engine, builder);
+    runModuleBriefServiceFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

@@ -53,6 +53,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisschedulerrelationships.cpp
     analysisschedulerwiring.cpp
     mainwindow.cpp
+    modulebriefservice.cpp
     alternatecommandservice.cpp
     completioncommandmode.cpp
     completioncontexthelper.cpp
@@ -209,6 +210,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisprogresscoordinator.h
     analysisscheduler.h
     mainwindow.h
+    modulebriefservice.h
     alternatecommandservice.h
     completioncommandmode.h
     completionmanager.h
