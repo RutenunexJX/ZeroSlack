@@ -114,6 +114,8 @@ set(ZEROSLACK_CORE_SOURCES
     semanticdockcoordinator.cpp
     semanticindex.cpp
     semanticindexcompletion.cpp
+    semanticindexlookup.cpp
+    semanticindexrelationships.cpp
     semanticindexsnapshot.cpp
     semanticruntimecoordinator.cpp
     slangmanager.cpp
