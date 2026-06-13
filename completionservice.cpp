@@ -4,6 +4,7 @@
 #include "completioncontexthelper.h"
 #include "completioncontextquery.h"
 #include "completionmatcher.h"
+#include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
 
 #include <QVector>
@@ -381,32 +382,14 @@ QStringList CompletionService::findScopeCompletions(const CompletionQuery& query
 
 QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const
 {
-    return CompletionSymbolQuery::namesFromSymbols(findCommandSymbolsFromIndex(query));
+    return CompletionSymbolQuery::namesFromSymbols(
+        CompletionSemanticQuery::commandSymbols(semanticIndex(), query));
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
     const CommandCompletionQuery& query) const
 {
-    const bool useSymbolInfoDirectly =
-        query.symbolType == sym_list::sym_packed_struct_var
-        || query.symbolType == sym_list::sym_unpacked_struct_var
-        || query.symbolType == sym_list::sym_packed_struct
-        || query.symbolType == sym_list::sym_unpacked_struct;
-
-    if (useSymbolInfoDirectly) {
-        if (query.moduleName.isEmpty())
-            return {};
-
-        semanticIndex()->refreshStructTypedefEnumForFile(query.fileName, query.documentText);
-
-        return semanticIndex()->getModuleContextSymbolsByType(
-            query.moduleName,
-            query.fileName,
-            query.symbolType,
-            query.prefix);
-    }
-
-    return findCommandSymbolsFromIndex(query);
+    return CompletionSemanticQuery::commandSymbols(semanticIndex(), query);
 }
 
 QStringList CompletionService::findModuleChildCompletions(
@@ -525,21 +508,24 @@ QStringList CompletionService::findEnumValueCompletions(
     const QString& prefix,
     const QString& enumTypeName) const
 {
-    return semanticIndex()->getEnumValueCompletionNames(prefix, enumTypeName);
+    return CompletionSemanticQuery::enumValueCompletions(
+        semanticIndex(), prefix, enumTypeName);
 }
 
 QString CompletionService::findEnumTypeForVariable(
     const QString& variableName,
     const QString& moduleName) const
 {
-    return semanticIndex()->enumTypeForVariable(variableName, moduleName);
+    return CompletionSemanticQuery::enumTypeForVariable(
+        semanticIndex(), variableName, moduleName);
 }
 
 QStringList CompletionService::findModulePortCompletions(
     const QString& prefix,
     const QString& moduleTypeName) const
 {
-    return semanticIndex()->getModulePortCompletionNames(prefix, moduleTypeName);
+    return CompletionSemanticQuery::modulePortCompletions(
+        semanticIndex(), prefix, moduleTypeName);
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findModuleInternalSymbolInfosByType(
@@ -548,7 +534,8 @@ QList<sym_list::SymbolInfo> CompletionService::findModuleInternalSymbolInfosByTy
     const QString& prefix,
     bool useRelationshipFallback) const
 {
-    return semanticIndex()->getModuleInternalSymbolsByType(
+    return CompletionSemanticQuery::moduleInternalSymbolInfosByType(
+        semanticIndex(),
         moduleName,
         symbolType,
         prefix,
@@ -561,7 +548,8 @@ QList<sym_list::SymbolInfo> CompletionService::findModuleContextSymbolInfosByTyp
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
-    return semanticIndex()->getModuleContextSymbolsByType(
+    return CompletionSemanticQuery::moduleContextSymbolInfosByType(
+        semanticIndex(),
         moduleName,
         fileName,
         symbolType,
@@ -572,18 +560,21 @@ QList<sym_list::SymbolInfo> CompletionService::findGlobalSymbolInfosByType(
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
-    return semanticIndex()->getGlobalSymbolInfosByType(symbolType, prefix);
+    return CompletionSemanticQuery::globalSymbolInfosByType(
+        semanticIndex(), symbolType, prefix);
 }
 
 QString CompletionService::currentModuleAt(const QString& fileName, int cursorPosition) const
 {
-    return semanticIndex()->currentModuleAt(fileName, cursorPosition);
+    return CompletionSemanticQuery::currentModuleAt(
+        semanticIndex(), fileName, cursorPosition);
 }
 
 QString CompletionService::getStructTypeForVariable(const QString& variableName,
                                                     const QString& moduleName) const
 {
-    return semanticIndex()->getStructTypeForVariable(variableName, moduleName);
+    return CompletionSemanticQuery::structTypeForVariable(
+        semanticIndex(), variableName, moduleName);
 }
 
 bool CompletionService::tryParseStructMemberContext(const QString& line,
@@ -599,13 +590,4 @@ bool CompletionService::tryParseStructMemberContext(const QString& line,
 SemanticIndex* CompletionService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findCommandSymbolsFromIndex(
-    const CommandCompletionQuery& query) const
-{
-    return semanticIndex()->getCommandCompletionSymbols(
-        query.moduleName,
-        query.symbolType,
-        query.prefix);
 }

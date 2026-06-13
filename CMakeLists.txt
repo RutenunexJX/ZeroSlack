@@ -55,6 +55,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionmanager.cpp
     completionmatcher.cpp
     completionmodel.cpp
+    completionsemanticquery.cpp
     completionservice.cpp
     completionsymbolquery.cpp
     definitionnavigationservice.cpp
@@ -141,6 +142,7 @@ set(ZEROSLACK_CORE_SOURCES
     completioncontexthelper.h
     completioncontextquery.h
     completionservice.h
+    completionsemanticquery.h
     completionsymbolquery.h
     definitionnavigationservice.h
     definitionservice.h

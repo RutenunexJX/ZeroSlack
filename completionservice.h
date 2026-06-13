@@ -296,8 +296,6 @@ private:
     static std::unique_ptr<CompletionService> instance;
 
     SemanticIndex* semanticIndex() const;
-    QList<sym_list::SymbolInfo> findCommandSymbolsFromIndex(
-        const CommandCompletionQuery& query) const;
 };
 
 #endif // COMPLETIONSERVICE_H
