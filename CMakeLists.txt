@@ -93,6 +93,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorsourcehover.cpp
     editorsyntaxstate.cpp
     editormodestate.cpp
+    filecommandcoordinatoralternate.cpp
     filecommandcoordinator.cpp
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
