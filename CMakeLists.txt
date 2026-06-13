@@ -132,6 +132,7 @@ set(ZEROSLACK_CORE_SOURCES
     smartrelationshipbuilder.cpp
     symbolanalyzer.cpp
     symbolrelationshipengine.cpp
+    syminfocontent.cpp
     syminfoindex.cpp
     syminfo.cpp
     tabdocumentqueries.cpp
