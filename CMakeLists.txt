@@ -109,6 +109,8 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipspanelcoordinator.cpp
     relationshipservice.cpp
     relationshipprogressdialog.cpp
+    relationshipprogressdialogui.cpp
+    relationshipprogressdialogupdates.cpp
     relationshipanalysisqueue.cpp
     relationshipanalysiscontroller.cpp
     relationshipanalysisworker.cpp
