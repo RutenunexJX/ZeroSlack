@@ -12,6 +12,7 @@ class NavigationManager;
 class ProblemsPanelCoordinator;
 class ReferencesPanelCoordinator;
 class RelationshipsPanelCoordinator;
+class RtlInsightsPanelCoordinator;
 class TabManager;
 class WorkspaceManager;
 
@@ -24,7 +25,8 @@ public:
                                     NavigationCommandCoordinator* navigationCommandCoordinator,
                                     ProblemsPanelCoordinator* problemsPanel,
                                     ReferencesPanelCoordinator* referencesPanel,
-                                    RelationshipsPanelCoordinator* relationshipsPanel);
+                                    RelationshipsPanelCoordinator* relationshipsPanel,
+                                    RtlInsightsPanelCoordinator* rtlInsightsPanel);
 
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
     void configurePanels();
@@ -70,11 +72,13 @@ private:
         ProblemsPanelCoordinator* problemsPanel = nullptr;
         ReferencesPanelCoordinator* referencesPanel = nullptr;
         RelationshipsPanelCoordinator* relationshipsPanel = nullptr;
+        RtlInsightsPanelCoordinator* rtlInsightsPanel = nullptr;
         bool configured = false;
 
         void set(ProblemsPanelCoordinator* problemsPanel,
                  ReferencesPanelCoordinator* referencesPanel,
-                 RelationshipsPanelCoordinator* relationshipsPanel);
+                 RelationshipsPanelCoordinator* relationshipsPanel,
+                 RtlInsightsPanelCoordinator* rtlInsightsPanel);
         bool isConfigured() const;
         void markConfigured();
         void configureProblemsPanel(
@@ -88,6 +92,9 @@ private:
         void configureRelationshipsPanel(
             const NavigationHandler& navigationHandler,
             const StatusMessageHandler& statusMessageHandler) const;
+        void configureRtlInsightsPanel(
+            const NavigationHandler& navigationHandler,
+            const StatusMessageHandler& statusMessageHandler) const;
         void updateProblemsPanel(const QString& fileName) const;
         void showReferencesForSymbol(const QString& symbolName,
                                      const QString& fileName,
@@ -97,6 +104,8 @@ private:
                                         const QString& fileName,
                                         const QString& moduleName) const;
         void refreshRelationshipsPanel() const;
+        void updateRtlInsightsPanel(const QString& fileName,
+                                    const QString& moduleName) const;
         bool problemsPanelShowsCurrentFile() const;
     };
 

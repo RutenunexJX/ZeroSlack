@@ -11,6 +11,7 @@ class NavigationManager;
 class ProblemsPanelCoordinator;
 class ReferencesPanelCoordinator;
 class RelationshipsPanelCoordinator;
+class RtlInsightsPanelCoordinator;
 class SemanticPanelRefreshCoordinator;
 class TabManager;
 class WorkspaceManager;
@@ -34,6 +35,7 @@ public:
     ProblemsPanelCoordinator* problemsPanelCoordinator() const;
     ReferencesPanelCoordinator* referencesPanelCoordinator() const;
     RelationshipsPanelCoordinator* relationshipsPanelCoordinator() const;
+    RtlInsightsPanelCoordinator* rtlInsightsPanelCoordinator() const;
 
 private:
     struct DockDependencies {
@@ -58,6 +60,7 @@ private:
         std::unique_ptr<ProblemsPanelCoordinator> problemsPanel;
         std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
         std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
+        std::unique_ptr<RtlInsightsPanelCoordinator> rtlInsightsPanel;
         std::unique_ptr<SemanticPanelRefreshCoordinator> semanticPanelRefresh;
 
         void createPanels(const DockDependencies& dependencies);

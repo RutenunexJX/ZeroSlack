@@ -5,6 +5,7 @@
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
+#include "rtlinsightspanelcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -66,10 +67,13 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
         std::make_unique<ReferencesPanelCoordinator>(dependencies.mainWindow);
     relationshipsPanel =
         std::make_unique<RelationshipsPanelCoordinator>(dependencies.mainWindow);
+    rtlInsightsPanel =
+        std::make_unique<RtlInsightsPanelCoordinator>(dependencies.mainWindow);
 
     dependencies.addBottomDock(problemsPanel->dock());
     dependencies.addBottomDock(referencesPanel->dock());
     dependencies.addBottomDock(relationshipsPanel->dock());
+    dependencies.addBottomDock(rtlInsightsPanel->dock());
 }
 
 void SemanticDockCoordinator::PanelBundle::createRefreshCoordinator(
@@ -83,7 +87,8 @@ void SemanticDockCoordinator::PanelBundle::createRefreshCoordinator(
         dependencies.navigationCommandCoordinator,
         problemsPanel.get(),
         referencesPanel.get(),
-        relationshipsPanel.get());
+        relationshipsPanel.get(),
+        rtlInsightsPanel.get());
     setStatusMessageHandler(statusMessageHandler);
     semanticPanelRefresh->configurePanels();
 }
@@ -131,4 +136,9 @@ ReferencesPanelCoordinator* SemanticDockCoordinator::referencesPanelCoordinator(
 RelationshipsPanelCoordinator* SemanticDockCoordinator::relationshipsPanelCoordinator() const
 {
     return panels.relationshipsPanel.get();
+}
+
+RtlInsightsPanelCoordinator* SemanticDockCoordinator::rtlInsightsPanelCoordinator() const
+{
+    return panels.rtlInsightsPanel.get();
 }

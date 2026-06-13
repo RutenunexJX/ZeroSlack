@@ -36,6 +36,7 @@
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
+#include "rtlinsightspanelcoordinator.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticdockcoordinator.h"
@@ -246,6 +247,13 @@ static QTreeWidget* relationshipsTree(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
         ? window.semanticDocks->relationshipsPanelCoordinator()->tree()
+        : nullptr;
+}
+
+static QTreeWidget* rtlInsightsTree(MainWindow& window)
+{
+    return window.semanticDocks && window.semanticDocks->rtlInsightsPanelCoordinator()
+        ? window.semanticDocks->rtlInsightsPanelCoordinator()->tree()
         : nullptr;
 }
 
@@ -644,6 +652,159 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                        true);
         }
     }
+}
+
+static sym_list::SymbolInfo makeGuiSmokeSymbol(
+    int id,
+    const QString& fileName,
+    const QString& name,
+    sym_list::sym_type_e type,
+    int line,
+    const QString& moduleScope = QString())
+{
+    sym_list::SymbolInfo symbol;
+    symbol.symbolId = id;
+    symbol.fileName = fileName;
+    symbol.symbolName = name;
+    symbol.symbolType = type;
+    symbol.startLine = line;
+    symbol.endLine = line;
+    symbol.startColumn = 1;
+    symbol.endColumn = 1;
+    symbol.position = 0;
+    symbol.length = name.length();
+    symbol.moduleScope = moduleScope;
+    return symbol;
+}
+
+static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fixturePath)
+{
+    printf("\n-- RTL insights panel regression --\n");
+
+    QList<sym_list::SymbolInfo> symbols;
+    sym_list::SymbolInfo module = makeGuiSmokeSymbol(
+        9601,
+        fixturePath,
+        QStringLiteral("insight_top"),
+        sym_list::sym_module,
+        1);
+    module.endLine = 18;
+    symbols.append(module);
+    symbols.append(makeGuiSmokeSymbol(
+        9602,
+        fixturePath,
+        QStringLiteral("clk"),
+        sym_list::sym_port_input,
+        2,
+        QStringLiteral("insight_top")));
+    symbols.append(makeGuiSmokeSymbol(
+        9603,
+        fixturePath,
+        QStringLiteral("rst_n"),
+        sym_list::sym_port_input,
+        3,
+        QStringLiteral("insight_top")));
+    symbols.append(makeGuiSmokeSymbol(
+        9604,
+        fixturePath,
+        QStringLiteral("u_stage"),
+        sym_list::sym_inst,
+        8,
+        QStringLiteral("insight_top")));
+
+    sym_list::SymbolInfo stateQ = makeGuiSmokeSymbol(
+        9605,
+        fixturePath,
+        QStringLiteral("state_q"),
+        sym_list::sym_enum_var,
+        10,
+        QStringLiteral("insight_top"));
+    stateQ.dataType = QStringLiteral("state_t");
+    symbols.append(stateQ);
+    sym_list::SymbolInfo stateD = makeGuiSmokeSymbol(
+        9606,
+        fixturePath,
+        QStringLiteral("state_d"),
+        sym_list::sym_enum_var,
+        11,
+        QStringLiteral("insight_top"));
+    stateD.dataType = QStringLiteral("state_t");
+    symbols.append(stateD);
+    sym_list::SymbolInfo idle = makeGuiSmokeSymbol(
+        9607,
+        fixturePath,
+        QStringLiteral("IDLE"),
+        sym_list::sym_enum_value,
+        5,
+        QStringLiteral("insight_top"));
+    idle.dataType = QStringLiteral("state_t");
+    symbols.append(idle);
+    sym_list::SymbolInfo run = makeGuiSmokeSymbol(
+        9608,
+        fixturePath,
+        QStringLiteral("RUN"),
+        sym_list::sym_enum_value,
+        5,
+        QStringLiteral("insight_top"));
+    run.dataType = QStringLiteral("state_t");
+    symbols.append(run);
+
+    QList<SemanticRelationship> relationships;
+    SemanticRelationship clockRel;
+    clockRel.fromId = 9602;
+    clockRel.toId = 9601;
+    clockRel.type = SymbolRelationshipEngine::CLOCKS;
+    relationships.append(clockRel);
+
+    const QString content = QStringLiteral(
+        "module insight_top(input logic clk, input logic rst_n);\n"
+        "  typedef enum logic {IDLE, RUN} state_t;\n"
+        "  state_t state_q;\n"
+        "  state_t state_d;\n"
+        "  always_comb begin\n"
+        "    case (state_q)\n"
+        "      IDLE: state_d = RUN;\n"
+        "      RUN: state_d = IDLE;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
+    QHash<QString, QString> fileContents;
+    fileContents.insert(fixturePath, content);
+    SemanticIndex::getInstance()->setSnapshot(
+        std::make_shared<const SemanticIndexSnapshot>(
+            symbols,
+            relationships,
+            QList<SemanticDiagnostic>(),
+            fileContents));
+
+    expectBool("RTL insights panel exists", rtlInsightsTree(window) != nullptr, true);
+    if (!window.semanticDocks || !window.semanticDocks->rtlInsightsPanelCoordinator())
+        return;
+
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
+        fixturePath,
+        QStringLiteral("insight_top"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    bool sawPort = false;
+    bool sawClock = false;
+    bool sawTransition = false;
+    const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
+    for (QTreeWidgetItem* item : items) {
+        sawPort = sawPort
+            || (item->text(0) == QStringLiteral("Port")
+                && item->text(1) == QStringLiteral("clk"));
+        sawClock = sawClock
+            || (item->text(0) == QStringLiteral("Clock")
+                && item->text(1) == QStringLiteral("clk"));
+        sawTransition = sawTransition
+            || (item->text(0) == QStringLiteral("IDLE")
+                && item->text(1) == QStringLiteral("RUN"));
+    }
+
+    expectBool("RTL insights renders module port", sawPort, true);
+    expectBool("RTL insights renders clock domain", sawClock, true);
+    expectBool("RTL insights renders FSM transition", sawTransition, true);
 }
 
 static void runNavigationHierarchyModelRegression()
@@ -1347,6 +1508,7 @@ int main(int argc, char** argv)
     }
 
     runReferenceDockRegression(window, normalizedSymbolFixturePath);
+    runRtlInsightsPanelRegression(window, normalizedSymbolFixturePath);
 
     drainRelationshipWork(window);
 

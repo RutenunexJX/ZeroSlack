@@ -3,15 +3,18 @@
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
+#include "rtlinsightspanelcoordinator.h"
 
 void SemanticPanelRefreshCoordinator::PanelSet::set(
     ProblemsPanelCoordinator* newProblemsPanel,
     ReferencesPanelCoordinator* newReferencesPanel,
-    RelationshipsPanelCoordinator* newRelationshipsPanel)
+    RelationshipsPanelCoordinator* newRelationshipsPanel,
+    RtlInsightsPanelCoordinator* newRtlInsightsPanel)
 {
     problemsPanel = newProblemsPanel;
     referencesPanel = newReferencesPanel;
     relationshipsPanel = newRelationshipsPanel;
+    rtlInsightsPanel = newRtlInsightsPanel;
 }
 
 bool SemanticPanelRefreshCoordinator::PanelSet::isConfigured() const
@@ -61,6 +64,17 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureRelationshipsPanel(
     relationshipsPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
+void SemanticPanelRefreshCoordinator::PanelSet::configureRtlInsightsPanel(
+    const NavigationHandler& navigationHandler,
+    const StatusMessageHandler& statusMessageHandler) const
+{
+    if (!rtlInsightsPanel)
+        return;
+
+    rtlInsightsPanel->setNavigationHandler(navigationHandler);
+    rtlInsightsPanel->setStatusMessageHandler(statusMessageHandler);
+}
+
 void SemanticPanelRefreshCoordinator::PanelSet::updateProblemsPanel(
     const QString& fileName) const
 {
@@ -96,6 +110,14 @@ void SemanticPanelRefreshCoordinator::PanelSet::refreshRelationshipsPanel() cons
 {
     if (relationshipsPanel)
         relationshipsPanel->refresh();
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::updateRtlInsightsPanel(
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (rtlInsightsPanel)
+        rtlInsightsPanel->updateModuleContext(fileName, moduleName);
 }
 
 bool SemanticPanelRefreshCoordinator::PanelSet::problemsPanelShowsCurrentFile() const

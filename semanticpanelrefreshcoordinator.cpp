@@ -3,6 +3,7 @@
 #include "mycodeeditor.h"
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
+#include "rtlinsightspanelcoordinator.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
@@ -15,13 +16,14 @@ SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
     NavigationCommandCoordinator* navigationCommandCoordinator,
     ProblemsPanelCoordinator* problemsPanel,
     ReferencesPanelCoordinator* referencesPanel,
-    RelationshipsPanelCoordinator* relationshipsPanel)
+    RelationshipsPanelCoordinator* relationshipsPanel,
+    RtlInsightsPanelCoordinator* rtlInsightsPanel)
 {
     dependencies.set(tabManager,
                      workspaceManager,
                      navigationManager,
                      navigationCommandCoordinator);
-    panels.set(problemsPanel, referencesPanel, relationshipsPanel);
+    panels.set(problemsPanel, referencesPanel, relationshipsPanel, rtlInsightsPanel);
 }
 
 void SemanticPanelRefreshCoordinator::ContextDependencies::set(
@@ -98,6 +100,8 @@ void SemanticPanelRefreshCoordinator::configurePanels()
                                     statusMessageHandler);
     panels.configureRelationshipsPanel(navigationHandler,
                                        statusMessageHandler);
+    panels.configureRtlInsightsPanel(navigationHandler,
+                                     statusMessageHandler);
     panels.markConfigured();
 }
 
@@ -135,6 +139,8 @@ void SemanticPanelRefreshCoordinator::refreshRelationshipsPanel()
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
     dependencies.handleActiveEditorChanged(editor);
+    panels.updateRtlInsightsPanel(editor ? editor->documentFileName() : QString(),
+                                  editor ? editor->currentModuleName() : QString());
     if (problemsPanelShowsCurrentFile())
         updateProblemsPanel();
 }
