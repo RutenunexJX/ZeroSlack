@@ -52,6 +52,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisschedulerdocuments.cpp
     analysisschedulerrelationships.cpp
     analysisschedulerwiring.cpp
+    clockresetdomainservice.cpp
     mainwindow.cpp
     modulebriefservice.cpp
     alternatecommandservice.cpp
@@ -210,6 +211,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysiscoordinator.h
     analysisprogresscoordinator.h
     analysisscheduler.h
+    clockresetdomainservice.h
     mainwindow.h
     modulebriefservice.h
     alternatecommandservice.h

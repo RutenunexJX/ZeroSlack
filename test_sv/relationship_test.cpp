@@ -3,6 +3,7 @@
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "analysisscheduler.h"
+#include "clockresetdomainservice.h"
 #include "semanticindex.h"
 #include "diagnosticservice.h"
 #include "documentmodel.h"
@@ -2488,6 +2489,123 @@ static void runSignalJourneyServiceFixture()
                true);
 }
 
+static void runClockResetDomainServiceFixture()
+{
+    printf("\n-- clock reset domain service fixture --\n");
+
+    const QString fileName = QStringLiteral("test_sv/clock_reset_domain_fixture.sv");
+    QList<sym_list::SymbolInfo> symbols;
+    sym_list::SymbolInfo top = makeModuleBriefSymbol(
+        9201,
+        fileName,
+        QStringLiteral("domain_top"),
+        sym_list::sym_module,
+        1);
+    top.endLine = 80;
+    symbols.append(top);
+    symbols.append(makeModuleBriefSymbol(
+        9202,
+        fileName,
+        QStringLiteral("other_domain"),
+        sym_list::sym_module,
+        90));
+    symbols.append(makeModuleBriefSymbol(
+        9203,
+        fileName,
+        QStringLiteral("clk_i"),
+        sym_list::sym_port_input,
+        10,
+        QStringLiteral("domain_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9204,
+        fileName,
+        QStringLiteral("rst_ni"),
+        sym_list::sym_port_input,
+        11,
+        QStringLiteral("domain_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9205,
+        fileName,
+        QStringLiteral("other_clk"),
+        sym_list::sym_port_input,
+        95,
+        QStringLiteral("other_domain")));
+
+    QList<SemanticRelationship> relationships;
+    SemanticRelationship topClock;
+    topClock.fromId = 9203;
+    topClock.toId = 9201;
+    topClock.type = SymbolRelationshipEngine::CLOCKS;
+    relationships.append(topClock);
+
+    SemanticRelationship topReset;
+    topReset.fromId = 9204;
+    topReset.toId = 9201;
+    topReset.type = SymbolRelationshipEngine::RESETS;
+    relationships.append(topReset);
+
+    SemanticRelationship otherClock;
+    otherClock.fromId = 9205;
+    otherClock.toId = 9202;
+    otherClock.type = SymbolRelationshipEngine::CLOCKS;
+    relationships.append(otherClock);
+
+    SemanticIndex index;
+    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        symbols,
+        relationships,
+        QList<SemanticDiagnostic>()));
+    ClockResetDomainService service(&index);
+
+    const ClockResetDomainReport allReport =
+        service.buildClockResetDomainMap();
+    expectBool("clock reset all found", allReport.found, true);
+    expectInt("clock reset all clock domains", allReport.clockDomains.size(), 2);
+    expectInt("clock reset all reset domains", allReport.resetDomains.size(), 1);
+    expectInt("clock reset all clock count",
+              allReport.clockRelationshipCount, 2);
+    expectInt("clock reset all reset count",
+              allReport.resetRelationshipCount, 1);
+
+    ClockResetDomainQuery topQuery;
+    topQuery.moduleName = QStringLiteral("domain_top");
+    topQuery.fileName = fileName;
+    const ClockResetDomainReport topReport =
+        service.buildClockResetDomainMap(topQuery);
+
+    expectBool("clock reset top found", topReport.found, true);
+    expectInt("clock reset top clock domains", topReport.clockDomains.size(), 1);
+    expectInt("clock reset top reset domains", topReport.resetDomains.size(), 1);
+    expectBool("clock reset top clock signal",
+               !topReport.clockDomains.isEmpty()
+                   && topReport.clockDomains.first().domainSignal.symbolName
+                       == QStringLiteral("clk_i"),
+               true);
+    expectBool("clock reset top reset signal",
+               !topReport.resetDomains.isEmpty()
+                   && topReport.resetDomains.first().domainSignal.symbolName
+                       == QStringLiteral("rst_ni"),
+               true);
+    expectBool("clock reset top clock target",
+               !topReport.clockDomains.isEmpty()
+                   && !topReport.clockDomains.first().modules.isEmpty()
+                   && topReport.clockDomains.first().modules.first()
+                       .moduleSymbol.symbolName == QStringLiteral("domain_top"),
+               true);
+
+    ClockResetDomainQuery idQuery;
+    idQuery.moduleSymbolId = 9202;
+    const ClockResetDomainReport otherReport =
+        service.buildClockResetDomainMap(idQuery);
+    expectInt("clock reset id clock domains", otherReport.clockDomains.size(), 1);
+    expectBool("clock reset id clock signal",
+               !otherReport.clockDomains.isEmpty()
+                   && otherReport.clockDomains.first().domainSignal.symbolName
+                       == QStringLiteral("other_clk"),
+               true);
+    expectInt("clock reset id reset domains", otherReport.resetDomains.size(), 0);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -2503,6 +2621,7 @@ int main(int argc, char** argv)
     runMultiFileRelationshipFixture(slang, db, engine, builder);
     runModuleBriefServiceFixture();
     runSignalJourneyServiceFixture();
+    runClockResetDomainServiceFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;
