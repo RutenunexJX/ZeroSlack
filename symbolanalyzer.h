@@ -70,6 +70,21 @@ private:
     SlangManager* m_slangManager = nullptr;
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
 
+    void publishOpenDocumentResults(
+        const QStringList& fileNames,
+        const QList<SemanticDiagnostic>& diagnostics);
+    void updateFileSymbols(
+        const QString& fileName,
+        const QString& content,
+        const QList<sym_list::SymbolInfo>& symbols);
+    void publishFileAnalysisResult(
+        const QString& fileName,
+        const QString& content,
+        const QList<sym_list::SymbolInfo>& symbols,
+        const QList<SemanticDiagnostic>& diagnostics);
+    int publishWorkspaceAnalysisResult(
+        const WorkspaceAnalysisResult& result,
+        int totalFiles);
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
     bool isSystemVerilogFile(const QString &fileName) const;
 };
