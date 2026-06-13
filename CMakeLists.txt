@@ -151,6 +151,7 @@ set(ZEROSLACK_CORE_SOURCES
     slangrelationshiphelpers.cpp
     smartrelationshipbuilderanalysis.cpp
     smartrelationshipbuilder.cpp
+    smartrelationshipbuildercontext.cpp
     smartrelationshipbuildertiming.cpp
     symbolanalyzer.cpp
     symbolrelationshipqueries.cpp
