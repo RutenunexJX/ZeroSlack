@@ -74,6 +74,7 @@ set(ZEROSLACK_CORE_SOURCES
     definitionnavigationservice.cpp
     definitionservice.cpp
     diagnosticservice.cpp
+    diagnosticsrefreshcontroller.cpp
     documentmodel.cpp
     documentregistry.cpp
     documentregistryreader.cpp
@@ -209,6 +210,7 @@ set(ZEROSLACK_CORE_SOURCES
     definitionnavigationservice.h
     definitionservice.h
     diagnosticservice.h
+    diagnosticsrefreshcontroller.h
     documentmodel.h
     documentregistry.h
     documentsnapshot.h

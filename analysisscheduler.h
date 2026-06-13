@@ -17,7 +17,7 @@
 class SymbolAnalyzer;
 class SymbolRelationshipEngine;
 class SmartRelationshipBuilder;
-class QTimer;
+class DiagnosticsRefreshController;
 
 class AnalysisScheduler : public QObject
 {
@@ -84,15 +84,13 @@ private:
     RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
     RelationshipResultPublisher* relationshipResultPublisher = nullptr;
     WorkspaceSymbolAnalysisController* workspaceSymbolAnalysis = nullptr;
+    DiagnosticsRefreshController* diagnosticsRefresh = nullptr;
 
-    QString pendingDiagnosticsRefreshFileName;
-    QTimer* diagnosticsRefreshTimer = nullptr;
     static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
 
     void onDocumentOpened(const DocumentSnapshot& snapshot);
     void onDocumentEdited(const DocumentSnapshot& snapshot);
     void onDocumentSaved(const DocumentSnapshot& snapshot);
-    void scheduleDiagnosticsRefresh(const QString& fileName);
 
     QString contentForOpenFile(const QString& fileName) const;
 };

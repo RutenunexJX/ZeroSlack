@@ -1,6 +1,7 @@
 #include "analysisscheduler.h"
 
-#include <QTimer>
+#include "diagnosticsrefreshcontroller.h"
+
 #include <utility>
 
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
@@ -96,10 +97,15 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisFinished,
             this,
             &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+    diagnosticsRefresh = new DiagnosticsRefreshController(this);
+    connect(diagnosticsRefresh,
+            &DiagnosticsRefreshController::diagnosticsRefreshRequested,
+            this,
+            &AnalysisScheduler::diagnosticsRefreshRequested);
     connect(workspaceSymbolAnalysis,
             &WorkspaceSymbolAnalysisController::diagnosticsRefreshRequested,
-            this,
-            &AnalysisScheduler::scheduleDiagnosticsRefresh);
+            diagnosticsRefresh,
+            &DiagnosticsRefreshController::requestRefresh);
     connect(workspaceSymbolAnalysis,
             &WorkspaceSymbolAnalysisController::workspaceRelationshipAnalysisRequested,
             this,
@@ -112,15 +118,6 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
             &WorkspaceSymbolAnalysisController::relationshipDataClearRequested,
             relationshipResultPublisher,
             &RelationshipResultPublisher::clearAllRelationships);
-
-    diagnosticsRefreshTimer = new QTimer(this);
-    diagnosticsRefreshTimer->setSingleShot(true);
-    diagnosticsRefreshTimer->setInterval(100);
-    connect(diagnosticsRefreshTimer, &QTimer::timeout, this, [this]() {
-        const QString fileName = pendingDiagnosticsRefreshFileName;
-        pendingDiagnosticsRefreshFileName.clear();
-        emit diagnosticsRefreshRequested(fileName);
-    });
 
 }
 
@@ -172,11 +169,4 @@ void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 {
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->requestWorkspaceAnalysis(project);
-}
-
-void AnalysisScheduler::scheduleDiagnosticsRefresh(const QString& fileName)
-{
-    pendingDiagnosticsRefreshFileName = fileName;
-    if (diagnosticsRefreshTimer)
-        diagnosticsRefreshTimer->start();
 }
