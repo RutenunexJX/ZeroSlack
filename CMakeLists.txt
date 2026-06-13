@@ -181,6 +181,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzer.cpp
     symbolanalyzerasync.cpp
     symbolanalyzerpublication.cpp
+    symbolanalyzerslang.cpp
     symbolanalyzerworkspace.cpp
     symbolrelationshipqueries.cpp
     symbolrelationshipengine.cpp
