@@ -51,6 +51,7 @@ set(ZEROSLACK_CORE_SOURCES
     alternatecommandservice.cpp
     completioncommandmode.cpp
     completioncontexthelper.cpp
+    completioncontextquery.cpp
     completionmanager.cpp
     completionmatcher.cpp
     completionmodel.cpp
@@ -138,6 +139,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionmodel.h
     completionmatcher.h
     completioncontexthelper.h
+    completioncontextquery.h
     completionservice.h
     completionsymbolquery.h
     definitionnavigationservice.h

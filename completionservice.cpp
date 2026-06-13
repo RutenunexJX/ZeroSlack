@@ -2,12 +2,11 @@
 
 #include "completioncommandmode.h"
 #include "completioncontexthelper.h"
+#include "completioncontextquery.h"
 #include "completionmatcher.h"
 #include "completionsymbolquery.h"
 
-#include <Qt>
 #include <QVector>
-#include <algorithm>
 
 std::unique_ptr<CompletionService> CompletionService::instance = nullptr;
 
@@ -356,7 +355,8 @@ QStringList CompletionService::findKeywordAbbreviationMatches(
 
 bool CompletionService::relationshipCompletionsAvailable() const
 {
-    return semanticIndex()->hasRelationshipFacts();
+    return CompletionContextQuery::relationshipCompletionsAvailable(
+        semanticIndex());
 }
 
 QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
@@ -365,50 +365,12 @@ QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
     int cursorPosition,
     bool relationshipCompletionsEnabled) const
 {
-    if (!relationshipCompletionsEnabled || !relationshipCompletionsAvailable())
-        return findScoredAllSymbolCompletions(prefix);
-
-    const QString currentModule = currentModuleAt(fileName, cursorPosition);
-    const QString context = QStringLiteral("general");
-
-    ContextCompletionQuery query;
-    query.prefix = prefix;
-    query.currentModule = currentModule;
-    query.context = context;
-    query.relationshipCompletionsEnabled = true;
-    const QStringList completions = findContextAwareCompletions(query);
-
-    QVector<QPair<QString, int>> result;
-    result.reserve(completions.size());
-    for (const QString& completion : completions) {
-        const int baseScore = CompletionMatcher::calculateContextMatchScore(completion, prefix);
-        const int contextScore =
-            CompletionContextHelper::contextScore(completion, context);
-        const int relationshipScore =
-            CompletionContextHelper::relationshipScore(
-                semanticIndex(), completion, currentModule);
-        const int scopeScore = CompletionContextHelper::scopeScore(
-            semanticIndex(), completion, currentModule);
-
-        const int finalScore = baseScore * 0.4
-            + contextScore * 0.2
-            + relationshipScore * 0.3
-            + scopeScore * 0.1;
-        result.append(qMakePair(completion, finalScore));
-    }
-
-    std::sort(result.begin(), result.end(),
-              [](const QPair<QString, int>& left,
-                 const QPair<QString, int>& right) {
-                  if (left.second != right.second)
-                      return left.second > right.second;
-                  return left.first < right.first;
-              });
-
-    if (result.size() > 20)
-        result = result.mid(0, 20);
-
-    return result;
+    return CompletionContextQuery::smartCompletions(
+        semanticIndex(),
+        prefix,
+        fileName,
+        cursorPosition,
+        relationshipCompletionsEnabled);
 }
 
 QStringList CompletionService::findScopeCompletions(const CompletionQuery& query) const
@@ -451,46 +413,36 @@ QStringList CompletionService::findModuleChildCompletions(
     const QString& moduleName,
     const QString& prefix) const
 {
-    return semanticIndex()->getRelationshipCompletionNames(
-        moduleName,
-        {SymbolRelationshipEngine::CONTAINS},
-        true,
-        prefix);
+    return CompletionContextQuery::moduleChildCompletions(
+        semanticIndex(), moduleName, prefix);
 }
 
 QStringList CompletionService::findRelatedSymbolCompletions(
     const QString& symbolName,
     const QString& prefix) const
 {
-    return semanticIndex()->getBidirectionalRelationshipCompletionNames(
-        symbolName,
-        {SymbolRelationshipEngine::REFERENCES},
-        prefix);
+    return CompletionContextQuery::relatedSymbolCompletions(
+        semanticIndex(), symbolName, prefix);
 }
 
 QStringList CompletionService::findSymbolReferenceCompletions(
     const QString& symbolName,
     const QString& prefix) const
 {
-    return semanticIndex()->getRelationshipCompletionNames(
-        symbolName,
-        {SymbolRelationshipEngine::REFERENCES},
-        false,
-        prefix);
+    return CompletionContextQuery::symbolReferenceCompletions(
+        semanticIndex(), symbolName, prefix);
 }
 
 QStringList CompletionService::findClockDomainCompletions(const QString& prefix) const
 {
-    return semanticIndex()->getSymbolsWithOutgoingRelationshipCompletionNames(
-        SymbolRelationshipEngine::CLOCKS,
-        prefix);
+    return CompletionContextQuery::clockDomainCompletions(
+        semanticIndex(), prefix);
 }
 
 QStringList CompletionService::findResetSignalCompletions(const QString& prefix) const
 {
-    return semanticIndex()->getSymbolsWithOutgoingRelationshipCompletionNames(
-        SymbolRelationshipEngine::RESETS,
-        prefix);
+    return CompletionContextQuery::resetSignalCompletions(
+        semanticIndex(), prefix);
 }
 
 QStringList CompletionService::findModuleInternalVariableCompletions(
@@ -549,152 +501,12 @@ QStringList CompletionService::findInstantiableModuleCompletions(const QString& 
 QStringList CompletionService::findContextAwareCompletions(
     const ContextCompletionQuery& query) const
 {
-    QStringList result;
-    const bool relationshipsEnabled =
-        query.relationshipCompletionsEnabled && relationshipCompletionsAvailable();
-
-    if (query.context.contains(QLatin1Char('.'))
-        || query.context.contains(QStringLiteral("->"))) {
-        const QString structVariableName =
-            CompletionContextHelper::extractStructVariable(query.context);
-        if (!structVariableName.isEmpty()) {
-            const QString structTypeName =
-                getStructTypeForVariable(structVariableName, query.currentModule);
-            if (!structTypeName.isEmpty()) {
-                result.append(findStructMemberCompletions(query.prefix, structTypeName));
-                if (!result.isEmpty())
-                    return result;
-            }
-        }
-    }
-
-    if (query.context.contains(QLatin1Char('='))
-        || query.context.contains(QStringLiteral("assign"))
-        || query.context.contains(QStringLiteral("case"))
-        || query.context.contains(QStringLiteral("if"))) {
-        const QString enumVariableName =
-            CompletionContextHelper::extractEnumVariable(query.context);
-        if (!enumVariableName.isEmpty()) {
-            const QString enumTypeName =
-                findEnumTypeForVariable(enumVariableName, query.currentModule);
-            if (!enumTypeName.isEmpty())
-                result.append(findEnumValueCompletions(query.prefix, enumTypeName));
-        }
-
-        if (result.isEmpty())
-            result.append(findEnumValueCompletions(query.prefix));
-    }
-
-    if (relationshipsEnabled
-        && query.context.contains(QLatin1Char('('))
-        && (query.context.contains(QStringLiteral("module"))
-            || query.context.contains(QStringLiteral("instantiation")))) {
-        const QString moduleTypeName =
-            CompletionContextHelper::extractModuleType(query.context);
-        if (!moduleTypeName.isEmpty())
-            result.append(findModulePortCompletions(query.prefix, moduleTypeName));
-    }
-
-    if (query.context.contains(QStringLiteral("clk"), Qt::CaseInsensitive)
-        || query.context.contains(QStringLiteral("clock"), Qt::CaseInsensitive)
-        || query.context.contains(QStringLiteral("always_ff"))) {
-        result.append(findClockDomainCompletions(query.prefix));
-    }
-
-    if (query.context.contains(QStringLiteral("rst"), Qt::CaseInsensitive)
-        || query.context.contains(QStringLiteral("reset"), Qt::CaseInsensitive)
-        || query.context.contains(QStringLiteral("negedge"))
-        || query.context.contains(QStringLiteral("posedge"))) {
-        result.append(findResetSignalCompletions(query.prefix));
-    }
-
-    if (!query.currentModule.isEmpty()) {
-        result.append(findModuleChildCompletions(query.currentModule, query.prefix));
-        if (relationshipsEnabled)
-            result.append(findRelatedSymbolCompletions(query.currentModule, query.prefix));
-    }
-
-    if (query.context.contains(QStringLiteral("task"))
-        || query.context.contains(QStringLiteral("function"))
-        || query.context.contains(QStringLiteral("call"))) {
-        result.append(findTaskFunctionCompletions(query.prefix));
-    }
-
-    if (query.context.contains(QStringLiteral("typedef"))
-        || query.context.contains(QStringLiteral("type"))) {
-        result.append(findGlobalSymbolsByType(sym_list::sym_typedef, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_enum, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_unpacked_struct, query.prefix));
-    }
-
-    if (query.context.contains(QStringLiteral("reg"))
-        || query.context.contains(QStringLiteral("wire"))
-        || query.context.contains(QStringLiteral("logic"))
-        || query.context.contains(QStringLiteral("var"))) {
-        result.append(CompletionMatcher::svKeywordCompletions(query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_enum, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_unpacked_struct, query.prefix));
-    }
-
-    if (result.isEmpty()
-        || query.context == QLatin1String("general")
-        || query.context.isEmpty()) {
-        if (!query.currentModule.isEmpty()) {
-            result.append(findModuleSymbolsByType(query.currentModule,
-                                                  sym_list::sym_reg,
-                                                  query.prefix));
-            result.append(findModuleSymbolsByType(query.currentModule,
-                                                  sym_list::sym_wire,
-                                                  query.prefix));
-            result.append(findModuleSymbolsByType(query.currentModule,
-                                                  sym_list::sym_logic,
-                                                  query.prefix));
-        }
-
-        result.append(findGlobalSymbolsByType(sym_list::sym_module, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_enum, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_packed_struct, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_task, query.prefix));
-        result.append(findGlobalSymbolsByType(sym_list::sym_function, query.prefix));
-        result.append(CompletionMatcher::svKeywordCompletions(query.prefix));
-    }
-
-    result.removeDuplicates();
-
-    QVector<QPair<QString, int>> scoredResults;
-    scoredResults.reserve(result.size());
-    for (const QString& completion : std::as_const(result)) {
-        int score = CompletionMatcher::calculateContextMatchScore(completion, query.prefix);
-        if (!query.context.isEmpty()
-            && query.context != QLatin1String("general")) {
-            score += CompletionContextHelper::contextScore(
-                completion, query.context);
-        }
-        if (!query.currentModule.isEmpty())
-            score += CompletionContextHelper::scopeScore(
-                semanticIndex(), completion, query.currentModule);
-        scoredResults.append(qMakePair(completion, score));
-    }
-
-    std::sort(scoredResults.begin(), scoredResults.end(),
-              [](const QPair<QString, int>& left,
-                 const QPair<QString, int>& right) {
-                  if (left.second != right.second)
-                      return left.second > right.second;
-                  return left.first < right.first;
-              });
-
-    QStringList finalResults;
-    finalResults.reserve(scoredResults.size());
-    for (const auto& scored : std::as_const(scoredResults))
-        finalResults.append(scored.first);
-
-    if (finalResults.size() > 50)
-        finalResults = finalResults.mid(0, 50);
-
-    return finalResults;
+    return CompletionContextQuery::contextAwareCompletions(
+        semanticIndex(),
+        query.prefix,
+        query.currentModule,
+        query.context,
+        query.relationshipCompletionsEnabled);
 }
 
 QStringList CompletionService::findStructMemberCompletions(
