@@ -140,6 +140,7 @@ set(ZEROSLACK_CORE_SOURCES
     slangmanagerdiagnostics.cpp
     smartrelationshipbuilderanalysis.cpp
     smartrelationshipbuilder.cpp
+    smartrelationshipbuildertiming.cpp
     symbolanalyzer.cpp
     symbolrelationshipqueries.cpp
     symbolrelationshipengine.cpp
