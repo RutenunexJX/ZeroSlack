@@ -49,6 +49,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisscheduler.cpp
     mainwindow.cpp
     alternatecommandservice.cpp
+    completioncommandmode.cpp
     completionmanager.cpp
     completionmatcher.cpp
     completionmodel.cpp
@@ -128,6 +129,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisscheduler.h
     mainwindow.h
     alternatecommandservice.h
+    completioncommandmode.h
     completionmanager.h
     scope_tree.h
     version.h
