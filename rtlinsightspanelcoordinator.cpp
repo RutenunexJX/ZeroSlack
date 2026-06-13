@@ -4,6 +4,7 @@
 #include "fsmgraphservice.h"
 #include "modulebriefservice.h"
 #include "semanticpanelutils.h"
+#include "signaljourneyservice.h"
 
 #include <QFileInfo>
 #include <QHeaderView>
@@ -250,6 +251,68 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
     }
 }
 
+void appendSignalJourneyItems(QTreeWidgetItem* parent,
+                              const QString& section,
+                              const QList<SignalJourneyItem>& items)
+{
+    QTreeWidgetItem* group = new QTreeWidgetItem(parent);
+    group->setText(0, SemanticPanelUtils::countLabel(section, items.size()));
+    for (const SignalJourneyItem& item : items) {
+        const QString direction = item.outgoing
+            ? QStringLiteral("outgoing")
+            : QStringLiteral("incoming");
+        createChildItem(group,
+                        section,
+                        item.peerSymbol.symbolName,
+                        QStringLiteral("%1 %2")
+                            .arg(direction,
+                                 SemanticPanelUtils::relationshipTypeText(
+                                     item.relationship.relationship.type)),
+                        item.peerSymbol.fileName,
+                        item.peerSymbol.startLine,
+                        item.peerSymbol.startColumn);
+    }
+}
+
+void appendSignalJourney(QTreeWidget* tree,
+                         const QString& fileName,
+                         const QString& moduleName,
+                         const QString& signalName)
+{
+    if (signalName.isEmpty())
+        return;
+
+    SignalJourneyQuery query;
+    query.fileName = fileName;
+    query.moduleName = moduleName;
+    query.signalName = signalName;
+    const SignalJourneyReport report =
+        SignalJourneyService::getInstance()->buildSignalJourney(query);
+    if (!report.found)
+        return;
+
+    const int totalItems = 1
+        + report.assignments.size()
+        + report.reads.size()
+        + report.portConnections.size();
+    QTreeWidgetItem* group = createGroupItem(tree,
+                                            QStringLiteral("Signal Journey: %1")
+                                                .arg(report.declaration.symbolName),
+                                            totalItems);
+    createChildItem(group,
+                    QStringLiteral("Declaration"),
+                    report.declaration.symbolName,
+                    symbolTypeText(report.declaration.symbolType),
+                    report.declaration.fileName,
+                    report.declaration.startLine,
+                    report.declaration.startColumn);
+    appendSignalJourneyItems(group, QStringLiteral("Assignments"), report.assignments);
+    appendSignalJourneyItems(group, QStringLiteral("Reads"), report.reads);
+    appendSignalJourneyItems(group,
+                             QStringLiteral("Port Connections"),
+                             report.portConnections);
+}
+
 } // namespace
 
 RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
@@ -307,18 +370,21 @@ void RtlInsightsPanelCoordinator::setStatusMessageHandler(
 
 void RtlInsightsPanelCoordinator::updateModuleContext(
     const QString& fileName,
-    const QString& moduleName)
+    const QString& moduleName,
+    const QString& signalName)
 {
     currentFileName = fileName;
     currentModuleName = moduleName;
+    currentSignalName = signalName;
     refresh();
 }
 
 void RtlInsightsPanelCoordinator::showModuleInsights(
     const QString& fileName,
-    const QString& moduleName)
+    const QString& moduleName,
+    const QString& signalName)
 {
-    updateModuleContext(fileName, moduleName);
+    updateModuleContext(fileName, moduleName, signalName);
     if (insightsDock) {
         insightsDock->show();
         insightsDock->raise();
@@ -377,6 +443,10 @@ void RtlInsightsPanelCoordinator::refresh()
                       moduleReport.imports);
     appendDiagnostics(insightsTree, moduleReport.diagnostics);
     appendRelationshipSummary(insightsTree, moduleReport.relationshipSummary);
+    appendSignalJourney(insightsTree,
+                        currentFileName,
+                        currentModuleName,
+                        currentSignalName);
 
     ClockResetDomainQuery domainQuery;
     domainQuery.fileName = currentFileName;

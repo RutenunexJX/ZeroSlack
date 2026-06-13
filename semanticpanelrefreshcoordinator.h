@@ -105,12 +105,14 @@ private:
                                         const QString& moduleName) const;
         void refreshRelationshipsPanel() const;
         void updateRtlInsightsPanel(const QString& fileName,
-                                    const QString& moduleName) const;
+                                    const QString& moduleName,
+                                    const QString& signalName) const;
         bool problemsPanelShowsCurrentFile() const;
     };
 
     QString currentFileName() const;
     QStringList workspaceFiles() const;
+    QString currentEditorWord(MyCodeEditor* editor) const;
     void navigateToFileAndLine(const QString& fileName, int line, int column) const;
     void showStatusMessage(const QString& message, int timeoutMs) const;
     bool problemsPanelShowsCurrentFile() const;

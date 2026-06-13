@@ -114,10 +114,11 @@ void SemanticPanelRefreshCoordinator::PanelSet::refreshRelationshipsPanel() cons
 
 void SemanticPanelRefreshCoordinator::PanelSet::updateRtlInsightsPanel(
     const QString& fileName,
-    const QString& moduleName) const
+    const QString& moduleName,
+    const QString& signalName) const
 {
     if (rtlInsightsPanel)
-        rtlInsightsPanel->updateModuleContext(fileName, moduleName);
+        rtlInsightsPanel->updateModuleContext(fileName, moduleName, signalName);
 }
 
 bool SemanticPanelRefreshCoordinator::PanelSet::problemsPanelShowsCurrentFile() const

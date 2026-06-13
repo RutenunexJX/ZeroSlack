@@ -15,8 +15,12 @@ public:
     void setNavigationHandler(std::function<void(const QString&, int, int)> handler);
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
 
-    void updateModuleContext(const QString& fileName, const QString& moduleName);
-    void showModuleInsights(const QString& fileName, const QString& moduleName);
+    void updateModuleContext(const QString& fileName,
+                             const QString& moduleName,
+                             const QString& signalName = QString());
+    void showModuleInsights(const QString& fileName,
+                            const QString& moduleName,
+                            const QString& signalName = QString());
     void refresh();
 
     QDockWidget* dock() const { return insightsDock; }
@@ -27,6 +31,7 @@ private:
     QTreeWidget* insightsTree = nullptr;
     QString currentFileName;
     QString currentModuleName;
+    QString currentSignalName;
 
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;

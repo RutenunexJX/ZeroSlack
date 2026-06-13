@@ -748,6 +748,34 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         QStringLiteral("insight_top"));
     run.dataType = QStringLiteral("state_t");
     symbols.append(run);
+    symbols.append(makeGuiSmokeSymbol(
+        9609,
+        fixturePath,
+        QStringLiteral("data_q"),
+        sym_list::sym_logic,
+        12,
+        QStringLiteral("insight_top")));
+    symbols.append(makeGuiSmokeSymbol(
+        9610,
+        fixturePath,
+        QStringLiteral("next_data"),
+        sym_list::sym_logic,
+        13,
+        QStringLiteral("insight_top")));
+    symbols.append(makeGuiSmokeSymbol(
+        9611,
+        fixturePath,
+        QStringLiteral("consumer"),
+        sym_list::sym_always_ff,
+        14,
+        QStringLiteral("insight_top")));
+    symbols.append(makeGuiSmokeSymbol(
+        9612,
+        fixturePath,
+        QStringLiteral("u_stage.data_i"),
+        sym_list::sym_inst_pin,
+        15,
+        QStringLiteral("insight_top")));
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship clockRel;
@@ -755,6 +783,21 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     clockRel.toId = 9601;
     clockRel.type = SymbolRelationshipEngine::CLOCKS;
     relationships.append(clockRel);
+    SemanticRelationship assignRel;
+    assignRel.fromId = 9610;
+    assignRel.toId = 9609;
+    assignRel.type = SymbolRelationshipEngine::ASSIGNS_TO;
+    relationships.append(assignRel);
+    SemanticRelationship readRel;
+    readRel.fromId = 9611;
+    readRel.toId = 9609;
+    readRel.type = SymbolRelationshipEngine::READS_FROM;
+    relationships.append(readRel);
+    SemanticRelationship portRel;
+    portRel.fromId = 9612;
+    portRel.toId = 9609;
+    portRel.type = SymbolRelationshipEngine::REFERENCES;
+    relationships.append(portRel);
 
     const QString content = QStringLiteral(
         "module insight_top(input logic clk, input logic rst_n);\n"
@@ -783,12 +826,14 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
 
     window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
         fixturePath,
-        QStringLiteral("insight_top"));
+        QStringLiteral("insight_top"),
+        QStringLiteral("data_q"));
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     bool sawPort = false;
     bool sawClock = false;
     bool sawTransition = false;
+    bool sawSignalJourney = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
     for (QTreeWidgetItem* item : items) {
         sawPort = sawPort
@@ -800,11 +845,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawTransition = sawTransition
             || (item->text(0) == QStringLiteral("IDLE")
                 && item->text(1) == QStringLiteral("RUN"));
+        sawSignalJourney = sawSignalJourney
+            || (item->text(0) == QStringLiteral("Assignments")
+                && item->text(1) == QStringLiteral("next_data"));
     }
 
     expectBool("RTL insights renders module port", sawPort, true);
     expectBool("RTL insights renders clock domain", sawClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
+    expectBool("RTL insights renders signal journey", sawSignalJourney, true);
 }
 
 static void runNavigationHierarchyModelRegression()

@@ -7,6 +7,8 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
+#include <QTextCursor>
+
 #include <utility>
 
 SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
@@ -140,7 +142,8 @@ void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* ed
 {
     dependencies.handleActiveEditorChanged(editor);
     panels.updateRtlInsightsPanel(editor ? editor->documentFileName() : QString(),
-                                  editor ? editor->currentModuleName() : QString());
+                                  editor ? editor->currentModuleName() : QString(),
+                                  currentEditorWord(editor));
     if (problemsPanelShowsCurrentFile())
         updateProblemsPanel();
 }
@@ -153,6 +156,16 @@ QString SemanticPanelRefreshCoordinator::currentFileName() const
 QStringList SemanticPanelRefreshCoordinator::workspaceFiles() const
 {
     return dependencies.workspaceFiles();
+}
+
+QString SemanticPanelRefreshCoordinator::currentEditorWord(MyCodeEditor* editor) const
+{
+    if (!editor)
+        return QString();
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.select(QTextCursor::WordUnderCursor);
+    return cursor.selectedText().trimmed();
 }
 
 void SemanticPanelRefreshCoordinator::navigateToFileAndLine(
