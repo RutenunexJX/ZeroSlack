@@ -14,6 +14,7 @@
 #include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
+#include "semanticdiffservice.h"
 #include "signaljourneyservice.h"
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
@@ -2743,6 +2744,205 @@ static void runFsmGraphServiceFixture()
                true);
 }
 
+static void runSemanticDiffServiceFixture()
+{
+    printf("\n-- semantic diff service fixture --\n");
+
+    const QString fileName = QStringLiteral("test_sv/semantic_diff_fixture.sv");
+
+    QList<sym_list::SymbolInfo> beforeSymbols;
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9401,
+        fileName,
+        QStringLiteral("diff_top"),
+        sym_list::sym_module,
+        1));
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9402,
+        fileName,
+        QStringLiteral("clk"),
+        sym_list::sym_port_input,
+        2,
+        QStringLiteral("diff_top")));
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9403,
+        fileName,
+        QStringLiteral("data"),
+        sym_list::sym_port_input,
+        3,
+        QStringLiteral("diff_top")));
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9404,
+        fileName,
+        QStringLiteral("OLD_PARAM"),
+        sym_list::sym_parameter,
+        4,
+        QStringLiteral("diff_top")));
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9405,
+        fileName,
+        QStringLiteral("u_old"),
+        sym_list::sym_inst,
+        10,
+        QStringLiteral("diff_top")));
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9406,
+        fileName,
+        QStringLiteral("stale_q"),
+        sym_list::sym_logic,
+        12,
+        QStringLiteral("diff_top")));
+
+    QList<sym_list::SymbolInfo> afterSymbols;
+    afterSymbols.append(makeModuleBriefSymbol(
+        9501,
+        fileName,
+        QStringLiteral("diff_top"),
+        sym_list::sym_module,
+        1));
+    afterSymbols.append(makeModuleBriefSymbol(
+        9502,
+        fileName,
+        QStringLiteral("clk"),
+        sym_list::sym_port_input,
+        2,
+        QStringLiteral("diff_top")));
+    afterSymbols.append(makeModuleBriefSymbol(
+        9503,
+        fileName,
+        QStringLiteral("data"),
+        sym_list::sym_port_output,
+        3,
+        QStringLiteral("diff_top")));
+    afterSymbols.append(makeModuleBriefSymbol(
+        9504,
+        fileName,
+        QStringLiteral("DEPTH"),
+        sym_list::sym_parameter,
+        4,
+        QStringLiteral("diff_top")));
+    afterSymbols.append(makeModuleBriefSymbol(
+        9505,
+        fileName,
+        QStringLiteral("u_new"),
+        sym_list::sym_inst,
+        10,
+        QStringLiteral("diff_top")));
+    afterSymbols.append(makeModuleBriefSymbol(
+        9506,
+        fileName,
+        QStringLiteral("state_q"),
+        sym_list::sym_logic,
+        12,
+        QStringLiteral("diff_top")));
+
+    QList<SemanticRelationship> beforeRelationships;
+    SemanticRelationship beforeInst;
+    beforeInst.fromId = 9401;
+    beforeInst.toId = 9405;
+    beforeInst.type = SymbolRelationshipEngine::INSTANTIATES;
+    beforeRelationships.append(beforeInst);
+
+    QList<SemanticRelationship> afterRelationships;
+    SemanticRelationship afterInst;
+    afterInst.fromId = 9501;
+    afterInst.toId = 9505;
+    afterInst.type = SymbolRelationshipEngine::INSTANTIATES;
+    afterRelationships.append(afterInst);
+
+    QList<SemanticDiagnostic> beforeDiagnostics;
+    SemanticDiagnostic beforeDiagnostic;
+    beforeDiagnostic.fileName = fileName;
+    beforeDiagnostic.line = 20;
+    beforeDiagnostic.column = 5;
+    beforeDiagnostic.severity = SemanticDiagnostic::Warning;
+    beforeDiagnostic.message = QStringLiteral("old warning");
+    beforeDiagnostics.append(beforeDiagnostic);
+
+    QList<SemanticDiagnostic> afterDiagnostics;
+    SemanticDiagnostic afterDiagnostic;
+    afterDiagnostic.fileName = fileName;
+    afterDiagnostic.line = 22;
+    afterDiagnostic.column = 7;
+    afterDiagnostic.severity = SemanticDiagnostic::Error;
+    afterDiagnostic.message = QStringLiteral("new error");
+    afterDiagnostics.append(afterDiagnostic);
+
+    auto beforeSnapshot = std::make_shared<SemanticIndexSnapshot>(
+        beforeSymbols,
+        beforeRelationships,
+        beforeDiagnostics);
+    auto afterSnapshot = std::make_shared<SemanticIndexSnapshot>(
+        afterSymbols,
+        afterRelationships,
+        afterDiagnostics);
+
+    SemanticDiffQuery query;
+    query.beforeSnapshot = beforeSnapshot;
+    query.afterSnapshot = afterSnapshot;
+    query.moduleName = QStringLiteral("diff_top");
+    query.beforeFileName = fileName;
+    query.afterFileName = fileName;
+
+    SemanticDiffService service;
+    const SemanticDiffReport report = service.buildSemanticDiff(query);
+
+    int addedSymbols = 0;
+    int removedSymbols = 0;
+    int modifiedSymbols = 0;
+    bool dataPortModified = false;
+    bool newSignalAdded = false;
+    for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
+        if (change.kind == SemanticDiffChangeKind::Added)
+            ++addedSymbols;
+        if (change.kind == SemanticDiffChangeKind::Removed)
+            ++removedSymbols;
+        if (change.kind == SemanticDiffChangeKind::Modified)
+            ++modifiedSymbols;
+        if (change.kind == SemanticDiffChangeKind::Modified
+            && change.category == SemanticDiffSymbolCategory::Port
+            && change.beforeSymbol.symbolName == QStringLiteral("data")
+            && change.beforeSymbol.symbolType == sym_list::sym_port_input
+            && change.afterSymbol.symbolType == sym_list::sym_port_output) {
+            dataPortModified = true;
+        }
+        if (change.kind == SemanticDiffChangeKind::Added
+            && change.category == SemanticDiffSymbolCategory::Signal
+            && change.afterSymbol.symbolName == QStringLiteral("state_q")) {
+            newSignalAdded = true;
+        }
+    }
+
+    int addedRelationships = 0;
+    int removedRelationships = 0;
+    for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
+        if (change.kind == SemanticDiffChangeKind::Added)
+            ++addedRelationships;
+        if (change.kind == SemanticDiffChangeKind::Removed)
+            ++removedRelationships;
+    }
+
+    int addedDiagnostics = 0;
+    int removedDiagnostics = 0;
+    for (const SemanticDiffDiagnosticChange& change : report.diagnosticChanges) {
+        if (change.kind == SemanticDiffChangeKind::Added)
+            ++addedDiagnostics;
+        if (change.kind == SemanticDiffChangeKind::Removed)
+            ++removedDiagnostics;
+    }
+
+    expectBool("semantic diff found", report.found, true);
+    expectInt("semantic diff added symbols", addedSymbols, 3);
+    expectInt("semantic diff removed symbols", removedSymbols, 3);
+    expectInt("semantic diff modified symbols", modifiedSymbols, 1);
+    expectBool("semantic diff modified data port", dataPortModified, true);
+    expectBool("semantic diff added state signal", newSignalAdded, true);
+    expectInt("semantic diff added relationships", addedRelationships, 1);
+    expectInt("semantic diff removed relationships", removedRelationships, 1);
+    expectInt("semantic diff added diagnostics", addedDiagnostics, 1);
+    expectInt("semantic diff removed diagnostics", removedDiagnostics, 1);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -2760,6 +2960,7 @@ int main(int argc, char** argv)
     runSignalJourneyServiceFixture();
     runClockResetDomainServiceFixture();
     runFsmGraphServiceFixture();
+    runSemanticDiffServiceFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

@@ -14,6 +14,7 @@
 #include "relationshipservice.h"
 #include "searchservice.h"
 #include "scopebandservice.h"
+#include "semanticdiffservice.h"
 #include "semanticindex.h"
 #include "signaljourneyservice.h"
 #include "smartrelationshipbuilder.h"
@@ -47,4 +48,5 @@ void SemanticRuntimeCoordinator::configureQueryServices(
     SignalJourneyService::getInstance()->setSemanticIndex(semanticIndex);
     ClockResetDomainService::getInstance()->setSemanticIndex(semanticIndex);
     FsmGraphService::getInstance()->setSemanticIndex(semanticIndex);
+    SemanticDiffService::getInstance()->setSemanticIndex(semanticIndex);
 }
