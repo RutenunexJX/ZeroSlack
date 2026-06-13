@@ -1,5 +1,7 @@
 #include "editorsemanticcontextservice.h"
 
+#include "editorsourcenavigationquery.h"
+
 #include <Qt>
 
 std::unique_ptr<EditorSemanticContextService>
@@ -32,59 +34,21 @@ EditorSemanticContextService::~EditorSemanticContextService() = default;
 SourceSymbolActionContext EditorSemanticContextService::sourceSymbolActionContext(
     const EditorSemanticContext& context) const
 {
-    return SourceNavigationService::getInstance()->symbolActionContextAtColumn(
-        context.lineText,
-        context.column,
-        context.fileName,
-        context.moduleName);
+    return EditorSourceNavigationQuery::sourceSymbolActionContext(context);
 }
 
 EditorSourceSymbolShortcutState
 EditorSemanticContextService::sourceSymbolShortcutState(
     const EditorSourceSymbolShortcutContext& context) const
 {
-    EditorSourceSymbolShortcutState state;
-    const Qt::KeyboardModifiers modifiers =
-        Qt::KeyboardModifiers::fromInt(context.modifiers);
-
-    if (context.key == Qt::Key_F12 && modifiers.testFlag(Qt::ShiftModifier)) {
-        state.matched = true;
-        state.acceptEvent = true;
-        state.action = SourceSymbolAction::FindReferences;
-        state.semanticContext = context.semanticContext;
-        return state;
-    }
-
-    if (context.key == Qt::Key_R
-        && modifiers.testFlag(Qt::ControlModifier)
-        && modifiers.testFlag(Qt::ShiftModifier)) {
-        state.matched = true;
-        state.acceptEvent = true;
-        state.action = SourceSymbolAction::ShowRelationships;
-        state.semanticContext = context.semanticContext;
-        return state;
-    }
-
-    return state;
+    return EditorSourceNavigationQuery::sourceSymbolShortcutState(context);
 }
 
 EditorSourceSymbolContextMenuState
 EditorSemanticContextService::sourceSymbolContextMenuState(
     const EditorSemanticContext& context) const
 {
-    const SourceSymbolActionContext actionContext =
-        sourceSymbolActionContext(context);
-
-    EditorSourceSymbolContextMenuState state;
-    state.items.append({
-        SourceSymbolAction::FindReferences,
-        actionContext.available
-    });
-    state.items.append({
-        SourceSymbolAction::ShowRelationships,
-        actionContext.available
-    });
-    return state;
+    return EditorSourceNavigationQuery::sourceSymbolContextMenuState(context);
 }
 
 EditorSourceSymbolActionRequestState
@@ -92,28 +56,17 @@ EditorSemanticContextService::sourceSymbolActionRequestState(
     SourceSymbolAction action,
     const EditorSemanticContext& context) const
 {
-    const SourceSymbolActionContext actionContext =
-        sourceSymbolActionContext(context);
-
-    EditorSourceSymbolActionRequestState state;
-    state.action = action;
-    if (!actionContext.available)
-        return state;
-
-    state.available = true;
-    state.symbolName = actionContext.symbolName;
-    state.fileName = actionContext.fileName;
-    state.moduleName = actionContext.moduleName;
-    return state;
+    return EditorSourceNavigationQuery::sourceSymbolActionRequestState(
+        action,
+        context);
 }
 
 SourceEditorNavigationTarget EditorSemanticContextService::sourceNavigationTarget(
     const EditorSemanticContext& context,
     const std::function<bool(const QString&)>& canResolveIdentifier) const
 {
-    return SourceNavigationService::getInstance()->editorNavigationTargetAtColumn(
-        context.lineText,
-        context.column,
+    return EditorSourceNavigationQuery::sourceNavigationTarget(
+        context,
         canResolveIdentifier);
 }
 
@@ -121,11 +74,7 @@ SourceEditorNavigationTarget
 EditorSemanticContextService::definitionSourceNavigationTarget(
     const EditorSemanticContext& context) const
 {
-    return sourceNavigationTarget(
-        context,
-        [this, context](const QString& symbolName) {
-            return canResolveDefinitionTarget(symbolName, context);
-        });
+    return EditorSourceNavigationQuery::definitionSourceNavigationTarget(context);
 }
 
 EditorSourceNavigationTarget
@@ -133,88 +82,58 @@ EditorSemanticContextService::editorSourceNavigationTarget(
     const EditorSemanticContext& context,
     int blockPosition) const
 {
-    EditorSourceNavigationTarget editorTarget;
-    const SourceEditorNavigationTarget sourceTarget =
-        definitionSourceNavigationTarget(context);
-    if (!sourceTarget.matched)
-        return editorTarget;
-
-    editorTarget.matched = true;
-    editorTarget.jumpable = sourceTarget.jumpable;
-    editorTarget.includeTarget = sourceTarget.includeTarget;
-    editorTarget.identifierTarget = sourceTarget.identifierTarget;
-    editorTarget.text = sourceTarget.text;
-    editorTarget.startPos = blockPosition + sourceTarget.startColumn;
-    editorTarget.endPos = blockPosition + sourceTarget.endColumn;
-    editorTarget.cursorPosition = blockPosition + sourceTarget.cursorColumn;
-    return editorTarget;
+    return EditorSourceNavigationQuery::editorSourceNavigationTarget(
+        context,
+        blockPosition);
 }
 
 EditorSourceNavigationClickState
 EditorSemanticContextService::sourceNavigationClickState(
     const EditorSourceNavigationTarget& target) const
 {
-    EditorSourceNavigationClickState state;
-    if (!target.matched || target.text.isEmpty())
-        return state;
-
-    state.text = target.text;
-    state.acceptEvent = true;
-    if (target.includeTarget) {
-        state.action = EditorSourceNavigationClickAction::OpenInclude;
-        return state;
-    }
-
-    state.action = EditorSourceNavigationClickAction::NavigateToDefinition;
-    state.contextCursorPosition =
-        target.identifierTarget ? target.cursorPosition : -1;
-    return state;
+    return EditorSourceNavigationQuery::sourceNavigationClickState(target);
 }
 
 SourceIdentifierTarget EditorSemanticContextService::sourceIdentifierTarget(
     const EditorSemanticContext& context) const
 {
-    return SourceNavigationService::getInstance()->identifierAtColumn(
-        context.lineText,
-        context.column);
+    return EditorSourceNavigationQuery::sourceIdentifierTarget(context);
 }
 
 DefinitionNavigationQuery EditorSemanticContextService::definitionNavigationQuery(
     const QString& symbolName,
     const EditorSemanticContext& context) const
 {
-    DefinitionNavigationContext navigationContext;
-    navigationContext.symbolName = symbolName;
-    navigationContext.fileName = context.fileName;
-    navigationContext.moduleName = context.moduleName;
-    navigationContext.lineText = context.lineText;
-    navigationContext.column = context.column;
-    return DefinitionNavigationService::getInstance()
-        ->navigationQueryForContext(navigationContext);
+    return EditorSourceNavigationQuery::definitionNavigationQuery(
+        symbolName,
+        context);
 }
 
 DefinitionNavigationTarget EditorSemanticContextService::resolveDefinitionTarget(
     const QString& symbolName,
     const EditorSemanticContext& context) const
 {
-    return DefinitionNavigationService::getInstance()->resolveTarget(
-        definitionNavigationQuery(symbolName, context));
+    return EditorSourceNavigationQuery::resolveDefinitionTarget(
+        symbolName,
+        context);
 }
 
 bool EditorSemanticContextService::canResolveDefinitionTarget(
     const QString& symbolName,
     const EditorSemanticContext& context) const
 {
-    return DefinitionNavigationService::getInstance()->canResolveTarget(
-        definitionNavigationQuery(symbolName, context));
+    return EditorSourceNavigationQuery::canResolveDefinitionTarget(
+        symbolName,
+        context);
 }
 
 QString EditorSemanticContextService::definitionTooltipText(
     const QString& symbolName,
     const EditorSemanticContext& context) const
 {
-    return DefinitionNavigationService::getInstance()->tooltipText(
-        definitionNavigationQuery(symbolName, context));
+    return EditorSourceNavigationQuery::definitionTooltipText(
+        symbolName,
+        context);
 }
 
 CompletionTriggerQuery EditorSemanticContextService::completionTriggerQuery(
