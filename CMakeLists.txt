@@ -127,7 +127,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexsnapshot.cpp
     semanticindexsnapshotpublication.cpp
     semanticruntimecoordinator.cpp
-    slangmanager.cpp
+    slangmanagerdiagnostics.cpp
     smartrelationshipbuilderanalysis.cpp
     smartrelationshipbuilder.cpp
     symbolanalyzer.cpp
