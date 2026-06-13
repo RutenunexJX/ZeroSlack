@@ -6,6 +6,7 @@
 #include "definitionnavigationservice.h"
 #include "definitionservice.h"
 #include "diagnosticservice.h"
+#include "fsmgraphservice.h"
 #include "hierarchyservice.h"
 #include "modulebriefservice.h"
 #include "navigationservice.h"
@@ -45,4 +46,5 @@ void SemanticRuntimeCoordinator::configureQueryServices(
     ModuleBriefService::getInstance()->setSemanticIndex(semanticIndex);
     SignalJourneyService::getInstance()->setSemanticIndex(semanticIndex);
     ClockResetDomainService::getInstance()->setSemanticIndex(semanticIndex);
+    FsmGraphService::getInstance()->setSemanticIndex(semanticIndex);
 }

@@ -7,6 +7,7 @@
 #include "semanticindex.h"
 #include "diagnosticservice.h"
 #include "documentmodel.h"
+#include "fsmgraphservice.h"
 #include "hierarchyservice.h"
 #include "modulebriefservice.h"
 #include "navigationservice.h"
@@ -2606,6 +2607,142 @@ static void runClockResetDomainServiceFixture()
     expectInt("clock reset id reset domains", otherReport.resetDomains.size(), 0);
 }
 
+static void runFsmGraphServiceFixture()
+{
+    printf("\n-- fsm graph service fixture --\n");
+
+    const QString fileName = QStringLiteral("test_sv/fsm_graph_fixture.sv");
+    const QString content = QStringLiteral(
+        "module fsm_top(input logic clk, input logic rst_n, input logic start, output logic done);\n"
+        "  typedef enum logic [1:0] {IDLE, RUN, DONE} state_t;\n"
+        "  state_t state_q;\n"
+        "  state_t state_d;\n"
+        "  always_comb begin\n"
+        "    state_d = state_q;\n"
+        "    case (state_q)\n"
+        "      IDLE: begin\n"
+        "        if (start) state_d = RUN;\n"
+        "      end\n"
+        "      RUN: state_d = DONE;\n"
+        "      DONE: if (!start) state_d = IDLE;\n"
+        "      default: state_d = IDLE;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
+
+    QList<sym_list::SymbolInfo> symbols;
+    sym_list::SymbolInfo module = makeModuleBriefSymbol(
+        9301,
+        fileName,
+        QStringLiteral("fsm_top"),
+        sym_list::sym_module,
+        1);
+    module.endLine = 16;
+    symbols.append(module);
+
+    sym_list::SymbolInfo stateQ = makeModuleBriefSymbol(
+        9302,
+        fileName,
+        QStringLiteral("state_q"),
+        sym_list::sym_enum_var,
+        3,
+        QStringLiteral("fsm_top"));
+    stateQ.dataType = QStringLiteral("state_t");
+    symbols.append(stateQ);
+
+    sym_list::SymbolInfo stateD = makeModuleBriefSymbol(
+        9303,
+        fileName,
+        QStringLiteral("state_d"),
+        sym_list::sym_enum_var,
+        4,
+        QStringLiteral("fsm_top"));
+    stateD.dataType = QStringLiteral("state_t");
+    symbols.append(stateD);
+
+    sym_list::SymbolInfo idle = makeModuleBriefSymbol(
+        9304,
+        fileName,
+        QStringLiteral("IDLE"),
+        sym_list::sym_enum_value,
+        2,
+        QStringLiteral("fsm_top"));
+    idle.dataType = QStringLiteral("state_t");
+    symbols.append(idle);
+
+    sym_list::SymbolInfo run = makeModuleBriefSymbol(
+        9305,
+        fileName,
+        QStringLiteral("RUN"),
+        sym_list::sym_enum_value,
+        2,
+        QStringLiteral("fsm_top"));
+    run.dataType = QStringLiteral("state_t");
+    symbols.append(run);
+
+    sym_list::SymbolInfo done = makeModuleBriefSymbol(
+        9306,
+        fileName,
+        QStringLiteral("DONE"),
+        sym_list::sym_enum_value,
+        2,
+        QStringLiteral("fsm_top"));
+    done.dataType = QStringLiteral("state_t");
+    symbols.append(done);
+
+    QHash<QString, QString> fileContents;
+    fileContents.insert(fileName, content);
+    SemanticIndex index;
+    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        symbols,
+        QList<SemanticRelationship>(),
+        QList<SemanticDiagnostic>(),
+        fileContents));
+    FsmGraphService service(&index);
+
+    FsmGraphQuery query;
+    query.moduleName = QStringLiteral("fsm_top");
+    query.fileName = fileName;
+    const FsmGraphReport report = service.buildFsmGraph(query);
+
+    expectBool("fsm graph found", report.found, true);
+    expectInt("fsm graph count", report.graphs.size(), 1);
+    expectBool("fsm graph state register",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().stateRegister.symbolName
+                       == QStringLiteral("state_q"),
+               true);
+    expectBool("fsm graph next state",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().nextStateSignal.symbolName
+                       == QStringLiteral("state_d"),
+               true);
+    expectInt("fsm graph state count",
+              report.graphs.isEmpty() ? 0 : report.graphs.first().states.size(),
+              3);
+    expectInt("fsm graph transition count",
+              report.graphs.isEmpty() ? 0 : report.graphs.first().transitions.size(),
+              4);
+    expectBool("fsm graph first transition",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().transitions.isEmpty()
+                   && report.graphs.first().transitions.first().fromState
+                       == QStringLiteral("IDLE")
+                   && report.graphs.first().transitions.first().toState
+                       == QStringLiteral("RUN")
+                   && report.graphs.first().transitions.first().condition
+                       == QStringLiteral("start"),
+               true);
+    expectBool("fsm graph default transition",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().transitions.isEmpty()
+                   && report.graphs.first().transitions.last().fromState
+                       == QStringLiteral("default")
+                   && report.graphs.first().transitions.last().toState
+                       == QStringLiteral("IDLE"),
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -2622,6 +2759,7 @@ int main(int argc, char** argv)
     runModuleBriefServiceFixture();
     runSignalJourneyServiceFixture();
     runClockResetDomainServiceFixture();
+    runFsmGraphServiceFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

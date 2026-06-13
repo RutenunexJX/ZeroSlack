@@ -111,6 +111,7 @@ set(ZEROSLACK_CORE_SOURCES
     editormodestate.cpp
     filecommandcoordinatoralternate.cpp
     filecommandcoordinator.cpp
+    fsmgraphservice.cpp
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
     sourcenavigationservice.cpp
@@ -254,6 +255,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorsyntaxstate.h
     editormodestate.h
     filecommandcoordinator.h
+    fsmgraphservice.h
     hierarchyservice.h
     sourcenavigationservice.h
     tsdocument.h
