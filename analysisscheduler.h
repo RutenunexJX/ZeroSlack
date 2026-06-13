@@ -4,6 +4,7 @@
 #include "documentmodel.h"
 #include "opendocumentanalysiscontroller.h"
 #include "projectmodel.h"
+#include "relationshipanalysisqueue.h"
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
 
@@ -56,6 +57,9 @@ public:
     void scheduleRelationshipAnalysis(const QString& fileName,
                                       const QString& content,
                                       int delayMs);
+    void cancelScheduledRelationshipAnalysis(const QString& fileName);
+    void cancelAllScheduledRelationshipAnalyses();
+    bool hasScheduledRelationshipAnalysis(const QString& fileName) const;
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
     void cancelRelationshipAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
@@ -93,6 +97,7 @@ private:
     ProjectModel* projectModel = nullptr;
     SymbolAnalyzer* symbolAnalyzer = nullptr;
     OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
+    RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
 
     std::function<QString(const QString&)> openFileContentProvider;
     std::function<bool()> workspaceOpenProvider;
@@ -100,9 +105,6 @@ private:
     SymbolRelationshipEngine* relationshipEngine = nullptr;
     SmartRelationshipBuilder* relationshipBuilder = nullptr;
 
-    QMap<QString, QTimer*> relationshipAnalysisTimers;
-    QMap<QString, QString> pendingRelationshipAnalysisContent;
-    QMap<QString, QString> lastRelationshipAnalysisContent;
     QString pendingDiagnosticsRefreshFileName;
     QTimer* diagnosticsRefreshTimer = nullptr;
     QTimer* relationshipRefreshTimer = nullptr;
@@ -132,8 +134,6 @@ private:
         std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const;
 
     QString contentForOpenFile(const QString& fileName) const;
-    static bool contentDiffersBeyondWhitespace(const QString& oldContent,
-                                               const QString& newContent);
 };
 
 #endif // ANALYSISSCHEDULER_H

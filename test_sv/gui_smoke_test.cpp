@@ -290,14 +290,7 @@ static void drainRelationshipWork(MainWindow& window)
     if (builder)
         builder->cancelAnalysis();
     if (window.analysisScheduler) {
-        for (QTimer* timer : window.analysisScheduler->relationshipAnalysisTimers) {
-            if (timer) {
-                timer->stop();
-                timer->deleteLater();
-            }
-        }
-        window.analysisScheduler->relationshipAnalysisTimers.clear();
-        window.analysisScheduler->pendingRelationshipAnalysisContent.clear();
+        window.analysisScheduler->cancelAllScheduledRelationshipAnalyses();
         window.analysisScheduler->cancelRelationshipAnalysis();
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     }

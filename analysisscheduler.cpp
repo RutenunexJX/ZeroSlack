@@ -43,6 +43,15 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
             this,
             &AnalysisScheduler::scheduleRelationshipAnalysis);
 
+    relationshipAnalysisQueue = new RelationshipAnalysisQueue(this);
+    relationshipAnalysisQueue->setContentProvider([this](const QString& fileName) {
+        return contentForOpenFile(fileName);
+    });
+    connect(relationshipAnalysisQueue,
+            &RelationshipAnalysisQueue::relationshipAnalysisRequested,
+            this,
+            &AnalysisScheduler::requestRelationshipAnalysis);
+
     diagnosticsRefreshTimer = new QTimer(this);
     diagnosticsRefreshTimer->setSingleShot(true);
     diagnosticsRefreshTimer->setInterval(100);
@@ -113,8 +122,6 @@ AnalysisScheduler::~AnalysisScheduler()
 {
     cancelRelationshipAnalysis();
     cancelWorkspaceRelationshipAnalysis();
-    for (QTimer* timer : relationshipAnalysisTimers)
-        timer->deleteLater();
 }
 
 void AnalysisScheduler::setDocumentModel(DocumentModel* model)
@@ -294,39 +301,28 @@ void AnalysisScheduler::scheduleRelationshipAnalysis(const QString& fileName,
     if (fileName.isEmpty() || content.isEmpty() || !relationshipBuilder)
         return;
 
-    const QString pendingContent =
-        pendingRelationshipAnalysisContent.value(fileName);
-    const QString lastContent = pendingContent.isNull()
-        ? lastRelationshipAnalysisContent.value(fileName)
-        : pendingContent;
-    if (!lastContent.isNull()
-        && !contentDiffersBeyondWhitespace(lastContent, content)) {
-        return;
-    }
+    if (relationshipAnalysisQueue)
+        relationshipAnalysisQueue->schedule(fileName, content, delayMs);
+}
 
-    pendingRelationshipAnalysisContent.insert(fileName, content);
+void AnalysisScheduler::cancelScheduledRelationshipAnalysis(const QString& fileName)
+{
+    if (relationshipAnalysisQueue)
+        relationshipAnalysisQueue->clearFile(fileName);
+}
 
-    if (relationshipAnalysisTimers.contains(fileName)) {
-        QTimer* oldTimer = relationshipAnalysisTimers.take(fileName);
-        oldTimer->stop();
-        oldTimer->deleteLater();
-    }
+void AnalysisScheduler::cancelAllScheduledRelationshipAnalyses()
+{
+    if (relationshipAnalysisQueue)
+        relationshipAnalysisQueue->cancelAll();
+}
 
-    QTimer* timer = new QTimer(this);
-    timer->setSingleShot(true);
-    timer->setInterval(delayMs);
-    connect(timer, &QTimer::timeout, this, [this, fileName, timer]() {
-        if (relationshipAnalysisTimers.value(fileName) == timer)
-            relationshipAnalysisTimers.remove(fileName);
-        timer->deleteLater();
-
-        const QString content = contentForOpenFile(fileName);
-        pendingRelationshipAnalysisContent.remove(fileName);
-        if (!content.isNull())
-            requestRelationshipAnalysis(fileName, content);
-    });
-    relationshipAnalysisTimers[fileName] = timer;
-    timer->start();
+bool AnalysisScheduler::hasScheduledRelationshipAnalysis(
+    const QString& fileName) const
+{
+    return relationshipAnalysisQueue
+        ? relationshipAnalysisQueue->hasScheduled(fileName)
+        : false;
 }
 
 void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, const QString& content)
@@ -339,12 +335,15 @@ void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, con
     }
 
     if (symbolAnalyzer) {
-        const QString lastContent = lastRelationshipAnalysisContent.value(fileName);
+        const QString lastContent = relationshipAnalysisQueue
+            ? relationshipAnalysisQueue->lastContent(fileName)
+            : QString();
         if (!lastContent.isNull() && !symbolAnalyzer->hasSignificantChanges(lastContent, content))
             return;
     }
 
-    lastRelationshipAnalysisContent.insert(fileName, content);
+    if (relationshipAnalysisQueue)
+        relationshipAnalysisQueue->rememberRequestedContent(fileName, content);
     cancelRelationshipAnalysis();
 
     relationshipBuilder->resetCancellation();
@@ -434,13 +433,8 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 {
     if (openDocumentAnalysis)
         openDocumentAnalysis->handleDocumentClosed(fileName);
-    if (relationshipAnalysisTimers.contains(fileName)) {
-        QTimer* oldTimer = relationshipAnalysisTimers.take(fileName);
-        oldTimer->stop();
-        oldTimer->deleteLater();
-    }
-    pendingRelationshipAnalysisContent.remove(fileName);
-    lastRelationshipAnalysisContent.remove(fileName);
+    if (relationshipAnalysisQueue)
+        relationshipAnalysisQueue->clearFile(fileName);
     if (openDocumentAnalysis)
         openDocumentAnalysis->analyzeOpenDocumentsNow();
 
@@ -652,20 +646,4 @@ QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const
     return openDocumentAnalysis
         ? openDocumentAnalysis->contentForOpenFile(fileName)
         : QString();
-}
-
-bool AnalysisScheduler::contentDiffersBeyondWhitespace(const QString& oldContent,
-                                                       const QString& newContent)
-{
-    auto withoutWhitespace = [](const QString& content) {
-        QString compact;
-        compact.reserve(content.size());
-        for (QChar ch : content) {
-            if (!ch.isSpace())
-                compact.append(ch);
-        }
-        return compact;
-    };
-
-    return withoutWhitespace(oldContent) != withoutWhitespace(newContent);
 }

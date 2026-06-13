@@ -78,14 +78,7 @@ static void drainRelationshipWork(MainWindow& window)
     if (builder)
         builder->cancelAnalysis();
     if (window.analysisScheduler) {
-        for (QTimer* timer : window.analysisScheduler->relationshipAnalysisTimers) {
-            if (timer) {
-                timer->stop();
-                timer->deleteLater();
-            }
-        }
-        window.analysisScheduler->relationshipAnalysisTimers.clear();
-        window.analysisScheduler->pendingRelationshipAnalysisContent.clear();
+        window.analysisScheduler->cancelAllScheduledRelationshipAnalyses();
         window.analysisScheduler->cancelRelationshipAnalysis();
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     }
@@ -101,9 +94,8 @@ static bool hasActiveRelationshipDebounce(MainWindow& window, const QString& fil
     if (!window.analysisScheduler)
         return false;
 
-    QTimer* timer =
-        window.analysisScheduler->relationshipAnalysisTimers.value(normalizedPath(fileName), nullptr);
-    return timer && timer->isActive();
+    return window.analysisScheduler->hasScheduledRelationshipAnalysis(
+        normalizedPath(fileName));
 }
 
 int main(int argc, char** argv)
