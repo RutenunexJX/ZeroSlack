@@ -4,23 +4,19 @@
 #include "documentmodel.h"
 #include "opendocumentanalysiscontroller.h"
 #include "projectmodel.h"
+#include "relationshipanalysiscontroller.h"
 #include "relationshipanalysisqueue.h"
 #include "relationshipresultpublisher.h"
 #include "relationshipanalysisworker.h"
-#include "smartrelationshipbuilder.h"
 #include "workspacesymbolanalysiscontroller.h"
 
-#include <QFutureWatcher>
 #include <QObject>
-#include <QMap>
-#include <QPair>
 #include <QString>
-#include <QVector>
 #include <functional>
-#include <memory>
 
 class SymbolAnalyzer;
 class SymbolRelationshipEngine;
+class SmartRelationshipBuilder;
 class QTimer;
 
 class AnalysisScheduler : public QObject
@@ -84,19 +80,13 @@ private:
     DocumentModel* documentModel = nullptr;
     SymbolAnalyzer* symbolAnalyzer = nullptr;
     OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
+    RelationshipAnalysisController* relationshipAnalysis = nullptr;
     RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
     RelationshipResultPublisher* relationshipResultPublisher = nullptr;
     WorkspaceSymbolAnalysisController* workspaceSymbolAnalysis = nullptr;
 
-    std::function<QString(const QString&)> openFileContentProvider;
-    std::function<bool()> workspaceOpenProvider;
-    std::function<bool()> workspaceSymbolCancelProvider;
-    SmartRelationshipBuilder* relationshipBuilder = nullptr;
-
     QString pendingDiagnosticsRefreshFileName;
     QTimer* diagnosticsRefreshTimer = nullptr;
-    QFutureWatcher<SingleFileRelationshipAnalysisResult>* singleFileRelationshipWatcher = nullptr;
-    QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceRelationshipWatcher = nullptr;
     static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
 
     void onDocumentOpened(const DocumentSnapshot& snapshot);

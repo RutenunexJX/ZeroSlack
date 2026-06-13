@@ -1,11 +1,5 @@
 #include "analysisscheduler.h"
 
-#include "semanticindex.h"
-#include "symbolrelationshipengine.h"
-#include "symbolanalyzer.h"
-
-#include <QtConcurrent/QtConcurrent>
-#include <QFuture>
 #include <QTimer>
 #include <utility>
 
@@ -35,7 +29,43 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
             this,
             &AnalysisScheduler::requestRelationshipAnalysis);
 
+    relationshipAnalysis = new RelationshipAnalysisController(this);
+    relationshipAnalysis->setRelationshipQueue(relationshipAnalysisQueue);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::relationshipAnalysisProgress,
+            this,
+            &AnalysisScheduler::relationshipAnalysisProgress);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::relationshipAnalysisError,
+            this,
+            &AnalysisScheduler::relationshipAnalysisError);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::relationshipAnalysisCancelled,
+            this,
+            &AnalysisScheduler::relationshipAnalysisCancelled);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::relationshipAnalysisFinished,
+            this,
+            &AnalysisScheduler::relationshipAnalysisFinished);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::workspaceRelationshipAnalysisStarted,
+            this,
+            &AnalysisScheduler::workspaceRelationshipAnalysisStarted);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::workspaceRelationshipAnalysisProgress,
+            this,
+            &AnalysisScheduler::workspaceRelationshipAnalysisProgress);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::workspaceRelationshipAnalysisFinished,
+            this,
+            &AnalysisScheduler::workspaceRelationshipAnalysisFinished);
+    connect(relationshipAnalysis,
+            &RelationshipAnalysisController::workspaceRelationshipAnalysisCancelled,
+            this,
+            &AnalysisScheduler::workspaceRelationshipAnalysisCancelled);
+
     relationshipResultPublisher = new RelationshipResultPublisher(this);
+    relationshipAnalysis->setResultPublisher(relationshipResultPublisher);
     connect(relationshipResultPublisher,
             &RelationshipResultPublisher::relationshipDataInvalidated,
             this,
@@ -92,58 +122,6 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
         emit diagnosticsRefreshRequested(fileName);
     });
 
-    singleFileRelationshipWatcher =
-        new QFutureWatcher<SingleFileRelationshipAnalysisResult>(this);
-    connect(singleFileRelationshipWatcher,
-            &QFutureWatcher<SingleFileRelationshipAnalysisResult>::finished,
-            this,
-            [this]() {
-                if (!singleFileRelationshipWatcher)
-                    return;
-                if (singleFileRelationshipWatcher->isCanceled())
-                    return;
-                const SingleFileRelationshipAnalysisResult result =
-                    singleFileRelationshipWatcher->result();
-                if (!relationshipResultPublisher
-                    || !relationshipResultPublisher->applySingleFileResult(result)) {
-                    return;
-                }
-                emit relationshipAnalysisProgress(
-                    result.fileName, result.relationships.size());
-                emit relationshipAnalysisFinished(result);
-            });
-
-    workspaceRelationshipWatcher = new QFutureWatcher<WorkspaceRelationshipAnalysisResult>(this);
-    connect(workspaceRelationshipWatcher,
-            &QFutureWatcher<WorkspaceRelationshipAnalysisResult>::finished,
-            this,
-            [this]() {
-                if (!workspaceRelationshipWatcher)
-                    return;
-                if (workspaceRelationshipWatcher->isCanceled()) {
-                    emit workspaceRelationshipAnalysisCancelled();
-                    return;
-                }
-                const WorkspaceRelationshipAnalysisResult result =
-                    workspaceRelationshipWatcher->result();
-                if (!relationshipResultPublisher
-                    || !relationshipResultPublisher->applyWorkspaceResult(result)) {
-                    return;
-                }
-                const int totalFiles = result.totalFiles > 0
-                    ? result.totalFiles
-                    : result.fileRelationships.size();
-                int processedFiles = 0;
-                for (const auto& pair : result.fileRelationships) {
-                    ++processedFiles;
-                    emit relationshipAnalysisProgress(pair.first, pair.second.size());
-                    emit workspaceRelationshipAnalysisProgress(pair.first,
-                                                               pair.second.size(),
-                                                               processedFiles,
-                                                               totalFiles);
-                }
-                emit workspaceRelationshipAnalysisFinished(result);
-            });
 }
 
 AnalysisScheduler::~AnalysisScheduler()
@@ -187,35 +165,32 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 {
     if (symbolAnalyzer == analyzer)
         return;
-    if (symbolAnalyzer)
-        disconnect(symbolAnalyzer, nullptr, this, nullptr);
 
     symbolAnalyzer = analyzer;
     if (openDocumentAnalysis)
         openDocumentAnalysis->setSymbolAnalyzer(analyzer);
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setSymbolAnalyzer(analyzer);
+    if (relationshipAnalysis)
+        relationshipAnalysis->setSymbolAnalyzer(analyzer);
 }
 
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
 {
-    openFileContentProvider = std::move(provider);
     if (openDocumentAnalysis)
-        openDocumentAnalysis->setOpenFileContentProvider(openFileContentProvider);
+        openDocumentAnalysis->setOpenFileContentProvider(std::move(provider));
 }
 
 void AnalysisScheduler::setWorkspaceOpenProvider(std::function<bool()> provider)
 {
-    workspaceOpenProvider = std::move(provider);
     if (openDocumentAnalysis)
-        openDocumentAnalysis->setWorkspaceOpenProvider(workspaceOpenProvider);
+        openDocumentAnalysis->setWorkspaceOpenProvider(std::move(provider));
 }
 
 void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> provider)
 {
-    workspaceSymbolCancelProvider = std::move(provider);
     if (workspaceSymbolAnalysis)
-        workspaceSymbolAnalysis->setCancelProvider(workspaceSymbolCancelProvider);
+        workspaceSymbolAnalysis->setCancelProvider(std::move(provider));
 }
 
 void AnalysisScheduler::setRelationshipEngine(SymbolRelationshipEngine* engine)
@@ -226,27 +201,8 @@ void AnalysisScheduler::setRelationshipEngine(SymbolRelationshipEngine* engine)
 
 void AnalysisScheduler::setRelationshipBuilder(SmartRelationshipBuilder* builder)
 {
-    if (relationshipBuilder == builder)
-        return;
-    if (relationshipBuilder)
-        disconnect(relationshipBuilder, nullptr, this, nullptr);
-
-    relationshipBuilder = builder;
-    if (!relationshipBuilder)
-        return;
-
-    connect(relationshipBuilder,
-            &SmartRelationshipBuilder::analysisError,
-            this,
-            [this](const QString& fileName, const QString& error) {
-                emit relationshipAnalysisError(fileName, error);
-            });
-    connect(relationshipBuilder,
-            &SmartRelationshipBuilder::analysisCancelled,
-            this,
-            [this]() {
-                emit relationshipAnalysisCancelled();
-            });
+    if (relationshipAnalysis)
+        relationshipAnalysis->setRelationshipBuilder(builder);
 }
 
 void AnalysisScheduler::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
@@ -265,8 +221,12 @@ void AnalysisScheduler::scheduleRelationshipAnalysis(const QString& fileName,
                                                      const QString& content,
                                                      int delayMs)
 {
-    if (fileName.isEmpty() || content.isEmpty() || !relationshipBuilder)
+    if (fileName.isEmpty()
+        || content.isEmpty()
+        || !relationshipAnalysis
+        || !relationshipAnalysis->hasRelationshipBuilder()) {
         return;
+    }
 
     if (relationshipAnalysisQueue)
         relationshipAnalysisQueue->schedule(fileName, content, delayMs);
@@ -294,52 +254,14 @@ bool AnalysisScheduler::hasScheduledRelationshipAnalysis(
 
 void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, const QString& content)
 {
-    if (fileName.isEmpty()
-        || content.isEmpty()
-        || !relationshipBuilder
-        || !singleFileRelationshipWatcher) {
-        return;
-    }
-
-    if (symbolAnalyzer) {
-        const QString lastContent = relationshipAnalysisQueue
-            ? relationshipAnalysisQueue->lastContent(fileName)
-            : QString();
-        if (!lastContent.isNull() && !symbolAnalyzer->hasSignificantChanges(lastContent, content))
-            return;
-    }
-
-    if (relationshipAnalysisQueue)
-        relationshipAnalysisQueue->rememberRequestedContent(fileName, content);
-    cancelRelationshipAnalysis();
-
-    relationshipBuilder->resetCancellation();
-    const auto baseSnapshot =
-        SemanticIndex::getInstance()->beginRelationshipAnalysisSnapshot();
-
-    QFuture<SingleFileRelationshipAnalysisResult> future =
-        QtConcurrent::run([this, fileName, content, baseSnapshot]() {
-            return RelationshipAnalysisWorker::analyzeSingleFile(
-                relationshipBuilder,
-                fileName,
-                content,
-                baseSnapshot);
-        });
-    singleFileRelationshipWatcher->setFuture(future);
+    if (relationshipAnalysis)
+        relationshipAnalysis->requestSingleFileAnalysis(fileName, content);
 }
 
 void AnalysisScheduler::cancelRelationshipAnalysis()
 {
-    if (!singleFileRelationshipWatcher || !singleFileRelationshipWatcher->isRunning())
-        return;
-
-    if (relationshipBuilder)
-        relationshipBuilder->cancelAnalysis();
-
-    QFuture<SingleFileRelationshipAnalysisResult> future =
-        singleFileRelationshipWatcher->future();
-    singleFileRelationshipWatcher->cancel();
-    future.waitForFinished();
+    if (relationshipAnalysis)
+        relationshipAnalysis->cancelSingleFileAnalysis();
 }
 
 void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
@@ -350,41 +272,14 @@ void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 
 void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project)
 {
-    if (!project.isOpen()
-        || project.systemVerilogFiles.isEmpty()
-        || !relationshipBuilder
-        || !workspaceRelationshipWatcher) {
-        return;
-    }
-
-    cancelWorkspaceRelationshipAnalysis();
-
-    emit workspaceRelationshipAnalysisStarted(project, project.systemVerilogFiles.size());
-
-    const auto baseSnapshot =
-        SemanticIndex::getInstance()->beginRelationshipAnalysisSnapshot();
-
-    QFuture<WorkspaceRelationshipAnalysisResult> future =
-        QtConcurrent::run([this, project, baseSnapshot]() {
-            return RelationshipAnalysisWorker::analyzeWorkspace(
-                relationshipBuilder,
-                project,
-                baseSnapshot);
-        });
-    workspaceRelationshipWatcher->setFuture(future);
+    if (relationshipAnalysis)
+        relationshipAnalysis->requestWorkspaceAnalysis(project);
 }
 
 void AnalysisScheduler::cancelWorkspaceRelationshipAnalysis()
 {
-    if (!workspaceRelationshipWatcher || !workspaceRelationshipWatcher->isRunning())
-        return;
-
-    if (relationshipBuilder)
-        relationshipBuilder->cancelAnalysis();
-
-    QFuture<WorkspaceRelationshipAnalysisResult> future = workspaceRelationshipWatcher->future();
-    workspaceRelationshipWatcher->cancel();
-    future.waitForFinished();
+    if (relationshipAnalysis)
+        relationshipAnalysis->cancelWorkspaceAnalysis();
 }
 
 void AnalysisScheduler::handleExternalFileChanged(const QString& fileName, int debounceMs)
