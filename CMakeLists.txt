@@ -137,6 +137,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexlookup.cpp
     semanticindexlookuphelpers.cpp
     semanticindexmodulecontext.cpp
+    semanticindexmodulecontexthelpers.cpp
     semanticindexrelationships.cpp
     semanticindexstore.cpp
     semanticindexsnapshot.cpp
@@ -244,6 +245,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticdockcoordinator.h
     semanticindex.h
     semanticindexlookuphelpers.h
+    semanticindexmodulecontexthelpers.h
     semanticindexsnapshot.h
     semanticruntimecoordinator.h
     slangmanager.h
