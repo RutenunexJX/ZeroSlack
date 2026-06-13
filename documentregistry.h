@@ -46,6 +46,7 @@ struct DocumentStore {
 struct DocumentSnapshotReader {
     QString normalizedFileName(const QString& fileName) const;
     QString documentIdForEditor(MyCodeEditor* editor) const;
+    void captureFileIdentity(MyCodeEditor* editor, DocumentSnapshot* snapshot) const;
     void captureCursorState(MyCodeEditor* editor, DocumentSnapshot* snapshot) const;
     TrackedDocument capture(
         MyCodeEditor* editor,
