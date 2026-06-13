@@ -118,6 +118,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipspanelcoordinator.cpp
     relationshipspanelrefresh.cpp
     relationshipservice.cpp
+    relationshipserviceordering.cpp
     relationshipprogressdialog.cpp
     relationshipprogressdialogui.cpp
     relationshipprogressdialogupdates.cpp
@@ -234,6 +235,7 @@ set(ZEROSLACK_CORE_SOURCES
     referenceservice.h
     relationshipspanelcoordinator.h
     relationshipservice.h
+    relationshipserviceordering.h
     relationshipprogressdialog.h
     relationshipanalysisqueue.h
     relationshipanalysiscontroller.h
