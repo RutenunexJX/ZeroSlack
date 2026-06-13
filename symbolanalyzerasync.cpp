@@ -5,6 +5,7 @@
 #include "workspacemanager.h"
 
 #include <QtConcurrent/QtConcurrent>
+#include <QFuture>
 #include <QFutureWatcher>
 #include <utility>
 
@@ -21,8 +22,7 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
 
 SymbolAnalyzer::~SymbolAnalyzer()
 {
-    if (workspaceAnalysisWatcher && workspaceAnalysisWatcher->isRunning())
-        workspaceAnalysisWatcher->cancel();
+    cancelWorkspaceAnalysisAndWait();
     if (workspaceAnalysisWatcher) {
         workspaceAnalysisWatcher->deleteLater();
         workspaceAnalysisWatcher = nullptr;
@@ -46,8 +46,7 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 {
     if (!project.isOpen())
         return;
-    if (workspaceAnalysisWatcher && workspaceAnalysisWatcher->isRunning())
-        workspaceAnalysisWatcher->cancel();
+    cancelWorkspaceAnalysisAndWait();
 
     const QStringList svFiles = project.systemVerilogFiles;
     const QString workspacePath = project.workspaceRoot;
@@ -69,6 +68,16 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     workspaceAnalysisWatcher->setProperty("workspacePath", workspacePath);
     workspaceAnalysisWatcher->setProperty("totalFiles", totalFiles);
     workspaceAnalysisWatcher->setFuture(future);
+}
+
+void SymbolAnalyzer::cancelWorkspaceAnalysisAndWait()
+{
+    if (!workspaceAnalysisWatcher || !workspaceAnalysisWatcher->isRunning())
+        return;
+
+    QFuture<WorkspaceAnalysisResult> future = workspaceAnalysisWatcher->future();
+    workspaceAnalysisWatcher->cancel();
+    future.waitForFinished();
 }
 
 void SymbolAnalyzer::onWorkspaceAnalysisFinished()

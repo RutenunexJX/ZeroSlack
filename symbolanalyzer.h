@@ -87,6 +87,7 @@ private:
     int publishWorkspaceAnalysisResult(
         const WorkspaceAnalysisResult& result,
         int totalFiles);
+    void cancelWorkspaceAnalysisAndWait();
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
     bool isSystemVerilogFile(const QString &fileName) const;
 };
