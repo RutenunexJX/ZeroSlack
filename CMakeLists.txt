@@ -232,6 +232,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexsnapshot.h
     semanticruntimecoordinator.h
     slangmanager.h
+    slangrelationshipparse.h
     smartrelationshipbuilder.h
     symbolanalyzer.h
     symbolrelationshipengine.h

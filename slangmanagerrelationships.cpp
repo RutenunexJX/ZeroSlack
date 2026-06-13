@@ -1,7 +1,7 @@
 #include "slangmanager.h"
+#include "slangrelationshipparse.h"
 
 #include <slang/ast/ASTVisitor.h>
-#include <slang/ast/Compilation.h>
 #include <slang/ast/expressions/AssignmentExpressions.h>
 #include <slang/ast/expressions/CallExpression.h>
 #include <slang/ast/expressions/ConversionExpression.h>
@@ -10,9 +10,7 @@
 #include <slang/ast/statements/ConditionalStatements.h>
 #include <slang/ast/statements/LoopStatements.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
-#include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
-#include <slang/util/Bag.h>
 
 #include <QSet>
 #include <string>
@@ -105,30 +103,11 @@ void appendTimingSignal(QVector<TimingSignalInfo>& result,
 RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& fileName,
                                                                  const QString& content)
 {
-    RelationshipExtractionInfo result;
-    try {
-        std::string src = content.toStdString();
-        std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
-
-        if (!tree)
-            return result;
-
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
-        compilation.addSyntaxTree(tree);
-        const RootSymbol& root = compilation.getRoot();
-        const slang::SourceManager* sm = compilation.getSourceManager();
-        if (!sm)
-            return result;
-
-        auto visitor = makeVisitor(
+    return slang_relationship::extractFromText<RelationshipExtractionInfo>(
+        fileName,
+        content,
+        [](RelationshipExtractionInfo& result, const slang::SourceManager* sm) {
+            return makeVisitor(
             [&](auto& v, const InstanceSymbol& inst) {
                 ModuleInstantiationInfo info;
                 info.instanceName = QString::fromStdString(std::string(inst.name));
@@ -204,43 +183,17 @@ RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& 
                 appendTimingSignal(result.timingSignals, sm, event);
                 v.visitDefault(event);
             });
-
-        root.visit(visitor);
-    } catch (const std::exception&) {
-        result = RelationshipExtractionInfo();
-    } catch (...) {
-        result = RelationshipExtractionInfo();
-    }
-    return result;
+        });
 }
 
 QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const QString& fileName,
                                                                            const QString& content)
 {
-    QVector<ModuleInstantiationInfo> result;
-    try {
-        std::string src = content.toStdString();
-        std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
-
-        if (!tree)
-            return result;
-
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
-        compilation.addSyntaxTree(tree);
-        const RootSymbol& root = compilation.getRoot();
-        const slang::SourceManager* sm = compilation.getSourceManager();
-        if (!sm)
-            return result;
-
-        auto visitor = makeVisitor(
+    return slang_relationship::extractFromText<QVector<ModuleInstantiationInfo>>(
+        fileName,
+        content,
+        [](QVector<ModuleInstantiationInfo>& result, const slang::SourceManager* sm) {
+            return makeVisitor(
             [&](auto& v, const InstanceSymbol& inst) {
                 ModuleInstantiationInfo info;
                 info.instanceName = QString::fromStdString(std::string(inst.name));
@@ -250,43 +203,17 @@ QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const
                 result.append(info);
                 v.visitDefault(inst);
             });
-
-        root.visit(visitor);
-    } catch (const std::exception&) {
-        result.clear();
-    } catch (...) {
-        result.clear();
-    }
-    return result;
+        });
 }
 
 QVector<SubroutineCallInfo> SlangManager::extractSubroutineCalls(const QString& fileName,
                                                                  const QString& content)
 {
-    QVector<SubroutineCallInfo> result;
-    try {
-        std::string src = content.toStdString();
-        std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
-
-        if (!tree)
-            return result;
-
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
-        compilation.addSyntaxTree(tree);
-        const RootSymbol& root = compilation.getRoot();
-        const slang::SourceManager* sm = compilation.getSourceManager();
-        if (!sm)
-            return result;
-
-        auto visitor = makeVisitor(
+    return slang_relationship::extractFromText<QVector<SubroutineCallInfo>>(
+        fileName,
+        content,
+        [](QVector<SubroutineCallInfo>& result, const slang::SourceManager* sm) {
+            return makeVisitor(
             [&](auto& v, const CallExpression& call) {
                 if (!call.isSystemCall()) {
                     SubroutineCallInfo info;
@@ -297,43 +224,17 @@ QVector<SubroutineCallInfo> SlangManager::extractSubroutineCalls(const QString& 
                 }
                 v.visitDefault(call);
             });
-
-        root.visit(visitor);
-    } catch (const std::exception&) {
-        result.clear();
-    } catch (...) {
-        result.clear();
-    }
-    return result;
+        });
 }
 
 QVector<AssignmentInfo> SlangManager::extractAssignments(const QString& fileName,
                                                          const QString& content)
 {
-    QVector<AssignmentInfo> result;
-    try {
-        std::string src = content.toStdString();
-        std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
-
-        if (!tree)
-            return result;
-
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
-        compilation.addSyntaxTree(tree);
-        const RootSymbol& root = compilation.getRoot();
-        const slang::SourceManager* sm = compilation.getSourceManager();
-        if (!sm)
-            return result;
-
-        auto visitor = makeVisitor(
+    return slang_relationship::extractFromText<QVector<AssignmentInfo>>(
+        fileName,
+        content,
+        [](QVector<AssignmentInfo>& result, const slang::SourceManager* sm) {
+            return makeVisitor(
             [&](auto& v, const AssignmentExpression& assignment) {
                 AssignmentInfo info;
                 info.leftName = assignmentRootName(assignment.left());
@@ -344,43 +245,17 @@ QVector<AssignmentInfo> SlangManager::extractAssignments(const QString& fileName
                     result.append(info);
                 v.visitDefault(assignment);
             });
-
-        root.visit(visitor);
-    } catch (const std::exception&) {
-        result.clear();
-    } catch (...) {
-        result.clear();
-    }
-    return result;
+        });
 }
 
 QVector<ConditionReferenceInfo> SlangManager::extractConditionReferences(const QString& fileName,
                                                                          const QString& content)
 {
-    QVector<ConditionReferenceInfo> result;
-    try {
-        std::string src = content.toStdString();
-        std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
-
-        if (!tree)
-            return result;
-
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
-        compilation.addSyntaxTree(tree);
-        const RootSymbol& root = compilation.getRoot();
-        const slang::SourceManager* sm = compilation.getSourceManager();
-        if (!sm)
-            return result;
-
-        auto visitor = makeVisitor(
+    return slang_relationship::extractFromText<QVector<ConditionReferenceInfo>>(
+        fileName,
+        content,
+        [](QVector<ConditionReferenceInfo>& result, const slang::SourceManager* sm) {
+            return makeVisitor(
             [&](auto& v, const ConditionalStatement& stmt) {
                 for (const auto& condition : stmt.conditions)
                     appendConditionReference(result, sm, *condition.expr);
@@ -423,53 +298,20 @@ QVector<ConditionReferenceInfo> SlangManager::extractConditionReferences(const Q
                 appendConditionReference(result, sm, stmt.cond);
                 v.visitDefault(stmt);
             });
-
-        root.visit(visitor);
-    } catch (const std::exception&) {
-        result.clear();
-    } catch (...) {
-        result.clear();
-    }
-    return result;
+        });
 }
 
 QVector<TimingSignalInfo> SlangManager::extractTimingSignals(const QString& fileName,
                                                              const QString& content)
 {
-    QVector<TimingSignalInfo> result;
-    try {
-        std::string src = content.toStdString();
-        std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
-
-        if (!tree)
-            return result;
-
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
-        compilation.addSyntaxTree(tree);
-        const RootSymbol& root = compilation.getRoot();
-        const slang::SourceManager* sm = compilation.getSourceManager();
-        if (!sm)
-            return result;
-
-        auto visitor = makeVisitor(
+    return slang_relationship::extractFromText<QVector<TimingSignalInfo>>(
+        fileName,
+        content,
+        [](QVector<TimingSignalInfo>& result, const slang::SourceManager* sm) {
+            return makeVisitor(
             [&](auto& v, const SignalEventControl& event) {
                 appendTimingSignal(result, sm, event);
                 v.visitDefault(event);
             });
-
-        root.visit(visitor);
-    } catch (const std::exception&) {
-        result.clear();
-    } catch (...) {
-        result.clear();
-    }
-    return result;
+        });
 }
