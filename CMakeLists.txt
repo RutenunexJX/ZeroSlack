@@ -111,6 +111,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationpanecoordinator.cpp
     navigationservice.cpp
     navigationservicehierarchy.cpp
+    navigationwidgetpresentation.cpp
     navigationwidgettrees.cpp
     navigationwidget.cpp
     problemspanelcoordinator.cpp
