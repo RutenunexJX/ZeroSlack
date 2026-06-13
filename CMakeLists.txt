@@ -98,6 +98,9 @@ set(ZEROSLACK_CORE_SOURCES
     opendocumentanalysiscontroller.cpp
     navigationcommandcoordinator.cpp
     navigationmanager.cpp
+    navigationmanagerconnections.cpp
+    navigationmanagerdata.cpp
+    navigationmanagerstate.cpp
     navigationpanecoordinator.cpp
     navigationservice.cpp
     navigationwidgettrees.cpp
