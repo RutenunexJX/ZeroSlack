@@ -124,6 +124,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipservice.cpp
     relationshipserviceordering.cpp
     relationshipprogressdialog.cpp
+    relationshipprogressdialogpresentation.cpp
     relationshipprogressdialogui.cpp
     relationshipprogressdialogupdates.cpp
     relationshipanalysisqueue.cpp
