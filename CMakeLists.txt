@@ -135,6 +135,7 @@ set(ZEROSLACK_CORE_SOURCES
     searchservice.cpp
     scopebandservice.cpp
     semanticpanelutils.cpp
+    semanticpanelrefreshpanels.cpp
     semanticpanelrefreshcoordinator.cpp
     semanticdockcoordinator.cpp
     semanticindex.cpp
