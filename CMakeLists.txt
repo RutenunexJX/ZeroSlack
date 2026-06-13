@@ -36,7 +36,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# Match the old .pro modules: core gui widgets concurrent.
+# Required Qt modules.
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 
 # =========================================================
@@ -128,6 +128,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexsnapshotpublication.cpp
     semanticruntimecoordinator.cpp
     slangmanager.cpp
+    smartrelationshipbuilderanalysis.cpp
     smartrelationshipbuilder.cpp
     symbolanalyzer.cpp
     symbolrelationshipengine.cpp
@@ -250,7 +251,7 @@ set(ZEROSLACK_CORE_SOURCES
 # =========================================================
 add_library(zeroslack_core STATIC ${ZEROSLACK_CORE_SOURCES})
 
-# Match the old .pro TARGET.
+# Main application target.
 add_executable(demo main.cpp)
 
 # Build a Windows GUI app without a console window.
@@ -261,7 +262,7 @@ endif()
 # =========================================================
 # 6. Include Paths and Libraries
 # =========================================================
-# Match the old .pro INCLUDEPATH.
+# Project include paths.
 target_include_directories(zeroslack_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     thirdparty/tree_sitter/lib/include
