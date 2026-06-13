@@ -4,11 +4,11 @@ Use `readme.md` for handoff state and `goal.md` for stable product/architecture 
 
 ## Next Architecture Blocks
 
-Prefer each turn to advance three or more medium-sized, clearly themed, mostly independent architecture blocks:
+Prefer each turn to advance multiple medium-sized, clearly themed architecture blocks when they are independent enough to verify together:
 
-1. Keep `SymbolAnalyzer` contained behind `SemanticRuntimeCoordinator` and `AnalysisScheduler`; new UI or navigation work should not regain direct analyzer reachability.
-2. Keep `SymbolAnalyzer` workspace assembly and SemanticIndex publication/write-back in their focused files; do not reintroduce publication logic into the main analyzer flow.
-3. Continue the `DocumentModel` / `MyCodeEditor` boundary migration in split blocks. Public editor adapters, document registry queries, text/version, saved-version state, cursor/live module, and Tree-sitter document ownership should remain separate themes.
+1. Stabilize lifecycle boundaries around `AnalysisScheduler`, `AnalysisCoordinator`, `SemanticRuntimeCoordinator`, open-document analysis, relationship analysis, diagnostics refresh, cancellation, and result publication.
+2. Keep shrinking `MyCodeEditor` through real physical extraction. Prefer whole editor subsystems over thin adapters: completion workflow, source navigation, hover, semantic context, runtime wiring, mode state, and remaining event clusters.
+3. Continue the `DocumentModel` / editor boundary migration only in separate ownership themes: file identity, text/version, saved state, cursor/live module, registry queries, and Tree-sitter document ownership.
 4. Continue moving panel and editor read policy into Query Services. Coordinators should map UI state into service options, then render service reports.
 5. When touching editor or completion workflows, move the whole workflow behind the appropriate model/service/coordinator boundary instead of adding one-off relays.
 6. Remove test-only private access only when the replacement API is clearly a production boundary, not a broad test seam.
@@ -20,10 +20,12 @@ Prioritize production-code architecture progress. Do not use pure assertion expa
 Good batch candidates:
 
 - different coordinator boundaries
+- different lifecycle finalization paths that do not share watcher or signal ownership
 - Query Service read paths
 - panel query builders and report shaping
 - focused fixture coverage tied to production changes
 - unrelated UI routing cleanup
+- physical editor extractions that move separate subsystems and reduce `mycodeeditor.cpp`
 - test cleanup that replaces private access with stable production-facing APIs
 
 Poor batch candidates:
@@ -31,8 +33,10 @@ Poor batch candidates:
 - broad simultaneous changes across `TabManager`, `DocumentModel`, and `MyCodeEditor`
 - async scheduler lifecycle changes
 - `SemanticIndex` snapshot publication or analyzer write-back changes
+- relationship analysis watcher/request/finish ownership changes that share the same controller state
 - migrations where signal lifetime or API shape is still unstable
 - mixed model/editor/save migrations that obscure document ownership
+- editor extractions that all touch the same event handler cluster
 - broad test rewrites that expose internals just to satisfy assertions
 
 When blocks touch the same core file or API boundary, reduce batch size and verify sooner.
@@ -52,7 +56,7 @@ Avoid:
 For code/test changes:
 
 - after each block, run light sanity only: affected target build or compile, focused CTest, `git diff --check`, and relevant `rg` or static boundary scans
-- after two or three blocks, run full Ninja, full `ctest --output-on-failure`, changed/new source/doc ASCII and trailing-whitespace scans, and the forbidden-file guard
+- before the commit, run full Ninja, full `ctest --output-on-failure`, changed/new source/doc ASCII and trailing-whitespace scans, and the forbidden-file guard
 - if a block touches risky lifecycle, snapshot publication, or unsettled API shape, run full verification before continuing the batch
 - after unified verification passes, create one large local commit for the completed turn
 
@@ -65,7 +69,7 @@ For docs-only cleanup:
 ## Commit Policy
 
 - Keep work organized so each turn remains reviewable as a coherent architecture increment.
-- After batched full verification passes, create one large local commit for the completed turn.
+- After full verification passes, create one large local commit for the completed turn.
 - Do not push unless explicitly asked.
 - Keep commit messages concise and architecture-oriented.
 - Docs-only cleanup gets one local docs commit after docs-only hygiene passes.

@@ -18,30 +18,31 @@ Thin UI consumers
 - Do not restore `.claude/` or Claude local config.
 - Do not restore SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
 - Keep source, tests, UI strings, CMake, and these docs English / ASCII.
-- Batch architecture work, verify once, then create one large local commit for the completed turn.
+- Batch architecture work when boundaries are independent, verify once, then create one large local commit for the completed turn.
 - Do not push unless explicitly asked.
 - Keep commit messages concise and architecture-oriented.
 - Never discard user changes or use destructive git commands unless explicitly requested.
 
 ## Current Development Workflow
 
-Use batch progress with unified verification and one commit per completed turn.
-Prefer three or more medium-sized, clearly themed architecture blocks when their files and API boundaries do not overlap.
-After each block, run light sanity only: affected build or compile, focused tests, `git diff --check`, or static boundary scans.
-After two or three blocks, run full Ninja, full `ctest --output-on-failure`, hygiene scans, and the forbidden-file guard.
-When full verification passes, create one local commit containing the verified work. Reduce batch size when blocks share core files or unsettled API boundaries.
+Use goal-mode progress with unified verification and one commit per completed turn.
+Prefer multiple medium-sized architecture blocks only when their files, lifetimes, and API boundaries do not overlap.
+After each block, run light sanity: affected build or compile, focused tests, `git diff --check`, or static boundary scans.
+Before committing, run full Ninja, full `ctest --output-on-failure`, hygiene scans, and the forbidden-file guard.
+When full verification passes, create one local commit containing the verified turn. Reduce batch size when blocks share core files or unsettled API boundaries.
+Each handoff should report the remaining Phase 2 percentage.
 
 ## Current Architecture Snapshot
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document snapshots, cached open-document text, text/saved versions, dirty/saved state, cursor/file-name refresh events, live module names, and registry-backed text queries.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and scheduler-level analysis events.
-- `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes, `SymbolAnalyzer`, and dependency injection into `SemanticIndex`.
+- `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into semantic runtime services.
 - `AnalysisCoordinator` owns scheduler/progress/workspace signal routing and active-editor refresh policy.
 - `SemanticIndex` owns semantic facts, snapshot publication, relationship lifecycle data, diagnostics, and shared semantic read helpers.
-- `SymbolAnalyzer` owns Slang extraction orchestration; workspace assembly and SemanticIndex publication/write-back are split into focused files.
+- `SymbolAnalyzer` owns Slang extraction orchestration behind scheduler/runtime boundaries; workspace assembly and SemanticIndex publication/write-back stay in focused files.
 - Query services own feature-specific reads for completion, definition, relationship, hierarchy, references, diagnostics, search, source navigation, and panel query shaping.
 - Coordinators own UI/editor command routing, dock/panel refresh, progress policy, navigation commands, file commands, mode commands, and semantic runtime setup.
 - Relationship graph helpers can use injected semantic data sources in tests and runtime wiring instead of hard-coded global reads.
 - `TabManager` owns tab lifecycle, file reads/writes, tab titles, and `DocumentModel` registration/save updates.
-- `MyCodeEditor` owns editor event flow and public editor adapters. Gutter, selection/highlight, geometry, cursor navigation, file identity, and syntax state live in focused editor subsystem files.
+- `MyCodeEditor` owns editor event flow and public editor adapters. Gutter, selection/highlight, geometry, cursor navigation, file identity, syntax state, runtime, completion, hover, and source navigation live in focused editor subsystem files.
