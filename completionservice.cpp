@@ -3,8 +3,8 @@
 #include "completioncommandmode.h"
 #include "completioncontexthelper.h"
 #include "completionmatcher.h"
+#include "completionsymbolquery.h"
 
-#include <QSet>
 #include <Qt>
 #include <QVector>
 #include <algorithm>
@@ -40,7 +40,7 @@ CompletionResult CompletionService::findCompletionResult(
 {
     CompletionResult result;
     result.symbols = findCompletionSymbols(query);
-    result.names = completionNamesFromSymbols(result.symbols);
+    result.names = CompletionSymbolQuery::namesFromSymbols(result.symbols);
     return result;
 }
 
@@ -48,44 +48,26 @@ QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
     const CompletionQuery& query) const
 {
     if (!query.structTypeNameForMember.isEmpty()) {
-        return findStructMemberSymbols(query);
+        return CompletionSymbolQuery::structMemberSymbols(
+            semanticIndex(), query.structTypeNameForMember, query.prefix);
     }
 
     if (query.prefix.isEmpty())
         return {};
 
     if (!query.moduleName.isEmpty())
-        return findModuleCompletionSymbols(query);
+        return semanticIndex()->getModuleCompletionSymbols(
+            query.moduleName, query.prefix);
 
-    return findGlobalCompletionSymbols(query);
+    return semanticIndex()->getGlobalCompletionSymbols(query.prefix);
 }
 
 QVector<QPair<QString, int>> CompletionService::findScoredAllSymbolCompletions(
     const QString& prefix,
     int maxResults) const
 {
-    const QStringList names = semanticIndex()->getCompletionSymbolNames();
-
-    QVector<QPair<QString, int>> scored;
-    scored.reserve(qMin(names.size(), maxResults > 0 ? maxResults : names.size()));
-    for (const QString& name : std::as_const(names)) {
-        const int score = CompletionMatcher::calculateContextMatchScore(name, prefix);
-        if (score > 0)
-            scored.append(qMakePair(name, score));
-    }
-
-    std::sort(scored.begin(), scored.end(),
-              [](const QPair<QString, int>& left,
-                 const QPair<QString, int>& right) {
-                  if (left.second != right.second)
-                      return left.second > right.second;
-                  return left.first < right.first;
-              });
-
-    if (maxResults > 0 && scored.size() > maxResults)
-        scored = scored.mid(0, maxResults);
-
-    return scored;
+    return CompletionSymbolQuery::scoredNames(
+        semanticIndex()->getCompletionSymbolNames(), prefix, maxResults);
 }
 
 QStringList CompletionService::findAllSymbolCompletions(
@@ -94,16 +76,7 @@ QStringList CompletionService::findAllSymbolCompletions(
 {
     const QVector<QPair<QString, int>> scored =
         findScoredAllSymbolCompletions(prefix, maxResults);
-
-    QStringList result;
-    result.reserve(scored.size());
-    for (const auto& match : scored)
-        result.append(match.first);
-
-    if (maxResults > 0 && result.size() > maxResults)
-        result = result.mid(0, maxResults);
-
-    return result;
+    return CompletionSymbolQuery::namesFromScored(scored, maxResults);
 }
 
 QVector<QPair<sym_list::SymbolInfo, int>>
@@ -112,30 +85,8 @@ CompletionService::findScoredSymbolCompletionsByType(
     const QString& prefix,
     int maxResults) const
 {
-    QVector<QPair<sym_list::SymbolInfo, int>> result;
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticIndex()->getTypedCompletionSymbols(symbolType);
-
-    result.reserve(qMin(symbols.size(), maxResults > 0 ? maxResults : symbols.size()));
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const int score =
-            CompletionMatcher::calculateSymbolTypeScore(symbol.symbolName, prefix);
-        if (score > 0)
-            result.append(qMakePair(symbol, score));
-    }
-
-    std::sort(result.begin(), result.end(),
-              [](const QPair<sym_list::SymbolInfo, int>& left,
-                 const QPair<sym_list::SymbolInfo, int>& right) {
-                  if (left.second != right.second)
-                      return left.second > right.second;
-                  return left.first.symbolName < right.first.symbolName;
-              });
-
-    if (maxResults > 0 && result.size() > maxResults)
-        result = result.mid(0, maxResults);
-
-    return result;
+    return CompletionSymbolQuery::scoredTypedSymbols(
+        semanticIndex(), symbolType, prefix, maxResults);
 }
 
 QStringList CompletionService::findSymbolCompletionsByType(
@@ -145,18 +96,7 @@ QStringList CompletionService::findSymbolCompletionsByType(
 {
     const QVector<QPair<sym_list::SymbolInfo, int>> scored =
         findScoredSymbolCompletionsByType(symbolType, prefix, maxResults);
-
-    QStringList result;
-    result.reserve(scored.size());
-    for (const auto& match : scored) {
-        if (!result.contains(match.first.symbolName))
-            result.append(match.first.symbolName);
-    }
-
-    if (maxResults > 0 && result.size() > maxResults)
-        result = result.mid(0, maxResults);
-
-    return result;
+    return CompletionSymbolQuery::symbolNamesFromScored(scored, maxResults);
 }
 
 bool CompletionService::matchesCompletionAbbreviation(
@@ -249,7 +189,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
 
     state.symbols = findCommandCompletionSymbols(completionQuery);
     if (state.symbols.isEmpty()
-        && isModuleRangeSymbolType(state.command.symbolType)
+        && CompletionSymbolQuery::isModuleRangeSymbolType(state.command.symbolType)
         && completionQuery.moduleName.isEmpty()) {
         state.hidePopup = true;
         return state;
@@ -473,29 +413,13 @@ QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
 
 QStringList CompletionService::findScopeCompletions(const CompletionQuery& query) const
 {
-    QStringList result;
-    if (query.fileName.isEmpty() || query.cursorLine < 0)
-        return result;
-
-    const QStringList scopeNames =
-        semanticIndex()->getScopeSymbolNames(query.fileName, query.cursorLine);
-    QSet<QString> seenNames;
-    for (const QString& name : scopeNames) {
-        if (!completionNameMatches(name, query.prefix))
-            continue;
-        const QString key = name.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(name);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return CompletionSymbolQuery::scopeCompletions(
+        semanticIndex(), query.fileName, query.cursorLine, query.prefix);
 }
 
 QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const
 {
-    return completionNamesFromSymbols(findCommandSymbolsFromIndex(query));
+    return CompletionSymbolQuery::namesFromSymbols(findCommandSymbolsFromIndex(query));
 }
 
 QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
@@ -573,7 +497,7 @@ QStringList CompletionService::findModuleInternalVariableCompletions(
     const QString& moduleName,
     const QString& prefix) const
 {
-    return completionNamesFromSymbols(
+    return CompletionSymbolQuery::namesFromSymbols(
         semanticIndex()->getModuleCompletionSymbols(moduleName, prefix));
 }
 
@@ -582,67 +506,22 @@ QStringList CompletionService::findModuleSymbolsByType(
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
-    QStringList result;
-    QSet<QString> seenNames;
-    if (moduleName.isEmpty())
-        return result;
-
-    CommandCompletionQuery query;
-    query.moduleName = moduleName;
-    query.symbolType = symbolType;
-    query.prefix = prefix;
-    const QList<sym_list::SymbolInfo> symbols = findCommandSymbolsFromIndex(query);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return CompletionSymbolQuery::moduleSymbolsByType(
+        semanticIndex(), moduleName, symbolType, prefix);
 }
 
 QStringList CompletionService::findGlobalSymbolCompletions(const QString& prefix) const
 {
-    return completionNamesFromSymbols(semanticIndex()->getGlobalCompletionSymbols(prefix));
+    return CompletionSymbolQuery::namesFromSymbols(
+        semanticIndex()->getGlobalCompletionSymbols(prefix));
 }
 
 QStringList CompletionService::findGlobalSymbolsByType(
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
-    QStringList result;
-    QSet<QString> seenNames;
-    if (!isGlobalSymbolType(symbolType))
-        return result;
-
-    CommandCompletionQuery query;
-    query.symbolType = symbolType;
-    query.prefix = prefix;
-    const QList<sym_list::SymbolInfo> symbols = findCommandSymbolsFromIndex(query);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        bool global = false;
-        if (symbolType == sym_list::sym_module
-            || symbolType == sym_list::sym_interface
-            || symbolType == sym_list::sym_package
-            || symbolType == sym_list::sym_packed_struct
-            || symbolType == sym_list::sym_unpacked_struct) {
-            global = true;
-        } else {
-            global = symbol.moduleScope.isEmpty();
-        }
-        if (!global)
-            continue;
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return CompletionSymbolQuery::globalSymbolsByType(
+        semanticIndex(), symbolType, prefix);
 }
 
 QStringList CompletionService::findVariableCompletionsInScope(
@@ -651,7 +530,7 @@ QStringList CompletionService::findVariableCompletionsInScope(
     const QString& prefix) const
 {
     if (moduleName.isEmpty()) {
-        return completionNamesFromSymbols(
+        return CompletionSymbolQuery::namesFromSymbols(
             semanticIndex()->getTypedCompletionSymbols(variableType, prefix));
     }
     return findModuleSymbolsByType(moduleName, variableType, prefix);
@@ -659,14 +538,7 @@ QStringList CompletionService::findVariableCompletionsInScope(
 
 QStringList CompletionService::findTaskFunctionCompletions(const QString& prefix) const
 {
-    QStringList result;
-    result.append(completionNamesFromSymbols(
-        semanticIndex()->getTypedCompletionSymbols(sym_list::sym_task, prefix)));
-    result.append(completionNamesFromSymbols(
-        semanticIndex()->getTypedCompletionSymbols(sym_list::sym_function, prefix)));
-    result.removeDuplicates();
-    result.sort(Qt::CaseInsensitive);
-    return result;
+    return CompletionSymbolQuery::taskFunctionCompletions(semanticIndex(), prefix);
 }
 
 QStringList CompletionService::findInstantiableModuleCompletions(const QString& prefix) const
@@ -832,7 +704,9 @@ QStringList CompletionService::findStructMemberCompletions(
     CompletionQuery query;
     query.prefix = prefix;
     query.structTypeNameForMember = structTypeName;
-    return completionNamesFromSymbols(findStructMemberSymbols(query));
+    return CompletionSymbolQuery::namesFromSymbols(
+        CompletionSymbolQuery::structMemberSymbols(
+            semanticIndex(), query.structTypeNameForMember, query.prefix));
 }
 
 QStringList CompletionService::findEnumValueCompletions(
@@ -915,37 +789,6 @@ SemanticIndex* CompletionService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-QList<sym_list::SymbolInfo> CompletionService::findStructMemberSymbols(
-    const CompletionQuery& query) const
-{
-    QList<sym_list::SymbolInfo> result;
-    QSet<QString> seenNames;
-    const QList<sym_list::SymbolInfo> members =
-        semanticIndex()->getStructMembers(query.structTypeNameForMember);
-    for (const sym_list::SymbolInfo& member : members) {
-        if (!completionNameMatches(member.symbolName, query.prefix))
-            continue;
-        const QString key = member.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(member);
-    }
-    return result;
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findModuleCompletionSymbols(
-    const CompletionQuery& query) const
-{
-    return semanticIndex()->getModuleCompletionSymbols(query.moduleName, query.prefix);
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findGlobalCompletionSymbols(
-    const CompletionQuery& query) const
-{
-    return semanticIndex()->getGlobalCompletionSymbols(query.prefix);
-}
-
 QList<sym_list::SymbolInfo> CompletionService::findCommandSymbolsFromIndex(
     const CommandCompletionQuery& query) const
 {
@@ -953,65 +796,4 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandSymbolsFromIndex(
         query.moduleName,
         query.symbolType,
         query.prefix);
-}
-
-QStringList CompletionService::completionNamesFromSymbols(
-    const QList<sym_list::SymbolInfo>& symbols) const
-{
-    QStringList result;
-    QSet<QString> seenNames;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
-}
-
-bool CompletionService::completionNameMatches(const QString& name,
-                                              const QString& prefix) const
-{
-    if (prefix.isEmpty())
-        return true;
-    if (name.isEmpty())
-        return false;
-
-    const QString lowerName = name.toLower();
-    const QString lowerPrefix = prefix.toLower();
-    if (lowerName.startsWith(lowerPrefix))
-        return true;
-
-    int namePos = 0;
-    int prefixPos = 0;
-    while (prefixPos < lowerPrefix.length() && namePos < lowerName.length()) {
-        if (lowerPrefix.at(prefixPos) == lowerName.at(namePos))
-            ++prefixPos;
-        ++namePos;
-    }
-    return prefixPos == lowerPrefix.length();
-}
-
-bool CompletionService::isModuleRangeSymbolType(sym_list::sym_type_e type) const
-{
-    return type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_packed_struct_var
-        || type == sym_list::sym_unpacked_struct_var;
-}
-
-bool CompletionService::isGlobalSymbolType(sym_list::sym_type_e type) const
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_enum;
 }

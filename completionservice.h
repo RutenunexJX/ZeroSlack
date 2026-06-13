@@ -296,19 +296,8 @@ private:
     static std::unique_ptr<CompletionService> instance;
 
     SemanticIndex* semanticIndex() const;
-    QList<sym_list::SymbolInfo> findStructMemberSymbols(
-        const CompletionQuery& query) const;
-    QList<sym_list::SymbolInfo> findModuleCompletionSymbols(
-        const CompletionQuery& query) const;
-    QList<sym_list::SymbolInfo> findGlobalCompletionSymbols(
-        const CompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCommandSymbolsFromIndex(
         const CommandCompletionQuery& query) const;
-    QStringList completionNamesFromSymbols(
-        const QList<sym_list::SymbolInfo>& symbols) const;
-    bool completionNameMatches(const QString& name, const QString& prefix) const;
-    bool isModuleRangeSymbolType(sym_list::sym_type_e type) const;
-    bool isGlobalSymbolType(sym_list::sym_type_e type) const;
 };
 
 #endif // COMPLETIONSERVICE_H
