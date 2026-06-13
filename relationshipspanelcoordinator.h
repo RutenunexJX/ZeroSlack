@@ -40,6 +40,8 @@ private:
 
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
+
+    void refreshHierarchyTree(int typeFilter);
 };
 
 #endif // RELATIONSHIPSPANELCOORDINATOR_H
