@@ -5,26 +5,9 @@
 #include "symbolanalyzer.h"
 
 #include <QtConcurrent/QtConcurrent>
-#include <QFile>
 #include <QFuture>
-#include <QTextStream>
 #include <QTimer>
 #include <utility>
-
-namespace {
-QList<SemanticRelationship> toSemanticRelationships(
-    const QVector<RelationshipToAdd>& relationships)
-{
-    QList<SemanticRelationship> result;
-    result.reserve(relationships.size());
-    for (const RelationshipToAdd& relationship : relationships) {
-        if (relationship.fromId < 0 || relationship.toId < 0)
-            continue;
-        result.append({relationship.fromId, relationship.toId, relationship.type});
-    }
-    return result;
-}
-}
 
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
@@ -352,7 +335,11 @@ void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, con
 
     QFuture<SingleFileRelationshipAnalysisResult> future =
         QtConcurrent::run([this, fileName, content, baseSnapshot]() {
-            return analyzeSingleFileRelationships(fileName, content, baseSnapshot);
+            return RelationshipAnalysisWorker::analyzeSingleFile(
+                relationshipBuilder,
+                fileName,
+                content,
+                baseSnapshot);
         });
     singleFileRelationshipWatcher->setFuture(future);
 }
@@ -405,7 +392,10 @@ void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapsh
 
     QFuture<WorkspaceRelationshipAnalysisResult> future =
         QtConcurrent::run([this, project, baseSnapshot]() {
-            return analyzeWorkspaceRelationships(project, baseSnapshot);
+            return RelationshipAnalysisWorker::analyzeWorkspace(
+                relationshipBuilder,
+                project,
+                baseSnapshot);
         });
     workspaceRelationshipWatcher->setFuture(future);
 }
@@ -578,67 +568,6 @@ bool AnalysisScheduler::applyWorkspaceRelationshipResult(
 
     scheduleRelationshipDataRefresh();
     return true;
-}
-
-SingleFileRelationshipAnalysisResult AnalysisScheduler::analyzeSingleFileRelationships(
-    const QString& fileName,
-    const QString& content,
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const
-{
-    SingleFileRelationshipAnalysisResult result;
-    result.fileName = fileName;
-    result.baseSnapshot = baseSnapshot;
-    result.semanticSnapshot = baseSnapshot;
-    if (!relationshipBuilder || !baseSnapshot)
-        return result;
-
-    const QList<sym_list::SymbolInfo> fileSymbols = baseSnapshot->getSymbols(fileName);
-    result.relationships =
-        relationshipBuilder->computeRelationships(
-            fileName, content, fileSymbols, baseSnapshot.get());
-
-    result.semanticSnapshot =
-        SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
-            baseSnapshot,
-            toSemanticRelationships(result.relationships));
-    return result;
-}
-
-WorkspaceRelationshipAnalysisResult AnalysisScheduler::analyzeWorkspaceRelationships(
-    const ProjectSnapshot& project,
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const
-{
-    WorkspaceRelationshipAnalysisResult result;
-    result.baseSnapshot = baseSnapshot;
-    result.semanticSnapshot = baseSnapshot;
-    result.totalFiles = project.systemVerilogFiles.size();
-    if (!relationshipBuilder)
-        return result;
-
-    relationshipBuilder->resetCancellation();
-    const QStringList svFiles = project.systemVerilogFiles;
-    result.fileRelationships.reserve(svFiles.size());
-    QList<SemanticRelationship> newRelationships;
-    for (const QString& filePath : svFiles) {
-        if (relationshipBuilder->isCancelled())
-            break;
-        QFile file(filePath);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-            continue;
-        const QString content = QTextStream(&file).readAll();
-        const QList<sym_list::SymbolInfo> fileSymbols =
-            baseSnapshot ? baseSnapshot->getSymbols(filePath) : QList<sym_list::SymbolInfo>();
-        const QVector<RelationshipToAdd> relationships =
-            relationshipBuilder->computeRelationships(
-                filePath, content, fileSymbols, baseSnapshot.get());
-        result.fileRelationships.append({filePath, relationships});
-        newRelationships.append(toSemanticRelationships(relationships));
-    }
-    result.semanticSnapshot =
-        SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
-            baseSnapshot,
-            newRelationships);
-    return result;
 }
 
 QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const

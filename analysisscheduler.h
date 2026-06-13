@@ -5,7 +5,7 @@
 #include "opendocumentanalysiscontroller.h"
 #include "projectmodel.h"
 #include "relationshipanalysisqueue.h"
-#include "semanticindexsnapshot.h"
+#include "relationshipanalysisworker.h"
 #include "smartrelationshipbuilder.h"
 
 #include <QFutureWatcher>
@@ -20,20 +20,6 @@
 class SymbolAnalyzer;
 class SymbolRelationshipEngine;
 class QTimer;
-
-struct WorkspaceRelationshipAnalysisResult {
-    QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
-    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
-    int totalFiles = 0;
-};
-
-struct SingleFileRelationshipAnalysisResult {
-    QString fileName;
-    QVector<RelationshipToAdd> relationships;
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
-    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
-};
 
 class AnalysisScheduler : public QObject
 {
@@ -125,13 +111,6 @@ private:
     void scheduleRelationshipDataRefresh();
     bool applySingleFileRelationshipResult(const SingleFileRelationshipAnalysisResult& result);
     bool applyWorkspaceRelationshipResult(const WorkspaceRelationshipAnalysisResult& result);
-    SingleFileRelationshipAnalysisResult analyzeSingleFileRelationships(
-        const QString& fileName,
-        const QString& content,
-        std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const;
-    WorkspaceRelationshipAnalysisResult analyzeWorkspaceRelationships(
-        const ProjectSnapshot& project,
-        std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot) const;
 
     QString contentForOpenFile(const QString& fileName) const;
 };
