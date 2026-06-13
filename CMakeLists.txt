@@ -45,6 +45,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ sources ---
     analysiscoordinator.cpp
+    analysiscoordinatorwiring.cpp
     analysisprogresscoordinator.cpp
     analysisscheduler.cpp
     analysisschedulerdocuments.cpp
