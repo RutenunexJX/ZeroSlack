@@ -141,6 +141,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindex.cpp
     semanticindexcompletion.cpp
     semanticindexcompletionqueries.cpp
+    semanticindexcompletiontypequeries.cpp
     semanticindexcompletioncontext.cpp
     semanticindexcompletionrelationships.cpp
     semanticindexlookup.cpp
@@ -255,6 +256,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticpanelrefreshcoordinator.h
     semanticdockcoordinator.h
     semanticindex.h
+    semanticindexcompletionfilters.h
     semanticindexlookuphelpers.h
     semanticindexmodulecontexthelpers.h
     semanticindexsnapshot.h
