@@ -45,6 +45,44 @@ AnalysisScheduler::AnalysisScheduler(QObject* parent)
             this,
             &AnalysisScheduler::relationshipDataRefreshRequested);
 
+    workspaceSymbolAnalysis = new WorkspaceSymbolAnalysisController(this);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::fileSymbolAnalysisStarted,
+            this,
+            &AnalysisScheduler::fileSymbolAnalysisStarted);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::fileSymbolAnalysisFinished,
+            this,
+            &AnalysisScheduler::fileSymbolAnalysisFinished);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisStarted,
+            this,
+            &AnalysisScheduler::workspaceSymbolAnalysisStarted);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisProgress,
+            this,
+            &AnalysisScheduler::workspaceSymbolAnalysisProgress);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisFinished,
+            this,
+            &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::diagnosticsRefreshRequested,
+            this,
+            &AnalysisScheduler::scheduleDiagnosticsRefresh);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceRelationshipAnalysisRequested,
+            this,
+            &AnalysisScheduler::requestWorkspaceRelationshipAnalysis);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceRelationshipAnalysisCancelRequested,
+            this,
+            &AnalysisScheduler::cancelWorkspaceRelationshipAnalysis);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::relationshipDataClearRequested,
+            relationshipResultPublisher,
+            &RelationshipResultPublisher::clearAllRelationships);
+
     diagnosticsRefreshTimer = new QTimer(this);
     diagnosticsRefreshTimer->setSingleShot(true);
     diagnosticsRefreshTimer->setInterval(100);
@@ -141,20 +179,8 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
 
 void AnalysisScheduler::setProjectModel(ProjectModel* model)
 {
-    if (projectModel == model)
-        return;
-    if (projectModel)
-        disconnect(projectModel, nullptr, this, nullptr);
-
-    projectModel = model;
-    if (!projectModel)
-        return;
-
-    connect(projectModel, &ProjectModel::projectChanged,
-            this, &AnalysisScheduler::onProjectChanged);
-    connect(projectModel, &ProjectModel::projectClosed,
-            this, &AnalysisScheduler::clearProjectSemanticState);
-    projectSemanticStateCleared = !projectModel->isOpen();
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->setProjectModel(model);
 }
 
 void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
@@ -167,33 +193,8 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
     symbolAnalyzer = analyzer;
     if (openDocumentAnalysis)
         openDocumentAnalysis->setSymbolAnalyzer(analyzer);
-    if (!symbolAnalyzer)
-        return;
-
-    connect(symbolAnalyzer,
-            &SymbolAnalyzer::analysisStarted,
-            this,
-            &AnalysisScheduler::fileSymbolAnalysisStarted);
-    connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted,
-            this, [this](const QString& fileName, int symbolCount) {
-                emit fileSymbolAnalysisFinished(fileName, symbolCount);
-                scheduleDiagnosticsRefresh(fileName);
-            });
-    connect(symbolAnalyzer,
-            &SymbolAnalyzer::batchProgress,
-            this,
-            [this](int filesDone, int totalFiles, const QString& currentFileName) {
-                emit workspaceSymbolAnalysisProgress(currentFileName,
-                                                     filesDone,
-                                                     totalFiles);
-            });
-    connect(symbolAnalyzer,
-            &SymbolAnalyzer::batchAnalysisCompleted,
-            this,
-            [this](int filesAnalyzed, int totalSymbols) {
-                scheduleDiagnosticsRefresh(QString());
-                onWorkspaceSymbolAnalysisCompleted(filesAnalyzed, totalSymbols);
-            });
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->setSymbolAnalyzer(analyzer);
 }
 
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
@@ -213,6 +214,8 @@ void AnalysisScheduler::setWorkspaceOpenProvider(std::function<bool()> provider)
 void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> provider)
 {
     workspaceSymbolCancelProvider = std::move(provider);
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->setCancelProvider(workspaceSymbolCancelProvider);
 }
 
 void AnalysisScheduler::setRelationshipEngine(SymbolRelationshipEngine* engine)
@@ -341,18 +344,8 @@ void AnalysisScheduler::cancelRelationshipAnalysis()
 
 void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 {
-    if (!project.isOpen() || !symbolAnalyzer)
-        return;
-
-    SemanticIndex::getInstance()->clearSnapshot();
-    if (project.systemVerilogFiles.isEmpty())
-        return;
-
-    activeWorkspaceProject = project;
-    workspaceSymbolAnalysisActive = true;
-    scheduleDiagnosticsRefresh(QString());
-    emit workspaceSymbolAnalysisStarted(project, project.systemVerilogFiles.size());
-    symbolAnalyzer->startAnalyzeProjectAsync(project, workspaceSymbolCancelProvider);
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->requestWorkspaceAnalysis(project);
 }
 
 void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project)
@@ -432,48 +425,6 @@ void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
 {
     if (openDocumentAnalysis)
         openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, true);
-}
-
-void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
-{
-    if (!project.isOpen()) {
-        clearProjectSemanticState();
-        return;
-    }
-
-    projectSemanticStateCleared = false;
-    requestWorkspaceAnalysis(project);
-}
-
-void AnalysisScheduler::clearProjectSemanticState()
-{
-    if (projectSemanticStateCleared)
-        return;
-
-    projectSemanticStateCleared = true;
-    workspaceSymbolAnalysisActive = false;
-    activeWorkspaceProject = ProjectSnapshot();
-    cancelWorkspaceRelationshipAnalysis();
-    SemanticIndex::getInstance()->clearSnapshot();
-
-    if (relationshipResultPublisher)
-        relationshipResultPublisher->clearAllRelationships();
-
-    scheduleDiagnosticsRefresh(QString());
-}
-
-void AnalysisScheduler::onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols)
-{
-    if (!workspaceSymbolAnalysisActive)
-        return;
-
-    workspaceSymbolAnalysisActive = false;
-    const ProjectSnapshot project = activeWorkspaceProject;
-    if (workspaceSymbolCancelProvider && workspaceSymbolCancelProvider())
-        return;
-
-    emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
-    requestWorkspaceRelationshipAnalysis(project);
 }
 
 void AnalysisScheduler::scheduleDiagnosticsRefresh(const QString& fileName)

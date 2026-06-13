@@ -118,6 +118,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabsavecontroller.cpp
     tabtitlecontroller.cpp
     workspacemanager.cpp
+    workspacesymbolanalysiscontroller.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
     analysiscoordinator.h
@@ -199,6 +200,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabsavecontroller.h
     tabtitlecontroller.h
     workspacemanager.h
+    workspacesymbolanalysiscontroller.h
 
     # --- UI files ---
     mainwindow.ui

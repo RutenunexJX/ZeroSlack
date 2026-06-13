@@ -8,6 +8,7 @@
 #include "relationshipresultpublisher.h"
 #include "relationshipanalysisworker.h"
 #include "smartrelationshipbuilder.h"
+#include "workspacesymbolanalysiscontroller.h"
 
 #include <QFutureWatcher>
 #include <QObject>
@@ -81,11 +82,11 @@ signals:
 
 private:
     DocumentModel* documentModel = nullptr;
-    ProjectModel* projectModel = nullptr;
     SymbolAnalyzer* symbolAnalyzer = nullptr;
     OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
     RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
     RelationshipResultPublisher* relationshipResultPublisher = nullptr;
+    WorkspaceSymbolAnalysisController* workspaceSymbolAnalysis = nullptr;
 
     std::function<QString(const QString&)> openFileContentProvider;
     std::function<bool()> workspaceOpenProvider;
@@ -96,17 +97,11 @@ private:
     QTimer* diagnosticsRefreshTimer = nullptr;
     QFutureWatcher<SingleFileRelationshipAnalysisResult>* singleFileRelationshipWatcher = nullptr;
     QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceRelationshipWatcher = nullptr;
-    ProjectSnapshot activeWorkspaceProject;
-    bool workspaceSymbolAnalysisActive = false;
-    bool projectSemanticStateCleared = true;
     static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
 
     void onDocumentOpened(const DocumentSnapshot& snapshot);
     void onDocumentEdited(const DocumentSnapshot& snapshot);
     void onDocumentSaved(const DocumentSnapshot& snapshot);
-    void onProjectChanged(const ProjectSnapshot& project);
-    void clearProjectSemanticState();
-    void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void scheduleDiagnosticsRefresh(const QString& fileName);
 
     QString contentForOpenFile(const QString& fileName) const;
