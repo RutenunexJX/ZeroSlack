@@ -117,6 +117,7 @@ set(ZEROSLACK_CORE_SOURCES
     mycodeeditor.cpp
     myhighlighter.cpp
     opendocumentanalysiscontroller.cpp
+    opendocumentanalysiscontrollerlifecycle.cpp
     navigationcommandcoordinator.cpp
     navigationmanager.cpp
     navigationmanagerconnections.cpp
