@@ -150,6 +150,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolrelationshipqueries.cpp
     symbolrelationshipengine.cpp
     slangsymbolcollector.cpp
+    slangsymbolcollectorhelpers.cpp
     syminfocontent.cpp
     syminfoindex.cpp
     syminfoscope.cpp
@@ -245,6 +246,7 @@ set(ZEROSLACK_CORE_SOURCES
     slangmanager.h
     slangrelationshipparse.h
     slangsymbolcollector.h
+    slangsymbolcollectorhelpers.h
     smartrelationshipbuilder.h
     symbolanalyzer.h
     symbolrelationshipengine.h
