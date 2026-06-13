@@ -93,6 +93,10 @@ private:
     void onDocumentSaved(const DocumentSnapshot& snapshot);
 
     QString contentForOpenFile(const QString& fileName) const;
+    void setupOpenDocumentAnalysis();
+    void setupRelationshipAnalysis();
+    void setupWorkspaceSymbolAnalysis();
+    void setupDiagnosticsRefreshAndWorkspaceRequests();
 };
 
 #endif // ANALYSISSCHEDULER_H

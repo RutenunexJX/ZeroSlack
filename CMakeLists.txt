@@ -51,6 +51,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisscheduler.cpp
     analysisschedulerdocuments.cpp
     analysisschedulerrelationships.cpp
+    analysisschedulerwiring.cpp
     mainwindow.cpp
     alternatecommandservice.cpp
     completioncommandmode.cpp
