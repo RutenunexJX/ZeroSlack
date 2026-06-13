@@ -134,6 +134,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexrelationships.cpp
     semanticindexstore.cpp
     semanticindexsnapshot.cpp
+    semanticindexsnapshotqueries.cpp
     semanticindexsnapshotpublication.cpp
     semanticruntimecoordinator.cpp
     slangmanagerdiagnostics.cpp
