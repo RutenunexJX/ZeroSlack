@@ -3,6 +3,7 @@
 #include "completioncontexthelper.h"
 #include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
+#include "semanticindex.h"
 
 QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType) const
 {

@@ -1,6 +1,7 @@
 #include "completionservice.h"
 
 #include "completionsymbolquery.h"
+#include "semanticindex.h"
 
 #include <QVector>
 

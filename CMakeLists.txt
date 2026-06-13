@@ -156,6 +156,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionservice.h
     completionsemanticquery.h
     completionsymbolquery.h
+    completiontypes.h
     definitionnavigationservice.h
     definitionservice.h
     diagnosticservice.h
