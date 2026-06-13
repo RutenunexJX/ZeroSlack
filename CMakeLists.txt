@@ -173,6 +173,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexsnapshotpublication.cpp
     semanticruntimecoordinator.cpp
     semanticruntimewiring.cpp
+    signaljourneyservice.cpp
     slangmanagerdiagnostics.cpp
     slangrelationshiphelpers.cpp
     smartrelationshipbuilderanalysis.cpp
@@ -288,6 +289,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexmodulecontexthelpers.h
     semanticindexsnapshot.h
     semanticruntimecoordinator.h
+    signaljourneyservice.h
     slangmanager.h
     slangrelationshiphelpers.h
     slangrelationshipparse.h

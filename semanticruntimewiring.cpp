@@ -13,6 +13,7 @@
 #include "searchservice.h"
 #include "scopebandservice.h"
 #include "semanticindex.h"
+#include "signaljourneyservice.h"
 #include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
 #include "symbolrelationshipengine.h"
@@ -41,4 +42,5 @@ void SemanticRuntimeCoordinator::configureQueryServices(
     ScopeBandService::getInstance()->setSemanticIndex(semanticIndex);
     NavigationService::getInstance()->setSemanticIndex(semanticIndex);
     ModuleBriefService::getInstance()->setSemanticIndex(semanticIndex);
+    SignalJourneyService::getInstance()->setSemanticIndex(semanticIndex);
 }

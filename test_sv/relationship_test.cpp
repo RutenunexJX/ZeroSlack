@@ -12,6 +12,7 @@
 #include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
+#include "signaljourneyservice.h"
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
 #include "syminfo.h"
@@ -2358,6 +2359,105 @@ static void runModuleBriefServiceFixture()
               1);
 }
 
+static void runSignalJourneyServiceFixture()
+{
+    printf("\n-- signal journey service fixture --\n");
+
+    const QString fileName = QStringLiteral("test_sv/signal_journey_fixture.sv");
+    QList<sym_list::SymbolInfo> symbols;
+    sym_list::SymbolInfo module = makeModuleBriefSymbol(
+        9101,
+        fileName,
+        QStringLiteral("journey_top"),
+        sym_list::sym_module,
+        1);
+    module.endLine = 80;
+    symbols.append(module);
+    symbols.append(makeModuleBriefSymbol(
+        9102,
+        fileName,
+        QStringLiteral("data_q"),
+        sym_list::sym_logic,
+        10,
+        QStringLiteral("journey_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9103,
+        fileName,
+        QStringLiteral("next_data"),
+        sym_list::sym_logic,
+        20,
+        QStringLiteral("journey_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9104,
+        fileName,
+        QStringLiteral("consumer"),
+        sym_list::sym_always_ff,
+        30,
+        QStringLiteral("journey_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9105,
+        fileName,
+        QStringLiteral("u_stage.data_i"),
+        sym_list::sym_inst_pin,
+        40,
+        QStringLiteral("journey_top")));
+
+    QList<SemanticRelationship> relationships;
+    SemanticRelationship assignment;
+    assignment.fromId = 9103;
+    assignment.toId = 9102;
+    assignment.type = SymbolRelationshipEngine::ASSIGNS_TO;
+    relationships.append(assignment);
+
+    SemanticRelationship read;
+    read.fromId = 9104;
+    read.toId = 9102;
+    read.type = SymbolRelationshipEngine::READS_FROM;
+    relationships.append(read);
+
+    SemanticRelationship portConnection;
+    portConnection.fromId = 9105;
+    portConnection.toId = 9102;
+    portConnection.type = SymbolRelationshipEngine::REFERENCES;
+    relationships.append(portConnection);
+
+    SemanticIndex index;
+    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        symbols,
+        relationships,
+        QList<SemanticDiagnostic>()));
+    SignalJourneyService service(&index);
+
+    SignalJourneyQuery query;
+    query.signalName = QStringLiteral("data_q");
+    query.fileName = fileName;
+    query.moduleName = QStringLiteral("journey_top");
+    const SignalJourneyReport report = service.buildSignalJourney(query);
+
+    expectBool("signal journey found declaration", report.found, true);
+    expectBool("signal journey declaration name",
+               report.declaration.symbolName == QStringLiteral("data_q"), true);
+    expectInt("signal journey assignment count", report.assignments.size(), 1);
+    expectInt("signal journey read count", report.reads.size(), 1);
+    expectInt("signal journey port connection count",
+              report.portConnections.size(), 1);
+    expectBool("signal journey assignment peer",
+               !report.assignments.isEmpty()
+                   && report.assignments.first().peerSymbol.symbolName
+                       == QStringLiteral("next_data"),
+               true);
+    expectBool("signal journey read peer",
+               !report.reads.isEmpty()
+                   && report.reads.first().peerSymbol.symbolName
+                       == QStringLiteral("consumer"),
+               true);
+    expectBool("signal journey port peer",
+               !report.portConnections.isEmpty()
+                   && report.portConnections.first().peerSymbol.symbolName
+                       == QStringLiteral("u_stage.data_i"),
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -2372,6 +2472,7 @@ int main(int argc, char** argv)
     runInlineRelationshipRegression(slang, db, builder);
     runMultiFileRelationshipFixture(slang, db, engine, builder);
     runModuleBriefServiceFixture();
+    runSignalJourneyServiceFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;
