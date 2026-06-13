@@ -1,10 +1,9 @@
 #include "completionservice.h"
 
 #include "completioncommandmode.h"
+#include "completioncontexthelper.h"
 #include "completionmatcher.h"
-#include "relationshipservice.h"
 
-#include <QRegularExpression>
 #include <QSet>
 #include <Qt>
 #include <QVector>
@@ -268,7 +267,8 @@ EditorCompletionState CompletionService::editorCompletionState(
     QString variableName;
     QString memberPrefix;
     const QString lineForParse = query.lineUpToCursor.trimmed();
-    if (tryParseStructMemberContext(lineForParse, variableName, memberPrefix)) {
+    if (CompletionContextHelper::tryParseStructMember(
+            lineForParse, variableName, memberPrefix)) {
         const QString structTypeName =
             getStructTypeForVariable(variableName, query.moduleName);
         if (!structTypeName.isEmpty()) {
@@ -343,7 +343,8 @@ CompletionTriggerState CompletionService::completionTriggerState(
         query.lineUpToCursor.left(query.lineUpToCursor.size() - 1).trimmed();
     QString variableName;
     QString memberPrefix;
-    if (!tryParseStructMemberContext(lineBeforeSpace, variableName, memberPrefix)) {
+    if (!CompletionContextHelper::tryParseStructMember(
+            lineBeforeSpace, variableName, memberPrefix)) {
         state.hidePopup = true;
         return state;
     }
@@ -441,10 +442,13 @@ QVector<QPair<QString, int>> CompletionService::findSmartCompletions(
     result.reserve(completions.size());
     for (const QString& completion : completions) {
         const int baseScore = CompletionMatcher::calculateContextMatchScore(completion, prefix);
-        const int contextScore = calculateContextScore(completion, context);
+        const int contextScore =
+            CompletionContextHelper::contextScore(completion, context);
         const int relationshipScore =
-            calculateRelationshipScore(completion, currentModule);
-        const int scopeScore = calculateScopeScore(completion, currentModule);
+            CompletionContextHelper::relationshipScore(
+                semanticIndex(), completion, currentModule);
+        const int scopeScore = CompletionContextHelper::scopeScore(
+            semanticIndex(), completion, currentModule);
 
         const int finalScore = baseScore * 0.4
             + contextScore * 0.2
@@ -680,7 +684,7 @@ QStringList CompletionService::findContextAwareCompletions(
     if (query.context.contains(QLatin1Char('.'))
         || query.context.contains(QStringLiteral("->"))) {
         const QString structVariableName =
-            extractStructVariableFromContext(query.context);
+            CompletionContextHelper::extractStructVariable(query.context);
         if (!structVariableName.isEmpty()) {
             const QString structTypeName =
                 getStructTypeForVariable(structVariableName, query.currentModule);
@@ -697,7 +701,7 @@ QStringList CompletionService::findContextAwareCompletions(
         || query.context.contains(QStringLiteral("case"))
         || query.context.contains(QStringLiteral("if"))) {
         const QString enumVariableName =
-            extractEnumVariableFromContext(query.context);
+            CompletionContextHelper::extractEnumVariable(query.context);
         if (!enumVariableName.isEmpty()) {
             const QString enumTypeName =
                 findEnumTypeForVariable(enumVariableName, query.currentModule);
@@ -713,7 +717,8 @@ QStringList CompletionService::findContextAwareCompletions(
         && query.context.contains(QLatin1Char('('))
         && (query.context.contains(QStringLiteral("module"))
             || query.context.contains(QStringLiteral("instantiation")))) {
-        const QString moduleTypeName = extractModuleTypeFromContext(query.context);
+        const QString moduleTypeName =
+            CompletionContextHelper::extractModuleType(query.context);
         if (!moduleTypeName.isEmpty())
             result.append(findModulePortCompletions(query.prefix, moduleTypeName));
     }
@@ -792,10 +797,12 @@ QStringList CompletionService::findContextAwareCompletions(
         int score = CompletionMatcher::calculateContextMatchScore(completion, query.prefix);
         if (!query.context.isEmpty()
             && query.context != QLatin1String("general")) {
-            score += calculateContextScore(completion, query.context);
+            score += CompletionContextHelper::contextScore(
+                completion, query.context);
         }
         if (!query.currentModule.isEmpty())
-            score += calculateScopeScore(completion, query.currentModule);
+            score += CompletionContextHelper::scopeScore(
+                semanticIndex(), completion, query.currentModule);
         scoredResults.append(qMakePair(completion, score));
     }
 
@@ -897,15 +904,10 @@ bool CompletionService::tryParseStructMemberContext(const QString& line,
                                                     QString& outVariableName,
                                                     QString& outMemberPrefix) const
 {
-    static const QRegularExpression memberPattern(
-        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)\\.([a-zA-Z0-9_]*)\\s*$"));
-    const QRegularExpressionMatch match = memberPattern.match(line);
-    if (!match.hasMatch())
-        return false;
-
-    outVariableName = match.captured(1);
-    outMemberPrefix = match.captured(2);
-    return true;
+    return CompletionContextHelper::tryParseStructMember(
+        line,
+        outVariableName,
+        outMemberPrefix);
 }
 
 SemanticIndex* CompletionService::semanticIndex() const
@@ -990,122 +992,6 @@ bool CompletionService::completionNameMatches(const QString& name,
         ++namePos;
     }
     return prefixPos == lowerPrefix.length();
-}
-
-QString CompletionService::extractStructVariableFromContext(const QString& context) const
-{
-    static const QRegularExpression dotPattern(
-        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*\\[[^\\]]*\\])*\\s*\\.$"));
-    QRegularExpressionMatch match = dotPattern.match(context);
-    if (match.hasMatch())
-        return match.captured(1);
-
-    static const QRegularExpression arrowPattern(
-        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)\\s*->$"));
-    match = arrowPattern.match(context);
-    if (match.hasMatch())
-        return match.captured(1);
-
-    return QString();
-}
-
-QString CompletionService::extractEnumVariableFromContext(const QString& context) const
-{
-    static const QRegularExpression assignPattern(
-        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)\\s*="));
-    QRegularExpressionMatch match = assignPattern.match(context);
-    if (match.hasMatch())
-        return match.captured(1);
-
-    static const QRegularExpression casePattern(
-        QStringLiteral("case\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)"));
-    match = casePattern.match(context);
-    if (match.hasMatch())
-        return match.captured(1);
-
-    static const QRegularExpression ifPattern(
-        QStringLiteral("if\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*=="));
-    match = ifPattern.match(context);
-    if (match.hasMatch())
-        return match.captured(1);
-
-    return QString();
-}
-
-QString CompletionService::extractModuleTypeFromContext(const QString& context) const
-{
-    static const QRegularExpression instPattern(
-        QStringLiteral("([a-zA-Z_][a-zA-Z0-9_]*)\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\("));
-    const QRegularExpressionMatch match = instPattern.match(context);
-    if (match.hasMatch())
-        return match.captured(1);
-    return QString();
-}
-
-int CompletionService::calculateContextScore(
-    const QString& symbol,
-    const QString& context) const
-{
-    if (context == QLatin1String("clock")
-        && symbol.contains(QStringLiteral("clk"), Qt::CaseInsensitive)) {
-        return 50;
-    }
-
-    static const QRegularExpression resetPattern(
-        QStringLiteral("rst|reset"),
-        QRegularExpression::CaseInsensitiveOption);
-    if (context == QLatin1String("reset") && symbol.contains(resetPattern))
-        return 50;
-
-    return 0;
-}
-
-int CompletionService::calculateRelationshipScore(
-    const QString& symbol,
-    const QString& currentContext) const
-{
-    if (currentContext.isEmpty())
-        return 0;
-
-    RelationshipService relationships(semanticIndex());
-
-    if (relationships.hasNamedRelationship(
-            currentContext,
-            symbol,
-            SymbolRelationshipEngine::CONTAINS)) {
-        return 40;
-    }
-
-    if (relationships.hasNamedRelationship(
-            symbol,
-            currentContext,
-            SymbolRelationshipEngine::REFERENCES)
-        || relationships.hasNamedRelationship(
-            currentContext,
-            symbol,
-            SymbolRelationshipEngine::REFERENCES)) {
-        return 30;
-    }
-
-    if (relationships.hasNamedRelationship(
-            symbol,
-            currentContext,
-            SymbolRelationshipEngine::CALLS)
-        || relationships.hasNamedRelationship(
-            currentContext,
-            symbol,
-            SymbolRelationshipEngine::CALLS)) {
-        return 25;
-    }
-
-    return 0;
-}
-
-int CompletionService::calculateScopeScore(
-    const QString& symbol,
-    const QString& currentModule) const
-{
-    return semanticIndex()->scopeScoreForSymbol(symbol, currentModule);
 }
 
 bool CompletionService::isModuleRangeSymbolType(sym_list::sym_type_e type) const

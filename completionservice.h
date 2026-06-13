@@ -307,13 +307,6 @@ private:
     QStringList completionNamesFromSymbols(
         const QList<sym_list::SymbolInfo>& symbols) const;
     bool completionNameMatches(const QString& name, const QString& prefix) const;
-    QString extractStructVariableFromContext(const QString& context) const;
-    QString extractEnumVariableFromContext(const QString& context) const;
-    QString extractModuleTypeFromContext(const QString& context) const;
-    int calculateContextScore(const QString& symbol, const QString& context) const;
-    int calculateRelationshipScore(const QString& symbol,
-                                   const QString& currentContext) const;
-    int calculateScopeScore(const QString& symbol, const QString& currentModule) const;
     bool isModuleRangeSymbolType(sym_list::sym_type_e type) const;
     bool isGlobalSymbolType(sym_list::sym_type_e type) const;
 };
