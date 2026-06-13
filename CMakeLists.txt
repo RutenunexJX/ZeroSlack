@@ -166,6 +166,7 @@ set(ZEROSLACK_CORE_SOURCES
     slangsymbolcollector.cpp
     slangsymbolcollectorhelpers.cpp
     syminfocontent.cpp
+    syminfomodulelookup.cpp
     syminfoindex.cpp
     syminfoscope.cpp
     syminfo.cpp
