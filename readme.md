@@ -36,11 +36,11 @@ Each handoff should report the remaining Phase 2 percentage.
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, and optional project config.
 - `DocumentModel` owns open document snapshots, cached open-document text, text/saved versions, dirty/saved state, cursor/file-name refresh events, live module names, and registry-backed text queries.
-- `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and scheduler-level analysis events.
+- `AnalysisScheduler` owns analysis timing, debounce/cancel policy, relationship background work, diagnostics refresh requests, and scheduler-level analysis events. Its construction wiring is split from document and relationship lifecycle operations.
 - `SemanticRuntimeCoordinator` owns semantic runtime object lifetimes and dependency injection into semantic runtime services.
 - `AnalysisCoordinator` owns scheduler/progress/workspace signal routing and active-editor refresh policy.
 - `SemanticIndex` owns semantic facts, snapshot publication, relationship lifecycle data, diagnostics, and shared semantic read helpers.
-- `SymbolAnalyzer` owns Slang extraction orchestration behind scheduler/runtime boundaries; workspace assembly and SemanticIndex publication/write-back stay in focused files.
+- `SymbolAnalyzer` owns Slang extraction orchestration behind scheduler/runtime boundaries. Slang execution, async lifecycle, workspace assembly, and SemanticIndex publication/write-back live in focused files.
 - Query services own feature-specific reads for completion, definition, relationship, hierarchy, references, diagnostics, search, source navigation, and panel query shaping.
 - Coordinators own UI/editor command routing, dock/panel refresh, progress policy, navigation commands, file commands, mode commands, and semantic runtime setup.
 - Relationship graph helpers can use injected semantic data sources in tests and runtime wiring instead of hard-coded global reads.

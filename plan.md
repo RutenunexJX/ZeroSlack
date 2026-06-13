@@ -4,9 +4,9 @@ Use `readme.md` for handoff state and `goal.md` for stable product/architecture 
 
 ## Next Architecture Blocks
 
-Prefer each turn to advance multiple medium-sized, clearly themed architecture blocks when they are independent enough to verify together:
+Start each turn from a current-state audit. Prefer multiple medium-sized, clearly themed architecture blocks only when their files and lifetimes are independent enough to verify together:
 
-1. Stabilize lifecycle boundaries around `AnalysisScheduler`, `AnalysisCoordinator`, `SemanticRuntimeCoordinator`, open-document analysis, relationship analysis, diagnostics refresh, cancellation, and result publication.
+1. If lifecycle work continues, change only a clearly proven gap in scheduler, analyzer, relationship, diagnostics, or snapshot publication ownership.
 2. Keep shrinking `MyCodeEditor` through real physical extraction. Prefer whole editor subsystems over thin adapters: completion workflow, source navigation, hover, semantic context, runtime wiring, mode state, and remaining event clusters.
 3. Continue the `DocumentModel` / editor boundary migration only in separate ownership themes: file identity, text/version, saved state, cursor/live module, registry queries, and Tree-sitter document ownership.
 4. Continue moving panel and editor read policy into Query Services. Coordinators should map UI state into service options, then render service reports.
