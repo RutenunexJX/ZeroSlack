@@ -119,6 +119,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticdockcoordinator.cpp
     semanticindex.cpp
     semanticindexcompletion.cpp
+    semanticindexcompletionrelationships.cpp
     semanticindexlookup.cpp
     semanticindexrelationships.cpp
     semanticindexstore.cpp
