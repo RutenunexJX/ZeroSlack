@@ -25,12 +25,14 @@ Thin UI consumers
 
 ## Current Development Workflow
 
-Use goal-mode progress with unified verification and one commit per completed turn.
-Prefer multiple medium-sized architecture blocks only when their files, lifetimes, and API boundaries do not overlap.
+Use goal-mode progress for Phase 3 RTL understanding work.
+Each turn should report the remaining Phase 3 percentage.
+Prefer service/report increments that read `SemanticIndexSnapshot` data before adding UI rendering.
+Batch independent blocks only when their files, lifetimes, and API boundaries do not overlap.
 After each block, run light sanity: affected build or compile, focused tests, `git diff --check`, or static boundary scans.
 Before committing, run full Ninja, full `ctest --output-on-failure`, hygiene scans, and the forbidden-file guard.
-When full verification passes, create one local commit containing the verified turn. Reduce batch size when blocks share core files or unsettled API boundaries.
-Each handoff should report the remaining Phase 2 percentage.
+When full verification passes, create one large local commit for the completed turn.
+Reduce batch size when blocks share core files or unsettled API boundaries.
 
 ## Current Architecture Snapshot
 
@@ -46,3 +48,9 @@ Each handoff should report the remaining Phase 2 percentage.
 - Relationship graph helpers can use injected semantic data sources in tests and runtime wiring instead of hard-coded global reads.
 - `TabManager` owns tab lifecycle, file reads/writes, tab titles, and `DocumentModel` registration/save updates.
 - `MyCodeEditor` owns editor event flow and public editor adapters. Gutter, selection/highlight, geometry, cursor navigation, file identity, syntax state, runtime, completion, hover, and source navigation live in focused editor subsystem files.
+
+## Phase 3 Focus
+
+Completed baseline services: Module Brief, Signal Journey, and relationship report explanations.
+Continue with Clock/Reset Domain Map, FSM State Transition Graph, Semantic Diff, and UI rendering for service reports.
+Keep the path `snapshot -> Query Service/service report -> UI render`.

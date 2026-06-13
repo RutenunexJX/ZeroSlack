@@ -28,7 +28,7 @@ SemanticIndex
   Owns semantic facts: symbols, definitions, relationships, references, diagnostics, cached content.
 
 Query Services
-  Own feature-specific reads and panel query shaping: definition, completion, relationship, hierarchy, reference, diagnostics, search.
+  Own feature-specific reads and panel query shaping: definition, completion, relationship, hierarchy, reference, diagnostics, search, module brief, signal journey, clock/reset domain, FSM, and semantic diff.
 
 Coordinators
   Own UI/editor command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and other workflow glue.
@@ -50,11 +50,12 @@ Tree-sitter and Slang split:
 - UI panels should render service/model output, not derive semantic policy from widgets.
 - MainWindow should compose and coordinate windows, not own analysis event routing, panel rendering, or editor workflow policy.
 - MyCodeEditor should provide editor event flow and stable editor adapters. Focused editor subsystem files should own gutter, selection/highlight, geometry, cursor navigation, file identity, syntax state, runtime, completion, hover, source navigation, and other coherent editor workflows while document state and project semantic decisions stay in models, services, scheduler, runtime, and coordinators.
+- Phase 3 RTL understanding features should move through `snapshot -> Query Service/service report -> UI render`.
 - New test code should prefer stable production-facing APIs; existing private-access test debt should shrink only when replacement APIs are real production boundaries.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
 - Use Qt 6 + CMake + Ninja only.
 - Verification may be batched across independent architecture blocks, with one large coherent local commit for the completed turn.
-- Each turn should report the remaining Phase 2 percentage.
+- Each turn should report the remaining Phase 3 percentage.
 
 ## Definition Of Done
 
@@ -64,9 +65,10 @@ The foundation is healthy when:
 - MainWindow is mostly UI composition and high-level callback wiring
 - MyCodeEditor is mostly event flow and public adapters, with editor UI and editor workflow subsystems split into focused files
 - private-access test debt is isolated and shrinking as stable production APIs appear
-- UI/services can read stable snapshot-backed semantic data
+- UI/services can read stable snapshot-backed semantic data through feature reports
 - all CTest targets pass
-- real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, diagnostics, and relationship browsing
+- real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, FSMs, diagnostics, relationship browsing, signal journeys, module briefs, and semantic diff
+- Phase 3 service reports have clear UI rendering paths without pushing semantic policy into widgets
 - verification may be batched across independent blocks, but product quality and fixture coverage do not shrink
 - each completed turn passes full Ninja, full `ctest --output-on-failure`, hygiene scans, and forbidden-file guard before the local commit is created
 - local commits stay coherent and architecture-oriented
