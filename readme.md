@@ -16,25 +16,24 @@ Thin UI consumers
 - Use Qt 6 + CMake + Ninja only.
 - Do not restore qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
 - Never discard user changes or use destructive git commands unless explicitly requested.
+- Do not touch user dirty RTL fixture files.
 - Do not push unless explicitly asked.
 - Keep local commits coherent, concise, and architecture-oriented.
 - Keep source, tests, UI strings, CMake, and these docs English / ASCII.
 
-## Development Rules
+## Latest Strategy
 
-- New semantic features should flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
-- UI code should render service or model output; it should not run Slang directly or scan workspace files directly.
-- Scheduler and analyzer code own timing, lifecycle, extraction, and publication; they should not own feature policy.
-- Prefer real workspace fixtures, especially `test_sv/new`, when expanding semantic behavior.
-- When shared semantic, scheduler, editor, or project boundaries change, run full Ninja and full `ctest --output-on-failure`.
-- Use focused tests for narrow feature changes, then full verification before committing.
+- Current priority is semantic product-logic consolidation before more RTL feature expansion.
+- `SemanticIndexSnapshot` is the intended single UI query truth.
+- Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
+- Validate semantic behavior against `test_sv/new`.
 
 ## Current Architecture
 
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, top, and ignored paths.
 - `DocumentModel` owns open document identity, text snapshots, versions, dirty/saved state, cursor, live module names, and registry-backed text queries.
-- `AnalysisScheduler` owns analysis timing, debounce/cancel policy, refresh requests, relationship work, and lifecycle routing.
-- `SemanticIndex` owns semantic facts, snapshots, relationships, references, diagnostics, and cached content.
+- `AnalysisScheduler` owns analysis timing, debounce/cancel policy, refresh requests, relationship work, and lifecycle routing; it does not own feature policy.
+- `SemanticIndexSnapshot` should be the single query truth for UI-facing semantic reads.
 - Query services and feature services own feature-specific semantic reads and report shaping.
-- Coordinators own UI command routing, panel refresh, progress policy, navigation commands, and runtime wiring.
+- UI code renders service/model output and must not run Slang or scan workspace files directly.
 - `MyCodeEditor` owns editor event flow and stable public adapters; focused editor subsystem files own gutter, selection/highlight, geometry, cursor navigation, file identity, syntax state, runtime, completion, hover, and source navigation.
