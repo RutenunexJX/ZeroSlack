@@ -16,6 +16,11 @@ void SymbolAnalyzer::invalidateCache()
     ++workspaceAnalysisGeneration;
 }
 
+void SymbolAnalyzer::setWorkspaceProtectedFiles(const QStringList& fileNames)
+{
+    workspaceProtectedFiles = fileNames;
+}
+
 QString SymbolAnalyzer::contentHash(const QString& content) const
 {
     return QString::number(qHash(content));

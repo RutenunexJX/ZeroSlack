@@ -1391,6 +1391,84 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     else
         SemanticIndex::getInstance()->clearSnapshot();
 
+    QTemporaryDir dirtyWorkspaceMergeDir;
+    expectBool("dirty workspace merge temp dir created",
+               dirtyWorkspaceMergeDir.isValid(),
+               true);
+    const QString dirtyWorkspaceFilePath =
+        dirtyWorkspaceMergeDir.filePath(QStringLiteral("dirty_workspace_file.sv"));
+    QFile dirtyWorkspaceFile(dirtyWorkspaceFilePath);
+    expectBool("dirty workspace file writable",
+               dirtyWorkspaceFile.open(QIODevice::WriteOnly | QIODevice::Text),
+               true);
+    if (dirtyWorkspaceFile.isOpen()) {
+        dirtyWorkspaceFile.write(
+            "module dirty_disk; logic disk_signal; endmodule\n");
+        dirtyWorkspaceFile.close();
+    }
+
+    AnalysisScheduler dirtyWorkspaceScheduler;
+    SymbolAnalyzer dirtyWorkspaceAnalyzer;
+    DocumentModel dirtyWorkspaceDocuments;
+    ProjectModel dirtyWorkspaceProject;
+    MyCodeEditor dirtyWorkspaceEditor;
+    dirtyWorkspaceEditor.setPlainText(
+        QStringLiteral("module dirty_disk; logic disk_signal; endmodule\n"));
+    dirtyWorkspaceScheduler.setSymbolAnalyzer(&dirtyWorkspaceAnalyzer);
+    dirtyWorkspaceScheduler.setDocumentModel(&dirtyWorkspaceDocuments);
+    dirtyWorkspaceScheduler.setProjectModel(&dirtyWorkspaceProject);
+    dirtyWorkspaceDocuments.registerEditor(&dirtyWorkspaceEditor,
+                                           dirtyWorkspaceFilePath);
+    dirtyWorkspaceEditor.setPlainText(
+        QStringLiteral("module dirty_open; logic dirty_signal; endmodule\n"));
+    QApplication::processEvents();
+    expectBool("dirty workspace document is dirty",
+               dirtyWorkspaceDocuments.documentForFile(dirtyWorkspaceFilePath).dirty,
+               true);
+    dirtyWorkspaceAnalyzer.analyzeFileContent(
+        dirtyWorkspaceFilePath,
+        dirtyWorkspaceEditor.toPlainText());
+
+    int dirtyWorkspaceFilesAnalyzed = -1;
+    bool dirtyWorkspaceFinished = false;
+    QEventLoop dirtyWorkspaceLoop;
+    QObject::connect(&dirtyWorkspaceScheduler,
+                     &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+                     &dirtyWorkspaceLoop,
+                     [&](const ProjectSnapshot&, int filesAnalyzed, int) {
+                         dirtyWorkspaceFilesAnalyzed = filesAnalyzed;
+                         dirtyWorkspaceFinished = true;
+                         dirtyWorkspaceLoop.quit();
+                     });
+    dirtyWorkspaceProject.setWorkspaceRoot(dirtyWorkspaceMergeDir.path());
+    dirtyWorkspaceProject.setScannedFiles({dirtyWorkspaceFilePath});
+    QTimer::singleShot(5000, &dirtyWorkspaceLoop, &QEventLoop::quit);
+    dirtyWorkspaceLoop.exec();
+    QApplication::processEvents();
+    bool dirtySnapshotHasOpen = false;
+    bool dirtySnapshotHasDisk = false;
+    if (const auto snapshot = SemanticIndex::getInstance()->snapshot()) {
+        for (const sym_list::SymbolInfo& symbol :
+             snapshot->getSymbols(dirtyWorkspaceFilePath)) {
+            dirtySnapshotHasOpen = dirtySnapshotHasOpen
+                || symbol.symbolName == QStringLiteral("dirty_open")
+                || symbol.symbolName == QStringLiteral("dirty_signal");
+            dirtySnapshotHasDisk = dirtySnapshotHasDisk
+                || symbol.symbolName == QStringLiteral("dirty_disk")
+                || symbol.symbolName == QStringLiteral("disk_signal");
+        }
+    }
+    expectBool("workspace skips dirty open document publication",
+               dirtyWorkspaceFinished && dirtyWorkspaceFilesAnalyzed == 0,
+               true);
+    expectBool("workspace preserves dirty open document symbols",
+               dirtySnapshotHasOpen && !dirtySnapshotHasDisk,
+               true);
+    if (workspaceMergePreviousSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(workspaceMergePreviousSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
+
     AnalysisScheduler projectCloseScheduler;
     ProjectModel projectCloseModel;
     SymbolRelationshipEngine projectCloseEngine;

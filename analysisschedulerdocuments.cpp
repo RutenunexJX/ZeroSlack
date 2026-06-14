@@ -10,6 +10,8 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
     documentModel = model;
     if (openDocumentAnalysis)
         openDocumentAnalysis->setDocumentModel(model);
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->setDocumentModel(model);
     if (!documentModel)
         return;
 

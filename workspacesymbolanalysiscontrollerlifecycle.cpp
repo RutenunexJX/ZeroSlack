@@ -12,6 +12,7 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     if (project.systemVerilogFiles.isEmpty())
         return;
 
+    symbolAnalyzer->setWorkspaceProtectedFiles(dirtyOpenDocumentFiles());
     activeProject = project;
     workspaceAnalysisActive = true;
     emit diagnosticsRefreshRequested(QString());

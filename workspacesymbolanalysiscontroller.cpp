@@ -1,10 +1,16 @@
 #include "workspacesymbolanalysiscontroller.h"
 
+#include "documentmodel.h"
 #include "symbolanalyzer.h"
 
 WorkspaceSymbolAnalysisController::WorkspaceSymbolAnalysisController(QObject* parent)
     : QObject(parent)
 {
+}
+
+void WorkspaceSymbolAnalysisController::setDocumentModel(DocumentModel* model)
+{
+    documentModel = model;
 }
 
 void WorkspaceSymbolAnalysisController::setProjectModel(ProjectModel* model)
@@ -72,4 +78,19 @@ void WorkspaceSymbolAnalysisController::setCancelProvider(
     std::function<bool()> provider)
 {
     cancelProvider = std::move(provider);
+}
+
+QStringList WorkspaceSymbolAnalysisController::dirtyOpenDocumentFiles() const
+{
+    QStringList files;
+    if (!documentModel)
+        return files;
+
+    for (const DocumentSnapshot& snapshot : documentModel->openDocuments()) {
+        if (snapshot.fileName.isEmpty() || !snapshot.dirty)
+            continue;
+        files.append(snapshot.fileName);
+    }
+    files.removeDuplicates();
+    return files;
 }

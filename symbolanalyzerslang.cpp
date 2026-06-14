@@ -80,6 +80,7 @@ void SymbolAnalyzer::analyzeProject(
             svFiles,
             allSymbols,
             isCancelled);
+    result.protectedFiles = workspaceProtectedFiles;
     result.generation = ++workspaceAnalysisGeneration;
     SlangManager diagnosticsAnalyzer;
     result.diagnostics =

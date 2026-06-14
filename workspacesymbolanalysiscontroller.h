@@ -6,6 +6,7 @@
 #include <QObject>
 #include <functional>
 
+class DocumentModel;
 class SymbolAnalyzer;
 
 class WorkspaceSymbolAnalysisController : public QObject
@@ -16,6 +17,7 @@ public:
     explicit WorkspaceSymbolAnalysisController(QObject* parent = nullptr);
 
     void setProjectModel(ProjectModel* model);
+    void setDocumentModel(DocumentModel* model);
     void setSymbolAnalyzer(SymbolAnalyzer* analyzer);
     void setCancelProvider(std::function<bool()> provider);
 
@@ -39,6 +41,7 @@ signals:
 
 private:
     ProjectModel* projectModel = nullptr;
+    DocumentModel* documentModel = nullptr;
     SymbolAnalyzer* symbolAnalyzer = nullptr;
     std::function<bool()> cancelProvider;
     ProjectSnapshot activeProject;
@@ -47,6 +50,7 @@ private:
 
     void onProjectChanged(const ProjectSnapshot& project);
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
+    QStringList dirtyOpenDocumentFiles() const;
 };
 
 #endif // WORKSPACESYMBOLANALYSISCONTROLLER_H
