@@ -520,6 +520,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
         bool sawIncoming = false;
         bool sawOutgoing = false;
         bool sawExternal = false;
+        bool sawExplanation = false;
         const QList<QTreeWidgetItem*> items = navigableItems(relationshipsTree(window));
         for (QTreeWidgetItem* item : items) {
             sawIncoming = sawIncoming
@@ -531,10 +532,13 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
             sawExternal = sawExternal
                 || (item->text(0) == QStringLiteral("Incoming")
                     && item->text(1) == QStringLiteral("external_ref"));
+            sawExplanation = sawExplanation
+                || item->text(5) == QStringLiteral("source_ref references target_ref");
         }
         expectBool("incoming relationship row rendered", sawIncoming, true);
         expectBool("outgoing relationship row rendered", sawOutgoing, true);
         expectBool("external relationship row rendered", sawExternal, true);
+        expectBool("relationship explanation column rendered", sawExplanation, true);
     }
 
     expectBool("relationship direction filter exists",

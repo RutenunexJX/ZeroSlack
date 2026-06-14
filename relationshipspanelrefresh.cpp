@@ -19,10 +19,12 @@ QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
     item->setText(2, QFileInfo(symbol.fileName).fileName());
     item->setText(3, QString::number(symbol.startLine));
     item->setText(4, SemanticPanelUtils::relationshipTypeText(type));
+    item->setText(5, explanation);
     item->setToolTip(0, explanation);
     item->setToolTip(1, explanation);
     item->setToolTip(2, symbol.fileName);
     item->setToolTip(4, explanation);
+    item->setToolTip(5, explanation);
     item->setData(0, Qt::UserRole, symbol.fileName);
     item->setData(0, Qt::UserRole + 1, symbol.startLine);
     item->setData(0, Qt::UserRole + 2, symbol.startColumn);

@@ -81,8 +81,13 @@ RelationshipsPanelCoordinator::RelationshipsPanelCoordinator(QWidget* parent)
 
     relationshipsTree = new QTreeWidget(panel);
     relationshipsTree->setObjectName(QStringLiteral("relationshipsTree"));
-    relationshipsTree->setColumnCount(5);
-    relationshipsTree->setHeaderLabels({"Direction", "Symbol", "File", "Line", "Relationship"});
+    relationshipsTree->setColumnCount(6);
+    relationshipsTree->setHeaderLabels({"Direction",
+                                        "Symbol",
+                                        "File",
+                                        "Line",
+                                        "Relationship",
+                                        "Explanation"});
     relationshipsTree->setRootIsDecorated(true);
     relationshipsTree->setAlternatingRowColors(true);
     relationshipsTree->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -91,6 +96,7 @@ RelationshipsPanelCoordinator::RelationshipsPanelCoordinator(QWidget* parent)
     relationshipsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     relationshipsTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     relationshipsTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    relationshipsTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     layout->addWidget(relationshipsTree);
 
     relationshipsDock = new QDockWidget("Relationships", parent);
