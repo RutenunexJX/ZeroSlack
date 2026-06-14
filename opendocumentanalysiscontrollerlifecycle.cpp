@@ -63,6 +63,9 @@ void OpenDocumentAnalysisController::handleExternalFileChanged(
         fileChangeDebounceTimers.remove(fileName);
         timer->deleteLater();
 
+        if (isDirtyOpenDocument(fileName))
+            return;
+
         symbolAnalyzer->analyzeFile(fileName);
 
         QFile file(fileName);

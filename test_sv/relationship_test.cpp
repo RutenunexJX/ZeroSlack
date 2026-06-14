@@ -1469,6 +1469,74 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     else
         SemanticIndex::getInstance()->clearSnapshot();
 
+    QTemporaryDir dirtyExternalDir;
+    expectBool("dirty external temp dir created",
+               dirtyExternalDir.isValid(),
+               true);
+    const QString dirtyExternalPath =
+        dirtyExternalDir.filePath(QStringLiteral("dirty_external_file.sv"));
+    QFile dirtyExternalFile(dirtyExternalPath);
+    expectBool("dirty external file writable",
+               dirtyExternalFile.open(QIODevice::WriteOnly | QIODevice::Text),
+               true);
+    if (dirtyExternalFile.isOpen()) {
+        dirtyExternalFile.write(
+            "module external_disk; logic external_disk_signal; endmodule\n");
+        dirtyExternalFile.close();
+    }
+
+    AnalysisScheduler dirtyExternalScheduler;
+    SymbolAnalyzer dirtyExternalAnalyzer;
+    DocumentModel dirtyExternalDocuments;
+    MyCodeEditor dirtyExternalEditor;
+    dirtyExternalEditor.setPlainText(
+        QStringLiteral("module external_disk; logic external_disk_signal; endmodule\n"));
+    dirtyExternalScheduler.setSymbolAnalyzer(&dirtyExternalAnalyzer);
+    dirtyExternalScheduler.setDocumentModel(&dirtyExternalDocuments);
+    dirtyExternalDocuments.registerEditor(&dirtyExternalEditor,
+                                          dirtyExternalPath);
+    dirtyExternalEditor.setPlainText(
+        QStringLiteral("module external_open; logic external_dirty_signal; endmodule\n"));
+    QApplication::processEvents();
+    dirtyExternalAnalyzer.analyzeFileContent(
+        dirtyExternalPath,
+        dirtyExternalEditor.toPlainText());
+    int dirtyExternalAnalysisCount = 0;
+    QObject::connect(&dirtyExternalAnalyzer,
+                     &SymbolAnalyzer::analysisCompleted,
+                     [&](const QString& fileName, int) {
+                         if (fileName == dirtyExternalPath)
+                             ++dirtyExternalAnalysisCount;
+                     });
+    dirtyExternalScheduler.handleExternalFileChanged(dirtyExternalPath, 10);
+    QEventLoop dirtyExternalLoop;
+    QTimer::singleShot(250, &dirtyExternalLoop, &QEventLoop::quit);
+    dirtyExternalLoop.exec();
+    QApplication::processEvents();
+    bool dirtyExternalSnapshotHasOpen = false;
+    bool dirtyExternalSnapshotHasDisk = false;
+    if (const auto snapshot = SemanticIndex::getInstance()->snapshot()) {
+        for (const sym_list::SymbolInfo& symbol :
+             snapshot->getSymbols(dirtyExternalPath)) {
+            dirtyExternalSnapshotHasOpen = dirtyExternalSnapshotHasOpen
+                || symbol.symbolName == QStringLiteral("external_open")
+                || symbol.symbolName == QStringLiteral("external_dirty_signal");
+            dirtyExternalSnapshotHasDisk = dirtyExternalSnapshotHasDisk
+                || symbol.symbolName == QStringLiteral("external_disk")
+                || symbol.symbolName == QStringLiteral("external_disk_signal");
+        }
+    }
+    expectBool("external change skips dirty open document analysis",
+               dirtyExternalAnalysisCount == 0,
+               true);
+    expectBool("external change preserves dirty open document symbols",
+               dirtyExternalSnapshotHasOpen && !dirtyExternalSnapshotHasDisk,
+               true);
+    if (workspaceMergePreviousSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(workspaceMergePreviousSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
+
     AnalysisScheduler projectCloseScheduler;
     ProjectModel projectCloseModel;
     SymbolRelationshipEngine projectCloseEngine;

@@ -136,6 +136,13 @@ bool OpenDocumentAnalysisController::isWorkspaceOpen() const
     return workspaceOpenProvider ? workspaceOpenProvider() : false;
 }
 
+bool OpenDocumentAnalysisController::isDirtyOpenDocument(const QString& fileName) const
+{
+    if (!documentModel || fileName.isEmpty())
+        return false;
+    return documentModel->documentForFile(fileName).dirty;
+}
+
 bool OpenDocumentAnalysisController::lineContainsStructuralKeyword(
     const QString& content,
     int oneBasedLine) const
