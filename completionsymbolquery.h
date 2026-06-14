@@ -51,7 +51,6 @@ public:
     static QStringList taskFunctionCompletions(
         SemanticIndex* semanticIndex,
         const QString& prefix);
-    static bool isModuleRangeSymbolType(sym_list::sym_type_e type);
     static bool isGlobalSymbolType(sym_list::sym_type_e type);
 };
 

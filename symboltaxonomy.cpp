@@ -159,6 +159,11 @@ bool isModuleDeclaration(sym_list::sym_type_e type)
     return declarationKind(type) == DeclarationKind::Module;
 }
 
+bool isPackageDeclaration(sym_list::sym_type_e type)
+{
+    return declarationKind(type) == DeclarationKind::Package;
+}
+
 bool isSubroutineDeclaration(sym_list::sym_type_e type)
 {
     const DeclarationKind kind = declarationKind(type);
@@ -171,6 +176,21 @@ bool isModuleRangeType(sym_list::sym_type_e type)
     const DeclarationKind kind = declarationKind(type);
     return kind == DeclarationKind::Struct
         || kind == DeclarationKind::StructVariable;
+}
+
+bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType)
+{
+    return isModuleRangeType(requestedType);
+}
+
+bool isPackageScopeVisibleCompletion(
+    const sym_list::SymbolInfo& symbol,
+    sym_list::sym_type_e requestedType,
+    const QSet<QString>& packageScopes)
+{
+    return isPackageVisibleCommandRequest(requestedType)
+        && !symbol.moduleScope.isEmpty()
+        && packageScopes.contains(symbol.moduleScope);
 }
 
 bool isOutlineSymbol(sym_list::sym_type_e type)

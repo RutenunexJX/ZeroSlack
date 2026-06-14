@@ -118,14 +118,6 @@ QStringList CompletionSymbolQuery::taskFunctionCompletions(
     return result;
 }
 
-bool CompletionSymbolQuery::isModuleRangeSymbolType(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_packed_struct_var
-        || type == sym_list::sym_unpacked_struct_var;
-}
-
 bool CompletionSymbolQuery::isGlobalSymbolType(sym_list::sym_type_e type)
 {
     return SymbolTaxonomy::isCommandGlobalCompletionType(type);

@@ -3,6 +3,7 @@
 #include "completioncommandmode.h"
 #include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
+#include "symboltaxonomy.h"
 
 QList<CommandModeCommand> CompletionService::commandModeCommands() const
 {
@@ -49,7 +50,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
 
     state.symbols = findCommandCompletionSymbols(completionQuery);
     if (state.symbols.isEmpty()
-        && CompletionSymbolQuery::isModuleRangeSymbolType(state.command.symbolType)
+        && SymbolTaxonomy::isDirectModuleContextCompletionRequest(state.command.symbolType)
         && completionQuery.moduleName.isEmpty()) {
         state.hidePopup = true;
         return state;

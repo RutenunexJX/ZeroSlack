@@ -12,21 +12,12 @@ QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
 {
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolType == sym_list::sym_package
+        if (SymbolTaxonomy::isPackageDeclaration(symbol.symbolType)
             && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);
         }
     }
     return names;
-}
-
-bool packageScopeMatches(const sym_list::SymbolInfo& symbol,
-                         sym_list::sym_type_e requestedType,
-                         const QSet<QString>& packages)
-{
-    return SymbolTaxonomy::isPackageVisibleCommandRequest(requestedType)
-        && !symbol.moduleScope.isEmpty()
-        && packages.contains(symbol.moduleScope);
 }
 
 } // namespace
@@ -49,7 +40,10 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
         const bool scopeMatches = useGlobalScope
             ? symbol.moduleScope.isEmpty()
             : symbol.moduleScope == moduleName
-                || packageScopeMatches(symbol, symbolType, packages);
+                || SymbolTaxonomy::isPackageScopeVisibleCompletion(
+                    symbol,
+                    symbolType,
+                    packages);
         if (!scopeMatches
             || !commandSymbolTypeMatches(symbol.symbolType,
                                         symbolType,

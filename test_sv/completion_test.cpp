@@ -225,6 +225,10 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy struct range type",
                SymbolTaxonomy::isModuleRangeType(sym_list::sym_packed_struct_var),
                true);
+    expectBool("SymbolTaxonomy direct context completion",
+               SymbolTaxonomy::isDirectModuleContextCompletionRequest(
+                   sym_list::sym_unpacked_struct_var),
+               true);
 
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();

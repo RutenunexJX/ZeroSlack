@@ -1,6 +1,7 @@
 #include "completionsemanticquery.h"
 
 #include "completionservice.h"
+#include "symboltaxonomy.h"
 
 QList<sym_list::SymbolInfo> CompletionSemanticQuery::commandSymbols(
     SemanticIndex* semanticIndex,
@@ -10,10 +11,7 @@ QList<sym_list::SymbolInfo> CompletionSemanticQuery::commandSymbols(
         return {};
 
     const bool useSymbolInfoDirectly =
-        query.symbolType == sym_list::sym_packed_struct_var
-        || query.symbolType == sym_list::sym_unpacked_struct_var
-        || query.symbolType == sym_list::sym_packed_struct
-        || query.symbolType == sym_list::sym_unpacked_struct;
+        SymbolTaxonomy::isDirectModuleContextCompletionRequest(query.symbolType);
 
     if (useSymbolInfoDirectly) {
         if (query.moduleName.isEmpty())

@@ -4,6 +4,7 @@
 #include "syminfo.h"
 
 #include <QList>
+#include <QSet>
 #include <QString>
 
 namespace SymbolTaxonomy {
@@ -56,8 +57,14 @@ bool isGlobalDefinition(sym_list::sym_type_e type);
 bool isPackageVisibleDefinition(sym_list::sym_type_e type);
 bool isInterfaceLikeOwner(sym_list::sym_type_e type);
 bool isModuleDeclaration(sym_list::sym_type_e type);
+bool isPackageDeclaration(sym_list::sym_type_e type);
 bool isSubroutineDeclaration(sym_list::sym_type_e type);
 bool isModuleRangeType(sym_list::sym_type_e type);
+bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType);
+bool isPackageScopeVisibleCompletion(
+    const sym_list::SymbolInfo& symbol,
+    sym_list::sym_type_e requestedType,
+    const QSet<QString>& packageScopes);
 bool isOutlineSymbol(sym_list::sym_type_e type);
 int definitionPriority(sym_list::sym_type_e type);
 QList<sym_list::sym_type_e> outlineSymbolTypes();

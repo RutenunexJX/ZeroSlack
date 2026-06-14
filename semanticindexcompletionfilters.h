@@ -13,8 +13,6 @@ inline bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                                      sym_list::sym_type_e commandType,
                                      const QString& dataType = QString())
 {
-    if (symbolType == commandType)
-        return true;
     return SymbolTaxonomy::commandSymbolTypeMatches(symbolType, commandType, dataType);
 }
 
