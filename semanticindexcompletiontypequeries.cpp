@@ -1,26 +1,12 @@
 #include "semanticindex.h"
 #include "semanticindexcompletionfilters.h"
+#include "symboltaxonomy.h"
 
 #include <QSet>
 
 using namespace semantic_index_completion;
 
 namespace {
-
-bool packageVisibleCommandType(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_typedef:
-    case sym_list::sym_enum:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-        return true;
-    default:
-        return false;
-    }
-}
 
 QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
 {
@@ -38,7 +24,7 @@ bool packageScopeMatches(const sym_list::SymbolInfo& symbol,
                          sym_list::sym_type_e requestedType,
                          const QSet<QString>& packages)
 {
-    return packageVisibleCommandType(requestedType)
+    return SymbolTaxonomy::isPackageVisibleCommandRequest(requestedType)
         && !symbol.moduleScope.isEmpty()
         && packages.contains(symbol.moduleScope);
 }

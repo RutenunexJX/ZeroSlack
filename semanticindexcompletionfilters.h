@@ -1,7 +1,7 @@
 #ifndef SEMANTICINDEXCOMPLETIONFILTERS_H
 #define SEMANTICINDEXCOMPLETIONFILTERS_H
 
-#include "syminfo.h"
+#include "symboltaxonomy.h"
 
 #include <QList>
 #include <QString>
@@ -15,13 +15,7 @@ inline bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
 {
     if (symbolType == commandType)
         return true;
-    if (commandType == sym_list::sym_parameter
-        && symbolType == sym_list::sym_localparam) {
-        return true;
-    }
-    return commandType == sym_list::sym_enum
-        && symbolType == sym_list::sym_typedef
-        && dataType == QLatin1String("enum");
+    return SymbolTaxonomy::commandSymbolTypeMatches(symbolType, commandType, dataType);
 }
 
 inline bool semanticCompletionNameMatches(const QString& name, const QString& prefix)
@@ -48,66 +42,32 @@ inline bool semanticCompletionNameMatches(const QString& name, const QString& pr
 
 inline bool internalCompletionSymbolType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_reg
-        || type == sym_list::sym_wire
-        || type == sym_list::sym_logic
-        || type == sym_list::sym_localparam
-        || type == sym_list::sym_parameter;
+    return SymbolTaxonomy::isInternalCompletionCandidate(type);
 }
 
 inline bool globalCompletionSymbolType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package;
+    return SymbolTaxonomy::isGlobalCompletionCandidate(type);
 }
 
 inline bool commandGlobalCompletionSymbolType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_enum;
+    return SymbolTaxonomy::isCommandGlobalCompletionType(type);
 }
 
 inline bool globalSymbolInfoType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_packed_struct_var
-        || type == sym_list::sym_unpacked_struct_var;
+    return SymbolTaxonomy::isGlobalSymbolInfoType(type);
 }
 
 inline bool alwaysGlobalSymbolInfoType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_module
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct;
+    return SymbolTaxonomy::isAlwaysGlobalSymbolInfoType(type);
 }
 
 inline bool alwaysGlobalCommandSymbolType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_module
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_def_define;
+    return SymbolTaxonomy::isAlwaysGlobalCommandSymbolType(type);
 }
 
 inline void sortSymbolsByName(QList<sym_list::SymbolInfo>& symbols)

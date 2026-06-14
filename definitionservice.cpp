@@ -1,6 +1,7 @@
 #include "definitionservice.h"
 
 #include "completionservice.h"
+#include "symboltaxonomy.h"
 
 std::unique_ptr<DefinitionService> DefinitionService::instance = nullptr;
 
@@ -32,13 +33,6 @@ QString interfaceScopeFromDataType(const QString& dataType)
     return dot >= 0 ? dataType.left(dot) : dataType;
 }
 
-bool interfaceLikeOwnerType(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_interface
-        || type == sym_list::sym_inst
-        || type == sym_list::sym_port_interface
-        || type == sym_list::sym_port_interface_modport;
-}
 }
 
 DefinitionService* DefinitionService::getInstance()
@@ -88,37 +82,7 @@ bool DefinitionService::isDefinition(const sym_list::SymbolInfo& symbol,
     if (symbol.symbolName != searchWord)
         return false;
 
-    switch (symbol.symbolType) {
-    case sym_list::sym_module:
-    case sym_list::sym_interface:
-    case sym_list::sym_interface_modport:
-    case sym_list::sym_package:
-    case sym_list::sym_inst:
-    case sym_list::sym_task:
-    case sym_list::sym_function:
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport:
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_struct_member:
-    case sym_list::sym_typedef:
-    case sym_list::sym_enum_var:
-    case sym_list::sym_enum_value:
-        return true;
-    default:
-        return false;
-    }
+    return SymbolTaxonomy::isDefinitionCandidate(symbol.symbolType);
 }
 
 SemanticIndex* DefinitionService::semanticIndex() const
@@ -153,7 +117,8 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
 
     const QList<sym_list::SymbolInfo> candidates = semanticIndex()->getSymbols();
     for (const sym_list::SymbolInfo& symbol : candidates) {
-        if (symbol.symbolName != variableName || !interfaceLikeOwnerType(symbol.symbolType))
+        if (symbol.symbolName != variableName
+            || !SymbolTaxonomy::isInterfaceLikeOwner(symbol.symbolType))
             continue;
         if (!query.moduleName.isEmpty()
             && !symbol.moduleScope.isEmpty()

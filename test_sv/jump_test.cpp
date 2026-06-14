@@ -20,6 +20,7 @@
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
 #include "semanticindexsnapshot.h"
+#include "symboltaxonomy.h"
 #include "mycodeeditor.h"
 
 static int g_checks = 0, g_fails = 0;
@@ -233,6 +234,30 @@ int main(int argc, char** argv) {
     snapshotHelperPackage.symbolId = 6108;
     snapshotDefinitionSymbols.append(snapshotHelperPackage);
 
+    sym_list::SymbolInfo snapshotPackageParam = snapshotHelperModule;
+    snapshotPackageParam.fileName = QStringLiteral("snapshot_pkg.sv");
+    snapshotPackageParam.symbolName = QStringLiteral("SNAP_WIDTH");
+    snapshotPackageParam.symbolType = sym_list::sym_parameter;
+    snapshotPackageParam.moduleScope = QStringLiteral("snap_pkg");
+    snapshotPackageParam.startLine = 20;
+    snapshotPackageParam.symbolId = 6109;
+    snapshotDefinitionSymbols.append(snapshotPackageParam);
+
+    sym_list::SymbolInfo snapshotPackageTypedef = snapshotPackageParam;
+    snapshotPackageTypedef.symbolName = QStringLiteral("snap_word_t");
+    snapshotPackageTypedef.symbolType = sym_list::sym_typedef;
+    snapshotPackageTypedef.startLine = 21;
+    snapshotPackageTypedef.symbolId = 6110;
+    snapshotDefinitionSymbols.append(snapshotPackageTypedef);
+
+    sym_list::SymbolInfo snapshotInterfaceModport = snapshotHelperInterface;
+    snapshotInterfaceModport.symbolName = QStringLiteral("slave");
+    snapshotInterfaceModport.symbolType = sym_list::sym_interface_modport;
+    snapshotInterfaceModport.moduleScope = QStringLiteral("snap_if");
+    snapshotInterfaceModport.startLine = 22;
+    snapshotInterfaceModport.symbolId = 6111;
+    snapshotDefinitionSymbols.append(snapshotInterfaceModport);
+
     sym_list::SymbolInfo snapshotLocalDuplicate;
     snapshotLocalDuplicate.fileName = QStringLiteral("snapshot_only.sv");
     snapshotLocalDuplicate.symbolName = QStringLiteral("snap_dup");
@@ -307,6 +332,22 @@ int main(int argc, char** argv) {
                snapshotDefinitionService.canResolveDefinition(snapshotInterfaceQuery),
                true);
 
+    DefinitionQuery snapshotInterfaceModportQuery;
+    snapshotInterfaceModportQuery.symbolName = QStringLiteral("slave");
+    snapshotInterfaceModportQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotInterfaceModportQuery.moduleName = QStringLiteral("snap_top");
+    const DefinitionResult snapshotInterfaceModportResult =
+        snapshotDefinitionService.resolveDefinition(snapshotInterfaceModportQuery);
+    ++g_checks;
+    const bool snapshotInterfaceModportOk = snapshotInterfaceModportResult.found
+        && snapshotInterfaceModportResult.symbol.symbolId
+            == snapshotInterfaceModport.symbolId
+        && snapshotInterfaceModportResult.symbol.moduleScope == QStringLiteral("snap_if");
+    if (!snapshotInterfaceModportOk)
+        ++g_fails;
+    printf("[%s] DefinitionService resolves snapshot interface modport\n",
+           snapshotInterfaceModportOk ? "PASS" : "FAIL");
+
     DefinitionQuery snapshotPackageQuery;
     snapshotPackageQuery.symbolName = QStringLiteral("snap_pkg");
     snapshotPackageQuery.fileName = QStringLiteral("snapshot_only.sv");
@@ -320,6 +361,46 @@ int main(int argc, char** argv) {
         ++g_fails;
     printf("[%s] DefinitionService findDefinitions resolves snapshot package\n",
            snapshotPackageOk ? "PASS" : "FAIL");
+
+    DefinitionQuery snapshotPackageParamQuery;
+    snapshotPackageParamQuery.symbolName = QStringLiteral("SNAP_WIDTH");
+    snapshotPackageParamQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotPackageParamQuery.moduleName = QStringLiteral("snap_top");
+    const DefinitionResult snapshotPackageParamResult =
+        snapshotDefinitionService.resolveDefinition(snapshotPackageParamQuery);
+    ++g_checks;
+    const bool snapshotPackageParamOk = snapshotPackageParamResult.found
+        && snapshotPackageParamResult.symbol.symbolId == snapshotPackageParam.symbolId;
+    if (!snapshotPackageParamOk)
+        ++g_fails;
+    printf("[%s] DefinitionService resolves snapshot package parameter\n",
+           snapshotPackageParamOk ? "PASS" : "FAIL");
+
+    DefinitionQuery snapshotPackageTypedefQuery;
+    snapshotPackageTypedefQuery.symbolName = QStringLiteral("snap_word_t");
+    snapshotPackageTypedefQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotPackageTypedefQuery.moduleName = QStringLiteral("snap_top");
+    const DefinitionResult snapshotPackageTypedefResult =
+        snapshotDefinitionService.resolveDefinition(snapshotPackageTypedefQuery);
+    ++g_checks;
+    const bool snapshotPackageTypedefOk = snapshotPackageTypedefResult.found
+        && snapshotPackageTypedefResult.symbol.symbolId == snapshotPackageTypedef.symbolId;
+    if (!snapshotPackageTypedefOk)
+        ++g_fails;
+    printf("[%s] DefinitionService resolves snapshot package typedef\n",
+           snapshotPackageTypedefOk ? "PASS" : "FAIL");
+
+    expectBool("SymbolTaxonomy package parameter visible",
+               SymbolTaxonomy::isPackageVisibleDefinition(sym_list::sym_parameter),
+               true);
+    expectBool("SymbolTaxonomy interface owner includes modport port",
+               SymbolTaxonomy::isInterfaceLikeOwner(
+                   sym_list::sym_port_interface_modport),
+               true);
+    expectBool("SymbolTaxonomy detects svh header role",
+               SymbolTaxonomy::sourceRoleForFileName(QStringLiteral("rtl/pkg_defs.svh"))
+                   == SymbolTaxonomy::SourceRole::Header,
+               true);
 
     DefinitionQuery snapshotLocalModuleQuery;
     snapshotLocalModuleQuery.symbolName = QStringLiteral("snap_dup");

@@ -1,5 +1,7 @@
 #include "semanticindexlookuphelpers.h"
 
+#include "symboltaxonomy.h"
+
 #include <QDir>
 #include <QFileInfo>
 
@@ -24,69 +26,12 @@ bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
     if (symbol.symbolName != searchWord)
         return false;
 
-    switch (symbol.symbolType) {
-    case sym_list::sym_module:
-    case sym_list::sym_interface:
-    case sym_list::sym_interface_modport:
-    case sym_list::sym_package:
-    case sym_list::sym_inst:
-    case sym_list::sym_task:
-    case sym_list::sym_function:
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport:
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_struct_member:
-    case sym_list::sym_typedef:
-    case sym_list::sym_enum_var:
-    case sym_list::sym_enum_value:
-        return true;
-    default:
-        return false;
-    }
+    return SymbolTaxonomy::isDefinitionCandidate(symbol.symbolType);
 }
 
 int semanticDefinitionTypePriority(sym_list::sym_type_e type)
 {
-    switch (type) {
-    case sym_list::sym_module: return 0;
-    case sym_list::sym_interface: return 1;
-    case sym_list::sym_package: return 2;
-    case sym_list::sym_interface_modport: return 3;
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport: return 3;
-    case sym_list::sym_task:
-    case sym_list::sym_function: return 4;
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_enum_var: return 5;
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_typedef: return 6;
-    case sym_list::sym_struct_member:
-    case sym_list::sym_enum_value: return 7;
-    default: return 10;
-    }
+    return SymbolTaxonomy::definitionPriority(type);
 }
 
 bool semanticDefinitionInScope(const sym_list::SymbolInfo& symbol,

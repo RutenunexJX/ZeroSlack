@@ -1,5 +1,7 @@
 #include "semanticindexsnapshot.h"
 
+#include "symboltaxonomy.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
@@ -201,9 +203,7 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::sortedDefinitions(
                 value += 100;
             if (!context.moduleName.isEmpty() && s.moduleScope == context.moduleName)
                 value += 50;
-            if (s.symbolType == sym_list::sym_module
-                || s.symbolType == sym_list::sym_interface
-                || s.symbolType == sym_list::sym_package)
+            if (SymbolTaxonomy::isGlobalDefinition(s.symbolType))
                 value += 10;
             return value;
         };

@@ -1,5 +1,7 @@
 #include "completionsymbolquery.h"
 
+#include "symboltaxonomy.h"
+
 #include <QSet>
 #include <Qt>
 
@@ -81,11 +83,7 @@ QStringList CompletionSymbolQuery::globalSymbolsByType(
     QSet<QString> seenNames;
     for (const sym_list::SymbolInfo& symbol : symbols) {
         bool global = false;
-        if (symbolType == sym_list::sym_module
-            || symbolType == sym_list::sym_interface
-            || symbolType == sym_list::sym_package
-            || symbolType == sym_list::sym_packed_struct
-            || symbolType == sym_list::sym_unpacked_struct) {
+        if (SymbolTaxonomy::isAlwaysGlobalSymbolInfoType(symbolType)) {
             global = true;
         } else {
             global = symbol.moduleScope.isEmpty();
@@ -130,14 +128,5 @@ bool CompletionSymbolQuery::isModuleRangeSymbolType(sym_list::sym_type_e type)
 
 bool CompletionSymbolQuery::isGlobalSymbolType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_enum;
+    return SymbolTaxonomy::isCommandGlobalCompletionType(type);
 }

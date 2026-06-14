@@ -191,6 +191,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzerworkspace.cpp
     symbolrelationshipqueries.cpp
     symbolrelationshipengine.cpp
+    symboltaxonomy.cpp
     slangsymbolcollector.cpp
     slangsymbolcollectorhelpers.cpp
     syminfocontent.cpp
@@ -309,6 +310,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzerworkspace.h
     symbolrelationshipengine.h
     symboloutlinemodel.h
+    symboltaxonomy.h
     syminfo.h
     tabdocumentqueries.h
     tabfileio.h
