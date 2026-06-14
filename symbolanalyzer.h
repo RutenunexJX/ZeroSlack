@@ -62,6 +62,7 @@ public:
     void analyzeFileContent(const QString& fileName, const QString& content);
     void analyzeFileContentAsync(const QString& fileName, const QString& content);
     void setWorkspaceProtectedFiles(const QStringList& fileNames);
+    void cancelWorkspaceAnalysisAndInvalidate();
 
     // Utility
     bool isAnalysisNeeded(const QString& fileName, const QString& content) const;

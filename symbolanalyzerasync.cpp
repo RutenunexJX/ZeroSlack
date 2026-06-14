@@ -88,6 +88,12 @@ void SymbolAnalyzer::cancelWorkspaceAnalysisAndWait()
     future.waitForFinished();
 }
 
+void SymbolAnalyzer::cancelWorkspaceAnalysisAndInvalidate()
+{
+    ++workspaceAnalysisGeneration;
+    cancelWorkspaceAnalysisAndWait();
+}
+
 void SymbolAnalyzer::onWorkspaceAnalysisFinished()
 {
     if (!workspaceAnalysisWatcher)

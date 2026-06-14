@@ -9,8 +9,11 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     if (!project.isOpen() || !symbolAnalyzer)
         return;
 
-    if (project.systemVerilogFiles.isEmpty())
+    if (project.systemVerilogFiles.isEmpty()) {
+        workspaceAnalysisActive = false;
+        symbolAnalyzer->cancelWorkspaceAnalysisAndInvalidate();
         return;
+    }
 
     symbolAnalyzer->setWorkspaceProtectedFiles(dirtyOpenDocumentFiles());
     activeProject = project;
@@ -28,6 +31,8 @@ void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
     projectSemanticStateCleared = true;
     workspaceAnalysisActive = false;
     activeProject = ProjectSnapshot();
+    if (symbolAnalyzer)
+        symbolAnalyzer->cancelWorkspaceAnalysisAndInvalidate();
     emit workspaceRelationshipAnalysisCancelRequested();
     SemanticIndex::getInstance()->clearSnapshot();
     emit relationshipDataClearRequested();
