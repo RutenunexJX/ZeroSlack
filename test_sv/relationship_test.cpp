@@ -1332,6 +1332,65 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("scheduler requests diagnostics refresh on project close",
                diagnosticsRefreshRequests > 0, true);
 
+    const auto workspaceMergePreviousSnapshot = SemanticIndex::getInstance()->snapshot();
+    QTemporaryDir workspaceMergeDir;
+    expectBool("workspace merge temp dir created", workspaceMergeDir.isValid(), true);
+    const QString workspaceMergeExternalPath =
+        workspaceMergeDir.filePath(QStringLiteral("workspace_merge_external.sv"));
+    SemanticDiagnostic workspaceMergeExternalDiagnostic;
+    workspaceMergeExternalDiagnostic.fileName = workspaceMergeExternalPath;
+    workspaceMergeExternalDiagnostic.line = 1;
+    workspaceMergeExternalDiagnostic.column = 1;
+    workspaceMergeExternalDiagnostic.message = QStringLiteral("external diagnostic");
+    workspaceMergeExternalDiagnostic.severity = SemanticDiagnostic::Error;
+    SemanticIndex::getInstance()->setSnapshot(
+        std::make_shared<const SemanticIndexSnapshot>(
+            QList<sym_list::SymbolInfo>(),
+            QList<SemanticRelationship>(),
+            QList<SemanticDiagnostic>{workspaceMergeExternalDiagnostic},
+            QHash<QString, QString>()));
+
+    AnalysisScheduler emptyWorkspaceScheduler;
+    SymbolAnalyzer emptyWorkspaceAnalyzer;
+    ProjectModel emptyWorkspaceModel;
+    emptyWorkspaceScheduler.setSymbolAnalyzer(&emptyWorkspaceAnalyzer);
+    emptyWorkspaceScheduler.setProjectModel(&emptyWorkspaceModel);
+    emptyWorkspaceModel.setWorkspaceRoot(workspaceMergeDir.path());
+    expectBool("workspace request preserves visible snapshot before results",
+               SemanticIndex::getInstance()->snapshot()
+                   && !SemanticIndex::getInstance()
+                           ->snapshot()
+                           ->getDiagnostics(workspaceMergeExternalPath)
+                           .isEmpty(),
+               true);
+
+    const QString workspaceMergePath =
+        workspaceMergeDir.filePath(QStringLiteral("workspace_merge_file.sv"));
+    QFile workspaceMergeFile(workspaceMergePath);
+    expectBool("workspace merge file writable",
+               workspaceMergeFile.open(QIODevice::WriteOnly | QIODevice::Text),
+               true);
+    if (workspaceMergeFile.isOpen()) {
+        workspaceMergeFile.write("module workspace_merge_file; endmodule\n");
+        workspaceMergeFile.close();
+    }
+    SymbolAnalyzer workspaceMergeAnalyzer;
+    ProjectModel workspaceMergeProject;
+    workspaceMergeProject.setWorkspaceRoot(workspaceMergeDir.path());
+    workspaceMergeProject.setScannedFiles({workspaceMergePath});
+    workspaceMergeAnalyzer.analyzeProject(workspaceMergeProject.snapshot());
+    expectBool("workspace publish preserves external diagnostics",
+               SemanticIndex::getInstance()->snapshot()
+                   && !SemanticIndex::getInstance()
+                           ->snapshot()
+                           ->getDiagnostics(workspaceMergeExternalPath)
+                           .isEmpty(),
+               true);
+    if (workspaceMergePreviousSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(workspaceMergePreviousSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
+
     AnalysisScheduler projectCloseScheduler;
     ProjectModel projectCloseModel;
     SymbolRelationshipEngine projectCloseEngine;

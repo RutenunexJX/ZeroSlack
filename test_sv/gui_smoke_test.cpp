@@ -1738,7 +1738,7 @@ int main(int argc, char** argv)
 
     if (problemsScopeCombo(window)) {
         SemanticDiagnostic closeDiagnostic;
-        closeDiagnostic.fileName = normalizedSymbolFixturePath;
+        closeDiagnostic.fileName = diagnosticPath;
         closeDiagnostic.line = 3;
         closeDiagnostic.column = 1;
         closeDiagnostic.message = QStringLiteral("workspace close probe");
@@ -1772,13 +1772,18 @@ int main(int argc, char** argv)
         workspaceSymbolsDone = false;
         expectBool("reopen workspace after close",
                    window.workspaceManager->openWorkspace(workspacePath), true);
-        expectBool("problems clear on workspace analysis start",
+        expectBool("problems preserve external diagnostic on workspace analysis start",
                    waitUntil([&]() {
-                       return navigableItemCount(problemsTree(window)) == 0;
+                       return navigableItemCount(problemsTree(window)) == 1;
                    }, 2000),
                    true);
         expectBool("reopened workspace analysis completes",
                    waitUntil([&]() { return workspaceSymbolsDone; }, 60000),
+                   true);
+        expectBool("problems keep external diagnostic after workspace analysis",
+                   waitUntil([&]() {
+                       return navigableItemCount(problemsTree(window)) == 1;
+                   }, 2000),
                    true);
         drainRelationshipWork(window);
     }

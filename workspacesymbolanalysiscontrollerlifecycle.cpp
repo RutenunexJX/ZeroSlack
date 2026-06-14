@@ -9,7 +9,6 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     if (!project.isOpen() || !symbolAnalyzer)
         return;
 
-    SemanticIndex::getInstance()->clearSnapshot();
     if (project.systemVerilogFiles.isEmpty())
         return;
 

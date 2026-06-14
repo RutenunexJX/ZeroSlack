@@ -35,16 +35,20 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
     int totalFiles)
 {
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    QStringList analyzedFiles;
+    analyzedFiles.reserve(result.files.size());
     int filesAnalyzed = 0;
     for (const WorkspaceFileAnalysis& fileResult : result.files) {
         updateFileSymbols(
             fileResult.fileName,
             fileResult.content,
             fileResult.symbols);
+        analyzedFiles.append(fileResult.fileName);
         filesAnalyzed++;
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 
-    semanticIndex->publishCompleteSnapshot(result.diagnostics);
+    semanticIndex->publishSnapshotReplacingDiagnostics(analyzedFiles,
+                                                       result.diagnostics);
     return filesAnalyzed;
 }
