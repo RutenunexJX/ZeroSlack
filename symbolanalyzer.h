@@ -11,7 +11,6 @@
 #include "semanticindex.h"
 #include "syminfo.h"
 
-class SlangManager;
 class WorkspaceManager;
 template <typename T>
 class QFutureWatcher;
@@ -69,7 +68,6 @@ private:
     // Analysis state tracking
     QHash<QString, QString> lastAnalyzedContent;
 
-    SlangManager* m_slangManager = nullptr;
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
 
     void publishOpenDocumentResults(

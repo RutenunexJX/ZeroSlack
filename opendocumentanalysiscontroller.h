@@ -53,6 +53,8 @@ private:
 
     bool isWorkspaceOpen() const;
     bool lineContainsStructuralKeyword(const QString& content, int oneBasedLine) const;
+    bool hasNonWhitespaceChange(const QString& oldContent,
+                                const QString& newContent) const;
 };
 
 #endif // OPENDOCUMENTANALYSISCONTROLLER_H

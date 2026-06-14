@@ -31,10 +31,12 @@ Result extractFromText(const QString& fileName,
     try {
         std::string src = content.toStdString();
         std::string nameStr = fileName.toStdString();
+        slang::SourceManager sourceManager;
         std::shared_ptr<slang::syntax::SyntaxTree> tree;
         if (includeDirs.isEmpty() && defines.isEmpty()) {
             tree = slang::syntax::SyntaxTree::fromText(
                 std::string_view(src),
+                sourceManager,
                 std::string_view(nameStr),
                 std::string_view{});
         } else {
@@ -42,9 +44,10 @@ Result extractFromText(const QString& fileName,
                 slang_parse_options::makeSyntaxOptions(includeDirs, defines);
             tree = slang::syntax::SyntaxTree::fromText(
                 std::string_view(src),
-                syntaxOptions,
+                sourceManager,
                 std::string_view(nameStr),
-                std::string_view(nameStr));
+                std::string_view(nameStr),
+                syntaxOptions);
         }
 
         if (!tree)

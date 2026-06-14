@@ -7,12 +7,20 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <cstdint>
 #include <memory>
 
 class SemanticIndexSnapshot;
 class SlangManager;
 class SmartRelationshipBuilder;
 class QObject;
+
+struct SemanticSnapshotToken {
+    std::shared_ptr<const SemanticIndexSnapshot> snapshot;
+    std::uint64_t revision = 0;
+
+    bool isValid() const { return snapshot != nullptr; }
+};
 
 struct SemanticQueryContext {
     QString fileName;
@@ -92,6 +100,8 @@ public:
     void setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot);
     void clearSnapshot();
     std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
+    std::uint64_t snapshotRevision() const;
+    SemanticSnapshotToken snapshotToken() const;
     void updateSymbolsForFile(const QString& fileName,
                               const QList<sym_list::SymbolInfo>& symbols,
                               const QString& content);
@@ -103,10 +113,13 @@ public:
     std::shared_ptr<const SemanticIndexSnapshot> captureSnapshotReplacingDiagnostics(
         const QStringList& fileNames,
         const QList<SemanticDiagnostic>& diagnostics) const;
-    std::shared_ptr<const SemanticIndexSnapshot> beginRelationshipAnalysisSnapshot();
+    SemanticSnapshotToken beginRelationshipAnalysisSnapshot();
     std::shared_ptr<const SemanticIndexSnapshot> snapshotWithAdditionalRelationships(
         std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot,
         const QList<SemanticRelationship>& relationships) const;
+    bool publishSnapshotIfCurrent(
+        const SemanticSnapshotToken& expectedCurrentSnapshot,
+        std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
     bool publishSnapshotIfCurrent(
         std::shared_ptr<const SemanticIndexSnapshot> expectedCurrentSnapshot,
         std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
@@ -209,6 +222,7 @@ public:
 private:
     sym_list* m_symbolDatabase = nullptr;
     std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
+    std::uint64_t m_snapshotRevision = 0;
     static std::unique_ptr<SemanticIndex> instance;
 
     QList<sym_list::SymbolInfo> sortedDefinitions(const QList<sym_list::SymbolInfo>& symbols,

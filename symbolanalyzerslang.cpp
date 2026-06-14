@@ -24,11 +24,13 @@ void SymbolAnalyzer::analyzeOpenDocuments(
             continue;
 
         svFiles.append(fileName);
+        SlangManager symbolAnalyzer;
         QList<sym_list::SymbolInfo> list =
-            m_slangManager->extractSymbols(fileName, content);
+            symbolAnalyzer.extractSymbols(fileName, content);
         updateFileSymbols(fileName, content, list);
+        SlangManager diagnosticsAnalyzer;
         diagnostics.append(
-            m_slangManager->extractDiagnostics(fileName, content));
+            diagnosticsAnalyzer.extractDiagnostics(fileName, content));
         symbolsFromOpenFiles += list.size();
     }
 
@@ -62,10 +64,11 @@ void SymbolAnalyzer::analyzeProject(
         return;
     }
 
+    SlangManager symbolAnalyzer;
     QList<sym_list::SymbolInfo> allSymbols =
-        m_slangManager->extractWorkspaceSymbols(svFiles,
-                                                project.includeDirs,
-                                                project.defines);
+        symbolAnalyzer.extractWorkspaceSymbols(svFiles,
+                                               project.includeDirs,
+                                               project.defines);
     if (isCancelled && isCancelled()) {
         emit batchAnalysisCompleted(0, 0);
         emit analysisCompleted(project.workspaceRoot, 0);
@@ -77,10 +80,11 @@ void SymbolAnalyzer::analyzeProject(
             svFiles,
             allSymbols,
             isCancelled);
+    SlangManager diagnosticsAnalyzer;
     result.diagnostics =
-        m_slangManager->extractWorkspaceDiagnostics(svFiles,
-                                                    project.includeDirs,
-                                                    project.defines);
+        diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles,
+                                                       project.includeDirs,
+                                                       project.defines);
     const int filesAnalyzed =
         publishWorkspaceAnalysisResult(result, totalFiles);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
@@ -102,10 +106,12 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
     QString content = QTextStream(&file).readAll();
     file.close();
 
+    SlangManager symbolAnalyzer;
     QList<sym_list::SymbolInfo> list =
-        m_slangManager->extractSymbols(filePath, content);
+        symbolAnalyzer.extractSymbols(filePath, content);
+    SlangManager diagnosticsAnalyzer;
     QList<SemanticDiagnostic> diagnostics =
-        m_slangManager->extractDiagnostics(filePath, content);
+        diagnosticsAnalyzer.extractDiagnostics(filePath, content);
     publishFileAnalysisResult(filePath, content, list, diagnostics);
     emit analysisCompleted(filePath, list.size());
 }
@@ -116,10 +122,12 @@ void SymbolAnalyzer::analyzeFileContent(
 {
     if (fileName.isEmpty() || !isSystemVerilogFile(fileName))
         return;
+    SlangManager symbolAnalyzer;
     QList<sym_list::SymbolInfo> list =
-        m_slangManager->extractSymbols(fileName, content);
+        symbolAnalyzer.extractSymbols(fileName, content);
+    SlangManager diagnosticsAnalyzer;
     QList<SemanticDiagnostic> diagnostics =
-        m_slangManager->extractDiagnostics(fileName, content);
+        diagnosticsAnalyzer.extractDiagnostics(fileName, content);
     publishFileAnalysisResult(fileName, content, list, diagnostics);
     emit analysisCompleted(fileName, list.size());
 }

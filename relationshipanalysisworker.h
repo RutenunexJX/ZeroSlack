@@ -12,7 +12,7 @@
 
 struct WorkspaceRelationshipAnalysisResult {
     QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
+    SemanticSnapshotToken baseSnapshot;
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
     int totalFiles = 0;
 };
@@ -20,7 +20,7 @@ struct WorkspaceRelationshipAnalysisResult {
 struct SingleFileRelationshipAnalysisResult {
     QString fileName;
     QVector<RelationshipToAdd> relationships;
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot;
+    SemanticSnapshotToken baseSnapshot;
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
 };
 
@@ -31,12 +31,12 @@ public:
         SmartRelationshipBuilder* relationshipBuilder,
         const QString& fileName,
         const QString& content,
-        std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot);
+        const SemanticSnapshotToken& baseSnapshot);
 
     static WorkspaceRelationshipAnalysisResult analyzeWorkspace(
         SmartRelationshipBuilder* relationshipBuilder,
         const ProjectSnapshot& project,
-        std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot);
+        const SemanticSnapshotToken& baseSnapshot);
 };
 
 #endif // RELATIONSHIPANALYSISWORKER_H

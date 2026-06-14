@@ -7,16 +7,28 @@
 void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot)
 {
     m_snapshot = std::move(snapshot);
+    ++m_snapshotRevision;
 }
 
 void SemanticIndex::clearSnapshot()
 {
     m_snapshot.reset();
+    ++m_snapshotRevision;
 }
 
 std::shared_ptr<const SemanticIndexSnapshot> SemanticIndex::snapshot() const
 {
     return m_snapshot;
+}
+
+std::uint64_t SemanticIndex::snapshotRevision() const
+{
+    return m_snapshotRevision;
+}
+
+SemanticSnapshotToken SemanticIndex::snapshotToken() const
+{
+    return {m_snapshot, m_snapshotRevision};
 }
 
 void SemanticIndex::publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics)
@@ -55,16 +67,16 @@ SemanticIndex::captureSnapshotReplacingDiagnostics(
         SemanticIndexSnapshot::fromSymbolDatabase(symbolDatabase(), mergedDiagnostics));
 }
 
-std::shared_ptr<const SemanticIndexSnapshot>
+SemanticSnapshotToken
 SemanticIndex::beginRelationshipAnalysisSnapshot()
 {
     if (m_snapshot)
-        return m_snapshot;
+        return snapshotToken();
 
     std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot =
         captureSnapshotPreservingDiagnostics();
     setSnapshot(baseSnapshot);
-    return baseSnapshot;
+    return snapshotToken();
 }
 
 std::shared_ptr<const SemanticIndexSnapshot>
@@ -79,12 +91,24 @@ SemanticIndex::snapshotWithAdditionalRelationships(
 }
 
 bool SemanticIndex::publishSnapshotIfCurrent(
-    std::shared_ptr<const SemanticIndexSnapshot> expectedCurrentSnapshot,
+    const SemanticSnapshotToken& expectedCurrentSnapshot,
     std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot)
 {
-    if (expectedCurrentSnapshot && snapshot() != expectedCurrentSnapshot)
+    if (expectedCurrentSnapshot.isValid()
+        && (snapshot() != expectedCurrentSnapshot.snapshot
+            || snapshotRevision() != expectedCurrentSnapshot.revision)) {
         return false;
+    }
     if (nextSnapshot)
         setSnapshot(std::move(nextSnapshot));
     return true;
+}
+
+bool SemanticIndex::publishSnapshotIfCurrent(
+    std::shared_ptr<const SemanticIndexSnapshot> expectedCurrentSnapshot,
+    std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot)
+{
+    return publishSnapshotIfCurrent(
+        {std::move(expectedCurrentSnapshot), snapshotRevision()},
+        std::move(nextSnapshot));
 }

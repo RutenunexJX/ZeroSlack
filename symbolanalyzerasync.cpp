@@ -12,7 +12,6 @@
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     : QObject(parent)
 {
-    m_slangManager = new SlangManager();
     workspaceAnalysisWatcher = new QFutureWatcher<WorkspaceAnalysisResult>(this);
     connect(workspaceAnalysisWatcher,
             &QFutureWatcher<WorkspaceAnalysisResult>::finished,
@@ -27,8 +26,6 @@ SymbolAnalyzer::~SymbolAnalyzer()
         workspaceAnalysisWatcher->deleteLater();
         workspaceAnalysisWatcher = nullptr;
     }
-    delete m_slangManager;
-    m_slangManager = nullptr;
 }
 
 void SymbolAnalyzer::startAnalyzeWorkspaceAsync(
@@ -56,16 +53,18 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 
     emit analysisStarted(workspacePath);
 
-    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([this, svFiles, includeDirs, defines, isCancelled]() {
+    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled]() {
+        SlangManager symbolAnalyzer;
         QList<sym_list::SymbolInfo> symbols =
-            m_slangManager->extractWorkspaceSymbols(svFiles, includeDirs, defines);
+            symbolAnalyzer.extractWorkspaceSymbols(svFiles, includeDirs, defines);
         WorkspaceAnalysisResult result =
             SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
                 svFiles,
                 symbols,
                 isCancelled);
+        SlangManager diagnosticsAnalyzer;
         result.diagnostics =
-            m_slangManager->extractWorkspaceDiagnostics(svFiles, includeDirs, defines);
+            diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles, includeDirs, defines);
         return result;
     });
 
@@ -118,8 +117,12 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
                 emit analysisCompleted(fileName, result.first.size());
             });
     watcher->setFuture(QtConcurrent::run([fileName, content]() {
-        SlangManager local;
-        return qMakePair(local.extractSymbols(fileName, content),
-                         local.extractDiagnostics(fileName, content));
+        SlangManager symbolAnalyzer;
+        QList<sym_list::SymbolInfo> symbols =
+            symbolAnalyzer.extractSymbols(fileName, content);
+        SlangManager diagnosticsAnalyzer;
+        QList<SemanticDiagnostic> diagnostics =
+            diagnosticsAnalyzer.extractDiagnostics(fileName, content);
+        return qMakePair(symbols, diagnostics);
     }));
 }

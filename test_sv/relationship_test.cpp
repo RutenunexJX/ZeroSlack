@@ -34,6 +34,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QString>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <cstdio>
 #include <memory>
@@ -368,6 +369,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         "endmodule\n");
     const QList<SemanticDiagnostic> brokenDiagnostics =
         slang.extractDiagnostics(brokenPath, brokenContent);
+    QTemporaryDir temporaryDiagnosticDir;
+    const QString temporaryBrokenPath =
+        temporaryDiagnosticDir.filePath(QStringLiteral("broken_diag.sv"));
+    const QList<SemanticDiagnostic> temporaryBrokenDiagnostics =
+        slang.extractDiagnostics(temporaryBrokenPath, brokenContent);
+    expectBool("slang diagnostics flow from temp path",
+               !temporaryBrokenDiagnostics.isEmpty(), true);
     SemanticIndex diagnosticIndex(db);
     diagnosticIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
         SemanticIndexSnapshot::fromSymbolDatabase(db, brokenDiagnostics)));
@@ -1215,6 +1223,34 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                replacedCaptureSnapshot->getDiagnostics(stagePath).size() == 1
                    && replacedCaptureSnapshot->getDiagnostics(stagePath).first().message
                        == errorDiagnostic.message,
+               true);
+    SemanticIndex guardedIndex(db);
+    const auto guardedBaseSnapshot =
+        std::make_shared<SemanticIndexSnapshot>(
+            SemanticIndexSnapshot::fromSymbolDatabase(db));
+    guardedIndex.setSnapshot(guardedBaseSnapshot);
+    const SemanticSnapshotToken staleToken = guardedIndex.snapshotToken();
+    const auto newerSnapshot =
+        std::make_shared<SemanticIndexSnapshot>(
+            guardedBaseSnapshot->withAdditionalRelationships({newTaskRelationship}));
+    guardedIndex.setSnapshot(newerSnapshot);
+    const auto staleRelationshipSnapshot =
+        std::make_shared<SemanticIndexSnapshot>(
+            guardedBaseSnapshot->withAdditionalRelationships({duplicateStageRelationship}));
+    expectBool("semantic index rejects stale snapshot token",
+               guardedIndex.publishSnapshotIfCurrent(staleToken,
+                                                     staleRelationshipSnapshot),
+               false);
+    expectBool("semantic index keeps newer snapshot after stale token",
+               guardedIndex.snapshot() == newerSnapshot,
+               true);
+    const SemanticSnapshotToken currentToken = guardedIndex.snapshotToken();
+    expectBool("semantic index accepts current snapshot token",
+               guardedIndex.publishSnapshotIfCurrent(currentToken,
+                                                     staleRelationshipSnapshot),
+               true);
+    expectBool("semantic index publishes current token snapshot",
+               guardedIndex.snapshot() == staleRelationshipSnapshot,
                true);
     snapshotIndex.clearSnapshot();
     expectInt("semantic snapshot clear restores live index",
@@ -3168,6 +3204,32 @@ static void runRealWorkspaceIncludeFixture()
                true);
 }
 
+static void runPostWorkspaceDiagnosticFixture()
+{
+    printf("\n-- post-workspace diagnostic fixture --\n");
+
+    QTemporaryDir diagnosticDir;
+    expectBool("post-workspace diagnostic temp dir created",
+               diagnosticDir.isValid(),
+               true);
+    if (!diagnosticDir.isValid())
+        return;
+
+    const QString brokenPath =
+        normalizedPath(diagnosticDir.filePath(QStringLiteral("broken_diag.sv")));
+    const QString brokenContent = QStringLiteral(
+        "module broken_diag(input logic clk);\n"
+        "  logic bad;\n"
+        "  assign bad = ;\n"
+        "endmodule\n");
+    SlangManager slang;
+    const QList<SemanticDiagnostic> diagnostics =
+        slang.extractDiagnostics(brokenPath, brokenContent);
+    expectBool("post-workspace temp diagnostics extracted",
+               !diagnostics.isEmpty(),
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -3187,6 +3249,7 @@ int main(int argc, char** argv)
     runFsmGraphServiceFixture();
     runSemanticDiffServiceFixture();
     runRealWorkspaceIncludeFixture();
+    runPostWorkspaceDiagnosticFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

@@ -10,6 +10,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QSet>
 #include <string>
 
 using namespace slang::ast;
@@ -38,15 +39,15 @@ SemanticDiagnostic::Severity mapDiagnosticSeverity(slang::DiagnosticSeverity sev
     }
 }
 
-QList<SemanticDiagnostic> collectDiagnostics(slang::ast::Compilation& compilation)
+void appendDiagnostics(const slang::SourceManager& sourceManager,
+                       const slang::Diagnostics& diagnostics,
+                       QList<SemanticDiagnostic>* result,
+                       QSet<QString>* seen)
 {
-    QList<SemanticDiagnostic> result;
-    const slang::SourceManager* sm = compilation.getSourceManager();
-    if (!sm)
-        return result;
+    if (!result || !seen)
+        return;
 
-    const slang::Diagnostics& diagnostics = compilation.getAllDiagnostics();
-    slang::DiagnosticEngine engine(*sm);
+    slang::DiagnosticEngine engine(sourceManager);
     for (const slang::Diagnostic& diagnostic : diagnostics) {
         const slang::DiagnosticSeverity severity =
             engine.getSeverity(diagnostic.code, diagnostic.location);
@@ -56,15 +57,37 @@ QList<SemanticDiagnostic> collectDiagnostics(slang::ast::Compilation& compilatio
             continue;
 
         SemanticDiagnostic item;
-        item.fileName = normalizedSlangFileName(sm->getFileName(diagnostic.location));
-        const size_t line = sm->getLineNumber(diagnostic.location);
-        const size_t column = sm->getColumnNumber(diagnostic.location);
+        item.fileName =
+            normalizedSlangFileName(sourceManager.getFileName(diagnostic.location));
+        const size_t line = sourceManager.getLineNumber(diagnostic.location);
+        const size_t column = sourceManager.getColumnNumber(diagnostic.location);
         item.line = line == 0 ? 1 : static_cast<int>(line);
         item.column = column == 0 ? 1 : static_cast<int>(column);
         item.message = QString::fromStdString(engine.formatMessage(diagnostic));
         item.severity = mapDiagnosticSeverity(severity);
-        result.append(item);
+
+        const QString key = QStringLiteral("%1:%2:%3:%4:%5")
+                                .arg(item.fileName)
+                                .arg(item.line)
+                                .arg(item.column)
+                                .arg(static_cast<int>(item.severity))
+                                .arg(item.message);
+        if (seen->contains(key))
+            continue;
+        seen->insert(key);
+        result->append(item);
     }
+}
+
+QList<SemanticDiagnostic> collectDiagnostics(slang::ast::Compilation& compilation)
+{
+    QList<SemanticDiagnostic> result;
+    const slang::SourceManager* sm = compilation.getSourceManager();
+    if (!sm)
+        return result;
+
+    QSet<QString> seen;
+    appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen);
     return result;
 }
 
@@ -81,10 +104,12 @@ QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileNa
         std::string nameStr = fileName.toStdString();
         const QStringList effectiveIncludeDirs =
             slang_parse_options::effectiveIncludeDirsForFile(fileName, includeDirs);
+        slang::SourceManager sourceManager;
         std::shared_ptr<slang::syntax::SyntaxTree> tree;
         if (effectiveIncludeDirs.isEmpty() && defines.isEmpty()) {
             tree = slang::syntax::SyntaxTree::fromText(
                 std::string_view(src),
+                sourceManager,
                 std::string_view(nameStr),
                 std::string_view{});
         } else {
@@ -92,20 +117,26 @@ QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileNa
                 slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines);
             tree = slang::syntax::SyntaxTree::fromText(
                 std::string_view(src),
-                syntaxOptions,
+                sourceManager,
                 std::string_view(nameStr),
-                std::string_view(nameStr));
+                std::string_view(nameStr),
+                syntaxOptions);
         }
 
         if (!tree)
             return result;
+
+        QSet<QString> seen;
+        appendDiagnostics(tree->sourceManager(), tree->diagnostics(), &result, &seen);
 
         slang::Bag compilationOptions =
             slang_parse_options::makeCompilationOptions();
         Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
         (void)compilation.getRoot();
-        result = collectDiagnostics(compilation);
+        const slang::SourceManager* sm = compilation.getSourceManager();
+        if (sm)
+            appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen);
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {
@@ -135,12 +166,13 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
         for (const std::string& s : pathStrs)
             pathViews.push_back(s);
 
+        slang::SourceManager sourceManager;
         slang::syntax::SyntaxTree::TreeOrError treeOrErr =
             effectiveIncludeDirs.isEmpty() && defines.isEmpty()
-                ? slang::syntax::SyntaxTree::fromFiles(pathViews)
+                ? slang::syntax::SyntaxTree::fromFiles(pathViews, sourceManager)
                 : slang::syntax::SyntaxTree::fromFiles(
                       pathViews,
-                      slang::syntax::SyntaxTree::getDefaultSourceManager(),
+                      sourceManager,
                       slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines));
         if (!treeOrErr)
             return result;
@@ -149,12 +181,17 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
         if (!tree)
             return result;
 
+        QSet<QString> seen;
+        appendDiagnostics(tree->sourceManager(), tree->diagnostics(), &result, &seen);
+
         slang::Bag compilationOptions =
             slang_parse_options::makeCompilationOptions();
         Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
         (void)compilation.getRoot();
-        result = collectDiagnostics(compilation);
+        const slang::SourceManager* sm = compilation.getSourceManager();
+        if (sm)
+            appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen);
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {

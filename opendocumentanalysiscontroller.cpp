@@ -57,8 +57,14 @@ void OpenDocumentAnalysisController::handleDocumentEdited(
     if (content.isNull())
         return;
 
-    if (isWorkspaceOpen())
-        return;
+    if (isWorkspaceOpen()) {
+        const QString cachedContent =
+            SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
+        if (!cachedContent.isEmpty()
+            && !hasNonWhitespaceChange(cachedContent, content)) {
+            return;
+        }
+    }
 
     emit relationshipAnalysisScheduled(snapshot.fileName,
                                        content,
@@ -161,4 +167,21 @@ bool OpenDocumentAnalysisController::lineContainsStructuralKeyword(
             return true;
     }
     return false;
+}
+
+bool OpenDocumentAnalysisController::hasNonWhitespaceChange(
+    const QString& oldContent,
+    const QString& newContent) const
+{
+    auto withoutWhitespace = [](const QString& text) {
+        QString result;
+        result.reserve(text.size());
+        for (const QChar ch : text) {
+            if (!ch.isSpace())
+                result.append(ch);
+        }
+        return result;
+    };
+
+    return withoutWhitespace(oldContent) != withoutWhitespace(newContent);
 }

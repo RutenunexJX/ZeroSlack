@@ -24,23 +24,24 @@ SingleFileRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeSingleFi
     SmartRelationshipBuilder* relationshipBuilder,
     const QString& fileName,
     const QString& content,
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot)
+    const SemanticSnapshotToken& baseSnapshot)
 {
     SingleFileRelationshipAnalysisResult result;
     result.fileName = fileName;
     result.baseSnapshot = baseSnapshot;
-    result.semanticSnapshot = baseSnapshot;
-    if (!relationshipBuilder || !baseSnapshot)
+    result.semanticSnapshot = baseSnapshot.snapshot;
+    if (!relationshipBuilder || !baseSnapshot.isValid())
         return result;
 
-    const QList<sym_list::SymbolInfo> fileSymbols = baseSnapshot->getSymbols(fileName);
+    const QList<sym_list::SymbolInfo> fileSymbols =
+        baseSnapshot.snapshot->getSymbols(fileName);
     result.relationships =
         relationshipBuilder->computeRelationships(
-            fileName, content, fileSymbols, baseSnapshot.get());
+            fileName, content, fileSymbols, baseSnapshot.snapshot.get());
 
     result.semanticSnapshot =
         SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
-            baseSnapshot,
+            baseSnapshot.snapshot,
             toSemanticRelationships(result.relationships));
     return result;
 }
@@ -48,11 +49,11 @@ SingleFileRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeSingleFi
 WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace(
     SmartRelationshipBuilder* relationshipBuilder,
     const ProjectSnapshot& project,
-    std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot)
+    const SemanticSnapshotToken& baseSnapshot)
 {
     WorkspaceRelationshipAnalysisResult result;
     result.baseSnapshot = baseSnapshot;
-    result.semanticSnapshot = baseSnapshot;
+    result.semanticSnapshot = baseSnapshot.snapshot;
     result.totalFiles = project.systemVerilogFiles.size();
     if (!relationshipBuilder)
         return result;
@@ -69,14 +70,15 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
             continue;
         const QString content = QTextStream(&file).readAll();
         const QList<sym_list::SymbolInfo> fileSymbols =
-            baseSnapshot ? baseSnapshot->getSymbols(filePath)
-                         : QList<sym_list::SymbolInfo>();
+            baseSnapshot.isValid()
+                ? baseSnapshot.snapshot->getSymbols(filePath)
+                : QList<sym_list::SymbolInfo>();
         const QVector<RelationshipToAdd> relationships =
             relationshipBuilder->computeRelationships(
                 filePath,
                 content,
                 fileSymbols,
-                baseSnapshot.get(),
+                baseSnapshot.snapshot.get(),
                 project.includeDirs,
                 project.defines);
         result.fileRelationships.append({filePath, relationships});
@@ -84,7 +86,7 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
     }
     result.semanticSnapshot =
         SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
-            baseSnapshot,
+            baseSnapshot.snapshot,
             newRelationships);
     return result;
 }
