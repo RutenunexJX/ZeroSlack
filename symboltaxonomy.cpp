@@ -291,6 +291,29 @@ QString symbolTypeLabel(sym_list::sym_type_e type)
     return QStringLiteral("symbol");
 }
 
+bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent)
+{
+    switch (intent) {
+    case SymbolSearchIntent::Any:
+        return true;
+    case SymbolSearchIntent::DefinitionCandidates:
+        return isDefinitionCandidate(type);
+    case SymbolSearchIntent::ModuleDeclarations:
+        return isModuleDeclaration(type);
+    case SymbolSearchIntent::GlobalDefinitions:
+        return isGlobalDefinition(type);
+    case SymbolSearchIntent::TypeDeclarations: {
+        const DeclarationKind kind = declarationKind(type);
+        return kind == DeclarationKind::Typedef
+            || kind == DeclarationKind::Enum
+            || kind == DeclarationKind::Struct;
+    }
+    case SymbolSearchIntent::SubroutineDeclarations:
+        return isSubroutineDeclaration(type);
+    }
+    return false;
+}
+
 bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                               sym_list::sym_type_e commandType,
                               const QString& dataType)

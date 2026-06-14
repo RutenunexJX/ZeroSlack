@@ -591,7 +591,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     SearchService searchService(&index);
     SearchQuery moduleSearchQuery;
     moduleSearchQuery.text = QStringLiteral("rel_");
-    moduleSearchQuery.types = {sym_list::sym_module};
+    moduleSearchQuery.intent = SymbolTaxonomy::SymbolSearchIntent::ModuleDeclarations;
     const QList<SearchResult> moduleSearchResults =
         searchService.findSymbols(moduleSearchQuery);
     bool searchFoundTop = false;
@@ -764,7 +764,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("snapshot search service max results",
               snapshotSearchService.findSymbols(snapshotLimitedModuleQuery).size(), 1);
     SearchQuery snapshotEmptyModuleQuery;
-    snapshotEmptyModuleQuery.types = {sym_list::sym_module};
+    snapshotEmptyModuleQuery.intent =
+        SymbolTaxonomy::SymbolSearchIntent::ModuleDeclarations;
     const QList<SearchResult> snapshotEmptyModuleResults =
         snapshotSearchService.findSymbols(snapshotEmptyModuleQuery);
     bool snapshotEmptySearchFoundTop = false;

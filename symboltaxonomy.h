@@ -39,6 +39,15 @@ enum class SourceRole {
     Header
 };
 
+enum class SymbolSearchIntent {
+    Any,
+    DefinitionCandidates,
+    ModuleDeclarations,
+    GlobalDefinitions,
+    TypeDeclarations,
+    SubroutineDeclarations
+};
+
 DeclarationKind declarationKind(sym_list::sym_type_e type);
 
 bool isDefinitionCandidate(sym_list::sym_type_e type);
@@ -51,6 +60,7 @@ bool isModuleRangeType(sym_list::sym_type_e type);
 int definitionPriority(sym_list::sym_type_e type);
 QList<sym_list::sym_type_e> outlineSymbolTypes();
 QString symbolTypeLabel(sym_list::sym_type_e type);
+bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent);
 
 bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                               sym_list::sym_type_e commandType,

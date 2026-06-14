@@ -27,6 +27,7 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
     indexQuery.text = query.text;
     indexQuery.fileName = query.fileName;
     indexQuery.types = query.types;
+    indexQuery.intent = query.intent;
     indexQuery.caseSensitive = query.caseSensitive;
     indexQuery.exactMatch = query.exactMatch;
     indexQuery.maxResults = query.maxResults;

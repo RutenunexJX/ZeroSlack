@@ -8,7 +8,8 @@ namespace semantic_index_lookup {
 QString normalizedLookupFileName(const QString& fileName);
 
 bool symbolSearchTypeMatches(sym_list::sym_type_e type,
-                             const QList<sym_list::sym_type_e>& types);
+                             const QList<sym_list::sym_type_e>& types,
+                             SymbolTaxonomy::SymbolSearchIntent intent);
 
 bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
                                      const QString& searchWord);

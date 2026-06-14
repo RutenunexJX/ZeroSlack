@@ -11,6 +11,7 @@ struct SearchQuery {
     QString text;
     QString fileName;
     QList<sym_list::sym_type_e> types;
+    SymbolTaxonomy::SymbolSearchIntent intent = SymbolTaxonomy::SymbolSearchIntent::Any;
     bool caseSensitive = false;
     bool exactMatch = false;
     int maxResults = -1;

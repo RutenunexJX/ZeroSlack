@@ -9,7 +9,7 @@
 QList<sym_list::SymbolInfo> NavigationService::moduleSymbols() const
 {
     SearchQuery moduleQuery;
-    moduleQuery.types = {sym_list::sym_module};
+    moduleQuery.intent = SymbolTaxonomy::SymbolSearchIntent::ModuleDeclarations;
 
     QList<sym_list::SymbolInfo> modules;
     const QList<SearchResult> moduleResults = searchService.findSymbols(moduleQuery);

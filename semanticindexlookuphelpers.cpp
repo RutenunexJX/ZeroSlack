@@ -15,9 +15,12 @@ QString normalizedLookupFileName(const QString& fileName)
 }
 
 bool symbolSearchTypeMatches(sym_list::sym_type_e type,
-                             const QList<sym_list::sym_type_e>& types)
+                             const QList<sym_list::sym_type_e>& types,
+                             SymbolTaxonomy::SymbolSearchIntent intent)
 {
-    return types.isEmpty() || types.contains(type);
+    if (!types.isEmpty())
+        return types.contains(type);
+    return SymbolTaxonomy::matchesSearchIntent(type, intent);
 }
 
 bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
