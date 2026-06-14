@@ -1,5 +1,7 @@
 #include "fsmgraphservice.h"
 
+#include "symboltaxonomy.h"
+
 #include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
@@ -69,7 +71,7 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);
-        return symbol.symbolType == sym_list::sym_module
+        return SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
             ? symbol
             : missingFsmSymbol();
     }
@@ -81,7 +83,8 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
     definitionQuery.fileName = query.fileName;
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
-    return definition.found && definition.symbol.symbolType == sym_list::sym_module
+    return definition.found
+            && SymbolTaxonomy::isModuleDeclaration(definition.symbol.symbolType)
         ? definition.symbol
         : missingFsmSymbol();
 }
@@ -106,7 +109,7 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateRegisters(
     QList<sym_list::SymbolInfo> result;
     QSet<int> seen;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!isStateRegisterType(symbol.symbolType))
+        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
             continue;
         if (!symbol.symbolName.contains(QStringLiteral("state"), Qt::CaseInsensitive))
             continue;
@@ -130,7 +133,7 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
     QList<sym_list::SymbolInfo> result;
     QSet<int> seen;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!isStateValueType(symbol.symbolType))
+        if (!SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType))
             continue;
         if (!stateRegister.dataType.isEmpty()
             && !symbol.dataType.isEmpty()
@@ -152,7 +155,7 @@ sym_list::SymbolInfo FsmGraphService::nextStateSignal(
 {
     QList<sym_list::SymbolInfo> candidates;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!isStateRegisterType(symbol.symbolType))
+        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
             continue;
         if (!symbol.symbolName.contains(QStringLiteral("state"), Qt::CaseInsensitive))
             continue;
@@ -291,24 +294,6 @@ bool FsmGraphService::isInsideModule(
     if (symbol.startLine < moduleSymbol.startLine)
         return false;
     return moduleSymbol.endLine <= 0 || symbol.startLine <= moduleSymbol.endLine;
-}
-
-bool FsmGraphService::isStateRegisterType(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_reg:
-    case sym_list::sym_logic:
-    case sym_list::sym_enum_var:
-        return true;
-    default:
-        return false;
-    }
-}
-
-bool FsmGraphService::isStateValueType(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_enum_value
-        || type == sym_list::sym_fsm_state;
 }
 
 QString FsmGraphService::stripLineComment(const QString& line)

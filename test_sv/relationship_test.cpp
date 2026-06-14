@@ -3081,6 +3081,12 @@ static void runFsmGraphServiceFixture()
     const FsmGraphReport report = service.buildFsmGraph(query);
 
     expectBool("fsm graph found", report.found, true);
+    expectBool("taxonomy recognizes fsm state register",
+               SymbolTaxonomy::isFsmStateRegisterDeclaration(stateQ.symbolType),
+               true);
+    expectBool("taxonomy recognizes fsm state value",
+               SymbolTaxonomy::isFsmStateValueDeclaration(idle.symbolType),
+               true);
     expectInt("fsm graph count", report.graphs.size(), 1);
     expectBool("fsm graph state register",
                !report.graphs.isEmpty()

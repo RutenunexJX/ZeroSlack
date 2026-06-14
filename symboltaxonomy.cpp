@@ -259,6 +259,19 @@ bool isPortConnectionPeer(sym_list::sym_type_e type)
         || isPortDeclaration(type);
 }
 
+bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_reg
+        || type == sym_list::sym_logic
+        || type == sym_list::sym_enum_var;
+}
+
+bool isFsmStateValueDeclaration(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_enum_value
+        || type == sym_list::sym_fsm_state;
+}
+
 bool isSubroutineDeclaration(sym_list::sym_type_e type)
 {
     const DeclarationKind kind = declarationKind(type);

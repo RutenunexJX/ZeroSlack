@@ -69,8 +69,6 @@ private:
 
     static bool isInsideModule(const sym_list::SymbolInfo& symbol,
                                const sym_list::SymbolInfo& moduleSymbol);
-    static bool isStateRegisterType(sym_list::sym_type_e type);
-    static bool isStateValueType(sym_list::sym_type_e type);
     static QString stripLineComment(const QString& line);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
     static void sortTransitions(QList<FsmTransition>& transitions);

@@ -89,6 +89,8 @@ bool isParameterDeclaration(sym_list::sym_type_e type);
 bool isSignalDeclaration(sym_list::sym_type_e type);
 bool isInstanceDeclaration(sym_list::sym_type_e type);
 bool isPortConnectionPeer(sym_list::sym_type_e type);
+bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type);
+bool isFsmStateValueDeclaration(sym_list::sym_type_e type);
 bool isSubroutineDeclaration(sym_list::sym_type_e type);
 bool isModuleRangeType(sym_list::sym_type_e type);
 bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type);
