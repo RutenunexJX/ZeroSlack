@@ -6,6 +6,9 @@
 #include <QTreeWidget>
 
 #include <functional>
+#include <memory>
+
+class SemanticIndexSnapshot;
 
 class RtlInsightsPanelCoordinator
 {
@@ -21,6 +24,11 @@ public:
     void showModuleInsights(const QString& fileName,
                             const QString& moduleName,
                             const QString& signalName = QString());
+    void showSemanticDiff(std::shared_ptr<const SemanticIndexSnapshot> beforeSnapshot,
+                          std::shared_ptr<const SemanticIndexSnapshot> afterSnapshot,
+                          const QString& moduleName = QString(),
+                          const QString& beforeFileName = QString(),
+                          const QString& afterFileName = QString());
     void refresh();
 
     QDockWidget* dock() const { return insightsDock; }

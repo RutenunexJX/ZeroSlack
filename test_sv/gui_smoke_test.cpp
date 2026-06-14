@@ -860,6 +860,126 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
 }
 
+static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
+                                                 const QString& fixturePath)
+{
+    printf("\n-- RTL insights semantic diff regression --\n");
+
+    QList<sym_list::SymbolInfo> beforeSymbols;
+    beforeSymbols.append(makeGuiSmokeSymbol(
+        9701,
+        fixturePath,
+        QStringLiteral("diff_top"),
+        sym_list::sym_module,
+        1));
+    beforeSymbols.append(makeGuiSmokeSymbol(
+        9702,
+        fixturePath,
+        QStringLiteral("data"),
+        sym_list::sym_port_input,
+        2,
+        QStringLiteral("diff_top")));
+    beforeSymbols.append(makeGuiSmokeSymbol(
+        9703,
+        fixturePath,
+        QStringLiteral("stale_q"),
+        sym_list::sym_logic,
+        6,
+        QStringLiteral("diff_top")));
+
+    QList<sym_list::SymbolInfo> afterSymbols;
+    afterSymbols.append(makeGuiSmokeSymbol(
+        9801,
+        fixturePath,
+        QStringLiteral("diff_top"),
+        sym_list::sym_module,
+        1));
+    afterSymbols.append(makeGuiSmokeSymbol(
+        9802,
+        fixturePath,
+        QStringLiteral("data"),
+        sym_list::sym_port_output,
+        2,
+        QStringLiteral("diff_top")));
+    afterSymbols.append(makeGuiSmokeSymbol(
+        9803,
+        fixturePath,
+        QStringLiteral("state_q"),
+        sym_list::sym_logic,
+        7,
+        QStringLiteral("diff_top")));
+
+    SemanticDiagnostic beforeDiagnostic;
+    beforeDiagnostic.fileName = fixturePath;
+    beforeDiagnostic.line = 6;
+    beforeDiagnostic.column = 3;
+    beforeDiagnostic.message = QStringLiteral("old warning");
+    beforeDiagnostic.severity = SemanticDiagnostic::Warning;
+
+    SemanticDiagnostic afterDiagnostic;
+    afterDiagnostic.fileName = fixturePath;
+    afterDiagnostic.line = 7;
+    afterDiagnostic.column = 5;
+    afterDiagnostic.message = QStringLiteral("new error");
+    afterDiagnostic.severity = SemanticDiagnostic::Error;
+
+    auto beforeSnapshot = std::make_shared<const SemanticIndexSnapshot>(
+        beforeSymbols,
+        QList<SemanticRelationship>(),
+        QList<SemanticDiagnostic>{beforeDiagnostic});
+    auto afterSnapshot = std::make_shared<const SemanticIndexSnapshot>(
+        afterSymbols,
+        QList<SemanticRelationship>(),
+        QList<SemanticDiagnostic>{afterDiagnostic});
+
+    expectBool("RTL insights panel exists for semantic diff",
+               rtlInsightsTree(window) != nullptr,
+               true);
+    if (!window.semanticDocks || !window.semanticDocks->rtlInsightsPanelCoordinator())
+        return;
+
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showSemanticDiff(
+        beforeSnapshot,
+        afterSnapshot,
+        QStringLiteral("diff_top"),
+        fixturePath,
+        fixturePath);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    bool sawModifiedPort = false;
+    bool sawAddedSignal = false;
+    bool sawRemovedSignal = false;
+    bool sawAddedDiagnostic = false;
+    bool sawRemovedDiagnostic = false;
+    const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
+    for (QTreeWidgetItem* item : items) {
+        sawModifiedPort = sawModifiedPort
+            || (item->text(0) == QStringLiteral("Modified")
+                && item->text(1) == QStringLiteral("data")
+                && item->text(2).contains(QStringLiteral("input -> output")));
+        sawAddedSignal = sawAddedSignal
+            || (item->text(0) == QStringLiteral("Added")
+                && item->text(1) == QStringLiteral("state_q"));
+        sawRemovedSignal = sawRemovedSignal
+            || (item->text(0) == QStringLiteral("Removed")
+                && item->text(1) == QStringLiteral("stale_q"));
+        sawAddedDiagnostic = sawAddedDiagnostic
+            || (item->text(0) == QStringLiteral("Added")
+                && item->text(1) == QStringLiteral("new error")
+                && item->text(2) == QStringLiteral("Error"));
+        sawRemovedDiagnostic = sawRemovedDiagnostic
+            || (item->text(0) == QStringLiteral("Removed")
+                && item->text(1) == QStringLiteral("old warning")
+                && item->text(2) == QStringLiteral("Warning"));
+    }
+
+    expectBool("RTL insights renders modified diff port", sawModifiedPort, true);
+    expectBool("RTL insights renders added diff signal", sawAddedSignal, true);
+    expectBool("RTL insights renders removed diff signal", sawRemovedSignal, true);
+    expectBool("RTL insights renders added diff diagnostic", sawAddedDiagnostic, true);
+    expectBool("RTL insights renders removed diff diagnostic", sawRemovedDiagnostic, true);
+}
+
 static void runNavigationHierarchyModelRegression()
 {
     printf("\n-- navigation hierarchy model regression --\n");
@@ -1562,6 +1682,7 @@ int main(int argc, char** argv)
 
     runReferenceDockRegression(window, normalizedSymbolFixturePath);
     runRtlInsightsPanelRegression(window, normalizedSymbolFixturePath);
+    runRtlInsightsSemanticDiffRegression(window, normalizedSymbolFixturePath);
 
     drainRelationshipWork(window);
 

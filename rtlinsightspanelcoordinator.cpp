@@ -3,6 +3,7 @@
 #include "clockresetdomainservice.h"
 #include "fsmgraphservice.h"
 #include "modulebriefservice.h"
+#include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
 #include "signaljourneyservice.h"
 
@@ -56,6 +57,85 @@ QString diagnosticSeverityText(SemanticDiagnostic::Severity severity)
     default:
         return QStringLiteral("Info");
     }
+}
+
+QString diffChangeKindText(SemanticDiffChangeKind kind)
+{
+    switch (kind) {
+    case SemanticDiffChangeKind::Added:
+        return QStringLiteral("Added");
+    case SemanticDiffChangeKind::Removed:
+        return QStringLiteral("Removed");
+    case SemanticDiffChangeKind::Modified:
+        return QStringLiteral("Modified");
+    }
+    return QString();
+}
+
+QString diffSymbolCategoryText(SemanticDiffSymbolCategory category)
+{
+    switch (category) {
+    case SemanticDiffSymbolCategory::Port:
+        return QStringLiteral("port");
+    case SemanticDiffSymbolCategory::Parameter:
+        return QStringLiteral("parameter");
+    case SemanticDiffSymbolCategory::Instance:
+        return QStringLiteral("instance");
+    case SemanticDiffSymbolCategory::Signal:
+        return QStringLiteral("signal");
+    }
+    return QStringLiteral("symbol");
+}
+
+const sym_list::SymbolInfo& diffDisplaySymbol(
+    const SemanticDiffSymbolChange& change)
+{
+    return change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeSymbol
+        : change.afterSymbol;
+}
+
+const SemanticDiagnostic& diffDisplayDiagnostic(
+    const SemanticDiffDiagnosticChange& change)
+{
+    return change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeDiagnostic
+        : change.afterDiagnostic;
+}
+
+QString diffSymbolDetail(const SemanticDiffSymbolChange& change)
+{
+    const sym_list::SymbolInfo& symbol = diffDisplaySymbol(change);
+    const QString category = diffSymbolCategoryText(change.category);
+    const QString type = symbolTypeText(symbol.symbolType);
+    const QString dataType = symbol.dataType.isEmpty()
+        ? QString()
+        : QStringLiteral(" %1").arg(symbol.dataType);
+    if (change.kind != SemanticDiffChangeKind::Modified)
+        return QStringLiteral("%1 %2%3").arg(category, type, dataType);
+
+    const QString beforeText =
+        QStringLiteral("%1%2")
+            .arg(symbolTypeText(change.beforeSymbol.symbolType),
+                 change.beforeSymbol.dataType.isEmpty()
+                     ? QString()
+                     : QStringLiteral(" %1").arg(change.beforeSymbol.dataType));
+    const QString afterText =
+        QStringLiteral("%1%2")
+            .arg(symbolTypeText(change.afterSymbol.symbolType),
+                 change.afterSymbol.dataType.isEmpty()
+                     ? QString()
+                     : QStringLiteral(" %1").arg(change.afterSymbol.dataType));
+    return QStringLiteral("%1 %2 -> %3").arg(category, beforeText, afterText);
+}
+
+QString diffRelationshipName(const SemanticDiffRelationshipChange& change)
+{
+    const SemanticRelationship& relationship =
+        change.kind == SemanticDiffChangeKind::Removed
+            ? change.beforeRelationship
+            : change.afterRelationship;
+    return SemanticPanelUtils::relationshipTypeText(relationship.type);
 }
 
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
@@ -313,6 +393,52 @@ void appendSignalJourney(QTreeWidget* tree,
                              report.portConnections);
 }
 
+void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
+{
+    QTreeWidgetItem* symbols = createGroupItem(tree,
+                                              QStringLiteral("Semantic Diff Symbols"),
+                                              report.symbolChanges.size());
+    for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
+        const sym_list::SymbolInfo& symbol = diffDisplaySymbol(change);
+        createChildItem(symbols,
+                        diffChangeKindText(change.kind),
+                        symbol.symbolName,
+                        diffSymbolDetail(change),
+                        symbol.fileName,
+                        symbol.startLine,
+                        symbol.startColumn);
+    }
+
+    QTreeWidgetItem* relationships =
+        createGroupItem(tree,
+                        QStringLiteral("Semantic Diff Relationships"),
+                        report.relationshipChanges.size());
+    for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
+        createChildItem(relationships,
+                        diffChangeKindText(change.kind),
+                        diffRelationshipName(change),
+                        change.key,
+                        QString(),
+                        0,
+                        0);
+    }
+
+    QTreeWidgetItem* diagnostics =
+        createGroupItem(tree,
+                        QStringLiteral("Semantic Diff Diagnostics"),
+                        report.diagnosticChanges.size());
+    for (const SemanticDiffDiagnosticChange& change : report.diagnosticChanges) {
+        const SemanticDiagnostic& diagnostic = diffDisplayDiagnostic(change);
+        createChildItem(diagnostics,
+                        diffChangeKindText(change.kind),
+                        diagnostic.message,
+                        diagnosticSeverityText(diagnostic.severity),
+                        diagnostic.fileName,
+                        diagnostic.line,
+                        diagnostic.column);
+    }
+}
+
 } // namespace
 
 RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
@@ -388,6 +514,54 @@ void RtlInsightsPanelCoordinator::showModuleInsights(
     if (insightsDock) {
         insightsDock->show();
         insightsDock->raise();
+    }
+}
+
+void RtlInsightsPanelCoordinator::showSemanticDiff(
+    std::shared_ptr<const SemanticIndexSnapshot> beforeSnapshot,
+    std::shared_ptr<const SemanticIndexSnapshot> afterSnapshot,
+    const QString& moduleName,
+    const QString& beforeFileName,
+    const QString& afterFileName)
+{
+    if (!insightsTree)
+        return;
+
+    const bool hadExpandableItems =
+        SemanticPanelUtils::treeHasExpandableItems(insightsTree);
+    const QSet<QString> expandedKeys =
+        SemanticPanelUtils::collectExpandedKeys(insightsTree);
+    insightsTree->clear();
+
+    SemanticDiffQuery query;
+    query.beforeSnapshot = std::move(beforeSnapshot);
+    query.afterSnapshot = std::move(afterSnapshot);
+    query.moduleName = moduleName;
+    query.beforeFileName = beforeFileName;
+    query.afterFileName = afterFileName;
+    const SemanticDiffReport report =
+        SemanticDiffService::getInstance()->buildSemanticDiff(query);
+
+    appendSemanticDiff(insightsTree, report);
+    SemanticPanelUtils::restoreTreeExpansion(insightsTree,
+                                             hadExpandableItems,
+                                             expandedKeys);
+
+    const int totalChanges = report.symbolChanges.size()
+        + report.relationshipChanges.size()
+        + report.diagnosticChanges.size();
+    if (insightsDock) {
+        const QString title = moduleName.isEmpty()
+            ? QStringLiteral("RTL Insights: Semantic Diff")
+            : QStringLiteral("RTL Insights: Semantic Diff %1").arg(moduleName);
+        insightsDock->setWindowTitle(title);
+        insightsDock->show();
+        insightsDock->raise();
+    }
+    if (statusMessageHandler) {
+        statusMessageHandler(QStringLiteral("Rendered semantic diff (%1 changes)")
+                                 .arg(totalChanges),
+                             1500);
     }
 }
 
