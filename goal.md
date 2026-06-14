@@ -57,6 +57,17 @@ Tree-sitter and Slang split:
 - Verification may be batched across independent architecture blocks, with one large coherent local commit for the completed turn.
 - Each turn should report the remaining Phase 3 percentage.
 
+## Phase 3 RTL Understanding Scope
+
+The implemented Phase 3 scope includes:
+
+- Module Brief service/report and RTL Insights rendering
+- Signal Journey service/report and RTL Insights rendering
+- Relationship Browsing 2.0 reports, explanations, and panel rendering
+- Clock/Reset Domain Map service/report and RTL Insights rendering
+- FSM State Transition Graph service/report and RTL Insights rendering
+- Semantic Diff service/report for symbols, relationships, and diagnostics, with RTL Insights rendering
+
 ## Definition Of Done
 
 The foundation is healthy when:

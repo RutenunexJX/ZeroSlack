@@ -4,13 +4,13 @@ Use `readme.md` for handoff state and `goal.md` for stable product/architecture 
 
 ## Next Architecture Blocks
 
-Start each turn from a current-state audit. Phase 3 work should add RTL understanding features through `snapshot -> Query Service/service report -> UI render`.
-Prefer multiple medium-sized, clearly themed architecture blocks only when their files and lifetimes are independent enough to verify together:
+Start each turn from a current-state audit. Phase 3 RTL understanding features should stay on the path `snapshot -> Query Service/service report -> UI render`.
+Phase 3 is now in completion-audit and stabilization state:
 
-1. Finish service/report foundations for Clock/Reset Domain Map, FSM State Transition Graph, Semantic Diff, and remaining relationship browsing improvements.
-2. Add focused UI rendering only after the service report shape is stable.
-3. Keep moving panel and editor read policy into Query Services. Coordinators should map UI state into service options, then render service reports.
-4. Touch scheduler, analyzer, document, or editor ownership only for a clearly proven Phase 3 blocker.
+1. Preserve the implemented service/report and UI render paths for Module Brief, Signal Journey, Relationship Browsing 2.0, Clock/Reset Domain Map, FSM Graph, and Semantic Diff.
+2. Fix only evidence-backed gaps found by tests, current-state audits, or real usage.
+3. Keep moving panel and editor read policy into Query Services only when a real boundary issue appears.
+4. Touch scheduler, analyzer, document, or editor ownership only for a clearly proven blocker.
 5. When touching editor or completion workflows, move the whole workflow behind the appropriate model/service/coordinator boundary instead of adding one-off relays.
 6. Remove test-only private access only when the replacement API is clearly a production boundary, not a broad test seam.
 

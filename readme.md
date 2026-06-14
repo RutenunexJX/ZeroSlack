@@ -51,6 +51,14 @@ Reduce batch size when blocks share core files or unsettled API boundaries.
 
 ## Phase 3 Focus
 
-Completed baseline services: Module Brief, Signal Journey, and relationship report explanations.
-Continue with Clock/Reset Domain Map, FSM State Transition Graph, Semantic Diff, and UI rendering for service reports.
-Keep the path `snapshot -> Query Service/service report -> UI render`.
+Phase 3 RTL understanding is in completion-audit state.
+Implemented feature paths:
+
+- Module Brief service/report with RTL Insights rendering.
+- Signal Journey service/report with RTL Insights rendering.
+- Relationship Browsing 2.0 reports with explanations and panel rendering.
+- Clock/Reset Domain Map service/report with RTL Insights rendering.
+- FSM State Transition Graph service/report with RTL Insights rendering.
+- Semantic Diff service/report for symbols, relationships, and diagnostics with RTL Insights rendering.
+
+Keep future RTL understanding work on the path `snapshot -> Query Service/service report -> UI render`.
