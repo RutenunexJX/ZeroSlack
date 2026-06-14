@@ -632,6 +632,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && exactTaskResults.first().symbol.symbolId == captureId,
                true);
 
+    SearchQuery outlineSearchQuery;
+    outlineSearchQuery.text = QStringLiteral("capture");
+    outlineSearchQuery.intent = SymbolTaxonomy::SymbolSearchIntent::OutlineSymbols;
+    const QList<SearchResult> outlineSearchResults =
+        searchService.findSymbols(outlineSearchQuery);
+    expectBool("search service outline intent finds task",
+               outlineSearchResults.size() == 1
+                   && outlineSearchResults.first().symbol.symbolId == captureId,
+               true);
+
     QVector<RelationshipToAdd> rels = builder.computeRelationships(topPath,
                                                                     contents.value(topPath),
                                                                     topSymbols);
@@ -746,6 +756,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("snapshot search service exact score",
               snapshotExactTaskResults.isEmpty() ? 0 : snapshotExactTaskResults.first().score,
               100);
+    const QList<SearchResult> snapshotOutlineSearchResults =
+        snapshotSearchService.findSymbols(outlineSearchQuery);
+    expectBool("snapshot search service outline intent finds task",
+               snapshotOutlineSearchResults.size() == 1
+                   && snapshotOutlineSearchResults.first().symbol.symbolId == captureId,
+               true);
     SearchQuery snapshotPartialExactTaskQuery = exactTaskSearchQuery;
     snapshotPartialExactTaskQuery.text = QStringLiteral("capture");
     expectBool("snapshot search service exact rejects partial",

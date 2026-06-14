@@ -173,6 +173,11 @@ bool isModuleRangeType(sym_list::sym_type_e type)
         || kind == DeclarationKind::StructVariable;
 }
 
+bool isOutlineSymbol(sym_list::sym_type_e type)
+{
+    return outlineSymbolTypes().contains(type);
+}
+
 int definitionPriority(sym_list::sym_type_e type)
 {
     switch (type) {
@@ -308,6 +313,8 @@ bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent)
             || kind == DeclarationKind::Enum
             || kind == DeclarationKind::Struct;
     }
+    case SymbolSearchIntent::OutlineSymbols:
+        return isOutlineSymbol(type);
     case SymbolSearchIntent::SubroutineDeclarations:
         return isSubroutineDeclaration(type);
     }

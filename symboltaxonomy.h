@@ -45,6 +45,7 @@ enum class SymbolSearchIntent {
     ModuleDeclarations,
     GlobalDefinitions,
     TypeDeclarations,
+    OutlineSymbols,
     SubroutineDeclarations
 };
 
@@ -57,6 +58,7 @@ bool isInterfaceLikeOwner(sym_list::sym_type_e type);
 bool isModuleDeclaration(sym_list::sym_type_e type);
 bool isSubroutineDeclaration(sym_list::sym_type_e type);
 bool isModuleRangeType(sym_list::sym_type_e type);
+bool isOutlineSymbol(sym_list::sym_type_e type);
 int definitionPriority(sym_list::sym_type_e type);
 QList<sym_list::sym_type_e> outlineSymbolTypes();
 QString symbolTypeLabel(sym_list::sym_type_e type);

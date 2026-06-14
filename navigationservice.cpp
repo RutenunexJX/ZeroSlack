@@ -46,6 +46,7 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
 {
     SearchQuery outlineQuery;
     outlineQuery.fileName = query.fileName;
+    outlineQuery.intent = SymbolTaxonomy::SymbolSearchIntent::OutlineSymbols;
 
     QList<sym_list::SymbolInfo> symbols;
     const QList<SearchResult> searchResults = searchService.findSymbols(outlineQuery);
