@@ -154,9 +154,17 @@ QList<SemanticDiffRelationshipChange> SemanticDiffService::relationshipChanges(
         if (hasBefore) {
             change.kind = SemanticDiffChangeKind::Removed;
             change.beforeRelationship = beforeRelationships.value(key);
+            change.beforeFromSymbol =
+                query.beforeSnapshot->getSymbolById(change.beforeRelationship.fromId);
+            change.beforeToSymbol =
+                query.beforeSnapshot->getSymbolById(change.beforeRelationship.toId);
         } else {
             change.kind = SemanticDiffChangeKind::Added;
             change.afterRelationship = afterRelationships.value(key);
+            change.afterFromSymbol =
+                query.afterSnapshot->getSymbolById(change.afterRelationship.fromId);
+            change.afterToSymbol =
+                query.afterSnapshot->getSymbolById(change.afterRelationship.toId);
         }
         changes.append(change);
     }

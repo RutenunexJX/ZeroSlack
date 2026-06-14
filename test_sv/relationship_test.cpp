@@ -2915,11 +2915,21 @@ static void runSemanticDiffServiceFixture()
 
     int addedRelationships = 0;
     int removedRelationships = 0;
+    bool addedRelationshipHasEndpoints = false;
+    bool removedRelationshipHasEndpoints = false;
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
-        if (change.kind == SemanticDiffChangeKind::Added)
+        if (change.kind == SemanticDiffChangeKind::Added) {
             ++addedRelationships;
-        if (change.kind == SemanticDiffChangeKind::Removed)
+            addedRelationshipHasEndpoints =
+                change.afterFromSymbol.symbolName == QStringLiteral("diff_top")
+                && change.afterToSymbol.symbolName == QStringLiteral("u_new");
+        }
+        if (change.kind == SemanticDiffChangeKind::Removed) {
             ++removedRelationships;
+            removedRelationshipHasEndpoints =
+                change.beforeFromSymbol.symbolName == QStringLiteral("diff_top")
+                && change.beforeToSymbol.symbolName == QStringLiteral("u_old");
+        }
     }
 
     int addedDiagnostics = 0;
@@ -2939,6 +2949,12 @@ static void runSemanticDiffServiceFixture()
     expectBool("semantic diff added state signal", newSignalAdded, true);
     expectInt("semantic diff added relationships", addedRelationships, 1);
     expectInt("semantic diff removed relationships", removedRelationships, 1);
+    expectBool("semantic diff added relationship endpoints",
+               addedRelationshipHasEndpoints,
+               true);
+    expectBool("semantic diff removed relationship endpoints",
+               removedRelationshipHasEndpoints,
+               true);
     expectInt("semantic diff added diagnostics", addedDiagnostics, 1);
     expectInt("semantic diff removed diagnostics", removedDiagnostics, 1);
 }

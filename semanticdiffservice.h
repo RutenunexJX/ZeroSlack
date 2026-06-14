@@ -41,7 +41,11 @@ struct SemanticDiffRelationshipChange {
     SemanticDiffChangeKind kind = SemanticDiffChangeKind::Added;
     QString key;
     SemanticRelationship beforeRelationship;
+    sym_list::SymbolInfo beforeFromSymbol = {};
+    sym_list::SymbolInfo beforeToSymbol = {};
     SemanticRelationship afterRelationship;
+    sym_list::SymbolInfo afterFromSymbol = {};
+    sym_list::SymbolInfo afterToSymbol = {};
 };
 
 struct SemanticDiffDiagnosticChange {

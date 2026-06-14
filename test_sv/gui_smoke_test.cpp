@@ -886,6 +886,13 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
         sym_list::sym_logic,
         6,
         QStringLiteral("diff_top")));
+    beforeSymbols.append(makeGuiSmokeSymbol(
+        9704,
+        fixturePath,
+        QStringLiteral("u_old"),
+        sym_list::sym_inst,
+        10,
+        QStringLiteral("diff_top")));
 
     QList<sym_list::SymbolInfo> afterSymbols;
     afterSymbols.append(makeGuiSmokeSymbol(
@@ -908,6 +915,23 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
         sym_list::sym_logic,
         7,
         QStringLiteral("diff_top")));
+    afterSymbols.append(makeGuiSmokeSymbol(
+        9804,
+        fixturePath,
+        QStringLiteral("u_new"),
+        sym_list::sym_inst,
+        10,
+        QStringLiteral("diff_top")));
+
+    SemanticRelationship beforeRelationship;
+    beforeRelationship.fromId = 9701;
+    beforeRelationship.toId = 9704;
+    beforeRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
+
+    SemanticRelationship afterRelationship;
+    afterRelationship.fromId = 9801;
+    afterRelationship.toId = 9804;
+    afterRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
 
     SemanticDiagnostic beforeDiagnostic;
     beforeDiagnostic.fileName = fixturePath;
@@ -925,11 +949,11 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
 
     auto beforeSnapshot = std::make_shared<const SemanticIndexSnapshot>(
         beforeSymbols,
-        QList<SemanticRelationship>(),
+        QList<SemanticRelationship>{beforeRelationship},
         QList<SemanticDiagnostic>{beforeDiagnostic});
     auto afterSnapshot = std::make_shared<const SemanticIndexSnapshot>(
         afterSymbols,
-        QList<SemanticRelationship>(),
+        QList<SemanticRelationship>{afterRelationship},
         QList<SemanticDiagnostic>{afterDiagnostic});
 
     expectBool("RTL insights panel exists for semantic diff",
@@ -949,6 +973,8 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     bool sawModifiedPort = false;
     bool sawAddedSignal = false;
     bool sawRemovedSignal = false;
+    bool sawAddedRelationship = false;
+    bool sawRemovedRelationship = false;
     bool sawAddedDiagnostic = false;
     bool sawRemovedDiagnostic = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
@@ -963,6 +989,14 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
         sawRemovedSignal = sawRemovedSignal
             || (item->text(0) == QStringLiteral("Removed")
                 && item->text(1) == QStringLiteral("stale_q"));
+        sawAddedRelationship = sawAddedRelationship
+            || (item->text(0) == QStringLiteral("Added")
+                && item->text(1) == QStringLiteral("Instantiates")
+                && item->text(2) == QStringLiteral("diff_top -> u_new"));
+        sawRemovedRelationship = sawRemovedRelationship
+            || (item->text(0) == QStringLiteral("Removed")
+                && item->text(1) == QStringLiteral("Instantiates")
+                && item->text(2) == QStringLiteral("diff_top -> u_old"));
         sawAddedDiagnostic = sawAddedDiagnostic
             || (item->text(0) == QStringLiteral("Added")
                 && item->text(1) == QStringLiteral("new error")
@@ -976,6 +1010,12 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     expectBool("RTL insights renders modified diff port", sawModifiedPort, true);
     expectBool("RTL insights renders added diff signal", sawAddedSignal, true);
     expectBool("RTL insights renders removed diff signal", sawRemovedSignal, true);
+    expectBool("RTL insights renders added diff relationship",
+               sawAddedRelationship,
+               true);
+    expectBool("RTL insights renders removed diff relationship",
+               sawRemovedRelationship,
+               true);
     expectBool("RTL insights renders added diff diagnostic", sawAddedDiagnostic, true);
     expectBool("RTL insights renders removed diff diagnostic", sawRemovedDiagnostic, true);
 }

@@ -138,6 +138,32 @@ QString diffRelationshipName(const SemanticDiffRelationshipChange& change)
     return SemanticPanelUtils::relationshipTypeText(relationship.type);
 }
 
+const sym_list::SymbolInfo& diffRelationshipFromSymbol(
+    const SemanticDiffRelationshipChange& change)
+{
+    return change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeFromSymbol
+        : change.afterFromSymbol;
+}
+
+const sym_list::SymbolInfo& diffRelationshipToSymbol(
+    const SemanticDiffRelationshipChange& change)
+{
+    return change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeToSymbol
+        : change.afterToSymbol;
+}
+
+QString diffRelationshipDetail(const SemanticDiffRelationshipChange& change)
+{
+    const sym_list::SymbolInfo& fromSymbol = diffRelationshipFromSymbol(change);
+    const sym_list::SymbolInfo& toSymbol = diffRelationshipToSymbol(change);
+    if (fromSymbol.symbolName.isEmpty() || toSymbol.symbolName.isEmpty())
+        return change.key;
+    return QStringLiteral("%1 -> %2")
+        .arg(fromSymbol.symbolName, toSymbol.symbolName);
+}
+
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
                                  const QString& title,
                                  int count)
@@ -414,13 +440,14 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                         QStringLiteral("Semantic Diff Relationships"),
                         report.relationshipChanges.size());
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
+        const sym_list::SymbolInfo& fromSymbol = diffRelationshipFromSymbol(change);
         createChildItem(relationships,
                         diffChangeKindText(change.kind),
                         diffRelationshipName(change),
-                        change.key,
-                        QString(),
-                        0,
-                        0);
+                        diffRelationshipDetail(change),
+                        fromSymbol.fileName,
+                        fromSymbol.startLine,
+                        fromSymbol.startColumn);
     }
 
     QTreeWidgetItem* diagnostics =
