@@ -1519,6 +1519,51 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("scheduler save skips relationship popup path",
                documentSaveRelationshipFinished, false);
 
+    SymbolAnalyzer staleFileAnalyzer;
+    const QString staleFilePath =
+        fixtureDir.absoluteFilePath(QStringLiteral("stale_async_file.sv"));
+    QString staleOldContent;
+    for (int i = 0; i < 400; ++i) {
+        staleOldContent += QStringLiteral(
+                               "module stale_old_%1; logic old_signal_%1; endmodule\n")
+                               .arg(i);
+    }
+    const QString staleNewContent =
+        QStringLiteral("module stale_new; logic new_signal; endmodule\n");
+    staleFileAnalyzer.analyzeFileContentAsync(staleFilePath, staleOldContent);
+    staleFileAnalyzer.analyzeFileContentAsync(staleFilePath, staleNewContent);
+    QEventLoop staleFileLoop;
+    QObject::connect(&staleFileAnalyzer,
+                     &SymbolAnalyzer::analysisCompleted,
+                     &staleFileLoop,
+                     [&](const QString& fileName, int symbolsFound) {
+                         if (fileName == staleFilePath && symbolsFound > 0) {
+                             const auto snapshot = SemanticIndex::getInstance()->snapshot();
+                             if (snapshot && !snapshot->getSymbols(staleFilePath).isEmpty())
+                                 staleFileLoop.quit();
+                         }
+                     });
+    QTimer::singleShot(3000, &staleFileLoop, &QEventLoop::quit);
+    staleFileLoop.exec();
+    QApplication::processEvents();
+    bool staleSnapshotHasNew = false;
+    bool staleSnapshotHasOld = false;
+    if (const auto snapshot = SemanticIndex::getInstance()->snapshot()) {
+        const QList<sym_list::SymbolInfo> symbols =
+            snapshot->getSymbols(staleFilePath);
+        for (const sym_list::SymbolInfo& symbol : symbols) {
+            staleSnapshotHasNew = staleSnapshotHasNew
+                || symbol.symbolName == QStringLiteral("stale_new")
+                || symbol.symbolName == QStringLiteral("new_signal");
+            staleSnapshotHasOld = staleSnapshotHasOld
+                || symbol.symbolName.startsWith(QStringLiteral("stale_old_"))
+                || symbol.symbolName.startsWith(QStringLiteral("old_signal_"));
+        }
+    }
+    expectBool("stale async file analysis keeps latest symbols",
+               staleSnapshotHasNew && !staleSnapshotHasOld,
+               true);
+
     AnalysisScheduler refreshScheduler;
     SymbolRelationshipEngine refreshEngine;
     refreshScheduler.setRelationshipEngine(&refreshEngine);

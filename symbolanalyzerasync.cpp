@@ -50,10 +50,11 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     const QHash<QString, QString> defines = project.defines;
     const QString workspacePath = project.workspaceRoot;
     const int totalFiles = svFiles.size();
+    const std::uint64_t generation = ++workspaceAnalysisGeneration;
 
     emit analysisStarted(workspacePath);
 
-    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled]() {
+    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation]() {
         SlangManager symbolAnalyzer;
         QList<sym_list::SymbolInfo> symbols =
             symbolAnalyzer.extractWorkspaceSymbols(svFiles, includeDirs, defines);
@@ -65,11 +66,13 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
         SlangManager diagnosticsAnalyzer;
         result.diagnostics =
             diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles, includeDirs, defines);
+        result.generation = generation;
         return result;
     });
 
     workspaceAnalysisWatcher->setProperty("workspacePath", workspacePath);
     workspaceAnalysisWatcher->setProperty("totalFiles", totalFiles);
+    workspaceAnalysisWatcher->setProperty("generation", QVariant::fromValue<qulonglong>(generation));
     workspaceAnalysisWatcher->setFuture(future);
 }
 
@@ -93,6 +96,10 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
     const WorkspaceAnalysisResult result = workspaceAnalysisWatcher->result();
     const QString workspacePath = workspaceAnalysisWatcher->property("workspacePath").toString();
     const int totalFiles = workspaceAnalysisWatcher->property("totalFiles").toInt();
+    const std::uint64_t generation =
+        workspaceAnalysisWatcher->property("generation").toULongLong();
+    if (generation != workspaceAnalysisGeneration || result.generation != generation)
+        return;
 
     const int filesAnalyzed = publishWorkspaceAnalysisResult(result, totalFiles);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
@@ -104,25 +111,41 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
     if (fileName.isEmpty() || !isSystemVerilogFile(fileName))
         return;
 
+    const std::uint64_t generation = fileAnalysisGenerations.value(fileName, 0) + 1;
+    fileAnalysisGenerations.insert(fileName, generation);
+    const QString expectedContentHash = contentHash(content);
+
     // Keep the parse task self-contained; the watcher owns only delivery back to this QObject.
     auto* watcher =
-        new QFutureWatcher<QPair<QList<sym_list::SymbolInfo>, QList<SemanticDiagnostic>>>(this);
+        new QFutureWatcher<FileAnalysisResult>(this);
     connect(watcher,
-            &QFutureWatcher<QPair<QList<sym_list::SymbolInfo>, QList<SemanticDiagnostic>>>::finished,
+            &QFutureWatcher<FileAnalysisResult>::finished,
             this,
-            [this, fileName, content, watcher]() {
+            [this, fileName, expectedContentHash, generation, watcher]() {
                 const auto result = watcher->result();
                 watcher->deleteLater();
-                publishFileAnalysisResult(fileName, content, result.first, result.second);
-                emit analysisCompleted(fileName, result.first.size());
+                if (fileAnalysisGenerations.value(fileName, 0) != generation)
+                    return;
+                if (result.generation != generation
+                    || result.contentHash != expectedContentHash) {
+                    return;
+                }
+                publishFileAnalysisResult(result.fileName,
+                                          result.content,
+                                          result.symbols,
+                                          result.diagnostics);
+                emit analysisCompleted(result.fileName, result.symbols.size());
             });
-    watcher->setFuture(QtConcurrent::run([fileName, content]() {
+    watcher->setFuture(QtConcurrent::run([fileName, content, expectedContentHash, generation]() {
+        FileAnalysisResult result;
+        result.fileName = fileName;
+        result.content = content;
+        result.contentHash = expectedContentHash;
+        result.generation = generation;
         SlangManager symbolAnalyzer;
-        QList<sym_list::SymbolInfo> symbols =
-            symbolAnalyzer.extractSymbols(fileName, content);
+        result.symbols = symbolAnalyzer.extractSymbols(fileName, content);
         SlangManager diagnosticsAnalyzer;
-        QList<SemanticDiagnostic> diagnostics =
-            diagnosticsAnalyzer.extractDiagnostics(fileName, content);
-        return qMakePair(symbols, diagnostics);
+        result.diagnostics = diagnosticsAnalyzer.extractDiagnostics(fileName, content);
+        return result;
     }));
 }

@@ -12,6 +12,13 @@ bool SymbolAnalyzer::isAnalysisNeeded(const QString& fileName, const QString& co
 void SymbolAnalyzer::invalidateCache()
 {
     lastAnalyzedContent.clear();
+    fileAnalysisGenerations.clear();
+    ++workspaceAnalysisGeneration;
+}
+
+QString SymbolAnalyzer::contentHash(const QString& content) const
+{
+    return QString::number(qHash(content));
 }
 
 QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) const

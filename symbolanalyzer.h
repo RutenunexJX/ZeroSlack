@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QList>
 #include <QVector>
+#include <cstdint>
 #include <functional>
 #include "projectmodel.h"
 #include "semanticindex.h"
@@ -30,6 +31,16 @@ struct WorkspaceAnalysisResult {
     QVector<WorkspaceFileAnalysis> files;
     QList<SemanticDiagnostic> diagnostics;
     int totalSymbols = 0;
+    std::uint64_t generation = 0;
+};
+
+struct FileAnalysisResult {
+    QString fileName;
+    QString content;
+    QString contentHash;
+    QList<sym_list::SymbolInfo> symbols;
+    QList<SemanticDiagnostic> diagnostics;
+    std::uint64_t generation = 0;
 };
 
 class SymbolAnalyzer : public QObject
@@ -67,6 +78,8 @@ private slots:
 private:
     // Analysis state tracking
     QHash<QString, QString> lastAnalyzedContent;
+    QHash<QString, std::uint64_t> fileAnalysisGenerations;
+    std::uint64_t workspaceAnalysisGeneration = 0;
 
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
 
@@ -85,6 +98,7 @@ private:
     int publishWorkspaceAnalysisResult(
         const WorkspaceAnalysisResult& result,
         int totalFiles);
+    QString contentHash(const QString& content) const;
     void cancelWorkspaceAnalysisAndWait();
     QStringList filterSystemVerilogFiles(const QStringList& files) const;
     bool isSystemVerilogFile(const QString &fileName) const;
