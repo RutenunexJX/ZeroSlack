@@ -3360,6 +3360,18 @@ static void runRealWorkspaceIncludeFixture()
                project.sourceRoleForFile(rootHeaderPath)
                    == SymbolTaxonomy::SourceRole::Header,
                true);
+    expectBool("real workspace model lists design sources",
+               project.designSourceFiles().contains(topPath),
+               true);
+    expectBool("real workspace model lists headers",
+               project.headerSourceFiles().contains(rootHeaderPath),
+               true);
+    expectBool("real workspace snapshot lists design sources",
+               snapshot.designSourceFiles().contains(topPath),
+               true);
+    expectBool("real workspace snapshot lists headers",
+               snapshot.headerSourceFiles().contains(rootHeaderPath),
+               true);
 
     SlangManager slang;
     const QList<SemanticDiagnostic> diagnostics =

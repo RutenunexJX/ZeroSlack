@@ -3,6 +3,28 @@
 #include <QDir>
 #include <QFileInfo>
 
+QStringList ProjectSnapshot::filesForSourceRole(
+    SymbolTaxonomy::SourceRole role) const
+{
+    QStringList files;
+    for (auto it = sourceRoles.cbegin(); it != sourceRoles.cend(); ++it) {
+        if (it.value() == role)
+            files.append(it.key());
+    }
+    files.sort(Qt::CaseInsensitive);
+    return files;
+}
+
+QStringList ProjectSnapshot::designSourceFiles() const
+{
+    return filesForSourceRole(SymbolTaxonomy::SourceRole::DesignSource);
+}
+
+QStringList ProjectSnapshot::headerSourceFiles() const
+{
+    return filesForSourceRole(SymbolTaxonomy::SourceRole::Header);
+}
+
 ProjectModel::ProjectModel(QObject* parent)
     : QObject(parent)
 {
@@ -142,6 +164,22 @@ SymbolTaxonomy::SourceRole ProjectModel::sourceRoleForFile(
     return current.sourceRoles.value(
         pathRules.normalizePath(filePath),
         SymbolTaxonomy::SourceRole::Unknown);
+}
+
+QStringList ProjectModel::filesForSourceRole(
+    SymbolTaxonomy::SourceRole role) const
+{
+    return current.filesForSourceRole(role);
+}
+
+QStringList ProjectModel::designSourceFiles() const
+{
+    return current.designSourceFiles();
+}
+
+QStringList ProjectModel::headerSourceFiles() const
+{
+    return current.headerSourceFiles();
 }
 
 QString ProjectModel::filelistPath() const

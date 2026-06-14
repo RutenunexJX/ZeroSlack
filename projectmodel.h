@@ -20,6 +20,9 @@ struct ProjectSnapshot {
     QStringList ignoredPaths;
 
     bool isOpen() const { return !workspaceRoot.isEmpty(); }
+    QStringList filesForSourceRole(SymbolTaxonomy::SourceRole role) const;
+    QStringList designSourceFiles() const;
+    QStringList headerSourceFiles() const;
 };
 
 class ProjectModel : public QObject
@@ -48,6 +51,9 @@ public:
     QHash<QString, QString> defines() const;
     QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles() const;
     SymbolTaxonomy::SourceRole sourceRoleForFile(const QString& filePath) const;
+    QStringList filesForSourceRole(SymbolTaxonomy::SourceRole role) const;
+    QStringList designSourceFiles() const;
+    QStringList headerSourceFiles() const;
     QString filelistPath() const;
     QString topModule() const;
     QStringList ignoredPaths() const;
