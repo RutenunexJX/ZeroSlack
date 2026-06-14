@@ -120,9 +120,6 @@ public:
     bool publishSnapshotIfCurrent(
         const SemanticSnapshotToken& expectedCurrentSnapshot,
         std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
-    bool publishSnapshotIfCurrent(
-        std::shared_ptr<const SemanticIndexSnapshot> expectedCurrentSnapshot,
-        std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
 
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;

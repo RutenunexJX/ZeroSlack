@@ -103,12 +103,3 @@ bool SemanticIndex::publishSnapshotIfCurrent(
         setSnapshot(std::move(nextSnapshot));
     return true;
 }
-
-bool SemanticIndex::publishSnapshotIfCurrent(
-    std::shared_ptr<const SemanticIndexSnapshot> expectedCurrentSnapshot,
-    std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot)
-{
-    return publishSnapshotIfCurrent(
-        {std::move(expectedCurrentSnapshot), snapshotRevision()},
-        std::move(nextSnapshot));
-}
