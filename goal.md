@@ -1,14 +1,14 @@
 # ZeroSlack Product And Architecture Goal
 
-ZeroSlack is a reliable SystemVerilog workspace browser and lightweight editor. It is not trying to become a full IDE in one jump.
+ZeroSlack is a reliable SystemVerilog workspace browser and lightweight editor. It should grow through stable semantic boundaries instead of ad hoc UI logic.
 
 ## Product Goal
 
 ZeroSlack should:
 
 - open real SV workspaces reliably
-- understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, and relationships
-- provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, and relationship browsing
+- understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, diagnostics, references, and relationships
+- provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, relationship browsing, and RTL insight reports
 - remain responsive on large files and multi-file workspaces
 - keep semantic behavior testable through real fixtures
 
@@ -19,68 +19,48 @@ ProjectModel
   Owns workspace inputs: root, file list, include dirs, defines, top, ignored paths.
 
 DocumentModel
-  Owns open document state: file identity, text snapshot/version, saved text version, dirty/saved state, cursor, live module, registry-backed text queries, and eventually Tree-sitter document ownership.
+  Owns open document identity, text snapshots, versions, dirty/saved state, cursor, live module, and registry-backed text queries.
 
 AnalysisScheduler
-  Owns analysis timing: scheduled semantic runs, relationship runs, cancellation, debounce, refresh requests, lifecycle, and analysis event routing.
+  Owns analysis timing, debounce, cancellation, refresh requests, relationship work, lifecycle, and analysis event routing.
 
-SemanticIndex
-  Owns semantic facts: symbols, definitions, relationships, references, diagnostics, cached content.
+SemanticIndex / SemanticIndexSnapshot
+  Own semantic facts: symbols, definitions, relationships, references, diagnostics, and cached content.
 
-Query Services
-  Own feature-specific reads and panel query shaping: definition, completion, relationship, hierarchy, reference, diagnostics, search, module brief, signal journey, clock/reset domain, FSM, and semantic diff.
+Query Services / Feature Services
+  Own feature-specific reads, report shaping, and semantic policy.
 
 Coordinators
-  Own UI/editor command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and other workflow glue.
+  Own UI command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and workflow glue.
 
 UI Layer
-  Renders service/model output. It should not scan files directly or trigger Slang directly.
+  Renders service/model output.
 ```
 
-Tree-sitter and Slang split:
+## Architecture Rules
 
-- Tree-sitter: instant, tolerant, low-latency editing experience; syntax highlighting; incremental parse trees; live scope.
-- Slang: real semantic facts; symbols; types; definitions; diagnostics; relationships; project-level truth.
-
-## Architecture Principles
-
-- New semantic reads should go through SemanticIndex or Query Services.
-- Panel filters and UI read policy should become service options, not scattered widget-derived query logic.
-- Analysis triggers belong in AnalysisScheduler.
-- UI panels should render service/model output, not derive semantic policy from widgets.
-- MainWindow should compose and coordinate windows, not own analysis event routing, panel rendering, or editor workflow policy.
-- MyCodeEditor should provide editor event flow and stable editor adapters. Focused editor subsystem files should own gutter, selection/highlight, geometry, cursor navigation, file identity, syntax state, runtime, completion, hover, source navigation, and other coherent editor workflows while document state and project semantic decisions stay in models, services, scheduler, runtime, and coordinators.
-- Phase 3 RTL understanding features should move through `snapshot -> Query Service/service report -> UI render`.
-- New test code should prefer stable production-facing APIs; existing private-access test debt should shrink only when replacement APIs are real production boundaries.
+- New semantic features should flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
+- UI code must not run Slang directly or scan workspace files directly.
+- Scheduler and analyzer code must not own feature policy.
+- Slang owns semantic truth; Tree-sitter owns low-latency editor syntax and live scope.
+- Real engineering fixtures, especially `test_sv/new`, should guide feature expansion.
 - Performance probes should be targeted and removable; do not restore scattered long-lived perflog.
+
+## Hard Rules
+
 - Use Qt 6 + CMake + Ninja only.
-- Verification may be batched across independent architecture blocks, with one large coherent local commit for the completed turn.
-- Each turn should report the remaining Phase 3 percentage.
-
-## Phase 3 RTL Understanding Scope
-
-The implemented Phase 3 scope includes:
-
-- Module Brief service/report and RTL Insights rendering
-- Signal Journey service/report and RTL Insights rendering
-- Relationship Browsing 2.0 reports, explanations, and panel rendering
-- Clock/Reset Domain Map service/report and RTL Insights rendering
-- FSM State Transition Graph service/report and RTL Insights rendering
-- Semantic Diff service/report for symbols, relationships, and diagnostics, with RTL Insights rendering
+- Do not restore qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
+- Do not discard user changes.
+- Do not push unless explicitly asked.
+- Keep local commits coherent and architecture-oriented.
 
 ## Definition Of Done
 
 The foundation is healthy when:
 
-- new feature reads mainly use ProjectModel, DocumentModel, AnalysisScheduler, SemanticIndex, and Query Services
-- MainWindow is mostly UI composition and high-level callback wiring
-- MyCodeEditor is mostly event flow and public adapters, with editor UI and editor workflow subsystems split into focused files
-- private-access test debt is isolated and shrinking as stable production APIs appear
-- UI/services can read stable snapshot-backed semantic data through feature reports
-- all CTest targets pass
-- real multi-file fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, FSMs, diagnostics, relationship browsing, signal journeys, module briefs, and semantic diff
-- Phase 3 service reports have clear UI rendering paths without pushing semantic policy into widgets
-- verification may be batched across independent blocks, but product quality and fixture coverage do not shrink
-- each completed turn passes full Ninja, full `ctest --output-on-failure`, hygiene scans, and forbidden-file guard before the local commit is created
-- local commits stay coherent and architecture-oriented
-- handoff docs are short enough for a new session to read without wasting context
+- feature reads use stable models, snapshots, Query Services, or feature services
+- UI panels render reports/models without owning semantic policy
+- scheduler, analyzer, project, document, and editor ownership boundaries stay clear
+- real fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, FSMs, diagnostics, relationship browsing, signal journeys, module briefs, semantic diff, and large-file response
+- full Ninja and full `ctest --output-on-failure` pass after shared semantic, scheduler, editor, or project boundary changes
+- handoff docs are short, current, and easy to reread

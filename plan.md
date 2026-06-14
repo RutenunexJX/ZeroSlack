@@ -1,80 +1,43 @@
 # ZeroSlack Development Plan
 
-Use `readme.md` for handoff state and `goal.md` for stable product/architecture goals. This file defines how to keep moving.
+Use `readme.md` for handoff state and `goal.md` for stable product and architecture goals. This file defines execution policy.
 
-## Next Architecture Blocks
+## Architecture Flow
 
-Start each turn from a current-state audit. Phase 3 RTL understanding features should stay on the path `snapshot -> Query Service/service report -> UI render`.
-Phase 3 is now in completion-audit and stabilization state:
+- Start each turn from the current worktree and current tests.
+- New semantic features should move through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
+- Keep UI panels as renderers of service or model output.
+- Keep scheduler and analyzer code focused on timing, lifecycle, extraction, and publication.
+- Move policy into services only when there is a real production boundary.
 
-1. Preserve the implemented service/report and UI render paths for Module Brief, Signal Journey, Relationship Browsing 2.0, Clock/Reset Domain Map, FSM Graph, and Semantic Diff.
-2. Fix only evidence-backed gaps found by tests, current-state audits, or real usage.
-3. Keep moving panel and editor read policy into Query Services only when a real boundary issue appears.
-4. Touch scheduler, analyzer, document, or editor ownership only for a clearly proven blocker.
-5. When touching editor or completion workflows, move the whole workflow behind the appropriate model/service/coordinator boundary instead of adding one-off relays.
-6. Remove test-only private access only when the replacement API is clearly a production boundary, not a broad test seam.
+## Good Work Blocks
 
-Prioritize production-code architecture progress. Do not use pure assertion expansion as the main increment. Add tests only as focused regression protection directly tied to a production change.
+- Query Service or feature service read paths.
+- Report/model shaping for semantic panels.
+- Focused UI rendering of stable reports.
+- Real fixture coverage tied to production changes.
+- Editor or project boundary cleanup with a clear ownership target.
 
-## Batch Selection
+## Risky Work Blocks
 
-Good batch candidates:
+- Broad simultaneous changes across `TabManager`, `DocumentModel`, and `MyCodeEditor`.
+- Async scheduler lifecycle changes.
+- `SemanticIndex` snapshot publication or analyzer write-back changes.
+- Relationship analysis lifecycle changes that share controller state.
+- Migrations where signal lifetime or API shape is not stable.
 
-- different coordinator boundaries
-- Query Service read paths
-- panel query builders and report shaping
-- service fixtures for independent RTL understanding reports
-- focused fixture coverage tied to production changes
-- unrelated UI routing cleanup
-- test cleanup that replaces private access with stable production-facing APIs
+Reduce batch size when blocks share core files or API boundaries.
 
-Poor batch candidates:
+## Validation
 
-- broad simultaneous changes across `TabManager`, `DocumentModel`, and `MyCodeEditor`
-- async scheduler lifecycle changes
-- `SemanticIndex` snapshot publication or analyzer write-back changes
-- relationship analysis watcher/request/finish ownership changes that share the same controller state
-- multiple new semantic extractors that change the same relationship publication path
-- migrations where signal lifetime or API shape is still unstable
-- mixed model/editor/save migrations that obscure document ownership
-- broad test rewrites that expose internals just to satisfy assertions
-
-When blocks touch the same core file or API boundary, reduce batch size and verify sooner.
-
-Avoid:
-
-- broad scattered rewrites
-- unrelated cleanup
-- qmake files
-- `.claude`
-- old Tree-sitter symbol parser
-- regex relationship analysis
-- long-lived perflog
-
-## Validation And Commit Rhythm
-
-For code/test changes:
-
-- after each block, run light sanity only: affected target build or compile, focused CTest, `git diff --check`, and relevant `rg` or static boundary scans
-- before the commit, run full Ninja, full `ctest --output-on-failure`, changed/new source/doc ASCII and trailing-whitespace scans, and the forbidden-file guard
-- if a block touches risky lifecycle, snapshot publication, or unsettled API shape, run full verification before continuing the batch
-- after unified verification passes, create one large local commit for the completed turn
-- every final handoff reports the remaining Phase 3 percentage
-
-For docs-only cleanup:
-
-- `git diff --check`
-- changed doc ASCII and trailing-whitespace scans
-- forbidden-file guard
+- For narrow feature changes, run focused build/tests and static boundary scans first.
+- For shared semantic, scheduler, editor, or project boundary changes, run full Ninja and full `ctest --output-on-failure`.
+- Before committing, run `git diff --check`, changed-file ASCII/trailing-whitespace scans, and forbidden-file guards.
+- Prefer real workspace fixtures such as `test_sv/new` for semantic feature expansion.
 
 ## Commit Policy
 
-- Keep work organized so each turn remains reviewable as a coherent architecture increment.
-- After full verification passes, create one large local commit for the completed turn.
+- Keep local commits coherent and architecture-oriented.
 - Do not push unless explicitly asked.
-- Keep commit messages concise and architecture-oriented.
-- Docs-only cleanup gets one local docs commit after docs-only hygiene passes.
-
-## Documentation Policy
-
-Update docs by replacement, not accumulation. Keep `readme.md` as current handoff, `plan.md` as execution policy, and `goal.md` as stable product/architecture goal.
+- Do not discard user changes.
+- Keep docs short and current; replace stale content instead of accumulating history.
