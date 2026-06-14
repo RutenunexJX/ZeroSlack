@@ -99,7 +99,11 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
     connect(workspaceSymbolAnalysis,
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisFinished,
             this,
-            &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+            [this](const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols) {
+                if (openDocumentAnalysis)
+                    openDocumentAnalysis->analyzeOpenDocumentsNow();
+                emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
+            });
 }
 
 void AnalysisScheduler::setupDiagnosticsRefreshAndWorkspaceRequests()

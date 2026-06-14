@@ -23,6 +23,8 @@ void EditorCompletionUi::init(MyCodeEditor* editor)
     completer->setCompletionMode(QCompleter::PopupCompletion);
     completer->setCaseSensitivity(Qt::CaseInsensitive);
     completer->setMaxVisibleItems(15);
+    popup()->setStyleSheet(QStringLiteral(
+        "QListView::item { padding: 1px 4px; min-height: 18px; }"));
     timer = new QTimer(editor);
     timer->setSingleShot(true);
     timer->setInterval(0);

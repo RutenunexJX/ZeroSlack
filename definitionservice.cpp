@@ -23,6 +23,22 @@ DefinitionResult toDefinitionResult(const SemanticDefinitionResult& semanticResu
     result.symbol = semanticResult.symbol;
     return result;
 }
+
+QString interfaceScopeFromDataType(const QString& dataType)
+{
+    if (dataType.isEmpty())
+        return QString();
+    const int dot = dataType.indexOf(QLatin1Char('.'));
+    return dot >= 0 ? dataType.left(dot) : dataType;
+}
+
+bool interfaceLikeOwnerType(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_interface
+        || type == sym_list::sym_inst
+        || type == sym_list::sym_port_interface
+        || type == sym_list::sym_port_interface_modport;
+}
 }
 
 DefinitionService* DefinitionService::getInstance()
@@ -75,7 +91,9 @@ bool DefinitionService::isDefinition(const sym_list::SymbolInfo& symbol,
     switch (symbol.symbolType) {
     case sym_list::sym_module:
     case sym_list::sym_interface:
+    case sym_list::sym_interface_modport:
     case sym_list::sym_package:
+    case sym_list::sym_inst:
     case sym_list::sym_task:
     case sym_list::sym_function:
     case sym_list::sym_port_input:
@@ -130,5 +148,25 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
 
     resolved.structTypeNameForMember =
         semanticIndex()->getStructTypeForVariable(variableName, query.moduleName);
+    if (!resolved.structTypeNameForMember.isEmpty())
+        return resolved;
+
+    const QList<sym_list::SymbolInfo> candidates = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& symbol : candidates) {
+        if (symbol.symbolName != variableName || !interfaceLikeOwnerType(symbol.symbolType))
+            continue;
+        if (!query.moduleName.isEmpty()
+            && !symbol.moduleScope.isEmpty()
+            && symbol.moduleScope != query.moduleName) {
+            continue;
+        }
+        if (symbol.symbolType == sym_list::sym_interface) {
+            resolved.structTypeNameForMember = symbol.symbolName;
+            return resolved;
+        }
+        resolved.structTypeNameForMember = interfaceScopeFromDataType(symbol.dataType);
+        if (!resolved.structTypeNameForMember.isEmpty())
+            return resolved;
+    }
     return resolved;
 }

@@ -4,6 +4,9 @@
 #include "smartrelationshipbuilder.h"
 #include "analysisscheduler.h"
 #include "clockresetdomainservice.h"
+#include "completionservice.h"
+#include "completionsymbolquery.h"
+#include "definitionservice.h"
 #include "semanticindex.h"
 #include "diagnosticservice.h"
 #include "documentmodel.h"
@@ -1430,6 +1433,55 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         SemanticIndex::getInstance()->setSnapshot(documentClosePreviousSnapshot);
     else
         SemanticIndex::getInstance()->clearSnapshot();
+
+    AnalysisScheduler documentSaveScheduler;
+    SymbolAnalyzer documentSaveAnalyzer;
+    SymbolRelationshipEngine documentSaveEngine;
+    SmartRelationshipBuilder documentSaveBuilder(
+        &documentSaveEngine,
+        db,
+        &slang);
+    DocumentModel documentSaveModel;
+    MyCodeEditor documentSaveEditor;
+    const QString documentSavePath =
+        fixtureDir.absoluteFilePath(QStringLiteral("document_save_package.sv"));
+    documentSaveEditor.setPlainText(QStringLiteral(
+        "package document_save_pkg;\n"
+        "  parameter int P_SAVE = 1;\n"
+        "endpackage\n"));
+    documentSaveModel.registerEditor(&documentSaveEditor, documentSavePath);
+    documentSaveScheduler.setSymbolAnalyzer(&documentSaveAnalyzer);
+    documentSaveScheduler.setRelationshipEngine(&documentSaveEngine);
+    documentSaveScheduler.setRelationshipBuilder(&documentSaveBuilder);
+    documentSaveScheduler.setDocumentModel(&documentSaveModel);
+
+    bool documentSaveSymbolsRefreshed = false;
+    bool documentSaveRelationshipFinished = false;
+    QEventLoop documentSaveLoop;
+    QObject::connect(&documentSaveAnalyzer,
+                     &SymbolAnalyzer::analysisCompleted,
+                     &documentSaveLoop,
+                     [&](const QString& fileName, int symbolsFound) {
+                         if (fileName == documentSavePath && symbolsFound > 0) {
+                             documentSaveSymbolsRefreshed = true;
+                             documentSaveLoop.quit();
+                         }
+                     });
+    QObject::connect(&documentSaveScheduler,
+                     &AnalysisScheduler::relationshipAnalysisFinished,
+                     &documentSaveLoop,
+                     [&](const SingleFileRelationshipAnalysisResult& result) {
+                         if (result.fileName == documentSavePath)
+                             documentSaveRelationshipFinished = true;
+                     });
+    documentSaveModel.markSaved(&documentSaveEditor);
+    QTimer::singleShot(500, &documentSaveLoop, &QEventLoop::quit);
+    documentSaveLoop.exec();
+    QApplication::processEvents();
+    expectBool("scheduler save refreshes symbols",
+               documentSaveSymbolsRefreshed, true);
+    expectBool("scheduler save skips relationship popup path",
+               documentSaveRelationshipFinished, false);
 
     AnalysisScheduler refreshScheduler;
     SymbolRelationshipEngine refreshEngine;
@@ -3020,6 +3072,99 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace has interface",
                symbolId(symbols, QStringLiteral("lr_genr_if"), sym_list::sym_interface)
                    >= 0,
+               true);
+    expectBool("real workspace has package parameter",
+               symbolId(symbols, QStringLiteral("P_SW_NUM"), sym_list::sym_parameter) >= 0
+                   || symbolId(symbols,
+                               QStringLiteral("P_SW_NUM"),
+                               sym_list::sym_localparam) >= 0,
+               true);
+    expectBool("real workspace has package typedef",
+               symbolId(symbols, QStringLiteral("cpld_sw_sp"), sym_list::sym_typedef) >= 0,
+               true);
+    expectBool("real workspace has interface modport",
+               symbolIdInScope(symbols,
+                               QStringLiteral("si"),
+                               sym_list::sym_interface_modport,
+                               QStringLiteral("lr_genr_if")) >= 0,
+               true);
+    expectBool("real workspace has interface instance",
+               symbolIdInScope(symbols,
+                               QStringLiteral("LR_GENR_IF"),
+                               sym_list::sym_inst,
+                               QStringLiteral("rtl_top")) >= 0,
+               true);
+
+    SemanticIndex index;
+    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(symbols));
+    DefinitionService definitionService(&index);
+
+    const QString topPath = normalizedPath(
+        QDir(workspaceRoot).filePath(QStringLiteral("elec_phy_import/top/rtl_top.sv")));
+    DefinitionQuery packageParamQuery;
+    packageParamQuery.symbolName = QStringLiteral("P_SW_NUM");
+    packageParamQuery.fileName = topPath;
+    packageParamQuery.moduleName = QStringLiteral("rtl_top");
+    const DefinitionResult packageParam =
+        definitionService.resolveDefinition(packageParamQuery);
+    expectBool("real workspace jumps package parameter",
+               packageParam.found
+                   && packageParam.symbol.moduleScope == QStringLiteral("gl_pkg"),
+               true);
+
+    DefinitionQuery interfaceQuery;
+    interfaceQuery.symbolName = QStringLiteral("lr_genr_if");
+    interfaceQuery.fileName = topPath;
+    interfaceQuery.moduleName = QStringLiteral("rtl_top");
+    const DefinitionResult interfaceResult =
+        definitionService.resolveDefinition(interfaceQuery);
+    expectBool("real workspace jumps interface",
+               interfaceResult.found
+                   && interfaceResult.symbol.symbolType == sym_list::sym_interface,
+               true);
+
+    DefinitionQuery modportTypeQuery;
+    modportTypeQuery.symbolName = QStringLiteral("si");
+    modportTypeQuery.fileName = topPath;
+    modportTypeQuery.moduleName = QStringLiteral("rtl_top");
+    modportTypeQuery.linePrefixBeforeCursor = QStringLiteral("lr_genr_if.si");
+    const DefinitionResult modportTypeResult =
+        definitionService.resolveDefinition(modportTypeQuery);
+    expectBool("real workspace jumps interface type modport",
+               modportTypeResult.found
+                   && modportTypeResult.symbol.symbolType == sym_list::sym_interface_modport
+                   && modportTypeResult.symbol.moduleScope == QStringLiteral("lr_genr_if"),
+               true);
+
+    DefinitionQuery modportInstQuery = modportTypeQuery;
+    modportInstQuery.linePrefixBeforeCursor = QStringLiteral("LR_GENR_IF.si");
+    const DefinitionResult modportInstResult =
+        definitionService.resolveDefinition(modportInstQuery);
+    expectBool("real workspace jumps interface instance modport",
+               modportInstResult.found
+                   && modportInstResult.symbol.symbolType == sym_list::sym_interface_modport
+                   && modportInstResult.symbol.moduleScope == QStringLiteral("lr_genr_if"),
+               true);
+
+    CompletionService completionService(&index);
+    CommandCompletionQuery parameterCompletion;
+    parameterCompletion.moduleName = QStringLiteral("rtl_top");
+    parameterCompletion.symbolType = sym_list::sym_parameter;
+    parameterCompletion.prefix = QStringLiteral("P_SW");
+    expectBool("real workspace completes package parameter",
+               CompletionSymbolQuery::namesFromSymbols(
+                   completionService.findCommandCompletionSymbols(parameterCompletion))
+                   .contains(QStringLiteral("P_SW_NUM")),
+               true);
+
+    CommandCompletionQuery typedefCompletion;
+    typedefCompletion.moduleName = QStringLiteral("rtl_top");
+    typedefCompletion.symbolType = sym_list::sym_typedef;
+    typedefCompletion.prefix = QStringLiteral("cpld");
+    expectBool("real workspace completes package typedef",
+               CompletionSymbolQuery::namesFromSymbols(
+                   completionService.findCommandCompletionSymbols(typedefCompletion))
+                   .contains(QStringLiteral("cpld_sw_sp")),
                true);
 }
 

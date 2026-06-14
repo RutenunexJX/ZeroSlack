@@ -74,7 +74,7 @@ void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
 void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
 {
     if (openDocumentAnalysis)
-        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, true);
+        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, true, false);
 }
 
 QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const

@@ -78,10 +78,28 @@ void SemanticIndex::updateSymbolsForFile(const QString& fileName,
 
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) const
 {
-    if (m_snapshot)
-        return m_snapshot->getSymbols(fileName);
-
     sym_list* db = symbolDatabase();
+    if (m_snapshot) {
+        QList<sym_list::SymbolInfo> symbols = m_snapshot->getSymbols(fileName);
+        if (!fileName.isEmpty()) {
+            if (!symbols.isEmpty())
+                return symbols;
+        } else {
+            QSet<QString> snapshotFiles;
+            for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
+                const QString normalized = normalizedStoreFileName(symbol.fileName);
+                if (!normalized.isEmpty())
+                    snapshotFiles.insert(normalized);
+            }
+            for (const sym_list::SymbolInfo& symbol : db->getAllSymbols()) {
+                const QString normalized = normalizedStoreFileName(symbol.fileName);
+                if (!normalized.isEmpty() && !snapshotFiles.contains(normalized))
+                    symbols.append(symbol);
+            }
+            return symbols;
+        }
+    }
+
     if (fileName.isEmpty())
         return db->getAllSymbols();
 
@@ -108,16 +126,23 @@ QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e
 
 QString SemanticIndex::getCachedFileContent(const QString& fileName) const
 {
-    if (m_snapshot)
-        return m_snapshot->getCachedFileContent(fileName);
+    if (m_snapshot) {
+        const QString content = m_snapshot->getCachedFileContent(fileName);
+        if (!content.isEmpty())
+            return content;
+    }
 
     return symbolDatabase()->getCachedFileContent(fileName);
 }
 
 QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int cursorLine) const
 {
-    if (m_snapshot)
-        return m_snapshot->getScopeSymbolNames(fileName, cursorLine);
+    if (m_snapshot) {
+        const QStringList snapshotNames =
+            m_snapshot->getScopeSymbolNames(fileName, cursorLine);
+        if (!snapshotNames.isEmpty())
+            return snapshotNames;
+    }
 
     QStringList result;
     if (fileName.isEmpty() || cursorLine < 0)

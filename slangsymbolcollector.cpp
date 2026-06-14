@@ -167,6 +167,36 @@ void slang_symbols::collectSymbols(slang::ast::Compilation& compilation,
             outList.append(info);
             v.visitDefault(port);
         },
+        [&](auto& v, const InterfacePortSymbol& port) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, port, info, &moduleScope))
+                return;
+            info.symbolType = port.modport.empty()
+                ? sym_list::sym_port_interface
+                : sym_list::sym_port_interface_modport;
+            info.moduleScope = moduleScope;
+            if (port.interfaceDef) {
+                info.dataType = QString::fromStdString(
+                    std::string(port.interfaceDef->name));
+                if (!port.modport.empty()) {
+                    info.dataType += QLatin1Char('.');
+                    info.dataType += QString::fromStdString(std::string(port.modport));
+                }
+            }
+            outList.append(info);
+            v.visitDefault(port);
+        },
+        [&](auto& v, const ModportSymbol& modport) {
+            sym_list::SymbolInfo info;
+            QString moduleScope;
+            if (!fillSymbolInfo(sm, modport, info, &moduleScope))
+                return;
+            info.symbolType = sym_list::sym_interface_modport;
+            info.moduleScope = moduleScope;
+            outList.append(info);
+            v.visitDefault(modport);
+        },
         [&](auto& v, const ParameterSymbol& param) {
             sym_list::SymbolInfo info;
             QString moduleScope;

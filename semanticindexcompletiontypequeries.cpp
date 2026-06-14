@@ -5,6 +5,46 @@
 
 using namespace semantic_index_completion;
 
+namespace {
+
+bool packageVisibleCommandType(sym_list::sym_type_e type)
+{
+    switch (type) {
+    case sym_list::sym_parameter:
+    case sym_list::sym_localparam:
+    case sym_list::sym_typedef:
+    case sym_list::sym_enum:
+    case sym_list::sym_packed_struct:
+    case sym_list::sym_unpacked_struct:
+        return true;
+    default:
+        return false;
+    }
+}
+
+QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
+{
+    QSet<QString> names;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (symbol.symbolType == sym_list::sym_package
+            && !symbol.symbolName.isEmpty()) {
+            names.insert(symbol.symbolName);
+        }
+    }
+    return names;
+}
+
+bool packageScopeMatches(const sym_list::SymbolInfo& symbol,
+                         sym_list::sym_type_e requestedType,
+                         const QSet<QString>& packages)
+{
+    return packageVisibleCommandType(requestedType)
+        && !symbol.moduleScope.isEmpty()
+        && packages.contains(symbol.moduleScope);
+}
+
+} // namespace
+
 QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,
@@ -16,12 +56,14 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
         return result;
 
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
+    const QSet<QString> packages = packageScopeNames(symbols);
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const bool useGlobalScope = moduleName.isEmpty()
             || alwaysGlobalCommandSymbolType(symbolType);
         const bool scopeMatches = useGlobalScope
             ? symbol.moduleScope.isEmpty()
-            : symbol.moduleScope == moduleName;
+            : symbol.moduleScope == moduleName
+                || packageScopeMatches(symbol, symbolType, packages);
         if (!scopeMatches
             || !commandSymbolTypeMatches(symbol.symbolType,
                                         symbolType,

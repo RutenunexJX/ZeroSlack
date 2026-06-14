@@ -27,7 +27,9 @@ bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
     switch (symbol.symbolType) {
     case sym_list::sym_module:
     case sym_list::sym_interface:
+    case sym_list::sym_interface_modport:
     case sym_list::sym_package:
+    case sym_list::sym_inst:
     case sym_list::sym_task:
     case sym_list::sym_function:
     case sym_list::sym_port_input:
@@ -61,6 +63,7 @@ int semanticDefinitionTypePriority(sym_list::sym_type_e type)
     case sym_list::sym_module: return 0;
     case sym_list::sym_interface: return 1;
     case sym_list::sym_package: return 2;
+    case sym_list::sym_interface_modport: return 3;
     case sym_list::sym_port_input:
     case sym_list::sym_port_output:
     case sym_list::sym_port_inout:
@@ -100,7 +103,8 @@ bool semanticDefinitionSkipForStructMemberType(
 {
     if (query.structTypeNameForMember.isEmpty())
         return false;
-    return symbol.symbolType == sym_list::sym_struct_member
+    return (symbol.symbolType == sym_list::sym_struct_member
+            || symbol.symbolType == sym_list::sym_interface_modport)
         && symbol.moduleScope != query.structTypeNameForMember;
 }
 

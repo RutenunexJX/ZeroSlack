@@ -58,6 +58,9 @@ SemanticIndex::captureSnapshotReplacingDiagnostics(
 std::shared_ptr<const SemanticIndexSnapshot>
 SemanticIndex::beginRelationshipAnalysisSnapshot()
 {
+    if (m_snapshot)
+        return m_snapshot;
+
     std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot =
         captureSnapshotPreservingDiagnostics();
     setSnapshot(baseSnapshot);

@@ -30,7 +30,9 @@ public:
     void handleExternalFileChanged(const QString& fileName, int debounceMs);
     void handleDocumentClosed(const QString& fileName);
     void handleDocumentEdited(const DocumentSnapshot& snapshot, int relationshipDelayMs);
-    void analyzeOpenDocumentNow(const DocumentSnapshot& snapshot, bool skipUnchanged);
+    void analyzeOpenDocumentNow(const DocumentSnapshot& snapshot,
+                                bool skipUnchanged,
+                                bool requestRelationships = true);
     void analyzeOpenDocumentsNow();
     QString contentForOpenFile(const QString& fileName) const;
 

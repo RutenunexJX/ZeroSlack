@@ -23,15 +23,17 @@ QList<sym_list::SymbolInfo> SlangManager::extractSymbols(
     try {
         std::string src = content.toStdString();
         std::string nameStr = fileName.toStdString();
+        const QStringList effectiveIncludeDirs =
+            slang_parse_options::effectiveIncludeDirsForFile(fileName, includeDirs);
         std::shared_ptr<slang::syntax::SyntaxTree> tree;
-        if (includeDirs.isEmpty() && defines.isEmpty()) {
+        if (effectiveIncludeDirs.isEmpty() && defines.isEmpty()) {
             tree = slang::syntax::SyntaxTree::fromText(
                 std::string_view(src),
                 std::string_view(nameStr),
                 std::string_view{});
         } else {
             slang::Bag syntaxOptions =
-                slang_parse_options::makeSyntaxOptions(includeDirs, defines);
+                slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines);
             tree = slang::syntax::SyntaxTree::fromText(
                 std::string_view(src),
                 syntaxOptions,
@@ -69,6 +71,8 @@ QList<sym_list::SymbolInfo> SlangManager::extractWorkspaceSymbols(
         pathStrs.reserve(filePaths.size());
         for (const QString& p : filePaths)
             pathStrs.push_back(p.toStdString());
+        const QStringList effectiveIncludeDirs =
+            slang_parse_options::effectiveIncludeDirsForFiles(filePaths, includeDirs);
 
         std::vector<std::string_view> pathViews;
         pathViews.reserve(pathStrs.size());
@@ -76,12 +80,12 @@ QList<sym_list::SymbolInfo> SlangManager::extractWorkspaceSymbols(
             pathViews.push_back(s);
 
         slang::syntax::SyntaxTree::TreeOrError treeOrErr =
-            includeDirs.isEmpty() && defines.isEmpty()
+            effectiveIncludeDirs.isEmpty() && defines.isEmpty()
                 ? slang::syntax::SyntaxTree::fromFiles(pathViews)
                 : slang::syntax::SyntaxTree::fromFiles(
                       pathViews,
                       slang::syntax::SyntaxTree::getDefaultSourceManager(),
-                      slang_parse_options::makeSyntaxOptions(includeDirs, defines));
+                      slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines));
         if (!treeOrErr)
             return result;
 

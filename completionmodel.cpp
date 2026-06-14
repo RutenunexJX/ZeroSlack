@@ -1,6 +1,7 @@
 #include "completionmodel.h"
 #include <QFont>
 #include <QColor>
+#include <QSize>
 #include <algorithm>
 
 static const int CompletionItemMetaTypeId = qRegisterMetaType<CompletionModel::CompletionItem>("CompletionModel::CompletionItem");
@@ -111,13 +112,16 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
 
     case Qt::FontRole:
         {
-            QFont font("Consolas", 10);
+            QFont font("Consolas", 9);
             if ((item.type == CommandCompletion || item.type == SymbolCompletion) &&
                 (item.text.contains("::") || item.text.startsWith("[DEFAULT]"))) {
                 font.setBold(true);
             }
             return font;
         }
+
+    case Qt::SizeHintRole:
+        return QSize(0, 18);
 
     case Qt::UserRole:
         return QVariant::fromValue(item);

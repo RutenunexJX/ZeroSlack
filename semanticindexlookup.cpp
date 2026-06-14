@@ -3,9 +3,57 @@
 #include "semanticindexlookuphelpers.h"
 #include "semanticindexsnapshot.h"
 
+#include <QSet>
 #include <algorithm>
 
 using namespace semantic_index_lookup;
+
+namespace {
+
+bool packageVisibleDefinitionType(sym_list::sym_type_e type)
+{
+    switch (type) {
+    case sym_list::sym_parameter:
+    case sym_list::sym_localparam:
+    case sym_list::sym_typedef:
+    case sym_list::sym_enum:
+    case sym_list::sym_enum_value:
+    case sym_list::sym_packed_struct:
+    case sym_list::sym_unpacked_struct:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool globalDefinitionType(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_module
+        || type == sym_list::sym_interface
+        || type == sym_list::sym_package;
+}
+
+QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
+{
+    QSet<QString> names;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (symbol.symbolType == sym_list::sym_package
+            && !symbol.symbolName.isEmpty()) {
+            names.insert(symbol.symbolName);
+        }
+    }
+    return names;
+}
+
+bool packageScopeVisible(const sym_list::SymbolInfo& symbol,
+                         const QSet<QString>& packages)
+{
+    return packageVisibleDefinitionType(symbol.symbolType)
+        && !symbol.moduleScope.isEmpty()
+        && packages.contains(symbol.moduleScope);
+}
+
+} // namespace
 
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     const SemanticSymbolSearchQuery& query) const
@@ -176,6 +224,7 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
 {
     SemanticDefinitionResult best;
     int bestPriority = 999;
+    const QSet<QString> packages = packageScopeNames(getSymbols());
 
     for (const sym_list::SymbolInfo& symbol : candidates) {
         if (!semanticDefinitionSymbolMatches(symbol, query.symbolName))
@@ -183,14 +232,19 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
         if (semanticDefinitionSkipForStructMemberType(symbol, query))
             continue;
         if (symbol.symbolType != sym_list::sym_struct_member
+            && symbol.symbolType != sym_list::sym_interface_modport
             && symbol.symbolType != sym_list::sym_enum_value
-            && !semanticDefinitionInScope(symbol, query)) {
+            && !globalDefinitionType(symbol.symbolType)
+            && !semanticDefinitionInScope(symbol, query)
+            && !packageScopeVisible(symbol, packages)) {
             continue;
         }
 
         int priority = semanticDefinitionTypePriority(symbol.symbolType);
         if (!query.moduleName.isEmpty() && symbol.moduleScope == query.moduleName)
             priority -= 100;
+        else if (packageScopeVisible(symbol, packages))
+            priority -= 20;
 
         if (!best.found || priority < bestPriority) {
             best.found = true;

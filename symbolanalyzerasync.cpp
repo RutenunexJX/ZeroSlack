@@ -49,19 +49,23 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     cancelWorkspaceAnalysisAndWait();
 
     const QStringList svFiles = project.systemVerilogFiles;
+    const QStringList includeDirs = project.includeDirs;
+    const QHash<QString, QString> defines = project.defines;
     const QString workspacePath = project.workspaceRoot;
     const int totalFiles = svFiles.size();
 
     emit analysisStarted(workspacePath);
 
-    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([this, svFiles, isCancelled]() {
-        QList<sym_list::SymbolInfo> symbols = m_slangManager->extractWorkspaceSymbols(svFiles);
+    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([this, svFiles, includeDirs, defines, isCancelled]() {
+        QList<sym_list::SymbolInfo> symbols =
+            m_slangManager->extractWorkspaceSymbols(svFiles, includeDirs, defines);
         WorkspaceAnalysisResult result =
             SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
                 svFiles,
                 symbols,
                 isCancelled);
-        result.diagnostics = m_slangManager->extractWorkspaceDiagnostics(svFiles);
+        result.diagnostics =
+            m_slangManager->extractWorkspaceDiagnostics(svFiles, includeDirs, defines);
         return result;
     });
 

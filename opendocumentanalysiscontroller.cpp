@@ -57,12 +57,12 @@ void OpenDocumentAnalysisController::handleDocumentEdited(
     if (content.isNull())
         return;
 
+    if (isWorkspaceOpen())
+        return;
+
     emit relationshipAnalysisScheduled(snapshot.fileName,
                                        content,
                                        relationshipDelayMs);
-
-    if (isWorkspaceOpen())
-        return;
 
     if (lineContainsStructuralKeyword(content, snapshot.cursorLine))
         scheduleOpenFileAnalysis(snapshot.fileName, 1000);
@@ -70,7 +70,8 @@ void OpenDocumentAnalysisController::handleDocumentEdited(
 
 void OpenDocumentAnalysisController::analyzeOpenDocumentNow(
     const DocumentSnapshot& snapshot,
-    bool skipUnchanged)
+    bool skipUnchanged,
+    bool requestRelationships)
 {
     if (snapshot.fileName.isEmpty() || !symbolAnalyzer)
         return;
@@ -87,7 +88,8 @@ void OpenDocumentAnalysisController::analyzeOpenDocumentNow(
 
     symbolAnalyzer->analyzeFileContent(snapshot.fileName, content);
     emit documentRefreshRequested(snapshot.fileName);
-    emit relationshipAnalysisRequested(snapshot.fileName, content);
+    if (requestRelationships && !isWorkspaceOpen())
+        emit relationshipAnalysisRequested(snapshot.fileName, content);
 }
 
 void OpenDocumentAnalysisController::analyzeOpenDocumentsNow()

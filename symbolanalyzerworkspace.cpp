@@ -1,19 +1,29 @@
 #include "symbolanalyzerworkspace.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHash>
 #include <QTextStream>
 #include <utility>
 
 namespace {
 
+QString normalizedWorkspaceSymbolFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
 QHash<QString, QList<sym_list::SymbolInfo>> groupSymbolsByFile(
     const QList<sym_list::SymbolInfo>& list)
 {
     QHash<QString, QList<sym_list::SymbolInfo>> byFile;
     for (const sym_list::SymbolInfo& symbol : list) {
-        if (!symbol.fileName.isEmpty())
-            byFile[symbol.fileName].append(symbol);
+        const QString normalized = normalizedWorkspaceSymbolFileName(symbol.fileName);
+        if (!normalized.isEmpty())
+            byFile[normalized].append(symbol);
     }
     return byFile;
 }
@@ -44,7 +54,8 @@ WorkspaceAnalysisResult SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
         WorkspaceFileAnalysis fileResult;
         fileResult.fileName = filePath;
         fileResult.content = readTextFile(filePath);
-        fileResult.symbols = byFile.value(filePath);
+        fileResult.symbols =
+            byFile.value(normalizedWorkspaceSymbolFileName(filePath));
         result.totalSymbols += fileResult.symbols.size();
         result.files.append(std::move(fileResult));
     }

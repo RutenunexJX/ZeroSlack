@@ -15,6 +15,10 @@ inline bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
 {
     if (symbolType == commandType)
         return true;
+    if (commandType == sym_list::sym_parameter
+        && symbolType == sym_list::sym_localparam) {
+        return true;
+    }
     return commandType == sym_list::sym_enum
         && symbolType == sym_list::sym_typedef
         && dataType == QLatin1String("enum");

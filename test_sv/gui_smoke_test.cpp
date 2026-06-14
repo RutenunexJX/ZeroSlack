@@ -1538,6 +1538,12 @@ int main(int argc, char** argv)
     expectBool("open diagnostic fixture", window.tabManager->openFileInTab(diagnosticPath), true);
     expectBool("diagnostic fixture analysis completes",
                waitUntil([&]() { return diagnosticFixtureAnalyzed; }, 10000), true);
+    expectBool("diagnostic fixture snapshot updates",
+               waitUntil([&]() {
+                   const auto snapshot = SemanticIndex::getInstance()->snapshot();
+                   return snapshot && !snapshot->getDiagnostics(diagnosticPath).isEmpty();
+               }, 5000),
+               true);
     expectBool("problems tree exists", problemsTree(window) != nullptr, true);
     expectBool("problems tree shows diagnostic",
                waitUntil([&]() {
@@ -1605,7 +1611,11 @@ int main(int argc, char** argv)
 
     expectBool("reopen symbol fixture", window.tabManager->openFileInTab(symbolFixturePath), true);
     expectBool("symbol fixture analysis remains complete",
-               waitUntil([&]() { return symbolFixtureAnalyzed; }, 10000), true);
+               waitUntil([&]() {
+                   const auto snapshot = SemanticIndex::getInstance()->snapshot();
+                   return snapshot && !snapshot->getSymbols(symbolFixturePath).isEmpty();
+               }, 10000),
+               true);
 
     MyCodeEditor* editor = window.tabManager->getCurrentEditor();
     expectBool("symbol editor exists", editor != nullptr, true);
