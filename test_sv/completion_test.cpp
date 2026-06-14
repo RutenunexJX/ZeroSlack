@@ -12,6 +12,7 @@
 #include "syminfo.h"
 #include <QApplication>
 #include <QFile>
+#include <QSet>
 #include <QTextStream>
 #include <QString>
 #include <QStringList>
@@ -229,6 +230,47 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::isDirectModuleContextCompletionRequest(
                    sym_list::sym_unpacked_struct_var),
                true);
+    expectBool("SymbolTaxonomy enum typedef typed completion",
+               SymbolTaxonomy::typedCompletionSymbolTypeMatches(
+                   sym_list::sym_typedef,
+                   sym_list::sym_enum,
+                   QStringLiteral("enum")),
+               true);
+    sym_list::SymbolInfo scopedStruct;
+    scopedStruct.symbolType = sym_list::sym_packed_struct;
+    scopedStruct.moduleScope = QStringLiteral("pkg_scope");
+    expectBool("SymbolTaxonomy global struct visibility",
+               SymbolTaxonomy::isGlobalSymbolInfoVisible(
+                   scopedStruct,
+                   sym_list::sym_packed_struct),
+               true);
+    sym_list::SymbolInfo scopedLogic;
+    scopedLogic.symbolType = sym_list::sym_logic;
+    scopedLogic.moduleScope = QStringLiteral("top");
+    expectBool("SymbolTaxonomy scoped logic not global visible",
+               SymbolTaxonomy::isGlobalSymbolInfoVisible(
+                   scopedLogic,
+                   sym_list::sym_logic),
+               false);
+    QSet<QString> packageScopes;
+    packageScopes.insert(QStringLiteral("pkg_scope"));
+    sym_list::SymbolInfo packageParameter;
+    packageParameter.symbolType = sym_list::sym_parameter;
+    packageParameter.moduleScope = QStringLiteral("pkg_scope");
+    expectBool("SymbolTaxonomy package command scope visible",
+               SymbolTaxonomy::isCommandCompletionScopeVisible(
+                   packageParameter,
+                   sym_list::sym_parameter,
+                   QStringLiteral("top"),
+                   packageScopes),
+               true);
+    expectBool("SymbolTaxonomy scoped logic command scope hidden",
+               SymbolTaxonomy::isCommandCompletionScopeVisible(
+                   scopedLogic,
+                   sym_list::sym_logic,
+                   QString(),
+                   packageScopes),
+               false);
 
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();

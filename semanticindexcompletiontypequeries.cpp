@@ -35,16 +35,11 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     const QSet<QString> packages = packageScopeNames(symbols);
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        const bool useGlobalScope = moduleName.isEmpty()
-            || alwaysGlobalCommandSymbolType(symbolType);
-        const bool scopeMatches = useGlobalScope
-            ? symbol.moduleScope.isEmpty()
-            : symbol.moduleScope == moduleName
-                || SymbolTaxonomy::isPackageScopeVisibleCompletion(
-                    symbol,
-                    symbolType,
-                    packages);
-        if (!scopeMatches
+        if (!SymbolTaxonomy::isCommandCompletionScopeVisible(
+                symbol,
+                symbolType,
+                moduleName,
+                packages)
             || !commandSymbolTypeMatches(symbol.symbolType,
                                         symbolType,
                                         symbol.dataType)
@@ -81,16 +76,11 @@ QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
     };
 
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolType == symbolType)
+        if (SymbolTaxonomy::typedCompletionSymbolTypeMatches(
+                symbol.symbolType,
+                symbolType,
+                symbol.dataType)) {
             appendIfMatches(symbol);
-    }
-
-    if (symbolType == sym_list::sym_enum) {
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (symbol.symbolType == sym_list::sym_typedef
-                && symbol.dataType == QLatin1String("enum")) {
-                appendIfMatches(symbol);
-            }
         }
     }
 
@@ -114,9 +104,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getGlobalSymbolInfosByType(
             continue;
         }
 
-        const bool global = alwaysGlobalSymbolInfoType(symbolType)
-            || symbol.moduleScope.isEmpty();
-        if (global)
+        if (SymbolTaxonomy::isGlobalSymbolInfoVisible(symbol, symbolType))
             result.append(symbol);
     }
 

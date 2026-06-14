@@ -529,6 +529,43 @@ bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType)
     }
 }
 
+bool isCommandCompletionScopeVisible(
+    const sym_list::SymbolInfo& symbol,
+    sym_list::sym_type_e requestedType,
+    const QString& moduleName,
+    const QSet<QString>& packageScopes)
+{
+    const bool useGlobalScope = moduleName.isEmpty()
+        || isAlwaysGlobalCommandSymbolType(requestedType);
+    if (useGlobalScope)
+        return symbol.moduleScope.isEmpty();
+    return symbol.moduleScope == moduleName
+        || isPackageScopeVisibleCompletion(
+            symbol,
+            requestedType,
+            packageScopes);
+}
+
+bool isGlobalSymbolInfoVisible(
+    const sym_list::SymbolInfo& symbol,
+    sym_list::sym_type_e requestedType)
+{
+    return isAlwaysGlobalSymbolInfoType(requestedType)
+        || symbol.moduleScope.isEmpty();
+}
+
+bool typedCompletionSymbolTypeMatches(
+    sym_list::sym_type_e symbolType,
+    sym_list::sym_type_e requestedType,
+    const QString& dataType)
+{
+    if (symbolType == requestedType)
+        return true;
+    return requestedType == sym_list::sym_enum
+        && symbolType == sym_list::sym_typedef
+        && dataType == QLatin1String("enum");
+}
+
 SourceRole sourceRoleForFileName(const QString& fileName)
 {
     const QString suffix = QFileInfo(fileName).suffix().toLower();

@@ -1,6 +1,7 @@
 #include "semanticindex.h"
 
 #include "completionservice.h"
+#include "symboltaxonomy.h"
 
 #include <QFile>
 #include <QRegularExpression>
@@ -106,7 +107,7 @@ QString SemanticIndex::currentModuleAt(const QString& fileName, int cursorPositi
     QList<sym_list::SymbolInfo> modules;
     const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(fileName);
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (symbol.symbolType == sym_list::sym_module)
+        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType))
             modules.append(symbol);
     }
 

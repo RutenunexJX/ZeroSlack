@@ -82,13 +82,7 @@ QStringList CompletionSymbolQuery::globalSymbolsByType(
         semanticIndex->getCommandCompletionSymbols(QString(), symbolType, prefix);
     QSet<QString> seenNames;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        bool global = false;
-        if (SymbolTaxonomy::isAlwaysGlobalSymbolInfoType(symbolType)) {
-            global = true;
-        } else {
-            global = symbol.moduleScope.isEmpty();
-        }
-        if (!global)
+        if (!SymbolTaxonomy::isGlobalSymbolInfoVisible(symbol, symbolType))
             continue;
 
         const QString key = symbol.symbolName.toCaseFolded();
