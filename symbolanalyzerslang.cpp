@@ -63,7 +63,9 @@ void SymbolAnalyzer::analyzeProject(
     }
 
     QList<sym_list::SymbolInfo> allSymbols =
-        m_slangManager->extractWorkspaceSymbols(svFiles);
+        m_slangManager->extractWorkspaceSymbols(svFiles,
+                                                project.includeDirs,
+                                                project.defines);
     if (isCancelled && isCancelled()) {
         emit batchAnalysisCompleted(0, 0);
         emit analysisCompleted(project.workspaceRoot, 0);
@@ -75,7 +77,10 @@ void SymbolAnalyzer::analyzeProject(
             svFiles,
             allSymbols,
             isCancelled);
-    result.diagnostics = m_slangManager->extractWorkspaceDiagnostics(svFiles);
+    result.diagnostics =
+        m_slangManager->extractWorkspaceDiagnostics(svFiles,
+                                                    project.includeDirs,
+                                                    project.defines);
     const int filesAnalyzed =
         publishWorkspaceAnalysisResult(result, totalFiles);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);

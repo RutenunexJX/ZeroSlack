@@ -20,10 +20,12 @@
 #include "semanticindexsnapshot.h"
 #include "syminfo.h"
 #include "mycodeeditor.h"
+#include "projectmodel.h"
 #include "symbolanalyzer.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -2959,6 +2961,68 @@ static void runSemanticDiffServiceFixture()
     expectInt("semantic diff removed diagnostics", removedDiagnostics, 1);
 }
 
+static void runRealWorkspaceIncludeFixture()
+{
+    printf("\n-- real workspace include fixture --\n");
+
+    const QString workspaceRoot = normalizedPath(
+        QFileInfo(QString::fromLocal8Bit(__FILE__)).dir()
+            .filePath(QStringLiteral("new")));
+    expectBool("real workspace fixture exists",
+               QFileInfo(workspaceRoot).isDir(),
+               true);
+    if (!QFileInfo(workspaceRoot).isDir())
+        return;
+
+    QStringList files;
+    QDirIterator it(workspaceRoot,
+                    QStringList{"*.sv", "*.svh", "*.v"},
+                    QDir::Files,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext())
+        files.append(normalizedPath(it.next()));
+
+    ProjectModel project;
+    project.setWorkspaceRoot(workspaceRoot);
+    project.setScannedFiles(files);
+    const ProjectSnapshot snapshot = project.snapshot();
+    expectBool("real workspace include dirs contain root",
+               snapshot.includeDirs.contains(workspaceRoot),
+               true);
+
+    SlangManager slang;
+    const QList<SemanticDiagnostic> diagnostics =
+        slang.extractWorkspaceDiagnostics(snapshot.systemVerilogFiles,
+                                          snapshot.includeDirs,
+                                          snapshot.defines);
+
+    bool missingRootHeader = false;
+    for (const SemanticDiagnostic& diagnostic : diagnostics) {
+        missingRootHeader = missingRootHeader
+            || diagnostic.message.contains(QStringLiteral("_svh.svh"),
+                                           Qt::CaseInsensitive);
+    }
+    expectBool("real workspace resolves root svh include",
+               missingRootHeader,
+               false);
+
+    const QList<sym_list::SymbolInfo> symbols =
+        slang.extractWorkspaceSymbols(snapshot.systemVerilogFiles,
+                                      snapshot.includeDirs,
+                                      snapshot.defines);
+    expectBool("real workspace extracts symbols", symbols.size() > 20, true);
+    expectBool("real workspace has rtl_top module",
+               symbolId(symbols, QStringLiteral("rtl_top"), sym_list::sym_module) >= 0,
+               true);
+    expectBool("real workspace has gl_pkg package",
+               symbolId(symbols, QStringLiteral("gl_pkg"), sym_list::sym_package) >= 0,
+               true);
+    expectBool("real workspace has interface",
+               symbolId(symbols, QStringLiteral("lr_genr_if"), sym_list::sym_interface)
+                   >= 0,
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -2977,6 +3041,7 @@ int main(int argc, char** argv)
     runClockResetDomainServiceFixture();
     runFsmGraphServiceFixture();
     runSemanticDiffServiceFixture();
+    runRealWorkspaceIncludeFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

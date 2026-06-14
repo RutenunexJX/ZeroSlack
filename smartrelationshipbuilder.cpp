@@ -71,6 +71,22 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     const QList<sym_list::SymbolInfo>& fileSymbols,
     const SemanticIndexSnapshot* snapshot)
 {
+    return computeRelationships(fileName,
+                                content,
+                                fileSymbols,
+                                snapshot,
+                                QStringList(),
+                                QHash<QString, QString>());
+}
+
+QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
+    const QString& fileName,
+    const QString& content,
+    const QList<sym_list::SymbolInfo>& fileSymbols,
+    const SemanticIndexSnapshot* snapshot,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines)
+{
     QVector<RelationshipToAdd> result;
     if (checkCancellation(fileName))
         return result;
@@ -80,6 +96,8 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     try {
         AnalysisContext context;
         setupAnalysisContextFromSymbols(fileName, fileSymbols, snapshot, context);
+        context.includeDirs = includeDirs;
+        context.defines = defines;
 
         collectResults = &result;
 

@@ -73,7 +73,12 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
                          : QList<sym_list::SymbolInfo>();
         const QVector<RelationshipToAdd> relationships =
             relationshipBuilder->computeRelationships(
-                filePath, content, fileSymbols, baseSnapshot.get());
+                filePath,
+                content,
+                fileSymbols,
+                baseSnapshot.get(),
+                project.includeDirs,
+                project.defines);
         result.fileRelationships.append({filePath, relationships});
         newRelationships.append(toSemanticRelationships(relationships));
     }

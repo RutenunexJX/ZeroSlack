@@ -40,6 +40,13 @@ public:
     QVector<RelationshipToAdd> computeRelationships(const QString& fileName, const QString& content,
                                                     const QList<sym_list::SymbolInfo>& fileSymbols,
                                                     const SemanticIndexSnapshot* snapshot);
+    QVector<RelationshipToAdd> computeRelationships(
+        const QString& fileName,
+        const QString& content,
+        const QList<sym_list::SymbolInfo>& fileSymbols,
+        const SemanticIndexSnapshot* snapshot,
+        const QStringList& includeDirs,
+        const QHash<QString, QString>& defines);
     void analyzeFileIncremental(const QString& fileName, const QString& content,
                                const QList<int>& changedLines);
 
@@ -88,6 +95,8 @@ private:
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;
         const SemanticIndexSnapshot* snapshot = nullptr;
+        QStringList includeDirs;
+        QHash<QString, QString> defines;
     };
 
     void setupAnalysisContext(const QString& fileName, AnalysisContext& context);

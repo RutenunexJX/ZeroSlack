@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QVector>
 #include <QList>
+#include <QHash>
 
 /// Result of one module instantiation: instance name, module (definition) name, and source line (1-based).
 struct ModuleInstantiationInfo {
@@ -62,40 +63,66 @@ public:
     /// instantiations. Returns empty list on parse/elaboration failure (exceptions caught).
     /// Line numbers in the result are 1-based.
     QVector<ModuleInstantiationInfo> extractModuleInstantiations(const QString& fileName,
-                                                                  const QString& content);
+                                                                  const QString& content,
+                                                                  const QStringList& includeDirs = {},
+                                                                  const QHash<QString, QString>& defines = {});
 
     /// Parses file content once with Slang and returns all relationship facts used by the
     /// relationship builder.
     RelationshipExtractionInfo extractRelationshipInfo(const QString& fileName,
-                                                       const QString& content);
+                                                       const QString& content,
+                                                       const QStringList& includeDirs = {},
+                                                       const QHash<QString, QString>& defines = {});
 
     /// Parses file content with Slang and returns resolved task/function calls, excluding system calls.
     QVector<SubroutineCallInfo> extractSubroutineCalls(const QString& fileName,
-                                                       const QString& content);
+                                                       const QString& content,
+                                                       const QStringList& includeDirs = {},
+                                                       const QHash<QString, QString>& defines = {});
 
     /// Parses file content with Slang and returns assignment left/right symbol references.
-    QVector<AssignmentInfo> extractAssignments(const QString& fileName, const QString& content);
+    QVector<AssignmentInfo> extractAssignments(const QString& fileName,
+                                               const QString& content,
+                                               const QStringList& includeDirs = {},
+                                               const QHash<QString, QString>& defines = {});
 
     /// Parses file content with Slang and returns symbols read by condition/control expressions.
     QVector<ConditionReferenceInfo> extractConditionReferences(const QString& fileName,
-                                                               const QString& content);
+                                                               const QString& content,
+                                                               const QStringList& includeDirs = {},
+                                                               const QHash<QString, QString>& defines = {});
 
     /// Parses file content with Slang and returns signal references from event/timing controls.
-    QVector<TimingSignalInfo> extractTimingSignals(const QString& fileName, const QString& content);
+    QVector<TimingSignalInfo> extractTimingSignals(const QString& fileName,
+                                                   const QString& content,
+                                                   const QStringList& includeDirs = {},
+                                                   const QHash<QString, QString>& defines = {});
 
     /// Single-file / hot-edit: parse content and extract symbols into sym_list::SymbolInfo list.
     /// Returns empty list on parse/elaboration failure (exceptions caught).
-    QList<sym_list::SymbolInfo> extractSymbols(const QString& fileName, const QString& content);
+    QList<sym_list::SymbolInfo> extractSymbols(const QString& fileName,
+                                               const QString& content,
+                                               const QStringList& includeDirs = {},
+                                               const QHash<QString, QString>& defines = {});
 
     /// Single-file / hot-edit: parse content and return Slang diagnostics as semantic data.
-    QList<SemanticDiagnostic> extractDiagnostics(const QString& fileName, const QString& content);
+    QList<SemanticDiagnostic> extractDiagnostics(const QString& fileName,
+                                                 const QString& content,
+                                                 const QStringList& includeDirs = {},
+                                                 const QHash<QString, QString>& defines = {});
 
     /// Workspace-wide: load all SV files (by path), compile together, extract all symbols.
     /// filePaths are read from disk inside this call. Returns empty list on failure.
-    QList<sym_list::SymbolInfo> extractWorkspaceSymbols(const QStringList& filePaths);
+    QList<sym_list::SymbolInfo> extractWorkspaceSymbols(
+        const QStringList& filePaths,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {});
 
     /// Workspace-wide: load all SV files (by path), compile together, and return diagnostics.
-    QList<SemanticDiagnostic> extractWorkspaceDiagnostics(const QStringList& filePaths);
+    QList<SemanticDiagnostic> extractWorkspaceDiagnostics(
+        const QStringList& filePaths,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {});
 };
 
 #endif // SLANGMANAGER_H

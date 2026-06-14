@@ -1,4 +1,5 @@
 #include "slangmanager.h"
+#include "slangparseoptions.h"
 
 #include <slang/ast/Compilation.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
@@ -70,25 +71,36 @@ QList<SemanticDiagnostic> collectDiagnostics(slang::ast::Compilation& compilatio
 } // namespace
 
 QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileName,
-                                                           const QString& content)
+                                                           const QString& content,
+                                                           const QStringList& includeDirs,
+                                                           const QHash<QString, QString>& defines)
 {
     QList<SemanticDiagnostic> result;
     try {
         std::string src = content.toStdString();
         std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
+        std::shared_ptr<slang::syntax::SyntaxTree> tree;
+        if (includeDirs.isEmpty() && defines.isEmpty()) {
+            tree = slang::syntax::SyntaxTree::fromText(
+                std::string_view(src),
+                std::string_view(nameStr),
+                std::string_view{});
+        } else {
+            slang::Bag syntaxOptions =
+                slang_parse_options::makeSyntaxOptions(includeDirs, defines);
+            tree = slang::syntax::SyntaxTree::fromText(
+                std::string_view(src),
+                syntaxOptions,
+                std::string_view(nameStr),
+                std::string_view(nameStr));
+        }
 
         if (!tree)
             return result;
 
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
+        slang::Bag compilationOptions =
+            slang_parse_options::makeCompilationOptions();
+        Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
         (void)compilation.getRoot();
         result = collectDiagnostics(compilation);
@@ -100,7 +112,10 @@ QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileNa
     return result;
 }
 
-QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(const QStringList& filePaths)
+QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
+    const QStringList& filePaths,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines)
 {
     QList<SemanticDiagnostic> result;
     if (filePaths.isEmpty())
@@ -116,7 +131,13 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(const QStrin
         for (const std::string& s : pathStrs)
             pathViews.push_back(s);
 
-        auto treeOrErr = slang::syntax::SyntaxTree::fromFiles(pathViews);
+        slang::syntax::SyntaxTree::TreeOrError treeOrErr =
+            includeDirs.isEmpty() && defines.isEmpty()
+                ? slang::syntax::SyntaxTree::fromFiles(pathViews)
+                : slang::syntax::SyntaxTree::fromFiles(
+                      pathViews,
+                      slang::syntax::SyntaxTree::getDefaultSourceManager(),
+                      slang_parse_options::makeSyntaxOptions(includeDirs, defines));
         if (!treeOrErr)
             return result;
 
@@ -124,11 +145,9 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(const QStrin
         if (!tree)
             return result;
 
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
+        slang::Bag compilationOptions =
+            slang_parse_options::makeCompilationOptions();
+        Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
         (void)compilation.getRoot();
         result = collectDiagnostics(compilation);

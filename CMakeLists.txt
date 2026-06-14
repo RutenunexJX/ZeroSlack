@@ -299,6 +299,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticruntimecoordinator.h
     signaljourneyservice.h
     slangmanager.h
+    slangparseoptions.h
     slangrelationshiphelpers.h
     slangrelationshipparse.h
     slangsymbolcollector.h

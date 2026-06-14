@@ -59,6 +59,9 @@ void SmartRelationshipBuilder::ensureRelationshipInfo(const QString& content,
         return;
 
     context.relationshipInfo =
-        m_slangManager->extractRelationshipInfo(context.currentFileName, content);
+        m_slangManager->extractRelationshipInfo(context.currentFileName,
+                                                content,
+                                                context.includeDirs,
+                                                context.defines);
     context.relationshipInfoLoaded = true;
 }

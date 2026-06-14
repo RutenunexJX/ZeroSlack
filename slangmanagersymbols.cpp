@@ -1,4 +1,5 @@
 #include "slangmanager.h"
+#include "slangparseoptions.h"
 #include "slangsymbolcollector.h"
 
 #include <slang/ast/Compilation.h>
@@ -12,25 +13,38 @@
 
 using namespace slang::ast;
 
-QList<sym_list::SymbolInfo> SlangManager::extractSymbols(const QString& fileName, const QString& content)
+QList<sym_list::SymbolInfo> SlangManager::extractSymbols(
+    const QString& fileName,
+    const QString& content,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines)
 {
     QList<sym_list::SymbolInfo> result;
     try {
         std::string src = content.toStdString();
         std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
+        std::shared_ptr<slang::syntax::SyntaxTree> tree;
+        if (includeDirs.isEmpty() && defines.isEmpty()) {
+            tree = slang::syntax::SyntaxTree::fromText(
+                std::string_view(src),
+                std::string_view(nameStr),
+                std::string_view{});
+        } else {
+            slang::Bag syntaxOptions =
+                slang_parse_options::makeSyntaxOptions(includeDirs, defines);
+            tree = slang::syntax::SyntaxTree::fromText(
+                std::string_view(src),
+                syntaxOptions,
+                std::string_view(nameStr),
+                std::string_view(nameStr));
+        }
 
         if (!tree)
             return result;
 
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
+        slang::Bag compilationOptions =
+            slang_parse_options::makeCompilationOptions();
+        Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
 
         slang_symbols::collectSymbols(compilation, result);
@@ -42,7 +56,10 @@ QList<sym_list::SymbolInfo> SlangManager::extractSymbols(const QString& fileName
     return result;
 }
 
-QList<sym_list::SymbolInfo> SlangManager::extractWorkspaceSymbols(const QStringList& filePaths)
+QList<sym_list::SymbolInfo> SlangManager::extractWorkspaceSymbols(
+    const QStringList& filePaths,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines)
 {
     QList<sym_list::SymbolInfo> result;
     if (filePaths.isEmpty())
@@ -58,7 +75,13 @@ QList<sym_list::SymbolInfo> SlangManager::extractWorkspaceSymbols(const QStringL
         for (const std::string& s : pathStrs)
             pathViews.push_back(s);
 
-        auto treeOrErr = slang::syntax::SyntaxTree::fromFiles(pathViews);
+        slang::syntax::SyntaxTree::TreeOrError treeOrErr =
+            includeDirs.isEmpty() && defines.isEmpty()
+                ? slang::syntax::SyntaxTree::fromFiles(pathViews)
+                : slang::syntax::SyntaxTree::fromFiles(
+                      pathViews,
+                      slang::syntax::SyntaxTree::getDefaultSourceManager(),
+                      slang_parse_options::makeSyntaxOptions(includeDirs, defines));
         if (!treeOrErr)
             return result;
 
@@ -66,11 +89,9 @@ QList<sym_list::SymbolInfo> SlangManager::extractWorkspaceSymbols(const QStringL
         if (!tree)
             return result;
 
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<CompilationOptions>();
-        opts.flags |= CompilationFlags::IgnoreUnknownModules;
-
-        Compilation compilation(bag);
+        slang::Bag compilationOptions =
+            slang_parse_options::makeCompilationOptions();
+        Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
 
         slang_symbols::collectSymbols(compilation, result);

@@ -16,7 +16,9 @@ using namespace slang::ast;
 using namespace slang_relationship::detail;
 
 RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& fileName,
-                                                                 const QString& content)
+                                                                 const QString& content,
+                                                                 const QStringList& includeDirs,
+                                                                 const QHash<QString, QString>& defines)
 {
     return slang_relationship::extractFromText<RelationshipExtractionInfo>(
         fileName,
@@ -98,11 +100,15 @@ RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& 
                 appendTimingSignal(result.timingSignals, sm, event);
                 v.visitDefault(event);
             });
-        });
+        },
+        includeDirs,
+        defines);
 }
 
 QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const QString& fileName,
-                                                                           const QString& content)
+                                                                           const QString& content,
+                                                                           const QStringList& includeDirs,
+                                                                           const QHash<QString, QString>& defines)
 {
     return slang_relationship::extractFromText<QVector<ModuleInstantiationInfo>>(
         fileName,
@@ -118,11 +124,15 @@ QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const
                 result.append(info);
                 v.visitDefault(inst);
             });
-        });
+        },
+        includeDirs,
+        defines);
 }
 
 QVector<SubroutineCallInfo> SlangManager::extractSubroutineCalls(const QString& fileName,
-                                                                 const QString& content)
+                                                                 const QString& content,
+                                                                 const QStringList& includeDirs,
+                                                                 const QHash<QString, QString>& defines)
 {
     return slang_relationship::extractFromText<QVector<SubroutineCallInfo>>(
         fileName,
@@ -139,11 +149,15 @@ QVector<SubroutineCallInfo> SlangManager::extractSubroutineCalls(const QString& 
                 }
                 v.visitDefault(call);
             });
-        });
+        },
+        includeDirs,
+        defines);
 }
 
 QVector<AssignmentInfo> SlangManager::extractAssignments(const QString& fileName,
-                                                         const QString& content)
+                                                         const QString& content,
+                                                         const QStringList& includeDirs,
+                                                         const QHash<QString, QString>& defines)
 {
     return slang_relationship::extractFromText<QVector<AssignmentInfo>>(
         fileName,
@@ -160,11 +174,15 @@ QVector<AssignmentInfo> SlangManager::extractAssignments(const QString& fileName
                     result.append(info);
                 v.visitDefault(assignment);
             });
-        });
+        },
+        includeDirs,
+        defines);
 }
 
 QVector<ConditionReferenceInfo> SlangManager::extractConditionReferences(const QString& fileName,
-                                                                         const QString& content)
+                                                                         const QString& content,
+                                                                         const QStringList& includeDirs,
+                                                                         const QHash<QString, QString>& defines)
 {
     return slang_relationship::extractFromText<QVector<ConditionReferenceInfo>>(
         fileName,
@@ -213,11 +231,15 @@ QVector<ConditionReferenceInfo> SlangManager::extractConditionReferences(const Q
                 appendConditionReference(result, sm, stmt.cond);
                 v.visitDefault(stmt);
             });
-        });
+        },
+        includeDirs,
+        defines);
 }
 
 QVector<TimingSignalInfo> SlangManager::extractTimingSignals(const QString& fileName,
-                                                             const QString& content)
+                                                             const QString& content,
+                                                             const QStringList& includeDirs,
+                                                             const QHash<QString, QString>& defines)
 {
     return slang_relationship::extractFromText<QVector<TimingSignalInfo>>(
         fileName,
@@ -228,5 +250,7 @@ QVector<TimingSignalInfo> SlangManager::extractTimingSignals(const QString& file
                 appendTimingSignal(result, sm, event);
                 v.visitDefault(event);
             });
-        });
+        },
+        includeDirs,
+        defines);
 }

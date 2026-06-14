@@ -2,11 +2,17 @@
 #define SLANGRELATIONSHIPPARSE_H
 
 #include <slang/ast/Compilation.h>
+#include <slang/ast/Symbol.h>
+#include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
 
+#include "slangparseoptions.h"
+
+#include <QHash>
 #include <QString>
+#include <QStringList>
 
 #include <exception>
 #include <string>
@@ -17,25 +23,36 @@ namespace slang_relationship {
 template <typename Result, typename VisitorFactory>
 Result extractFromText(const QString& fileName,
                        const QString& content,
-                       VisitorFactory makeRelationshipVisitor)
+                       VisitorFactory makeRelationshipVisitor,
+                       const QStringList& includeDirs = {},
+                       const QHash<QString, QString>& defines = {})
 {
     Result result;
     try {
         std::string src = content.toStdString();
         std::string nameStr = fileName.toStdString();
-        auto tree = slang::syntax::SyntaxTree::fromText(
-            std::string_view(src),
-            std::string_view(nameStr),
-            std::string_view{});
+        std::shared_ptr<slang::syntax::SyntaxTree> tree;
+        if (includeDirs.isEmpty() && defines.isEmpty()) {
+            tree = slang::syntax::SyntaxTree::fromText(
+                std::string_view(src),
+                std::string_view(nameStr),
+                std::string_view{});
+        } else {
+            slang::Bag syntaxOptions =
+                slang_parse_options::makeSyntaxOptions(includeDirs, defines);
+            tree = slang::syntax::SyntaxTree::fromText(
+                std::string_view(src),
+                syntaxOptions,
+                std::string_view(nameStr),
+                std::string_view(nameStr));
+        }
 
         if (!tree)
             return result;
 
-        slang::Bag bag;
-        auto& opts = bag.insertOrGet<slang::ast::CompilationOptions>();
-        opts.flags |= slang::ast::CompilationFlags::IgnoreUnknownModules;
-
-        slang::ast::Compilation compilation(bag);
+        slang::Bag compilationOptions =
+            slang_parse_options::makeCompilationOptions();
+        slang::ast::Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
         const slang::ast::RootSymbol& root = compilation.getRoot();
         const slang::SourceManager* sm = compilation.getSourceManager();
