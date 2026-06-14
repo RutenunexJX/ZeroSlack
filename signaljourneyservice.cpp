@@ -66,7 +66,10 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     if (query.signalSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.signalSymbolId);
-        return isSignalLike(symbol.symbolType) ? symbol : missingSignalJourneySymbol();
+        return SymbolTaxonomy::isSignalDeclaration(symbol.symbolType)
+            || SymbolTaxonomy::isPortDeclaration(symbol.symbolType)
+            ? symbol
+            : missingSignalJourneySymbol();
     }
     if (query.signalName.isEmpty())
         return missingSignalJourneySymbol();
@@ -77,7 +80,9 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     definitionQuery.moduleName = query.moduleName;
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
-    return definition.found && isSignalLike(definition.symbol.symbolType)
+    return definition.found
+            && (SymbolTaxonomy::isSignalDeclaration(definition.symbol.symbolType)
+                || SymbolTaxonomy::isPortDeclaration(definition.symbol.symbolType))
         ? definition.symbol
         : missingSignalJourneySymbol();
 }
@@ -116,7 +121,7 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
         for (const SemanticRelationshipResult& relationship : relationships) {
             const sym_list::SymbolInfo peer =
                 outgoing ? relationship.toSymbol : relationship.fromSymbol;
-            if (!isPortConnectionPeer(peer.symbolType))
+            if (!SymbolTaxonomy::isPortConnectionPeer(peer.symbolType))
                 continue;
             const QString key = QStringLiteral("%1:%2:%3")
                                     .arg(relationship.relationship.fromId)
@@ -137,40 +142,6 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
     appendDirection(true);
     sortItems(items);
     return items;
-}
-
-bool SignalJourneyService::isSignalLike(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport:
-        return true;
-    default:
-        return false;
-    }
-}
-
-bool SignalJourneyService::isPortConnectionPeer(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_inst_pin:
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport:
-        return true;
-    default:
-        return false;
-    }
 }
 
 void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)

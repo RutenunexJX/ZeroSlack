@@ -230,38 +230,27 @@ bool SemanticDiffService::symbolCategory(
     sym_list::sym_type_e type,
     SemanticDiffSymbolCategory* category)
 {
-    switch (type) {
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport:
+    if (SymbolTaxonomy::isPortDeclaration(type)) {
         if (category)
             *category = SemanticDiffSymbolCategory::Port;
         return true;
-    case sym_list::sym_parameter:
-    case sym_list::sym_module_parameter:
-    case sym_list::sym_localparam:
+    }
+    if (SymbolTaxonomy::isParameterDeclaration(type)) {
         if (category)
             *category = SemanticDiffSymbolCategory::Parameter;
         return true;
-    case sym_list::sym_inst:
+    }
+    if (SymbolTaxonomy::isInstanceDeclaration(type)) {
         if (category)
             *category = SemanticDiffSymbolCategory::Instance;
         return true;
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_enum_var:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
+    }
+    if (SymbolTaxonomy::isSignalDeclaration(type)) {
         if (category)
             *category = SemanticDiffSymbolCategory::Signal;
         return true;
-    default:
-        return false;
     }
+    return false;
 }
 
 bool SemanticDiffService::symbolInScope(
@@ -344,10 +333,10 @@ QString SemanticDiffService::relationshipKey(
     SemanticDiffSymbolCategory toCategory = SemanticDiffSymbolCategory::Signal;
     symbolCategory(fromSymbol.symbolType, &fromCategory);
     symbolCategory(toSymbol.symbolType, &toCategory);
-    const QString fromKey = fromSymbol.symbolType == sym_list::sym_module
+    const QString fromKey = SymbolTaxonomy::isModuleDeclaration(fromSymbol.symbolType)
         ? QStringLiteral("module:%1").arg(fromSymbol.symbolName)
         : symbolKey(fromSymbol, fromCategory);
-    const QString toKey = toSymbol.symbolType == sym_list::sym_module
+    const QString toKey = SymbolTaxonomy::isModuleDeclaration(toSymbol.symbolType)
         ? QStringLiteral("module:%1").arg(toSymbol.symbolName)
         : symbolKey(toSymbol, toCategory);
     return QStringLiteral("%1:%2:%3")

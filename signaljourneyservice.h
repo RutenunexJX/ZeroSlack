@@ -53,8 +53,6 @@ private:
     QList<SignalJourneyItem> portConnectionItems(
         const sym_list::SymbolInfo& signal) const;
 
-    static bool isSignalLike(sym_list::sym_type_e type);
-    static bool isPortConnectionPeer(sym_list::sym_type_e type);
     static void sortItems(QList<SignalJourneyItem>& items);
 };
 

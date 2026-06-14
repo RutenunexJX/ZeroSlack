@@ -49,19 +49,15 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.ports = symbolsInModule(
         moduleSymbol,
         symbols,
-        {sym_list::sym_port_input,
-         sym_list::sym_port_output,
-         sym_list::sym_port_inout,
-         sym_list::sym_port_ref,
-         sym_list::sym_port_interface,
-         sym_list::sym_port_interface_modport});
+        SymbolTaxonomy::isPortDeclaration);
     report.parameters = symbolsInModule(
         moduleSymbol,
         symbols,
-        {sym_list::sym_parameter,
-         sym_list::sym_module_parameter,
-         sym_list::sym_localparam});
-    report.instances = symbolsInModule(moduleSymbol, symbols, {sym_list::sym_inst});
+        SymbolTaxonomy::isParameterDeclaration);
+    report.instances = symbolsInModule(
+        moduleSymbol,
+        symbols,
+        SymbolTaxonomy::isInstanceDeclaration);
     report.imports = importSymbols(moduleSymbol);
     report.diagnostics = diagnosticsForModule(moduleSymbol);
     report.relationshipSummary = relationshipSummary(moduleSymbol);
@@ -79,7 +75,7 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);
-        return symbol.symbolType == sym_list::sym_module
+        return SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
             ? symbol
             : missingModuleBriefSymbol();
     }
@@ -91,7 +87,8 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
     definitionQuery.fileName = query.fileName;
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
-    return definition.found && definition.symbol.symbolType == sym_list::sym_module
+    return definition.found
+            && SymbolTaxonomy::isModuleDeclaration(definition.symbol.symbolType)
         ? definition.symbol
         : missingModuleBriefSymbol();
 }
@@ -99,11 +96,11 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
 QList<sym_list::SymbolInfo> ModuleBriefService::symbolsInModule(
     const sym_list::SymbolInfo& moduleSymbol,
     const QList<sym_list::SymbolInfo>& symbols,
-    const QList<sym_list::sym_type_e>& types) const
+    bool (*matchesType)(sym_list::sym_type_e)) const
 {
     QList<sym_list::SymbolInfo> result;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!types.contains(symbol.symbolType))
+        if (!matchesType(symbol.symbolType))
             continue;
         if (!isInsideModule(symbol, moduleSymbol))
             continue;
@@ -121,7 +118,7 @@ QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
     const QList<SemanticRelationshipResult> relationships =
         semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
     for (const SemanticRelationshipResult& relationship : relationships) {
-        if (relationship.toSymbol.symbolType != sym_list::sym_package)
+        if (!SymbolTaxonomy::isPackageDeclaration(relationship.toSymbol.symbolType))
             continue;
         if (seen.contains(relationship.toSymbol.symbolId))
             continue;

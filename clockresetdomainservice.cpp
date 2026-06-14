@@ -107,7 +107,7 @@ bool ClockResetDomainService::acceptsRelationship(
 {
     if (relationship.fromSymbol.symbolId < 0 || relationship.toSymbol.symbolId < 0)
         return false;
-    if (relationship.toSymbol.symbolType != sym_list::sym_module)
+    if (!SymbolTaxonomy::isModuleDeclaration(relationship.toSymbol.symbolType))
         return false;
     if (query.moduleSymbolId >= 0
         && relationship.toSymbol.symbolId != query.moduleSymbolId) {

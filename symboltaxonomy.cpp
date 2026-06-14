@@ -218,6 +218,37 @@ bool isPackageDeclaration(sym_list::sym_type_e type)
     return declarationKind(type) == DeclarationKind::Package;
 }
 
+bool isPortDeclaration(sym_list::sym_type_e type)
+{
+    return declarationKind(type) == DeclarationKind::Port;
+}
+
+bool isParameterDeclaration(sym_list::sym_type_e type)
+{
+    const DeclarationKind kind = declarationKind(type);
+    return kind == DeclarationKind::Parameter
+        || kind == DeclarationKind::Localparam;
+}
+
+bool isSignalDeclaration(sym_list::sym_type_e type)
+{
+    const DeclarationKind kind = declarationKind(type);
+    return kind == DeclarationKind::Signal
+        || kind == DeclarationKind::StructVariable
+        || type == sym_list::sym_enum_var;
+}
+
+bool isInstanceDeclaration(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_inst;
+}
+
+bool isPortConnectionPeer(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_inst_pin
+        || isPortDeclaration(type);
+}
+
 bool isSubroutineDeclaration(sym_list::sym_type_e type)
 {
     const DeclarationKind kind = declarationKind(type);

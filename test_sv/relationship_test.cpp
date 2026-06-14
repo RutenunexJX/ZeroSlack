@@ -2728,6 +2728,15 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief found module", report.found, true);
     expectBool("module brief subject name",
                report.moduleSymbol.symbolName == QStringLiteral("brief_top"), true);
+    expectBool("taxonomy recognizes module brief port",
+               SymbolTaxonomy::isPortDeclaration(symbols.at(2).symbolType),
+               true);
+    expectBool("taxonomy recognizes module brief parameter",
+               SymbolTaxonomy::isParameterDeclaration(symbols.at(1).symbolType),
+               true);
+    expectBool("taxonomy recognizes module brief instance",
+               SymbolTaxonomy::isInstanceDeclaration(symbols.at(5).symbolType),
+               true);
     expectInt("module brief port count", report.ports.size(), 3);
     expectInt("module brief parameter count", report.parameters.size(), 1);
     expectInt("module brief instance count", report.instances.size(), 1);
@@ -2829,6 +2838,12 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal journey found declaration", report.found, true);
     expectBool("signal journey declaration name",
                report.declaration.symbolName == QStringLiteral("data_q"), true);
+    expectBool("taxonomy recognizes signal journey declaration",
+               SymbolTaxonomy::isSignalDeclaration(report.declaration.symbolType),
+               true);
+    expectBool("taxonomy recognizes signal journey port peer",
+               SymbolTaxonomy::isPortConnectionPeer(symbols.at(4).symbolType),
+               true);
     expectInt("signal journey assignment count", report.assignments.size(), 1);
     expectInt("signal journey read count", report.reads.size(), 1);
     expectInt("signal journey port connection count",

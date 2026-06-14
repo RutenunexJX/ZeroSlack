@@ -54,7 +54,7 @@ private:
     QList<sym_list::SymbolInfo> symbolsInModule(
         const sym_list::SymbolInfo& moduleSymbol,
         const QList<sym_list::SymbolInfo>& symbols,
-        const QList<sym_list::sym_type_e>& types) const;
+        bool (*matchesType)(sym_list::sym_type_e)) const;
     QList<sym_list::SymbolInfo> importSymbols(
         const sym_list::SymbolInfo& moduleSymbol) const;
     QList<SemanticDiagnostic> diagnosticsForModule(
