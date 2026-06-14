@@ -34,6 +34,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QSet>
 #include <QString>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -3393,37 +3394,115 @@ static void runRealWorkspaceIncludeFixture()
         slang.extractWorkspaceSymbols(snapshot.systemVerilogFiles,
                                       snapshot.includeDirs,
                                       snapshot.defines);
+    const int rtlTopId =
+        symbolId(symbols, QStringLiteral("rtl_top"), sym_list::sym_module);
+    const int packageId =
+        symbolId(symbols, QStringLiteral("gl_pkg"), sym_list::sym_package);
+    const int interfaceId =
+        symbolId(symbols, QStringLiteral("lr_genr_if"), sym_list::sym_interface);
+    int packageParamId =
+        symbolId(symbols, QStringLiteral("P_SW_NUM"), sym_list::sym_parameter);
+    if (packageParamId < 0) {
+        packageParamId =
+            symbolId(symbols, QStringLiteral("P_SW_NUM"), sym_list::sym_localparam);
+    }
+    const int packageTypedefId =
+        symbolId(symbols, QStringLiteral("cpld_sw_sp"), sym_list::sym_typedef);
+    const int interfaceModportId =
+        symbolIdInScope(symbols,
+                        QStringLiteral("si"),
+                        sym_list::sym_interface_modport,
+                        QStringLiteral("lr_genr_if"));
+    const int interfaceInstId =
+        symbolIdInScope(symbols,
+                        QStringLiteral("LR_GENR_IF"),
+                        sym_list::sym_inst,
+                        QStringLiteral("rtl_top"));
+    const auto symbolByName = [&](const QString& name,
+                                  sym_list::sym_type_e type,
+                                  const QString& moduleScope) {
+        sym_list::SymbolInfo found;
+        found.symbolType = sym_list::sym_user;
+        for (const sym_list::SymbolInfo& symbol : symbols) {
+            if (symbol.symbolName == name
+                && symbol.symbolType == type
+                && symbol.moduleScope == moduleScope) {
+                return symbol;
+            }
+        }
+        return found;
+    };
+    const auto symbolByNameAndType = [&](const QString& name,
+                                         sym_list::sym_type_e type) {
+        sym_list::SymbolInfo found;
+        found.symbolType = sym_list::sym_user;
+        for (const sym_list::SymbolInfo& symbol : symbols) {
+            if (symbol.symbolName == name && symbol.symbolType == type)
+                return symbol;
+        }
+        return found;
+    };
+    sym_list::SymbolInfo packageParamSymbol =
+        symbolByName(QStringLiteral("P_SW_NUM"),
+                     sym_list::sym_parameter,
+                     QStringLiteral("gl_pkg"));
+    if (packageParamSymbol.symbolType == sym_list::sym_user) {
+        packageParamSymbol =
+            symbolByName(QStringLiteral("P_SW_NUM"),
+                         sym_list::sym_localparam,
+                         QStringLiteral("gl_pkg"));
+    }
+    const sym_list::SymbolInfo packageSymbol =
+        symbolByNameAndType(QStringLiteral("gl_pkg"), sym_list::sym_package);
+    const sym_list::SymbolInfo packageTypedefSymbol =
+        symbolByName(QStringLiteral("cpld_sw_sp"),
+                     sym_list::sym_typedef,
+                     QStringLiteral("gl_pkg"));
+    const sym_list::SymbolInfo interfaceModportSymbol =
+        symbolByName(QStringLiteral("si"),
+                     sym_list::sym_interface_modport,
+                     QStringLiteral("lr_genr_if"));
+    const sym_list::SymbolInfo interfaceInstSymbol =
+        symbolByName(QStringLiteral("LR_GENR_IF"),
+                     sym_list::sym_inst,
+                     QStringLiteral("rtl_top"));
+
     expectBool("real workspace extracts symbols", symbols.size() > 20, true);
     expectBool("real workspace has rtl_top module",
-               symbolId(symbols, QStringLiteral("rtl_top"), sym_list::sym_module) >= 0,
-               true);
+               rtlTopId >= 0, true);
     expectBool("real workspace has gl_pkg package",
-               symbolId(symbols, QStringLiteral("gl_pkg"), sym_list::sym_package) >= 0,
-               true);
+               packageId >= 0, true);
     expectBool("real workspace has interface",
-               symbolId(symbols, QStringLiteral("lr_genr_if"), sym_list::sym_interface)
-                   >= 0,
-               true);
+               interfaceId >= 0, true);
     expectBool("real workspace has package parameter",
-               symbolId(symbols, QStringLiteral("P_SW_NUM"), sym_list::sym_parameter) >= 0
-                   || symbolId(symbols,
-                               QStringLiteral("P_SW_NUM"),
-                               sym_list::sym_localparam) >= 0,
-               true);
+               packageParamId >= 0, true);
     expectBool("real workspace has package typedef",
-               symbolId(symbols, QStringLiteral("cpld_sw_sp"), sym_list::sym_typedef) >= 0,
-               true);
+               packageTypedefId >= 0, true);
     expectBool("real workspace has interface modport",
-               symbolIdInScope(symbols,
-                               QStringLiteral("si"),
-                               sym_list::sym_interface_modport,
-                               QStringLiteral("lr_genr_if")) >= 0,
-               true);
+               interfaceModportId >= 0, true);
     expectBool("real workspace has interface instance",
-               symbolIdInScope(symbols,
-                               QStringLiteral("LR_GENR_IF"),
-                               sym_list::sym_inst,
-                               QStringLiteral("rtl_top")) >= 0,
+               interfaceInstId >= 0, true);
+    QSet<QString> packageScopes;
+    packageScopes.insert(QStringLiteral("gl_pkg"));
+    expectBool("real workspace taxonomy marks global package",
+               SymbolTaxonomy::ownerScope(packageSymbol, packageScopes)
+                   == SymbolTaxonomy::SymbolOwnerScope::Global,
+               true);
+    expectBool("real workspace taxonomy marks package parameter visibility",
+               SymbolTaxonomy::visibility(packageParamSymbol, packageScopes)
+                   == SymbolTaxonomy::SymbolVisibility::PackageVisible,
+               true);
+    expectBool("real workspace taxonomy marks package typedef visibility",
+               SymbolTaxonomy::visibility(packageTypedefSymbol, packageScopes)
+                   == SymbolTaxonomy::SymbolVisibility::PackageVisible,
+               true);
+    expectBool("real workspace taxonomy marks interface modport member",
+               SymbolTaxonomy::ownerScope(interfaceModportSymbol, packageScopes)
+                   == SymbolTaxonomy::SymbolOwnerScope::Interface,
+               true);
+    expectBool("real workspace taxonomy marks module instance local",
+               SymbolTaxonomy::visibility(interfaceInstSymbol, packageScopes)
+                   == SymbolTaxonomy::SymbolVisibility::ScopeLocal,
                true);
 
     SemanticIndex index;

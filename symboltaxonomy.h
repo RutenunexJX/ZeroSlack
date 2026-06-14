@@ -40,6 +40,23 @@ enum class SourceRole {
     Header
 };
 
+enum class SymbolOwnerScope {
+    Unknown,
+    Global,
+    Module,
+    Interface,
+    Package,
+    Struct
+};
+
+enum class SymbolVisibility {
+    Unknown,
+    Global,
+    ScopeLocal,
+    PackageVisible,
+    Member
+};
+
 enum class SymbolSearchIntent {
     Any,
     DefinitionCandidates,
@@ -51,6 +68,12 @@ enum class SymbolSearchIntent {
 };
 
 DeclarationKind declarationKind(sym_list::sym_type_e type);
+SymbolOwnerScope ownerScope(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes = {});
+SymbolVisibility visibility(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes = {});
 
 bool isDefinitionCandidate(sym_list::sym_type_e type);
 bool isGlobalDefinition(sym_list::sym_type_e type);

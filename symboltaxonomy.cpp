@@ -87,6 +87,47 @@ DeclarationKind declarationKind(sym_list::sym_type_e type)
     return DeclarationKind::Unknown;
 }
 
+SymbolOwnerScope ownerScope(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes)
+{
+    const DeclarationKind kind = declarationKind(symbol.symbolType);
+    if (isGlobalDefinition(symbol.symbolType))
+        return SymbolOwnerScope::Global;
+    if (kind == DeclarationKind::Modport)
+        return SymbolOwnerScope::Interface;
+    if (kind == DeclarationKind::StructMember)
+        return SymbolOwnerScope::Struct;
+    if (!symbol.moduleScope.isEmpty()) {
+        if (packageScopes.contains(symbol.moduleScope)
+            && isPackageVisibleDefinition(symbol.symbolType)) {
+            return SymbolOwnerScope::Package;
+        }
+        return SymbolOwnerScope::Module;
+    }
+    return SymbolOwnerScope::Unknown;
+}
+
+SymbolVisibility visibility(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes)
+{
+    const SymbolOwnerScope scope = ownerScope(symbol, packageScopes);
+    if (scope == SymbolOwnerScope::Global)
+        return SymbolVisibility::Global;
+    if (scope == SymbolOwnerScope::Package
+        && isPackageVisibleDefinition(symbol.symbolType)) {
+        return SymbolVisibility::PackageVisible;
+    }
+    if (scope == SymbolOwnerScope::Interface
+        || scope == SymbolOwnerScope::Struct) {
+        return SymbolVisibility::Member;
+    }
+    if (scope == SymbolOwnerScope::Module)
+        return SymbolVisibility::ScopeLocal;
+    return SymbolVisibility::Unknown;
+}
+
 bool isDefinitionCandidate(sym_list::sym_type_e type)
 {
     switch (type) {
@@ -209,8 +250,8 @@ bool isPackageScopeVisibleCompletion(
     const QSet<QString>& packageScopes)
 {
     return isPackageVisibleCommandRequest(requestedType)
-        && !symbol.moduleScope.isEmpty()
-        && packageScopes.contains(symbol.moduleScope);
+        && visibility(symbol, packageScopes)
+            == SymbolVisibility::PackageVisible;
 }
 
 bool isOutlineSymbol(sym_list::sym_type_e type)
