@@ -47,14 +47,20 @@ void ProjectModel::setScannedFiles(const QStringList& files)
     acceptedFiles = pathRules.uniqueSorted(acceptedFiles);
 
     QStringList svFiles;
+    QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles;
     svFiles.reserve(acceptedFiles.size());
     for (const QString& filePath : std::as_const(acceptedFiles)) {
+        const SymbolTaxonomy::SourceRole sourceRole =
+            pathRules.sourceRoleForFile(filePath);
+        if (sourceRole != SymbolTaxonomy::SourceRole::Unknown)
+            sourceRoles.insert(filePath, sourceRole);
         if (pathRules.isSystemVerilogFile(filePath))
             svFiles.append(filePath);
     }
 
     current.allFiles = acceptedFiles;
     current.systemVerilogFiles = svFiles;
+    current.sourceRoles = sourceRoles;
     if (!includeDirsExplicit)
         current.includeDirs = pathRules.defaultIncludeDirsForFiles(
             current.workspaceRoot,
@@ -123,6 +129,19 @@ QStringList ProjectModel::includeDirs() const
 QHash<QString, QString> ProjectModel::defines() const
 {
     return current.defines;
+}
+
+QHash<QString, SymbolTaxonomy::SourceRole> ProjectModel::sourceRoles() const
+{
+    return current.sourceRoles;
+}
+
+SymbolTaxonomy::SourceRole ProjectModel::sourceRoleForFile(
+    const QString& filePath) const
+{
+    return current.sourceRoles.value(
+        pathRules.normalizePath(filePath),
+        SymbolTaxonomy::SourceRole::Unknown);
 }
 
 QString ProjectModel::filelistPath() const
@@ -213,6 +232,12 @@ bool ProjectModel::ProjectPathRules::isSystemVerilogFile(
 
     static const QStringList svExtensions = {"sv", "v", "vh", "svh", "vp", "svp"};
     return svExtensions.contains(QFileInfo(filePath).suffix().toLower());
+}
+
+SymbolTaxonomy::SourceRole ProjectModel::ProjectPathRules::sourceRoleForFile(
+    const QString& filePath) const
+{
+    return SymbolTaxonomy::sourceRoleForFileName(filePath);
 }
 
 void ProjectModel::publishChanged()

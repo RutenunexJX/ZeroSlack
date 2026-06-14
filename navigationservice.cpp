@@ -1,5 +1,7 @@
 #include "navigationservice.h"
 
+#include "symboltaxonomy.h"
+
 #include <QSet>
 
 std::unique_ptr<NavigationService> NavigationService::instance = nullptr;
@@ -53,23 +55,22 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
 
     QSet<QString> subroutineScopes;
     for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
-        if (symbol.symbolType == sym_list::sym_task
-            || symbol.symbolType == sym_list::sym_function) {
+        if (SymbolTaxonomy::isSubroutineDeclaration(symbol.symbolType)) {
             subroutineScopes.insert(symbol.symbolName);
         }
     }
 
     QHash<sym_list::sym_type_e, QList<sym_list::SymbolInfo>> byType;
     for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
-        const bool isSubroutine = symbol.symbolType == sym_list::sym_task
-            || symbol.symbolType == sym_list::sym_function;
+        const bool isSubroutine =
+            SymbolTaxonomy::isSubroutineDeclaration(symbol.symbolType);
         if (!isSubroutine && subroutineScopes.contains(symbol.moduleScope))
             continue;
         byType[symbol.symbolType].append(symbol);
     }
 
     QList<SymbolOutlineGroup> result;
-    for (sym_list::sym_type_e symbolType : outlineSymbolTypes()) {
+    for (sym_list::sym_type_e symbolType : SymbolTaxonomy::outlineSymbolTypes()) {
         QList<sym_list::SymbolInfo> outlineSymbols = byType.value(symbolType);
         if (outlineSymbols.isEmpty())
             continue;
@@ -105,38 +106,10 @@ NavigationModuleTarget NavigationService::resolveModuleTarget(
     query.symbolName = moduleName;
     const DefinitionNavigationTarget target =
         definitionNavigationService.resolveTarget(query);
-    if (!target.found || target.symbolType != sym_list::sym_module)
+    if (!target.found || !SymbolTaxonomy::isModuleDeclaration(target.symbolType))
         return result;
 
     result.found = true;
     result.symbol = target.symbol;
     return result;
-}
-
-QList<sym_list::sym_type_e> NavigationService::outlineSymbolTypes() const
-{
-    return {
-        sym_list::sym_module,
-        sym_list::sym_parameter,
-        sym_list::sym_localparam,
-        sym_list::sym_port_input,
-        sym_list::sym_port_output,
-        sym_list::sym_port_inout,
-        sym_list::sym_port_ref,
-        sym_list::sym_reg,
-        sym_list::sym_wire,
-        sym_list::sym_logic,
-        sym_list::sym_typedef,
-        sym_list::sym_enum,
-        sym_list::sym_enum_var,
-        sym_list::sym_enum_value,
-        sym_list::sym_packed_struct,
-        sym_list::sym_unpacked_struct,
-        sym_list::sym_packed_struct_var,
-        sym_list::sym_unpacked_struct_var,
-        sym_list::sym_struct_member,
-        sym_list::sym_task,
-        sym_list::sym_function,
-        sym_list::sym_inst
-    };
 }

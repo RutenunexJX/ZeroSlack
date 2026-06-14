@@ -3,6 +3,7 @@
 
 #include "syminfo.h"
 
+#include <QList>
 #include <QString>
 
 namespace SymbolTaxonomy {
@@ -44,7 +45,10 @@ bool isDefinitionCandidate(sym_list::sym_type_e type);
 bool isGlobalDefinition(sym_list::sym_type_e type);
 bool isPackageVisibleDefinition(sym_list::sym_type_e type);
 bool isInterfaceLikeOwner(sym_list::sym_type_e type);
+bool isModuleDeclaration(sym_list::sym_type_e type);
+bool isSubroutineDeclaration(sym_list::sym_type_e type);
 int definitionPriority(sym_list::sym_type_e type);
+QList<sym_list::sym_type_e> outlineSymbolTypes();
 
 bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                               sym_list::sym_type_e commandType,

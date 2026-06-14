@@ -154,6 +154,18 @@ bool isInterfaceLikeOwner(sym_list::sym_type_e type)
         || type == sym_list::sym_port_interface_modport;
 }
 
+bool isModuleDeclaration(sym_list::sym_type_e type)
+{
+    return declarationKind(type) == DeclarationKind::Module;
+}
+
+bool isSubroutineDeclaration(sym_list::sym_type_e type)
+{
+    const DeclarationKind kind = declarationKind(type);
+    return kind == DeclarationKind::Task
+        || kind == DeclarationKind::Function;
+}
+
 int definitionPriority(sym_list::sym_type_e type)
 {
     switch (type) {
@@ -185,6 +197,34 @@ int definitionPriority(sym_list::sym_type_e type)
     case sym_list::sym_enum_value: return 7;
     default: return 10;
     }
+}
+
+QList<sym_list::sym_type_e> outlineSymbolTypes()
+{
+    return {
+        sym_list::sym_module,
+        sym_list::sym_parameter,
+        sym_list::sym_localparam,
+        sym_list::sym_port_input,
+        sym_list::sym_port_output,
+        sym_list::sym_port_inout,
+        sym_list::sym_port_ref,
+        sym_list::sym_reg,
+        sym_list::sym_wire,
+        sym_list::sym_logic,
+        sym_list::sym_typedef,
+        sym_list::sym_enum,
+        sym_list::sym_enum_var,
+        sym_list::sym_enum_value,
+        sym_list::sym_packed_struct,
+        sym_list::sym_unpacked_struct,
+        sym_list::sym_packed_struct_var,
+        sym_list::sym_unpacked_struct_var,
+        sym_list::sym_struct_member,
+        sym_list::sym_task,
+        sym_list::sym_function,
+        sym_list::sym_inst
+    };
 }
 
 bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
@@ -292,7 +332,9 @@ SourceRole sourceRoleForFileName(const QString& fileName)
         return SourceRole::Header;
     }
     if (suffix == QLatin1String("sv")
-        || suffix == QLatin1String("v")) {
+        || suffix == QLatin1String("v")
+        || suffix == QLatin1String("vp")
+        || suffix == QLatin1String("svp")) {
         return SourceRole::DesignSource;
     }
     return SourceRole::Unknown;

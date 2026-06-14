@@ -56,7 +56,6 @@ private:
     QList<ModuleHierarchyGroup> filterModuleHierarchy(
         const QList<ModuleHierarchyGroup>& hierarchy,
         const QString& filter) const;
-    QList<sym_list::sym_type_e> outlineSymbolTypes() const;
 };
 
 #endif // NAVIGATIONSERVICE_H

@@ -1,5 +1,7 @@
 #include "navigationservice.h"
 
+#include "symboltaxonomy.h"
+
 #include <QFileInfo>
 #include <QSet>
 #include <algorithm>
@@ -65,7 +67,7 @@ QList<ModuleHierarchyGroup> NavigationService::buildModuleInstantiationHierarchy
         const QList<HierarchyNode> childNodes =
             hierarchyService.moduleInstantiationChildren(module.symbolId);
         for (const HierarchyNode& node : childNodes) {
-            if (node.symbol.symbolType != sym_list::sym_module
+            if (!SymbolTaxonomy::isModuleDeclaration(node.symbol.symbolType)
                 || node.symbol.symbolName.isEmpty()) {
                 continue;
             }

@@ -1,6 +1,8 @@
 #ifndef PROJECTMODEL_H
 #define PROJECTMODEL_H
 
+#include "symboltaxonomy.h"
+
 #include <QHash>
 #include <QObject>
 #include <QString>
@@ -12,6 +14,7 @@ struct ProjectSnapshot {
     QStringList systemVerilogFiles;
     QStringList includeDirs;
     QHash<QString, QString> defines;
+    QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles;
     QString filelistPath;
     QString topModule;
     QStringList ignoredPaths;
@@ -43,6 +46,8 @@ public:
     QStringList systemVerilogFiles() const;
     QStringList includeDirs() const;
     QHash<QString, QString> defines() const;
+    QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles() const;
+    SymbolTaxonomy::SourceRole sourceRoleForFile(const QString& filePath) const;
     QString filelistPath() const;
     QString topModule() const;
     QStringList ignoredPaths() const;
@@ -65,6 +70,8 @@ private:
         bool isIgnored(const QString& filePath,
                        const QStringList& ignoredPaths) const;
         bool isSystemVerilogFile(const QString& filePath) const;
+        SymbolTaxonomy::SourceRole sourceRoleForFile(
+            const QString& filePath) const;
     };
 
     ProjectSnapshot current;

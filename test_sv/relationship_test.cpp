@@ -21,6 +21,7 @@
 #include "signaljourneyservice.h"
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
+#include "symboltaxonomy.h"
 #include "syminfo.h"
 #include "mycodeeditor.h"
 #include "projectmodel.h"
@@ -3327,6 +3328,21 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace include dirs contain root",
                snapshot.includeDirs.contains(workspaceRoot),
                true);
+    const QString topPath = normalizedPath(
+        QDir(workspaceRoot).filePath(QStringLiteral("elec_phy_import/top/rtl_top.sv")));
+    const QString rootHeaderPath =
+        normalizedPath(QDir(workspaceRoot).filePath(QStringLiteral("_svh.svh")));
+    expectBool("real workspace records source roles",
+               snapshot.sourceRoles.size() >= files.size(),
+               true);
+    expectBool("real workspace classifies sv as design source",
+               project.sourceRoleForFile(topPath)
+                   == SymbolTaxonomy::SourceRole::DesignSource,
+               true);
+    expectBool("real workspace classifies svh as header",
+               project.sourceRoleForFile(rootHeaderPath)
+                   == SymbolTaxonomy::SourceRole::Header,
+               true);
 
     SlangManager slang;
     const QList<SemanticDiagnostic> diagnostics =
@@ -3385,8 +3401,6 @@ static void runRealWorkspaceIncludeFixture()
     index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(symbols));
     DefinitionService definitionService(&index);
 
-    const QString topPath = normalizedPath(
-        QDir(workspaceRoot).filePath(QStringLiteral("elec_phy_import/top/rtl_top.sv")));
     DefinitionQuery packageParamQuery;
     packageParamQuery.symbolName = QStringLiteral("P_SW_NUM");
     packageParamQuery.fileName = topPath;
