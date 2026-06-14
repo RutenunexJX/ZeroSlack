@@ -125,6 +125,12 @@ int definitionContextPriorityAdjustment(
     const sym_list::SymbolInfo& symbol,
     const QString& moduleName,
     const QSet<QString>& packageScopes);
+bool isSymbolInModuleScope(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName);
+bool isSymbolInModuleContext(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName);
 bool isCommandCompletionScopeVisible(
     const sym_list::SymbolInfo& symbol,
     sym_list::sym_type_e requestedType,

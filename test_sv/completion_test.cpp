@@ -305,9 +305,25 @@ int main(int argc, char** argv) {
                true);
     sym_list::SymbolInfo moduleSymbol;
     moduleSymbol.symbolType = sym_list::sym_module;
+    moduleSymbol.symbolName = QStringLiteral("top");
     expectBool("SymbolTaxonomy module symbol overload",
                SymbolTaxonomy::isModuleDeclaration(moduleSymbol),
                true);
+    expectBool("SymbolTaxonomy symbol in module scope",
+               SymbolTaxonomy::isSymbolInModuleScope(
+                   scopedLogic,
+                   QStringLiteral("top")),
+               true);
+    expectBool("SymbolTaxonomy module context endpoint",
+               SymbolTaxonomy::isSymbolInModuleContext(
+                   moduleSymbol,
+                   QStringLiteral("top")),
+               true);
+    expectBool("SymbolTaxonomy scoped signal not other context",
+               SymbolTaxonomy::isSymbolInModuleContext(
+                   scopedLogic,
+                   QStringLiteral("other_top")),
+               false);
 
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();

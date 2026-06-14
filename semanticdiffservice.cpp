@@ -262,9 +262,7 @@ bool SemanticDiffService::symbolInScope(
         && normalizedFileName(symbol.fileName) != normalizedFileName(fileName)) {
         return false;
     }
-    if (moduleName.isEmpty())
-        return true;
-    return symbol.moduleScope == moduleName;
+    return SymbolTaxonomy::isSymbolInModuleScope(symbol, moduleName);
 }
 
 bool SemanticDiffService::relationshipInScope(
@@ -286,10 +284,9 @@ bool SemanticDiffService::relationshipInScope(
             && normalizedFileName(symbol.fileName) != normalizedFileName(fileName)) {
             return false;
         }
-        if (query.moduleName.isEmpty())
-            return true;
-        return symbol.moduleScope == query.moduleName
-            || symbol.symbolName == query.moduleName;
+        return SymbolTaxonomy::isSymbolInModuleContext(
+            symbol,
+            query.moduleName);
     };
 
     return endpointInScope(fromSymbol) || endpointInScope(toSymbol);

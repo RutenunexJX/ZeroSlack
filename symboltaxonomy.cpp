@@ -582,6 +582,22 @@ int definitionContextPriorityAdjustment(
     return 0;
 }
 
+bool isSymbolInModuleScope(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName)
+{
+    return moduleName.isEmpty() || symbol.moduleScope == moduleName;
+}
+
+bool isSymbolInModuleContext(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName)
+{
+    return isSymbolInModuleScope(symbol, moduleName)
+        || (isModuleDeclaration(symbol)
+            && symbol.symbolName == moduleName);
+}
+
 bool isCommandCompletionScopeVisible(
     const sym_list::SymbolInfo& symbol,
     sym_list::sym_type_e requestedType,
