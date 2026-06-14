@@ -37,14 +37,6 @@ int semanticDefinitionTypePriority(sym_list::sym_type_e type)
     return SymbolTaxonomy::definitionPriority(type);
 }
 
-bool semanticDefinitionInScope(const sym_list::SymbolInfo& symbol,
-                               const SemanticDefinitionQuery& query)
-{
-    if (query.moduleName.isEmpty())
-        return true;
-    return symbol.moduleScope == query.moduleName;
-}
-
 bool semanticDefinitionSkipForStructMemberType(
     const sym_list::SymbolInfo& symbol,
     const SemanticDefinitionQuery& query)

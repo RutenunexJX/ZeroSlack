@@ -82,6 +82,8 @@ bool isInterfaceLikeOwner(sym_list::sym_type_e type);
 QString interfaceScopeFromOwner(const sym_list::SymbolInfo& symbol);
 bool isModuleDeclaration(sym_list::sym_type_e type);
 bool isPackageDeclaration(sym_list::sym_type_e type);
+bool isModuleDeclaration(const sym_list::SymbolInfo& symbol);
+bool isPackageDeclaration(const sym_list::SymbolInfo& symbol);
 bool isPortDeclaration(sym_list::sym_type_e type);
 bool isParameterDeclaration(sym_list::sym_type_e type);
 bool isSignalDeclaration(sym_list::sym_type_e type);
@@ -111,6 +113,18 @@ bool isGlobalSymbolInfoType(sym_list::sym_type_e type);
 bool isAlwaysGlobalSymbolInfoType(sym_list::sym_type_e type);
 bool isAlwaysGlobalCommandSymbolType(sym_list::sym_type_e type);
 bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType);
+QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols);
+bool isPackageScopeVisibleDefinition(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes);
+bool isDefinitionVisibleInContext(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName,
+    const QSet<QString>& packageScopes);
+int definitionContextPriorityAdjustment(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName,
+    const QSet<QString>& packageScopes);
 bool isCommandCompletionScopeVisible(
     const sym_list::SymbolInfo& symbol,
     sym_list::sym_type_e requestedType,

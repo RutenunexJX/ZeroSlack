@@ -6,22 +6,6 @@
 
 using namespace semantic_index_completion;
 
-namespace {
-
-QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
-{
-    QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::isPackageDeclaration(symbol.symbolType)
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
-        }
-    }
-    return names;
-}
-
-} // namespace
-
 QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,
@@ -33,7 +17,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
         return result;
 
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    const QSet<QString> packages = packageScopeNames(symbols);
+    const QSet<QString> packages = SymbolTaxonomy::packageScopeNames(symbols);
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (!SymbolTaxonomy::isCommandCompletionScopeVisible(
                 symbol,

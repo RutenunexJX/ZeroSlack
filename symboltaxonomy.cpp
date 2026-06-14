@@ -218,6 +218,16 @@ bool isPackageDeclaration(sym_list::sym_type_e type)
     return declarationKind(type) == DeclarationKind::Package;
 }
 
+bool isModuleDeclaration(const sym_list::SymbolInfo& symbol)
+{
+    return isModuleDeclaration(symbol.symbolType);
+}
+
+bool isPackageDeclaration(const sym_list::SymbolInfo& symbol)
+{
+    return isPackageDeclaration(symbol.symbolType);
+}
+
 bool isPortDeclaration(sym_list::sym_type_e type)
 {
     return declarationKind(type) == DeclarationKind::Port;
@@ -527,6 +537,49 @@ bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType)
     default:
         return false;
     }
+}
+
+QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
+{
+    QSet<QString> names;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (isPackageDeclaration(symbol) && !symbol.symbolName.isEmpty())
+            names.insert(symbol.symbolName);
+    }
+    return names;
+}
+
+bool isPackageScopeVisibleDefinition(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes)
+{
+    return visibility(symbol, packageScopes)
+        == SymbolVisibility::PackageVisible;
+}
+
+bool isDefinitionVisibleInContext(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName,
+    const QSet<QString>& packageScopes)
+{
+    return isMemberScopeDefinitionCandidate(symbol.symbolType)
+        || symbol.symbolType == sym_list::sym_enum_value
+        || isGlobalDefinition(symbol.symbolType)
+        || moduleName.isEmpty()
+        || symbol.moduleScope == moduleName
+        || isPackageScopeVisibleDefinition(symbol, packageScopes);
+}
+
+int definitionContextPriorityAdjustment(
+    const sym_list::SymbolInfo& symbol,
+    const QString& moduleName,
+    const QSet<QString>& packageScopes)
+{
+    if (!moduleName.isEmpty() && symbol.moduleScope == moduleName)
+        return -100;
+    if (isPackageScopeVisibleDefinition(symbol, packageScopes))
+        return -20;
+    return 0;
 }
 
 bool isCommandCompletionScopeVisible(

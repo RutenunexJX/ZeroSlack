@@ -16,9 +16,6 @@ bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
 
 int semanticDefinitionTypePriority(sym_list::sym_type_e type);
 
-bool semanticDefinitionInScope(const sym_list::SymbolInfo& symbol,
-                               const SemanticDefinitionQuery& query);
-
 bool semanticDefinitionSkipForStructMemberType(
     const sym_list::SymbolInfo& symbol,
     const SemanticDefinitionQuery& query);

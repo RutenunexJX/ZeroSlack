@@ -257,6 +257,16 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo packageParameter;
     packageParameter.symbolType = sym_list::sym_parameter;
     packageParameter.moduleScope = QStringLiteral("pkg_scope");
+    sym_list::SymbolInfo packageSymbol;
+    packageSymbol.symbolType = sym_list::sym_package;
+    packageSymbol.symbolName = QStringLiteral("pkg_scope");
+    expectBool("SymbolTaxonomy package symbol overload",
+               SymbolTaxonomy::isPackageDeclaration(packageSymbol),
+               true);
+    expectBool("SymbolTaxonomy package scope names",
+               SymbolTaxonomy::packageScopeNames({packageSymbol})
+                   .contains(QStringLiteral("pkg_scope")),
+               true);
     expectBool("SymbolTaxonomy package command scope visible",
                SymbolTaxonomy::isCommandCompletionScopeVisible(
                    packageParameter,
@@ -271,6 +281,33 @@ int main(int argc, char** argv) {
                    QString(),
                    packageScopes),
                false);
+    expectBool("SymbolTaxonomy package definition visible",
+               SymbolTaxonomy::isDefinitionVisibleInContext(
+                   packageParameter,
+                   QStringLiteral("top"),
+                   packageScopes),
+               true);
+    expectBool("SymbolTaxonomy scoped logic definition hidden",
+               SymbolTaxonomy::isDefinitionVisibleInContext(
+                   scopedLogic,
+                   QStringLiteral("other_top"),
+                   packageScopes),
+               false);
+    expectBool("SymbolTaxonomy local definition priority wins",
+               SymbolTaxonomy::definitionContextPriorityAdjustment(
+                   scopedLogic,
+                   QStringLiteral("top"),
+                   packageScopes)
+                   < SymbolTaxonomy::definitionContextPriorityAdjustment(
+                       packageParameter,
+                       QStringLiteral("top"),
+                       packageScopes),
+               true);
+    sym_list::SymbolInfo moduleSymbol;
+    moduleSymbol.symbolType = sym_list::sym_module;
+    expectBool("SymbolTaxonomy module symbol overload",
+               SymbolTaxonomy::isModuleDeclaration(moduleSymbol),
+               true);
 
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();

@@ -1,6 +1,7 @@
 #include "semanticindex.h"
 
 #include "semanticindexmodulecontexthelpers.h"
+#include "symboltaxonomy.h"
 
 #include <QDir>
 #include <QFile>
@@ -27,7 +28,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (symbol.symbolType == sym_list::sym_module
+        if (SymbolTaxonomy::isModuleDeclaration(symbol)
             && symbol.symbolName == moduleName) {
             moduleSymbol = symbol;
             foundModule = true;
@@ -40,7 +41,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
         QList<sym_list::SymbolInfo> fileModules;
         const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(moduleSymbol.fileName);
         for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-            if (symbol.symbolType == sym_list::sym_module
+            if (SymbolTaxonomy::isModuleDeclaration(symbol)
                 && symbol.fileName == moduleSymbol.fileName) {
                 fileModules.append(symbol);
             }
@@ -117,7 +118,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (symbol.symbolType == sym_list::sym_module
+        if (SymbolTaxonomy::isModuleDeclaration(symbol)
             && symbol.symbolName == moduleName
             && normalizedModuleContextFileName(symbol.fileName) == normalizedTargetFile) {
             moduleSymbol = symbol;
@@ -130,7 +131,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
 
     int moduleEndLineExclusive = std::numeric_limits<int>::max();
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (symbol.symbolType != sym_list::sym_module)
+        if (!SymbolTaxonomy::isModuleDeclaration(symbol))
             continue;
         if (symbol.symbolId == moduleSymbol.symbolId)
             continue;

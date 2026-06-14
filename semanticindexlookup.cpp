@@ -9,30 +9,6 @@
 
 using namespace semantic_index_lookup;
 
-namespace {
-
-QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
-{
-    QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolType == sym_list::sym_package
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
-        }
-    }
-    return names;
-}
-
-bool packageScopeVisible(const sym_list::SymbolInfo& symbol,
-                         const QSet<QString>& packages)
-{
-    return SymbolTaxonomy::isPackageVisibleDefinition(symbol.symbolType)
-        && !symbol.moduleScope.isEmpty()
-        && packages.contains(symbol.moduleScope);
-}
-
-} // namespace
-
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     const SemanticSymbolSearchQuery& query) const
 {
@@ -200,26 +176,26 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
 {
     SemanticDefinitionResult best;
     int bestPriority = 999;
-    const QSet<QString> packages = packageScopeNames(getSymbols());
+    const QSet<QString> packages =
+        SymbolTaxonomy::packageScopeNames(getSymbols());
 
     for (const sym_list::SymbolInfo& symbol : candidates) {
         if (!semanticDefinitionSymbolMatches(symbol, query.symbolName))
             continue;
         if (semanticDefinitionSkipForStructMemberType(symbol, query))
             continue;
-        if (!SymbolTaxonomy::isMemberScopeDefinitionCandidate(symbol.symbolType)
-            && symbol.symbolType != sym_list::sym_enum_value
-            && !SymbolTaxonomy::isGlobalDefinition(symbol.symbolType)
-            && !semanticDefinitionInScope(symbol, query)
-            && !packageScopeVisible(symbol, packages)) {
+        if (!SymbolTaxonomy::isDefinitionVisibleInContext(
+                symbol,
+                query.moduleName,
+                packages)) {
             continue;
         }
 
-        int priority = semanticDefinitionTypePriority(symbol.symbolType);
-        if (!query.moduleName.isEmpty() && symbol.moduleScope == query.moduleName)
-            priority -= 100;
-        else if (packageScopeVisible(symbol, packages))
-            priority -= 20;
+        int priority = semanticDefinitionTypePriority(symbol.symbolType)
+            + SymbolTaxonomy::definitionContextPriorityAdjustment(
+                symbol,
+                query.moduleName,
+                packages);
 
         if (!best.found || priority < bestPriority) {
             best.found = true;
