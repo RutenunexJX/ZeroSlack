@@ -207,8 +207,7 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
             continue;
         if (semanticDefinitionSkipForStructMemberType(symbol, query))
             continue;
-        if (symbol.symbolType != sym_list::sym_struct_member
-            && symbol.symbolType != sym_list::sym_interface_modport
+        if (!SymbolTaxonomy::isMemberScopeDefinitionCandidate(symbol.symbolType)
             && symbol.symbolType != sym_list::sym_enum_value
             && !SymbolTaxonomy::isGlobalDefinition(symbol.symbolType)
             && !semanticDefinitionInScope(symbol, query)

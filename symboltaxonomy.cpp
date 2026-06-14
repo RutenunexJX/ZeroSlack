@@ -154,6 +154,19 @@ bool isInterfaceLikeOwner(sym_list::sym_type_e type)
         || type == sym_list::sym_port_interface_modport;
 }
 
+QString interfaceScopeFromOwner(const sym_list::SymbolInfo& symbol)
+{
+    if (!isInterfaceLikeOwner(symbol.symbolType))
+        return QString();
+    if (declarationKind(symbol.symbolType) == DeclarationKind::Interface)
+        return symbol.symbolName;
+    if (symbol.dataType.isEmpty())
+        return QString();
+
+    const int dot = symbol.dataType.indexOf(QLatin1Char('.'));
+    return dot >= 0 ? symbol.dataType.left(dot) : symbol.dataType;
+}
+
 bool isModuleDeclaration(sym_list::sym_type_e type)
 {
     return declarationKind(type) == DeclarationKind::Module;
@@ -176,6 +189,13 @@ bool isModuleRangeType(sym_list::sym_type_e type)
     const DeclarationKind kind = declarationKind(type);
     return kind == DeclarationKind::Struct
         || kind == DeclarationKind::StructVariable;
+}
+
+bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type)
+{
+    const DeclarationKind kind = declarationKind(type);
+    return kind == DeclarationKind::StructMember
+        || kind == DeclarationKind::Modport;
 }
 
 bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType)

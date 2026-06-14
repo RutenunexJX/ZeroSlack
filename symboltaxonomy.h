@@ -56,10 +56,12 @@ bool isDefinitionCandidate(sym_list::sym_type_e type);
 bool isGlobalDefinition(sym_list::sym_type_e type);
 bool isPackageVisibleDefinition(sym_list::sym_type_e type);
 bool isInterfaceLikeOwner(sym_list::sym_type_e type);
+QString interfaceScopeFromOwner(const sym_list::SymbolInfo& symbol);
 bool isModuleDeclaration(sym_list::sym_type_e type);
 bool isPackageDeclaration(sym_list::sym_type_e type);
 bool isSubroutineDeclaration(sym_list::sym_type_e type);
 bool isModuleRangeType(sym_list::sym_type_e type);
+bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type);
 bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType);
 bool isPackageScopeVisibleCompletion(
     const sym_list::SymbolInfo& symbol,

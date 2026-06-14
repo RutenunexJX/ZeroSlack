@@ -397,6 +397,22 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::isInterfaceLikeOwner(
                    sym_list::sym_port_interface_modport),
                true);
+    sym_list::SymbolInfo taxonomyInterfaceOwner;
+    taxonomyInterfaceOwner.symbolName = QStringLiteral("if_bus");
+    taxonomyInterfaceOwner.symbolType = sym_list::sym_interface;
+    expectEq("SymbolTaxonomy interface owner scope",
+             SymbolTaxonomy::interfaceScopeFromOwner(taxonomyInterfaceOwner),
+             QStringLiteral("if_bus"));
+    taxonomyInterfaceOwner.symbolName = QStringLiteral("bus_port");
+    taxonomyInterfaceOwner.symbolType = sym_list::sym_port_interface_modport;
+    taxonomyInterfaceOwner.dataType = QStringLiteral("if_bus.master");
+    expectEq("SymbolTaxonomy modport owner scope",
+             SymbolTaxonomy::interfaceScopeFromOwner(taxonomyInterfaceOwner),
+             QStringLiteral("if_bus"));
+    expectBool("SymbolTaxonomy modport member-scope candidate",
+               SymbolTaxonomy::isMemberScopeDefinitionCandidate(
+                   sym_list::sym_interface_modport),
+               true);
     expectBool("SymbolTaxonomy detects svh header role",
                SymbolTaxonomy::sourceRoleForFileName(QStringLiteral("rtl/pkg_defs.svh"))
                    == SymbolTaxonomy::SourceRole::Header,

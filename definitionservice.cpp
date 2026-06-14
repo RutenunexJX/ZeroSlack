@@ -25,14 +25,6 @@ DefinitionResult toDefinitionResult(const SemanticDefinitionResult& semanticResu
     return result;
 }
 
-QString interfaceScopeFromDataType(const QString& dataType)
-{
-    if (dataType.isEmpty())
-        return QString();
-    const int dot = dataType.indexOf(QLatin1Char('.'));
-    return dot >= 0 ? dataType.left(dot) : dataType;
-}
-
 }
 
 DefinitionService* DefinitionService::getInstance()
@@ -125,11 +117,7 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
             && symbol.moduleScope != query.moduleName) {
             continue;
         }
-        if (symbol.symbolType == sym_list::sym_interface) {
-            resolved.structTypeNameForMember = symbol.symbolName;
-            return resolved;
-        }
-        resolved.structTypeNameForMember = interfaceScopeFromDataType(symbol.dataType);
+        resolved.structTypeNameForMember = SymbolTaxonomy::interfaceScopeFromOwner(symbol);
         if (!resolved.structTypeNameForMember.isEmpty())
             return resolved;
     }

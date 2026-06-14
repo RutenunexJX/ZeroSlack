@@ -51,8 +51,7 @@ bool semanticDefinitionSkipForStructMemberType(
 {
     if (query.structTypeNameForMember.isEmpty())
         return false;
-    return (symbol.symbolType == sym_list::sym_struct_member
-            || symbol.symbolType == sym_list::sym_interface_modport)
+    return SymbolTaxonomy::isMemberScopeDefinitionCandidate(symbol.symbolType)
         && symbol.moduleScope != query.structTypeNameForMember;
 }
 
