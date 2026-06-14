@@ -8,6 +8,7 @@
 #include "editorsemanticcontextservice.h"
 #include "relationshipservice.h"
 #include "semanticindexsnapshot.h"
+#include "symboltaxonomy.h"
 #include "syminfo.h"
 #include <QApplication>
 #include <QFile>
@@ -214,6 +215,16 @@ int main(int argc, char** argv) {
     expectEq("CompletionModel symbol desc",
              modelScoring.getItem(modelScoring.index(2, 0)).description,
              QStringLiteral("logic"));
+    expectEq("CompletionService interface desc",
+             CompletionService::getInstance()->symbolTypeDescription(
+                 sym_list::sym_interface),
+             QStringLiteral("interface"));
+    expectEq("SymbolTaxonomy modport label",
+             SymbolTaxonomy::symbolTypeLabel(sym_list::sym_interface_modport),
+             QStringLiteral("modport"));
+    expectBool("SymbolTaxonomy struct range type",
+               SymbolTaxonomy::isModuleRangeType(sym_list::sym_packed_struct_var),
+               true);
 
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();

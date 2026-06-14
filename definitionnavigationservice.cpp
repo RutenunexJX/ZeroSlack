@@ -1,6 +1,7 @@
 #include "definitionnavigationservice.h"
 
 #include "definitionservice.h"
+#include "symboltaxonomy.h"
 
 #include <QFileInfo>
 #include <QtGlobal>
@@ -105,14 +106,5 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
 
 QString DefinitionNavigationService::symbolTypeText(sym_list::sym_type_e symbolType)
 {
-    switch (symbolType) {
-    case sym_list::sym_reg: return QStringLiteral("reg");
-    case sym_list::sym_wire: return QStringLiteral("wire");
-    case sym_list::sym_logic: return QStringLiteral("logic");
-    case sym_list::sym_module: return QStringLiteral("module");
-    case sym_list::sym_task: return QStringLiteral("task");
-    case sym_list::sym_function: return QStringLiteral("function");
-    default:
-        return QStringLiteral("unknown_%1").arg(static_cast<int>(symbolType));
-    }
+    return SymbolTaxonomy::symbolTypeLabel(symbolType);
 }

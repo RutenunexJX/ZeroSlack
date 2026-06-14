@@ -1,5 +1,7 @@
 #include "semanticindexmodulecontexthelpers.h"
 
+#include "symboltaxonomy.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <algorithm>
@@ -17,11 +19,10 @@ bool moduleContextSymbolTypeMatches(sym_list::sym_type_e symbolType,
                                     sym_list::sym_type_e commandType,
                                     const QString& dataType)
 {
-    if (symbolType == commandType)
-        return true;
-    return commandType == sym_list::sym_enum
-        && symbolType == sym_list::sym_typedef
-        && dataType == QLatin1String("enum");
+    return SymbolTaxonomy::commandSymbolTypeMatches(
+        symbolType,
+        commandType,
+        dataType);
 }
 
 bool moduleContextNameMatches(const QString& name, const QString& prefix)
@@ -48,10 +49,7 @@ bool moduleContextNameMatches(const QString& name, const QString& prefix)
 
 bool isModuleRangeSymbolType(sym_list::sym_type_e type)
 {
-    return type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_packed_struct_var
-        || type == sym_list::sym_unpacked_struct_var;
+    return SymbolTaxonomy::isModuleRangeType(type);
 }
 
 void sortModuleContextSymbols(QList<sym_list::SymbolInfo>& symbols)

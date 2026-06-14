@@ -166,6 +166,13 @@ bool isSubroutineDeclaration(sym_list::sym_type_e type)
         || kind == DeclarationKind::Function;
 }
 
+bool isModuleRangeType(sym_list::sym_type_e type)
+{
+    const DeclarationKind kind = declarationKind(type);
+    return kind == DeclarationKind::Struct
+        || kind == DeclarationKind::StructVariable;
+}
+
 int definitionPriority(sym_list::sym_type_e type)
 {
     switch (type) {
@@ -225,6 +232,63 @@ QList<sym_list::sym_type_e> outlineSymbolTypes()
         sym_list::sym_function,
         sym_list::sym_inst
     };
+}
+
+QString symbolTypeLabel(sym_list::sym_type_e type)
+{
+    switch (declarationKind(type)) {
+    case DeclarationKind::Module:
+        return QStringLiteral("module");
+    case DeclarationKind::Interface:
+        return QStringLiteral("interface");
+    case DeclarationKind::Package:
+        return QStringLiteral("package");
+    case DeclarationKind::Typedef:
+        return QStringLiteral("typedef");
+    case DeclarationKind::Enum:
+        return type == sym_list::sym_enum_value
+            ? QStringLiteral("enum value")
+            : QStringLiteral("enum");
+    case DeclarationKind::Parameter:
+        return QStringLiteral("parameter");
+    case DeclarationKind::Localparam:
+        return QStringLiteral("localparam");
+    case DeclarationKind::Port:
+        return QStringLiteral("port");
+    case DeclarationKind::Signal:
+        if (type == sym_list::sym_reg)
+            return QStringLiteral("reg");
+        if (type == sym_list::sym_wire)
+            return QStringLiteral("wire");
+        return QStringLiteral("logic");
+    case DeclarationKind::Struct:
+        return QStringLiteral("struct");
+    case DeclarationKind::StructVariable:
+        return QStringLiteral("struct variable");
+    case DeclarationKind::StructMember:
+        return QStringLiteral("member");
+    case DeclarationKind::Instance:
+        return QStringLiteral("instance");
+    case DeclarationKind::Modport:
+        return QStringLiteral("modport");
+    case DeclarationKind::Task:
+        return QStringLiteral("task");
+    case DeclarationKind::Function:
+        return QStringLiteral("function");
+    case DeclarationKind::Macro:
+        return QStringLiteral("macro");
+    case DeclarationKind::Process:
+        return QStringLiteral("process");
+    case DeclarationKind::Generate:
+        return QStringLiteral("generate");
+    case DeclarationKind::Constraint:
+        return QStringLiteral("constraint");
+    case DeclarationKind::User:
+        return QStringLiteral("user");
+    case DeclarationKind::Unknown:
+        break;
+    }
+    return QStringLiteral("symbol");
 }
 
 bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
