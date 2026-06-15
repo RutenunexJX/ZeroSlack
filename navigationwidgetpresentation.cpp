@@ -28,36 +28,36 @@ QIcon NavigationWidget::getFileIcon(const QString& filePath)
 
 QIcon NavigationWidget::getSymbolIcon(sym_list::sym_type_e symbolType)
 {
-    switch (symbolType) {
-    case sym_list::sym_module:
+    switch (SymbolTaxonomy::declarationKind(symbolType)) {
+    case SymbolTaxonomy::DeclarationKind::Module:
         return style()->standardIcon(QStyle::SP_ComputerIcon);
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
+    case SymbolTaxonomy::DeclarationKind::Signal:
         return style()->standardIcon(QStyle::SP_DialogApplyButton);
-    case sym_list::sym_task:
-    case sym_list::sym_function:
+    case SymbolTaxonomy::DeclarationKind::Task:
+    case SymbolTaxonomy::DeclarationKind::Function:
         return style()->standardIcon(QStyle::SP_MediaPlay);
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
+    case SymbolTaxonomy::DeclarationKind::Parameter:
+    case SymbolTaxonomy::DeclarationKind::Localparam:
         return style()->standardIcon(QStyle::SP_FileDialogDetailedView);
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
+    case SymbolTaxonomy::DeclarationKind::Port:
         return style()->standardIcon(QStyle::SP_ArrowRight);
-    case sym_list::sym_inst:
+    case SymbolTaxonomy::DeclarationKind::Instance:
         return style()->standardIcon(QStyle::SP_DirIcon);
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_struct_member:
-    case sym_list::sym_typedef:
-    case sym_list::sym_enum:
-    case sym_list::sym_enum_var:
-    case sym_list::sym_enum_value:
+    case SymbolTaxonomy::DeclarationKind::Typedef:
+    case SymbolTaxonomy::DeclarationKind::Enum:
+    case SymbolTaxonomy::DeclarationKind::Struct:
+    case SymbolTaxonomy::DeclarationKind::StructVariable:
+    case SymbolTaxonomy::DeclarationKind::StructMember:
         return style()->standardIcon(QStyle::SP_FileIcon);
+    case SymbolTaxonomy::DeclarationKind::Interface:
+    case SymbolTaxonomy::DeclarationKind::Package:
+    case SymbolTaxonomy::DeclarationKind::Modport:
+    case SymbolTaxonomy::DeclarationKind::Macro:
+    case SymbolTaxonomy::DeclarationKind::Process:
+    case SymbolTaxonomy::DeclarationKind::Generate:
+    case SymbolTaxonomy::DeclarationKind::Constraint:
+    case SymbolTaxonomy::DeclarationKind::User:
+    case SymbolTaxonomy::DeclarationKind::Unknown:
     default:
         return style()->standardIcon(QStyle::SP_FileIcon);
     }
