@@ -114,22 +114,32 @@ void appendClockResetDomains(QTreeWidget* tree,
                              const ClockResetDomainReport& report)
 {
     QTreeWidgetItem* clocks = createGroupItem(tree,
-                                             QStringLiteral("Clock Domains"),
+                                             report.clockGroupDisplayName.isEmpty()
+                                                 ? QStringLiteral("Clock Domains")
+                                                 : report.clockGroupDisplayName,
                                              report.clockRelationshipCount);
     for (const ClockResetDomainEntry& domain : report.clockDomains) {
         QTreeWidgetItem* signal = createChildItem(clocks,
-                                                  QStringLiteral("Clock"),
+                                                  domain.sectionDisplayName.isEmpty()
+                                                      ? QStringLiteral("Clock")
+                                                      : domain.sectionDisplayName,
                                                   domain.domainSignal.symbolName,
-                                                  QStringLiteral("drives %1 modules")
-                                                      .arg(domain.modules.size()),
+                                                  domain.detailDisplayName.isEmpty()
+                                                      ? QStringLiteral("drives %1 modules")
+                                                            .arg(domain.modules.size())
+                                                      : domain.detailDisplayName,
                                                   domain.domainSignal.fileName,
                                                   domain.domainSignal.startLine,
                                                   domain.domainSignal.startColumn);
         for (const ClockResetDomainMember& member : domain.modules) {
             createChildItem(signal,
-                            QStringLiteral("Module"),
+                            member.sectionDisplayName.isEmpty()
+                                ? QStringLiteral("Module")
+                                : member.sectionDisplayName,
                             member.moduleSymbol.symbolName,
-                            QStringLiteral("clocked"),
+                            member.detailDisplayName.isEmpty()
+                                ? QStringLiteral("clocked")
+                                : member.detailDisplayName,
                             member.moduleSymbol.fileName,
                             member.moduleSymbol.startLine,
                             member.moduleSymbol.startColumn);
@@ -137,22 +147,32 @@ void appendClockResetDomains(QTreeWidget* tree,
     }
 
     QTreeWidgetItem* resets = createGroupItem(tree,
-                                             QStringLiteral("Reset Domains"),
+                                             report.resetGroupDisplayName.isEmpty()
+                                                 ? QStringLiteral("Reset Domains")
+                                                 : report.resetGroupDisplayName,
                                              report.resetRelationshipCount);
     for (const ClockResetDomainEntry& domain : report.resetDomains) {
         QTreeWidgetItem* signal = createChildItem(resets,
-                                                  QStringLiteral("Reset"),
+                                                  domain.sectionDisplayName.isEmpty()
+                                                      ? QStringLiteral("Reset")
+                                                      : domain.sectionDisplayName,
                                                   domain.domainSignal.symbolName,
-                                                  QStringLiteral("resets %1 modules")
-                                                      .arg(domain.modules.size()),
+                                                  domain.detailDisplayName.isEmpty()
+                                                      ? QStringLiteral("resets %1 modules")
+                                                            .arg(domain.modules.size())
+                                                      : domain.detailDisplayName,
                                                   domain.domainSignal.fileName,
                                                   domain.domainSignal.startLine,
                                                   domain.domainSignal.startColumn);
         for (const ClockResetDomainMember& member : domain.modules) {
             createChildItem(signal,
-                            QStringLiteral("Module"),
+                            member.sectionDisplayName.isEmpty()
+                                ? QStringLiteral("Module")
+                                : member.sectionDisplayName,
                             member.moduleSymbol.symbolName,
-                            QStringLiteral("reset"),
+                            member.detailDisplayName.isEmpty()
+                                ? QStringLiteral("reset")
+                                : member.detailDisplayName,
                             member.moduleSymbol.fileName,
                             member.moduleSymbol.startLine,
                             member.moduleSymbol.startColumn);

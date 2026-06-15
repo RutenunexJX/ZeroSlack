@@ -3136,6 +3136,10 @@ static void runClockResetDomainServiceFixture()
               allReport.clockRelationshipCount, 2);
     expectInt("clock reset all reset count",
               allReport.resetRelationshipCount, 1);
+    expectBool("clock reset all group display metadata",
+               allReport.clockGroupDisplayName == QStringLiteral("Clock Domains")
+                   && allReport.resetGroupDisplayName == QStringLiteral("Reset Domains"),
+               true);
 
     ClockResetDomainQuery topQuery;
     topQuery.moduleName = QStringLiteral("domain_top");
@@ -3149,18 +3153,36 @@ static void runClockResetDomainServiceFixture()
     expectBool("clock reset top clock signal",
                !topReport.clockDomains.isEmpty()
                    && topReport.clockDomains.first().domainSignal.symbolName
-                       == QStringLiteral("clk_i"),
+                       == QStringLiteral("clk_i")
+                   && topReport.clockDomains.first().sectionDisplayName
+                       == QStringLiteral("Clock")
+                   && topReport.clockDomains.first().detailDisplayName
+                       == QStringLiteral("drives 1 modules"),
                true);
     expectBool("clock reset top reset signal",
                !topReport.resetDomains.isEmpty()
                    && topReport.resetDomains.first().domainSignal.symbolName
-                       == QStringLiteral("rst_ni"),
+                       == QStringLiteral("rst_ni")
+                   && topReport.resetDomains.first().sectionDisplayName
+                       == QStringLiteral("Reset")
+                   && topReport.resetDomains.first().detailDisplayName
+                       == QStringLiteral("resets 1 modules"),
                true);
     expectBool("clock reset top clock target",
                !topReport.clockDomains.isEmpty()
                    && !topReport.clockDomains.first().modules.isEmpty()
                    && topReport.clockDomains.first().modules.first()
-                       .moduleSymbol.symbolName == QStringLiteral("domain_top"),
+                       .moduleSymbol.symbolName == QStringLiteral("domain_top")
+                   && topReport.clockDomains.first().modules.first()
+                          .sectionDisplayName == QStringLiteral("Module")
+                   && topReport.clockDomains.first().modules.first()
+                          .detailDisplayName == QStringLiteral("clocked"),
+               true);
+    expectBool("clock reset top reset target metadata",
+               !topReport.resetDomains.isEmpty()
+                   && !topReport.resetDomains.first().modules.isEmpty()
+                   && topReport.resetDomains.first().modules.first()
+                          .detailDisplayName == QStringLiteral("reset"),
                true);
 
     ClockResetDomainQuery idQuery;

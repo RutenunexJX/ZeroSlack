@@ -16,15 +16,21 @@ struct ClockResetDomainQuery {
 struct ClockResetDomainMember {
     sym_list::SymbolInfo moduleSymbol = {};
     SemanticRelationshipResult relationship;
+    QString sectionDisplayName;
+    QString detailDisplayName;
 };
 
 struct ClockResetDomainEntry {
     sym_list::SymbolInfo domainSignal = {};
+    QString sectionDisplayName;
+    QString detailDisplayName;
     QList<ClockResetDomainMember> modules;
 };
 
 struct ClockResetDomainReport {
     bool found = false;
+    QString clockGroupDisplayName;
+    QString resetGroupDisplayName;
     QList<ClockResetDomainEntry> clockDomains;
     QList<ClockResetDomainEntry> resetDomains;
     int clockRelationshipCount = 0;
@@ -57,6 +63,13 @@ private:
     static bool acceptsRelationship(const SemanticRelationshipResult& relationship,
                                     const ClockResetDomainQuery& query);
     static QString normalizedFileName(const QString& fileName);
+    static QString groupDisplayName(SymbolRelationshipEngine::RelationType type);
+    static QString domainSectionDisplayName(SymbolRelationshipEngine::RelationType type);
+    static QString domainDetailDisplayName(SymbolRelationshipEngine::RelationType type,
+                                           int moduleCount);
+    static QString memberDetailDisplayName(SymbolRelationshipEngine::RelationType type);
+    static void fillEntryDisplayMetadata(ClockResetDomainEntry& entry,
+                                         SymbolRelationshipEngine::RelationType type);
     static void sortEntries(QList<ClockResetDomainEntry>& entries);
     static void sortMembers(QList<ClockResetDomainMember>& members);
 };

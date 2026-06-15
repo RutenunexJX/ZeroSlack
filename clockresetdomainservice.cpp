@@ -30,6 +30,10 @@ ClockResetDomainReport ClockResetDomainService::buildClockResetDomainMap(
     const ClockResetDomainQuery& query) const
 {
     ClockResetDomainReport report;
+    report.clockGroupDisplayName =
+        groupDisplayName(SymbolRelationshipEngine::CLOCKS);
+    report.resetGroupDisplayName =
+        groupDisplayName(SymbolRelationshipEngine::RESETS);
     report.clockDomains = buildDomains(
         SymbolRelationshipEngine::CLOCKS,
         query,
@@ -87,13 +91,17 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
             ClockResetDomainMember member;
             member.moduleSymbol = relationship.toSymbol;
             member.relationship = relationship;
+            member.sectionDisplayName = QStringLiteral("Module");
+            member.detailDisplayName = memberDetailDisplayName(type);
             entries[entryBySignalId.value(signalId)].modules.append(member);
             ++count;
         }
     }
 
-    for (ClockResetDomainEntry& entry : entries)
+    for (ClockResetDomainEntry& entry : entries) {
         sortMembers(entry.modules);
+        fillEntryDisplayMetadata(entry, type);
+    }
     sortEntries(entries);
 
     if (relationshipCount)
@@ -128,6 +136,54 @@ bool ClockResetDomainService::acceptsRelationship(
 QString ClockResetDomainService::normalizedFileName(const QString& fileName)
 {
     return QDir::cleanPath(QDir::fromNativeSeparators(fileName));
+}
+
+QString ClockResetDomainService::groupDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    return type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("Clock Domains")
+        : QStringLiteral("Reset Domains");
+}
+
+QString ClockResetDomainService::domainSectionDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    return type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("Clock")
+        : QStringLiteral("Reset");
+}
+
+QString ClockResetDomainService::domainDetailDisplayName(
+    SymbolRelationshipEngine::RelationType type,
+    int moduleCount)
+{
+    const QString verb = type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("drives")
+        : QStringLiteral("resets");
+    return QStringLiteral("%1 %2 modules").arg(verb).arg(moduleCount);
+}
+
+QString ClockResetDomainService::memberDetailDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    return type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("clocked")
+        : QStringLiteral("reset");
+}
+
+void ClockResetDomainService::fillEntryDisplayMetadata(
+    ClockResetDomainEntry& entry,
+    SymbolRelationshipEngine::RelationType type)
+{
+    entry.sectionDisplayName = domainSectionDisplayName(type);
+    entry.detailDisplayName = domainDetailDisplayName(type, entry.modules.size());
+    for (ClockResetDomainMember& member : entry.modules) {
+        if (member.sectionDisplayName.isEmpty())
+            member.sectionDisplayName = QStringLiteral("Module");
+        if (member.detailDisplayName.isEmpty())
+            member.detailDisplayName = memberDetailDisplayName(type);
+    }
 }
 
 void ClockResetDomainService::sortEntries(QList<ClockResetDomainEntry>& entries)
