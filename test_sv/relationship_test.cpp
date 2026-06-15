@@ -841,15 +841,31 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QList<SymbolOutlineGroup> snapshotOutlineGroups =
         snapshotNavigationService.findSymbolOutline(snapshotOutlineQuery);
     bool snapshotOutlineHasDisplayName = false;
+    bool snapshotOutlineHasRowMetadata = false;
     for (const SymbolOutlineGroup& group : snapshotOutlineGroups) {
         snapshotOutlineHasDisplayName =
             snapshotOutlineHasDisplayName
             || (group.symbolType == sym_list::sym_module
                 && group.displayName == QStringLiteral("Module")
                 && !group.symbols.isEmpty());
+        if (group.symbolType == sym_list::sym_module
+            && group.displayName == QStringLiteral("Module")
+            && group.iconKind == SymbolOutlineIconKind::Module
+            && !group.symbolRows.isEmpty()) {
+            const SymbolOutlineSymbolRow& row = group.symbolRows.first();
+            snapshotOutlineHasRowMetadata =
+                row.symbol.symbolId == topId
+                && row.displayName == QStringLiteral("rel_top")
+                && row.typeDisplayName == QStringLiteral("Module")
+                && row.iconKind == SymbolOutlineIconKind::Module
+                && !row.detailDisplayName.isEmpty();
+        }
     }
     expectBool("snapshot navigation outline exposes display model",
                snapshotOutlineHasDisplayName,
+               true);
+    expectBool("snapshot navigation outline exposes row metadata",
+               snapshotOutlineHasRowMetadata,
                true);
     expectBool("semantic snapshot returns cached file content",
                snapshotIndex.getCachedFileContent(topPath) == contents.value(topPath), true);

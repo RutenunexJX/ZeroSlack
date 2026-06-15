@@ -66,7 +66,9 @@ void NavigationWidget::populateModuleTree()
         QTreeWidgetItem* rootItem = new QTreeWidgetItem(moduleTreeWidget);
         const bool rootIsFile = group.rootKind == ModuleHierarchyRootKind::FileGroup;
         rootItem->setText(0, group.rootDisplayName);
-        rootItem->setIcon(0, rootIsFile ? getFileIcon(group.rootName) : getSymbolIcon(sym_list::sym_module));
+        rootItem->setIcon(0, rootIsFile
+                                  ? getFileIcon(group.rootName)
+                                  : getSymbolIcon(SymbolOutlineIconKind::Module));
         rootItem->setData(0, Qt::UserRole, group.rootName);
         rootItem->setData(0, Qt::UserRole + 1, rootIsFile);
         rootItem->setToolTip(0, group.rootToolTip);
@@ -104,25 +106,41 @@ void NavigationWidget::populateSymbolTree()
         if (group.symbols.isEmpty()) continue;
 
         const QString groupDisplayName = group.displayName.isEmpty()
-            ? getSymbolTypeDisplayName(group.symbolType)
+            ? QStringLiteral("Symbols")
             : group.displayName;
 
         QTreeWidgetItem* typeItem = new QTreeWidgetItem(symbolTreeWidget);
         typeItem->setText(0, QString("%1 (%2)").arg(groupDisplayName).arg(group.symbols.size()));
-        typeItem->setIcon(0, getSymbolIcon(group.symbolType));
+        typeItem->setIcon(0, getSymbolIcon(group.iconKind));
         typeItem->setExpanded(true);
         typeItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
 
         int addedCount = 0;
-        for (const sym_list::SymbolInfo& symbol : group.symbols) {
-            if (!currentSearchFilter.isEmpty()
-                && !symbol.symbolName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
-                continue;
-            }
+        if (!group.symbolRows.isEmpty()) {
+            for (const SymbolOutlineSymbolRow& row : group.symbolRows) {
+                if (!currentSearchFilter.isEmpty()
+                    && !row.symbol.symbolName.contains(currentSearchFilter,
+                                                       Qt::CaseInsensitive)) {
+                    continue;
+                }
 
-            QTreeWidgetItem* symbolItem = createSymbolItem(symbol, groupDisplayName);
-            typeItem->addChild(symbolItem);
-            addedCount++;
+                QTreeWidgetItem* symbolItem = createSymbolItem(row);
+                typeItem->addChild(symbolItem);
+                addedCount++;
+            }
+        } else {
+            for (const sym_list::SymbolInfo& symbol : group.symbols) {
+                if (!currentSearchFilter.isEmpty()
+                    && !symbol.symbolName.contains(currentSearchFilter,
+                                                   Qt::CaseInsensitive)) {
+                    continue;
+                }
+
+                QTreeWidgetItem* symbolItem =
+                    createLegacySymbolItem(symbol, groupDisplayName);
+                typeItem->addChild(symbolItem);
+                addedCount++;
+            }
         }
 
         typeItem->setText(0, QString("%1 (%2)").arg(groupDisplayName).arg(addedCount));
@@ -165,7 +183,7 @@ QTreeWidgetItem* NavigationWidget::createModuleItem(const QString& moduleName, c
     QTreeWidgetItem* item = new QTreeWidgetItem();
 
     item->setText(0, moduleName);
-    item->setIcon(0, getSymbolIcon(sym_list::sym_module));
+    item->setIcon(0, getSymbolIcon(SymbolOutlineIconKind::Module));
     item->setData(0, Qt::UserRole, fileName);
     item->setData(0, Qt::UserRole + 1, false);
     item->setToolTip(0, QString("Module: %1\nFile: %2").arg(moduleName, QFileInfo(fileName).fileName()));
@@ -174,6 +192,33 @@ QTreeWidgetItem* NavigationWidget::createModuleItem(const QString& moduleName, c
 }
 
 QTreeWidgetItem* NavigationWidget::createSymbolItem(
+    const SymbolOutlineSymbolRow& row)
+{
+    QTreeWidgetItem* item = new QTreeWidgetItem();
+    const int payloadId = nextSymbolItemPayloadId++;
+    symbolItemPayloads.insert(payloadId, row.symbol);
+
+    item->setText(0, row.displayName.isEmpty()
+                        ? row.symbol.symbolName
+                        : row.displayName);
+    item->setIcon(0, getSymbolIcon(row.iconKind));
+    item->setData(0, Qt::UserRole, static_cast<int>(row.iconKind));
+    item->setData(0, Qt::UserRole + 1, payloadId);
+    const QString typeDisplayName = row.typeDisplayName.isEmpty()
+        ? QStringLiteral("Symbol")
+        : row.typeDisplayName;
+    const QString detail = row.detailDisplayName.isEmpty()
+        ? row.symbol.symbolName
+        : row.detailDisplayName;
+    item->setToolTip(0, QString("%1: %2\n%3")
+                            .arg(typeDisplayName,
+                                 row.symbol.symbolName,
+                                 detail));
+
+    return item;
+}
+
+QTreeWidgetItem* NavigationWidget::createLegacySymbolItem(
     const sym_list::SymbolInfo& symbol,
     const QString& displayName)
 {
@@ -182,8 +227,9 @@ QTreeWidgetItem* NavigationWidget::createSymbolItem(
     symbolItemPayloads.insert(payloadId, symbol);
 
     item->setText(0, symbol.symbolName);
-    item->setIcon(0, getSymbolIcon(symbol.symbolType));
-    item->setData(0, Qt::UserRole, static_cast<int>(symbol.symbolType));
+    item->setIcon(0, getSymbolIcon(SymbolOutlineIconKind::Symbol));
+    item->setData(0, Qt::UserRole,
+                  static_cast<int>(SymbolOutlineIconKind::Symbol));
     item->setData(0, Qt::UserRole + 1, payloadId);
     item->setToolTip(0, QString("%1: %2").arg(displayName, symbol.symbolName));
 

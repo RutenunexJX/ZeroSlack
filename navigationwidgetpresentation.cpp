@@ -1,17 +1,8 @@
 #include "navigationwidget.h"
 
-#include "symboltaxonomy.h"
-
 #include <QStyle>
 
-QString NavigationWidget::getSymbolTypeDisplayName(sym_list::sym_type_e symbolType)
-{
-    QString label = SymbolTaxonomy::symbolTypeLabel(symbolType);
-    if (label.isEmpty() || label == QLatin1String("symbol"))
-        return QStringLiteral("Symbols");
-    label[0] = label.at(0).toUpper();
-    return label;
-}
+#include "symboltaxonomy.h"
 
 QIcon NavigationWidget::getFileIcon(const QString& filePath)
 {
@@ -26,38 +17,24 @@ QIcon NavigationWidget::getFileIcon(const QString& filePath)
     return style()->standardIcon(QStyle::SP_FileIcon);
 }
 
-QIcon NavigationWidget::getSymbolIcon(sym_list::sym_type_e symbolType)
+QIcon NavigationWidget::getSymbolIcon(SymbolOutlineIconKind iconKind)
 {
-    switch (SymbolTaxonomy::declarationKind(symbolType)) {
-    case SymbolTaxonomy::DeclarationKind::Module:
+    switch (iconKind) {
+    case SymbolOutlineIconKind::Module:
         return style()->standardIcon(QStyle::SP_ComputerIcon);
-    case SymbolTaxonomy::DeclarationKind::Signal:
+    case SymbolOutlineIconKind::Signal:
         return style()->standardIcon(QStyle::SP_DialogApplyButton);
-    case SymbolTaxonomy::DeclarationKind::Task:
-    case SymbolTaxonomy::DeclarationKind::Function:
+    case SymbolOutlineIconKind::Subroutine:
         return style()->standardIcon(QStyle::SP_MediaPlay);
-    case SymbolTaxonomy::DeclarationKind::Parameter:
-    case SymbolTaxonomy::DeclarationKind::Localparam:
+    case SymbolOutlineIconKind::Parameter:
         return style()->standardIcon(QStyle::SP_FileDialogDetailedView);
-    case SymbolTaxonomy::DeclarationKind::Port:
+    case SymbolOutlineIconKind::Port:
         return style()->standardIcon(QStyle::SP_ArrowRight);
-    case SymbolTaxonomy::DeclarationKind::Instance:
+    case SymbolOutlineIconKind::Instance:
         return style()->standardIcon(QStyle::SP_DirIcon);
-    case SymbolTaxonomy::DeclarationKind::Typedef:
-    case SymbolTaxonomy::DeclarationKind::Enum:
-    case SymbolTaxonomy::DeclarationKind::Struct:
-    case SymbolTaxonomy::DeclarationKind::StructVariable:
-    case SymbolTaxonomy::DeclarationKind::StructMember:
+    case SymbolOutlineIconKind::Type:
         return style()->standardIcon(QStyle::SP_FileIcon);
-    case SymbolTaxonomy::DeclarationKind::Interface:
-    case SymbolTaxonomy::DeclarationKind::Package:
-    case SymbolTaxonomy::DeclarationKind::Modport:
-    case SymbolTaxonomy::DeclarationKind::Macro:
-    case SymbolTaxonomy::DeclarationKind::Process:
-    case SymbolTaxonomy::DeclarationKind::Generate:
-    case SymbolTaxonomy::DeclarationKind::Constraint:
-    case SymbolTaxonomy::DeclarationKind::User:
-    case SymbolTaxonomy::DeclarationKind::Unknown:
+    case SymbolOutlineIconKind::Symbol:
     default:
         return style()->standardIcon(QStyle::SP_FileIcon);
     }

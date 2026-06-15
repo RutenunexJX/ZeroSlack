@@ -15,6 +15,72 @@ QString outlineDisplayName(const sym_list::SymbolInfo& symbol)
     label[0] = label.at(0).toUpper();
     return label;
 }
+
+SymbolOutlineIconKind outlineIconKind(const sym_list::SymbolInfo& symbol)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    switch (metadata.declarationKind) {
+    case SymbolTaxonomy::DeclarationKind::Module:
+        return SymbolOutlineIconKind::Module;
+    case SymbolTaxonomy::DeclarationKind::Signal:
+        return SymbolOutlineIconKind::Signal;
+    case SymbolTaxonomy::DeclarationKind::Task:
+    case SymbolTaxonomy::DeclarationKind::Function:
+        return SymbolOutlineIconKind::Subroutine;
+    case SymbolTaxonomy::DeclarationKind::Parameter:
+    case SymbolTaxonomy::DeclarationKind::Localparam:
+        return SymbolOutlineIconKind::Parameter;
+    case SymbolTaxonomy::DeclarationKind::Port:
+        return SymbolOutlineIconKind::Port;
+    case SymbolTaxonomy::DeclarationKind::Instance:
+        return SymbolOutlineIconKind::Instance;
+    case SymbolTaxonomy::DeclarationKind::Typedef:
+    case SymbolTaxonomy::DeclarationKind::Enum:
+    case SymbolTaxonomy::DeclarationKind::Struct:
+    case SymbolTaxonomy::DeclarationKind::StructVariable:
+    case SymbolTaxonomy::DeclarationKind::StructMember:
+        return SymbolOutlineIconKind::Type;
+    case SymbolTaxonomy::DeclarationKind::Interface:
+    case SymbolTaxonomy::DeclarationKind::Package:
+    case SymbolTaxonomy::DeclarationKind::Modport:
+    case SymbolTaxonomy::DeclarationKind::Macro:
+    case SymbolTaxonomy::DeclarationKind::Process:
+    case SymbolTaxonomy::DeclarationKind::Generate:
+    case SymbolTaxonomy::DeclarationKind::Constraint:
+    case SymbolTaxonomy::DeclarationKind::User:
+    case SymbolTaxonomy::DeclarationKind::Unknown:
+    default:
+        return SymbolOutlineIconKind::Symbol;
+    }
+}
+
+QString outlineDetailDisplayName(const sym_list::SymbolInfo& symbol)
+{
+    if (!symbol.dataType.isEmpty())
+        return symbol.dataType;
+    if (!symbol.moduleScope.isEmpty())
+        return symbol.moduleScope;
+    return symbol.fileName;
+}
+
+QList<SymbolOutlineSymbolRow> outlineRows(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QString& groupDisplayName)
+{
+    QList<SymbolOutlineSymbolRow> rows;
+    rows.reserve(symbols.size());
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        SymbolOutlineSymbolRow row;
+        row.symbol = symbol;
+        row.displayName = symbol.symbolName;
+        row.typeDisplayName = groupDisplayName;
+        row.detailDisplayName = outlineDetailDisplayName(symbol);
+        row.iconKind = outlineIconKind(symbol);
+        rows.append(row);
+    }
+    return rows;
+}
 }
 
 std::unique_ptr<NavigationService> NavigationService::instance = nullptr;
@@ -103,7 +169,9 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             SymbolOutlineGroup group;
             group.symbolType = symbolType;
             group.displayName = outlineDisplayName(outlineSymbols.first());
+            group.iconKind = outlineIconKind(outlineSymbols.first());
             group.symbols = outlineSymbols;
+            group.symbolRows = outlineRows(outlineSymbols, group.displayName);
             result.append(group);
         }
     }
