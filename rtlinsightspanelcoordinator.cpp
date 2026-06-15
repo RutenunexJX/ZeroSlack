@@ -21,19 +21,6 @@ QString symbolTypeText(sym_list::sym_type_e type)
     return SymbolTaxonomy::symbolTypeLabel(type);
 }
 
-QString diagnosticSeverityText(SemanticDiagnostic::Severity severity)
-{
-    switch (severity) {
-    case SemanticDiagnostic::Error:
-        return QStringLiteral("Error");
-    case SemanticDiagnostic::Warning:
-        return QStringLiteral("Warning");
-    case SemanticDiagnostic::Info:
-    default:
-        return QStringLiteral("Info");
-    }
-}
-
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
                                  const QString& title,
                                  int count)
@@ -68,19 +55,15 @@ QTreeWidgetItem* createChildItem(QTreeWidgetItem* parent,
 
 void appendSymbolGroup(QTreeWidget* tree,
                        const QString& title,
-                       const QString& section,
-                       const QList<sym_list::SymbolInfo>& symbols)
+                       const QList<ModuleBriefSymbolRow>& rows)
 {
-    QTreeWidgetItem* group = createGroupItem(tree, title, symbols.size());
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString detail = symbol.dataType.isEmpty()
-            ? symbolTypeText(symbol.symbolType)
-            : QStringLiteral("%1 %2")
-                  .arg(symbolTypeText(symbol.symbolType), symbol.dataType);
+    QTreeWidgetItem* group = createGroupItem(tree, title, rows.size());
+    for (const ModuleBriefSymbolRow& row : rows) {
+        const sym_list::SymbolInfo& symbol = row.symbol;
         createChildItem(group,
-                        section,
+                        row.sectionDisplayName,
                         symbol.symbolName,
-                        detail,
+                        row.detailDisplayName,
                         symbol.fileName,
                         symbol.startLine,
                         symbol.startColumn);
@@ -88,16 +71,17 @@ void appendSymbolGroup(QTreeWidget* tree,
 }
 
 void appendDiagnostics(QTreeWidget* tree,
-                       const QList<SemanticDiagnostic>& diagnostics)
+                       const QList<ModuleBriefDiagnosticRow>& diagnostics)
 {
     QTreeWidgetItem* group = createGroupItem(tree,
                                             QStringLiteral("Diagnostics"),
                                             diagnostics.size());
-    for (const SemanticDiagnostic& diagnostic : diagnostics) {
+    for (const ModuleBriefDiagnosticRow& row : diagnostics) {
+        const SemanticDiagnostic& diagnostic = row.diagnostic;
         createChildItem(group,
-                        diagnosticSeverityText(diagnostic.severity),
+                        row.severityDisplayName,
                         diagnostic.message,
-                        QStringLiteral("diagnostic"),
+                        row.detailDisplayName,
                         diagnostic.fileName,
                         diagnostic.line,
                         diagnostic.column);
@@ -501,21 +485,17 @@ void RtlInsightsPanelCoordinator::refresh()
 
     appendSymbolGroup(insightsTree,
                       QStringLiteral("Ports"),
-                      QStringLiteral("Port"),
-                      moduleReport.ports);
+                      moduleReport.portRows);
     appendSymbolGroup(insightsTree,
                       QStringLiteral("Parameters"),
-                      QStringLiteral("Parameter"),
-                      moduleReport.parameters);
+                      moduleReport.parameterRows);
     appendSymbolGroup(insightsTree,
                       QStringLiteral("Instances"),
-                      QStringLiteral("Instance"),
-                      moduleReport.instances);
+                      moduleReport.instanceRows);
     appendSymbolGroup(insightsTree,
                       QStringLiteral("Imports"),
-                      QStringLiteral("Import"),
-                      moduleReport.imports);
-    appendDiagnostics(insightsTree, moduleReport.diagnostics);
+                      moduleReport.importRows);
+    appendDiagnostics(insightsTree, moduleReport.diagnosticRows);
     appendRelationshipSummary(insightsTree, moduleReport.relationshipSummary);
     appendSignalJourney(insightsTree,
                         currentFileName,

@@ -60,6 +60,11 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
         SymbolTaxonomy::isInstanceDeclaration);
     report.imports = importSymbols(moduleSymbol);
     report.diagnostics = diagnosticsForModule(moduleSymbol);
+    report.portRows = symbolRows(report.ports, QStringLiteral("Port"));
+    report.parameterRows = symbolRows(report.parameters, QStringLiteral("Parameter"));
+    report.instanceRows = symbolRows(report.instances, QStringLiteral("Instance"));
+    report.importRows = symbolRows(report.imports, QStringLiteral("Import"));
+    report.diagnosticRows = diagnosticRows(report.diagnostics);
     report.relationshipSummary = relationshipSummary(moduleSymbol);
     return report;
 }
@@ -193,6 +198,65 @@ bool ModuleBriefService::isInsideModule(
     if (symbol.startLine < moduleSymbol.startLine)
         return false;
     return moduleSymbol.endLine <= 0 || symbol.startLine <= moduleSymbol.endLine;
+}
+
+QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QString& sectionDisplayName)
+{
+    QList<ModuleBriefSymbolRow> rows;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        ModuleBriefSymbolRow row;
+        row.symbol = symbol;
+        row.sectionDisplayName = sectionDisplayName;
+        row.typeDisplayName = symbolTypeDisplayName(symbol.symbolType);
+        row.detailDisplayName = symbolDetailDisplayName(symbol);
+        rows.append(row);
+    }
+    return rows;
+}
+
+QList<ModuleBriefDiagnosticRow> ModuleBriefService::diagnosticRows(
+    const QList<SemanticDiagnostic>& diagnostics)
+{
+    QList<ModuleBriefDiagnosticRow> rows;
+    for (const SemanticDiagnostic& diagnostic : diagnostics) {
+        ModuleBriefDiagnosticRow row;
+        row.diagnostic = diagnostic;
+        row.severityDisplayName =
+            diagnosticSeverityDisplayName(diagnostic.severity);
+        row.detailDisplayName = QStringLiteral("diagnostic");
+        rows.append(row);
+    }
+    return rows;
+}
+
+QString ModuleBriefService::symbolTypeDisplayName(sym_list::sym_type_e type)
+{
+    return SymbolTaxonomy::symbolTypeLabel(type);
+}
+
+QString ModuleBriefService::symbolDetailDisplayName(
+    const sym_list::SymbolInfo& symbol)
+{
+    const QString type = symbolTypeDisplayName(symbol.symbolType);
+    return symbol.dataType.isEmpty()
+        ? type
+        : QStringLiteral("%1 %2").arg(type, symbol.dataType);
+}
+
+QString ModuleBriefService::diagnosticSeverityDisplayName(
+    SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return QStringLiteral("Error");
+    case SemanticDiagnostic::Warning:
+        return QStringLiteral("Warning");
+    case SemanticDiagnostic::Info:
+    default:
+        return QStringLiteral("Info");
+    }
 }
 
 void ModuleBriefService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)

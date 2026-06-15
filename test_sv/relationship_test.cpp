@@ -2901,6 +2901,30 @@ static void runModuleBriefServiceFixture()
     expectInt("module brief instance count", report.instances.size(), 1);
     expectInt("module brief import count", report.imports.size(), 1);
     expectInt("module brief diagnostic count", report.diagnostics.size(), 1);
+    expectInt("module brief port row count", report.portRows.size(), 3);
+    expectInt("module brief parameter row count", report.parameterRows.size(), 1);
+    expectInt("module brief instance row count", report.instanceRows.size(), 1);
+    expectInt("module brief import row count", report.importRows.size(), 1);
+    expectInt("module brief diagnostic row count", report.diagnosticRows.size(), 1);
+    expectBool("module brief port row display metadata",
+               !report.portRows.isEmpty()
+                   && report.portRows.first().sectionDisplayName == QStringLiteral("Port")
+                   && !report.portRows.first().typeDisplayName.isEmpty()
+                   && !report.portRows.first().detailDisplayName.isEmpty(),
+               true);
+    expectBool("module brief parameter row display metadata",
+               !report.parameterRows.isEmpty()
+                   && report.parameterRows.first().sectionDisplayName
+                       == QStringLiteral("Parameter")
+                   && !report.parameterRows.first().detailDisplayName.isEmpty(),
+               true);
+    expectBool("module brief diagnostic row display metadata",
+               !report.diagnosticRows.isEmpty()
+                   && report.diagnosticRows.first().severityDisplayName
+                       == QStringLiteral("Warning")
+                   && report.diagnosticRows.first().detailDisplayName
+                       == QStringLiteral("diagnostic"),
+               true);
     expectBool("module brief import package",
                !report.imports.isEmpty()
                    && report.imports.first().symbolName == QStringLiteral("brief_pkg"),
