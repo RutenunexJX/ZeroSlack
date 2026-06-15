@@ -41,6 +41,8 @@ struct DiagnosticPanelQueryOptions {
 
 struct DiagnosticResult {
     SemanticDiagnostic diagnostic;
+    QString severityDisplayName;
+    QString fileDisplayName;
 };
 
 struct DiagnosticFileGroup {
@@ -82,6 +84,8 @@ private:
     bool severityMatches(SemanticDiagnostic::Severity severity,
                          const DiagnosticQuery& query) const;
     static QString normalizedFileName(const QString& fileName);
+    static QString severityDisplayName(SemanticDiagnostic::Severity severity);
+    static QString diagnosticFileDisplayName(const QString& fileName);
 };
 
 #endif // DIAGNOSTICSERVICE_H

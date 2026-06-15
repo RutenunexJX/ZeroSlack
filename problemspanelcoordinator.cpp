@@ -3,7 +3,6 @@
 #include "diagnosticservice.h"
 #include "semanticpanelutils.h"
 
-#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QVBoxLayout>
@@ -12,25 +11,13 @@
 
 namespace {
 
-QString diagnosticSeverityText(SemanticDiagnostic::Severity severity)
-{
-    switch (severity) {
-    case SemanticDiagnostic::Error:
-        return QStringLiteral("Error");
-    case SemanticDiagnostic::Warning:
-        return QStringLiteral("Warning");
-    case SemanticDiagnostic::Info:
-    default:
-        return QStringLiteral("Info");
-    }
-}
-
 QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
-                                      const SemanticDiagnostic& diagnostic)
+                                      const DiagnosticResult& result)
 {
+    const SemanticDiagnostic& diagnostic = result.diagnostic;
     auto* item = new QTreeWidgetItem(parent);
-    item->setText(0, diagnosticSeverityText(diagnostic.severity));
-    item->setText(1, QFileInfo(diagnostic.fileName).fileName());
+    item->setText(0, result.severityDisplayName);
+    item->setText(1, result.fileDisplayName);
     item->setText(2, QString::number(diagnostic.line));
     item->setText(3, QString::number(diagnostic.column));
     item->setText(4, diagnostic.message);
@@ -185,8 +172,7 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
     problemsTree->clear();
     if (currentFileOnly) {
         for (const DiagnosticResult& result : diagnostics) {
-            const SemanticDiagnostic& diagnostic = result.diagnostic;
-            createDiagnosticItem(problemsTree->invisibleRootItem(), diagnostic);
+            createDiagnosticItem(problemsTree->invisibleRootItem(), result);
         }
     } else {
         for (const DiagnosticFileGroup& group : report.fileGroups) {
@@ -197,7 +183,7 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
             fileGroup->setToolTip(0, group.fileName);
             fileGroup->setToolTip(1, group.fileName);
             for (const DiagnosticResult& result : group.diagnostics)
-                createDiagnosticItem(fileGroup, result.diagnostic);
+                createDiagnosticItem(fileGroup, result);
         }
         SemanticPanelUtils::restoreTreeExpansion(problemsTree,
                                                  hadExpandableItems,

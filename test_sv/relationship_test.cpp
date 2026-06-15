@@ -404,6 +404,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         expectBool("slang diagnostic has severity",
                    brokenDiagnosticResults.first().diagnostic.severity == SemanticDiagnostic::Error,
                    true);
+        expectBool("slang diagnostic exposes display metadata",
+                   brokenDiagnosticResults.first().severityDisplayName == QStringLiteral("Error")
+                       && brokenDiagnosticResults.first().fileDisplayName
+                          == QStringLiteral("broken_diag.sv"),
+                   true);
     }
 
     SemanticDiagnostic infoDiagnostic;
@@ -449,7 +454,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             diagnosticReportFoundTopGroup =
                 group.count == 2
                 && group.diagnostics.size() == 2
-                && !group.displayName.isEmpty();
+                && !group.displayName.isEmpty()
+                && !group.diagnostics.first().severityDisplayName.isEmpty()
+                && !group.diagnostics.first().fileDisplayName.isEmpty();
         }
     }
     expectBool("diagnostic report groups file diagnostics",
@@ -460,6 +467,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !diagnosticReport.diagnostics.isEmpty()
                    && diagnosticReport.diagnostics.first().diagnostic.severity
                        == SemanticDiagnostic::Error,
+               true);
+    expectBool("diagnostic report exposes row display metadata",
+               !diagnosticReport.diagnostics.isEmpty()
+                   && diagnosticReport.diagnostics.first().severityDisplayName
+                       == QStringLiteral("Error")
+                   && diagnosticReport.diagnostics.first().fileDisplayName
+                       == QStringLiteral("relationship_stage.sv"),
                true);
 
     DiagnosticQuery topOnlyDiagnosticQuery;

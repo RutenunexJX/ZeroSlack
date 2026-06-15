@@ -66,6 +66,8 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
 
         DiagnosticResult item;
         item.diagnostic = diagnostic;
+        item.severityDisplayName = severityDisplayName(diagnostic.severity);
+        item.fileDisplayName = diagnosticFileDisplayName(diagnostic.fileName);
         result.append(item);
     }
     std::sort(result.begin(), result.end(),
@@ -110,9 +112,7 @@ DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& 
             DiagnosticFileGroup group;
             group.fileName = diagnostic.fileName;
             group.fileKey = fileKey;
-            group.displayName = QFileInfo(diagnostic.fileName).fileName();
-            if (group.displayName.isEmpty())
-                group.displayName = diagnostic.fileName;
+            group.displayName = diagnosticFileDisplayName(diagnostic.fileName);
             fileGroupIndexes.insert(fileKey, report.fileGroups.size());
             report.fileGroups.append(group);
         }
@@ -180,4 +180,25 @@ QString DiagnosticService::normalizedFileName(const QString& fileName)
     if (fileName.isEmpty())
         return QString();
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+QString DiagnosticService::severityDisplayName(SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return QStringLiteral("Error");
+    case SemanticDiagnostic::Warning:
+        return QStringLiteral("Warning");
+    case SemanticDiagnostic::Info:
+    default:
+        return QStringLiteral("Info");
+    }
+}
+
+QString DiagnosticService::diagnosticFileDisplayName(const QString& fileName)
+{
+    QString displayName = QFileInfo(fileName).fileName();
+    if (displayName.isEmpty())
+        displayName = fileName;
+    return displayName;
 }
