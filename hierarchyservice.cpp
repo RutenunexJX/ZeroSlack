@@ -1,5 +1,6 @@
 #include "hierarchyservice.h"
 
+#include <QFileInfo>
 #include <algorithm>
 
 std::unique_ptr<HierarchyService> HierarchyService::instance = nullptr;
@@ -74,6 +75,29 @@ void HierarchyService::fillDisplayMetadata(HierarchyNode& node)
     node.relationshipTypeDisplayName = node.depth == 0
         ? QStringLiteral("Root")
         : relationshipTypeDisplayName(node.viaType);
+    node.symbolDisplayName = symbolDisplayName(node.symbol);
+    node.fileDisplayName = fileDisplayName(node.symbol.fileName);
+    node.lineDisplayName = lineDisplayName(node.symbol.startLine);
+}
+
+QString HierarchyService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolName.isEmpty()
+        ? QStringLiteral("<unnamed>")
+        : symbol.symbolName;
+}
+
+QString HierarchyService::fileDisplayName(const QString& fileName)
+{
+    QString displayName = QFileInfo(fileName).fileName();
+    if (displayName.isEmpty())
+        displayName = fileName;
+    return displayName;
+}
+
+QString HierarchyService::lineDisplayName(int line)
+{
+    return QString::number(line);
 }
 
 HierarchyService* HierarchyService::getInstance()

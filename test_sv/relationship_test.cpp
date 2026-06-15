@@ -2389,10 +2389,23 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && node.direction == HierarchyQuery::Children
                 && node.viaType == SymbolRelationshipEngine::INSTANTIATES
                 && node.directionDisplayName == QStringLiteral("Outgoing")
-                && node.relationshipTypeDisplayName == QStringLiteral("Instantiates"));
+                && node.relationshipTypeDisplayName == QStringLiteral("Instantiates")
+                && node.symbolDisplayName == QStringLiteral("rel_stage")
+                && node.fileDisplayName == QFileInfo(stagePath).fileName()
+                && !node.lineDisplayName.isEmpty());
     }
     expectBool("hierarchy report keeps child row identity",
                hierarchyReportHasStageChild, true);
+    expectBool("hierarchy report keeps root row metadata",
+               !hierarchyReport.nodes.isEmpty()
+                   && hierarchyReport.nodes.first().depth == 0
+                   && hierarchyReport.nodes.first().symbolDisplayName
+                       == QStringLiteral("rel_top")
+                   && hierarchyReport.nodes.first().fileDisplayName
+                       == QFileInfo(topPath).fileName()
+                   && hierarchyReport.nodes.first().relationshipTypeDisplayName
+                       == QStringLiteral("Root"),
+               true);
     expectBool("hierarchy service exposes all tree types",
                HierarchyService::allRelationshipTypes().contains(SymbolRelationshipEngine::READS_FROM),
                true);

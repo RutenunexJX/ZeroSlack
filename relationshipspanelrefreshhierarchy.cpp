@@ -3,7 +3,6 @@
 #include "hierarchyservice.h"
 #include "semanticpanelutils.h"
 
-#include <QFileInfo>
 #include <QMap>
 
 namespace {
@@ -51,9 +50,15 @@ QTreeWidgetItem* createHierarchyItem(QTreeWidgetItem* parent,
 {
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, roleText);
-    item->setText(1, node.symbol.symbolName);
-    item->setText(2, QFileInfo(node.symbol.fileName).fileName());
-    item->setText(3, QString::number(node.symbol.startLine));
+    item->setText(1, node.symbolDisplayName.isEmpty()
+                         ? node.symbol.symbolName
+                         : node.symbolDisplayName);
+    item->setText(2, node.fileDisplayName.isEmpty()
+                         ? node.symbol.fileName
+                         : node.fileDisplayName);
+    item->setText(3, node.lineDisplayName.isEmpty()
+                         ? QString::number(node.symbol.startLine)
+                         : node.lineDisplayName);
     item->setText(4, node.relationshipTypeDisplayName.isEmpty()
                          ? (node.depth == 0
                                 ? QStringLiteral("Root")
