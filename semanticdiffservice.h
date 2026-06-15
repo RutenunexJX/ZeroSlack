@@ -35,6 +35,10 @@ struct SemanticDiffSymbolChange {
     QString key;
     sym_list::SymbolInfo beforeSymbol = {};
     sym_list::SymbolInfo afterSymbol = {};
+    sym_list::SymbolInfo displaySymbol = {};
+    QString kindDisplayName;
+    QString categoryDisplayName;
+    QString detailDisplayName;
 };
 
 struct SemanticDiffRelationshipChange {
@@ -46,6 +50,11 @@ struct SemanticDiffRelationshipChange {
     SemanticRelationship afterRelationship;
     sym_list::SymbolInfo afterFromSymbol = {};
     sym_list::SymbolInfo afterToSymbol = {};
+    sym_list::SymbolInfo displayFromSymbol = {};
+    sym_list::SymbolInfo displayToSymbol = {};
+    QString kindDisplayName;
+    QString relationshipTypeDisplayName;
+    QString detailDisplayName;
 };
 
 struct SemanticDiffDiagnosticChange {
@@ -53,6 +62,9 @@ struct SemanticDiffDiagnosticChange {
     QString key;
     SemanticDiagnostic beforeDiagnostic;
     SemanticDiagnostic afterDiagnostic;
+    SemanticDiagnostic displayDiagnostic;
+    QString kindDisplayName;
+    QString severityDisplayName;
 };
 
 struct SemanticDiffReport {
@@ -108,6 +120,13 @@ private:
     static QString diagnosticKey(const SemanticDiagnostic& diagnostic);
     static QString normalizedFileName(const QString& fileName);
     static QString changeKindName(SemanticDiffChangeKind kind);
+    static QString changeKindDisplayName(SemanticDiffChangeKind kind);
+    static QString symbolCategoryDisplayName(SemanticDiffSymbolCategory category);
+    static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
+    static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
+    static void fillDisplayMetadata(SemanticDiffSymbolChange& change);
+    static void fillDisplayMetadata(SemanticDiffRelationshipChange& change);
+    static void fillDisplayMetadata(SemanticDiffDiagnosticChange& change);
 
     static void sortSymbolChanges(QList<SemanticDiffSymbolChange>& changes);
     static void sortRelationshipChanges(

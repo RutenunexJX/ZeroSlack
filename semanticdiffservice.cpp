@@ -93,17 +93,20 @@ QList<SemanticDiffSymbolChange> SemanticDiffService::symbolChanges(
 
         if (!hasBefore) {
             change.kind = SemanticDiffChangeKind::Added;
+            fillDisplayMetadata(change);
             changes.append(change);
             continue;
         }
         if (!hasAfter) {
             change.kind = SemanticDiffChangeKind::Removed;
+            fillDisplayMetadata(change);
             changes.append(change);
             continue;
         }
         if (symbolSignature(change.beforeSymbol)
             != symbolSignature(change.afterSymbol)) {
             change.kind = SemanticDiffChangeKind::Modified;
+            fillDisplayMetadata(change);
             changes.append(change);
         }
     }
@@ -166,6 +169,7 @@ QList<SemanticDiffRelationshipChange> SemanticDiffService::relationshipChanges(
             change.afterToSymbol =
                 query.afterSnapshot->getSymbolById(change.afterRelationship.toId);
         }
+        fillDisplayMetadata(change);
         changes.append(change);
     }
 
@@ -219,6 +223,7 @@ QList<SemanticDiffDiagnosticChange> SemanticDiffService::diagnosticChanges(
             change.kind = SemanticDiffChangeKind::Added;
             change.afterDiagnostic = afterDiagnostics.value(key);
         }
+        fillDisplayMetadata(change);
         changes.append(change);
     }
 
@@ -368,6 +373,155 @@ QString SemanticDiffService::changeKindName(SemanticDiffChangeKind kind)
         return QStringLiteral("modified");
     }
     return QString();
+}
+
+QString SemanticDiffService::changeKindDisplayName(SemanticDiffChangeKind kind)
+{
+    switch (kind) {
+    case SemanticDiffChangeKind::Added:
+        return QStringLiteral("Added");
+    case SemanticDiffChangeKind::Removed:
+        return QStringLiteral("Removed");
+    case SemanticDiffChangeKind::Modified:
+        return QStringLiteral("Modified");
+    }
+    return QString();
+}
+
+QString SemanticDiffService::symbolCategoryDisplayName(
+    SemanticDiffSymbolCategory category)
+{
+    switch (category) {
+    case SemanticDiffSymbolCategory::Port:
+        return QStringLiteral("port");
+    case SemanticDiffSymbolCategory::Parameter:
+        return QStringLiteral("parameter");
+    case SemanticDiffSymbolCategory::Instance:
+        return QStringLiteral("instance");
+    case SemanticDiffSymbolCategory::Signal:
+        return QStringLiteral("signal");
+    }
+    return QStringLiteral("symbol");
+}
+
+QString SemanticDiffService::relationshipTypeDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("Contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("References");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("Instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("Calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("Inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("Implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("Assigns To");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("Reads From");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("Clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("Resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("Generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("Constrains");
+    }
+    return QStringLiteral("Relationship");
+}
+
+QString SemanticDiffService::diagnosticSeverityDisplayName(
+    SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return QStringLiteral("Error");
+    case SemanticDiagnostic::Warning:
+        return QStringLiteral("Warning");
+    case SemanticDiagnostic::Info:
+    default:
+        return QStringLiteral("Info");
+    }
+}
+
+void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
+{
+    change.displaySymbol = change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeSymbol
+        : change.afterSymbol;
+    change.kindDisplayName = changeKindDisplayName(change.kind);
+    change.categoryDisplayName = symbolCategoryDisplayName(change.category);
+
+    const QString type = SymbolTaxonomy::symbolTypeLabel(change.displaySymbol.symbolType);
+    const QString dataType = change.displaySymbol.dataType.isEmpty()
+        ? QString()
+        : QStringLiteral(" %1").arg(change.displaySymbol.dataType);
+    if (change.kind != SemanticDiffChangeKind::Modified) {
+        change.detailDisplayName = QStringLiteral("%1 %2%3")
+                                       .arg(change.categoryDisplayName,
+                                            type,
+                                            dataType);
+        return;
+    }
+
+    const QString beforeText =
+        QStringLiteral("%1%2")
+            .arg(SymbolTaxonomy::symbolTypeLabel(change.beforeSymbol.symbolType),
+                 change.beforeSymbol.dataType.isEmpty()
+                     ? QString()
+                     : QStringLiteral(" %1").arg(change.beforeSymbol.dataType));
+    const QString afterText =
+        QStringLiteral("%1%2")
+            .arg(SymbolTaxonomy::symbolTypeLabel(change.afterSymbol.symbolType),
+                 change.afterSymbol.dataType.isEmpty()
+                     ? QString()
+                     : QStringLiteral(" %1").arg(change.afterSymbol.dataType));
+    change.detailDisplayName = QStringLiteral("%1 %2 -> %3")
+                                   .arg(change.categoryDisplayName,
+                                        beforeText,
+                                        afterText);
+}
+
+void SemanticDiffService::fillDisplayMetadata(
+    SemanticDiffRelationshipChange& change)
+{
+    const SemanticRelationship& relationship =
+        change.kind == SemanticDiffChangeKind::Removed
+            ? change.beforeRelationship
+            : change.afterRelationship;
+    change.displayFromSymbol = change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeFromSymbol
+        : change.afterFromSymbol;
+    change.displayToSymbol = change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeToSymbol
+        : change.afterToSymbol;
+    change.kindDisplayName = changeKindDisplayName(change.kind);
+    change.relationshipTypeDisplayName =
+        relationshipTypeDisplayName(relationship.type);
+    change.detailDisplayName =
+        change.displayFromSymbol.symbolName.isEmpty()
+            || change.displayToSymbol.symbolName.isEmpty()
+        ? change.key
+        : QStringLiteral("%1 -> %2")
+              .arg(change.displayFromSymbol.symbolName,
+                   change.displayToSymbol.symbolName);
+}
+
+void SemanticDiffService::fillDisplayMetadata(
+    SemanticDiffDiagnosticChange& change)
+{
+    change.displayDiagnostic = change.kind == SemanticDiffChangeKind::Removed
+        ? change.beforeDiagnostic
+        : change.afterDiagnostic;
+    change.kindDisplayName = changeKindDisplayName(change.kind);
+    change.severityDisplayName =
+        diagnosticSeverityDisplayName(change.displayDiagnostic.severity);
 }
 
 void SemanticDiffService::sortSymbolChanges(

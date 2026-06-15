@@ -34,111 +34,6 @@ QString diagnosticSeverityText(SemanticDiagnostic::Severity severity)
     }
 }
 
-QString diffChangeKindText(SemanticDiffChangeKind kind)
-{
-    switch (kind) {
-    case SemanticDiffChangeKind::Added:
-        return QStringLiteral("Added");
-    case SemanticDiffChangeKind::Removed:
-        return QStringLiteral("Removed");
-    case SemanticDiffChangeKind::Modified:
-        return QStringLiteral("Modified");
-    }
-    return QString();
-}
-
-QString diffSymbolCategoryText(SemanticDiffSymbolCategory category)
-{
-    switch (category) {
-    case SemanticDiffSymbolCategory::Port:
-        return QStringLiteral("port");
-    case SemanticDiffSymbolCategory::Parameter:
-        return QStringLiteral("parameter");
-    case SemanticDiffSymbolCategory::Instance:
-        return QStringLiteral("instance");
-    case SemanticDiffSymbolCategory::Signal:
-        return QStringLiteral("signal");
-    }
-    return QStringLiteral("symbol");
-}
-
-const sym_list::SymbolInfo& diffDisplaySymbol(
-    const SemanticDiffSymbolChange& change)
-{
-    return change.kind == SemanticDiffChangeKind::Removed
-        ? change.beforeSymbol
-        : change.afterSymbol;
-}
-
-const SemanticDiagnostic& diffDisplayDiagnostic(
-    const SemanticDiffDiagnosticChange& change)
-{
-    return change.kind == SemanticDiffChangeKind::Removed
-        ? change.beforeDiagnostic
-        : change.afterDiagnostic;
-}
-
-QString diffSymbolDetail(const SemanticDiffSymbolChange& change)
-{
-    const sym_list::SymbolInfo& symbol = diffDisplaySymbol(change);
-    const QString category = diffSymbolCategoryText(change.category);
-    const QString type = symbolTypeText(symbol.symbolType);
-    const QString dataType = symbol.dataType.isEmpty()
-        ? QString()
-        : QStringLiteral(" %1").arg(symbol.dataType);
-    if (change.kind != SemanticDiffChangeKind::Modified)
-        return QStringLiteral("%1 %2%3").arg(category, type, dataType);
-
-    const QString beforeText =
-        QStringLiteral("%1%2")
-            .arg(symbolTypeText(change.beforeSymbol.symbolType),
-                 change.beforeSymbol.dataType.isEmpty()
-                     ? QString()
-                     : QStringLiteral(" %1").arg(change.beforeSymbol.dataType));
-    const QString afterText =
-        QStringLiteral("%1%2")
-            .arg(symbolTypeText(change.afterSymbol.symbolType),
-                 change.afterSymbol.dataType.isEmpty()
-                     ? QString()
-                     : QStringLiteral(" %1").arg(change.afterSymbol.dataType));
-    return QStringLiteral("%1 %2 -> %3").arg(category, beforeText, afterText);
-}
-
-QString diffRelationshipName(const SemanticDiffRelationshipChange& change)
-{
-    const SemanticRelationship& relationship =
-        change.kind == SemanticDiffChangeKind::Removed
-            ? change.beforeRelationship
-            : change.afterRelationship;
-    return SemanticPanelUtils::relationshipTypeText(relationship.type);
-}
-
-const sym_list::SymbolInfo& diffRelationshipFromSymbol(
-    const SemanticDiffRelationshipChange& change)
-{
-    return change.kind == SemanticDiffChangeKind::Removed
-        ? change.beforeFromSymbol
-        : change.afterFromSymbol;
-}
-
-const sym_list::SymbolInfo& diffRelationshipToSymbol(
-    const SemanticDiffRelationshipChange& change)
-{
-    return change.kind == SemanticDiffChangeKind::Removed
-        ? change.beforeToSymbol
-        : change.afterToSymbol;
-}
-
-QString diffRelationshipDetail(const SemanticDiffRelationshipChange& change)
-{
-    const sym_list::SymbolInfo& fromSymbol = diffRelationshipFromSymbol(change);
-    const sym_list::SymbolInfo& toSymbol = diffRelationshipToSymbol(change);
-    if (fromSymbol.symbolName.isEmpty() || toSymbol.symbolName.isEmpty())
-        return change.key;
-    return QStringLiteral("%1 -> %2")
-        .arg(fromSymbol.symbolName, toSymbol.symbolName);
-}
-
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
                                  const QString& title,
                                  int count)
@@ -403,11 +298,11 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                                               QStringLiteral("Semantic Diff Symbols"),
                                               report.symbolChanges.size());
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
-        const sym_list::SymbolInfo& symbol = diffDisplaySymbol(change);
+        const sym_list::SymbolInfo& symbol = change.displaySymbol;
         createChildItem(symbols,
-                        diffChangeKindText(change.kind),
+                        change.kindDisplayName,
                         symbol.symbolName,
-                        diffSymbolDetail(change),
+                        change.detailDisplayName,
                         symbol.fileName,
                         symbol.startLine,
                         symbol.startColumn);
@@ -418,11 +313,11 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                         QStringLiteral("Semantic Diff Relationships"),
                         report.relationshipChanges.size());
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
-        const sym_list::SymbolInfo& fromSymbol = diffRelationshipFromSymbol(change);
+        const sym_list::SymbolInfo& fromSymbol = change.displayFromSymbol;
         createChildItem(relationships,
-                        diffChangeKindText(change.kind),
-                        diffRelationshipName(change),
-                        diffRelationshipDetail(change),
+                        change.kindDisplayName,
+                        change.relationshipTypeDisplayName,
+                        change.detailDisplayName,
                         fromSymbol.fileName,
                         fromSymbol.startLine,
                         fromSymbol.startColumn);
@@ -433,11 +328,11 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                         QStringLiteral("Semantic Diff Diagnostics"),
                         report.diagnosticChanges.size());
     for (const SemanticDiffDiagnosticChange& change : report.diagnosticChanges) {
-        const SemanticDiagnostic& diagnostic = diffDisplayDiagnostic(change);
+        const SemanticDiagnostic& diagnostic = change.displayDiagnostic;
         createChildItem(diagnostics,
-                        diffChangeKindText(change.kind),
+                        change.kindDisplayName,
                         diagnostic.message,
-                        diagnosticSeverityText(diagnostic.severity),
+                        change.severityDisplayName,
                         diagnostic.fileName,
                         diagnostic.line,
                         diagnostic.column);

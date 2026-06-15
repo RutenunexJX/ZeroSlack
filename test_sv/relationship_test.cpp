@@ -3442,6 +3442,7 @@ static void runSemanticDiffServiceFixture()
     int modifiedSymbols = 0;
     bool dataPortModified = false;
     bool newSignalAdded = false;
+    bool symbolDisplayMetadataFound = false;
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         if (change.kind == SemanticDiffChangeKind::Added)
             ++addedSymbols;
@@ -3455,6 +3456,11 @@ static void runSemanticDiffServiceFixture()
             && change.beforeSymbol.symbolType == sym_list::sym_port_input
             && change.afterSymbol.symbolType == sym_list::sym_port_output) {
             dataPortModified = true;
+            symbolDisplayMetadataFound =
+                change.kindDisplayName == QStringLiteral("Modified")
+                && change.categoryDisplayName == QStringLiteral("port")
+                && change.displaySymbol.symbolName == QStringLiteral("data")
+                && change.detailDisplayName.contains(QStringLiteral("port"));
         }
         if (change.kind == SemanticDiffChangeKind::Added
             && change.category == SemanticDiffSymbolCategory::Signal
@@ -3467,12 +3473,18 @@ static void runSemanticDiffServiceFixture()
     int removedRelationships = 0;
     bool addedRelationshipHasEndpoints = false;
     bool removedRelationshipHasEndpoints = false;
+    bool relationshipDisplayMetadataFound = false;
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
         if (change.kind == SemanticDiffChangeKind::Added) {
             ++addedRelationships;
             addedRelationshipHasEndpoints =
                 change.afterFromSymbol.symbolName == QStringLiteral("diff_top")
                 && change.afterToSymbol.symbolName == QStringLiteral("u_new");
+            relationshipDisplayMetadataFound =
+                change.kindDisplayName == QStringLiteral("Added")
+                && change.relationshipTypeDisplayName == QStringLiteral("Instantiates")
+                && change.displayFromSymbol.symbolName == QStringLiteral("diff_top")
+                && change.detailDisplayName == QStringLiteral("diff_top -> u_new");
         }
         if (change.kind == SemanticDiffChangeKind::Removed) {
             ++removedRelationships;
@@ -3484,9 +3496,15 @@ static void runSemanticDiffServiceFixture()
 
     int addedDiagnostics = 0;
     int removedDiagnostics = 0;
+    bool diagnosticDisplayMetadataFound = false;
     for (const SemanticDiffDiagnosticChange& change : report.diagnosticChanges) {
-        if (change.kind == SemanticDiffChangeKind::Added)
+        if (change.kind == SemanticDiffChangeKind::Added) {
             ++addedDiagnostics;
+            diagnosticDisplayMetadataFound =
+                change.kindDisplayName == QStringLiteral("Added")
+                && change.severityDisplayName == QStringLiteral("Error")
+                && change.displayDiagnostic.message == QStringLiteral("new error");
+        }
         if (change.kind == SemanticDiffChangeKind::Removed)
             ++removedDiagnostics;
     }
@@ -3497,6 +3515,8 @@ static void runSemanticDiffServiceFixture()
     expectInt("semantic diff modified symbols", modifiedSymbols, 1);
     expectBool("semantic diff modified data port", dataPortModified, true);
     expectBool("semantic diff added state signal", newSignalAdded, true);
+    expectBool("semantic diff symbol display metadata",
+               symbolDisplayMetadataFound, true);
     expectInt("semantic diff added relationships", addedRelationships, 1);
     expectInt("semantic diff removed relationships", removedRelationships, 1);
     expectBool("semantic diff added relationship endpoints",
@@ -3505,8 +3525,13 @@ static void runSemanticDiffServiceFixture()
     expectBool("semantic diff removed relationship endpoints",
                removedRelationshipHasEndpoints,
                true);
+    expectBool("semantic diff relationship display metadata",
+               relationshipDisplayMetadataFound,
+               true);
     expectInt("semantic diff added diagnostics", addedDiagnostics, 1);
     expectInt("semantic diff removed diagnostics", removedDiagnostics, 1);
+    expectBool("semantic diff diagnostic display metadata",
+               diagnosticDisplayMetadataFound, true);
 }
 
 static void runRealWorkspaceIncludeFixture()
