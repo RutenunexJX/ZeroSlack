@@ -3297,6 +3297,9 @@ static void runFsmGraphServiceFixture()
     const FsmGraphReport report = service.buildFsmGraph(query);
 
     expectBool("fsm graph found", report.found, true);
+    expectBool("fsm graph group metadata",
+               report.groupDisplayName == QStringLiteral("FSM Graphs"),
+               true);
     expectBool("taxonomy recognizes fsm state register",
                SymbolTaxonomy::isFsmStateRegisterDeclaration(stateQ.symbolType),
                true);
@@ -3314,9 +3317,28 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().nextStateSignal.symbolName
                        == QStringLiteral("state_d"),
                true);
+    expectBool("fsm graph register display metadata",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().stateRegisterSectionDisplayName
+                       == QStringLiteral("State Register")
+                   && report.graphs.first().stateRegisterDetailDisplayName
+                       == QStringLiteral("next state_d"),
+               true);
     expectInt("fsm graph state count",
               report.graphs.isEmpty() ? 0 : report.graphs.first().states.size(),
               3);
+    expectBool("fsm graph state row metadata",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().statesGroupDisplayName
+                       == QStringLiteral("States")
+                   && report.graphs.first().stateRows.size()
+                       == report.graphs.first().states.size()
+                   && !report.graphs.first().stateRows.isEmpty()
+                   && report.graphs.first().stateRows.first().sectionDisplayName
+                       == QStringLiteral("State")
+                   && report.graphs.first().stateRows.first().detailDisplayName
+                       == QStringLiteral("state_t"),
+               true);
     expectInt("fsm graph transition count",
               report.graphs.isEmpty() ? 0 : report.graphs.first().transitions.size(),
               4);
@@ -3329,6 +3351,16 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("RUN")
                    && report.graphs.first().transitions.first().condition
                        == QStringLiteral("start"),
+               true);
+    expectBool("fsm graph transition display metadata",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().transitionsGroupDisplayName
+                       == QStringLiteral("Transitions")
+                   && !report.graphs.first().transitions.isEmpty()
+                   && report.graphs.first().transitions.first().sectionDisplayName
+                       == QStringLiteral("IDLE")
+                   && report.graphs.first().transitions.first().detailDisplayName
+                       == QStringLiteral("state_d when start"),
                true);
     expectBool("fsm graph default transition",
                !report.graphs.isEmpty()

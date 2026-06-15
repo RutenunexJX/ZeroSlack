@@ -183,47 +183,71 @@ void appendClockResetDomains(QTreeWidget* tree,
 void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
 {
     QTreeWidgetItem* group = createGroupItem(tree,
-                                            QStringLiteral("FSM Graphs"),
+                                            report.groupDisplayName.isEmpty()
+                                                ? QStringLiteral("FSM Graphs")
+                                                : report.groupDisplayName,
                                             report.graphs.size());
     for (const FsmGraph& graph : report.graphs) {
         QTreeWidgetItem* stateRegister =
             createChildItem(group,
-                            QStringLiteral("State Register"),
+                            graph.stateRegisterSectionDisplayName.isEmpty()
+                                ? QStringLiteral("State Register")
+                                : graph.stateRegisterSectionDisplayName,
                             graph.stateRegister.symbolName,
-                            graph.nextStateSignal.symbolId >= 0
-                                ? QStringLiteral("next %1")
-                                      .arg(graph.nextStateSignal.symbolName)
-                                : QStringLiteral("state register"),
+                            graph.stateRegisterDetailDisplayName.isEmpty()
+                                ? QStringLiteral("state register")
+                                : graph.stateRegisterDetailDisplayName,
                             graph.stateRegister.fileName,
                             graph.stateRegister.startLine,
                             graph.stateRegister.startColumn);
 
         QTreeWidgetItem* states = new QTreeWidgetItem(stateRegister);
-        states->setText(0, SemanticPanelUtils::countLabel(QStringLiteral("States"),
+        const QString statesGroup = graph.statesGroupDisplayName.isEmpty()
+            ? QStringLiteral("States")
+            : graph.statesGroupDisplayName;
+        states->setText(0, SemanticPanelUtils::countLabel(statesGroup,
                                                           graph.states.size()));
-        for (const sym_list::SymbolInfo& state : graph.states) {
-            createChildItem(states,
-                            QStringLiteral("State"),
-                            state.symbolName,
-                            state.dataType,
-                            state.fileName,
-                            state.startLine,
-                            state.startColumn);
+        if (!graph.stateRows.isEmpty()) {
+            for (const FsmStateRow& row : graph.stateRows) {
+                createChildItem(states,
+                                row.sectionDisplayName.isEmpty()
+                                    ? QStringLiteral("State")
+                                    : row.sectionDisplayName,
+                                row.state.symbolName,
+                                row.detailDisplayName,
+                                row.state.fileName,
+                                row.state.startLine,
+                                row.state.startColumn);
+            }
+        } else {
+            for (const sym_list::SymbolInfo& state : graph.states) {
+                createChildItem(states,
+                                QStringLiteral("State"),
+                                state.symbolName,
+                                state.dataType,
+                                state.fileName,
+                                state.startLine,
+                                state.startColumn);
+            }
         }
 
         QTreeWidgetItem* transitions = new QTreeWidgetItem(stateRegister);
+        const QString transitionsGroup =
+            graph.transitionsGroupDisplayName.isEmpty()
+                ? QStringLiteral("Transitions")
+                : graph.transitionsGroupDisplayName;
         transitions->setText(0, SemanticPanelUtils::countLabel(
-                                    QStringLiteral("Transitions"),
+                                    transitionsGroup,
                                     graph.transitions.size()));
         for (const FsmTransition& transition : graph.transitions) {
-            const QString detail = transition.condition.isEmpty()
-                ? transition.assignmentTarget
-                : QStringLiteral("%1 when %2")
-                      .arg(transition.assignmentTarget, transition.condition);
             createChildItem(transitions,
-                            transition.fromState,
+                            transition.sectionDisplayName.isEmpty()
+                                ? transition.fromState
+                                : transition.sectionDisplayName,
                             transition.toState,
-                            detail,
+                            transition.detailDisplayName.isEmpty()
+                                ? transition.assignmentTarget
+                                : transition.detailDisplayName,
                             graph.moduleSymbol.fileName,
                             transition.line,
                             1);

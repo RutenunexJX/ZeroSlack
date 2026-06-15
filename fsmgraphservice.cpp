@@ -39,6 +39,7 @@ void FsmGraphService::setSemanticIndex(SemanticIndex* semanticIndex)
 FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
 {
     FsmGraphReport report;
+    report.groupDisplayName = QStringLiteral("FSM Graphs");
     const sym_list::SymbolInfo moduleSymbol = resolveModule(query);
     if (moduleSymbol.symbolId < 0)
         return report;
@@ -53,6 +54,7 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
         graph.transitions = parseTransitions(moduleSymbol, stateRegister, graph.states);
         if (graph.states.isEmpty() && graph.transitions.isEmpty())
             continue;
+        fillDisplayMetadata(graph);
         report.graphs.append(graph);
     }
 
@@ -270,6 +272,7 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         const QRegularExpressionMatch conditionMatch = conditionExpression.match(code);
         if (conditionMatch.hasMatch())
             transition.condition = conditionMatch.captured(1).trimmed();
+        fillDisplayMetadata(transition);
         transitions.append(transition);
     }
 
@@ -302,6 +305,63 @@ QString FsmGraphService::stripLineComment(const QString& line)
     if (commentIndex < 0)
         return line;
     return line.left(commentIndex);
+}
+
+QList<FsmStateRow> FsmGraphService::stateRows(
+    const QList<sym_list::SymbolInfo>& states)
+{
+    QList<FsmStateRow> rows;
+    rows.reserve(states.size());
+    for (const sym_list::SymbolInfo& state : states) {
+        FsmStateRow row;
+        row.state = state;
+        row.sectionDisplayName = QStringLiteral("State");
+        row.detailDisplayName = stateDetailDisplayName(state);
+        rows.append(row);
+    }
+    return rows;
+}
+
+QString FsmGraphService::stateDetailDisplayName(
+    const sym_list::SymbolInfo& state)
+{
+    return state.dataType;
+}
+
+QString FsmGraphService::stateRegisterDetailDisplayName(
+    const FsmGraph& graph)
+{
+    if (graph.nextStateSignal.symbolId >= 0) {
+        return QStringLiteral("next %1")
+            .arg(graph.nextStateSignal.symbolName);
+    }
+    return QStringLiteral("state register");
+}
+
+QString FsmGraphService::transitionDetailDisplayName(
+    const FsmTransition& transition)
+{
+    if (transition.condition.isEmpty())
+        return transition.assignmentTarget;
+    return QStringLiteral("%1 when %2")
+        .arg(transition.assignmentTarget, transition.condition);
+}
+
+void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
+{
+    graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
+    graph.stateRegisterDetailDisplayName = stateRegisterDetailDisplayName(graph);
+    graph.statesGroupDisplayName = QStringLiteral("States");
+    graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
+    graph.stateRows = stateRows(graph.states);
+    for (FsmTransition& transition : graph.transitions)
+        fillDisplayMetadata(transition);
+}
+
+void FsmGraphService::fillDisplayMetadata(FsmTransition& transition)
+{
+    transition.sectionDisplayName = transition.fromState;
+    transition.detailDisplayName = transitionDetailDisplayName(transition);
 }
 
 void FsmGraphService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)

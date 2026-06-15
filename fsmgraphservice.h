@@ -19,6 +19,14 @@ struct FsmTransition {
     QString condition;
     QString assignmentTarget;
     int line = 0;
+    QString sectionDisplayName;
+    QString detailDisplayName;
+};
+
+struct FsmStateRow {
+    sym_list::SymbolInfo state = {};
+    QString sectionDisplayName;
+    QString detailDisplayName;
 };
 
 struct FsmGraph {
@@ -27,10 +35,16 @@ struct FsmGraph {
     sym_list::SymbolInfo nextStateSignal = {};
     QList<sym_list::SymbolInfo> states;
     QList<FsmTransition> transitions;
+    QList<FsmStateRow> stateRows;
+    QString stateRegisterSectionDisplayName;
+    QString stateRegisterDetailDisplayName;
+    QString statesGroupDisplayName;
+    QString transitionsGroupDisplayName;
 };
 
 struct FsmGraphReport {
     bool found = false;
+    QString groupDisplayName;
     QList<FsmGraph> graphs;
 };
 
@@ -70,6 +84,13 @@ private:
     static bool isInsideModule(const sym_list::SymbolInfo& symbol,
                                const sym_list::SymbolInfo& moduleSymbol);
     static QString stripLineComment(const QString& line);
+    static QList<FsmStateRow> stateRows(
+        const QList<sym_list::SymbolInfo>& states);
+    static QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
+    static QString stateRegisterDetailDisplayName(const FsmGraph& graph);
+    static QString transitionDetailDisplayName(const FsmTransition& transition);
+    static void fillDisplayMetadata(FsmGraph& graph);
+    static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
     static void sortTransitions(QList<FsmTransition>& transitions);
 };
