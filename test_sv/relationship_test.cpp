@@ -2997,6 +2997,8 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal journey found declaration", report.found, true);
     expectBool("signal journey declaration name",
                report.declaration.symbolName == QStringLiteral("data_q"), true);
+    expectBool("signal journey declaration display type",
+               !report.declarationTypeDisplayName.isEmpty(), true);
     expectBool("taxonomy recognizes signal journey declaration",
                SymbolTaxonomy::isSignalDeclaration(report.declaration.symbolType),
                true);
@@ -3010,17 +3012,26 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal journey assignment peer",
                !report.assignments.isEmpty()
                    && report.assignments.first().peerSymbol.symbolName
-                       == QStringLiteral("next_data"),
+                       == QStringLiteral("next_data")
+                   && report.assignments.first().directionDisplayName
+                       == QStringLiteral("incoming")
+                   && report.assignments.first().relationshipTypeDisplayName
+                       == QStringLiteral("Assigns To")
+                   && report.assignments.first().detailDisplayName
+                       == QStringLiteral("incoming Assigns To"),
                true);
     expectBool("signal journey read peer",
                !report.reads.isEmpty()
                    && report.reads.first().peerSymbol.symbolName
-                       == QStringLiteral("consumer"),
+                       == QStringLiteral("consumer")
+                   && report.reads.first().detailDisplayName
+                       == QStringLiteral("incoming Reads From"),
                true);
     expectBool("signal journey port peer",
                !report.portConnections.isEmpty()
                    && report.portConnections.first().peerSymbol.symbolName
-                       == QStringLiteral("u_stage.data_i"),
+                       == QStringLiteral("u_stage.data_i")
+                   && !report.portConnections.first().detailDisplayName.isEmpty(),
                true);
 }
 

@@ -339,16 +339,17 @@ void appendSignalJourneyItems(QTreeWidgetItem* parent,
     QTreeWidgetItem* group = new QTreeWidgetItem(parent);
     group->setText(0, SemanticPanelUtils::countLabel(section, items.size()));
     for (const SignalJourneyItem& item : items) {
-        const QString direction = item.outgoing
-            ? QStringLiteral("outgoing")
-            : QStringLiteral("incoming");
         createChildItem(group,
                         section,
                         item.peerSymbol.symbolName,
-                        QStringLiteral("%1 %2")
-                            .arg(direction,
-                                 SemanticPanelUtils::relationshipTypeText(
-                                     item.relationship.relationship.type)),
+                        item.detailDisplayName.isEmpty()
+                            ? QStringLiteral("%1 %2")
+                                  .arg(item.outgoing
+                                           ? QStringLiteral("outgoing")
+                                           : QStringLiteral("incoming"),
+                                       SemanticPanelUtils::relationshipTypeText(
+                                           item.relationship.relationship.type))
+                            : item.detailDisplayName,
                         item.peerSymbol.fileName,
                         item.peerSymbol.startLine,
                         item.peerSymbol.startColumn);
@@ -383,7 +384,9 @@ void appendSignalJourney(QTreeWidget* tree,
     createChildItem(group,
                     QStringLiteral("Declaration"),
                     report.declaration.symbolName,
-                    symbolTypeText(report.declaration.symbolType),
+                    report.declarationTypeDisplayName.isEmpty()
+                        ? symbolTypeText(report.declaration.symbolType)
+                        : report.declarationTypeDisplayName,
                     report.declaration.fileName,
                     report.declaration.startLine,
                     report.declaration.startColumn);

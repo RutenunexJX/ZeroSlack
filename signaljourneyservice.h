@@ -18,11 +18,15 @@ struct SignalJourneyItem {
     SemanticRelationshipResult relationship;
     sym_list::SymbolInfo peerSymbol = {};
     bool outgoing = false;
+    QString directionDisplayName;
+    QString relationshipTypeDisplayName;
+    QString detailDisplayName;
 };
 
 struct SignalJourneyReport {
     bool found = false;
     sym_list::SymbolInfo declaration = {};
+    QString declarationTypeDisplayName;
     QList<SignalJourneyItem> assignments;
     QList<SignalJourneyItem> reads;
     QList<SignalJourneyItem> portConnections;
@@ -53,6 +57,9 @@ private:
     QList<SignalJourneyItem> portConnectionItems(
         const sym_list::SymbolInfo& signal) const;
 
+    static QString directionDisplayName(bool outgoing);
+    static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
+    static void fillDisplayMetadata(SignalJourneyItem& item);
     static void sortItems(QList<SignalJourneyItem>& items);
 };
 

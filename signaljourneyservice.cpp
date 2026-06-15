@@ -12,6 +12,37 @@ sym_list::SymbolInfo missingSignalJourneySymbol()
     symbol.symbolId = -1;
     return symbol;
 }
+
+QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("Contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("References");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("Instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("Calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("Inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("Implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("Assigns To");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("Reads From");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("Clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("Resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("Generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("Constrains");
+    }
+    return QStringLiteral("Relationship");
+}
 }
 
 SignalJourneyService* SignalJourneyService::getInstance()
@@ -43,6 +74,7 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
 
     report.found = true;
     report.declaration = signal;
+    report.declarationTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(signal.symbolType);
     report.assignments = relationshipItems(
         signal,
         false,
@@ -104,6 +136,7 @@ QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
         item.peerSymbol = outgoing ? relationship.toSymbol : relationship.fromSymbol;
         if (item.peerSymbol.symbolId < 0)
             continue;
+        fillDisplayMetadata(item);
         items.append(item);
     }
     sortItems(items);
@@ -135,6 +168,7 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
             item.relationship = relationship;
             item.peerSymbol = peer;
             item.outgoing = outgoing;
+            fillDisplayMetadata(item);
             items.append(item);
         }
     };
@@ -142,6 +176,27 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
     appendDirection(true);
     sortItems(items);
     return items;
+}
+
+QString SignalJourneyService::directionDisplayName(bool outgoing)
+{
+    return outgoing ? QStringLiteral("outgoing") : QStringLiteral("incoming");
+}
+
+QString SignalJourneyService::relationshipTypeDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    return ::relationshipTypeDisplayName(type);
+}
+
+void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
+{
+    item.directionDisplayName = directionDisplayName(item.outgoing);
+    item.relationshipTypeDisplayName =
+        relationshipTypeDisplayName(item.relationship.relationship.type);
+    item.detailDisplayName = QStringLiteral("%1 %2")
+                                 .arg(item.directionDisplayName,
+                                      item.relationshipTypeDisplayName);
 }
 
 void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)
