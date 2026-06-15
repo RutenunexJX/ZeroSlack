@@ -822,6 +822,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotNavigationTarget.symbol.symbolId == stageId
                    && snapshotNavigationTarget.symbol.fileName == stagePath,
                true);
+    NavigationSymbolOutlineQuery snapshotOutlineQuery;
+    snapshotOutlineQuery.fileName = topPath;
+    const QList<SymbolOutlineGroup> snapshotOutlineGroups =
+        snapshotNavigationService.findSymbolOutline(snapshotOutlineQuery);
+    bool snapshotOutlineHasDisplayName = false;
+    for (const SymbolOutlineGroup& group : snapshotOutlineGroups) {
+        snapshotOutlineHasDisplayName =
+            snapshotOutlineHasDisplayName
+            || (group.symbolType == sym_list::sym_module
+                && group.displayName == QStringLiteral("Module")
+                && !group.symbols.isEmpty());
+    }
+    expectBool("snapshot navigation outline exposes display model",
+               snapshotOutlineHasDisplayName,
+               true);
     expectBool("semantic snapshot returns cached file content",
                snapshotIndex.getCachedFileContent(topPath) == contents.value(topPath), true);
     expectBool("semantic snapshot returns scope symbols",

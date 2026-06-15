@@ -103,8 +103,12 @@ void NavigationWidget::populateSymbolTree()
     for (const SymbolOutlineGroup& group : std::as_const(currentSymbolHierarchy)) {
         if (group.symbols.isEmpty()) continue;
 
+        const QString groupDisplayName = group.displayName.isEmpty()
+            ? getSymbolTypeDisplayName(group.symbolType)
+            : group.displayName;
+
         QTreeWidgetItem* typeItem = new QTreeWidgetItem(symbolTreeWidget);
-        typeItem->setText(0, QString("%1 (%2)").arg(getSymbolTypeDisplayName(group.symbolType)).arg(group.symbols.size()));
+        typeItem->setText(0, QString("%1 (%2)").arg(groupDisplayName).arg(group.symbols.size()));
         typeItem->setIcon(0, getSymbolIcon(group.symbolType));
         typeItem->setExpanded(true);
         typeItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
@@ -116,12 +120,12 @@ void NavigationWidget::populateSymbolTree()
                 continue;
             }
 
-            QTreeWidgetItem* symbolItem = createSymbolItem(symbol);
+            QTreeWidgetItem* symbolItem = createSymbolItem(symbol, groupDisplayName);
             typeItem->addChild(symbolItem);
             addedCount++;
         }
 
-        typeItem->setText(0, QString("%1 (%2)").arg(getSymbolTypeDisplayName(group.symbolType)).arg(addedCount));
+        typeItem->setText(0, QString("%1 (%2)").arg(groupDisplayName).arg(addedCount));
 
         if (typeItem->childCount() == 0)
             delete typeItem;
@@ -169,7 +173,9 @@ QTreeWidgetItem* NavigationWidget::createModuleItem(const QString& moduleName, c
     return item;
 }
 
-QTreeWidgetItem* NavigationWidget::createSymbolItem(const sym_list::SymbolInfo& symbol)
+QTreeWidgetItem* NavigationWidget::createSymbolItem(
+    const sym_list::SymbolInfo& symbol,
+    const QString& displayName)
 {
     QTreeWidgetItem* item = new QTreeWidgetItem();
     const int payloadId = nextSymbolItemPayloadId++;
@@ -179,7 +185,7 @@ QTreeWidgetItem* NavigationWidget::createSymbolItem(const sym_list::SymbolInfo& 
     item->setIcon(0, getSymbolIcon(symbol.symbolType));
     item->setData(0, Qt::UserRole, static_cast<int>(symbol.symbolType));
     item->setData(0, Qt::UserRole + 1, payloadId);
-    item->setToolTip(0, QString("%1: %2").arg(getSymbolTypeDisplayName(symbol.symbolType), symbol.symbolName));
+    item->setToolTip(0, QString("%1: %2").arg(displayName, symbol.symbolName));
 
     return item;
 }

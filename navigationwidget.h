@@ -95,7 +95,8 @@ private:
     void applySearchFilter();
     QTreeWidgetItem* createFileItem(const QString& filePath);
     QTreeWidgetItem* createModuleItem(const QString& moduleName, const QString& fileName);
-    QTreeWidgetItem* createSymbolItem(const sym_list::SymbolInfo& symbol);
+    QTreeWidgetItem* createSymbolItem(const sym_list::SymbolInfo& symbol,
+                                      const QString& displayName);
     QString getSymbolTypeDisplayName(sym_list::sym_type_e symbolType);
     QIcon getFileIcon(const QString& filePath);
     QIcon getSymbolIcon(sym_list::sym_type_e symbolType);

@@ -4,6 +4,19 @@
 
 #include <QSet>
 
+namespace {
+QString outlineDisplayName(const sym_list::SymbolInfo& symbol)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    QString label = SymbolTaxonomy::symbolTypeLabel(metadata.rawCollectorKind);
+    if (label.isEmpty() || label == QLatin1String("symbol"))
+        return QStringLiteral("Symbols");
+    label[0] = label.at(0).toUpper();
+    return label;
+}
+}
+
 std::unique_ptr<NavigationService> NavigationService::instance = nullptr;
 
 NavigationService* NavigationService::getInstance()
@@ -89,6 +102,7 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
         if (!outlineSymbols.isEmpty()) {
             SymbolOutlineGroup group;
             group.symbolType = symbolType;
+            group.displayName = outlineDisplayName(outlineSymbols.first());
             group.symbols = outlineSymbols;
             result.append(group);
         }
