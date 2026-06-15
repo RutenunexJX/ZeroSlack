@@ -1,5 +1,6 @@
 #include "smartrelationshipbuilder.h"
 #include "semanticindexsnapshot.h"
+#include "symboltaxonomy.h"
 
 #include <algorithm>
 
@@ -34,8 +35,10 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
     // Workspace-wide Slang symbol extraction can resolve cross-file instances even when
     // the single-file relationship parse treats the module type as unknown.
     for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
-        if (symbol.symbolType != sym_list::sym_inst || symbol.dataType.isEmpty())
+        if (!SymbolTaxonomy::isInstanceDeclaration(symbol.symbolType)
+            || symbol.dataType.isEmpty()) {
             continue;
+        }
         if (lineMin >= 0 && (symbol.startLine - 1 < lineMin || symbol.startLine - 1 > lineMax))
             continue;
 
@@ -149,7 +152,7 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
                 taskType = symbolDatabase->getSymbolById(taskId).symbolType;
         }
 
-        if (taskType != sym_list::sym_task && taskType != sym_list::sym_function)
+        if (!SymbolTaxonomy::isSubroutineDeclaration(taskType))
             continue;
 
         int ownerModuleId = getContainingModuleId(call.lineNumber, context);
@@ -208,7 +211,7 @@ int SmartRelationshipBuilder::getContainingModuleId(int lineNumber, const Analys
     int foundId = -1;
     int foundStart = -1;
     for (const sym_list::SymbolInfo& s : context.fileSymbols) {
-        if (s.symbolType == sym_list::sym_module
+        if (SymbolTaxonomy::isModuleDeclaration(s.symbolType)
             && s.startLine <= lineNumber
             && s.endLine >= lineNumber
             && (foundId < 0 || s.startLine > foundStart)) {

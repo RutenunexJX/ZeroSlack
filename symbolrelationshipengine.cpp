@@ -1,4 +1,5 @@
 #include "symbolrelationshipengine.h"
+#include "symboltaxonomy.h"
 #include "syminfo.h"
 #include <QCoreApplication>
 #include <QThread>
@@ -164,7 +165,7 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
     QList<sym_list::SymbolInfo> fileSymbols = symbols()->findSymbolsByFileName(fileName);
 
     for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
-        if (symbol.symbolType == sym_list::sym_module) {
+        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)) {
             int moduleId = symbol.symbolId;
             symbolsByFile[fileName].insert(moduleId);
 

@@ -1,4 +1,5 @@
 #include "smartrelationshipbuilder.h"
+#include "symboltaxonomy.h"
 
 #include <utility>
 
@@ -14,7 +15,8 @@ void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName,
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
         context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
 
-        if (symbol.symbolType == sym_list::sym_module && context.currentModuleId == -1) {
+        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
+            && context.currentModuleId == -1) {
             context.currentModuleName = symbol.symbolName;
             context.currentModuleId = symbol.symbolId;
         }
@@ -45,7 +47,8 @@ void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
         context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
 
-        if (symbol.symbolType == sym_list::sym_module && context.currentModuleId == -1) {
+        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
+            && context.currentModuleId == -1) {
             context.currentModuleName = symbol.symbolName;
             context.currentModuleId = symbol.symbolId;
         }
