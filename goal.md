@@ -50,24 +50,30 @@ UI Layer
 
 ### Phase B: Symbol Taxonomy And Source Role
 
-- Stabilize symbol meaning beyond raw `sym_type_e`.
-- Separate declaration kind, owner scope, visibility, source role, and usage role.
-- Give package, interface, interface instance, modport, typedef, parameter/localparam, enum, port, signal, member, and include/header files explicit rules.
-- Avoid scattered "this symbol type counts as definition/completion/type/global" checks.
+- Stabilize taxonomy/source-role helper rules first.
+- Keep `sym_type_e` as legacy/raw collector kind during Phase B.
+- Do not rush a broad `SymbolInfo` layout migration in Phase B.
+- Move product semantic policy into `SymbolTaxonomy`, source-role helpers, Query Services, or feature services.
 - This phase blocks broad RTL Insights expansion.
 
-### Phase C: Query Service And UI Data Flow
+### Phase C: Semantic Metadata, Query Service, And UI Data Flow
 
+- Introduce stable semantic metadata after Phase B helper rules are stable.
+- `SymbolInfo` may gain fields, or an equivalent metadata layer, for declaration kind, usage role, owner scope, visibility, source role, and raw collector kind.
+- Keep `sym_type_e` available as raw/legacy collector kind during migration.
+- Query Services and feature services should prefer stable semantic metadata over scattered raw enum checks.
 - UI should consume reports/models, not semantic internals.
 - CompletionService, DefinitionService, DiagnosticService, RelationshipService, and RTL Insights services should own query policy.
 - Coordinators route state and refreshes; they should not encode semantic feature rules.
 - Scheduler schedules and Analyzer executes analysis; neither owns product feature policy.
+- This phase should happen before broad Phase D RTL Insights expansion.
 
 ### Phase D: RTL Insights Expansion After The Base Is Stable
 
 - Continue FSM graph, Signal Journey, Module Brief, Clock/Reset Domain Map, Semantic Diff, and code/document links only after Phase A/B/C contracts are stable.
 - Use `test_sv/new` and similar real projects as first-class fixtures.
 - Add focused tests at service level first, then UI smoke coverage where needed.
+- Do not use Phase D to add feature-specific workarounds around weak semantic metadata.
 
 ## Architecture Rules
 
@@ -93,7 +99,9 @@ The foundation is healthy when:
 
 - feature reads use stable models, snapshots, Query Services, or feature services
 - stale workspace, open-document, and relationship analysis results cannot overwrite newer semantic snapshots
-- product logic is stable only when snapshot publication, symbol taxonomy/source role, query services, and UI data flow have clear contracts and tests
+- product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
+- `sym_type_e` should remain a raw compatibility field unless and until all consumers have migrated safely
+- RTL Insights expansion should not proceed broadly until stable semantic metadata and Query Service contracts are in place
 - UI panels render reports/models without owning semantic policy
 - scheduler, analyzer, project, document, and editor ownership boundaries stay clear
 - real fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, FSMs, diagnostics, relationship browsing, signal journeys, module briefs, semantic diff, and large-file response

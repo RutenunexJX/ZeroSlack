@@ -23,8 +23,10 @@ Thin UI consumers
 
 ## Latest Strategy
 
-- Current priority is semantic product-logic consolidation before more RTL feature expansion.
+- Current priority remains semantic product-logic consolidation before broad RTL feature expansion.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
+- Phase B stabilizes taxonomy/source-role helper rules; Phase C lands stable semantic metadata and Query Service/UI contracts.
+- `sym_type_e` remains raw collector compatibility during migration.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - Validate semantic behavior against `test_sv/new`.
 
