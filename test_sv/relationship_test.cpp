@@ -2731,11 +2731,23 @@ static void runModuleBriefServiceFixture()
     expectBool("taxonomy recognizes module brief port",
                SymbolTaxonomy::isPortDeclaration(symbols.at(2).symbolType),
                true);
+    expectBool("taxonomy groups module brief port",
+               SymbolTaxonomy::declarationGroup(symbols.at(2).symbolType)
+                   == SymbolTaxonomy::DeclarationGroup::Port,
+               true);
     expectBool("taxonomy recognizes module brief parameter",
                SymbolTaxonomy::isParameterDeclaration(symbols.at(1).symbolType),
                true);
+    expectBool("taxonomy groups module brief parameter",
+               SymbolTaxonomy::declarationGroup(symbols.at(1).symbolType)
+                   == SymbolTaxonomy::DeclarationGroup::Parameter,
+               true);
     expectBool("taxonomy recognizes module brief instance",
                SymbolTaxonomy::isInstanceDeclaration(symbols.at(5).symbolType),
+               true);
+    expectBool("taxonomy groups module brief instance",
+               SymbolTaxonomy::declarationGroup(symbols.at(5).symbolType)
+                   == SymbolTaxonomy::DeclarationGroup::Instance,
                true);
     expectInt("module brief port count", report.ports.size(), 3);
     expectInt("module brief parameter count", report.parameters.size(), 1);

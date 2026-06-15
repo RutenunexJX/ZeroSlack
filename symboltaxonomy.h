@@ -57,6 +57,14 @@ enum class SymbolVisibility {
     Member
 };
 
+enum class DeclarationGroup {
+    Unknown,
+    Port,
+    Parameter,
+    Instance,
+    Signal
+};
+
 enum class SymbolSearchIntent {
     Any,
     DefinitionCandidates,
@@ -68,6 +76,7 @@ enum class SymbolSearchIntent {
 };
 
 DeclarationKind declarationKind(sym_list::sym_type_e type);
+DeclarationGroup declarationGroup(sym_list::sym_type_e type);
 SymbolOwnerScope ownerScope(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {});

@@ -87,6 +87,19 @@ DeclarationKind declarationKind(sym_list::sym_type_e type)
     return DeclarationKind::Unknown;
 }
 
+DeclarationGroup declarationGroup(sym_list::sym_type_e type)
+{
+    if (isPortDeclaration(type))
+        return DeclarationGroup::Port;
+    if (isParameterDeclaration(type))
+        return DeclarationGroup::Parameter;
+    if (isInstanceDeclaration(type))
+        return DeclarationGroup::Instance;
+    if (isSignalDeclaration(type))
+        return DeclarationGroup::Signal;
+    return DeclarationGroup::Unknown;
+}
+
 SymbolOwnerScope ownerScope(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes)

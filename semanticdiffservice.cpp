@@ -230,25 +230,25 @@ bool SemanticDiffService::symbolCategory(
     sym_list::sym_type_e type,
     SemanticDiffSymbolCategory* category)
 {
-    if (SymbolTaxonomy::isPortDeclaration(type)) {
+    switch (SymbolTaxonomy::declarationGroup(type)) {
+    case SymbolTaxonomy::DeclarationGroup::Port:
         if (category)
             *category = SemanticDiffSymbolCategory::Port;
         return true;
-    }
-    if (SymbolTaxonomy::isParameterDeclaration(type)) {
+    case SymbolTaxonomy::DeclarationGroup::Parameter:
         if (category)
             *category = SemanticDiffSymbolCategory::Parameter;
         return true;
-    }
-    if (SymbolTaxonomy::isInstanceDeclaration(type)) {
+    case SymbolTaxonomy::DeclarationGroup::Instance:
         if (category)
             *category = SemanticDiffSymbolCategory::Instance;
         return true;
-    }
-    if (SymbolTaxonomy::isSignalDeclaration(type)) {
+    case SymbolTaxonomy::DeclarationGroup::Signal:
         if (category)
             *category = SemanticDiffSymbolCategory::Signal;
         return true;
+    case SymbolTaxonomy::DeclarationGroup::Unknown:
+        break;
     }
     return false;
 }
