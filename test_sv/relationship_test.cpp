@@ -2728,8 +2728,33 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief found module", report.found, true);
     expectBool("module brief subject name",
                report.moduleSymbol.symbolName == QStringLiteral("brief_top"), true);
+    const SymbolTaxonomy::SemanticMetadata moduleMetadata =
+        SymbolTaxonomy::semanticMetadata(report.moduleSymbol);
+    expectBool("semantic metadata keeps raw module kind",
+               moduleMetadata.rawCollectorKind == sym_list::sym_module,
+               true);
+    expectBool("semantic metadata classifies module declaration",
+               moduleMetadata.declarationKind
+                   == SymbolTaxonomy::DeclarationKind::Module,
+               true);
+    expectBool("semantic metadata marks module as global",
+               moduleMetadata.ownerScope == SymbolTaxonomy::SymbolOwnerScope::Global
+                   && moduleMetadata.visibility == SymbolTaxonomy::SymbolVisibility::Global,
+               true);
     expectBool("taxonomy recognizes module brief port",
                SymbolTaxonomy::isPortDeclaration(symbols.at(2).symbolType),
+               true);
+    const SymbolTaxonomy::SemanticMetadata portMetadata =
+        SymbolTaxonomy::semanticMetadata(symbols.at(2));
+    expectBool("semantic metadata classifies port declaration",
+               portMetadata.declarationKind
+                   == SymbolTaxonomy::DeclarationKind::Port,
+               true);
+    expectBool("semantic metadata keeps port as declaration usage",
+               portMetadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration,
+               true);
+    expectBool("semantic metadata classifies design source",
+               portMetadata.sourceRole == SymbolTaxonomy::SourceRole::DesignSource,
                true);
     expectBool("taxonomy groups module brief port",
                SymbolTaxonomy::declarationGroup(symbols.at(2).symbolType)

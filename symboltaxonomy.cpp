@@ -87,6 +87,41 @@ DeclarationKind declarationKind(sym_list::sym_type_e type)
     return DeclarationKind::Unknown;
 }
 
+SymbolUsageRole usageRole(sym_list::sym_type_e type)
+{
+    switch (declarationKind(type)) {
+    case DeclarationKind::Unknown:
+        return SymbolUsageRole::Unknown;
+    case DeclarationKind::Process:
+    case DeclarationKind::Generate:
+        return SymbolUsageRole::Process;
+    case DeclarationKind::Instance:
+        if (type == sym_list::sym_inst_pin)
+            return SymbolUsageRole::Reference;
+        return SymbolUsageRole::Declaration;
+    case DeclarationKind::Module:
+    case DeclarationKind::Interface:
+    case DeclarationKind::Package:
+    case DeclarationKind::Typedef:
+    case DeclarationKind::Enum:
+    case DeclarationKind::Parameter:
+    case DeclarationKind::Localparam:
+    case DeclarationKind::Port:
+    case DeclarationKind::Signal:
+    case DeclarationKind::Struct:
+    case DeclarationKind::StructVariable:
+    case DeclarationKind::StructMember:
+    case DeclarationKind::Modport:
+    case DeclarationKind::Task:
+    case DeclarationKind::Function:
+    case DeclarationKind::Macro:
+    case DeclarationKind::Constraint:
+    case DeclarationKind::User:
+        return SymbolUsageRole::Declaration;
+    }
+    return SymbolUsageRole::Unknown;
+}
+
 DeclarationGroup declarationGroup(sym_list::sym_type_e type)
 {
     if (isPortDeclaration(type))
@@ -98,6 +133,21 @@ DeclarationGroup declarationGroup(sym_list::sym_type_e type)
     if (isSignalDeclaration(type))
         return DeclarationGroup::Signal;
     return DeclarationGroup::Unknown;
+}
+
+SemanticMetadata semanticMetadata(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes)
+{
+    SemanticMetadata metadata;
+    metadata.declarationKind = declarationKind(symbol.symbolType);
+    metadata.usageRole = usageRole(symbol.symbolType);
+    metadata.ownerScope = ownerScope(symbol, packageScopes);
+    metadata.visibility = visibility(symbol, packageScopes);
+    metadata.sourceRole = sourceRoleForFileName(symbol.fileName);
+    metadata.rawCollectorKind = symbol.symbolType;
+    metadata.interfaceLikeOwner = isInterfaceLikeOwner(symbol.symbolType);
+    return metadata;
 }
 
 SymbolOwnerScope ownerScope(
@@ -175,6 +225,13 @@ bool isDefinitionCandidate(sym_list::sym_type_e type)
     default:
         return false;
     }
+}
+
+bool isDefinitionCandidate(const SemanticMetadata& metadata)
+{
+    if (metadata.usageRole != SymbolUsageRole::Declaration)
+        return false;
+    return isDefinitionCandidate(metadata.rawCollectorKind);
 }
 
 bool isGlobalDefinition(sym_list::sym_type_e type)
@@ -362,6 +419,11 @@ int definitionPriority(sym_list::sym_type_e type)
     case sym_list::sym_enum_value: return 7;
     default: return 10;
     }
+}
+
+int definitionPriority(const SemanticMetadata& metadata)
+{
+    return definitionPriority(metadata.rawCollectorKind);
 }
 
 QList<sym_list::sym_type_e> outlineSymbolTypes()

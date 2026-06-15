@@ -29,12 +29,16 @@ bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
     if (symbol.symbolName != searchWord)
         return false;
 
-    return SymbolTaxonomy::isDefinitionCandidate(symbol.symbolType);
+    return SymbolTaxonomy::isDefinitionCandidate(
+        SymbolTaxonomy::semanticMetadata(symbol));
 }
 
 int semanticDefinitionTypePriority(sym_list::sym_type_e type)
 {
-    return SymbolTaxonomy::definitionPriority(type);
+    sym_list::SymbolInfo symbol;
+    symbol.symbolType = type;
+    return SymbolTaxonomy::definitionPriority(
+        SymbolTaxonomy::semanticMetadata(symbol));
 }
 
 bool semanticDefinitionSkipForStructMemberType(
@@ -43,7 +47,10 @@ bool semanticDefinitionSkipForStructMemberType(
 {
     if (query.structTypeNameForMember.isEmpty())
         return false;
-    return SymbolTaxonomy::isMemberScopeDefinitionCandidate(symbol.symbolType)
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    return (metadata.ownerScope == SymbolTaxonomy::SymbolOwnerScope::Interface
+            || metadata.ownerScope == SymbolTaxonomy::SymbolOwnerScope::Struct)
         && symbol.moduleScope != query.structTypeNameForMember;
 }
 

@@ -57,6 +57,13 @@ enum class SymbolVisibility {
     Member
 };
 
+enum class SymbolUsageRole {
+    Unknown,
+    Declaration,
+    Reference,
+    Process
+};
+
 enum class DeclarationGroup {
     Unknown,
     Port,
@@ -75,7 +82,18 @@ enum class SymbolSearchIntent {
     SubroutineDeclarations
 };
 
+struct SemanticMetadata {
+    DeclarationKind declarationKind = DeclarationKind::Unknown;
+    SymbolUsageRole usageRole = SymbolUsageRole::Unknown;
+    SymbolOwnerScope ownerScope = SymbolOwnerScope::Unknown;
+    SymbolVisibility visibility = SymbolVisibility::Unknown;
+    SourceRole sourceRole = SourceRole::Unknown;
+    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
+    bool interfaceLikeOwner = false;
+};
+
 DeclarationKind declarationKind(sym_list::sym_type_e type);
+SymbolUsageRole usageRole(sym_list::sym_type_e type);
 DeclarationGroup declarationGroup(sym_list::sym_type_e type);
 SymbolOwnerScope ownerScope(
     const sym_list::SymbolInfo& symbol,
@@ -83,8 +101,12 @@ SymbolOwnerScope ownerScope(
 SymbolVisibility visibility(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {});
+SemanticMetadata semanticMetadata(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes = {});
 
 bool isDefinitionCandidate(sym_list::sym_type_e type);
+bool isDefinitionCandidate(const SemanticMetadata& metadata);
 bool isGlobalDefinition(sym_list::sym_type_e type);
 bool isPackageVisibleDefinition(sym_list::sym_type_e type);
 bool isInterfaceLikeOwner(sym_list::sym_type_e type);
@@ -111,6 +133,7 @@ bool isPackageScopeVisibleCompletion(
     const QSet<QString>& packageScopes);
 bool isOutlineSymbol(sym_list::sym_type_e type);
 int definitionPriority(sym_list::sym_type_e type);
+int definitionPriority(const SemanticMetadata& metadata);
 QList<sym_list::sym_type_e> outlineSymbolTypes();
 QString symbolTypeLabel(sym_list::sym_type_e type);
 bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent);

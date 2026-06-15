@@ -74,7 +74,8 @@ bool DefinitionService::isDefinition(const sym_list::SymbolInfo& symbol,
     if (symbol.symbolName != searchWord)
         return false;
 
-    return SymbolTaxonomy::isDefinitionCandidate(symbol.symbolType);
+    return SymbolTaxonomy::isDefinitionCandidate(
+        SymbolTaxonomy::semanticMetadata(symbol));
 }
 
 SemanticIndex* DefinitionService::semanticIndex() const
@@ -109,8 +110,10 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
 
     const QList<sym_list::SymbolInfo> candidates = semanticIndex()->getSymbols();
     for (const sym_list::SymbolInfo& symbol : candidates) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(symbol);
         if (symbol.symbolName != variableName
-            || !SymbolTaxonomy::isInterfaceLikeOwner(symbol.symbolType))
+            || !metadata.interfaceLikeOwner)
             continue;
         if (!query.moduleName.isEmpty()
             && !symbol.moduleScope.isEmpty()
