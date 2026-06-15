@@ -19,6 +19,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
             item.text = keyword;
             item.type = KeywordCompletion;
             item.score = completionService->completionItemScore(keyword, prefix);
+            fillDisplayMetadata(item);
             completions.append(item);
         }
     } else if (type == SymbolCompletion) {
@@ -32,6 +33,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.description =
                     completionService->symbolTypeDescription(symbols[i].symbolType);
 
+                fillDisplayMetadata(item);
                 completions.append(item);
             }
         } else {
@@ -44,6 +46,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.description =
                     completionService->symbolTypeDescription(symbol.symbolType);
 
+                fillDisplayMetadata(item);
                 completions.append(item);
             }
         }
@@ -72,6 +75,7 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
     headerItem.type = CommandCompletion;
     headerItem.description = "Command Interface";
     headerItem.score = 1000;
+    fillDisplayMetadata(headerItem);
     completions.append(headerItem);
 
     CompletionService* completionService = CompletionService::getInstance();
@@ -83,6 +87,7 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
             item.type = CommandCompletion;
             item.description = QString("Execute %1 command").arg(command);
             item.score = completionService->completionItemScore(command, prefix);
+            fillDisplayMetadata(item);
             completions.append(item);
             matchCount++;
         }
@@ -94,6 +99,7 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
         noMatchItem.type = CommandCompletion;
         noMatchItem.description = "No commands match your input";
         noMatchItem.score = 0;
+        fillDisplayMetadata(noMatchItem);
         completions.append(noMatchItem);
     }
 
@@ -121,6 +127,7 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
     descItem.description = "Command Mode";
     descItem.score = 1000;
     descItem.defaultValue = presentation.defaultValue;
+    fillDisplayMetadata(descItem);
     completions.append(descItem);
 
     CompletionItem defaultItem;
@@ -131,6 +138,7 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         QString("Default %1 declaration").arg(presentation.typeDescription.split(' ').value(0));
     defaultItem.defaultValue = presentation.defaultValue;
     defaultItem.score = 999;  // High score but less than header.
+    fillDisplayMetadata(defaultItem);
     completions.append(defaultItem);
 
     QSet<QString> addedItems;
@@ -154,6 +162,7 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         item.defaultValue = serviceItem.defaultValue;
         item.score = serviceItem.score;
 
+        fillDisplayMetadata(item);
         completions.append(item);
     }
 

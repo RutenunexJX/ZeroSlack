@@ -17,13 +17,29 @@ public:
         CommandCompletion
     };
 
+    enum CompletionVisualKind {
+        KeywordVisual,
+        SymbolVisual,
+        SymbolHeaderVisual,
+        SymbolDefaultVisual,
+        CommandVisual,
+        CommandHeaderVisual,
+        CommandEmptyVisual
+    };
+
     struct CompletionItem {
         QString text;
         QString description;
-        CompletionType type;
-        sym_list::sym_type_e symbolType;
+        QString displayText;
+        QString toolTipText;
+        CompletionType type = KeywordCompletion;
+        CompletionVisualKind visualKind = KeywordVisual;
+        sym_list::sym_type_e symbolType = sym_list::sym_user;
         QString defaultValue;
-        int score;
+        int score = 0;
+        int rowHeight = 18;
+        bool selectable = true;
+        bool emphasized = false;
     };
 
     explicit CompletionModel(QObject *parent = nullptr);
@@ -57,6 +73,7 @@ private:
 
     static const int MaxCompletionItems = 500;
 
+    static void fillDisplayMetadata(CompletionItem &item);
     void sortCompletionsByScore();
     bool isSelectableItem(const CompletionItem &item) const;
 };

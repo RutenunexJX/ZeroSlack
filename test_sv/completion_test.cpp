@@ -216,6 +216,36 @@ int main(int argc, char** argv) {
     expectEq("CompletionModel symbol desc",
              modelScoring.getItem(modelScoring.index(2, 0)).description,
              QStringLiteral("logic"));
+    expectEq("CompletionModel symbol display",
+             modelScoring.getItem(modelScoring.index(2, 0)).displayText,
+             QStringLiteral("always_ff (logic)"));
+    expectBool("CompletionModel header selectable",
+               modelScoring.getItem(modelScoring.index(0, 0)).selectable,
+               false);
+    expectBool("CompletionModel default metadata",
+               modelScoring.getItem(modelScoring.index(1, 0)).emphasized
+                   && modelScoring.getItem(modelScoring.index(1, 0))
+                          .toolTipText.contains(QStringLiteral("default value")),
+               true);
+    expectEq("CompletionModel display role",
+             modelScoring.data(modelScoring.index(2, 0), Qt::DisplayRole).toString(),
+             QStringLiteral("always_ff (logic)"));
+    CompletionModel commandDisplayModel;
+    commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
+                                                 QStringLiteral("s"));
+    expectEq("CompletionModel command display",
+             commandDisplayModel.getItem(commandDisplayModel.index(1, 0)).displayText,
+             QStringLiteral("save - Execute save command"));
+    CompletionModel noCommandModel;
+    noCommandModel.updateCommandCompletions({QStringLiteral("save")},
+                                            QStringLiteral("zz"));
+    expectBool("CompletionModel no command selectable",
+               !noCommandModel.getItem(noCommandModel.index(1, 0)).selectable
+                   && noCommandModel.data(noCommandModel.index(1, 0),
+                                          Qt::DisplayRole)
+                          .toString()
+                       == QStringLiteral("No matching commands - No commands match your input"),
+               true);
     expectEq("CompletionService interface desc",
              CompletionService::getInstance()->symbolTypeDescription(
                  sym_list::sym_interface),
