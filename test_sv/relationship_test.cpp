@@ -2126,6 +2126,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == QStringLiteral("Outgoing")
                    && !relationshipReport.relationships.first().typeDisplayName.isEmpty(),
                true);
+    expectBool("relationship report row display metadata",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().peerSymbolDisplayName
+                       == QStringLiteral("rel_stage")
+                   && relationshipReport.relationships.first().peerFileDisplayName
+                       == QFileInfo(stagePath).fileName()
+                   && !relationshipReport.relationships.first()
+                          .peerLineDisplayName.isEmpty(),
+               true);
     expectBool("relationship report subject role",
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().subjectRole
@@ -2286,6 +2295,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !incomingStageReport.relationships.isEmpty()
                    && incomingStageReport.relationships.first().explanation
                        == QStringLiteral("rel_top instantiates rel_stage"),
+               true);
+    expectBool("relationship report incoming row metadata",
+               !incomingStageReport.relationships.isEmpty()
+                   && incomingStageReport.relationships.first().peerSymbolDisplayName
+                       == QStringLiteral("rel_top")
+                   && incomingStageReport.relationships.first().peerFileDisplayName
+                       == QFileInfo(topPath).fileName()
+                   && !incomingStageReport.relationships.first()
+                          .peerLineDisplayName.isEmpty(),
                true);
     expectBool("relationship report incoming subject role",
                !incomingStageReport.relationships.isEmpty()

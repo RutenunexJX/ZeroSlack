@@ -57,6 +57,9 @@ struct DirectedRelationshipResult {
     QString subjectRole;
     QString peerRole;
     QString explanation;
+    QString peerSymbolDisplayName;
+    QString peerFileDisplayName;
+    QString peerLineDisplayName;
 };
 
 struct RelationshipTypeGroup {

@@ -2,6 +2,8 @@
 
 #include "relationshipserviceordering.h"
 
+#include <QFileInfo>
+
 std::unique_ptr<RelationshipService> RelationshipService::instance = nullptr;
 
 using relationship_service_ordering::sortRelationshipResults;
@@ -113,6 +115,19 @@ QString symbolDisplayName(const sym_list::SymbolInfo& symbol)
         ? QStringLiteral("<unnamed>")
         : symbol.symbolName;
 }
+
+QString fileDisplayName(const QString& fileName)
+{
+    QString displayName = QFileInfo(fileName).fileName();
+    if (displayName.isEmpty())
+        displayName = fileName;
+    return displayName;
+}
+
+QString lineDisplayName(int line)
+{
+    return QString::number(line);
+}
 }
 
 RelationshipService* RelationshipService::getInstance()
@@ -198,6 +213,9 @@ RelationshipReport RelationshipService::findRelationshipReport(
             directed.directionDisplayName = relationshipDirectionDisplayName(direction);
             directed.typeDisplayName =
                 relationshipTypeDisplayName(relationship.relationship.type);
+            directed.peerSymbolDisplayName = symbolDisplayName(directed.peerSymbol);
+            directed.peerFileDisplayName = fileDisplayName(directed.peerSymbol.fileName);
+            directed.peerLineDisplayName = lineDisplayName(directed.peerSymbol.startLine);
             const bool subjectIsSource =
                 direction == DirectedRelationshipResult::Outgoing;
             directed.subjectRole =

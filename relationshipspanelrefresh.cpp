@@ -3,8 +3,6 @@
 #include "relationshipservice.h"
 #include "semanticpanelutils.h"
 
-#include <QFileInfo>
-
 namespace {
 
 QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
@@ -14,9 +12,15 @@ QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
     const sym_list::SymbolInfo& symbol = relationship.peerSymbol;
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, direction);
-    item->setText(1, symbol.symbolName);
-    item->setText(2, QFileInfo(symbol.fileName).fileName());
-    item->setText(3, QString::number(symbol.startLine));
+    item->setText(1, relationship.peerSymbolDisplayName.isEmpty()
+                         ? symbol.symbolName
+                         : relationship.peerSymbolDisplayName);
+    item->setText(2, relationship.peerFileDisplayName.isEmpty()
+                         ? symbol.fileName
+                         : relationship.peerFileDisplayName);
+    item->setText(3, relationship.peerLineDisplayName.isEmpty()
+                         ? QString::number(symbol.startLine)
+                         : relationship.peerLineDisplayName);
     item->setText(4, relationship.typeDisplayName.isEmpty()
                          ? SemanticPanelUtils::relationshipTypeText(
                                relationship.relationship.relationship.type)
