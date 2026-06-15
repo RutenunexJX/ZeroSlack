@@ -199,8 +199,9 @@ void ReferencesPanelCoordinator::refresh()
 
         for (const ReferenceTypeGroup& typeGroupReport : fileGroupReport.typeGroups) {
             auto* typeGroup = new QTreeWidgetItem(fileGroup);
-            const QString typeText =
-                SemanticPanelUtils::relationshipTypeText(typeGroupReport.type);
+            const QString typeText = typeGroupReport.displayName.isEmpty()
+                ? SemanticPanelUtils::relationshipTypeText(typeGroupReport.type)
+                : typeGroupReport.displayName;
             typeGroup->setText(3, SemanticPanelUtils::countLabel(typeText,
                                                                  typeGroupReport.count));
             for (const ReferenceResult& reference : typeGroupReport.references)

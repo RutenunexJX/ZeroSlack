@@ -1040,6 +1040,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .type == SymbolRelationshipEngine::INSTANTIATES
                    && snapshotReferenceReport.fileGroups.first()
                           .typeGroups.first()
+                          .displayName == QStringLiteral("Instantiates")
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
                           .count == 1,
                true);
     expectBool("snapshot reference report keeps grouped symbols",
@@ -2399,6 +2402,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : stageReferenceReport.fileGroups.first().typeGroups.size(),
               1);
+    expectBool("reference report type group display name",
+               !stageReferenceReport.fileGroups.isEmpty()
+                   && !stageReferenceReport.fileGroups.first().typeGroups.isEmpty()
+                   && stageReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .displayName == QStringLiteral("Instantiates"),
+               true);
     expectInt("reference report grouped result count",
               stageReferenceReport.fileGroups.isEmpty()
                   || stageReferenceReport.fileGroups.first().typeGroups.isEmpty()

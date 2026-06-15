@@ -29,6 +29,37 @@ bool referenceLocationLess(const sym_list::SymbolInfo& lhs,
         return lhs.startColumn < rhs.startColumn;
     return QString::compare(lhs.symbolName, rhs.symbolName, Qt::CaseInsensitive) < 0;
 }
+
+QString referenceTypeDisplayName(SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("Contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("References");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("Instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("Calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("Inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("Implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("Assigns To");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("Reads From");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("Clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("Resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("Generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("Constrains");
+    }
+    return QStringLiteral("Relationship");
+}
 }
 
 ReferenceService* ReferenceService::getInstance()
@@ -124,6 +155,7 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
         if (!typeGroupIndexes[fileKey].contains(type)) {
             ReferenceTypeGroup typeGroup;
             typeGroup.type = type;
+            typeGroup.displayName = referenceTypeDisplayName(type);
             typeGroupIndexes[fileKey].insert(type, fileGroup.typeGroups.size());
             fileGroup.typeGroups.append(typeGroup);
         }

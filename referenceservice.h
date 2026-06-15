@@ -43,6 +43,7 @@ struct ReferenceResult {
 
 struct ReferenceTypeGroup {
     SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
+    QString displayName;
     QList<ReferenceResult> references;
     int count = 0;
 };
