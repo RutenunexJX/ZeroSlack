@@ -16,18 +16,10 @@ QTreeWidgetItem* createReferenceItem(QTreeWidgetItem* parent,
 {
     const sym_list::SymbolInfo& source = reference.referencingSymbol;
     auto* item = new QTreeWidgetItem(parent);
-    item->setText(0, reference.symbolDisplayName.isEmpty()
-                         ? source.symbolName
-                         : reference.symbolDisplayName);
-    item->setText(1, reference.fileDisplayName.isEmpty()
-                         ? source.fileName
-                         : reference.fileDisplayName);
-    item->setText(2, reference.lineDisplayName.isEmpty()
-                         ? QString::number(source.startLine)
-                         : reference.lineDisplayName);
-    item->setText(3, reference.relationshipTypeDisplayName.isEmpty()
-                         ? QStringLiteral("Relationship")
-                         : reference.relationshipTypeDisplayName);
+    item->setText(0, reference.symbolDisplayName);
+    item->setText(1, reference.fileDisplayName);
+    item->setText(2, reference.lineDisplayName);
+    item->setText(3, reference.relationshipTypeDisplayName);
     item->setToolTip(1, source.fileName);
     item->setData(0, Qt::UserRole, source.fileName);
     item->setData(0, Qt::UserRole + 1, source.startLine);
@@ -205,10 +197,7 @@ void ReferencesPanelCoordinator::refresh()
 
         for (const ReferenceTypeGroup& typeGroupReport : fileGroupReport.typeGroups) {
             auto* typeGroup = new QTreeWidgetItem(fileGroup);
-            const QString typeText = typeGroupReport.displayName.isEmpty()
-                ? SemanticPanelUtils::relationshipTypeText(typeGroupReport.type)
-                : typeGroupReport.displayName;
-            typeGroup->setText(3, SemanticPanelUtils::countLabel(typeText,
+            typeGroup->setText(3, SemanticPanelUtils::countLabel(typeGroupReport.displayName,
                                                                  typeGroupReport.count));
             for (const ReferenceResult& reference : typeGroupReport.references)
                 createReferenceItem(typeGroup, reference);
