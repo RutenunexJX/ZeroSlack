@@ -96,6 +96,7 @@ bool isPackageDeclaration(const sym_list::SymbolInfo& symbol);
 bool isPortDeclaration(sym_list::sym_type_e type);
 bool isParameterDeclaration(sym_list::sym_type_e type);
 bool isSignalDeclaration(sym_list::sym_type_e type);
+bool isLogicDeclaration(sym_list::sym_type_e type);
 bool isInstanceDeclaration(sym_list::sym_type_e type);
 bool isPortConnectionPeer(sym_list::sym_type_e type);
 bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type);

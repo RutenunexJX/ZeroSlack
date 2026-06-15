@@ -1,5 +1,7 @@
 #include "scopebandservice.h"
 
+#include "symboltaxonomy.h"
+
 std::unique_ptr<ScopeBandService> ScopeBandService::instance = nullptr;
 
 ScopeBandService* ScopeBandService::getInstance()
@@ -30,13 +32,13 @@ ScopeBandReport ScopeBandService::scopeBands(const ScopeBandQuery& query) const
     SemanticIndex* semantic = semanticIndex();
     const QList<sym_list::SymbolInfo> symbols = semantic->getSymbols(query.fileName);
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolType == sym_list::sym_module) {
+        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)) {
             if (!semantic->isValidModuleName(symbol.symbolName))
                 continue;
             const int endLine = semantic->findEndModuleLine(query.fileName, symbol);
             if (endLine >= 0)
                 report.modules.append({symbol, endLine});
-        } else if (symbol.symbolType == sym_list::sym_logic) {
+        } else if (SymbolTaxonomy::isLogicDeclaration(symbol.symbolType)) {
             const int endLine = symbol.endLine < symbol.startLine
                 ? symbol.startLine
                 : symbol.endLine;

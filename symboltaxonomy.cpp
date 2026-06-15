@@ -261,6 +261,11 @@ bool isSignalDeclaration(sym_list::sym_type_e type)
         || type == sym_list::sym_enum_var;
 }
 
+bool isLogicDeclaration(sym_list::sym_type_e type)
+{
+    return type == sym_list::sym_logic;
+}
+
 bool isInstanceDeclaration(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_inst;
