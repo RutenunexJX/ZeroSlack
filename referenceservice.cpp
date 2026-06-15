@@ -141,9 +141,8 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
             ReferenceFileGroup fileGroup;
             fileGroup.fileName = reference.referencingSymbol.fileName;
             fileGroup.fileKey = fileKey;
-            fileGroup.displayName = QFileInfo(reference.referencingSymbol.fileName).fileName();
-            if (fileGroup.displayName.isEmpty())
-                fileGroup.displayName = reference.referencingSymbol.fileName;
+            fileGroup.displayName =
+                referenceFileDisplayName(reference.referencingSymbol.fileName);
             fileGroupIndexes.insert(fileKey, report.fileGroups.size());
             report.fileGroups.append(fileGroup);
         }
@@ -253,5 +252,23 @@ ReferenceResult ReferenceService::toReferenceResult(
     result.relationship = relationship;
     result.referencingSymbol = relationship.fromSymbol;
     result.referencedSymbol = relationship.toSymbol;
+    result.symbolDisplayName = relationship.fromSymbol.symbolName;
+    result.fileDisplayName = referenceFileDisplayName(relationship.fromSymbol.fileName);
+    result.lineDisplayName = referenceLineDisplayName(relationship.fromSymbol.startLine);
+    result.relationshipTypeDisplayName =
+        referenceTypeDisplayName(relationship.relationship.type);
     return result;
+}
+
+QString ReferenceService::referenceFileDisplayName(const QString& fileName)
+{
+    QString displayName = QFileInfo(fileName).fileName();
+    if (displayName.isEmpty())
+        displayName = fileName;
+    return displayName;
+}
+
+QString ReferenceService::referenceLineDisplayName(int line)
+{
+    return QString::number(line);
 }

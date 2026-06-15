@@ -39,6 +39,10 @@ struct ReferenceResult {
     RelationshipResult relationship;
     sym_list::SymbolInfo referencingSymbol;
     sym_list::SymbolInfo referencedSymbol;
+    QString symbolDisplayName;
+    QString fileDisplayName;
+    QString lineDisplayName;
+    QString relationshipTypeDisplayName;
 };
 
 struct ReferenceTypeGroup {
@@ -93,6 +97,8 @@ private:
         const ReferenceQuery& query) const;
     bool scopeMatches(const ReferenceQuery& query, const sym_list::SymbolInfo& symbol) const;
     ReferenceResult toReferenceResult(const RelationshipResult& relationship) const;
+    static QString referenceFileDisplayName(const QString& fileName);
+    static QString referenceLineDisplayName(int line);
 };
 
 #endif // REFERENCESERVICE_H

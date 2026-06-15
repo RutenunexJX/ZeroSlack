@@ -2522,6 +2522,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .typeGroups.first()
                           .displayName == QStringLiteral("Instantiates"),
                true);
+    expectBool("reference report row display metadata",
+               !stageReferenceReport.references.isEmpty()
+                   && stageReferenceReport.references.first().symbolDisplayName
+                       == QStringLiteral("rel_top")
+                   && stageReferenceReport.references.first().fileDisplayName
+                       == QFileInfo(topPath).fileName()
+                   && !stageReferenceReport.references.first().lineDisplayName.isEmpty()
+                   && stageReferenceReport.references.first()
+                          .relationshipTypeDisplayName
+                       == QStringLiteral("Instantiates"),
+               true);
     expectInt("reference report grouped result count",
               stageReferenceReport.fileGroups.isEmpty()
                   || stageReferenceReport.fileGroups.first().typeGroups.isEmpty()

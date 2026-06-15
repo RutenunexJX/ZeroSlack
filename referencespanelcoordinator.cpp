@@ -3,7 +3,6 @@
 #include "referenceservice.h"
 #include "semanticpanelutils.h"
 
-#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QVBoxLayout>
@@ -17,11 +16,18 @@ QTreeWidgetItem* createReferenceItem(QTreeWidgetItem* parent,
 {
     const sym_list::SymbolInfo& source = reference.referencingSymbol;
     auto* item = new QTreeWidgetItem(parent);
-    item->setText(0, source.symbolName);
-    item->setText(1, QFileInfo(source.fileName).fileName());
-    item->setText(2, QString::number(source.startLine));
-    item->setText(3, SemanticPanelUtils::relationshipTypeText(
-                         reference.relationship.relationship.type));
+    item->setText(0, reference.symbolDisplayName.isEmpty()
+                         ? source.symbolName
+                         : reference.symbolDisplayName);
+    item->setText(1, reference.fileDisplayName.isEmpty()
+                         ? source.fileName
+                         : reference.fileDisplayName);
+    item->setText(2, reference.lineDisplayName.isEmpty()
+                         ? QString::number(source.startLine)
+                         : reference.lineDisplayName);
+    item->setText(3, reference.relationshipTypeDisplayName.isEmpty()
+                         ? QStringLiteral("Relationship")
+                         : reference.relationshipTypeDisplayName);
     item->setToolTip(1, source.fileName);
     item->setData(0, Qt::UserRole, source.fileName);
     item->setData(0, Qt::UserRole + 1, source.startLine);
