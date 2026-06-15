@@ -407,6 +407,18 @@ QString symbolTypeLabel(sym_list::sym_type_e type)
     case DeclarationKind::Localparam:
         return QStringLiteral("localparam");
     case DeclarationKind::Port:
+        if (type == sym_list::sym_port_input)
+            return QStringLiteral("input");
+        if (type == sym_list::sym_port_output)
+            return QStringLiteral("output");
+        if (type == sym_list::sym_port_inout)
+            return QStringLiteral("inout");
+        if (type == sym_list::sym_port_ref)
+            return QStringLiteral("ref");
+        if (type == sym_list::sym_port_interface)
+            return QStringLiteral("interface port");
+        if (type == sym_list::sym_port_interface_modport)
+            return QStringLiteral("modport port");
         return QStringLiteral("port");
     case DeclarationKind::Signal:
         if (type == sym_list::sym_reg)

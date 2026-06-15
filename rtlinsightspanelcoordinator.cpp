@@ -6,6 +6,7 @@
 #include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
 #include "signaljourneyservice.h"
+#include "symboltaxonomy.h"
 
 #include <QFileInfo>
 #include <QHeaderView>
@@ -17,33 +18,7 @@ namespace {
 
 QString symbolTypeText(sym_list::sym_type_e type)
 {
-    switch (type) {
-    case sym_list::sym_port_input:
-        return QStringLiteral("input");
-    case sym_list::sym_port_output:
-        return QStringLiteral("output");
-    case sym_list::sym_port_inout:
-        return QStringLiteral("inout");
-    case sym_list::sym_parameter:
-    case sym_list::sym_module_parameter:
-        return QStringLiteral("parameter");
-    case sym_list::sym_localparam:
-        return QStringLiteral("localparam");
-    case sym_list::sym_inst:
-        return QStringLiteral("instance");
-    case sym_list::sym_logic:
-        return QStringLiteral("logic");
-    case sym_list::sym_reg:
-        return QStringLiteral("reg");
-    case sym_list::sym_wire:
-        return QStringLiteral("wire");
-    case sym_list::sym_enum_var:
-        return QStringLiteral("enum variable");
-    case sym_list::sym_enum_value:
-        return QStringLiteral("enum value");
-    default:
-        return QStringLiteral("symbol");
-    }
+    return SymbolTaxonomy::symbolTypeLabel(type);
 }
 
 QString diagnosticSeverityText(SemanticDiagnostic::Severity severity)
