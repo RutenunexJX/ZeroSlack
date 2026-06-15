@@ -43,9 +43,23 @@ inline bool internalCompletionSymbolType(sym_list::sym_type_e type)
     return SymbolTaxonomy::isInternalCompletionCandidate(type);
 }
 
+inline bool internalCompletionSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    return SymbolTaxonomy::isInternalCompletionCandidate(
+        SymbolTaxonomy::semanticMetadata(symbol));
+}
+
 inline bool globalCompletionSymbolType(sym_list::sym_type_e type)
 {
     return SymbolTaxonomy::isGlobalCompletionCandidate(type);
+}
+
+inline bool globalCompletionSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    return SymbolTaxonomy::isGlobalCompletionCandidate(
+        SymbolTaxonomy::semanticMetadata(symbol));
 }
 
 inline bool commandGlobalCompletionSymbolType(sym_list::sym_type_e type)
@@ -56,6 +70,12 @@ inline bool commandGlobalCompletionSymbolType(sym_list::sym_type_e type)
 inline bool globalSymbolInfoType(sym_list::sym_type_e type)
 {
     return SymbolTaxonomy::isGlobalSymbolInfoType(type);
+}
+
+inline bool globalSymbolInfoMetadata(
+    const SymbolTaxonomy::SemanticMetadata& metadata)
+{
+    return SymbolTaxonomy::isGlobalSymbolInfoType(metadata);
 }
 
 inline bool alwaysGlobalSymbolInfoType(sym_list::sym_type_e type)

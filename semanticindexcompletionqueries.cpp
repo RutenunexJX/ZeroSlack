@@ -17,7 +17,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleCompletionSymbols(
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (symbol.moduleScope != moduleName
-            || !internalCompletionSymbolType(symbol.symbolType)
+            || !internalCompletionSymbol(symbol)
             || !semanticCompletionNameMatches(symbol.symbolName, prefix)) {
             continue;
         }
@@ -40,7 +40,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getGlobalCompletionSymbols(
     QSet<QString> seenNames;
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!globalCompletionSymbolType(symbol.symbolType)
+        if (!globalCompletionSymbol(symbol)
             || !semanticCompletionNameMatches(symbol.symbolName, prefix)) {
             continue;
         }

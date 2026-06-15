@@ -19,12 +19,14 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     const QSet<QString> packages = SymbolTaxonomy::packageScopeNames(symbols);
     for (const sym_list::SymbolInfo& symbol : symbols) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(symbol);
         if (!SymbolTaxonomy::isCommandCompletionScopeVisible(
                 symbol,
                 symbolType,
                 moduleName,
                 packages)
-            || !commandSymbolTypeMatches(symbol.symbolType,
+            || !commandSymbolTypeMatches(metadata.rawCollectorKind,
                                         symbolType,
                                         symbol.dataType)
             || !semanticCompletionNameMatches(symbol.symbolName, prefix)) {
@@ -60,8 +62,10 @@ QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
     };
 
     for (const sym_list::SymbolInfo& symbol : symbols) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(symbol);
         if (SymbolTaxonomy::typedCompletionSymbolTypeMatches(
-                symbol.symbolType,
+                metadata.rawCollectorKind,
                 symbolType,
                 symbol.dataType)) {
             appendIfMatches(symbol);
@@ -81,7 +85,10 @@ QList<sym_list::SymbolInfo> SemanticIndex::getGlobalSymbolInfosByType(
 
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!commandSymbolTypeMatches(symbol.symbolType,
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(symbol);
+        if (!globalSymbolInfoMetadata(metadata)
+            || !commandSymbolTypeMatches(metadata.rawCollectorKind,
                                       symbolType,
                                       symbol.dataType)
             || !semanticCompletionNameMatches(symbol.symbolName, prefix)) {

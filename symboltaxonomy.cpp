@@ -572,6 +572,11 @@ bool isInternalCompletionCandidate(sym_list::sym_type_e type)
         || type == sym_list::sym_parameter;
 }
 
+bool isInternalCompletionCandidate(const SemanticMetadata& metadata)
+{
+    return isInternalCompletionCandidate(metadata.rawCollectorKind);
+}
+
 bool isGlobalCompletionCandidate(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_module
@@ -579,6 +584,11 @@ bool isGlobalCompletionCandidate(sym_list::sym_type_e type)
         || type == sym_list::sym_function
         || type == sym_list::sym_interface
         || type == sym_list::sym_package;
+}
+
+bool isGlobalCompletionCandidate(const SemanticMetadata& metadata)
+{
+    return isGlobalCompletionCandidate(metadata.rawCollectorKind);
 }
 
 bool isCommandGlobalCompletionType(sym_list::sym_type_e type)
@@ -595,6 +605,11 @@ bool isCommandGlobalCompletionType(sym_list::sym_type_e type)
         || type == sym_list::sym_enum;
 }
 
+bool isCommandGlobalCompletionType(const SemanticMetadata& metadata)
+{
+    return isCommandGlobalCompletionType(metadata.rawCollectorKind);
+}
+
 bool isGlobalSymbolInfoType(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_module
@@ -609,6 +624,11 @@ bool isGlobalSymbolInfoType(sym_list::sym_type_e type)
         || type == sym_list::sym_packed_struct_var
         || type == sym_list::sym_unpacked_struct_var
         || type == sym_list::sym_enum;
+}
+
+bool isGlobalSymbolInfoType(const SemanticMetadata& metadata)
+{
+    return isGlobalSymbolInfoType(metadata.rawCollectorKind);
 }
 
 bool isAlwaysGlobalSymbolInfoType(sym_list::sym_type_e type)

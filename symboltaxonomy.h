@@ -142,9 +142,13 @@ bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                               sym_list::sym_type_e commandType,
                               const QString& dataType = QString());
 bool isInternalCompletionCandidate(sym_list::sym_type_e type);
+bool isInternalCompletionCandidate(const SemanticMetadata& metadata);
 bool isGlobalCompletionCandidate(sym_list::sym_type_e type);
+bool isGlobalCompletionCandidate(const SemanticMetadata& metadata);
 bool isCommandGlobalCompletionType(sym_list::sym_type_e type);
+bool isCommandGlobalCompletionType(const SemanticMetadata& metadata);
 bool isGlobalSymbolInfoType(sym_list::sym_type_e type);
+bool isGlobalSymbolInfoType(const SemanticMetadata& metadata);
 bool isAlwaysGlobalSymbolInfoType(sym_list::sym_type_e type);
 bool isAlwaysGlobalCommandSymbolType(sym_list::sym_type_e type);
 bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType);

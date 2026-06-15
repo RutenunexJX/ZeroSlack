@@ -236,6 +236,25 @@ int main(int argc, char** argv) {
                    sym_list::sym_enum,
                    QStringLiteral("enum")),
                true);
+    sym_list::SymbolInfo completionModuleSymbol;
+    completionModuleSymbol.symbolType = sym_list::sym_module;
+    completionModuleSymbol.fileName = QStringLiteral("rtl/top.sv");
+    const SymbolTaxonomy::SemanticMetadata moduleMetadata =
+        SymbolTaxonomy::semanticMetadata(completionModuleSymbol);
+    expectBool("SymbolTaxonomy metadata global completion",
+               SymbolTaxonomy::isGlobalCompletionCandidate(moduleMetadata),
+               true);
+    sym_list::SymbolInfo logicSymbol;
+    logicSymbol.symbolType = sym_list::sym_logic;
+    logicSymbol.fileName = QStringLiteral("rtl/top.sv");
+    const SymbolTaxonomy::SemanticMetadata logicMetadata =
+        SymbolTaxonomy::semanticMetadata(logicSymbol);
+    expectBool("SymbolTaxonomy metadata internal completion",
+               SymbolTaxonomy::isInternalCompletionCandidate(logicMetadata),
+               true);
+    expectBool("SymbolTaxonomy metadata raw compatibility",
+               logicMetadata.rawCollectorKind == sym_list::sym_logic,
+               true);
     sym_list::SymbolInfo scopedStruct;
     scopedStruct.symbolType = sym_list::sym_packed_struct;
     scopedStruct.moduleScope = QStringLiteral("pkg_scope");
