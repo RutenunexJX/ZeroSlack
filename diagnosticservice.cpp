@@ -68,6 +68,9 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
         item.diagnostic = diagnostic;
         item.severityDisplayName = severityDisplayName(diagnostic.severity);
         item.fileDisplayName = diagnosticFileDisplayName(diagnostic.fileName);
+        item.lineDisplayName = diagnosticLineDisplayName(diagnostic.line);
+        item.columnDisplayName = diagnosticColumnDisplayName(diagnostic.column);
+        item.messageDisplayName = diagnosticMessageDisplayName(diagnostic.message);
         result.append(item);
     }
     std::sort(result.begin(), result.end(),
@@ -201,4 +204,19 @@ QString DiagnosticService::diagnosticFileDisplayName(const QString& fileName)
     if (displayName.isEmpty())
         displayName = fileName;
     return displayName;
+}
+
+QString DiagnosticService::diagnosticLineDisplayName(int line)
+{
+    return QString::number(line);
+}
+
+QString DiagnosticService::diagnosticColumnDisplayName(int column)
+{
+    return QString::number(column);
+}
+
+QString DiagnosticService::diagnosticMessageDisplayName(const QString& message)
+{
+    return message;
 }

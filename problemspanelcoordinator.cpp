@@ -18,11 +18,19 @@ QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, result.severityDisplayName);
     item->setText(1, result.fileDisplayName);
-    item->setText(2, QString::number(diagnostic.line));
-    item->setText(3, QString::number(diagnostic.column));
-    item->setText(4, diagnostic.message);
+    item->setText(2, result.lineDisplayName.isEmpty()
+                         ? QString::number(diagnostic.line)
+                         : result.lineDisplayName);
+    item->setText(3, result.columnDisplayName.isEmpty()
+                         ? QString::number(diagnostic.column)
+                         : result.columnDisplayName);
+    item->setText(4, result.messageDisplayName.isEmpty()
+                         ? diagnostic.message
+                         : result.messageDisplayName);
     item->setToolTip(1, diagnostic.fileName);
-    item->setToolTip(4, diagnostic.message);
+    item->setToolTip(4, result.messageDisplayName.isEmpty()
+                            ? diagnostic.message
+                            : result.messageDisplayName);
     item->setData(0, Qt::UserRole, diagnostic.fileName);
     item->setData(0, Qt::UserRole + 1, diagnostic.line);
     item->setData(0, Qt::UserRole + 2, diagnostic.column);

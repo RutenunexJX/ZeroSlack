@@ -43,6 +43,9 @@ struct DiagnosticResult {
     SemanticDiagnostic diagnostic;
     QString severityDisplayName;
     QString fileDisplayName;
+    QString lineDisplayName;
+    QString columnDisplayName;
+    QString messageDisplayName;
 };
 
 struct DiagnosticFileGroup {
@@ -86,6 +89,9 @@ private:
     static QString normalizedFileName(const QString& fileName);
     static QString severityDisplayName(SemanticDiagnostic::Severity severity);
     static QString diagnosticFileDisplayName(const QString& fileName);
+    static QString diagnosticLineDisplayName(int line);
+    static QString diagnosticColumnDisplayName(int column);
+    static QString diagnosticMessageDisplayName(const QString& message);
 };
 
 #endif // DIAGNOSTICSERVICE_H

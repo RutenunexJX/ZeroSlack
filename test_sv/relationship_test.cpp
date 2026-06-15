@@ -475,6 +475,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && diagnosticReport.diagnostics.first().fileDisplayName
                        == QStringLiteral("relationship_stage.sv"),
                true);
+    expectBool("diagnostic report exposes location display metadata",
+               !diagnosticReport.diagnostics.isEmpty()
+                   && diagnosticReport.diagnostics.first().lineDisplayName
+                       == QStringLiteral("4")
+                   && diagnosticReport.diagnostics.first().columnDisplayName
+                       == QStringLiteral("7")
+                   && diagnosticReport.diagnostics.first().messageDisplayName
+                       == QStringLiteral("error message"),
+               true);
 
     DiagnosticQuery topOnlyDiagnosticQuery;
     topOnlyDiagnosticQuery.fileName = topPath;
