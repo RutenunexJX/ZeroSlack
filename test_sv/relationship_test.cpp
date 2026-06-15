@@ -917,6 +917,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotRelationshipReport.directionGroups.size() == 1
                    && snapshotRelationshipReport.directionGroups.first().direction
                        == DirectedRelationshipResult::Outgoing
+                   && snapshotRelationshipReport.directionGroups.first().displayName
+                       == QStringLiteral("Outgoing")
                    && snapshotRelationshipReport.directionGroups.first().count == 1
                    && snapshotRelationshipReport.directionGroups.first().typeGroups.size() == 1
                    && snapshotRelationshipReport.directionGroups.first()
@@ -924,10 +926,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .type == SymbolRelationshipEngine::INSTANTIATES
                    && snapshotRelationshipReport.directionGroups.first()
                           .typeGroups.first()
+                          .displayName == QStringLiteral("Instantiates")
+                   && snapshotRelationshipReport.directionGroups.first()
+                          .typeGroups.first()
                           .count == 1
                    && !snapshotRelationshipReport.directionGroups.first()
                            .typeGroups.first()
                            .relationships.isEmpty()
+                   && snapshotRelationshipReport.directionGroups.first()
+                          .typeGroups.first()
+                          .relationships.first()
+                          .directionDisplayName == QStringLiteral("Outgoing")
+                   && snapshotRelationshipReport.directionGroups.first()
+                          .typeGroups.first()
+                          .relationships.first()
+                          .typeDisplayName == QStringLiteral("Instantiates")
                    && snapshotRelationshipReport.directionGroups.first()
                           .typeGroups.first()
                           .relationships.first()
@@ -953,6 +966,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotIncomingStageReport.directionGroups.size() == 1
                    && snapshotIncomingStageReport.directionGroups.first().direction
                        == DirectedRelationshipResult::Incoming
+                   && snapshotIncomingStageReport.directionGroups.first().displayName
+                       == QStringLiteral("Incoming")
                    && snapshotIncomingStageReport.directionGroups.first().count == 1
                    && snapshotIncomingStageReport.directionGroups.first().typeGroups.size() == 1
                    && snapshotIncomingStageReport.directionGroups.first()
@@ -960,10 +975,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .type == SymbolRelationshipEngine::INSTANTIATES
                    && snapshotIncomingStageReport.directionGroups.first()
                           .typeGroups.first()
+                          .displayName == QStringLiteral("Instantiates")
+                   && snapshotIncomingStageReport.directionGroups.first()
+                          .typeGroups.first()
                           .count == 1
                    && !snapshotIncomingStageReport.directionGroups.first()
                            .typeGroups.first()
                            .relationships.isEmpty()
+                   && snapshotIncomingStageReport.directionGroups.first()
+                          .typeGroups.first()
+                          .relationships.first()
+                          .directionDisplayName == QStringLiteral("Incoming")
+                   && snapshotIncomingStageReport.directionGroups.first()
+                          .typeGroups.first()
+                          .relationships.first()
+                          .typeDisplayName == QStringLiteral("Instantiates")
                    && snapshotIncomingStageReport.directionGroups.first()
                           .typeGroups.first()
                           .relationships.first()
@@ -2003,11 +2029,23 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               1);
     expectInt("relationship report direction group count",
               relationshipReport.directionGroups.size(), 1);
+    expectBool("relationship report direction display name",
+               !relationshipReport.directionGroups.isEmpty()
+                   && relationshipReport.directionGroups.first().displayName
+                       == QStringLiteral("Outgoing"),
+               true);
     expectInt("relationship report type group count",
               relationshipReport.directionGroups.isEmpty()
                   ? 0
                   : relationshipReport.directionGroups.first().typeGroups.size(),
               relationshipReport.typeCounts.size());
+    expectBool("relationship report type group display name",
+               !relationshipReport.directionGroups.isEmpty()
+                   && !relationshipReport.directionGroups.first().typeGroups.isEmpty()
+                   && !relationshipReport.directionGroups.first()
+                           .typeGroups.first()
+                           .displayName.isEmpty(),
+               true);
     expectInt("relationship report grouped total count",
               relationshipReport.directionGroups.isEmpty()
                   || relationshipReport.directionGroups.first().typeGroups.isEmpty()
@@ -2022,6 +2060,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().explanation
                        == QStringLiteral("rel_top instantiates rel_stage"),
+               true);
+    expectBool("relationship report relationship display names",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().directionDisplayName
+                       == QStringLiteral("Outgoing")
+                   && !relationshipReport.relationships.first().typeDisplayName.isEmpty(),
                true);
     expectBool("relationship report subject role",
                !relationshipReport.relationships.isEmpty()
@@ -2154,6 +2198,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? -1
                   : incomingStageReport.directionGroups.first().direction,
               DirectedRelationshipResult::Incoming);
+    expectBool("relationship report incoming-only direction display name",
+               !incomingStageReport.directionGroups.isEmpty()
+                   && incomingStageReport.directionGroups.first().displayName
+                       == QStringLiteral("Incoming"),
+               true);
     expectInt("relationship report incoming-only type count",
               incomingStageReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES),
               1);
@@ -2163,6 +2212,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? -1
                   : incomingStageReport.directionGroups.first().typeGroups.first().type,
               SymbolRelationshipEngine::INSTANTIATES);
+    expectBool("relationship report incoming-only type display name",
+               !incomingStageReport.directionGroups.isEmpty()
+                   && !incomingStageReport.directionGroups.first().typeGroups.isEmpty()
+                   && incomingStageReport.directionGroups.first()
+                          .typeGroups.first()
+                          .displayName == QStringLiteral("Instantiates"),
+               true);
     expectBool("relationship report incoming peer symbol",
                !incomingStageReport.relationships.isEmpty()
                    && incomingStageReport.relationships.first().peerSymbol.symbolId == topId,

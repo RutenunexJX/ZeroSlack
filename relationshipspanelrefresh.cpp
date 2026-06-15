@@ -8,17 +8,20 @@
 namespace {
 
 QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
-                                        const QString& direction,
-                                        const sym_list::SymbolInfo& symbol,
-                                        SymbolRelationshipEngine::RelationType type,
-                                        const QString& explanation)
+                                        const DirectedRelationshipResult& relationship,
+                                        const QString& direction)
 {
+    const sym_list::SymbolInfo& symbol = relationship.peerSymbol;
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, direction);
     item->setText(1, symbol.symbolName);
     item->setText(2, QFileInfo(symbol.fileName).fileName());
     item->setText(3, QString::number(symbol.startLine));
-    item->setText(4, SemanticPanelUtils::relationshipTypeText(type));
+    item->setText(4, relationship.typeDisplayName.isEmpty()
+                         ? SemanticPanelUtils::relationshipTypeText(
+                               relationship.relationship.relationship.type)
+                         : relationship.typeDisplayName);
+    const QString& explanation = relationship.explanation;
     item->setText(5, explanation);
     item->setToolTip(0, explanation);
     item->setToolTip(1, explanation);
@@ -85,9 +88,11 @@ void RelationshipsPanelCoordinator::refresh()
         SemanticPanelUtils::collectExpandedKeys(relationshipsTree);
     relationshipsTree->clear();
     for (const RelationshipDirectionGroup& directionGroupReport : report.directionGroups) {
-        const QString direction = directionGroupReport.direction == DirectedRelationshipResult::Outgoing
-            ? QStringLiteral("Outgoing")
-            : QStringLiteral("Incoming");
+        const QString direction = directionGroupReport.displayName.isEmpty()
+            ? (directionGroupReport.direction == DirectedRelationshipResult::Outgoing
+                   ? QStringLiteral("Outgoing")
+                   : QStringLiteral("Incoming"))
+            : directionGroupReport.displayName;
         auto* directionGroup = new QTreeWidgetItem(relationshipsTree);
         directionGroup->setText(0, SemanticPanelUtils::countLabel(
                                        direction,
@@ -95,17 +100,14 @@ void RelationshipsPanelCoordinator::refresh()
 
         for (const RelationshipTypeGroup& typeGroupReport : directionGroupReport.typeGroups) {
             auto* typeGroup = new QTreeWidgetItem(directionGroup);
-            const QString typeText =
-                SemanticPanelUtils::relationshipTypeText(typeGroupReport.type);
+            const QString typeText = typeGroupReport.displayName.isEmpty()
+                ? SemanticPanelUtils::relationshipTypeText(typeGroupReport.type)
+                : typeGroupReport.displayName;
             typeGroup->setText(4, SemanticPanelUtils::countLabel(typeText,
                                                                  typeGroupReport.count));
 
             for (const DirectedRelationshipResult& directed : typeGroupReport.relationships) {
-                createRelationshipItem(typeGroup,
-                                       direction,
-                                       directed.peerSymbol,
-                                       directed.relationship.relationship.type,
-                                       directed.explanation);
+                createRelationshipItem(typeGroup, directed, direction);
             }
         }
     }

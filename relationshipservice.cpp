@@ -38,6 +38,44 @@ QString relationVerb(SymbolRelationshipEngine::RelationType type)
     return QStringLiteral("relates to");
 }
 
+QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("Contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("References");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("Instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("Calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("Inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("Implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("Assigns To");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("Reads From");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("Clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("Resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("Generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("Constrains");
+    }
+    return QStringLiteral("Relationship");
+}
+
+QString relationshipDirectionDisplayName(DirectedRelationshipResult::Direction direction)
+{
+    return direction == DirectedRelationshipResult::Outgoing
+        ? QStringLiteral("Outgoing")
+        : QStringLiteral("Incoming");
+}
+
 QString roleFor(SymbolRelationshipEngine::RelationType type, bool sourceSide)
 {
     switch (type) {
@@ -157,6 +195,9 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : relationship.fromSymbol;
             if (directed.peerSymbol.symbolId < 0)
                 continue;
+            directed.directionDisplayName = relationshipDirectionDisplayName(direction);
+            directed.typeDisplayName =
+                relationshipTypeDisplayName(relationship.relationship.type);
             const bool subjectIsSource =
                 direction == DirectedRelationshipResult::Outgoing;
             directed.subjectRole =
@@ -180,6 +221,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
             if (!directionGroupIndexes.contains(direction)) {
                 RelationshipDirectionGroup directionGroup;
                 directionGroup.direction = direction;
+                directionGroup.displayName = relationshipDirectionDisplayName(direction);
                 directionGroupIndexes.insert(direction, report.directionGroups.size());
                 report.directionGroups.append(directionGroup);
             }
@@ -193,6 +235,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
             if (!typeGroupIndexes[direction].contains(type)) {
                 RelationshipTypeGroup typeGroup;
                 typeGroup.type = type;
+                typeGroup.displayName = relationshipTypeDisplayName(type);
                 typeGroupIndexes[direction].insert(type,
                                                    directionGroup.typeGroups.size());
                 directionGroup.typeGroups.append(typeGroup);
