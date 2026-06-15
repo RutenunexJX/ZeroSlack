@@ -45,10 +45,13 @@ struct HierarchyNode {
     int parentNodeId = -1;
     HierarchyQuery::Direction direction = HierarchyQuery::Children;
     SymbolRelationshipEngine::RelationType viaType = SymbolRelationshipEngine::CONTAINS;
+    QString directionDisplayName;
+    QString relationshipTypeDisplayName;
 };
 
 struct HierarchyRootDirectionGroup {
     HierarchyQuery::Direction direction = HierarchyQuery::Children;
+    QString displayName;
     QList<HierarchyNode> nodes;
     int count = 0;
 };
@@ -89,6 +92,9 @@ private:
     SemanticIndex* semanticIndex() const;
     int resolveSymbolId(const HierarchyQuery& query) const;
     QList<SymbolRelationshipEngine::RelationType> effectiveTypes(const HierarchyQuery& query) const;
+    static QString directionDisplayName(HierarchyQuery::Direction direction);
+    static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
+    static void fillDisplayMetadata(HierarchyNode& node);
 };
 
 #endif // HIERARCHYSERVICE_H

@@ -25,6 +25,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     root.nodeId = nextNodeId++;
     root.parentNodeId = -1;
     root.direction = query.direction;
+    fillDisplayMetadata(root);
     WorkItem rootItem;
     rootItem.node = root;
     rootItem.path.insert(rootId);
@@ -59,6 +60,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
                 child.nodeId = nextNodeId++;
                 child.parentNodeId = current.node.nodeId;
                 child.direction = edgeDirection;
+                fillDisplayMetadata(child);
 
                 WorkItem childItem;
                 childItem.node = child;
@@ -100,6 +102,7 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
             if (!rootDirectionGroupIndexes.contains(node.direction)) {
                 HierarchyRootDirectionGroup group;
                 group.direction = node.direction;
+                group.displayName = directionDisplayName(node.direction);
                 rootDirectionGroupIndexes.insert(node.direction,
                                                  report.rootDirectionGroups.size());
                 report.rootDirectionGroups.append(group);

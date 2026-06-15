@@ -1134,7 +1134,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && node.parentSymbolId == topId
                 && node.symbol.symbolId == stageId
                 && node.direction == HierarchyQuery::Children
-                && node.viaType == SymbolRelationshipEngine::INSTANTIATES);
+                && node.viaType == SymbolRelationshipEngine::INSTANTIATES
+                && node.directionDisplayName == QStringLiteral("Outgoing")
+                && node.relationshipTypeDisplayName == QStringLiteral("Instantiates"));
     }
     expectBool("snapshot hierarchy service finds stage child",
                snapshotHierarchyFoundStage, true);
@@ -1156,8 +1158,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotHierarchyReport.rootDirectionGroups.size() == 1
                    && snapshotHierarchyReport.rootDirectionGroups.first().direction
                        == HierarchyQuery::Children
+                   && snapshotHierarchyReport.rootDirectionGroups.first().displayName
+                       == QStringLiteral("Outgoing")
                    && snapshotHierarchyReport.rootDirectionGroups.first().count == 1
                    && snapshotHierarchyReport.rootDirectionGroups.first().nodes.size() == 1
+                   && snapshotHierarchyReport.rootDirectionGroups.first()
+                          .nodes.first()
+                          .directionDisplayName == QStringLiteral("Outgoing")
+                   && snapshotHierarchyReport.rootDirectionGroups.first()
+                          .nodes.first()
+                          .relationshipTypeDisplayName == QStringLiteral("Instantiates")
                    && snapshotHierarchyReport.rootDirectionGroups.first()
                           .nodes.first()
                           .symbol.symbolId == stageId,
@@ -1171,6 +1181,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotHierarchyReport.nodes.size() == 2
                    && snapshotHierarchyReport.nodes.first().nodeId == 0
                    && snapshotHierarchyReport.nodes.first().parentNodeId == -1
+                   && snapshotHierarchyReport.nodes.first().relationshipTypeDisplayName
+                       == QStringLiteral("Root")
                    && snapshotHierarchyReport.nodes.last().nodeId == 1
                    && snapshotHierarchyReport.nodes.last().parentNodeId == 0,
                true);
@@ -1193,8 +1205,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotParentHierarchyReport.rootDirectionGroups.size() == 1
                    && snapshotParentHierarchyReport.rootDirectionGroups.first().direction
                        == HierarchyQuery::Parents
+                   && snapshotParentHierarchyReport.rootDirectionGroups.first().displayName
+                       == QStringLiteral("Incoming")
                    && snapshotParentHierarchyReport.rootDirectionGroups.first().count == 1
                    && snapshotParentHierarchyReport.rootDirectionGroups.first().nodes.size() == 1
+                   && snapshotParentHierarchyReport.rootDirectionGroups.first()
+                          .nodes.first()
+                          .directionDisplayName == QStringLiteral("Incoming")
+                   && snapshotParentHierarchyReport.rootDirectionGroups.first()
+                          .nodes.first()
+                          .relationshipTypeDisplayName == QStringLiteral("Instantiates")
                    && snapshotParentHierarchyReport.rootDirectionGroups.first()
                           .nodes.first()
                           .symbol.symbolId == topId,
@@ -2298,6 +2318,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               hierarchyReport.rootDirectionCounts.value(HierarchyQuery::Children), 1);
     expectInt("hierarchy report type count",
               hierarchyReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
+    expectBool("hierarchy report root direction display name",
+               !hierarchyReport.rootDirectionGroups.isEmpty()
+                   && hierarchyReport.rootDirectionGroups.first().displayName
+                       == QStringLiteral("Outgoing"),
+               true);
     bool hierarchyReportHasStageChild = false;
     for (const HierarchyNode& node : hierarchyReport.nodes) {
         hierarchyReportHasStageChild = hierarchyReportHasStageChild
@@ -2305,7 +2330,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && node.parentSymbolId == topId
                 && node.symbol.symbolId == stageId
                 && node.direction == HierarchyQuery::Children
-                && node.viaType == SymbolRelationshipEngine::INSTANTIATES);
+                && node.viaType == SymbolRelationshipEngine::INSTANTIATES
+                && node.directionDisplayName == QStringLiteral("Outgoing")
+                && node.relationshipTypeDisplayName == QStringLiteral("Instantiates"));
     }
     expectBool("hierarchy report keeps child row identity",
                hierarchyReportHasStageChild, true);

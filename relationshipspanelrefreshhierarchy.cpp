@@ -21,16 +21,26 @@ QString hierarchyDirectionText(HierarchyQuery::Direction direction)
     return QStringLiteral("Related");
 }
 
+QString hierarchyNodeDirectionText(const HierarchyNode& node)
+{
+    return node.directionDisplayName.isEmpty()
+        ? hierarchyDirectionText(node.direction)
+        : node.directionDisplayName;
+}
+
 QTreeWidgetItem* getOrCreateHierarchyDirectionGroup(
     QTreeWidgetItem* parent,
     QMap<HierarchyQuery::Direction, QTreeWidgetItem*>& groups,
-    HierarchyQuery::Direction direction)
+    const HierarchyRootDirectionGroup& directionGroup)
 {
+    const HierarchyQuery::Direction direction = directionGroup.direction;
     if (groups.contains(direction))
         return groups.value(direction);
 
     auto* group = new QTreeWidgetItem(parent);
-    group->setText(0, hierarchyDirectionText(direction));
+    group->setText(0, directionGroup.displayName.isEmpty()
+                          ? hierarchyDirectionText(direction)
+                          : directionGroup.displayName);
     groups.insert(direction, group);
     return group;
 }
@@ -44,9 +54,11 @@ QTreeWidgetItem* createHierarchyItem(QTreeWidgetItem* parent,
     item->setText(1, node.symbol.symbolName);
     item->setText(2, QFileInfo(node.symbol.fileName).fileName());
     item->setText(3, QString::number(node.symbol.startLine));
-    item->setText(4, node.depth == 0
-                         ? QStringLiteral("Root")
-                         : SemanticPanelUtils::relationshipTypeText(node.viaType));
+    item->setText(4, node.relationshipTypeDisplayName.isEmpty()
+                         ? (node.depth == 0
+                                ? QStringLiteral("Root")
+                                : SemanticPanelUtils::relationshipTypeText(node.viaType))
+                         : node.relationshipTypeDisplayName);
     item->setToolTip(2, node.symbol.fileName);
     item->setData(0, Qt::UserRole, node.symbol.fileName);
     item->setData(0, Qt::UserRole + 1, node.symbol.startLine);
@@ -95,6 +107,9 @@ void RelationshipsPanelCoordinator::refreshHierarchyTree(int typeFilter)
     relationshipsTree->clear();
     QMap<int, QTreeWidgetItem*> itemByNodeId;
     QMap<HierarchyQuery::Direction, QTreeWidgetItem*> rootDirectionItems;
+    QMap<HierarchyQuery::Direction, HierarchyRootDirectionGroup> rootDirectionGroups;
+    for (const HierarchyRootDirectionGroup& directionGroup : report.rootDirectionGroups)
+        rootDirectionGroups.insert(directionGroup.direction, directionGroup);
     QTreeWidgetItem* rootItem = nullptr;
     int visibleCount = 0;
     for (const HierarchyNode& node : report.nodes) {
@@ -112,15 +127,17 @@ void RelationshipsPanelCoordinator::refreshHierarchyTree(int typeFilter)
         if (node.parentNodeId >= 0 && itemByNodeId.contains(node.parentNodeId))
             parent = itemByNodeId.value(node.parentNodeId);
         if (node.parentNodeId == 0 && rootItem) {
+            const HierarchyRootDirectionGroup directionGroup =
+                rootDirectionGroups.value(node.direction);
             parent = getOrCreateHierarchyDirectionGroup(rootItem,
                                                         rootDirectionItems,
-                                                        node.direction);
+                                                        directionGroup);
         }
 
         QTreeWidgetItem* item = createHierarchyItem(
             parent,
             node,
-            hierarchyDirectionText(node.direction));
+            hierarchyNodeDirectionText(node));
         itemByNodeId.insert(node.nodeId, item);
         visibleCount++;
     }
@@ -130,7 +147,9 @@ void RelationshipsPanelCoordinator::refreshHierarchyTree(int typeFilter)
         rootDirectionItems.value(directionGroup.direction)->setText(
             0,
             SemanticPanelUtils::countLabel(
-                hierarchyDirectionText(directionGroup.direction),
+                directionGroup.displayName.isEmpty()
+                    ? hierarchyDirectionText(directionGroup.direction)
+                    : directionGroup.displayName,
                 directionGroup.count));
     }
     SemanticPanelUtils::restoreTreeExpansion(relationshipsTree,

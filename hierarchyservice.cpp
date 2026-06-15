@@ -23,6 +23,59 @@ static bool hierarchyNodeLess(const HierarchyNode& lhs, const HierarchyNode& rhs
                             Qt::CaseInsensitive) < 0;
 }
 
+QString HierarchyService::directionDisplayName(HierarchyQuery::Direction direction)
+{
+    switch (direction) {
+    case HierarchyQuery::Children:
+        return QStringLiteral("Outgoing");
+    case HierarchyQuery::Parents:
+        return QStringLiteral("Incoming");
+    case HierarchyQuery::Both:
+        break;
+    }
+    return QStringLiteral("Related");
+}
+
+QString HierarchyService::relationshipTypeDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("Contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("References");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("Instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("Calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("Inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("Implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("Assigns To");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("Reads From");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("Clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("Resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("Generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("Constrains");
+    }
+    return QStringLiteral("Relationship");
+}
+
+void HierarchyService::fillDisplayMetadata(HierarchyNode& node)
+{
+    node.directionDisplayName = directionDisplayName(node.direction);
+    node.relationshipTypeDisplayName = node.depth == 0
+        ? QStringLiteral("Root")
+        : relationshipTypeDisplayName(node.viaType);
+}
+
 HierarchyService* HierarchyService::getInstance()
 {
     if (!instance)
@@ -82,6 +135,7 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
         node.parentSymbolId = rel.fromSymbol.symbolId;
         node.direction = HierarchyQuery::Children;
         node.viaType = rel.relationship.type;
+        fillDisplayMetadata(node);
         result.append(node);
     }
     std::sort(result.begin(), result.end(), hierarchyNodeLess);
@@ -108,6 +162,7 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
         node.parentSymbolId = rel.toSymbol.symbolId;
         node.direction = HierarchyQuery::Parents;
         node.viaType = rel.relationship.type;
+        fillDisplayMetadata(node);
         result.append(node);
     }
     std::sort(result.begin(), result.end(), hierarchyNodeLess);
