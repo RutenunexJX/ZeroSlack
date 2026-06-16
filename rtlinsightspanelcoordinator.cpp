@@ -404,15 +404,34 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                             : report.relationshipGroupDisplayName,
                         report.relationshipChangeCount);
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
-        createChildItem(relationships,
-                        change.kindDisplayName,
+        QTreeWidgetItem* relationship =
+            createChildItem(relationships,
+                            change.kindDisplayName,
+                            change.relationshipTypeDisplayName,
+                            change.detailDisplayName,
+                            change.codeLink.fileName,
+                            change.codeLink.line,
+                            change.codeLink.column,
+                            change.codeLink.fileDisplayName,
+                            change.codeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("From"),
+                        change.fromSymbolDisplayName,
                         change.relationshipTypeDisplayName,
-                        change.detailDisplayName,
-                        change.codeLink.fileName,
-                        change.codeLink.line,
-                        change.codeLink.column,
-                        change.codeLink.fileDisplayName,
-                        change.codeLink.lineDisplayName);
+                        change.fromCodeLink.fileName,
+                        change.fromCodeLink.line,
+                        change.fromCodeLink.column,
+                        change.fromCodeLink.fileDisplayName,
+                        change.fromCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("To"),
+                        change.toSymbolDisplayName,
+                        change.relationshipTypeDisplayName,
+                        change.toCodeLink.fileName,
+                        change.toCodeLink.line,
+                        change.toCodeLink.column,
+                        change.toCodeLink.fileDisplayName,
+                        change.toCodeLink.lineDisplayName);
     }
 
     QTreeWidgetItem* diagnostics =

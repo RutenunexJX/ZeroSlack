@@ -1021,6 +1021,8 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     bool sawRemovedSignal = false;
     bool sawAddedRelationship = false;
     bool sawRemovedRelationship = false;
+    bool sawAddedRelationshipFromEndpoint = false;
+    bool sawAddedRelationshipToEndpoint = false;
     bool sawAddedDiagnostic = false;
     bool sawRemovedDiagnostic = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
@@ -1042,6 +1044,14 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
             || (item->text(0) == QStringLiteral("Added")
                 && item->text(1) == QStringLiteral("Instantiates")
                 && item->text(2) == QStringLiteral("diff_top -> u_new"));
+        sawAddedRelationshipFromEndpoint = sawAddedRelationshipFromEndpoint
+            || (item->text(0) == QStringLiteral("From")
+                && item->text(1) == QStringLiteral("diff_top")
+                && item->text(2) == QStringLiteral("Instantiates"));
+        sawAddedRelationshipToEndpoint = sawAddedRelationshipToEndpoint
+            || (item->text(0) == QStringLiteral("To")
+                && item->text(1) == QStringLiteral("u_new")
+                && item->text(2) == QStringLiteral("Instantiates"));
         sawRemovedRelationship = sawRemovedRelationship
             || (item->text(0) == QStringLiteral("Removed")
                 && item->text(1) == QStringLiteral("Instantiates")
@@ -1061,6 +1071,12 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     expectBool("RTL insights renders removed diff signal", sawRemovedSignal, true);
     expectBool("RTL insights renders added diff relationship",
                sawAddedRelationship,
+               true);
+    expectBool("RTL insights renders added diff from endpoint",
+               sawAddedRelationshipFromEndpoint,
+               true);
+    expectBool("RTL insights renders added diff to endpoint",
+               sawAddedRelationshipToEndpoint,
                true);
     expectBool("RTL insights renders removed diff relationship",
                sawRemovedRelationship,
