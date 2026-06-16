@@ -269,6 +269,9 @@ QList<ModuleBriefDiagnosticRow> ModuleBriefService::diagnosticRows(
         row.severityDisplayName =
             diagnosticSeverityDisplayName(diagnostic.severity);
         row.detailDisplayName = QStringLiteral("diagnostic");
+        row.sourceRoleDisplayName =
+            sourceRoleDisplayName(
+                SymbolTaxonomy::sourceRoleForFileName(diagnostic.fileName));
         rows.append(row);
     }
     return rows;

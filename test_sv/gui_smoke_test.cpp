@@ -873,11 +873,17 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         "endmodule\n");
     QHash<QString, QString> fileContents;
     fileContents.insert(fixturePath, content);
+    SemanticDiagnostic insightDiagnostic;
+    insightDiagnostic.fileName = fixturePath;
+    insightDiagnostic.line = 6;
+    insightDiagnostic.column = 5;
+    insightDiagnostic.message = QStringLiteral("insight warning");
+    insightDiagnostic.severity = SemanticDiagnostic::Warning;
     SemanticIndex::getInstance()->setSnapshot(
         std::make_shared<const SemanticIndexSnapshot>(
             symbols,
             relationships,
-            QList<SemanticDiagnostic>(),
+            QList<SemanticDiagnostic>{insightDiagnostic},
             fileContents));
 
     expectBool("RTL insights panel exists", rtlInsightsTree(window) != nullptr, true);
@@ -901,6 +907,8 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawPackageMemberContext = false;
     bool sawPackageMemberKind = false;
     bool sawPackageMemberType = false;
+    bool sawModuleBriefDiagnostic = false;
+    bool sawModuleBriefDiagnosticSourceRole = false;
     bool sawClockSignalEndpoint = false;
     bool sawClockModuleEndpoint = false;
     bool sawClockRelationshipType = false;
@@ -972,6 +980,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("Type")
                 && item->text(1) == QStringLiteral("parameter")
                 && item->text(2) == QStringLiteral("package parameter"));
+        sawModuleBriefDiagnostic = sawModuleBriefDiagnostic
+            || (item->text(0) == QStringLiteral("Warning")
+                && item->text(1) == QStringLiteral("insight warning")
+                && item->text(2) == QStringLiteral("diagnostic"));
+        sawModuleBriefDiagnosticSourceRole =
+            sawModuleBriefDiagnosticSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("Warning"));
         sawClockSignalEndpoint = sawClockSignalEndpoint
             || (item->text(0) == QStringLiteral("Signal")
                 && item->text(1) == QStringLiteral("clk")
@@ -1111,6 +1128,12 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders package member type",
                sawPackageMemberType,
+               true);
+    expectBool("RTL insights renders module brief diagnostic",
+               sawModuleBriefDiagnostic,
+               true);
+    expectBool("RTL insights renders module brief diagnostic source role",
+               sawModuleBriefDiagnosticSourceRole,
                true);
     expectBool("RTL insights renders clock signal endpoint",
                sawClockSignalEndpoint,

@@ -63,6 +63,7 @@ struct ModuleBriefDiagnosticRow {
     RtlInsightCodeLink codeLink;
     QString severityDisplayName;
     QString detailDisplayName;
+    QString sourceRoleDisplayName;
 };
 
 struct ModuleBriefContextRow {

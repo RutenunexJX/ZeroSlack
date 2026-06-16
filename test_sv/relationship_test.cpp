@@ -3052,7 +3052,9 @@ static void runModuleBriefServiceFixture()
                    && report.diagnosticRows.first().severityDisplayName
                        == QStringLiteral("Warning")
                    && report.diagnosticRows.first().detailDisplayName
-                       == QStringLiteral("diagnostic"),
+                       == QStringLiteral("diagnostic")
+                   && report.diagnosticRows.first().sourceRoleDisplayName
+                       == QStringLiteral("design source"),
                true);
     expectBool("module brief diagnostic row code link",
                !report.diagnosticRows.isEmpty()

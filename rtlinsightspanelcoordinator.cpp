@@ -80,10 +80,20 @@ void appendDiagnostics(QTreeWidget* tree,
                                             diagnostics.size());
     for (const ModuleBriefDiagnosticRow& row : diagnostics) {
         const SemanticDiagnostic& diagnostic = row.diagnostic;
-        createChildItem(group,
+        QTreeWidgetItem* diagnosticItem =
+            createChildItem(group,
+                            row.severityDisplayName,
+                            diagnostic.message,
+                            row.detailDisplayName,
+                            row.codeLink.fileName,
+                            row.codeLink.line,
+                            row.codeLink.column,
+                            row.codeLink.fileDisplayName,
+                            row.codeLink.lineDisplayName);
+        createChildItem(diagnosticItem,
+                        QStringLiteral("Source Role"),
+                        row.sourceRoleDisplayName,
                         row.severityDisplayName,
-                        diagnostic.message,
-                        row.detailDisplayName,
                         row.codeLink.fileName,
                         row.codeLink.line,
                         row.codeLink.column,
