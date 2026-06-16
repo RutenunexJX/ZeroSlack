@@ -72,10 +72,29 @@ UI Layer
 
 - Current phase.
 - Expand FSM graph, Signal Journey, Module Brief, Clock/Reset Domain Map, Semantic Diff, and code/document links through feature services.
+- Continue small RTL Insights improvements only when they do not require semantic data model changes.
+- Defer features that need `SymbolInfo`, `sym_type_e`, identity, owner/type metadata, source role, relationship provenance, query result, completion item, or report-model changes to Phase E.
 - Use `test_sv/new` and similar real projects as first-class fixtures.
 - Add focused tests at service level first, then UI smoke coverage where needed.
 - Do not add feature-specific workarounds around semantic gaps in UI, scheduler, analyzer, or coordinator code.
 - Keep feature reports explicit enough for UI render without understanding semantic internals.
+
+### Phase E: Semantic Data Model Hardening
+
+- E1 Symbol Identity And Snapshot Handles: treat `symbolId` as snapshot-local, add stable identity, carry stable identity plus local handles, and define merge/rebind rules.
+- E2 Semantic Metadata On Symbols: keep `sym_type_e` raw, add stable declaration/usage/owner/visibility/source-role metadata, and generate it consistently.
+- E3 Owner Scope And Type Reference Model: reduce `moduleScope` and `dataType` overloads, model owner/type/modport explicitly, and resolve interface modports through type rules.
+- E4 Source Role, Diagnostics, And Snapshot Publication Metadata: formalize source roles, diagnostic ownership, snapshot metadata, and stale-result protection.
+- E5 Relationship Provenance And Query Result Contracts: add provenance, confidence, evidence, candidate counts, failure reasons, and consistent query contracts.
+- E6 Completion Item And RTL Report Model Hardening: formalize completion items and RTL report models with display fields, evidence, confidence, not-found reasons, and stable identity references.
+
+### Release Gate
+
+- After Phase E, run a product baseline gate before broad RTL feature expansion.
+- `test_sv/new` must validate package/import/typedef/parameter, interface/interface instance/modport, `.svh`/`.vh` includes, completion, navigation, Problems, and RTL Insights sharing one semantic truth.
+- Full Ninja and full CTest must pass.
+- Hygiene scans and forbidden-file guard must pass.
+- No dirty user RTL fixture files may be touched or committed.
 
 ## Architecture Rules
 
@@ -102,12 +121,15 @@ The foundation is healthy when:
 - feature reads use stable models, snapshots, Query Services, or feature services
 - stale workspace, open-document, and relationship analysis results cannot overwrite newer semantic snapshots
 - product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
-- `sym_type_e` should remain a raw compatibility field unless and until all consumers have migrated safely
-- RTL Insights expansion should not proceed broadly until stable semantic metadata and Query Service contracts are in place
+- product logic is not ready for broad feature expansion until Phase E and the Release Gate pass
+- `sym_type_e` remains raw collector compatibility, not the primary product policy surface
+- `symbolId` is snapshot-local unless stable identity rules say otherwise
+- Query Services and RTL feature services consume stable semantic metadata and contracts
+- RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, and the Release Gate are in place
 - Phase D features are done only when service-level behavior, report shape, UI render path, and real fixture evidence are covered
 - UI panels render reports/models without owning semantic policy
 - scheduler, analyzer, project, document, and editor ownership boundaries stay clear
 - real fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, FSMs, diagnostics, relationship browsing, signal journeys, module briefs, semantic diff, and large-file response
 - verification may be batched, but commits remain coherent by block
-- full Ninja and full `ctest --output-on-failure` pass after shared semantic state, scheduler, editor, or project boundary changes
+- full Ninja and full `ctest --output-on-failure` pass after shared semantic state, scheduler, editor, project, symbol identity, `SymbolInfo`, source role, or query contract boundary changes
 - handoff docs are short, current, and easy to reread

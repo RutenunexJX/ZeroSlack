@@ -46,16 +46,82 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 - Current phase.
 - Expand FSM graph, Signal Journey, Module Brief, Clock/Reset Domain Map, Semantic Diff, and code/document links through feature services.
+- Continue small RTL Insights improvements only when they do not require semantic data model changes.
+- Defer features that need `SymbolInfo`, `sym_type_e`, identity, owner/type metadata, source role, relationship provenance, query result, completion item, or report-model changes to Phase E.
 - Use `test_sv/new` and similar real projects as first-class fixtures.
 - Add focused tests at service level first, then UI smoke coverage where needed.
 - Do not add feature-specific workarounds in UI, scheduler, analyzer, or coordinator code.
 - Keep reports explicit: rows, display names, navigation payloads, diagnostics, and evidence should be shaped before UI render.
 
+### Phase E: Semantic Data Model Hardening
+
+#### E1: Symbol Identity And Snapshot Handles
+
+- Treat `symbolId` as a snapshot-local handle unless stable identity rules say otherwise.
+- Add `SymbolStableKey` or an equivalent stable identity model.
+- Let relationships, reports, and query results carry stable identity plus local handles.
+- Define snapshot merge and rebind rules for relationships and reports.
+- Keep this serial; it blocks deeper metadata migration.
+
+#### E2: Semantic Metadata On Symbols
+
+- Keep `sym_type_e` as raw/legacy collector kind.
+- Add stable semantic metadata on `SymbolInfo` or an equivalent metadata layer.
+- Cover declaration kind, usage role, owner scope, visibility, source role, and raw collector kind.
+- Generate metadata consistently through `SymbolTaxonomy` or a dedicated mapper.
+- Query Services and RTL feature services should prefer stable metadata over raw enum checks.
+- Keep this serial and avoid unrelated feature work.
+
+#### E3: Owner Scope And Type Reference Model
+
+- Reduce `moduleScope` overload with owner name, kind, path, or equivalent owner metadata.
+- Reduce `dataType` overload by separating raw type text, resolved type name, resolved type kind, and modport name where needed.
+- Give package, interface, interface instance, modport, struct/enum/member, parameter/localparam, port, signal, and module instance explicit rules.
+- Support `lr_genr_if.si` and `LR_GENR_IF.si` through type/interface/modport resolution, not scattered string guesses.
+- Keep this serial.
+
+#### E4: Source Role, Diagnostics, And Snapshot Publication Metadata
+
+- Formalize source roles: design source, header, external header, generated, and unknown.
+- Separate diagnostic ownership for Slang, include/source-role, ZeroSlack semantic, stale, current-file, and workspace diagnostics.
+- Formalize snapshot metadata such as snapshot kind, project generation, document version, source hash, analysis kind, and created revision/time where useful.
+- Prevent stale async diagnostics or semantic results from replacing newer visible truth.
+- Batch focused tests and isolated report metadata only; publication rules stay serial.
+
+#### E5: Relationship Provenance And Query Result Contracts
+
+- Add relationship provenance, confidence, and evidence location/range where useful.
+- Distinguish Slang-confirmed, inferred, lexical fallback, open-document, workspace, and feature-generated relationships.
+- Extend query results with reason, evidence, candidate count, and confidence where useful.
+- Definition, Completion, Reference, Hierarchy, Relationship, and RTL Insights services should expose consistent result contracts.
+- Failed navigation/completion should explain missing include, missing import, unknown source role, unresolved interface instance type, missing modport, or no symbol.
+- Split by service after E1-E4 contracts are stable.
+
+#### E6: Completion Item And RTL Report Model Hardening
+
+- Formalize completion item models with label, insert text, kind, detail, source, priority, replacement range, and semantic role.
+- Harden RTL report models so UI receives display fields, evidence, confidence, not-found reasons, and stable identity references.
+- Keep UI render-only.
+- Module Brief, Signal Journey, Clock/Reset Domain Map, FSM Graph, Semantic Diff, and code/document links should share report conventions.
+- Proceed in service-sized batches.
+
+### Release Gate
+
+- After Phase E, run a product baseline gate before broad RTL feature expansion.
+- `test_sv/new` must validate package/import/typedef/parameter, interface/interface instance/modport, `.svh`/`.vh` includes, completion, navigation, Problems, and RTL Insights sharing one semantic truth.
+- Full Ninja and full CTest must pass.
+- Hygiene scans and forbidden-file guard must pass.
+- No dirty user RTL fixture files may be touched or committed.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
 - Suitable Phase D batches: focused service tests, independent feature-service reports, UI render-only cleanup, and fixture expansion.
-- Keep serial: snapshot publication rules, async generation guards, `SemanticIndex`/`sym_list` ownership changes, symbol taxonomy migrations, `SymbolInfo` layout changes, semantic metadata publication, raw enum compatibility changes, source role migration, and cross-service contract changes.
+- E1, E2, and E3 are mostly serial.
+- E4 publication rules are serial, but focused tests and isolated report metadata can batch.
+- E5 and E6 can be split by service once earlier contracts are stable.
+- Safe batch blocks: focused service tests, independent query-service result migration, UI render-only conversion, and report display-field cleanup.
+- Not suitable for batching: symbol identity changes, `SymbolInfo` layout changes, `sym_type_e` compatibility changes, owner/type model migration, source role migration, snapshot publication rules, relationship rebind rules, and cross-service query contract changes.
 - Reduce batch size when blocks share core files, API boundaries, or real fixture expectations.
 
 ## Good Work Blocks

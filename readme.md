@@ -23,12 +23,12 @@ Thin UI consumers
 
 ## Latest Strategy
 
-- Current priority is Phase D: expand RTL Insights on the stable semantic base.
+- Current priority is finishing RTL Insights carefully while deferring semantic data model changes to Phase E.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
-- Phase A/B/C contracts are the baseline: snapshot publication, taxonomy/source role, semantic metadata, Query Services, and UI report/model flow.
-- Add RTL features through feature services and report/model fields, not UI, scheduler, or analyzer workarounds.
-- Keep `sym_type_e` as raw collector compatibility unless a dedicated migration removes it safely.
-- Validate Phase D behavior against `test_sv/new` first.
+- Phase E hardens symbol identity, semantic metadata, owner/type modeling, source roles, relationships, query results, completion items, and RTL report contracts.
+- After Phase E, run a Release Gate on `test_sv/new` before broad RTL feature expansion.
+- Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
+- Keep `sym_type_e` as raw collector compatibility until a dedicated migration removes it safely.
 
 ## Current Architecture
 
