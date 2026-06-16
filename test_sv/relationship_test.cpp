@@ -3131,6 +3131,7 @@ static void runModuleBriefServiceFixture()
     bool hasInstanceRelationshipEvidence = false;
     bool hasClockRelationshipEvidence = false;
     bool hasClockRelationshipEvidenceLink = false;
+    bool hasClockRelationshipEndpointLinks = false;
     for (const ModuleBriefRelationshipEvidenceRow& row
          : report.relationshipEvidenceRows) {
         hasPackageRelationshipEvidence = hasPackageRelationshipEvidence
@@ -3157,6 +3158,18 @@ static void runModuleBriefServiceFixture()
                 && row.peerCodeLink.fileDisplayName
                     == QStringLiteral("module_brief_fixture.sv")
                 && row.peerCodeLink.lineDisplayName == QStringLiteral("12"));
+        hasClockRelationshipEndpointLinks = hasClockRelationshipEndpointLinks
+            || (!row.outgoing
+                && row.fromSymbolDisplayName == QStringLiteral("clk")
+                && row.toSymbolDisplayName == QStringLiteral("brief_top")
+                && row.fromCodeLink.fileName == fileName
+                && row.fromCodeLink.line == 12
+                && row.fromCodeLink.fileDisplayName
+                    == QStringLiteral("module_brief_fixture.sv")
+                && row.toCodeLink.fileName == fileName
+                && row.toCodeLink.line == 10
+                && row.toCodeLink.fileDisplayName
+                    == QStringLiteral("module_brief_fixture.sv"));
     }
     expectBool("module brief package relationship evidence",
                hasPackageRelationshipEvidence,
@@ -3169,6 +3182,9 @@ static void runModuleBriefServiceFixture()
                true);
     expectBool("module brief clock relationship evidence code link",
                hasClockRelationshipEvidenceLink,
+               true);
+    expectBool("module brief clock relationship endpoint links",
+               hasClockRelationshipEndpointLinks,
                true);
 }
 
@@ -4852,6 +4868,8 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealPackageRelationshipEvidenceLink = false;
     bool sawRealClockRelationshipEvidenceLink = false;
     bool sawRealResetRelationshipEvidenceLink = false;
+    bool sawRealClockRelationshipEndpointLinks = false;
+    bool sawRealResetRelationshipEndpointLinks = false;
     for (const ModuleBriefRelationshipEvidenceRow& row
          : moduleBrief.relationshipEvidenceRows) {
         sawRealPackageRelationshipEvidence = sawRealPackageRelationshipEvidence
@@ -4878,6 +4896,18 @@ static void runRealWorkspaceIncludeFixture()
                 && row.peerCodeLink.line > 0
                 && !row.peerCodeLink.fileDisplayName.isEmpty()
                 && !row.peerCodeLink.lineDisplayName.isEmpty());
+        sawRealClockRelationshipEndpointLinks = sawRealClockRelationshipEndpointLinks
+            || (!row.outgoing
+                && row.fromSymbolDisplayName == QStringLiteral("clk_main")
+                && row.toSymbolDisplayName == QStringLiteral("rtl_top")
+                && !row.fromCodeLink.fileName.isEmpty()
+                && row.fromCodeLink.line > 0
+                && !row.fromCodeLink.fileDisplayName.isEmpty()
+                && !row.fromCodeLink.lineDisplayName.isEmpty()
+                && !row.toCodeLink.fileName.isEmpty()
+                && row.toCodeLink.line > 0
+                && !row.toCodeLink.fileDisplayName.isEmpty()
+                && !row.toCodeLink.lineDisplayName.isEmpty());
         sawRealResetRelationshipEvidence = sawRealResetRelationshipEvidence
             || (!row.outgoing
                 && row.peerDisplayName == QStringLiteral("srst_main")
@@ -4890,6 +4920,18 @@ static void runRealWorkspaceIncludeFixture()
                 && row.peerCodeLink.line > 0
                 && !row.peerCodeLink.fileDisplayName.isEmpty()
                 && !row.peerCodeLink.lineDisplayName.isEmpty());
+        sawRealResetRelationshipEndpointLinks = sawRealResetRelationshipEndpointLinks
+            || (!row.outgoing
+                && row.fromSymbolDisplayName == QStringLiteral("srst_main")
+                && row.toSymbolDisplayName == QStringLiteral("rtl_top")
+                && !row.fromCodeLink.fileName.isEmpty()
+                && row.fromCodeLink.line > 0
+                && !row.fromCodeLink.fileDisplayName.isEmpty()
+                && !row.fromCodeLink.lineDisplayName.isEmpty()
+                && !row.toCodeLink.fileName.isEmpty()
+                && row.toCodeLink.line > 0
+                && !row.toCodeLink.fileDisplayName.isEmpty()
+                && !row.toCodeLink.lineDisplayName.isEmpty());
     }
     expectBool("real workspace module brief package relationship evidence",
                sawRealPackageRelationshipEvidence,
@@ -4903,11 +4945,17 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace module brief clock relationship evidence link",
                sawRealClockRelationshipEvidenceLink,
                true);
+    expectBool("real workspace module brief clock relationship endpoint links",
+               sawRealClockRelationshipEndpointLinks,
+               true);
     expectBool("real workspace module brief reset relationship evidence",
                sawRealResetRelationshipEvidence,
                true);
     expectBool("real workspace module brief reset relationship evidence link",
                sawRealResetRelationshipEvidenceLink,
+               true);
+    expectBool("real workspace module brief reset relationship endpoint links",
+               sawRealResetRelationshipEndpointLinks,
                true);
 
     ClockResetDomainService clockResetService(&index);

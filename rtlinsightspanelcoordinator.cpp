@@ -120,15 +120,34 @@ void appendRelationshipSummary(
                                             QStringLiteral("Relationships"),
                                             summary.totalCount);
     for (const ModuleBriefRelationshipEvidenceRow& row : evidenceRows) {
-        createChildItem(group,
-                        row.directionDisplayName,
-                        row.peerDisplayName,
-                        row.detailDisplayName,
-                        row.peerCodeLink.fileName,
-                        row.peerCodeLink.line,
-                        row.peerCodeLink.column,
-                        row.peerCodeLink.fileDisplayName,
-                        row.peerCodeLink.lineDisplayName);
+        QTreeWidgetItem* relationship =
+            createChildItem(group,
+                            row.directionDisplayName,
+                            row.peerDisplayName,
+                            row.detailDisplayName,
+                            row.peerCodeLink.fileName,
+                            row.peerCodeLink.line,
+                            row.peerCodeLink.column,
+                            row.peerCodeLink.fileDisplayName,
+                            row.peerCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("From"),
+                        row.fromSymbolDisplayName,
+                        row.typeDisplayName,
+                        row.fromCodeLink.fileName,
+                        row.fromCodeLink.line,
+                        row.fromCodeLink.column,
+                        row.fromCodeLink.fileDisplayName,
+                        row.fromCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("To"),
+                        row.toSymbolDisplayName,
+                        row.typeDisplayName,
+                        row.toCodeLink.fileName,
+                        row.toCodeLink.line,
+                        row.toCodeLink.column,
+                        row.toCodeLink.fileDisplayName,
+                        row.toCodeLink.lineDisplayName);
     }
     for (const ModuleBriefRelationshipRow& row : summary.rows) {
         createChildItem(group,

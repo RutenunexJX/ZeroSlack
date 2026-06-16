@@ -476,10 +476,16 @@ QString ModuleBriefService::relationshipEvidenceDetailDisplayName(
 void ModuleBriefService::fillRelationshipEvidenceMetadata(
     ModuleBriefRelationshipEvidenceRow& row)
 {
+    row.fromSymbol = row.relationship.fromSymbol;
+    row.toSymbol = row.relationship.toSymbol;
     row.peerCodeLink = RtlInsightLink::fromSymbol(row.peerSymbol);
+    row.fromCodeLink = RtlInsightLink::fromSymbol(row.fromSymbol);
+    row.toCodeLink = RtlInsightLink::fromSymbol(row.toSymbol);
     row.directionDisplayName = relationshipDirectionDisplayName(row.outgoing);
     row.typeDisplayName = relationshipTypeDisplayName(row.relationship.relationship.type);
     row.peerDisplayName = symbolDisplayName(row.peerSymbol);
+    row.fromSymbolDisplayName = symbolDisplayName(row.fromSymbol);
+    row.toSymbolDisplayName = symbolDisplayName(row.toSymbol);
     row.detailDisplayName = relationshipEvidenceDetailDisplayName(row);
 }
 

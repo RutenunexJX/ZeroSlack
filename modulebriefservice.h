@@ -27,11 +27,17 @@ struct ModuleBriefRelationshipRow {
 struct ModuleBriefRelationshipEvidenceRow {
     SemanticRelationshipResult relationship;
     sym_list::SymbolInfo peerSymbol = {};
+    sym_list::SymbolInfo fromSymbol = {};
+    sym_list::SymbolInfo toSymbol = {};
     RtlInsightCodeLink peerCodeLink;
+    RtlInsightCodeLink fromCodeLink;
+    RtlInsightCodeLink toCodeLink;
     bool outgoing = false;
     QString directionDisplayName;
     QString typeDisplayName;
     QString peerDisplayName;
+    QString fromSymbolDisplayName;
+    QString toSymbolDisplayName;
     QString detailDisplayName;
 };
 
