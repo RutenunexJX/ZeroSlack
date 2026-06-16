@@ -793,6 +793,21 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         QStringLiteral("insight_pkg"),
         sym_list::sym_package,
         18));
+    symbols.append(makeGuiSmokeSymbol(
+        9615,
+        fixturePath,
+        QStringLiteral("insight_if"),
+        sym_list::sym_interface,
+        19));
+    sym_list::SymbolInfo interfaceBus = makeGuiSmokeSymbol(
+        9616,
+        fixturePath,
+        QStringLiteral("if_bus"),
+        sym_list::sym_inst,
+        20,
+        QStringLiteral("insight_top"));
+    interfaceBus.dataType = QStringLiteral("insight_if");
+    symbols.append(interfaceBus);
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship packageRel;
@@ -820,6 +835,11 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     portRel.toId = 9609;
     portRel.type = SymbolRelationshipEngine::REFERENCES;
     relationships.append(portRel);
+    SemanticRelationship interfaceRel;
+    interfaceRel.fromId = 9616;
+    interfaceRel.toId = 9609;
+    interfaceRel.type = SymbolRelationshipEngine::REFERENCES;
+    relationships.append(interfaceRel);
     SemanticRelationship instRel;
     instRel.fromId = 9601;
     instRel.toId = 9604;
@@ -878,6 +898,11 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawSignalJourney = false;
     bool sawSignalJourneyFromEndpoint = false;
     bool sawSignalJourneyToEndpoint = false;
+    bool sawSignalJourneyInterfaceConnection = false;
+    bool sawSignalJourneyInterfaceKind = false;
+    bool sawSignalJourneyInterfaceBase = false;
+    bool sawSignalJourneyInterfacePeerType = false;
+    bool sawSignalJourneyInterfaceSourceRole = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
     for (QTreeWidgetItem* item : items) {
         sawPort = sawPort
@@ -957,6 +982,27 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("To")
                 && item->text(1) == QStringLiteral("data_q")
                 && item->text(2) == QStringLiteral("Assigns To"));
+        sawSignalJourneyInterfaceConnection =
+            sawSignalJourneyInterfaceConnection
+            || (item->text(0) == QStringLiteral("Interface Connections")
+                && item->text(1) == QStringLiteral("if_bus")
+                && item->text(2) == QStringLiteral("interface incoming References"));
+        sawSignalJourneyInterfaceKind = sawSignalJourneyInterfaceKind
+            || (item->text(0) == QStringLiteral("Connection")
+                && item->text(1) == QStringLiteral("interface instance")
+                && item->text(2) == QStringLiteral("interface incoming References"));
+        sawSignalJourneyInterfaceBase = sawSignalJourneyInterfaceBase
+            || (item->text(0) == QStringLiteral("Interface")
+                && item->text(1) == QStringLiteral("insight_if")
+                && item->text(2) == QStringLiteral("interface instance"));
+        sawSignalJourneyInterfacePeerType = sawSignalJourneyInterfacePeerType
+            || (item->text(0) == QStringLiteral("Peer Type")
+                && item->text(1) == QStringLiteral("instance")
+                && item->text(2) == QStringLiteral("References"));
+        sawSignalJourneyInterfaceSourceRole = sawSignalJourneyInterfaceSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("if_bus"));
     }
 
     expectBool("RTL insights renders module port", sawPort, true);
@@ -1008,6 +1054,21 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders signal journey to endpoint",
                sawSignalJourneyToEndpoint,
+               true);
+    expectBool("RTL insights renders signal journey interface connection",
+               sawSignalJourneyInterfaceConnection,
+               true);
+    expectBool("RTL insights renders signal journey interface kind",
+               sawSignalJourneyInterfaceKind,
+               true);
+    expectBool("RTL insights renders signal journey interface base",
+               sawSignalJourneyInterfaceBase,
+               true);
+    expectBool("RTL insights renders signal journey interface peer type",
+               sawSignalJourneyInterfacePeerType,
+               true);
+    expectBool("RTL insights renders signal journey interface source role",
+               sawSignalJourneyInterfaceSourceRole,
                true);
 
     window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(

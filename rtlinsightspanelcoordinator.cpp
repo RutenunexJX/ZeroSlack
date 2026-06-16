@@ -454,6 +454,44 @@ void appendSignalJourneyItems(QTreeWidgetItem* parent,
                         item.toCodeLink.column,
                         item.toCodeLink.fileDisplayName,
                         item.toCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("Connection"),
+                        item.connectionKindDisplayName,
+                        item.detailDisplayName,
+                        item.peerCodeLink.fileName,
+                        item.peerCodeLink.line,
+                        item.peerCodeLink.column,
+                        item.peerCodeLink.fileDisplayName,
+                        item.peerCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("Peer Type"),
+                        item.peerTypeDisplayName,
+                        item.relationshipTypeDisplayName,
+                        item.peerCodeLink.fileName,
+                        item.peerCodeLink.line,
+                        item.peerCodeLink.column,
+                        item.peerCodeLink.fileDisplayName,
+                        item.peerCodeLink.lineDisplayName);
+        if (!item.interfaceBaseDisplayName.isEmpty()) {
+            createChildItem(relationship,
+                            QStringLiteral("Interface"),
+                            item.interfaceBaseDisplayName,
+                            item.connectionKindDisplayName,
+                            item.peerCodeLink.fileName,
+                            item.peerCodeLink.line,
+                            item.peerCodeLink.column,
+                            item.peerCodeLink.fileDisplayName,
+                            item.peerCodeLink.lineDisplayName);
+        }
+        createChildItem(relationship,
+                        QStringLiteral("Source Role"),
+                        item.peerSourceRoleDisplayName,
+                        item.peerSymbolDisplayName,
+                        item.peerCodeLink.fileName,
+                        item.peerCodeLink.line,
+                        item.peerCodeLink.column,
+                        item.peerCodeLink.fileDisplayName,
+                        item.peerCodeLink.lineDisplayName);
     }
 }
 

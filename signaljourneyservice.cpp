@@ -203,6 +203,7 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
             item.peerSymbol = peer;
             item.outgoing = outgoing;
             fillDisplayMetadata(item);
+            fillInterfaceDisplayMetadata(item);
             item.detailDisplayName = QStringLiteral("interface %1")
                                          .arg(item.detailDisplayName);
             items.append(item);
@@ -319,6 +320,48 @@ QString SignalJourneyService::interfaceBaseName(const QString& dataType)
     return dot >= 0 ? dataType.left(dot) : dataType;
 }
 
+QString SignalJourneyService::interfaceConnectionKindDisplayName(
+    const sym_list::SymbolInfo& symbol)
+{
+    if (symbol.symbolType == sym_list::sym_port_interface
+        || symbol.symbolType == sym_list::sym_port_interface_modport) {
+        return QStringLiteral("interface port");
+    }
+    if (symbol.symbolType == sym_list::sym_interface_modport)
+        return QStringLiteral("interface modport");
+    if (symbol.symbolType == sym_list::sym_interface)
+        return QStringLiteral("interface declaration");
+    if (symbol.symbolType == sym_list::sym_inst
+        && !interfaceBaseName(symbol.dataType).isEmpty()) {
+        return QStringLiteral("interface instance");
+    }
+    if (!symbol.moduleScope.isEmpty())
+        return QStringLiteral("interface member");
+    return QStringLiteral("interface connection");
+}
+
+QString SignalJourneyService::interfaceBaseDisplayName(
+    const sym_list::SymbolInfo& symbol)
+{
+    const QString baseName = interfaceBaseName(symbol.dataType);
+    if (!baseName.isEmpty())
+        return baseName;
+    return symbol.moduleScope;
+}
+
+QString SignalJourneyService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
+{
+    switch (role) {
+    case SymbolTaxonomy::SourceRole::DesignSource:
+        return QStringLiteral("design source");
+    case SymbolTaxonomy::SourceRole::Header:
+        return QStringLiteral("header");
+    case SymbolTaxonomy::SourceRole::Unknown:
+    default:
+        return QStringLiteral("source");
+    }
+}
+
 void SignalJourneyService::fillDeclarationDisplayMetadata(
     SignalJourneyReport& report)
 {
@@ -345,11 +388,25 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
     item.peerSymbolDisplayName = symbolDisplayName(item.peerSymbol);
     item.fromSymbolDisplayName = symbolDisplayName(item.fromSymbol);
     item.toSymbolDisplayName = symbolDisplayName(item.toSymbol);
+    item.connectionKindDisplayName = QStringLiteral("relationship");
+    item.peerTypeDisplayName =
+        SymbolTaxonomy::symbolTypeLabel(item.peerSymbol.symbolType);
+    item.peerSourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(item.peerSymbol.fileName));
+    item.interfaceBaseDisplayName = interfaceBaseDisplayName(item.peerSymbol);
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
     item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;
     item.detailDisplayName = QStringLiteral("%1 %2")
                                  .arg(item.directionDisplayName,
                                       item.relationshipTypeDisplayName);
+}
+
+void SignalJourneyService::fillInterfaceDisplayMetadata(SignalJourneyItem& item)
+{
+    item.connectionKindDisplayName =
+        interfaceConnectionKindDisplayName(item.peerSymbol);
+    item.interfaceBaseDisplayName = interfaceBaseDisplayName(item.peerSymbol);
 }
 
 void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)

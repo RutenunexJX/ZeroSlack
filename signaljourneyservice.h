@@ -3,6 +3,7 @@
 
 #include "rtlinsightlink.h"
 #include "semanticindex.h"
+#include "symboltaxonomy.h"
 
 #include <QList>
 #include <QSet>
@@ -30,6 +31,10 @@ struct SignalJourneyItem {
     QString peerSymbolDisplayName;
     QString fromSymbolDisplayName;
     QString toSymbolDisplayName;
+    QString connectionKindDisplayName;
+    QString peerTypeDisplayName;
+    QString peerSourceRoleDisplayName;
+    QString interfaceBaseDisplayName;
     QString peerFileDisplayName;
     QString peerLineDisplayName;
     QString detailDisplayName;
@@ -86,8 +91,12 @@ private:
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString interfaceBaseName(const QString& dataType);
+    static QString interfaceConnectionKindDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString interfaceBaseDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
     static void fillDisplayMetadata(SignalJourneyItem& item);
+    static void fillInterfaceDisplayMetadata(SignalJourneyItem& item);
     static void sortItems(QList<SignalJourneyItem>& items);
 };
 

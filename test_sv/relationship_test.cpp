@@ -3473,6 +3473,8 @@ static void runSignalJourneyServiceFixture()
                true);
     bool sawInterfaceInstanceEndpoints = false;
     bool sawInterfaceMemberEndpoints = false;
+    bool sawInterfaceInstanceMetadata = false;
+    bool sawInterfaceMemberMetadata = false;
     for (const SignalJourneyItem& item : report.interfaceConnections) {
         sawInterfaceInstanceEndpoints = sawInterfaceInstanceEndpoints
             || (item.peerSymbolDisplayName == QStringLiteral("if_bus")
@@ -3490,12 +3492,34 @@ static void runSignalJourneyServiceFixture()
                 && item.fromCodeLink.line == 10
                 && item.toCodeLink.fileName == fileName
                 && item.toCodeLink.line == 55);
+        sawInterfaceInstanceMetadata = sawInterfaceInstanceMetadata
+            || (item.peerSymbolDisplayName == QStringLiteral("if_bus")
+                && item.connectionKindDisplayName
+                    == QStringLiteral("interface instance")
+                && item.peerTypeDisplayName == QStringLiteral("instance")
+                && item.interfaceBaseDisplayName == QStringLiteral("journey_if")
+                && item.peerSourceRoleDisplayName
+                    == QStringLiteral("design source"));
+        sawInterfaceMemberMetadata = sawInterfaceMemberMetadata
+            || (item.peerSymbolDisplayName == QStringLiteral("ready")
+                && item.connectionKindDisplayName
+                    == QStringLiteral("interface member")
+                && item.peerTypeDisplayName == QStringLiteral("logic")
+                && item.interfaceBaseDisplayName == QStringLiteral("journey_if")
+                && item.peerSourceRoleDisplayName
+                    == QStringLiteral("design source"));
     }
     expectBool("signal journey interface instance endpoints",
                sawInterfaceInstanceEndpoints,
                true);
     expectBool("signal journey interface member endpoints",
                sawInterfaceMemberEndpoints,
+               true);
+    expectBool("signal journey interface instance metadata",
+               sawInterfaceInstanceMetadata,
+               true);
+    expectBool("signal journey interface member metadata",
+               sawInterfaceMemberMetadata,
                true);
 
     SignalJourneyQuery clockQuery;
@@ -5262,10 +5286,19 @@ static void runRealWorkspaceIncludeFixture()
         signalJourneyService.buildSignalJourney(interfaceJourneyQuery);
     bool sawRealInterfaceModportJourney = false;
     bool sawRealInterfaceModportJourneyLink = false;
+    bool sawRealInterfaceModportJourneyMetadata = false;
     for (const SignalJourneyItem& item : interfaceJourney.interfaceConnections) {
         sawRealInterfaceModportJourney = sawRealInterfaceModportJourney
             || (item.peerSymbolDisplayName == QStringLiteral("si")
                 && item.detailDisplayName == QStringLiteral("interface outgoing References"));
+        sawRealInterfaceModportJourneyMetadata =
+            sawRealInterfaceModportJourneyMetadata
+            || (item.peerSymbolDisplayName == QStringLiteral("si")
+                && item.connectionKindDisplayName
+                    == QStringLiteral("interface modport")
+                && item.interfaceBaseDisplayName == QStringLiteral("lr_genr_if")
+                && !item.peerTypeDisplayName.isEmpty()
+                && !item.peerSourceRoleDisplayName.isEmpty());
         sawRealInterfaceModportJourneyLink = sawRealInterfaceModportJourneyLink
             || (item.peerSymbolDisplayName == QStringLiteral("si")
                 && !item.peerCodeLink.fileName.isEmpty()
@@ -5284,6 +5317,9 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace signal journey interface modport",
                sawRealInterfaceModportJourney,
+               true);
+    expectBool("real workspace signal journey interface modport metadata",
+               sawRealInterfaceModportJourneyMetadata,
                true);
     expectBool("real workspace signal journey interface modport code link",
                sawRealInterfaceModportJourneyLink,
