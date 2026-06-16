@@ -526,6 +526,13 @@ QList<FsmStateRow> FsmGraphService::stateRows(
         row.codeLink = RtlInsightLink::fromSymbol(state);
         row.sectionDisplayName = QStringLiteral("State");
         row.detailDisplayName = stateDetailDisplayName(state);
+        row.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(state.symbolType);
+        row.sourceRoleDisplayName =
+            sourceRoleDisplayName(
+                SymbolTaxonomy::sourceRoleForFileName(state.fileName));
+        row.moduleDisplayName = state.moduleScope.isEmpty()
+            ? QStringLiteral("global")
+            : state.moduleScope;
         rows.append(row);
     }
     return rows;

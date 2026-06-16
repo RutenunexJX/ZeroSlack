@@ -471,12 +471,40 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
         states->setText(0, SemanticPanelUtils::countLabel(statesGroup,
                                                           graph.states.size()));
         for (const FsmStateRow& row : graph.stateRows) {
-            createChildItem(states,
-                            row.sectionDisplayName.isEmpty()
-                                ? QStringLiteral("State")
-                                : row.sectionDisplayName,
+            QTreeWidgetItem* state =
+                createChildItem(states,
+                                row.sectionDisplayName.isEmpty()
+                                    ? QStringLiteral("State")
+                                    : row.sectionDisplayName,
+                                row.state.symbolName,
+                                row.detailDisplayName,
+                                row.codeLink.fileName,
+                                row.codeLink.line,
+                                row.codeLink.column,
+                                row.codeLink.fileDisplayName,
+                                row.codeLink.lineDisplayName);
+            createChildItem(state,
+                            QStringLiteral("Type"),
+                            row.typeDisplayName,
                             row.state.symbolName,
-                            row.detailDisplayName,
+                            row.codeLink.fileName,
+                            row.codeLink.line,
+                            row.codeLink.column,
+                            row.codeLink.fileDisplayName,
+                            row.codeLink.lineDisplayName);
+            createChildItem(state,
+                            QStringLiteral("Source Role"),
+                            row.sourceRoleDisplayName,
+                            row.state.symbolName,
+                            row.codeLink.fileName,
+                            row.codeLink.line,
+                            row.codeLink.column,
+                            row.codeLink.fileDisplayName,
+                            row.codeLink.lineDisplayName);
+            createChildItem(state,
+                            QStringLiteral("Module"),
+                            row.moduleDisplayName,
+                            row.state.symbolName,
                             row.codeLink.fileName,
                             row.codeLink.line,
                             row.codeLink.column,

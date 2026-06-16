@@ -923,6 +923,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawUnmappedClock = false;
     bool sawUnmappedClockCategory = false;
     bool sawTransition = false;
+    bool sawFsmStateType = false;
+    bool sawFsmStateSourceRole = false;
+    bool sawFsmStateModule = false;
     bool sawFsmRegisterType = false;
     bool sawFsmRegisterSourceRole = false;
     bool sawFsmNextStateSignal = false;
@@ -1051,6 +1054,18 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawTransition = sawTransition
             || (item->text(0) == QStringLiteral("IDLE")
                 && item->text(1) == QStringLiteral("RUN"));
+        sawFsmStateType = sawFsmStateType
+            || (item->text(0) == QStringLiteral("Type")
+                && item->text(1) == QStringLiteral("enum value")
+                && item->text(2) == QStringLiteral("IDLE"));
+        sawFsmStateSourceRole = sawFsmStateSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("IDLE"));
+        sawFsmStateModule = sawFsmStateModule
+            || (item->text(0) == QStringLiteral("Module")
+                && item->text(1) == QStringLiteral("insight_top")
+                && item->text(2) == QStringLiteral("IDLE"));
         sawFsmRegisterType = sawFsmRegisterType
             || (item->text(0) == QStringLiteral("Type")
                 && item->text(1) == QStringLiteral("enum")
@@ -1205,6 +1220,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                sawUnmappedClockCategory,
                true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
+    expectBool("RTL insights renders FSM state type",
+               sawFsmStateType,
+               true);
+    expectBool("RTL insights renders FSM state source role",
+               sawFsmStateSourceRole,
+               true);
+    expectBool("RTL insights renders FSM state module",
+               sawFsmStateModule,
+               true);
     expectBool("RTL insights renders FSM register type",
                sawFsmRegisterType,
                true);

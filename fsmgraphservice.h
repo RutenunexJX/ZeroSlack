@@ -31,6 +31,9 @@ struct FsmStateRow {
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString detailDisplayName;
+    QString typeDisplayName;
+    QString sourceRoleDisplayName;
+    QString moduleDisplayName;
 };
 
 struct FsmTransitionRow {

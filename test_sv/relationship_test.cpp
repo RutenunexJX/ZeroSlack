@@ -4190,7 +4190,13 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().stateRows.first().sectionDisplayName
                        == QStringLiteral("State")
                    && report.graphs.first().stateRows.first().detailDisplayName
-                       == QStringLiteral("state_t"),
+                       == QStringLiteral("state_t")
+                   && report.graphs.first().stateRows.first().typeDisplayName
+                       == QStringLiteral("enum value")
+                   && report.graphs.first().stateRows.first().sourceRoleDisplayName
+                       == QStringLiteral("design source")
+                   && report.graphs.first().stateRows.first().moduleDisplayName
+                       == QStringLiteral("fsm_top"),
                true);
     expectBool("fsm graph state row code link",
                !report.graphs.isEmpty()
@@ -4365,6 +4371,16 @@ static void runFsmGraphServiceFixture()
                           .codeLink.fileName == packageFileName
                    && packageReport.graphs.first().stateRows.first()
                           .codeLink.line > 0,
+               true);
+    expectBool("fsm graph package enum state metadata",
+               !packageReport.graphs.isEmpty()
+                   && !packageReport.graphs.first().stateRows.isEmpty()
+                   && packageReport.graphs.first().stateRows.first()
+                          .typeDisplayName == QStringLiteral("enum value")
+                   && packageReport.graphs.first().stateRows.first()
+                          .sourceRoleDisplayName == QStringLiteral("design source")
+                   && packageReport.graphs.first().stateRows.first()
+                          .moduleDisplayName == QStringLiteral("fsm_pkg"),
                true);
 }
 
@@ -5600,6 +5616,7 @@ static void runRealWorkspaceIncludeFixture()
         realFsmService.buildFsmGraph(realFsmQuery);
     bool sawRealPhyPassFsm = false;
     bool sawRealPhyPassFsmStateLink = false;
+    bool sawRealPhyPassFsmStateMetadata = false;
     bool sawRealPhyPassFsmRegisterMetadata = false;
     bool sawRealPhyPassFsmNextStateLink = false;
     bool sawRealPhyPassFsmTransition = false;
@@ -5631,6 +5648,10 @@ static void runRealWorkspaceIncludeFixture()
             && graph.stateRows.first().codeLink.line > 0
             && !graph.stateRows.first().codeLink.fileDisplayName.isEmpty()
             && !graph.stateRows.first().codeLink.lineDisplayName.isEmpty();
+        sawRealPhyPassFsmStateMetadata = !graph.stateRows.isEmpty()
+            && !graph.stateRows.first().typeDisplayName.isEmpty()
+            && !graph.stateRows.first().sourceRoleDisplayName.isEmpty()
+            && !graph.stateRows.first().moduleDisplayName.isEmpty();
         sawRealPhyPassFsmTransition = !graph.transitionRows.isEmpty()
             && !graph.transitionRows.first().codeLink.fileName.isEmpty()
             && graph.transitionRows.first().codeLink.line > 0
@@ -5676,6 +5697,9 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace fsm graph state code link",
                sawRealPhyPassFsmStateLink,
+               true);
+    expectBool("real workspace fsm graph state metadata",
+               sawRealPhyPassFsmStateMetadata,
                true);
     expectBool("real workspace fsm graph register metadata",
                sawRealPhyPassFsmRegisterMetadata,
