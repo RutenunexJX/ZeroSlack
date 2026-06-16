@@ -244,9 +244,11 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
                             graph.stateRegisterDetailDisplayName.isEmpty()
                                 ? QStringLiteral("state register")
                                 : graph.stateRegisterDetailDisplayName,
-                            graph.stateRegister.fileName,
-                            graph.stateRegister.startLine,
-                            graph.stateRegister.startColumn);
+                            graph.stateRegisterCodeLink.fileName,
+                            graph.stateRegisterCodeLink.line,
+                            graph.stateRegisterCodeLink.column,
+                            graph.stateRegisterCodeLink.fileDisplayName,
+                            graph.stateRegisterCodeLink.lineDisplayName);
 
         QTreeWidgetItem* states = new QTreeWidgetItem(stateRegister);
         const QString statesGroup = graph.statesGroupDisplayName.isEmpty()
@@ -254,28 +256,18 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
             : graph.statesGroupDisplayName;
         states->setText(0, SemanticPanelUtils::countLabel(statesGroup,
                                                           graph.states.size()));
-        if (!graph.stateRows.isEmpty()) {
-            for (const FsmStateRow& row : graph.stateRows) {
-                createChildItem(states,
-                                row.sectionDisplayName.isEmpty()
-                                    ? QStringLiteral("State")
-                                    : row.sectionDisplayName,
-                                row.state.symbolName,
-                                row.detailDisplayName,
-                                row.state.fileName,
-                                row.state.startLine,
-                                row.state.startColumn);
-            }
-        } else {
-            for (const sym_list::SymbolInfo& state : graph.states) {
-                createChildItem(states,
-                                QStringLiteral("State"),
-                                state.symbolName,
-                                state.dataType,
-                                state.fileName,
-                                state.startLine,
-                                state.startColumn);
-            }
+        for (const FsmStateRow& row : graph.stateRows) {
+            createChildItem(states,
+                            row.sectionDisplayName.isEmpty()
+                                ? QStringLiteral("State")
+                                : row.sectionDisplayName,
+                            row.state.symbolName,
+                            row.detailDisplayName,
+                            row.codeLink.fileName,
+                            row.codeLink.line,
+                            row.codeLink.column,
+                            row.codeLink.fileDisplayName,
+                            row.codeLink.lineDisplayName);
         }
 
         QTreeWidgetItem* transitions = new QTreeWidgetItem(stateRegister);
@@ -286,32 +278,18 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
         transitions->setText(0, SemanticPanelUtils::countLabel(
                                     transitionsGroup,
                                     graph.transitions.size()));
-        if (!graph.transitionRows.isEmpty()) {
-            for (const FsmTransitionRow& row : graph.transitionRows) {
-                createChildItem(transitions,
-                                row.sectionDisplayName.isEmpty()
-                                    ? row.fromStateDisplayName
-                                    : row.sectionDisplayName,
-                                row.toStateDisplayName,
-                                row.detailDisplayName,
-                                graph.moduleSymbol.fileName,
-                                row.transition.line,
-                                1);
-            }
-        } else {
-            for (const FsmTransition& transition : graph.transitions) {
-                createChildItem(transitions,
-                                transition.sectionDisplayName.isEmpty()
-                                    ? transition.fromState
-                                    : transition.sectionDisplayName,
-                                transition.toState,
-                                transition.detailDisplayName.isEmpty()
-                                    ? transition.assignmentTarget
-                                    : transition.detailDisplayName,
-                                graph.moduleSymbol.fileName,
-                                transition.line,
-                                1);
-            }
+        for (const FsmTransitionRow& row : graph.transitionRows) {
+            createChildItem(transitions,
+                            row.sectionDisplayName.isEmpty()
+                                ? row.fromStateDisplayName
+                                : row.sectionDisplayName,
+                            row.toStateDisplayName,
+                            row.detailDisplayName,
+                            row.codeLink.fileName,
+                            row.codeLink.line,
+                            row.codeLink.column,
+                            row.codeLink.fileDisplayName,
+                            row.codeLink.lineDisplayName);
         }
     }
 }

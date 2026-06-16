@@ -1,6 +1,7 @@
 #ifndef FSMGRAPHSERVICE_H
 #define FSMGRAPHSERVICE_H
 
+#include "rtlinsightlink.h"
 #include "semanticindex.h"
 
 #include <QList>
@@ -19,18 +20,21 @@ struct FsmTransition {
     QString condition;
     QString assignmentTarget;
     int line = 0;
+    RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString detailDisplayName;
 };
 
 struct FsmStateRow {
     sym_list::SymbolInfo state = {};
+    RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString detailDisplayName;
 };
 
 struct FsmTransitionRow {
     FsmTransition transition;
+    RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString fromStateDisplayName;
     QString toStateDisplayName;
@@ -43,6 +47,7 @@ struct FsmGraph {
     sym_list::SymbolInfo moduleSymbol = {};
     sym_list::SymbolInfo stateRegister = {};
     sym_list::SymbolInfo nextStateSignal = {};
+    RtlInsightCodeLink stateRegisterCodeLink;
     QList<sym_list::SymbolInfo> states;
     QList<FsmTransition> transitions;
     QList<FsmStateRow> stateRows;
@@ -104,6 +109,10 @@ private:
     static QString transitionDetailDisplayName(const FsmTransition& transition);
     static QString transitionConditionDisplayName(const FsmTransition& transition);
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);
+    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
+    static RtlInsightCodeLink codeLink(const QString& fileName, int line, int column);
+    static QString fileDisplayName(const QString& fileName);
+    static QString lineDisplayName(int line);
     static void fillDisplayMetadata(FsmGraph& graph);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);

@@ -3697,6 +3697,16 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().stateRegisterDetailDisplayName
                        == QStringLiteral("next state_d"),
                true);
+    expectBool("fsm graph register code link",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().stateRegisterCodeLink.fileName == fileName
+                   && report.graphs.first().stateRegisterCodeLink.line == 3
+                   && report.graphs.first().stateRegisterCodeLink.column == 1
+                   && report.graphs.first().stateRegisterCodeLink.fileDisplayName
+                       == QStringLiteral("fsm_graph_fixture.sv")
+                   && report.graphs.first().stateRegisterCodeLink.lineDisplayName
+                       == QStringLiteral("3"),
+               true);
     expectInt("fsm graph state count",
               report.graphs.isEmpty() ? 0 : report.graphs.first().states.size(),
               3);
@@ -3711,6 +3721,18 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("State")
                    && report.graphs.first().stateRows.first().detailDisplayName
                        == QStringLiteral("state_t"),
+               true);
+    expectBool("fsm graph state row code link",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().stateRows.isEmpty()
+                   && report.graphs.first().stateRows.first().codeLink.fileName
+                       == fileName
+                   && report.graphs.first().stateRows.first().codeLink.line == 2
+                   && report.graphs.first().stateRows.first().codeLink.column == 1
+                   && report.graphs.first().stateRows.first().codeLink.fileDisplayName
+                       == QStringLiteral("fsm_graph_fixture.sv")
+                   && report.graphs.first().stateRows.first().codeLink.lineDisplayName
+                       == QStringLiteral("2"),
                true);
     expectInt("fsm graph transition count",
               report.graphs.isEmpty() ? 0 : report.graphs.first().transitions.size(),
@@ -3739,6 +3761,18 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("start")
                    && report.graphs.first().transitionRows.first().sourceLineDisplayName
                        == QStringLiteral("line 10"),
+               true);
+    expectBool("fsm graph transition row code link",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().transitionRows.isEmpty()
+                   && report.graphs.first().transitionRows.first().codeLink.fileName
+                       == fileName
+                   && report.graphs.first().transitionRows.first().codeLink.line == 10
+                   && report.graphs.first().transitionRows.first().codeLink.column == 1
+                   && report.graphs.first().transitionRows.first().codeLink.fileDisplayName
+                       == QStringLiteral("fsm_graph_fixture.sv")
+                   && report.graphs.first().transitionRows.first().codeLink.lineDisplayName
+                       == QStringLiteral("10"),
                true);
     expectBool("fsm graph transition display metadata",
                !report.graphs.isEmpty()
