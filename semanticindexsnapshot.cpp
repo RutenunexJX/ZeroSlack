@@ -30,6 +30,55 @@ QList<SymbolRelationshipEngine::RelationType> snapshotRelationshipTypes()
     };
 }
 
+sym_list::SymbolInfo snapshotSymbolById(
+    const QList<sym_list::SymbolInfo>& symbols,
+    int symbolId)
+{
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (symbol.symbolId == symbolId)
+            return symbol;
+    }
+
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    return missing;
+}
+
+void fillRelationshipStableKeys(
+    SemanticRelationship* relationship,
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    if (!relationship)
+        return;
+
+    if (!relationship->fromStableKey.isValid()) {
+        relationship->fromStableKey =
+            symbolStableKeyForSymbol(snapshotSymbolById(symbols, relationship->fromId));
+    }
+    if (!relationship->toStableKey.isValid()) {
+        relationship->toStableKey =
+            symbolStableKeyForSymbol(snapshotSymbolById(symbols, relationship->toId));
+    }
+}
+
+QString snapshotRelationshipDedupeKey(
+    const SemanticRelationship& relationship,
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    SemanticRelationship keyedRelationship = relationship;
+    fillRelationshipStableKeys(&keyedRelationship, symbols);
+
+    const QString stableKey =
+        semanticRelationshipStableKeyText(keyedRelationship);
+    if (!stableKey.isEmpty())
+        return stableKey;
+
+    return QStringLiteral("local:%1:%2:%3")
+        .arg(keyedRelationship.fromId)
+        .arg(keyedRelationship.toId)
+        .arg(static_cast<int>(keyedRelationship.type));
+}
+
 }
 
 SemanticIndexSnapshot::SemanticIndexSnapshot(
@@ -42,6 +91,8 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
       m_diagnostics(std::move(diagnostics)),
       m_fileContents(std::move(fileContents))
 {
+    for (SemanticRelationship& relationship : m_relationships)
+        fillRelationshipStableKeys(&relationship, m_symbols);
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
@@ -98,21 +149,15 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
     QList<SemanticRelationship> merged = m_relationships;
     QSet<QString> seen;
     for (const SemanticRelationship& relationship : std::as_const(merged)) {
-        if (relationship.fromId < 0 || relationship.toId < 0)
-            continue;
-        seen.insert(QStringLiteral("%1:%2:%3")
-                        .arg(relationship.fromId)
-                        .arg(relationship.toId)
-                        .arg(static_cast<int>(relationship.type)));
+        const QString key = snapshotRelationshipDedupeKey(relationship, m_symbols);
+        if (!key.isEmpty())
+            seen.insert(key);
     }
 
     for (const SemanticRelationship& relationship : relationships) {
         if (relationship.fromId < 0 || relationship.toId < 0)
             continue;
-        const QString key = QStringLiteral("%1:%2:%3")
-                                .arg(relationship.fromId)
-                                .arg(relationship.toId)
-                                .arg(static_cast<int>(relationship.type));
+        const QString key = snapshotRelationshipDedupeKey(relationship, m_symbols);
         if (seen.contains(key))
             continue;
         seen.insert(key);

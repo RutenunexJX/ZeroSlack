@@ -31,16 +31,32 @@ struct SemanticQueryContext {
     int cursorPosition = -1;  // QTextDocument position, when available
 };
 
+struct SymbolStableKey {
+    QString fileName;
+    QString symbolName;
+    SymbolTaxonomy::DeclarationKind declarationKind =
+        SymbolTaxonomy::DeclarationKind::Unknown;
+    QString ownerScope;
+
+    bool isValid() const;
+    QString toString() const;
+    bool operator==(const SymbolStableKey& other) const;
+};
+
 struct SemanticRelationship {
     int fromId = -1;
     int toId = -1;
     SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
+    SymbolStableKey fromStableKey;
+    SymbolStableKey toStableKey;
 };
 
 struct SemanticRelationshipResult {
     SemanticRelationship relationship;
     sym_list::SymbolInfo fromSymbol;
     sym_list::SymbolInfo toSymbol;
+    SymbolStableKey fromStableKey;
+    SymbolStableKey toStableKey;
 };
 
 struct SemanticDiagnostic {
@@ -84,6 +100,11 @@ struct SemanticDefinitionResult {
     bool localFile = false;
     sym_list::SymbolInfo symbol;
 };
+
+SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol);
+QString symbolStableKeyText(const SymbolStableKey& key);
+QString semanticRelationshipStableKeyText(
+    const SemanticRelationship& relationship);
 
 // Thin facade over the current sym_list-backed semantic store.
 //

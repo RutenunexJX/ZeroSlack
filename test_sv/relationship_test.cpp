@@ -888,16 +888,30 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QList<SemanticRelationship> snapshotTopRelationships =
         snapshotIndex.getRelationships(topId, true);
     bool snapshotFoundStage = false;
+    bool snapshotFoundStageStableKey = false;
+    const SymbolStableKey topStableKey =
+        symbolStableKeyForSymbol(snapshotIndex.getSymbolById(topId));
+    const SymbolStableKey stageStableKey =
+        symbolStableKeyForSymbol(snapshotIndex.getSymbolById(stageId));
     for (const SemanticRelationship& relationship : snapshotTopRelationships) {
         snapshotFoundStage = snapshotFoundStage
             || (relationship.toId == stageId
                 && relationship.type == SymbolRelationshipEngine::INSTANTIATES);
+        snapshotFoundStageStableKey = snapshotFoundStageStableKey
+            || (relationship.toId == stageId
+                && relationship.type == SymbolRelationshipEngine::INSTANTIATES
+                && relationship.fromStableKey == topStableKey
+                && relationship.toStableKey == stageStableKey
+                && !semanticRelationshipStableKeyText(relationship).isEmpty());
     }
     expectBool("semantic snapshot captures relationships",
                snapshotFoundStage, true);
+    expectBool("semantic snapshot captures relationship stable keys",
+               snapshotFoundStageStableKey, true);
     const QList<SemanticRelationshipResult> snapshotTopRelationshipResults =
         snapshotIndex.getRelationshipResults(topId, true);
     bool snapshotFoundStageResult = false;
+    bool snapshotFoundStageResultStableKey = false;
     for (const SemanticRelationshipResult& relationship : snapshotTopRelationshipResults) {
         snapshotFoundStageResult = snapshotFoundStageResult
             || (relationship.relationship.fromId == topId
@@ -905,9 +919,18 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES
                 && relationship.fromSymbol.symbolId == topId
                 && relationship.toSymbol.symbolId == stageId);
+        snapshotFoundStageResultStableKey = snapshotFoundStageResultStableKey
+            || (relationship.relationship.fromId == topId
+                && relationship.relationship.toId == stageId
+                && relationship.fromStableKey == topStableKey
+                && relationship.toStableKey == stageStableKey
+                && relationship.relationship.fromStableKey == topStableKey
+                && relationship.relationship.toStableKey == stageStableKey);
     }
     expectBool("semantic snapshot returns relationship endpoint symbols",
                snapshotFoundStageResult, true);
+    expectBool("semantic snapshot returns relationship stable keys",
+               snapshotFoundStageResultStableKey, true);
     RelationshipService snapshotRelationshipService(&snapshotIndex);
     RelationshipQuery snapshotRelationshipQuery;
     snapshotRelationshipQuery.symbolId = topId;
@@ -1276,6 +1299,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotNamedHierarchyReport.nodes.first().symbol.symbolId == topId
                    && snapshotNamedHierarchyReport.nodes.last().symbol.symbolId == stageId,
                true);
+    SemanticRelationship duplicateStableRelationship;
+    duplicateStableRelationship.fromId = topId + 100000;
+    duplicateStableRelationship.toId = stageId + 100000;
+    duplicateStableRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
+    duplicateStableRelationship.fromStableKey = topStableKey;
+    duplicateStableRelationship.toStableKey = stageStableKey;
+    const SemanticIndexSnapshot stableDedupedSnapshot =
+        snapshot->withAdditionalRelationships({duplicateStableRelationship});
+    expectInt("semantic snapshot merge deduplicates stable relationship",
+              stableDedupedSnapshot.relationships().size(),
+              snapshot->relationships().size());
     SemanticRelationship duplicateStageRelationship;
     duplicateStageRelationship.fromId = topId;
     duplicateStageRelationship.toId = stageId;
@@ -1293,14 +1327,23 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               enrichedSnapshot.relationships().size(),
               snapshot->relationships().size() + 1);
     bool enrichedFoundTask = false;
+    bool enrichedTaskHasStableKeys = false;
     for (const SemanticRelationship& relationship :
          enrichedSnapshot.getRelationships(stageId, true)) {
         enrichedFoundTask = enrichedFoundTask
             || (relationship.toId == captureId
                 && relationship.type == SymbolRelationshipEngine::CALLS);
+        enrichedTaskHasStableKeys = enrichedTaskHasStableKeys
+            || (relationship.toId == captureId
+                && relationship.type == SymbolRelationshipEngine::CALLS
+                && relationship.fromStableKey == stageStableKey
+                && relationship.toStableKey
+                    == symbolStableKeyForSymbol(snapshotIndex.getSymbolById(captureId)));
     }
     expectBool("semantic snapshot merge keeps new relationship",
                enrichedFoundTask, true);
+    expectBool("semantic snapshot merge fills new stable keys",
+               enrichedTaskHasStableKeys, true);
     SemanticDiagnostic replacementDiagnostic;
     replacementDiagnostic.fileName = topPath;
     replacementDiagnostic.line = 12;
