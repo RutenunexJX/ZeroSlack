@@ -391,6 +391,16 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
     item.peerSymbolDisplayName = symbolDisplayName(item.peerSymbol);
     item.fromSymbolDisplayName = symbolDisplayName(item.fromSymbol);
     item.toSymbolDisplayName = symbolDisplayName(item.toSymbol);
+    item.fromTypeDisplayName =
+        SymbolTaxonomy::symbolTypeLabel(item.fromSymbol.symbolType);
+    item.toTypeDisplayName =
+        SymbolTaxonomy::symbolTypeLabel(item.toSymbol.symbolType);
+    item.fromSourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(item.fromSymbol.fileName));
+    item.toSourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(item.toSymbol.fileName));
     item.connectionKindDisplayName = QStringLiteral("relationship");
     item.peerTypeDisplayName =
         SymbolTaxonomy::symbolTypeLabel(item.peerSymbol.symbolType);

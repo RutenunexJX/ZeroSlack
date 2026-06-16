@@ -31,6 +31,10 @@ struct SignalJourneyItem {
     QString peerSymbolDisplayName;
     QString fromSymbolDisplayName;
     QString toSymbolDisplayName;
+    QString fromTypeDisplayName;
+    QString toTypeDisplayName;
+    QString fromSourceRoleDisplayName;
+    QString toSourceRoleDisplayName;
     QString connectionKindDisplayName;
     QString peerTypeDisplayName;
     QString peerSourceRoleDisplayName;

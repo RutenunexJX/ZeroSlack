@@ -3464,6 +3464,17 @@ static void runSignalJourneyServiceFixture()
                    && report.assignments.first().toCodeLink.lineDisplayName
                        == QStringLiteral("10"),
                true);
+    expectBool("signal journey assignment endpoint metadata",
+               !report.assignments.isEmpty()
+                   && report.assignments.first().fromTypeDisplayName
+                       == QStringLiteral("logic")
+                   && report.assignments.first().toTypeDisplayName
+                       == QStringLiteral("logic")
+                   && report.assignments.first().fromSourceRoleDisplayName
+                       == QStringLiteral("design source")
+                   && report.assignments.first().toSourceRoleDisplayName
+                       == QStringLiteral("design source"),
+               true);
     expectBool("signal journey read peer",
                !report.reads.isEmpty()
                    && report.reads.first().peerSymbol.symbolName
@@ -3545,6 +3556,12 @@ static void runSignalJourneyServiceFixture()
                 && item.peerTypeDisplayName == QStringLiteral("instance")
                 && item.interfaceBaseDisplayName == QStringLiteral("journey_if")
                 && item.peerSourceRoleDisplayName
+                    == QStringLiteral("design source")
+                && item.fromTypeDisplayName == QStringLiteral("instance")
+                && item.toTypeDisplayName == QStringLiteral("logic")
+                && item.fromSourceRoleDisplayName
+                    == QStringLiteral("design source")
+                && item.toSourceRoleDisplayName
                     == QStringLiteral("design source"));
         sawInterfaceMemberMetadata = sawInterfaceMemberMetadata
             || (item.peerSymbolDisplayName == QStringLiteral("ready")
@@ -3553,6 +3570,12 @@ static void runSignalJourneyServiceFixture()
                 && item.peerTypeDisplayName == QStringLiteral("logic")
                 && item.interfaceBaseDisplayName == QStringLiteral("journey_if")
                 && item.peerSourceRoleDisplayName
+                    == QStringLiteral("design source")
+                && item.fromTypeDisplayName == QStringLiteral("logic")
+                && item.toTypeDisplayName == QStringLiteral("logic")
+                && item.fromSourceRoleDisplayName
+                    == QStringLiteral("design source")
+                && item.toSourceRoleDisplayName
                     == QStringLiteral("design source"));
     }
     expectBool("signal journey interface instance endpoints",
@@ -5442,6 +5465,7 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealInterfaceModportJourney = false;
     bool sawRealInterfaceModportJourneyLink = false;
     bool sawRealInterfaceModportJourneyMetadata = false;
+    bool sawRealInterfaceModportJourneyEndpointMetadata = false;
     for (const SignalJourneyItem& item : interfaceJourney.interfaceConnections) {
         sawRealInterfaceModportJourney = sawRealInterfaceModportJourney
             || (item.peerSymbolDisplayName == QStringLiteral("si")
@@ -5454,6 +5478,13 @@ static void runRealWorkspaceIncludeFixture()
                 && item.interfaceBaseDisplayName == QStringLiteral("lr_genr_if")
                 && !item.peerTypeDisplayName.isEmpty()
                 && !item.peerSourceRoleDisplayName.isEmpty());
+        sawRealInterfaceModportJourneyEndpointMetadata =
+            sawRealInterfaceModportJourneyEndpointMetadata
+            || (item.peerSymbolDisplayName == QStringLiteral("si")
+                && !item.fromTypeDisplayName.isEmpty()
+                && !item.toTypeDisplayName.isEmpty()
+                && !item.fromSourceRoleDisplayName.isEmpty()
+                && !item.toSourceRoleDisplayName.isEmpty());
         sawRealInterfaceModportJourneyLink = sawRealInterfaceModportJourneyLink
             || (item.peerSymbolDisplayName == QStringLiteral("si")
                 && !item.peerCodeLink.fileName.isEmpty()
@@ -5478,6 +5509,9 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace signal journey interface modport metadata",
                sawRealInterfaceModportJourneyMetadata,
+               true);
+    expectBool("real workspace signal journey interface modport endpoint metadata",
+               sawRealInterfaceModportJourneyEndpointMetadata,
                true);
     expectBool("real workspace signal journey interface modport code link",
                sawRealInterfaceModportJourneyLink,

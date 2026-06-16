@@ -931,6 +931,10 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawSignalJourneyDeclarationSourceRole = false;
     bool sawSignalJourneyFromEndpoint = false;
     bool sawSignalJourneyToEndpoint = false;
+    bool sawSignalJourneyFromEndpointType = false;
+    bool sawSignalJourneyFromEndpointSourceRole = false;
+    bool sawSignalJourneyToEndpointType = false;
+    bool sawSignalJourneyToEndpointSourceRole = false;
     bool sawSignalJourneyInterfaceConnection = false;
     bool sawSignalJourneyInterfaceKind = false;
     bool sawSignalJourneyInterfaceBase = false;
@@ -1077,6 +1081,24 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("To")
                 && item->text(1) == QStringLiteral("data_q")
                 && item->text(2) == QStringLiteral("Assigns To"));
+        sawSignalJourneyFromEndpointType = sawSignalJourneyFromEndpointType
+            || (item->text(0) == QStringLiteral("Type")
+                && item->text(1) == QStringLiteral("logic")
+                && item->text(2) == QStringLiteral("next_data"));
+        sawSignalJourneyFromEndpointSourceRole =
+            sawSignalJourneyFromEndpointSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("next_data"));
+        sawSignalJourneyToEndpointType = sawSignalJourneyToEndpointType
+            || (item->text(0) == QStringLiteral("Type")
+                && item->text(1) == QStringLiteral("logic")
+                && item->text(2) == QStringLiteral("data_q"));
+        sawSignalJourneyToEndpointSourceRole =
+            sawSignalJourneyToEndpointSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("data_q"));
         sawSignalJourneyInterfaceConnection =
             sawSignalJourneyInterfaceConnection
             || (item->text(0) == QStringLiteral("Interface Connections")
@@ -1194,6 +1216,18 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders signal journey to endpoint",
                sawSignalJourneyToEndpoint,
+               true);
+    expectBool("RTL insights renders signal journey from endpoint type",
+               sawSignalJourneyFromEndpointType,
+               true);
+    expectBool("RTL insights renders signal journey from endpoint source role",
+               sawSignalJourneyFromEndpointSourceRole,
+               true);
+    expectBool("RTL insights renders signal journey to endpoint type",
+               sawSignalJourneyToEndpointType,
+               true);
+    expectBool("RTL insights renders signal journey to endpoint source role",
+               sawSignalJourneyToEndpointSourceRole,
                true);
     expectBool("RTL insights renders signal journey interface connection",
                sawSignalJourneyInterfaceConnection,
