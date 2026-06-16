@@ -3214,6 +3214,13 @@ static void runClockResetDomainServiceFixture()
         sym_list::sym_port_input,
         95,
         QStringLiteral("other_domain")));
+    symbols.append(makeModuleBriefSymbol(
+        9206,
+        fileName,
+        QStringLiteral("alt_clk_i"),
+        sym_list::sym_port_input,
+        12,
+        QStringLiteral("domain_top")));
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship topClock;
@@ -3221,6 +3228,12 @@ static void runClockResetDomainServiceFixture()
     topClock.toId = 9201;
     topClock.type = SymbolRelationshipEngine::CLOCKS;
     relationships.append(topClock);
+
+    SemanticRelationship altTopClock;
+    altTopClock.fromId = 9206;
+    altTopClock.toId = 9201;
+    altTopClock.type = SymbolRelationshipEngine::CLOCKS;
+    relationships.append(altTopClock);
 
     SemanticRelationship topReset;
     topReset.fromId = 9204;
@@ -3244,15 +3257,21 @@ static void runClockResetDomainServiceFixture()
     const ClockResetDomainReport allReport =
         service.buildClockResetDomainMap();
     expectBool("clock reset all found", allReport.found, true);
-    expectInt("clock reset all clock domains", allReport.clockDomains.size(), 2);
+    expectInt("clock reset all clock domains", allReport.clockDomains.size(), 3);
     expectInt("clock reset all reset domains", allReport.resetDomains.size(), 1);
     expectInt("clock reset all clock count",
-              allReport.clockRelationshipCount, 2);
+              allReport.clockRelationshipCount, 3);
     expectInt("clock reset all reset count",
               allReport.resetRelationshipCount, 1);
+    expectInt("clock reset all evidence rows", allReport.evidenceRows.size(), 4);
+    expectInt("clock reset all ambiguity rows", allReport.ambiguityRows.size(), 2);
     expectBool("clock reset all group display metadata",
                allReport.clockGroupDisplayName == QStringLiteral("Clock Domains")
-                   && allReport.resetGroupDisplayName == QStringLiteral("Reset Domains"),
+                   && allReport.resetGroupDisplayName == QStringLiteral("Reset Domains")
+                   && allReport.evidenceGroupDisplayName
+                       == QStringLiteral("Domain Evidence")
+                   && allReport.ambiguityGroupDisplayName
+                       == QStringLiteral("Ambiguity"),
                true);
 
     ClockResetDomainQuery topQuery;
@@ -3262,8 +3281,10 @@ static void runClockResetDomainServiceFixture()
         service.buildClockResetDomainMap(topQuery);
 
     expectBool("clock reset top found", topReport.found, true);
-    expectInt("clock reset top clock domains", topReport.clockDomains.size(), 1);
+    expectInt("clock reset top clock domains", topReport.clockDomains.size(), 2);
     expectInt("clock reset top reset domains", topReport.resetDomains.size(), 1);
+    expectInt("clock reset top evidence rows", topReport.evidenceRows.size(), 3);
+    expectInt("clock reset top ambiguity rows", topReport.ambiguityRows.size(), 2);
     expectBool("clock reset top clock signal",
                !topReport.clockDomains.isEmpty()
                    && topReport.clockDomains.first().domainSignal.symbolName
@@ -3297,6 +3318,26 @@ static void runClockResetDomainServiceFixture()
                    && !topReport.resetDomains.first().modules.isEmpty()
                    && topReport.resetDomains.first().modules.first()
                           .detailDisplayName == QStringLiteral("reset"),
+               true);
+    expectBool("clock reset top evidence row metadata",
+               !topReport.evidenceRows.isEmpty()
+                   && topReport.evidenceRows.first().sectionDisplayName
+                       == QStringLiteral("Clock")
+                   && topReport.evidenceRows.first().signalDisplayName
+                       == QStringLiteral("clk_i")
+                   && topReport.evidenceRows.first().moduleDisplayName
+                       == QStringLiteral("domain_top")
+                   && topReport.evidenceRows.first().detailDisplayName
+                       == QStringLiteral("clk_i clocks domain_top")
+                   && topReport.evidenceRows.first().sourceRoleDisplayName
+                       == QStringLiteral("design source"),
+               true);
+    expectBool("clock reset top ambiguity row metadata",
+               !topReport.ambiguityRows.isEmpty()
+                   && topReport.ambiguityRows.first().sectionDisplayName
+                       == QStringLiteral("Multiple Clocks")
+                   && topReport.ambiguityRows.first().detailDisplayName
+                       == QStringLiteral("domain_top has 2 clock domains"),
                true);
 
     ClockResetDomainQuery idQuery;
@@ -3828,6 +3869,16 @@ static void runRealWorkspaceIncludeFixture()
                         QStringLiteral("LR_GENR_IF"),
                         sym_list::sym_inst,
                         QStringLiteral("rtl_top"));
+    const int realClockId =
+        symbolIdInScope(symbols,
+                        QStringLiteral("clk_main"),
+                        sym_list::sym_port_input,
+                        QStringLiteral("rtl_top"));
+    const int realResetId =
+        symbolIdInScope(symbols,
+                        QStringLiteral("srst_main"),
+                        sym_list::sym_logic,
+                        QStringLiteral("rtl_top"));
     const auto symbolByName = [&](const QString& name,
                                   sym_list::sym_type_e type,
                                   const QString& moduleScope) {
@@ -3892,6 +3943,10 @@ static void runRealWorkspaceIncludeFixture()
                interfaceModportId >= 0, true);
     expectBool("real workspace has interface instance",
                interfaceInstId >= 0, true);
+    expectBool("real workspace has top clock",
+               realClockId >= 0, true);
+    expectBool("real workspace has top reset",
+               realResetId >= 0, true);
     QSet<QString> packageScopes;
     packageScopes.insert(QStringLiteral("gl_pkg"));
     expectBool("real workspace taxonomy marks global package",
@@ -3927,6 +3982,20 @@ static void runRealWorkspaceIncludeFixture()
             packageImportRelationship.toId = packageId;
             packageImportRelationship.type = SymbolRelationshipEngine::REFERENCES;
             realRelationships.append(packageImportRelationship);
+            if (realClockId >= 0) {
+                SemanticRelationship clockRelationship;
+                clockRelationship.fromId = realClockId;
+                clockRelationship.toId = symbol.symbolId;
+                clockRelationship.type = SymbolRelationshipEngine::CLOCKS;
+                realRelationships.append(clockRelationship);
+            }
+            if (realResetId >= 0) {
+                SemanticRelationship resetRelationship;
+                resetRelationship.fromId = realResetId;
+                resetRelationship.toId = symbol.symbolId;
+                resetRelationship.type = SymbolRelationshipEngine::RESETS;
+                realRelationships.append(resetRelationship);
+            }
         }
     }
 
@@ -4027,6 +4096,34 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace module brief interface context",
                sawRealInterfaceContext,
+               true);
+
+    ClockResetDomainService clockResetService(&index);
+    ClockResetDomainQuery clockResetQuery;
+    clockResetQuery.moduleName = QStringLiteral("rtl_top");
+    clockResetQuery.fileName = topPath;
+    const ClockResetDomainReport clockResetReport =
+        clockResetService.buildClockResetDomainMap(clockResetQuery);
+    bool sawRealClockEvidence = false;
+    bool sawRealResetEvidence = false;
+    for (const ClockResetDomainEvidenceRow& row : clockResetReport.evidenceRows) {
+        sawRealClockEvidence = sawRealClockEvidence
+            || (row.sectionDisplayName == QStringLiteral("Clock")
+                && row.signalDisplayName == QStringLiteral("clk_main")
+                && row.moduleDisplayName == QStringLiteral("rtl_top"));
+        sawRealResetEvidence = sawRealResetEvidence
+            || (row.sectionDisplayName == QStringLiteral("Reset")
+                && row.signalDisplayName == QStringLiteral("srst_main")
+                && row.moduleDisplayName == QStringLiteral("rtl_top"));
+    }
+    expectBool("real workspace clock reset found",
+               clockResetReport.found,
+               true);
+    expectBool("real workspace clock evidence row",
+               sawRealClockEvidence,
+               true);
+    expectBool("real workspace reset evidence row",
+               sawRealResetEvidence,
                true);
 }
 

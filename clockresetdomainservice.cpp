@@ -1,6 +1,8 @@
 #include "clockresetdomainservice.h"
 
 #include <QDir>
+#include <QFileInfo>
+#include <QHash>
 #include <QMap>
 #include <QSet>
 #include <algorithm>
@@ -34,6 +36,8 @@ ClockResetDomainReport ClockResetDomainService::buildClockResetDomainMap(
         groupDisplayName(SymbolRelationshipEngine::CLOCKS);
     report.resetGroupDisplayName =
         groupDisplayName(SymbolRelationshipEngine::RESETS);
+    report.evidenceGroupDisplayName = QStringLiteral("Domain Evidence");
+    report.ambiguityGroupDisplayName = QStringLiteral("Ambiguity");
     report.clockDomains = buildDomains(
         SymbolRelationshipEngine::CLOCKS,
         query,
@@ -42,6 +46,8 @@ ClockResetDomainReport ClockResetDomainService::buildClockResetDomainMap(
         SymbolRelationshipEngine::RESETS,
         query,
         &report.resetRelationshipCount);
+    report.evidenceRows = evidenceRows(report.clockDomains, report.resetDomains);
+    report.ambiguityRows = ambiguityRows(report.clockDomains, report.resetDomains);
     report.found = !report.clockDomains.isEmpty() || !report.resetDomains.isEmpty();
     return report;
 }
@@ -135,7 +141,10 @@ bool ClockResetDomainService::acceptsRelationship(
 
 QString ClockResetDomainService::normalizedFileName(const QString& fileName)
 {
-    return QDir::cleanPath(QDir::fromNativeSeparators(fileName));
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
 QString ClockResetDomainService::groupDisplayName(
@@ -170,6 +179,135 @@ QString ClockResetDomainService::memberDetailDisplayName(
     return type == SymbolRelationshipEngine::CLOCKS
         ? QStringLiteral("clocked")
         : QStringLiteral("reset");
+}
+
+QList<ClockResetDomainEvidenceRow> ClockResetDomainService::evidenceRows(
+    const QList<ClockResetDomainEntry>& clockDomains,
+    const QList<ClockResetDomainEntry>& resetDomains)
+{
+    QList<ClockResetDomainEvidenceRow> rows;
+    for (const ClockResetDomainEntry& entry : clockDomains) {
+        for (const ClockResetDomainMember& member : entry.modules) {
+            rows.append(evidenceRow(entry,
+                                    member,
+                                    SymbolRelationshipEngine::CLOCKS));
+        }
+    }
+    for (const ClockResetDomainEntry& entry : resetDomains) {
+        for (const ClockResetDomainMember& member : entry.modules) {
+            rows.append(evidenceRow(entry,
+                                    member,
+                                    SymbolRelationshipEngine::RESETS));
+        }
+    }
+    return rows;
+}
+
+QList<ClockResetDomainEvidenceRow> ClockResetDomainService::ambiguityRows(
+    const QList<ClockResetDomainEntry>& clockDomains,
+    const QList<ClockResetDomainEntry>& resetDomains)
+{
+    auto collectAmbiguityRows =
+        [](const QList<ClockResetDomainEntry>& domains,
+           SymbolRelationshipEngine::RelationType type) {
+            QList<ClockResetDomainEvidenceRow> rows;
+            QHash<int, QList<ClockResetDomainEvidenceRow>> rowsByModuleId;
+            QHash<int, QSet<int>> domainIdsByModuleId;
+            for (const ClockResetDomainEntry& entry : domains) {
+                for (const ClockResetDomainMember& member : entry.modules) {
+                    const int moduleId = member.moduleSymbol.symbolId;
+                    if (moduleId < 0)
+                        continue;
+                    rowsByModuleId[moduleId].append(evidenceRow(entry, member, type));
+                    domainIdsByModuleId[moduleId].insert(entry.domainSignal.symbolId);
+                }
+            }
+
+            for (auto it = rowsByModuleId.constBegin();
+                 it != rowsByModuleId.constEnd();
+                 ++it) {
+                const int domainCount = domainIdsByModuleId.value(it.key()).size();
+                if (domainCount <= 1)
+                    continue;
+                for (ClockResetDomainEvidenceRow row : it.value()) {
+                    row.sectionDisplayName = type == SymbolRelationshipEngine::CLOCKS
+                        ? QStringLiteral("Multiple Clocks")
+                        : QStringLiteral("Multiple Resets");
+                    row.detailDisplayName =
+                        ambiguityDetailDisplayName(row.moduleDisplayName,
+                                                   type,
+                                                   domainCount);
+                    rows.append(row);
+                }
+            }
+            return rows;
+        };
+
+    QList<ClockResetDomainEvidenceRow> rows =
+        collectAmbiguityRows(clockDomains, SymbolRelationshipEngine::CLOCKS);
+    rows.append(collectAmbiguityRows(resetDomains, SymbolRelationshipEngine::RESETS));
+    return rows;
+}
+
+ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
+    const ClockResetDomainEntry& entry,
+    const ClockResetDomainMember& member,
+    SymbolRelationshipEngine::RelationType type)
+{
+    ClockResetDomainEvidenceRow row;
+    row.domainSignal = entry.domainSignal;
+    row.moduleSymbol = member.moduleSymbol;
+    row.relationshipType = type;
+    row.sectionDisplayName = domainSectionDisplayName(type);
+    row.signalDisplayName = entry.domainSignal.symbolName.isEmpty()
+        ? QStringLiteral("<unnamed>")
+        : entry.domainSignal.symbolName;
+    row.moduleDisplayName = member.moduleSymbol.symbolName.isEmpty()
+        ? QStringLiteral("<unnamed>")
+        : member.moduleSymbol.symbolName;
+    row.detailDisplayName =
+        evidenceDetailDisplayName(row.signalDisplayName,
+                                  row.moduleDisplayName,
+                                  type);
+    row.sourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(member.moduleSymbol.fileName));
+    return row;
+}
+
+QString ClockResetDomainService::evidenceDetailDisplayName(
+    const QString& signalName,
+    const QString& moduleName,
+    SymbolRelationshipEngine::RelationType type)
+{
+    const QString verb = type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("clocks")
+        : QStringLiteral("resets");
+    return QStringLiteral("%1 %2 %3").arg(signalName, verb, moduleName);
+}
+
+QString ClockResetDomainService::ambiguityDetailDisplayName(
+    const QString& moduleName,
+    SymbolRelationshipEngine::RelationType type,
+    int domainCount)
+{
+    const QString noun = type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("clock domains")
+        : QStringLiteral("reset domains");
+    return QStringLiteral("%1 has %2 %3").arg(moduleName).arg(domainCount).arg(noun);
+}
+
+QString ClockResetDomainService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
+{
+    switch (role) {
+    case SymbolTaxonomy::SourceRole::DesignSource:
+        return QStringLiteral("design source");
+    case SymbolTaxonomy::SourceRole::Header:
+        return QStringLiteral("header");
+    case SymbolTaxonomy::SourceRole::Unknown:
+    default:
+        return QStringLiteral("source");
+    }
 }
 
 void ClockResetDomainService::fillEntryDisplayMetadata(

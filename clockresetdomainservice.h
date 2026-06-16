@@ -27,12 +27,28 @@ struct ClockResetDomainEntry {
     QList<ClockResetDomainMember> modules;
 };
 
+struct ClockResetDomainEvidenceRow {
+    sym_list::SymbolInfo domainSignal = {};
+    sym_list::SymbolInfo moduleSymbol = {};
+    SymbolRelationshipEngine::RelationType relationshipType =
+        SymbolRelationshipEngine::CLOCKS;
+    QString sectionDisplayName;
+    QString signalDisplayName;
+    QString moduleDisplayName;
+    QString detailDisplayName;
+    QString sourceRoleDisplayName;
+};
+
 struct ClockResetDomainReport {
     bool found = false;
     QString clockGroupDisplayName;
     QString resetGroupDisplayName;
+    QString evidenceGroupDisplayName;
+    QString ambiguityGroupDisplayName;
     QList<ClockResetDomainEntry> clockDomains;
     QList<ClockResetDomainEntry> resetDomains;
+    QList<ClockResetDomainEvidenceRow> evidenceRows;
+    QList<ClockResetDomainEvidenceRow> ambiguityRows;
     int clockRelationshipCount = 0;
     int resetRelationshipCount = 0;
 };
@@ -68,6 +84,23 @@ private:
     static QString domainDetailDisplayName(SymbolRelationshipEngine::RelationType type,
                                            int moduleCount);
     static QString memberDetailDisplayName(SymbolRelationshipEngine::RelationType type);
+    static QList<ClockResetDomainEvidenceRow> evidenceRows(
+        const QList<ClockResetDomainEntry>& clockDomains,
+        const QList<ClockResetDomainEntry>& resetDomains);
+    static QList<ClockResetDomainEvidenceRow> ambiguityRows(
+        const QList<ClockResetDomainEntry>& clockDomains,
+        const QList<ClockResetDomainEntry>& resetDomains);
+    static ClockResetDomainEvidenceRow evidenceRow(
+        const ClockResetDomainEntry& entry,
+        const ClockResetDomainMember& member,
+        SymbolRelationshipEngine::RelationType type);
+    static QString evidenceDetailDisplayName(const QString& signalName,
+                                             const QString& moduleName,
+                                             SymbolRelationshipEngine::RelationType type);
+    static QString ambiguityDetailDisplayName(const QString& moduleName,
+                                              SymbolRelationshipEngine::RelationType type,
+                                              int domainCount);
+    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillEntryDisplayMetadata(ClockResetDomainEntry& entry,
                                          SymbolRelationshipEngine::RelationType type);
     static void sortEntries(QList<ClockResetDomainEntry>& entries);

@@ -192,6 +192,25 @@ void appendClockResetDomains(QTreeWidget* tree,
     }
 }
 
+void appendClockResetEvidenceRows(
+    QTreeWidget* tree,
+    const QString& groupDisplayName,
+    const QList<ClockResetDomainEvidenceRow>& rows)
+{
+    QTreeWidgetItem* group = createGroupItem(tree,
+                                            groupDisplayName,
+                                            rows.size());
+    for (const ClockResetDomainEvidenceRow& row : rows) {
+        createChildItem(group,
+                        row.sectionDisplayName,
+                        row.signalDisplayName,
+                        row.detailDisplayName,
+                        row.domainSignal.fileName,
+                        row.domainSignal.startLine,
+                        row.domainSignal.startColumn);
+    }
+}
+
 void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
 {
     QTreeWidgetItem* group = createGroupItem(tree,
@@ -557,9 +576,21 @@ void RtlInsightsPanelCoordinator::refresh()
     ClockResetDomainQuery domainQuery;
     domainQuery.fileName = currentFileName;
     domainQuery.moduleName = currentModuleName;
-    appendClockResetDomains(
+    const ClockResetDomainReport clockResetReport =
+        ClockResetDomainService::getInstance()->buildClockResetDomainMap(domainQuery);
+    appendClockResetDomains(insightsTree, clockResetReport);
+    appendClockResetEvidenceRows(
         insightsTree,
-        ClockResetDomainService::getInstance()->buildClockResetDomainMap(domainQuery));
+        clockResetReport.evidenceGroupDisplayName.isEmpty()
+            ? QStringLiteral("Domain Evidence")
+            : clockResetReport.evidenceGroupDisplayName,
+        clockResetReport.evidenceRows);
+    appendClockResetEvidenceRows(
+        insightsTree,
+        clockResetReport.ambiguityGroupDisplayName.isEmpty()
+            ? QStringLiteral("Ambiguity")
+            : clockResetReport.ambiguityGroupDisplayName,
+        clockResetReport.ambiguityRows);
 
     FsmGraphQuery fsmQuery;
     fsmQuery.fileName = currentFileName;
