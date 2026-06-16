@@ -121,12 +121,15 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateRegisters(
             continue;
         if (looksLikeNextStateName(symbol.symbolName))
             continue;
+        const bool hasNextStatePair =
+            hasPairedNextStateSignal(moduleSymbols, symbol);
         if (!looksLikeCurrentStateName(symbol.symbolName)
-            && !hasPairedNextStateSignal(moduleSymbols, symbol)) {
+            && !hasNextStatePair) {
             continue;
         }
         if (!symbol.dataType.isEmpty()
             && !hasStateValuesForType(allSymbols, symbol.dataType)
+            && !hasNextStatePair
             && !symbol.symbolName.contains(QStringLiteral("state"),
                                            Qt::CaseInsensitive)) {
             continue;
@@ -160,6 +163,20 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
             continue;
         seen.insert(symbol.symbolId);
         result.append(symbol);
+    }
+    if (!stateRegister.dataType.isEmpty() && result.isEmpty()) {
+        for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
+            if (!SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType))
+                continue;
+            if (!symbol.dataType.isEmpty()
+                && symbol.dataType != stateRegister.dataType) {
+                continue;
+            }
+            if (seen.contains(symbol.symbolId))
+                continue;
+            seen.insert(symbol.symbolId);
+            result.append(symbol);
+        }
     }
     sortSymbols(result);
     return result;

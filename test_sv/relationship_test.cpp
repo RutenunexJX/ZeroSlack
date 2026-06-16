@@ -4279,6 +4279,8 @@ static void runRealWorkspaceIncludeFixture()
                true);
     const QString topPath = normalizedPath(
         QDir(workspaceRoot).filePath(QStringLiteral("elec_phy_import/top/rtl_top.sv")));
+    const QString chlCtrlPath = normalizedPath(
+        QDir(workspaceRoot).filePath(QStringLiteral("elec_phy_import/ctrl/chl_ctrl.sv")));
     const QString rootHeaderPath =
         normalizedPath(QDir(workspaceRoot).filePath(QStringLiteral("_svh.svh")));
     expectBool("real workspace records source roles",
@@ -4327,6 +4329,9 @@ static void runRealWorkspaceIncludeFixture()
                                       snapshot.defines);
     for (int i = 0; i < symbols.size(); ++i)
         symbols[i].symbolId = i + 1;
+    QHash<QString, QString> fileContents;
+    for (const QString& fileName : files)
+        fileContents.insert(fileName, loadTextFile(fileName));
     const int rtlTopId =
         symbolId(symbols, QStringLiteral("rtl_top"), sym_list::sym_module);
     const int packageId =
@@ -4361,6 +4366,18 @@ static void runRealWorkspaceIncludeFixture()
                         QStringLiteral("srst_main"),
                         sym_list::sym_logic,
                         QStringLiteral("rtl_top"));
+    const int chlCtrlId =
+        symbolId(symbols, QStringLiteral("chl_ctrl"), sym_list::sym_module);
+    const int phyPassCsId =
+        symbolIdInScope(symbols,
+                        QStringLiteral("phy_pass_thrg_cfg_cs"),
+                        sym_list::sym_enum_var,
+                        QStringLiteral("chl_ctrl"));
+    const int phyPassNsId =
+        symbolIdInScope(symbols,
+                        QStringLiteral("phy_pass_thrg_cfg_ns"),
+                        sym_list::sym_enum_var,
+                        QStringLiteral("chl_ctrl"));
     const auto symbolByName = [&](const QString& name,
                                   sym_list::sym_type_e type,
                                   const QString& moduleScope) {
@@ -4431,6 +4448,12 @@ static void runRealWorkspaceIncludeFixture()
                realClockId >= 0, true);
     expectBool("real workspace has top reset",
                realResetId >= 0, true);
+    expectBool("real workspace has chl_ctrl module",
+               chlCtrlId >= 0, true);
+    expectBool("real workspace has chl_ctrl current fsm state",
+               phyPassCsId >= 0, true);
+    expectBool("real workspace has chl_ctrl next fsm state",
+               phyPassNsId >= 0, true);
     QSet<QString> packageScopes;
     packageScopes.insert(QStringLiteral("gl_pkg"));
     expectBool("real workspace taxonomy marks global package",
@@ -4493,7 +4516,9 @@ static void runRealWorkspaceIncludeFixture()
     SemanticIndex index;
     index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
         symbols,
-        realRelationships));
+        realRelationships,
+        QList<SemanticDiagnostic>(),
+        fileContents));
     DefinitionService definitionService(&index);
 
     DefinitionQuery packageParamQuery;
@@ -4706,6 +4731,45 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace signal journey interface modport code link",
                sawRealInterfaceModportJourneyLink,
+               true);
+
+    FsmGraphService realFsmService(&index);
+    FsmGraphQuery realFsmQuery;
+    realFsmQuery.moduleName = QStringLiteral("chl_ctrl");
+    realFsmQuery.fileName = chlCtrlPath;
+    const FsmGraphReport realFsmReport =
+        realFsmService.buildFsmGraph(realFsmQuery);
+    bool sawRealPhyPassFsm = false;
+    bool sawRealPhyPassFsmStateLink = false;
+    bool sawRealPhyPassFsmTransition = false;
+    for (const FsmGraph& graph : realFsmReport.graphs) {
+        if (graph.stateRegister.symbolName
+            != QStringLiteral("phy_pass_thrg_cfg_cs")) {
+            continue;
+        }
+        sawRealPhyPassFsm = graph.nextStateSignal.symbolName
+            == QStringLiteral("phy_pass_thrg_cfg_ns");
+        sawRealPhyPassFsmStateLink = !graph.stateRows.isEmpty()
+            && !graph.stateRows.first().codeLink.fileName.isEmpty()
+            && graph.stateRows.first().codeLink.line > 0
+            && !graph.stateRows.first().codeLink.fileDisplayName.isEmpty()
+            && !graph.stateRows.first().codeLink.lineDisplayName.isEmpty();
+        sawRealPhyPassFsmTransition = !graph.transitionRows.isEmpty()
+            && !graph.transitionRows.first().codeLink.fileName.isEmpty()
+            && graph.transitionRows.first().codeLink.line > 0
+            && !graph.transitionRows.first().sourceLineDisplayName.isEmpty();
+    }
+    expectBool("real workspace fsm graph found",
+               realFsmReport.found,
+               true);
+    expectBool("real workspace fsm graph phy pass current next pair",
+               sawRealPhyPassFsm,
+               true);
+    expectBool("real workspace fsm graph state code link",
+               sawRealPhyPassFsmStateLink,
+               true);
+    expectBool("real workspace fsm graph transition evidence",
+               sawRealPhyPassFsmTransition,
                true);
 
     QList<sym_list::SymbolInfo> realBeforeDiffSymbols;
