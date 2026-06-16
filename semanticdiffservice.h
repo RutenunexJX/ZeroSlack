@@ -61,8 +61,12 @@ struct SemanticDiffRelationshipChange {
     sym_list::SymbolInfo afterToSymbol = {};
     sym_list::SymbolInfo displayFromSymbol = {};
     sym_list::SymbolInfo displayToSymbol = {};
+    RtlInsightCodeLink fromCodeLink;
+    RtlInsightCodeLink toCodeLink;
     QString kindDisplayName;
     QString relationshipTypeDisplayName;
+    QString fromSymbolDisplayName;
+    QString toSymbolDisplayName;
     QString categoryGroupDisplayName;
     QString detailDisplayName;
     RtlInsightCodeLink codeLink;

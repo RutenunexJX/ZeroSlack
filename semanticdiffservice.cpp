@@ -601,15 +601,25 @@ void SemanticDiffService::fillDisplayMetadata(
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
+    change.fromCodeLink = RtlInsightLink::fromSymbol(change.displayFromSymbol);
+    change.toCodeLink = RtlInsightLink::fromSymbol(change.displayToSymbol);
+    change.fromSymbolDisplayName =
+        change.displayFromSymbol.symbolName.isEmpty()
+            ? QStringLiteral("<unknown>")
+            : change.displayFromSymbol.symbolName;
+    change.toSymbolDisplayName =
+        change.displayToSymbol.symbolName.isEmpty()
+            ? QStringLiteral("<unknown>")
+            : change.displayToSymbol.symbolName;
     change.categoryGroupDisplayName = QStringLiteral("Relationships");
-    change.codeLink = RtlInsightLink::fromSymbol(change.displayFromSymbol);
+    change.codeLink = change.fromCodeLink;
     change.detailDisplayName =
         change.displayFromSymbol.symbolName.isEmpty()
             || change.displayToSymbol.symbolName.isEmpty()
         ? change.key
         : QStringLiteral("%1 -> %2")
-              .arg(change.displayFromSymbol.symbolName,
-                   change.displayToSymbol.symbolName);
+              .arg(change.fromSymbolDisplayName,
+                   change.toSymbolDisplayName);
 }
 
 void SemanticDiffService::fillDisplayMetadata(
