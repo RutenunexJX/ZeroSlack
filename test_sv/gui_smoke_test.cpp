@@ -912,6 +912,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawClockSignalEndpoint = false;
     bool sawClockModuleEndpoint = false;
     bool sawClockRelationshipType = false;
+    bool sawClockCategory = false;
     bool sawClockEvidenceReason = false;
     bool sawClockSourceRole = false;
     bool sawClockDomainMemberType = false;
@@ -920,6 +921,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawResetDomainMemberType = false;
     bool sawResetDomainMemberSignal = false;
     bool sawUnmappedClock = false;
+    bool sawUnmappedClockCategory = false;
     bool sawTransition = false;
     bool sawFsmRegisterType = false;
     bool sawFsmRegisterSourceRole = false;
@@ -1005,6 +1007,10 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("Relationship Type")
                 && item->text(1) == QStringLiteral("Clock")
                 && item->text(2) == QStringLiteral("Clock"));
+        sawClockCategory = sawClockCategory
+            || (item->text(0) == QStringLiteral("Category")
+                && item->text(1) == QStringLiteral("mapped domain")
+                && item->text(2) == QStringLiteral("Clock"));
         sawClockEvidenceReason = sawClockEvidenceReason
             || (item->text(0) == QStringLiteral("Reason")
                 && item->text(1) == QStringLiteral("relationship")
@@ -1038,6 +1044,10 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                 && item->text(1) == QStringLiteral("scan_clk")
                 && item->text(2).contains(
                     QStringLiteral("no clock domain relationship")));
+        sawUnmappedClockCategory = sawUnmappedClockCategory
+            || (item->text(0) == QStringLiteral("Category")
+                && item->text(1) == QStringLiteral("unmapped timing")
+                && item->text(2) == QStringLiteral("Unmapped Clock"));
         sawTransition = sawTransition
             || (item->text(0) == QStringLiteral("IDLE")
                 && item->text(1) == QStringLiteral("RUN"));
@@ -1166,6 +1176,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     expectBool("RTL insights renders clock relationship type",
                sawClockRelationshipType,
                true);
+    expectBool("RTL insights renders clock category",
+               sawClockCategory,
+               true);
     expectBool("RTL insights renders clock evidence reason",
                sawClockEvidenceReason,
                true);
@@ -1188,6 +1201,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                sawResetDomainMemberSignal,
                true);
     expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
+    expectBool("RTL insights renders unmapped clock category",
+               sawUnmappedClockCategory,
+               true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
     expectBool("RTL insights renders FSM register type",
                sawFsmRegisterType,

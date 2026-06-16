@@ -383,6 +383,15 @@ void appendClockResetEvidenceRows(
                         row.signalCodeLink.fileDisplayName,
                         row.signalCodeLink.lineDisplayName);
         createChildItem(evidence,
+                        QStringLiteral("Category"),
+                        row.categoryDisplayName,
+                        row.sectionDisplayName,
+                        row.signalCodeLink.fileName,
+                        row.signalCodeLink.line,
+                        row.signalCodeLink.column,
+                        row.signalCodeLink.fileDisplayName,
+                        row.signalCodeLink.lineDisplayName);
+        createChildItem(evidence,
                         QStringLiteral("Reason"),
                         row.evidenceReasonDisplayName,
                         row.detailDisplayName,

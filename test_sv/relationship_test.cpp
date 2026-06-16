@@ -3861,6 +3861,8 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("domain_top")
                    && topReport.evidenceRows.first().relationshipTypeDisplayName
                        == QStringLiteral("Clock")
+                   && topReport.evidenceRows.first().categoryDisplayName
+                       == QStringLiteral("mapped domain")
                    && topReport.evidenceRows.first().evidenceReasonDisplayName
                        == QStringLiteral("relationship")
                    && topReport.evidenceRows.first().detailDisplayName
@@ -3893,6 +3895,8 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("Multiple Clocks")
                    && topReport.ambiguityRows.first().relationshipTypeDisplayName
                        == QStringLiteral("Clock")
+                   && topReport.ambiguityRows.first().categoryDisplayName
+                       == QStringLiteral("ambiguous domain")
                    && topReport.ambiguityRows.first().evidenceReasonDisplayName
                        == QStringLiteral("ambiguous domain membership")
                    && topReport.ambiguityRows.first().detailDisplayName
@@ -3907,6 +3911,7 @@ static void runClockResetDomainServiceFixture()
                 && row.signalDisplayName == QStringLiteral("scan_clk")
                 && row.moduleDisplayName == QStringLiteral("domain_top")
                 && row.relationshipTypeDisplayName == QStringLiteral("Clock")
+                && row.categoryDisplayName == QStringLiteral("unmapped timing")
                 && row.evidenceReasonDisplayName
                     == QStringLiteral("missing relationship")
                 && row.sourceRoleDisplayName == QStringLiteral("design source")
@@ -3925,6 +3930,7 @@ static void runClockResetDomainServiceFixture()
                 && row.signalDisplayName == QStringLiteral("por_rst_n")
                 && row.moduleDisplayName == QStringLiteral("domain_top")
                 && row.relationshipTypeDisplayName == QStringLiteral("Reset")
+                && row.categoryDisplayName == QStringLiteral("unmapped timing")
                 && row.evidenceReasonDisplayName
                     == QStringLiteral("missing relationship")
                 && row.sourceRoleDisplayName == QStringLiteral("design source")
@@ -5358,6 +5364,7 @@ static void runRealWorkspaceIncludeFixture()
                 && row.signalDisplayName == QStringLiteral("clk_main")
                 && row.moduleDisplayName == QStringLiteral("rtl_top")
                 && row.relationshipTypeDisplayName == QStringLiteral("Clock")
+                && row.categoryDisplayName == QStringLiteral("mapped domain")
                 && row.evidenceReasonDisplayName == QStringLiteral("relationship")
                 && !row.sourceRoleDisplayName.isEmpty());
         sawRealClockEvidenceLink = sawRealClockEvidenceLink
@@ -5381,6 +5388,7 @@ static void runRealWorkspaceIncludeFixture()
                 && row.signalDisplayName == QStringLiteral("srst_main")
                 && row.moduleDisplayName == QStringLiteral("rtl_top")
                 && row.relationshipTypeDisplayName == QStringLiteral("Reset")
+                && row.categoryDisplayName == QStringLiteral("mapped domain")
                 && row.evidenceReasonDisplayName == QStringLiteral("relationship")
                 && !row.sourceRoleDisplayName.isEmpty());
         sawRealResetEvidenceLink = sawRealResetEvidenceLink
@@ -5407,6 +5415,7 @@ static void runRealWorkspaceIncludeFixture()
             || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
                 && row.signalDisplayName.startsWith(QStringLiteral("clk_cpld"))
                 && row.relationshipTypeDisplayName == QStringLiteral("Clock")
+                && row.categoryDisplayName == QStringLiteral("unmapped timing")
                 && row.evidenceReasonDisplayName
                     == QStringLiteral("missing relationship")
                 && !row.sourceRoleDisplayName.isEmpty());

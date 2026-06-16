@@ -158,6 +158,7 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
         if (row.moduleDisplayName.isEmpty())
             row.moduleDisplayName = QStringLiteral("<unknown module>");
         row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
+        row.categoryDisplayName = unmappedCategoryDisplayName();
         row.evidenceReasonDisplayName = QStringLiteral("missing relationship");
         row.detailDisplayName =
             unmappedDetailDisplayName(row.signalDisplayName, type);
@@ -388,6 +389,7 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::ambiguityRows(
                     row.sectionDisplayName = type == SymbolRelationshipEngine::CLOCKS
                         ? QStringLiteral("Multiple Clocks")
                         : QStringLiteral("Multiple Resets");
+                    row.categoryDisplayName = ambiguityCategoryDisplayName();
                     row.evidenceReasonDisplayName =
                         QStringLiteral("ambiguous domain membership");
                     row.detailDisplayName =
@@ -425,6 +427,7 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
         ? QStringLiteral("<unnamed>")
         : member.moduleSymbol.symbolName;
     row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
+    row.categoryDisplayName = evidenceCategoryDisplayName();
     row.evidenceReasonDisplayName = QStringLiteral("relationship");
     row.detailDisplayName =
         evidenceDetailDisplayName(row.signalDisplayName,
@@ -447,12 +450,22 @@ QString ClockResetDomainService::evidenceDetailDisplayName(
     return QStringLiteral("%1 %2 %3").arg(signalName, verb, moduleName);
 }
 
+QString ClockResetDomainService::evidenceCategoryDisplayName()
+{
+    return QStringLiteral("mapped domain");
+}
+
 QString ClockResetDomainService::relationshipTypeDisplayName(
     SymbolRelationshipEngine::RelationType type)
 {
     return type == SymbolRelationshipEngine::CLOCKS
         ? QStringLiteral("Clock")
         : QStringLiteral("Reset");
+}
+
+QString ClockResetDomainService::ambiguityCategoryDisplayName()
+{
+    return QStringLiteral("ambiguous domain");
 }
 
 QString ClockResetDomainService::ambiguityDetailDisplayName(
@@ -464,6 +477,11 @@ QString ClockResetDomainService::ambiguityDetailDisplayName(
         ? QStringLiteral("clock domains")
         : QStringLiteral("reset domains");
     return QStringLiteral("%1 has %2 %3").arg(moduleName).arg(domainCount).arg(noun);
+}
+
+QString ClockResetDomainService::unmappedCategoryDisplayName()
+{
+    return QStringLiteral("unmapped timing");
 }
 
 QString ClockResetDomainService::unmappedDetailDisplayName(
