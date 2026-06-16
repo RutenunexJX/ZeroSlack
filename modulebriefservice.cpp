@@ -319,6 +319,8 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = section;
         row.symbolDisplayName = symbolDisplayName(symbol);
+        row.contextKindDisplayName = kind;
+        row.symbolTypeDisplayName = symbolTypeDisplayName(symbol.symbolType);
         row.detailDisplayName = contextDetailDisplayName(kind, symbol);
         row.sourceRoleDisplayName =
             sourceRoleDisplayName(SymbolTaxonomy::sourceRoleForFileName(symbol.fileName));

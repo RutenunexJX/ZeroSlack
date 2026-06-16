@@ -70,6 +70,8 @@ struct ModuleBriefContextRow {
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString symbolDisplayName;
+    QString contextKindDisplayName;
+    QString symbolTypeDisplayName;
     QString detailDisplayName;
     QString sourceRoleDisplayName;
 };

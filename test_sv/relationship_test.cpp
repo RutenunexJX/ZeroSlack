@@ -3060,11 +3060,20 @@ static void runModuleBriefServiceFixture()
     bool hasPackageContextLink = false;
     bool hasInterfacePortContextLink = false;
     bool hasInterfaceInstanceContextLink = false;
+    bool hasPackageContextMetadata = false;
+    bool hasInterfacePortContextMetadata = false;
+    bool hasInterfaceInstanceContextMetadata = false;
     for (const ModuleBriefContextRow& row : report.contextRows) {
         hasPackageContext = hasPackageContext
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("brief_pkg")
                 && row.detailDisplayName == QStringLiteral("package import"));
+        hasPackageContextMetadata = hasPackageContextMetadata
+            || (row.sectionDisplayName == QStringLiteral("Package")
+                && row.symbolDisplayName == QStringLiteral("brief_pkg")
+                && row.contextKindDisplayName == QStringLiteral("package import")
+                && row.symbolTypeDisplayName == QStringLiteral("package")
+                && row.sourceRoleDisplayName == QStringLiteral("design source"));
         hasPackageContextLink = hasPackageContextLink
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("brief_pkg")
@@ -3078,6 +3087,12 @@ static void runModuleBriefServiceFixture()
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && row.symbolDisplayName == QStringLiteral("if_port")
                 && row.detailDisplayName.contains(QStringLiteral("brief_if.master")));
+        hasInterfacePortContextMetadata = hasInterfacePortContextMetadata
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolDisplayName == QStringLiteral("if_port")
+                && row.contextKindDisplayName == QStringLiteral("interface port")
+                && row.symbolTypeDisplayName == QStringLiteral("modport port")
+                && row.sourceRoleDisplayName == QStringLiteral("design source"));
         hasInterfacePortContextLink = hasInterfacePortContextLink
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && row.symbolDisplayName == QStringLiteral("if_port")
@@ -3091,6 +3106,12 @@ static void runModuleBriefServiceFixture()
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && row.symbolDisplayName == QStringLiteral("if_bus")
                 && row.detailDisplayName.contains(QStringLiteral("brief_if")));
+        hasInterfaceInstanceContextMetadata = hasInterfaceInstanceContextMetadata
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolDisplayName == QStringLiteral("if_bus")
+                && row.contextKindDisplayName == QStringLiteral("interface instance")
+                && row.symbolTypeDisplayName == QStringLiteral("instance")
+                && row.sourceRoleDisplayName == QStringLiteral("design source"));
         hasInterfaceInstanceContextLink = hasInterfaceInstanceContextLink
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && row.symbolDisplayName == QStringLiteral("if_bus")
@@ -3102,15 +3123,24 @@ static void runModuleBriefServiceFixture()
                 && row.codeLink.lineDisplayName == QStringLiteral("31"));
     }
     expectBool("module brief package context row", hasPackageContext, true);
+    expectBool("module brief package context metadata",
+               hasPackageContextMetadata,
+               true);
     expectBool("module brief package context code link",
                hasPackageContextLink,
                true);
     expectBool("module brief interface port context row", hasInterfacePortContext, true);
+    expectBool("module brief interface port context metadata",
+               hasInterfacePortContextMetadata,
+               true);
     expectBool("module brief interface port context code link",
                hasInterfacePortContextLink,
                true);
     expectBool("module brief interface instance context row",
                hasInterfaceInstanceContext,
+               true);
+    expectBool("module brief interface instance context metadata",
+               hasInterfaceInstanceContextMetadata,
                true);
     expectBool("module brief interface instance context code link",
                hasInterfaceInstanceContextLink,
@@ -4912,10 +4942,18 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealInterfaceContext = false;
     bool sawRealPackageContextLink = false;
     bool sawRealInterfaceContextLink = false;
+    bool sawRealPackageContextMetadata = false;
+    bool sawRealInterfaceContextMetadata = false;
     for (const ModuleBriefContextRow& row : moduleBrief.contextRows) {
         sawRealPackageContext = sawRealPackageContext
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("gl_pkg"));
+        sawRealPackageContextMetadata = sawRealPackageContextMetadata
+            || (row.sectionDisplayName == QStringLiteral("Package")
+                && row.symbolDisplayName == QStringLiteral("gl_pkg")
+                && row.contextKindDisplayName == QStringLiteral("package import")
+                && row.symbolTypeDisplayName == QStringLiteral("package")
+                && !row.sourceRoleDisplayName.isEmpty());
         sawRealPackageContextLink = sawRealPackageContextLink
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("gl_pkg")
@@ -4927,6 +4965,13 @@ static void runRealWorkspaceIncludeFixture()
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && (row.symbolDisplayName == QStringLiteral("LR_GENR_IF")
                     || row.detailDisplayName.contains(QStringLiteral("lr_genr_if"))));
+        sawRealInterfaceContextMetadata = sawRealInterfaceContextMetadata
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && (row.symbolDisplayName == QStringLiteral("LR_GENR_IF")
+                    || row.detailDisplayName.contains(QStringLiteral("lr_genr_if")))
+                && row.contextKindDisplayName.contains(QStringLiteral("interface"))
+                && !row.symbolTypeDisplayName.isEmpty()
+                && !row.sourceRoleDisplayName.isEmpty());
         sawRealInterfaceContextLink = sawRealInterfaceContextLink
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && (row.symbolDisplayName == QStringLiteral("LR_GENR_IF")
@@ -4942,11 +4987,17 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace module brief package context",
                sawRealPackageContext,
                true);
+    expectBool("real workspace module brief package context metadata",
+               sawRealPackageContextMetadata,
+               true);
     expectBool("real workspace module brief package context code link",
                sawRealPackageContextLink,
                true);
     expectBool("real workspace module brief interface context",
                sawRealInterfaceContext,
+               true);
+    expectBool("real workspace module brief interface context metadata",
+               sawRealInterfaceContextMetadata,
                true);
     expectBool("real workspace module brief interface context code link",
                sawRealInterfaceContextLink,

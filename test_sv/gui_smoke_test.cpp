@@ -787,8 +787,19 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sym_list::sym_port_input,
         16,
         QStringLiteral("insight_top")));
+    symbols.append(makeGuiSmokeSymbol(
+        9614,
+        fixturePath,
+        QStringLiteral("insight_pkg"),
+        sym_list::sym_package,
+        18));
 
     QList<SemanticRelationship> relationships;
+    SemanticRelationship packageRel;
+    packageRel.fromId = 9601;
+    packageRel.toId = 9614;
+    packageRel.type = SymbolRelationshipEngine::REFERENCES;
+    relationships.append(packageRel);
     SemanticRelationship clockRel;
     clockRel.fromId = 9602;
     clockRel.toId = 9601;
@@ -852,6 +863,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawRelationshipEvidence = false;
     bool sawRelationshipFromEndpoint = false;
     bool sawRelationshipToEndpoint = false;
+    bool sawContextKind = false;
+    bool sawContextType = false;
+    bool sawContextSourceRole = false;
     bool sawClockSignalEndpoint = false;
     bool sawClockModuleEndpoint = false;
     bool sawUnmappedClock = false;
@@ -881,6 +895,18 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("To")
                 && item->text(1) == QStringLiteral("u_stage")
                 && item->text(2) == QStringLiteral("Instantiates"));
+        sawContextKind = sawContextKind
+            || (item->text(0) == QStringLiteral("Kind")
+                && item->text(1) == QStringLiteral("package import")
+                && item->text(2) == QStringLiteral("Package"));
+        sawContextType = sawContextType
+            || (item->text(0) == QStringLiteral("Type")
+                && item->text(1) == QStringLiteral("package")
+                && item->text(2) == QStringLiteral("package import"));
+        sawContextSourceRole = sawContextSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("Package"));
         sawClockSignalEndpoint = sawClockSignalEndpoint
             || (item->text(0) == QStringLiteral("Signal")
                 && item->text(1) == QStringLiteral("clk")
@@ -928,6 +954,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders relationship to endpoint",
                sawRelationshipToEndpoint,
+               true);
+    expectBool("RTL insights renders context kind",
+               sawContextKind,
+               true);
+    expectBool("RTL insights renders context type",
+               sawContextType,
+               true);
+    expectBool("RTL insights renders context source role",
+               sawContextSourceRole,
                true);
     expectBool("RTL insights renders clock signal endpoint",
                sawClockSignalEndpoint,
