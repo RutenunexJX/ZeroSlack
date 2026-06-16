@@ -111,6 +111,20 @@ private:
                                       const QString& candidateName);
     static bool looksLikeCurrentStateName(const QString& name);
     static bool looksLikeNextStateName(const QString& name);
+    static QString assignmentTarget(const QString& code);
+    static QList<QString> assignedStateValues(const QString& code,
+                                              const QSet<QString>& stateNames);
+    static QString transitionConditionForState(const QString& code,
+                                               const QString& pendingCondition,
+                                               const QString& stateName);
+    static void appendTransition(QList<FsmTransition>& transitions,
+                                 QSet<QString>& seenTransitions,
+                                 const QString& currentState,
+                                 const QString& toState,
+                                 const QString& assignmentTarget,
+                                 const QString& condition,
+                                 const QString& fileName,
+                                 int line);
     static QString stripLineComment(const QString& line);
     static QList<FsmStateRow> stateRows(
         const QList<sym_list::SymbolInfo>& states);

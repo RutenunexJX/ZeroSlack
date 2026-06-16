@@ -240,9 +240,6 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
             .arg(QRegularExpression::escape(stateRegister.symbolName)));
     const QRegularExpression labelExpression(
         QStringLiteral("^\\s*([A-Za-z_][A-Za-z0-9_$]*|default)\\s*:"));
-    const QRegularExpression assignmentExpression(
-        QStringLiteral("\\b([A-Za-z_][A-Za-z0-9_$]*)\\s*(?:<=|=)\\s*"
-                       "([A-Za-z_][A-Za-z0-9_$]*)\\b"));
     const QRegularExpression conditionExpression(
         QStringLiteral("\\bif\\s*\\(([^)]*)\\)"));
     const QRegularExpression endcaseExpression(QStringLiteral("\\bendcase\\b"));
@@ -281,13 +278,8 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         if (conditionMatch.hasMatch())
             pendingCondition = conditionMatch.captured(1).trimmed();
 
-        const QRegularExpressionMatch assignmentMatch = assignmentExpression.match(code);
-        if (!assignmentMatch.hasMatch())
-            continue;
-
-        const QString target = assignmentMatch.captured(1);
-        const QString rhs = assignmentMatch.captured(2);
-        if (!stateNames.contains(rhs))
+        const QString target = assignmentTarget(code);
+        if (target.isEmpty())
             continue;
         if (!target.contains(QStringLiteral("state"), Qt::CaseInsensitive)
             && (nextStateSignal.symbolId < 0
@@ -295,26 +287,21 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
             continue;
         }
 
-        const QString key = QStringLiteral("%1:%2:%3:%4")
-                                .arg(currentState)
-                                .arg(rhs)
-                                .arg(target)
-                                .arg(i + 1);
-        if (seenTransitions.contains(key))
-            continue;
-        seenTransitions.insert(key);
-
-        FsmTransition transition;
-        transition.fromState = currentState;
-        transition.toState = rhs;
-        transition.assignmentTarget = target;
-        transition.line = i + 1;
-        transition.codeLink =
-            RtlInsightLink::fromFileLine(moduleSymbol.fileName, transition.line, 1);
-        transition.condition = pendingCondition;
-        pendingCondition.clear();
-        fillDisplayMetadata(transition);
-        transitions.append(transition);
+        const QList<QString> toStates = assignedStateValues(code, stateNames);
+        for (const QString& toState : toStates) {
+            appendTransition(transitions,
+                             seenTransitions,
+                             currentState,
+                             toState,
+                             target,
+                             transitionConditionForState(code,
+                                                         pendingCondition,
+                                                         toState),
+                             moduleSymbol.fileName,
+                             i + 1);
+        }
+        if (!toStates.isEmpty())
+            pendingCondition.clear();
     }
 
     sortTransitions(transitions);
@@ -416,6 +403,97 @@ bool FsmGraphService::looksLikeNextStateName(const QString& name)
         || lower.endsWith(QStringLiteral("ns"))
         || lower.endsWith(QStringLiteral("_d"))
         || lower.endsWith(QStringLiteral("_nxt"));
+}
+
+QString FsmGraphService::assignmentTarget(const QString& code)
+{
+    const QRegularExpression assignmentExpression(
+        QStringLiteral("\\b([A-Za-z_][A-Za-z0-9_$]*)\\s*(?:<=|=)\\s*"));
+    const QRegularExpressionMatch match = assignmentExpression.match(code);
+    return match.hasMatch() ? match.captured(1) : QString();
+}
+
+QList<QString> FsmGraphService::assignedStateValues(
+    const QString& code,
+    const QSet<QString>& stateNames)
+{
+    QList<QString> states;
+    QSet<QString> seen;
+    const int assignment = code.indexOf(QRegularExpression(QStringLiteral("<=|=")));
+    const QString rhs = assignment >= 0 ? code.mid(assignment + 1) : code;
+    const QRegularExpression identifierExpression(
+        QStringLiteral("\\b[A-Za-z_][A-Za-z0-9_$]*\\b"));
+    QRegularExpressionMatchIterator it = identifierExpression.globalMatch(rhs);
+    while (it.hasNext()) {
+        const QString token = it.next().captured(0);
+        if (!stateNames.contains(token) || seen.contains(token))
+            continue;
+        seen.insert(token);
+        states.append(token);
+    }
+    return states;
+}
+
+QString FsmGraphService::transitionConditionForState(
+    const QString& code,
+    const QString& pendingCondition,
+    const QString& stateName)
+{
+    const int question = code.indexOf(QLatin1Char('?'));
+    const int colon = question >= 0 ? code.indexOf(QLatin1Char(':'), question + 1) : -1;
+    if (question < 0 || colon < 0)
+        return pendingCondition;
+
+    QString condition = code.left(question).trimmed();
+    const int assignment = condition.indexOf(QRegularExpression(QStringLiteral("<=|=")));
+    if (assignment >= 0)
+        condition = condition.mid(assignment + 1).trimmed();
+    if (condition.isEmpty())
+        condition = pendingCondition;
+
+    const QString trueBranch = code.mid(question + 1, colon - question - 1);
+    const QString falseBranch = code.mid(colon + 1);
+    if (trueBranch.contains(QRegularExpression(
+            QStringLiteral("\\b%1\\b").arg(QRegularExpression::escape(stateName))))) {
+        return condition;
+    }
+    if (falseBranch.contains(QRegularExpression(
+            QStringLiteral("\\b%1\\b").arg(QRegularExpression::escape(stateName))))) {
+        return condition.isEmpty()
+            ? QStringLiteral("else")
+            : QStringLiteral("else %1").arg(condition);
+    }
+    return pendingCondition;
+}
+
+void FsmGraphService::appendTransition(
+    QList<FsmTransition>& transitions,
+    QSet<QString>& seenTransitions,
+    const QString& currentState,
+    const QString& toState,
+    const QString& assignmentTarget,
+    const QString& condition,
+    const QString& fileName,
+    int line)
+{
+    const QString key = QStringLiteral("%1:%2:%3:%4")
+                            .arg(currentState)
+                            .arg(toState)
+                            .arg(assignmentTarget)
+                            .arg(line);
+    if (seenTransitions.contains(key))
+        return;
+    seenTransitions.insert(key);
+
+    FsmTransition transition;
+    transition.fromState = currentState;
+    transition.toState = toState;
+    transition.assignmentTarget = assignmentTarget;
+    transition.line = line;
+    transition.codeLink = RtlInsightLink::fromFileLine(fileName, transition.line, 1);
+    transition.condition = condition;
+    fillDisplayMetadata(transition);
+    transitions.append(transition);
 }
 
 QString FsmGraphService::stripLineComment(const QString& line)

@@ -3663,7 +3663,7 @@ static void runFsmGraphServiceFixture()
         "  pkg_state_e ns;\n"
         "  always_comb begin\n"
         "    case (cs)\n"
-        "      IDLE: ns = RUN;\n"
+        "      IDLE: ns = go ? RUN : IDLE;\n"
         "      RUN: ns = IDLE;\n"
         "    endcase\n"
         "  end\n"
@@ -3881,18 +3881,29 @@ static void runFsmGraphServiceFixture()
               packageReport.graphs.isEmpty()
                   ? 0
                   : packageReport.graphs.first().transitions.size(),
-              2);
+              3);
+    bool sawPackageTernaryTransition = false;
+    for (const FsmTransitionRow& row : packageReport.graphs.first().transitionRows) {
+        sawPackageTernaryTransition = sawPackageTernaryTransition
+            || (row.fromStateDisplayName == QStringLiteral("IDLE")
+                && row.toStateDisplayName == QStringLiteral("RUN")
+                && row.conditionDisplayName == QStringLiteral("go")
+                && row.codeLink.fileName == packageModuleFileName
+                && row.codeLink.line == 6);
+    }
     expectBool("fsm graph package enum transition evidence",
-               !packageReport.graphs.isEmpty()
-                   && !packageReport.graphs.first().transitionRows.isEmpty()
-                   && packageReport.graphs.first().transitionRows.first()
-                          .fromStateDisplayName == QStringLiteral("IDLE")
-                   && packageReport.graphs.first().transitionRows.first()
-                          .toStateDisplayName == QStringLiteral("RUN")
-                   && packageReport.graphs.first().transitionRows.first()
-                          .codeLink.fileName == packageModuleFileName
-                   && packageReport.graphs.first().transitionRows.first()
-                          .codeLink.line == 6,
+               sawPackageTernaryTransition,
+               true);
+    bool sawPackageTernaryElseTransition = false;
+    for (const FsmTransitionRow& row : packageReport.graphs.first().transitionRows) {
+        sawPackageTernaryElseTransition = sawPackageTernaryElseTransition
+            || (row.fromStateDisplayName == QStringLiteral("IDLE")
+                && row.toStateDisplayName == QStringLiteral("IDLE")
+                && row.conditionDisplayName == QStringLiteral("else go")
+                && row.codeLink.line == 6);
+    }
+    expectBool("fsm graph package enum ternary else evidence",
+               sawPackageTernaryElseTransition,
                true);
     expectBool("fsm graph package enum state link",
                !packageReport.graphs.isEmpty()
@@ -4742,6 +4753,8 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealPhyPassFsm = false;
     bool sawRealPhyPassFsmStateLink = false;
     bool sawRealPhyPassFsmTransition = false;
+    bool sawRealPhyPassTernaryTransition = false;
+    bool sawRealPhyPassTernaryElseTransition = false;
     for (const FsmGraph& graph : realFsmReport.graphs) {
         if (graph.stateRegister.symbolName
             != QStringLiteral("phy_pass_thrg_cfg_cs")) {
@@ -4758,6 +4771,20 @@ static void runRealWorkspaceIncludeFixture()
             && !graph.transitionRows.first().codeLink.fileName.isEmpty()
             && graph.transitionRows.first().codeLink.line > 0
             && !graph.transitionRows.first().sourceLineDisplayName.isEmpty();
+        for (const FsmTransitionRow& row : graph.transitionRows) {
+            sawRealPhyPassTernaryTransition = sawRealPhyPassTernaryTransition
+                || (row.fromStateDisplayName == QStringLiteral("S_IDLE")
+                    && row.toStateDisplayName == QStringLiteral("S_PRE_DEASSERT_DONE")
+                    && row.conditionDisplayName.contains(QStringLiteral("E_CFG_TYPE_PRE_DEASSERT"))
+                    && row.codeLink.line > 0);
+            sawRealPhyPassTernaryElseTransition =
+                sawRealPhyPassTernaryElseTransition
+                || (row.fromStateDisplayName == QStringLiteral("S_IDLE")
+                    && row.toStateDisplayName == QStringLiteral("S_PROT_EXT_SWITCH_DIS")
+                    && row.conditionDisplayName.contains(QStringLiteral("else"))
+                    && row.conditionDisplayName.contains(QStringLiteral("E_CFG_TYPE_PRE_DEASSERT"))
+                    && row.codeLink.line > 0);
+        }
     }
     expectBool("real workspace fsm graph found",
                realFsmReport.found,
@@ -4770,6 +4797,12 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace fsm graph transition evidence",
                sawRealPhyPassFsmTransition,
+               true);
+    expectBool("real workspace fsm graph ternary transition evidence",
+               sawRealPhyPassTernaryTransition,
+               true);
+    expectBool("real workspace fsm graph ternary else evidence",
+               sawRealPhyPassTernaryElseTransition,
                true);
 
     QList<sym_list::SymbolInfo> realBeforeDiffSymbols;
