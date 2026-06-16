@@ -7,6 +7,13 @@
 
 std::unique_ptr<SemanticDiffService> SemanticDiffService::instance = nullptr;
 
+namespace {
+bool hasDisplaySymbol(const sym_list::SymbolInfo& symbol)
+{
+    return !symbol.symbolName.isEmpty() || !symbol.fileName.isEmpty();
+}
+}
+
 SemanticDiffService* SemanticDiffService::getInstance()
 {
     if (!instance)
@@ -551,6 +558,26 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
         SymbolTaxonomy::symbolTypeLabel(change.displaySymbol.symbolType);
     change.scopeDisplayName = symbolScopeDisplayName(change.displaySymbol);
     change.codeLink = RtlInsightLink::fromSymbol(change.displaySymbol);
+    if (hasDisplaySymbol(change.beforeSymbol)) {
+        change.beforeSymbolTypeDisplayName =
+            SymbolTaxonomy::symbolTypeLabel(change.beforeSymbol.symbolType);
+        change.beforeScopeDisplayName = symbolScopeDisplayName(change.beforeSymbol);
+        change.beforeSourceRoleDisplayName =
+            sourceRoleDisplayName(
+                SymbolTaxonomy::sourceRoleForFileName(change.beforeSymbol.fileName));
+        change.beforeDataTypeDisplayName = change.beforeSymbol.dataType;
+        change.beforeCodeLink = RtlInsightLink::fromSymbol(change.beforeSymbol);
+    }
+    if (hasDisplaySymbol(change.afterSymbol)) {
+        change.afterSymbolTypeDisplayName =
+            SymbolTaxonomy::symbolTypeLabel(change.afterSymbol.symbolType);
+        change.afterScopeDisplayName = symbolScopeDisplayName(change.afterSymbol);
+        change.afterSourceRoleDisplayName =
+            sourceRoleDisplayName(
+                SymbolTaxonomy::sourceRoleForFileName(change.afterSymbol.fileName));
+        change.afterDataTypeDisplayName = change.afterSymbol.dataType;
+        change.afterCodeLink = RtlInsightLink::fromSymbol(change.afterSymbol);
+    }
 
     const QString dataType = change.displaySymbol.dataType.isEmpty()
         ? QString()

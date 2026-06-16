@@ -46,8 +46,18 @@ struct SemanticDiffSymbolChange {
     QString sourceRoleDisplayName;
     QString symbolTypeDisplayName;
     QString scopeDisplayName;
+    QString beforeSymbolTypeDisplayName;
+    QString afterSymbolTypeDisplayName;
+    QString beforeScopeDisplayName;
+    QString afterScopeDisplayName;
+    QString beforeSourceRoleDisplayName;
+    QString afterSourceRoleDisplayName;
+    QString beforeDataTypeDisplayName;
+    QString afterDataTypeDisplayName;
     QString detailDisplayName;
     RtlInsightCodeLink codeLink;
+    RtlInsightCodeLink beforeCodeLink;
+    RtlInsightCodeLink afterCodeLink;
 };
 
 struct SemanticDiffRelationshipChange {

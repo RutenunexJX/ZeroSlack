@@ -1140,6 +1140,9 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     bool sawModifiedPort = false;
+    bool sawModifiedPortBefore = false;
+    bool sawModifiedPortAfter = false;
+    bool sawModifiedPortSourceRole = false;
     bool sawAddedSignal = false;
     bool sawRemovedSignal = false;
     bool sawAddedRelationship = false;
@@ -1155,6 +1158,18 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
                 && item->text(1) == QStringLiteral("data")
                 && item->text(2).contains(QStringLiteral("input -> output"))
                 && item->text(2).contains(QStringLiteral("scope diff_top")));
+        sawModifiedPortBefore = sawModifiedPortBefore
+            || (item->text(0) == QStringLiteral("Before")
+                && item->text(1) == QStringLiteral("input")
+                && item->text(2) == QStringLiteral("scope diff_top"));
+        sawModifiedPortAfter = sawModifiedPortAfter
+            || (item->text(0) == QStringLiteral("After")
+                && item->text(1) == QStringLiteral("output")
+                && item->text(2) == QStringLiteral("scope diff_top"));
+        sawModifiedPortSourceRole = sawModifiedPortSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("port"));
         sawAddedSignal = sawAddedSignal
             || (item->text(0) == QStringLiteral("Added Signals")
                 && item->text(1) == QStringLiteral("state_q")
@@ -1190,6 +1205,15 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     }
 
     expectBool("RTL insights renders modified diff port", sawModifiedPort, true);
+    expectBool("RTL insights renders modified diff before",
+               sawModifiedPortBefore,
+               true);
+    expectBool("RTL insights renders modified diff after",
+               sawModifiedPortAfter,
+               true);
+    expectBool("RTL insights renders modified diff source role",
+               sawModifiedPortSourceRole,
+               true);
     expectBool("RTL insights renders added diff signal", sawAddedSignal, true);
     expectBool("RTL insights renders removed diff signal", sawRemovedSignal, true);
     expectBool("RTL insights renders added diff relationship",

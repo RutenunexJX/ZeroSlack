@@ -515,12 +515,52 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                                               report.symbolChangeCount);
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         const sym_list::SymbolInfo& symbol = change.displaySymbol;
-        createChildItem(symbols,
-                        QStringLiteral("%1 %2")
-                            .arg(change.kindDisplayName,
-                                 change.categoryGroupDisplayName),
-                        symbol.symbolName,
-                        change.detailDisplayName,
+        QTreeWidgetItem* symbolChange =
+            createChildItem(symbols,
+                            QStringLiteral("%1 %2")
+                                .arg(change.kindDisplayName,
+                                     change.categoryGroupDisplayName),
+                            symbol.symbolName,
+                            change.detailDisplayName,
+                            change.codeLink.fileName,
+                            change.codeLink.line,
+                            change.codeLink.column,
+                            change.codeLink.fileDisplayName,
+                            change.codeLink.lineDisplayName);
+        if (!change.beforeSymbolTypeDisplayName.isEmpty()) {
+            createChildItem(symbolChange,
+                            QStringLiteral("Before"),
+                            change.beforeSymbolTypeDisplayName,
+                            change.beforeDataTypeDisplayName.isEmpty()
+                                ? change.beforeScopeDisplayName
+                                : QStringLiteral("%1, %2")
+                                      .arg(change.beforeDataTypeDisplayName,
+                                           change.beforeScopeDisplayName),
+                            change.beforeCodeLink.fileName,
+                            change.beforeCodeLink.line,
+                            change.beforeCodeLink.column,
+                            change.beforeCodeLink.fileDisplayName,
+                            change.beforeCodeLink.lineDisplayName);
+        }
+        if (!change.afterSymbolTypeDisplayName.isEmpty()) {
+            createChildItem(symbolChange,
+                            QStringLiteral("After"),
+                            change.afterSymbolTypeDisplayName,
+                            change.afterDataTypeDisplayName.isEmpty()
+                                ? change.afterScopeDisplayName
+                                : QStringLiteral("%1, %2")
+                                      .arg(change.afterDataTypeDisplayName,
+                                           change.afterScopeDisplayName),
+                            change.afterCodeLink.fileName,
+                            change.afterCodeLink.line,
+                            change.afterCodeLink.column,
+                            change.afterCodeLink.fileDisplayName,
+                            change.afterCodeLink.lineDisplayName);
+        }
+        createChildItem(symbolChange,
+                        QStringLiteral("Source Role"),
+                        change.sourceRoleDisplayName,
+                        change.categoryDisplayName,
                         change.codeLink.fileName,
                         change.codeLink.line,
                         change.codeLink.column,
