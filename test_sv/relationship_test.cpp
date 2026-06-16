@@ -3190,6 +3190,20 @@ static void runSignalJourneyServiceFixture()
         sym_list::sym_logic,
         55,
         QStringLiteral("journey_if")));
+    symbols.append(makeModuleBriefSymbol(
+        9109,
+        fileName,
+        QStringLiteral("clk"),
+        sym_list::sym_port_input,
+        60,
+        QStringLiteral("journey_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9110,
+        fileName,
+        QStringLiteral("rst_n"),
+        sym_list::sym_port_input,
+        61,
+        QStringLiteral("journey_top")));
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship assignment;
@@ -3221,6 +3235,18 @@ static void runSignalJourneyServiceFixture()
     interfaceMemberConnection.toId = 9108;
     interfaceMemberConnection.type = SymbolRelationshipEngine::REFERENCES;
     relationships.append(interfaceMemberConnection);
+
+    SemanticRelationship clockConnection;
+    clockConnection.fromId = 9109;
+    clockConnection.toId = 9101;
+    clockConnection.type = SymbolRelationshipEngine::CLOCKS;
+    relationships.append(clockConnection);
+
+    SemanticRelationship resetConnection;
+    resetConnection.fromId = 9110;
+    resetConnection.toId = 9101;
+    resetConnection.type = SymbolRelationshipEngine::RESETS;
+    relationships.append(resetConnection);
 
     SemanticIndex index;
     index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
@@ -3261,6 +3287,8 @@ static void runSignalJourneyServiceFixture()
               report.portConnections.size(), 1);
     expectInt("signal journey interface connection count",
               report.interfaceConnections.size(), 2);
+    expectInt("signal journey timing connection count",
+              report.timingConnections.size(), 0);
     expectBool("signal journey assignment peer",
                !report.assignments.isEmpty()
                    && report.assignments.first().peerSymbol.symbolName
@@ -3331,6 +3359,50 @@ static void runSignalJourneyServiceFixture()
                true);
     expectBool("signal journey interface member code link",
                sawInterfaceMemberLink,
+               true);
+
+    SignalJourneyQuery clockQuery;
+    clockQuery.signalName = QStringLiteral("clk");
+    clockQuery.fileName = fileName;
+    clockQuery.moduleName = QStringLiteral("journey_top");
+    const SignalJourneyReport clockReport = service.buildSignalJourney(clockQuery);
+    expectBool("signal journey clock found",
+               clockReport.found,
+               true);
+    expectInt("signal journey clock timing count",
+              clockReport.timingConnections.size(),
+              1);
+    expectBool("signal journey clock timing peer",
+               !clockReport.timingConnections.isEmpty()
+                   && clockReport.timingConnections.first().peerSymbolDisplayName
+                       == QStringLiteral("journey_top")
+                   && clockReport.timingConnections.first().relationshipTypeDisplayName
+                       == QStringLiteral("Clocks")
+                   && clockReport.timingConnections.first().detailDisplayName
+                       == QStringLiteral("timing outgoing Clocks")
+                   && clockReport.timingConnections.first().peerCodeLink.fileName == fileName
+                   && clockReport.timingConnections.first().peerCodeLink.line == 1,
+               true);
+
+    SignalJourneyQuery resetQuery;
+    resetQuery.signalName = QStringLiteral("rst_n");
+    resetQuery.fileName = fileName;
+    resetQuery.moduleName = QStringLiteral("journey_top");
+    const SignalJourneyReport resetReport = service.buildSignalJourney(resetQuery);
+    expectBool("signal journey reset found",
+               resetReport.found,
+               true);
+    expectInt("signal journey reset timing count",
+              resetReport.timingConnections.size(),
+              1);
+    expectBool("signal journey reset timing peer",
+               !resetReport.timingConnections.isEmpty()
+                   && resetReport.timingConnections.first().peerSymbolDisplayName
+                       == QStringLiteral("journey_top")
+                   && resetReport.timingConnections.first().relationshipTypeDisplayName
+                       == QStringLiteral("Resets")
+                   && resetReport.timingConnections.first().detailDisplayName
+                       == QStringLiteral("timing outgoing Resets"),
                true);
 }
 
@@ -4742,6 +4814,66 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace signal journey interface modport code link",
                sawRealInterfaceModportJourneyLink,
+               true);
+
+    SignalJourneyQuery clockJourneyQuery;
+    clockJourneyQuery.signalName = QStringLiteral("clk_main");
+    clockJourneyQuery.fileName = topPath;
+    clockJourneyQuery.moduleName = QStringLiteral("rtl_top");
+    const SignalJourneyReport clockJourney =
+        signalJourneyService.buildSignalJourney(clockJourneyQuery);
+    bool sawRealClockJourney = false;
+    bool sawRealClockJourneyLink = false;
+    for (const SignalJourneyItem& item : clockJourney.timingConnections) {
+        sawRealClockJourney = sawRealClockJourney
+            || (item.peerSymbolDisplayName == QStringLiteral("rtl_top")
+                && item.relationshipTypeDisplayName == QStringLiteral("Clocks")
+                && item.detailDisplayName == QStringLiteral("timing outgoing Clocks"));
+        sawRealClockJourneyLink = sawRealClockJourneyLink
+            || (item.peerSymbolDisplayName == QStringLiteral("rtl_top")
+                && !item.peerCodeLink.fileName.isEmpty()
+                && item.peerCodeLink.line > 0
+                && !item.peerCodeLink.fileDisplayName.isEmpty()
+                && !item.peerCodeLink.lineDisplayName.isEmpty());
+    }
+    expectBool("real workspace signal journey clock found",
+               clockJourney.found,
+               true);
+    expectBool("real workspace signal journey clock timing",
+               sawRealClockJourney,
+               true);
+    expectBool("real workspace signal journey clock timing code link",
+               sawRealClockJourneyLink,
+               true);
+
+    SignalJourneyQuery resetJourneyQuery;
+    resetJourneyQuery.signalName = QStringLiteral("srst_main");
+    resetJourneyQuery.fileName = topPath;
+    resetJourneyQuery.moduleName = QStringLiteral("rtl_top");
+    const SignalJourneyReport resetJourney =
+        signalJourneyService.buildSignalJourney(resetJourneyQuery);
+    bool sawRealResetJourney = false;
+    bool sawRealResetJourneyLink = false;
+    for (const SignalJourneyItem& item : resetJourney.timingConnections) {
+        sawRealResetJourney = sawRealResetJourney
+            || (item.peerSymbolDisplayName == QStringLiteral("rtl_top")
+                && item.relationshipTypeDisplayName == QStringLiteral("Resets")
+                && item.detailDisplayName == QStringLiteral("timing outgoing Resets"));
+        sawRealResetJourneyLink = sawRealResetJourneyLink
+            || (item.peerSymbolDisplayName == QStringLiteral("rtl_top")
+                && !item.peerCodeLink.fileName.isEmpty()
+                && item.peerCodeLink.line > 0
+                && !item.peerCodeLink.fileDisplayName.isEmpty()
+                && !item.peerCodeLink.lineDisplayName.isEmpty());
+    }
+    expectBool("real workspace signal journey reset found",
+               resetJourney.found,
+               true);
+    expectBool("real workspace signal journey reset timing",
+               sawRealResetJourney,
+               true);
+    expectBool("real workspace signal journey reset timing code link",
+               sawRealResetJourneyLink,
                true);
 
     FsmGraphService realFsmService(&index);

@@ -41,6 +41,7 @@ struct SignalJourneyReport {
     QList<SignalJourneyItem> reads;
     QList<SignalJourneyItem> portConnections;
     QList<SignalJourneyItem> interfaceConnections;
+    QList<SignalJourneyItem> timingConnections;
 };
 
 class SignalJourneyService
@@ -68,6 +69,8 @@ private:
     QList<SignalJourneyItem> portConnectionItems(
         const sym_list::SymbolInfo& signal) const;
     QList<SignalJourneyItem> interfaceConnectionItems(
+        const sym_list::SymbolInfo& signal) const;
+    QList<SignalJourneyItem> timingConnectionItems(
         const sym_list::SymbolInfo& signal) const;
 
     bool isJourneyDeclaration(const sym_list::SymbolInfo& symbol) const;

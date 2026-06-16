@@ -334,7 +334,8 @@ void appendSignalJourney(QTreeWidget* tree,
         + report.assignments.size()
         + report.reads.size()
         + report.portConnections.size()
-        + report.interfaceConnections.size();
+        + report.interfaceConnections.size()
+        + report.timingConnections.size();
     QTreeWidgetItem* group = createGroupItem(tree,
                                             QStringLiteral("Signal Journey: %1")
                                                 .arg(report.declaration.symbolName),
@@ -356,6 +357,9 @@ void appendSignalJourney(QTreeWidget* tree,
     appendSignalJourneyItems(group,
                              QStringLiteral("Interface Connections"),
                              report.interfaceConnections);
+    appendSignalJourneyItems(group,
+                             QStringLiteral("Timing Connections"),
+                             report.timingConnections);
 }
 
 void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)

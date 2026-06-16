@@ -85,6 +85,7 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
         {SymbolRelationshipEngine::READS_FROM});
     report.portConnections = portConnectionItems(signal);
     report.interfaceConnections = interfaceConnectionItems(signal);
+    report.timingConnections = timingConnectionItems(signal);
     return report;
 }
 
@@ -203,6 +204,47 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
             item.outgoing = outgoing;
             fillDisplayMetadata(item);
             item.detailDisplayName = QStringLiteral("interface %1")
+                                         .arg(item.detailDisplayName);
+            items.append(item);
+        }
+    };
+    appendDirection(false);
+    appendDirection(true);
+    sortItems(items);
+    return items;
+}
+
+QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
+    const sym_list::SymbolInfo& signal) const
+{
+    QList<SignalJourneyItem> items;
+    QSet<QString> seen;
+    auto appendDirection = [&](bool outgoing) {
+        const QList<SemanticRelationshipResult> relationships =
+            semanticIndex()->getRelationshipResults(signal.symbolId, outgoing);
+        for (const SemanticRelationshipResult& relationship : relationships) {
+            if (relationship.relationship.type != SymbolRelationshipEngine::CLOCKS
+                && relationship.relationship.type != SymbolRelationshipEngine::RESETS) {
+                continue;
+            }
+            const sym_list::SymbolInfo peer =
+                outgoing ? relationship.toSymbol : relationship.fromSymbol;
+            if (peer.symbolId < 0)
+                continue;
+            const QString key = QStringLiteral("%1:%2:%3")
+                                    .arg(relationship.relationship.fromId)
+                                    .arg(relationship.relationship.toId)
+                                    .arg(static_cast<int>(relationship.relationship.type));
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+
+            SignalJourneyItem item;
+            item.relationship = relationship;
+            item.peerSymbol = peer;
+            item.outgoing = outgoing;
+            fillDisplayMetadata(item);
+            item.detailDisplayName = QStringLiteral("timing %1")
                                          .arg(item.detailDisplayName);
             items.append(item);
         }
