@@ -334,11 +334,17 @@ void SignalJourneyService::fillDeclarationDisplayMetadata(
 
 void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
 {
+    item.fromSymbol = item.relationship.fromSymbol;
+    item.toSymbol = item.relationship.toSymbol;
     item.peerCodeLink = RtlInsightLink::fromSymbol(item.peerSymbol);
+    item.fromCodeLink = RtlInsightLink::fromSymbol(item.fromSymbol);
+    item.toCodeLink = RtlInsightLink::fromSymbol(item.toSymbol);
     item.directionDisplayName = directionDisplayName(item.outgoing);
     item.relationshipTypeDisplayName =
         relationshipTypeDisplayName(item.relationship.relationship.type);
     item.peerSymbolDisplayName = symbolDisplayName(item.peerSymbol);
+    item.fromSymbolDisplayName = symbolDisplayName(item.fromSymbol);
+    item.toSymbolDisplayName = symbolDisplayName(item.toSymbol);
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
     item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;
     item.detailDisplayName = QStringLiteral("%1 %2")

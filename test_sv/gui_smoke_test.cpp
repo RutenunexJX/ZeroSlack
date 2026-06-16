@@ -857,6 +857,8 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawUnmappedClock = false;
     bool sawTransition = false;
     bool sawSignalJourney = false;
+    bool sawSignalJourneyFromEndpoint = false;
+    bool sawSignalJourneyToEndpoint = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
     for (QTreeWidgetItem* item : items) {
         sawPort = sawPort
@@ -896,6 +898,14 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawSignalJourney = sawSignalJourney
             || (item->text(0) == QStringLiteral("Assignments")
                 && item->text(1) == QStringLiteral("next_data"));
+        sawSignalJourneyFromEndpoint = sawSignalJourneyFromEndpoint
+            || (item->text(0) == QStringLiteral("From")
+                && item->text(1) == QStringLiteral("next_data")
+                && item->text(2) == QStringLiteral("Assigns To"));
+        sawSignalJourneyToEndpoint = sawSignalJourneyToEndpoint
+            || (item->text(0) == QStringLiteral("To")
+                && item->text(1) == QStringLiteral("data_q")
+                && item->text(2) == QStringLiteral("Assigns To"));
     }
 
     expectBool("RTL insights renders module port", sawPort, true);
@@ -918,6 +928,12 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
+    expectBool("RTL insights renders signal journey from endpoint",
+               sawSignalJourneyFromEndpoint,
+               true);
+    expectBool("RTL insights renders signal journey to endpoint",
+               sawSignalJourneyToEndpoint,
+               true);
 
     window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
         fixturePath,

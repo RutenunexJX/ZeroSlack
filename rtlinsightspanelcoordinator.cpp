@@ -352,15 +352,34 @@ void appendSignalJourneyItems(QTreeWidgetItem* parent,
     QTreeWidgetItem* group = new QTreeWidgetItem(parent);
     group->setText(0, SemanticPanelUtils::countLabel(section, items.size()));
     for (const SignalJourneyItem& item : items) {
-        createChildItem(group,
-                        section,
-                        item.peerSymbolDisplayName,
-                        item.detailDisplayName,
-                        item.peerCodeLink.fileName,
-                        item.peerCodeLink.line,
-                        item.peerCodeLink.column,
-                        item.peerCodeLink.fileDisplayName,
-                        item.peerCodeLink.lineDisplayName);
+        QTreeWidgetItem* relationship =
+            createChildItem(group,
+                            section,
+                            item.peerSymbolDisplayName,
+                            item.detailDisplayName,
+                            item.peerCodeLink.fileName,
+                            item.peerCodeLink.line,
+                            item.peerCodeLink.column,
+                            item.peerCodeLink.fileDisplayName,
+                            item.peerCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("From"),
+                        item.fromSymbolDisplayName,
+                        item.relationshipTypeDisplayName,
+                        item.fromCodeLink.fileName,
+                        item.fromCodeLink.line,
+                        item.fromCodeLink.column,
+                        item.fromCodeLink.fileDisplayName,
+                        item.fromCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("To"),
+                        item.toSymbolDisplayName,
+                        item.relationshipTypeDisplayName,
+                        item.toCodeLink.fileName,
+                        item.toCodeLink.line,
+                        item.toCodeLink.column,
+                        item.toCodeLink.fileDisplayName,
+                        item.toCodeLink.lineDisplayName);
     }
 }
 

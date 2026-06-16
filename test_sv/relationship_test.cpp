@@ -3369,6 +3369,25 @@ static void runSignalJourneyServiceFixture()
                    && report.assignments.first().peerCodeLink.lineDisplayName
                        == QStringLiteral("20"),
                true);
+    expectBool("signal journey assignment endpoints",
+               !report.assignments.isEmpty()
+                   && report.assignments.first().fromSymbolDisplayName
+                       == QStringLiteral("next_data")
+                   && report.assignments.first().toSymbolDisplayName
+                       == QStringLiteral("data_q")
+                   && report.assignments.first().fromCodeLink.fileName == fileName
+                   && report.assignments.first().fromCodeLink.line == 20
+                   && report.assignments.first().fromCodeLink.fileDisplayName
+                       == QStringLiteral("signal_journey_fixture.sv")
+                   && report.assignments.first().fromCodeLink.lineDisplayName
+                       == QStringLiteral("20")
+                   && report.assignments.first().toCodeLink.fileName == fileName
+                   && report.assignments.first().toCodeLink.line == 10
+                   && report.assignments.first().toCodeLink.fileDisplayName
+                       == QStringLiteral("signal_journey_fixture.sv")
+                   && report.assignments.first().toCodeLink.lineDisplayName
+                       == QStringLiteral("10"),
+               true);
     expectBool("signal journey read peer",
                !report.reads.isEmpty()
                    && report.reads.first().peerSymbol.symbolName
@@ -3421,6 +3440,32 @@ static void runSignalJourneyServiceFixture()
                true);
     expectBool("signal journey interface member code link",
                sawInterfaceMemberLink,
+               true);
+    bool sawInterfaceInstanceEndpoints = false;
+    bool sawInterfaceMemberEndpoints = false;
+    for (const SignalJourneyItem& item : report.interfaceConnections) {
+        sawInterfaceInstanceEndpoints = sawInterfaceInstanceEndpoints
+            || (item.peerSymbolDisplayName == QStringLiteral("if_bus")
+                && item.fromSymbolDisplayName == QStringLiteral("if_bus")
+                && item.toSymbolDisplayName == QStringLiteral("data_q")
+                && item.fromCodeLink.fileName == fileName
+                && item.fromCodeLink.line == 50
+                && item.toCodeLink.fileName == fileName
+                && item.toCodeLink.line == 10);
+        sawInterfaceMemberEndpoints = sawInterfaceMemberEndpoints
+            || (item.peerSymbolDisplayName == QStringLiteral("ready")
+                && item.fromSymbolDisplayName == QStringLiteral("data_q")
+                && item.toSymbolDisplayName == QStringLiteral("ready")
+                && item.fromCodeLink.fileName == fileName
+                && item.fromCodeLink.line == 10
+                && item.toCodeLink.fileName == fileName
+                && item.toCodeLink.line == 55);
+    }
+    expectBool("signal journey interface instance endpoints",
+               sawInterfaceInstanceEndpoints,
+               true);
+    expectBool("signal journey interface member endpoints",
+               sawInterfaceMemberEndpoints,
                true);
 
     SignalJourneyQuery clockQuery;
