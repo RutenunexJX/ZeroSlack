@@ -1,5 +1,6 @@
 #include "signaljourneyservice.h"
 
+#include <QFileInfo>
 #include <QSet>
 #include <algorithm>
 
@@ -74,7 +75,7 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
 
     report.found = true;
     report.declaration = signal;
-    report.declarationTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(signal.symbolType);
+    fillDeclarationDisplayMetadata(report);
     report.assignments = relationshipItems(
         signal,
         false,
@@ -189,11 +190,42 @@ QString SignalJourneyService::relationshipTypeDisplayName(
     return ::relationshipTypeDisplayName(type);
 }
 
+QString SignalJourneyService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolName;
+}
+
+QString SignalJourneyService::fileDisplayName(const QString& fileName)
+{
+    QString displayName = QFileInfo(fileName).fileName();
+    if (displayName.isEmpty())
+        displayName = fileName;
+    return displayName;
+}
+
+QString SignalJourneyService::lineDisplayName(int line)
+{
+    return QString::number(line);
+}
+
+void SignalJourneyService::fillDeclarationDisplayMetadata(
+    SignalJourneyReport& report)
+{
+    report.declarationDisplayName = symbolDisplayName(report.declaration);
+    report.declarationTypeDisplayName =
+        SymbolTaxonomy::symbolTypeLabel(report.declaration.symbolType);
+    report.declarationFileDisplayName = fileDisplayName(report.declaration.fileName);
+    report.declarationLineDisplayName = lineDisplayName(report.declaration.startLine);
+}
+
 void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
 {
     item.directionDisplayName = directionDisplayName(item.outgoing);
     item.relationshipTypeDisplayName =
         relationshipTypeDisplayName(item.relationship.relationship.type);
+    item.peerSymbolDisplayName = symbolDisplayName(item.peerSymbol);
+    item.peerFileDisplayName = fileDisplayName(item.peerSymbol.fileName);
+    item.peerLineDisplayName = lineDisplayName(item.peerSymbol.startLine);
     item.detailDisplayName = QStringLiteral("%1 %2")
                                  .arg(item.directionDisplayName,
                                       item.relationshipTypeDisplayName);

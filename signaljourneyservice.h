@@ -20,13 +20,19 @@ struct SignalJourneyItem {
     bool outgoing = false;
     QString directionDisplayName;
     QString relationshipTypeDisplayName;
+    QString peerSymbolDisplayName;
+    QString peerFileDisplayName;
+    QString peerLineDisplayName;
     QString detailDisplayName;
 };
 
 struct SignalJourneyReport {
     bool found = false;
     sym_list::SymbolInfo declaration = {};
+    QString declarationDisplayName;
     QString declarationTypeDisplayName;
+    QString declarationFileDisplayName;
+    QString declarationLineDisplayName;
     QList<SignalJourneyItem> assignments;
     QList<SignalJourneyItem> reads;
     QList<SignalJourneyItem> portConnections;
@@ -59,6 +65,10 @@ private:
 
     static QString directionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
+    static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString fileDisplayName(const QString& fileName);
+    static QString lineDisplayName(int line);
+    static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
     static void fillDisplayMetadata(SignalJourneyItem& item);
     static void sortItems(QList<SignalJourneyItem>& items);
 };

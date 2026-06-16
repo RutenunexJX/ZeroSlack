@@ -6,7 +6,6 @@
 #include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
 #include "signaljourneyservice.h"
-#include "symboltaxonomy.h"
 
 #include <QFileInfo>
 #include <QHeaderView>
@@ -15,11 +14,6 @@
 #include <utility>
 
 namespace {
-
-QString symbolTypeText(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::symbolTypeLabel(type);
-}
 
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
                                  const QString& title,
@@ -36,14 +30,20 @@ QTreeWidgetItem* createChildItem(QTreeWidgetItem* parent,
                                  const QString& detail,
                                  const QString& fileName,
                                  int line,
-                                 int column)
+                                 int column,
+                                 const QString& fileDisplayName = QString(),
+                                 const QString& lineDisplayName = QString())
 {
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, section);
     item->setText(1, name);
     item->setText(2, detail);
-    item->setText(3, QFileInfo(fileName).fileName());
-    item->setText(4, line > 0 ? QString::number(line) : QString());
+    item->setText(3, fileDisplayName.isEmpty()
+                         ? QFileInfo(fileName).fileName()
+                         : fileDisplayName);
+    item->setText(4, lineDisplayName.isEmpty()
+                         ? (line > 0 ? QString::number(line) : QString())
+                         : lineDisplayName);
     item->setToolTip(1, name);
     item->setToolTip(2, detail);
     item->setToolTip(3, fileName);
@@ -264,18 +264,13 @@ void appendSignalJourneyItems(QTreeWidgetItem* parent,
     for (const SignalJourneyItem& item : items) {
         createChildItem(group,
                         section,
-                        item.peerSymbol.symbolName,
-                        item.detailDisplayName.isEmpty()
-                            ? QStringLiteral("%1 %2")
-                                  .arg(item.outgoing
-                                           ? QStringLiteral("outgoing")
-                                           : QStringLiteral("incoming"),
-                                       SemanticPanelUtils::relationshipTypeText(
-                                           item.relationship.relationship.type))
-                            : item.detailDisplayName,
+                        item.peerSymbolDisplayName,
+                        item.detailDisplayName,
                         item.peerSymbol.fileName,
                         item.peerSymbol.startLine,
-                        item.peerSymbol.startColumn);
+                        item.peerSymbol.startColumn,
+                        item.peerFileDisplayName,
+                        item.peerLineDisplayName);
     }
 }
 
@@ -306,13 +301,13 @@ void appendSignalJourney(QTreeWidget* tree,
                                             totalItems);
     createChildItem(group,
                     QStringLiteral("Declaration"),
-                    report.declaration.symbolName,
-                    report.declarationTypeDisplayName.isEmpty()
-                        ? symbolTypeText(report.declaration.symbolType)
-                        : report.declarationTypeDisplayName,
+                    report.declarationDisplayName,
+                    report.declarationTypeDisplayName,
                     report.declaration.fileName,
                     report.declaration.startLine,
-                    report.declaration.startColumn);
+                    report.declaration.startColumn,
+                    report.declarationFileDisplayName,
+                    report.declarationLineDisplayName);
     appendSignalJourneyItems(group, QStringLiteral("Assignments"), report.assignments);
     appendSignalJourneyItems(group, QStringLiteral("Reads"), report.reads);
     appendSignalJourneyItems(group,
