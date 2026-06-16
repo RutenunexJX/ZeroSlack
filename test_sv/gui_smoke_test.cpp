@@ -780,6 +780,13 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sym_list::sym_inst_pin,
         15,
         QStringLiteral("insight_top")));
+    symbols.append(makeGuiSmokeSymbol(
+        9613,
+        fixturePath,
+        QStringLiteral("scan_clk"),
+        sym_list::sym_port_input,
+        16,
+        QStringLiteral("insight_top")));
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship clockRel;
@@ -802,6 +809,11 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     portRel.toId = 9609;
     portRel.type = SymbolRelationshipEngine::REFERENCES;
     relationships.append(portRel);
+    SemanticRelationship instRel;
+    instRel.fromId = 9601;
+    instRel.toId = 9604;
+    instRel.type = SymbolRelationshipEngine::INSTANTIATES;
+    relationships.append(instRel);
 
     const QString content = QStringLiteral(
         "module insight_top(input logic clk, input logic rst_n);\n"
@@ -814,6 +826,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         "      RUN: state_d = IDLE;\n"
         "    endcase\n"
         "  end\n"
+        "  input logic scan_clk;\n"
         "endmodule\n");
     QHash<QString, QString> fileContents;
     fileContents.insert(fixturePath, content);
@@ -836,6 +849,8 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
 
     bool sawPort = false;
     bool sawClock = false;
+    bool sawRelationshipEvidence = false;
+    bool sawUnmappedClock = false;
     bool sawTransition = false;
     bool sawSignalJourney = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
@@ -846,6 +861,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawClock = sawClock
             || (item->text(0) == QStringLiteral("Clock")
                 && item->text(1) == QStringLiteral("clk"));
+        sawRelationshipEvidence = sawRelationshipEvidence
+            || (item->text(0) == QStringLiteral("Outgoing")
+                && item->text(1) == QStringLiteral("u_stage")
+                && item->text(2) == QStringLiteral("Outgoing Instantiates"));
+        sawUnmappedClock = sawUnmappedClock
+            || (item->text(0) == QStringLiteral("Unmapped Clock")
+                && item->text(1) == QStringLiteral("scan_clk")
+                && item->text(2).contains(
+                    QStringLiteral("no clock domain relationship")));
         sawTransition = sawTransition
             || (item->text(0) == QStringLiteral("IDLE")
                 && item->text(1) == QStringLiteral("RUN"));
@@ -856,8 +880,30 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
 
     expectBool("RTL insights renders module port", sawPort, true);
     expectBool("RTL insights renders clock domain", sawClock, true);
+    expectBool("RTL insights renders relationship evidence",
+               sawRelationshipEvidence,
+               true);
+    expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
+
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
+        fixturePath,
+        QStringLiteral("insight_top"),
+        QStringLiteral("clk"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    bool sawTimingJourney = false;
+    const QList<QTreeWidgetItem*> timingItems = navigableItems(rtlInsightsTree(window));
+    for (QTreeWidgetItem* item : timingItems) {
+        sawTimingJourney = sawTimingJourney
+            || (item->text(0) == QStringLiteral("Timing Connections")
+                && item->text(1) == QStringLiteral("insight_top")
+                && item->text(2) == QStringLiteral("timing outgoing Clocks"));
+    }
+    expectBool("RTL insights renders timing signal journey",
+               sawTimingJourney,
+               true);
 }
 
 static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
