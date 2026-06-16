@@ -311,11 +311,11 @@ void appendSignalJourneyItems(QTreeWidgetItem* parent,
                         section,
                         item.peerSymbolDisplayName,
                         item.detailDisplayName,
-                        item.peerSymbol.fileName,
-                        item.peerSymbol.startLine,
-                        item.peerSymbol.startColumn,
-                        item.peerFileDisplayName,
-                        item.peerLineDisplayName);
+                        item.peerCodeLink.fileName,
+                        item.peerCodeLink.line,
+                        item.peerCodeLink.column,
+                        item.peerCodeLink.fileDisplayName,
+                        item.peerCodeLink.lineDisplayName);
     }
 }
 
@@ -349,11 +349,11 @@ void appendSignalJourney(QTreeWidget* tree,
                     QStringLiteral("Declaration"),
                     report.declarationDisplayName,
                     report.declarationTypeDisplayName,
-                    report.declaration.fileName,
-                    report.declaration.startLine,
-                    report.declaration.startColumn,
-                    report.declarationFileDisplayName,
-                    report.declarationLineDisplayName);
+                    report.declarationCodeLink.fileName,
+                    report.declarationCodeLink.line,
+                    report.declarationCodeLink.column,
+                    report.declarationCodeLink.fileDisplayName,
+                    report.declarationCodeLink.lineDisplayName);
     appendSignalJourneyItems(group, QStringLiteral("Assignments"), report.assignments);
     appendSignalJourneyItems(group, QStringLiteral("Reads"), report.reads);
     appendSignalJourneyItems(group,

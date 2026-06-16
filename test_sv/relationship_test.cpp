@@ -3171,6 +3171,15 @@ static void runSignalJourneyServiceFixture()
                report.declaration.symbolName == QStringLiteral("data_q"), true);
     expectBool("signal journey declaration display type",
                !report.declarationTypeDisplayName.isEmpty(), true);
+    expectBool("signal journey declaration code link",
+               report.declarationCodeLink.fileName == fileName
+                   && report.declarationCodeLink.line == 10
+                   && report.declarationCodeLink.column == 1
+                   && report.declarationCodeLink.fileDisplayName
+                       == QStringLiteral("signal_journey_fixture.sv")
+                   && report.declarationCodeLink.lineDisplayName
+                       == QStringLiteral("10"),
+               true);
     expectBool("taxonomy recognizes signal journey declaration",
                SymbolTaxonomy::isSignalDeclaration(report.declaration.symbolType),
                true);
@@ -3192,7 +3201,14 @@ static void runSignalJourneyServiceFixture()
                    && report.assignments.first().relationshipTypeDisplayName
                        == QStringLiteral("Assigns To")
                    && report.assignments.first().detailDisplayName
-                       == QStringLiteral("incoming Assigns To"),
+                       == QStringLiteral("incoming Assigns To")
+                   && report.assignments.first().peerCodeLink.fileName == fileName
+                   && report.assignments.first().peerCodeLink.line == 20
+                   && report.assignments.first().peerCodeLink.column == 1
+                   && report.assignments.first().peerCodeLink.fileDisplayName
+                       == QStringLiteral("signal_journey_fixture.sv")
+                   && report.assignments.first().peerCodeLink.lineDisplayName
+                       == QStringLiteral("20"),
                true);
     expectBool("signal journey read peer",
                !report.reads.isEmpty()
@@ -3209,19 +3225,43 @@ static void runSignalJourneyServiceFixture()
                true);
     bool sawInterfaceInstance = false;
     bool sawInterfaceMember = false;
+    bool sawInterfaceInstanceLink = false;
+    bool sawInterfaceMemberLink = false;
     for (const SignalJourneyItem& item : report.interfaceConnections) {
         sawInterfaceInstance = sawInterfaceInstance
             || (item.peerSymbolDisplayName == QStringLiteral("if_bus")
                 && item.detailDisplayName == QStringLiteral("interface incoming References"));
+        sawInterfaceInstanceLink = sawInterfaceInstanceLink
+            || (item.peerSymbolDisplayName == QStringLiteral("if_bus")
+                && item.peerCodeLink.fileName == fileName
+                && item.peerCodeLink.line == 50
+                && item.peerCodeLink.column == 1
+                && item.peerCodeLink.fileDisplayName
+                    == QStringLiteral("signal_journey_fixture.sv")
+                && item.peerCodeLink.lineDisplayName == QStringLiteral("50"));
         sawInterfaceMember = sawInterfaceMember
             || (item.peerSymbolDisplayName == QStringLiteral("ready")
                 && item.detailDisplayName == QStringLiteral("interface outgoing References"));
+        sawInterfaceMemberLink = sawInterfaceMemberLink
+            || (item.peerSymbolDisplayName == QStringLiteral("ready")
+                && item.peerCodeLink.fileName == fileName
+                && item.peerCodeLink.line == 55
+                && item.peerCodeLink.column == 1
+                && item.peerCodeLink.fileDisplayName
+                    == QStringLiteral("signal_journey_fixture.sv")
+                && item.peerCodeLink.lineDisplayName == QStringLiteral("55"));
     }
     expectBool("signal journey interface instance peer",
                sawInterfaceInstance,
                true);
+    expectBool("signal journey interface instance code link",
+               sawInterfaceInstanceLink,
+               true);
     expectBool("signal journey interface member peer",
                sawInterfaceMember,
+               true);
+    expectBool("signal journey interface member code link",
+               sawInterfaceMemberLink,
                true);
 }
 
@@ -4316,16 +4356,32 @@ static void runRealWorkspaceIncludeFixture()
     const SignalJourneyReport interfaceJourney =
         signalJourneyService.buildSignalJourney(interfaceJourneyQuery);
     bool sawRealInterfaceModportJourney = false;
+    bool sawRealInterfaceModportJourneyLink = false;
     for (const SignalJourneyItem& item : interfaceJourney.interfaceConnections) {
         sawRealInterfaceModportJourney = sawRealInterfaceModportJourney
             || (item.peerSymbolDisplayName == QStringLiteral("si")
                 && item.detailDisplayName == QStringLiteral("interface outgoing References"));
+        sawRealInterfaceModportJourneyLink = sawRealInterfaceModportJourneyLink
+            || (item.peerSymbolDisplayName == QStringLiteral("si")
+                && !item.peerCodeLink.fileName.isEmpty()
+                && item.peerCodeLink.line > 0
+                && !item.peerCodeLink.fileDisplayName.isEmpty()
+                && !item.peerCodeLink.lineDisplayName.isEmpty());
     }
     expectBool("real workspace signal journey interface found",
                interfaceJourney.found,
                true);
+    expectBool("real workspace signal journey declaration code link",
+               !interfaceJourney.declarationCodeLink.fileName.isEmpty()
+                   && interfaceJourney.declarationCodeLink.line > 0
+                   && !interfaceJourney.declarationCodeLink.fileDisplayName.isEmpty()
+                   && !interfaceJourney.declarationCodeLink.lineDisplayName.isEmpty(),
+               true);
     expectBool("real workspace signal journey interface modport",
                sawRealInterfaceModportJourney,
+               true);
+    expectBool("real workspace signal journey interface modport code link",
+               sawRealInterfaceModportJourneyLink,
                true);
 
     QList<sym_list::SymbolInfo> realBeforeDiffSymbols;

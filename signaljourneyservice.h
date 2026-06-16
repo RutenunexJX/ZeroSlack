@@ -1,6 +1,7 @@
 #ifndef SIGNALJOURNEYSERVICE_H
 #define SIGNALJOURNEYSERVICE_H
 
+#include "rtlinsightlink.h"
 #include "semanticindex.h"
 
 #include <QList>
@@ -18,6 +19,7 @@ struct SignalJourneyQuery {
 struct SignalJourneyItem {
     SemanticRelationshipResult relationship;
     sym_list::SymbolInfo peerSymbol = {};
+    RtlInsightCodeLink peerCodeLink;
     bool outgoing = false;
     QString directionDisplayName;
     QString relationshipTypeDisplayName;
@@ -30,6 +32,7 @@ struct SignalJourneyItem {
 struct SignalJourneyReport {
     bool found = false;
     sym_list::SymbolInfo declaration = {};
+    RtlInsightCodeLink declarationCodeLink;
     QString declarationDisplayName;
     QString declarationTypeDisplayName;
     QString declarationFileDisplayName;
@@ -75,6 +78,7 @@ private:
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString fileDisplayName(const QString& fileName);
     static QString lineDisplayName(int line);
+    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
     static QString interfaceBaseName(const QString& dataType);
     static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
     static void fillDisplayMetadata(SignalJourneyItem& item);

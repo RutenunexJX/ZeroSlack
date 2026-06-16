@@ -285,6 +285,18 @@ QString SignalJourneyService::lineDisplayName(int line)
     return QString::number(line);
 }
 
+RtlInsightCodeLink SignalJourneyService::codeLink(
+    const sym_list::SymbolInfo& symbol)
+{
+    RtlInsightCodeLink link;
+    link.fileName = symbol.fileName;
+    link.line = symbol.startLine;
+    link.column = symbol.startColumn;
+    link.fileDisplayName = fileDisplayName(symbol.fileName);
+    link.lineDisplayName = lineDisplayName(symbol.startLine);
+    return link;
+}
+
 QString SignalJourneyService::interfaceBaseName(const QString& dataType)
 {
     const int dot = dataType.indexOf(QLatin1Char('.'));
@@ -294,21 +306,25 @@ QString SignalJourneyService::interfaceBaseName(const QString& dataType)
 void SignalJourneyService::fillDeclarationDisplayMetadata(
     SignalJourneyReport& report)
 {
+    report.declarationCodeLink = codeLink(report.declaration);
     report.declarationDisplayName = symbolDisplayName(report.declaration);
     report.declarationTypeDisplayName =
         SymbolTaxonomy::symbolTypeLabel(report.declaration.symbolType);
-    report.declarationFileDisplayName = fileDisplayName(report.declaration.fileName);
-    report.declarationLineDisplayName = lineDisplayName(report.declaration.startLine);
+    report.declarationFileDisplayName =
+        report.declarationCodeLink.fileDisplayName;
+    report.declarationLineDisplayName =
+        report.declarationCodeLink.lineDisplayName;
 }
 
 void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
 {
+    item.peerCodeLink = codeLink(item.peerSymbol);
     item.directionDisplayName = directionDisplayName(item.outgoing);
     item.relationshipTypeDisplayName =
         relationshipTypeDisplayName(item.relationship.relationship.type);
     item.peerSymbolDisplayName = symbolDisplayName(item.peerSymbol);
-    item.peerFileDisplayName = fileDisplayName(item.peerSymbol.fileName);
-    item.peerLineDisplayName = lineDisplayName(item.peerSymbol.startLine);
+    item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
+    item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;
     item.detailDisplayName = QStringLiteral("%1 %2")
                                  .arg(item.directionDisplayName,
                                       item.relationshipTypeDisplayName);
