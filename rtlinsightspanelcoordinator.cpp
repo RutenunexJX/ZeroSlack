@@ -633,6 +633,12 @@ void RtlInsightsPanelCoordinator::refresh()
             ? QStringLiteral("Ambiguity")
             : clockResetReport.ambiguityGroupDisplayName,
         clockResetReport.ambiguityRows);
+    appendClockResetEvidenceRows(
+        insightsTree,
+        clockResetReport.unmappedGroupDisplayName.isEmpty()
+            ? QStringLiteral("Unmapped Timing Signals")
+            : clockResetReport.unmappedGroupDisplayName,
+        clockResetReport.unmappedRows);
 
     FsmGraphQuery fsmQuery;
     fsmQuery.fileName = currentFileName;

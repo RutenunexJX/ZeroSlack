@@ -38,6 +38,7 @@ ClockResetDomainReport ClockResetDomainService::buildClockResetDomainMap(
         groupDisplayName(SymbolRelationshipEngine::RESETS);
     report.evidenceGroupDisplayName = QStringLiteral("Domain Evidence");
     report.ambiguityGroupDisplayName = QStringLiteral("Ambiguity");
+    report.unmappedGroupDisplayName = QStringLiteral("Unmapped Timing Signals");
     report.clockDomains = buildDomains(
         SymbolRelationshipEngine::CLOCKS,
         query,
@@ -48,7 +49,10 @@ ClockResetDomainReport ClockResetDomainService::buildClockResetDomainMap(
         &report.resetRelationshipCount);
     report.evidenceRows = evidenceRows(report.clockDomains, report.resetDomains);
     report.ambiguityRows = ambiguityRows(report.clockDomains, report.resetDomains);
-    report.found = !report.clockDomains.isEmpty() || !report.resetDomains.isEmpty();
+    report.unmappedRows = unmappedTimingRows(query);
+    report.found = !report.clockDomains.isEmpty()
+        || !report.resetDomains.isEmpty()
+        || !report.unmappedRows.isEmpty();
     return report;
 }
 
@@ -119,6 +123,66 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
     return entries;
 }
 
+QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
+    const ClockResetDomainQuery& query) const
+{
+    QList<ClockResetDomainEvidenceRow> rows;
+    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::CLOCKS;
+        if (!isTimingCandidate(symbol, &type))
+            continue;
+
+        const sym_list::SymbolInfo moduleSymbol =
+            moduleForCandidate(symbol, symbols);
+        if (!acceptsCandidate(symbol, query, moduleSymbol))
+            continue;
+        if (hasMappedTimingRelationship(semanticIndex(), symbol, type, query))
+            continue;
+
+        ClockResetDomainEvidenceRow row;
+        row.domainSignal = symbol;
+        row.moduleSymbol = moduleSymbol;
+        row.signalCodeLink = RtlInsightLink::fromSymbol(symbol);
+        row.moduleCodeLink = RtlInsightLink::fromSymbol(moduleSymbol);
+        row.relationshipType = type;
+        row.sectionDisplayName = type == SymbolRelationshipEngine::CLOCKS
+            ? QStringLiteral("Unmapped Clock")
+            : QStringLiteral("Unmapped Reset");
+        row.signalDisplayName = symbol.symbolName.isEmpty()
+            ? QStringLiteral("<unnamed>")
+            : symbol.symbolName;
+        row.moduleDisplayName = moduleSymbol.symbolName.isEmpty()
+            ? symbol.moduleScope
+            : moduleSymbol.symbolName;
+        if (row.moduleDisplayName.isEmpty())
+            row.moduleDisplayName = QStringLiteral("<unknown module>");
+        row.detailDisplayName =
+            unmappedDetailDisplayName(row.signalDisplayName, type);
+        row.sourceRoleDisplayName =
+            sourceRoleDisplayName(SymbolTaxonomy::sourceRoleForFileName(symbol.fileName));
+        rows.append(row);
+    }
+
+    std::sort(rows.begin(),
+              rows.end(),
+              [](const ClockResetDomainEvidenceRow& lhs,
+                 const ClockResetDomainEvidenceRow& rhs) {
+                  if (lhs.moduleDisplayName != rhs.moduleDisplayName)
+                      return lhs.moduleDisplayName < rhs.moduleDisplayName;
+                  if (lhs.relationshipType != rhs.relationshipType)
+                      return lhs.relationshipType < rhs.relationshipType;
+                  if (lhs.signalCodeLink.fileName != rhs.signalCodeLink.fileName)
+                      return lhs.signalCodeLink.fileName < rhs.signalCodeLink.fileName;
+                  if (lhs.signalCodeLink.line != rhs.signalCodeLink.line)
+                      return lhs.signalCodeLink.line < rhs.signalCodeLink.line;
+                  if (lhs.signalDisplayName != rhs.signalDisplayName)
+                      return lhs.signalDisplayName < rhs.signalDisplayName;
+                  return lhs.domainSignal.symbolId < rhs.domainSignal.symbolId;
+              });
+    return rows;
+}
+
 bool ClockResetDomainService::acceptsRelationship(
     const SemanticRelationshipResult& relationship,
     const ClockResetDomainQuery& query)
@@ -141,6 +205,91 @@ bool ClockResetDomainService::acceptsRelationship(
         return false;
     }
     return true;
+}
+
+bool ClockResetDomainService::acceptsCandidate(
+    const sym_list::SymbolInfo& symbol,
+    const ClockResetDomainQuery& query,
+    const sym_list::SymbolInfo& moduleSymbol)
+{
+    if (query.moduleSymbolId >= 0
+        && moduleSymbol.symbolId != query.moduleSymbolId) {
+        return false;
+    }
+    if (!query.moduleName.isEmpty()
+        && symbol.moduleScope != query.moduleName
+        && moduleSymbol.symbolName != query.moduleName) {
+        return false;
+    }
+    if (!query.fileName.isEmpty()
+        && normalizedFileName(symbol.fileName)
+            != normalizedFileName(query.fileName)
+        && normalizedFileName(moduleSymbol.fileName)
+            != normalizedFileName(query.fileName)) {
+        return false;
+    }
+    return true;
+}
+
+bool ClockResetDomainService::isTimingCandidate(
+    const sym_list::SymbolInfo& symbol,
+    SymbolRelationshipEngine::RelationType* type)
+{
+    if (symbol.symbolName.isEmpty() || symbol.moduleScope.isEmpty())
+        return false;
+    if (!SymbolTaxonomy::isPortDeclaration(symbol.symbolType)
+        && !SymbolTaxonomy::isSignalDeclaration(symbol.symbolType)) {
+        return false;
+    }
+
+    const QString name = symbol.symbolName.toLower();
+    if (name.contains(QStringLiteral("reset"))
+        || name.contains(QStringLiteral("rst"))) {
+        if (type)
+            *type = SymbolRelationshipEngine::RESETS;
+        return true;
+    }
+    if (name.contains(QStringLiteral("clock"))
+        || name.contains(QStringLiteral("clk"))) {
+        if (type)
+            *type = SymbolRelationshipEngine::CLOCKS;
+        return true;
+    }
+    return false;
+}
+
+bool ClockResetDomainService::hasMappedTimingRelationship(
+    SemanticIndex* index,
+    const sym_list::SymbolInfo& symbol,
+    SymbolRelationshipEngine::RelationType type,
+    const ClockResetDomainQuery& query)
+{
+    const QList<SemanticRelationshipResult> relationships =
+        index->getRelationshipResults(symbol.symbolId, true);
+    for (const SemanticRelationshipResult& relationship : relationships) {
+        if (relationship.relationship.type != type)
+            continue;
+        if (acceptsRelationship(relationship, query))
+            return true;
+    }
+    return false;
+}
+
+sym_list::SymbolInfo ClockResetDomainService::moduleForCandidate(
+    const sym_list::SymbolInfo& symbol,
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    for (const sym_list::SymbolInfo& candidate : symbols) {
+        if (candidate.symbolName == symbol.moduleScope
+            && SymbolTaxonomy::isModuleDeclaration(candidate.symbolType)) {
+            return candidate;
+        }
+    }
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    missing.symbolName = symbol.moduleScope;
+    missing.fileName = symbol.fileName;
+    return missing;
 }
 
 QString ClockResetDomainService::normalizedFileName(const QString& fileName)
@@ -301,6 +450,16 @@ QString ClockResetDomainService::ambiguityDetailDisplayName(
         ? QStringLiteral("clock domains")
         : QStringLiteral("reset domains");
     return QStringLiteral("%1 has %2 %3").arg(moduleName).arg(domainCount).arg(noun);
+}
+
+QString ClockResetDomainService::unmappedDetailDisplayName(
+    const QString& signalName,
+    SymbolRelationshipEngine::RelationType type)
+{
+    const QString noun = type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("clock domain")
+        : QStringLiteral("reset domain");
+    return QStringLiteral("%1 has no %2 relationship").arg(signalName, noun);
 }
 
 QString ClockResetDomainService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)

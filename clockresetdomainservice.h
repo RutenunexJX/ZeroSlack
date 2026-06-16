@@ -50,10 +50,12 @@ struct ClockResetDomainReport {
     QString resetGroupDisplayName;
     QString evidenceGroupDisplayName;
     QString ambiguityGroupDisplayName;
+    QString unmappedGroupDisplayName;
     QList<ClockResetDomainEntry> clockDomains;
     QList<ClockResetDomainEntry> resetDomains;
     QList<ClockResetDomainEvidenceRow> evidenceRows;
     QList<ClockResetDomainEvidenceRow> ambiguityRows;
+    QList<ClockResetDomainEvidenceRow> unmappedRows;
     int clockRelationshipCount = 0;
     int resetRelationshipCount = 0;
 };
@@ -80,9 +82,24 @@ private:
         SymbolRelationshipEngine::RelationType type,
         const ClockResetDomainQuery& query,
         int* relationshipCount) const;
+    QList<ClockResetDomainEvidenceRow> unmappedTimingRows(
+        const ClockResetDomainQuery& query) const;
 
     static bool acceptsRelationship(const SemanticRelationshipResult& relationship,
                                     const ClockResetDomainQuery& query);
+    static bool acceptsCandidate(const sym_list::SymbolInfo& symbol,
+                                 const ClockResetDomainQuery& query,
+                                 const sym_list::SymbolInfo& moduleSymbol);
+    static bool isTimingCandidate(const sym_list::SymbolInfo& symbol,
+                                  SymbolRelationshipEngine::RelationType* type);
+    static bool hasMappedTimingRelationship(
+        SemanticIndex* index,
+        const sym_list::SymbolInfo& symbol,
+        SymbolRelationshipEngine::RelationType type,
+        const ClockResetDomainQuery& query);
+    static sym_list::SymbolInfo moduleForCandidate(
+        const sym_list::SymbolInfo& symbol,
+        const QList<sym_list::SymbolInfo>& symbols);
     static QString normalizedFileName(const QString& fileName);
     static QString groupDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString domainSectionDisplayName(SymbolRelationshipEngine::RelationType type);
@@ -105,6 +122,8 @@ private:
     static QString ambiguityDetailDisplayName(const QString& moduleName,
                                               SymbolRelationshipEngine::RelationType type,
                                               int domainCount);
+    static QString unmappedDetailDisplayName(const QString& signalName,
+                                             SymbolRelationshipEngine::RelationType type);
     static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillEntryDisplayMetadata(ClockResetDomainEntry& entry,
                                          SymbolRelationshipEngine::RelationType type);

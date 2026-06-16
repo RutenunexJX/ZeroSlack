@@ -3500,6 +3500,20 @@ static void runClockResetDomainServiceFixture()
         sym_list::sym_port_input,
         12,
         QStringLiteral("domain_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9207,
+        fileName,
+        QStringLiteral("scan_clk"),
+        sym_list::sym_port_input,
+        13,
+        QStringLiteral("domain_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9208,
+        fileName,
+        QStringLiteral("por_rst_n"),
+        sym_list::sym_logic,
+        14,
+        QStringLiteral("domain_top")));
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship topClock;
@@ -3544,13 +3558,18 @@ static void runClockResetDomainServiceFixture()
               allReport.resetRelationshipCount, 1);
     expectInt("clock reset all evidence rows", allReport.evidenceRows.size(), 4);
     expectInt("clock reset all ambiguity rows", allReport.ambiguityRows.size(), 2);
+    expectBool("clock reset all unmapped rows",
+               allReport.unmappedRows.size() >= 2,
+               true);
     expectBool("clock reset all group display metadata",
                allReport.clockGroupDisplayName == QStringLiteral("Clock Domains")
                    && allReport.resetGroupDisplayName == QStringLiteral("Reset Domains")
                    && allReport.evidenceGroupDisplayName
                        == QStringLiteral("Domain Evidence")
                    && allReport.ambiguityGroupDisplayName
-                       == QStringLiteral("Ambiguity"),
+                       == QStringLiteral("Ambiguity")
+                   && allReport.unmappedGroupDisplayName
+                       == QStringLiteral("Unmapped Timing Signals"),
                true);
 
     ClockResetDomainQuery topQuery;
@@ -3564,6 +3583,7 @@ static void runClockResetDomainServiceFixture()
     expectInt("clock reset top reset domains", topReport.resetDomains.size(), 1);
     expectInt("clock reset top evidence rows", topReport.evidenceRows.size(), 3);
     expectInt("clock reset top ambiguity rows", topReport.ambiguityRows.size(), 2);
+    expectInt("clock reset top unmapped rows", topReport.unmappedRows.size(), 2);
     expectBool("clock reset top clock signal",
                !topReport.clockDomains.isEmpty()
                    && topReport.clockDomains.first().domainSignal.symbolName
@@ -3674,6 +3694,36 @@ static void runClockResetDomainServiceFixture()
                    && topReport.ambiguityRows.first().detailDisplayName
                        == QStringLiteral("domain_top has 2 clock domains"),
                true);
+    bool sawUnmappedClock = false;
+    bool sawUnmappedReset = false;
+    bool sawUnmappedClockLink = false;
+    for (const ClockResetDomainEvidenceRow& row : topReport.unmappedRows) {
+        sawUnmappedClock = sawUnmappedClock
+            || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
+                && row.signalDisplayName == QStringLiteral("scan_clk")
+                && row.moduleDisplayName == QStringLiteral("domain_top")
+                && row.detailDisplayName
+                    == QStringLiteral("scan_clk has no clock domain relationship"));
+        sawUnmappedClockLink = sawUnmappedClockLink
+            || (row.signalDisplayName == QStringLiteral("scan_clk")
+                && row.signalCodeLink.fileName == fileName
+                && row.signalCodeLink.line == 13
+                && row.signalCodeLink.column == 1
+                && row.signalCodeLink.fileDisplayName
+                    == QStringLiteral("clock_reset_domain_fixture.sv")
+                && row.signalCodeLink.lineDisplayName == QStringLiteral("13"));
+        sawUnmappedReset = sawUnmappedReset
+            || (row.sectionDisplayName == QStringLiteral("Unmapped Reset")
+                && row.signalDisplayName == QStringLiteral("por_rst_n")
+                && row.moduleDisplayName == QStringLiteral("domain_top")
+                && row.detailDisplayName
+                    == QStringLiteral("por_rst_n has no reset domain relationship"));
+    }
+    expectBool("clock reset top unmapped clock row", sawUnmappedClock, true);
+    expectBool("clock reset top unmapped clock code link",
+               sawUnmappedClockLink,
+               true);
+    expectBool("clock reset top unmapped reset row", sawUnmappedReset, true);
 
     ClockResetDomainQuery idQuery;
     idQuery.moduleSymbolId = 9202;
@@ -4839,6 +4889,8 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealResetEvidence = false;
     bool sawRealClockEvidenceLink = false;
     bool sawRealResetEvidenceLink = false;
+    bool sawRealUnmappedClock = false;
+    bool sawRealUnmappedClockLink = false;
     for (const ClockResetDomainEvidenceRow& row : clockResetReport.evidenceRows) {
         sawRealClockEvidence = sawRealClockEvidence
             || (row.sectionDisplayName == QStringLiteral("Clock")
@@ -4873,6 +4925,21 @@ static void runRealWorkspaceIncludeFixture()
                 && !row.moduleCodeLink.fileDisplayName.isEmpty()
                 && !row.moduleCodeLink.lineDisplayName.isEmpty());
     }
+    for (const ClockResetDomainEvidenceRow& row : clockResetReport.unmappedRows) {
+        sawRealUnmappedClock = sawRealUnmappedClock
+            || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
+                && row.signalDisplayName.startsWith(QStringLiteral("clk_cpld"))
+                && row.moduleDisplayName == QStringLiteral("rtl_top")
+                && row.detailDisplayName.contains(
+                    QStringLiteral("no clock domain relationship")));
+        sawRealUnmappedClockLink = sawRealUnmappedClockLink
+            || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
+                && row.signalDisplayName.startsWith(QStringLiteral("clk_cpld"))
+                && !row.signalCodeLink.fileName.isEmpty()
+                && row.signalCodeLink.line > 0
+                && !row.signalCodeLink.fileDisplayName.isEmpty()
+                && !row.signalCodeLink.lineDisplayName.isEmpty());
+    }
     expectBool("real workspace clock reset found",
                clockResetReport.found,
                true);
@@ -4887,6 +4954,12 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace reset evidence row code link",
                sawRealResetEvidenceLink,
+               true);
+    expectBool("real workspace clock reset unmapped clock",
+               sawRealUnmappedClock,
+               true);
+    expectBool("real workspace clock reset unmapped clock code link",
+               sawRealUnmappedClockLink,
                true);
 
     SignalJourneyService signalJourneyService(&index);
