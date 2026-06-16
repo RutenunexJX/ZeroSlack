@@ -663,6 +663,12 @@ void SemanticDiffService::fillDisplayMetadata(
         diagnosticSeverityDisplayName(change.displayDiagnostic.severity);
     change.categoryGroupDisplayName = QStringLiteral("Diagnostics");
     change.codeLink = RtlInsightLink::fromDiagnostic(change.displayDiagnostic);
+    change.sourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(change.displayDiagnostic.fileName));
+    change.detailDisplayName = QStringLiteral("%1, %2")
+                                   .arg(change.severityDisplayName,
+                                        change.sourceRoleDisplayName);
 }
 
 void SemanticDiffService::sortSymbolChanges(

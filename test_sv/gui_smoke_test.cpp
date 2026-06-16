@@ -1305,6 +1305,7 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     bool sawAddedRelationshipToEndpoint = false;
     bool sawAddedRelationshipSourceRole = false;
     bool sawAddedDiagnostic = false;
+    bool sawAddedDiagnosticSourceRole = false;
     bool sawRemovedDiagnostic = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
     for (QTreeWidgetItem* item : items) {
@@ -1356,11 +1357,15 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
         sawAddedDiagnostic = sawAddedDiagnostic
             || (item->text(0) == QStringLiteral("Added")
                 && item->text(1) == QStringLiteral("new error")
+                && item->text(2) == QStringLiteral("Error, design source"));
+        sawAddedDiagnosticSourceRole = sawAddedDiagnosticSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
                 && item->text(2) == QStringLiteral("Error"));
         sawRemovedDiagnostic = sawRemovedDiagnostic
             || (item->text(0) == QStringLiteral("Removed")
                 && item->text(1) == QStringLiteral("old warning")
-                && item->text(2) == QStringLiteral("Warning"));
+                && item->text(2) == QStringLiteral("Warning, design source"));
     }
 
     expectBool("RTL insights renders modified diff port", sawModifiedPort, true);
@@ -1391,6 +1396,9 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
                sawRemovedRelationship,
                true);
     expectBool("RTL insights renders added diff diagnostic", sawAddedDiagnostic, true);
+    expectBool("RTL insights renders added diff diagnostic source role",
+               sawAddedDiagnosticSourceRole,
+               true);
     expectBool("RTL insights renders removed diff diagnostic", sawRemovedDiagnostic, true);
 }
 

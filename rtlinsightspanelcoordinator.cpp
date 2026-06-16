@@ -739,9 +739,21 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                         report.diagnosticChangeCount);
     for (const SemanticDiffDiagnosticChange& change : report.diagnosticChanges) {
         const SemanticDiagnostic& diagnostic = change.displayDiagnostic;
-        createChildItem(diagnostics,
-                        change.kindDisplayName,
-                        diagnostic.message,
+        QTreeWidgetItem* diagnosticItem =
+            createChildItem(diagnostics,
+                            change.kindDisplayName,
+                            diagnostic.message,
+                            change.detailDisplayName.isEmpty()
+                                ? change.severityDisplayName
+                                : change.detailDisplayName,
+                            change.codeLink.fileName,
+                            change.codeLink.line,
+                            change.codeLink.column,
+                            change.codeLink.fileDisplayName,
+                            change.codeLink.lineDisplayName);
+        createChildItem(diagnosticItem,
+                        QStringLiteral("Source Role"),
+                        change.sourceRoleDisplayName,
                         change.severityDisplayName,
                         change.codeLink.fileName,
                         change.codeLink.line,

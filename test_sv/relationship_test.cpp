@@ -4635,6 +4635,8 @@ static void runSemanticDiffServiceFixture()
             diagnosticDisplayMetadataFound =
                 change.kindDisplayName == QStringLiteral("Added")
                 && change.severityDisplayName == QStringLiteral("Error")
+                && change.sourceRoleDisplayName == QStringLiteral("design source")
+                && change.detailDisplayName == QStringLiteral("Error, design source")
                 && change.displayDiagnostic.message == QStringLiteral("new error");
             diagnosticCodeLinkFound =
                 change.codeLink.fileName == fileName
@@ -5627,6 +5629,12 @@ static void runRealWorkspaceIncludeFixture()
         interfaceReference.type = SymbolRelationshipEngine::REFERENCES;
         realAfterDiffRelationships.append(interfaceReference);
     }
+    SemanticDiagnostic realAfterDiffDiagnostic;
+    realAfterDiffDiagnostic.fileName = topPath;
+    realAfterDiffDiagnostic.line = 63;
+    realAfterDiffDiagnostic.column = 13;
+    realAfterDiffDiagnostic.message = QStringLiteral("real diff diagnostic");
+    realAfterDiffDiagnostic.severity = SemanticDiagnostic::Warning;
     auto realBeforeDiffSnapshot = std::make_shared<SemanticIndexSnapshot>(
         realBeforeDiffSymbols,
         QList<SemanticRelationship>(),
@@ -5634,7 +5642,7 @@ static void runRealWorkspaceIncludeFixture()
     auto realAfterDiffSnapshot = std::make_shared<SemanticIndexSnapshot>(
         realAfterDiffSymbols,
         realAfterDiffRelationships,
-        QList<SemanticDiagnostic>());
+        QList<SemanticDiagnostic>{realAfterDiffDiagnostic});
     SemanticDiffQuery realDiffQuery;
     realDiffQuery.beforeSnapshot = realBeforeDiffSnapshot;
     realDiffQuery.afterSnapshot = realAfterDiffSnapshot;
@@ -5650,6 +5658,7 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealDiffInterfaceAfterMetadata = false;
     bool sawRealDiffTypeAfterMetadata = false;
     bool sawRealDiffRelationshipEndpointLinks = false;
+    bool sawRealDiffDiagnosticMetadata = false;
     for (const SemanticDiffSymbolChange& change : realDiffReport.symbolChanges) {
         sawRealDiffInterface = sawRealDiffInterface
             || (change.category == SemanticDiffSymbolCategory::Interface
@@ -5722,6 +5731,20 @@ static void runRealWorkspaceIncludeFixture()
                 && !change.toCodeLink.fileDisplayName.isEmpty()
                 && !change.toCodeLink.lineDisplayName.isEmpty());
     }
+    for (const SemanticDiffDiagnosticChange& change
+         : realDiffReport.diagnosticChanges) {
+        sawRealDiffDiagnosticMetadata = sawRealDiffDiagnosticMetadata
+            || (change.kindDisplayName == QStringLiteral("Added")
+                && change.severityDisplayName == QStringLiteral("Warning")
+                && !change.sourceRoleDisplayName.isEmpty()
+                && change.detailDisplayName.contains(QStringLiteral("Warning"))
+                && change.displayDiagnostic.message
+                    == QStringLiteral("real diff diagnostic")
+                && !change.codeLink.fileName.isEmpty()
+                && change.codeLink.line == 63
+                && !change.codeLink.fileDisplayName.isEmpty()
+                && !change.codeLink.lineDisplayName.isEmpty());
+    }
     expectBool("real workspace semantic diff found",
                realDiffReport.found,
                true);
@@ -5751,6 +5774,9 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace semantic diff relationship endpoint links",
                sawRealDiffRelationshipEndpointLinks,
+               true);
+    expectBool("real workspace semantic diff diagnostic metadata",
+               sawRealDiffDiagnosticMetadata,
                true);
 }
 

@@ -92,6 +92,8 @@ struct SemanticDiffDiagnosticChange {
     QString kindDisplayName;
     QString severityDisplayName;
     QString categoryGroupDisplayName;
+    QString sourceRoleDisplayName;
+    QString detailDisplayName;
     RtlInsightCodeLink codeLink;
 };
 
