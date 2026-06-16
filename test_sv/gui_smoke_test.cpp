@@ -794,6 +794,13 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sym_list::sym_package,
         18));
     symbols.append(makeGuiSmokeSymbol(
+        9617,
+        fixturePath,
+        QStringLiteral("PKG_DEPTH"),
+        sym_list::sym_parameter,
+        21,
+        QStringLiteral("insight_pkg")));
+    symbols.append(makeGuiSmokeSymbol(
         9615,
         fixturePath,
         QStringLiteral("insight_if"),
@@ -886,6 +893,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawContextKind = false;
     bool sawContextType = false;
     bool sawContextSourceRole = false;
+    bool sawPackageMemberContext = false;
+    bool sawPackageMemberKind = false;
+    bool sawPackageMemberType = false;
     bool sawClockSignalEndpoint = false;
     bool sawClockModuleEndpoint = false;
     bool sawClockRelationshipType = false;
@@ -935,6 +945,18 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("Source Role")
                 && item->text(1) == QStringLiteral("design source")
                 && item->text(2) == QStringLiteral("Package"));
+        sawPackageMemberContext = sawPackageMemberContext
+            || (item->text(0) == QStringLiteral("Package Member")
+                && item->text(1) == QStringLiteral("PKG_DEPTH")
+                && item->text(2) == QStringLiteral("package parameter"));
+        sawPackageMemberKind = sawPackageMemberKind
+            || (item->text(0) == QStringLiteral("Kind")
+                && item->text(1) == QStringLiteral("package parameter")
+                && item->text(2) == QStringLiteral("Package Member"));
+        sawPackageMemberType = sawPackageMemberType
+            || (item->text(0) == QStringLiteral("Type")
+                && item->text(1) == QStringLiteral("parameter")
+                && item->text(2) == QStringLiteral("package parameter"));
         sawClockSignalEndpoint = sawClockSignalEndpoint
             || (item->text(0) == QStringLiteral("Signal")
                 && item->text(1) == QStringLiteral("clk")
@@ -1024,6 +1046,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders context source role",
                sawContextSourceRole,
+               true);
+    expectBool("RTL insights renders package member context",
+               sawPackageMemberContext,
+               true);
+    expectBool("RTL insights renders package member kind",
+               sawPackageMemberKind,
+               true);
+    expectBool("RTL insights renders package member type",
+               sawPackageMemberType,
                true);
     expectBool("RTL insights renders clock signal endpoint",
                sawClockSignalEndpoint,

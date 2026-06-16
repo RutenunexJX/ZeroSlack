@@ -308,8 +308,12 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
     auto appendRow = [&](const QString& section,
                          const QString& kind,
                          const sym_list::SymbolInfo& symbol) {
-        const QString key = QStringLiteral("%1:%2:%3")
-                                .arg(section, symbol.symbolName, symbol.dataType);
+        const QString key = QStringLiteral("%1:%2:%3:%4:%5")
+                                .arg(section)
+                                .arg(symbol.symbolId)
+                                .arg(symbol.moduleScope,
+                                     symbol.symbolName,
+                                     symbol.dataType);
         if (seen.contains(key))
             return;
         seen.insert(key);
@@ -327,8 +331,24 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         rows.append(row);
     };
 
-    for (const sym_list::SymbolInfo& packageSymbol : imports)
+    for (const sym_list::SymbolInfo& packageSymbol : imports) {
         appendRow(QStringLiteral("Package"), QStringLiteral("package import"), packageSymbol);
+        QList<sym_list::SymbolInfo> packageMembers;
+        for (const sym_list::SymbolInfo& symbol : allSymbols) {
+            if (symbol.moduleScope != packageSymbol.symbolName)
+                continue;
+            if (!SymbolTaxonomy::isPackageVisibleDefinition(symbol.symbolType))
+                continue;
+            packageMembers.append(symbol);
+        }
+        sortSymbols(packageMembers);
+        for (const sym_list::SymbolInfo& symbol : packageMembers) {
+            appendRow(QStringLiteral("Package Member"),
+                      QStringLiteral("package %1")
+                          .arg(symbolTypeDisplayName(symbol.symbolType)),
+                      symbol);
+        }
+    }
 
     for (const sym_list::SymbolInfo& port : ports) {
         if (port.symbolType == sym_list::sym_port_interface

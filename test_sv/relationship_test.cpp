@@ -2859,6 +2859,20 @@ static void runModuleBriefServiceFixture()
         sym_list::sym_package,
         1));
     symbols.append(makeModuleBriefSymbol(
+        9012,
+        fileName,
+        QStringLiteral("PKG_WIDTH"),
+        sym_list::sym_parameter,
+        2,
+        QStringLiteral("brief_pkg")));
+    symbols.append(makeModuleBriefSymbol(
+        9013,
+        fileName,
+        QStringLiteral("brief_t"),
+        sym_list::sym_typedef,
+        4,
+        QStringLiteral("brief_pkg")));
+    symbols.append(makeModuleBriefSymbol(
         9009,
         fileName,
         QStringLiteral("brief_if"),
@@ -2997,7 +3011,7 @@ static void runModuleBriefServiceFixture()
     expectInt("module brief instance row count", report.instanceRows.size(), 2);
     expectInt("module brief import row count", report.importRows.size(), 1);
     expectInt("module brief diagnostic row count", report.diagnosticRows.size(), 1);
-    expectInt("module brief context row count", report.contextRows.size(), 3);
+    expectInt("module brief context row count", report.contextRows.size(), 5);
     expectInt("module brief relationship evidence row count",
               report.relationshipEvidenceRows.size(),
               3);
@@ -3063,6 +3077,8 @@ static void runModuleBriefServiceFixture()
     bool hasPackageContextMetadata = false;
     bool hasInterfacePortContextMetadata = false;
     bool hasInterfaceInstanceContextMetadata = false;
+    bool hasPackageParameterContext = false;
+    bool hasPackageTypedefContext = false;
     for (const ModuleBriefContextRow& row : report.contextRows) {
         hasPackageContext = hasPackageContext
             || (row.sectionDisplayName == QStringLiteral("Package")
@@ -3083,6 +3099,24 @@ static void runModuleBriefServiceFixture()
                 && row.codeLink.fileDisplayName
                     == QStringLiteral("module_brief_fixture.sv")
                 && row.codeLink.lineDisplayName == QStringLiteral("1"));
+        hasPackageParameterContext = hasPackageParameterContext
+            || (row.sectionDisplayName == QStringLiteral("Package Member")
+                && row.symbolDisplayName == QStringLiteral("PKG_WIDTH")
+                && row.contextKindDisplayName == QStringLiteral("package parameter")
+                && row.symbolTypeDisplayName == QStringLiteral("parameter")
+                && row.sourceRoleDisplayName == QStringLiteral("design source")
+                && row.codeLink.fileName == fileName
+                && row.codeLink.line == 2
+                && row.codeLink.lineDisplayName == QStringLiteral("2"));
+        hasPackageTypedefContext = hasPackageTypedefContext
+            || (row.sectionDisplayName == QStringLiteral("Package Member")
+                && row.symbolDisplayName == QStringLiteral("brief_t")
+                && row.contextKindDisplayName == QStringLiteral("package typedef")
+                && row.symbolTypeDisplayName == QStringLiteral("typedef")
+                && row.sourceRoleDisplayName == QStringLiteral("design source")
+                && row.codeLink.fileName == fileName
+                && row.codeLink.line == 4
+                && row.codeLink.lineDisplayName == QStringLiteral("4"));
         hasInterfacePortContext = hasInterfacePortContext
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && row.symbolDisplayName == QStringLiteral("if_port")
@@ -3128,6 +3162,12 @@ static void runModuleBriefServiceFixture()
                true);
     expectBool("module brief package context code link",
                hasPackageContextLink,
+               true);
+    expectBool("module brief package parameter context",
+               hasPackageParameterContext,
+               true);
+    expectBool("module brief package typedef context",
+               hasPackageTypedefContext,
                true);
     expectBool("module brief interface port context row", hasInterfacePortContext, true);
     expectBool("module brief interface port context metadata",
@@ -5007,6 +5047,8 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealInterfaceContextLink = false;
     bool sawRealPackageContextMetadata = false;
     bool sawRealInterfaceContextMetadata = false;
+    bool sawRealPackageParameterContext = false;
+    bool sawRealPackageTypedefContext = false;
     for (const ModuleBriefContextRow& row : moduleBrief.contextRows) {
         sawRealPackageContext = sawRealPackageContext
             || (row.sectionDisplayName == QStringLiteral("Package")
@@ -5020,6 +5062,29 @@ static void runRealWorkspaceIncludeFixture()
         sawRealPackageContextLink = sawRealPackageContextLink
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("gl_pkg")
+                && !row.codeLink.fileName.isEmpty()
+                && row.codeLink.line > 0
+                && !row.codeLink.fileDisplayName.isEmpty()
+                && !row.codeLink.lineDisplayName.isEmpty());
+        sawRealPackageParameterContext = sawRealPackageParameterContext
+            || (row.sectionDisplayName == QStringLiteral("Package Member")
+                && row.symbolDisplayName == QStringLiteral("P_SW_NUM")
+                && (row.contextKindDisplayName == QStringLiteral("package parameter")
+                    || row.contextKindDisplayName
+                        == QStringLiteral("package localparam"))
+                && (row.symbolTypeDisplayName == QStringLiteral("parameter")
+                    || row.symbolTypeDisplayName == QStringLiteral("localparam"))
+                && !row.sourceRoleDisplayName.isEmpty()
+                && !row.codeLink.fileName.isEmpty()
+                && row.codeLink.line > 0
+                && !row.codeLink.fileDisplayName.isEmpty()
+                && !row.codeLink.lineDisplayName.isEmpty());
+        sawRealPackageTypedefContext = sawRealPackageTypedefContext
+            || (row.sectionDisplayName == QStringLiteral("Package Member")
+                && row.symbolDisplayName == QStringLiteral("cpld_sw_sp")
+                && row.contextKindDisplayName == QStringLiteral("package typedef")
+                && row.symbolTypeDisplayName == QStringLiteral("typedef")
+                && !row.sourceRoleDisplayName.isEmpty()
                 && !row.codeLink.fileName.isEmpty()
                 && row.codeLink.line > 0
                 && !row.codeLink.fileDisplayName.isEmpty()
@@ -5055,6 +5120,12 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace module brief package context code link",
                sawRealPackageContextLink,
+               true);
+    expectBool("real workspace module brief package parameter context",
+               sawRealPackageParameterContext,
+               true);
+    expectBool("real workspace module brief package typedef context",
+               sawRealPackageTypedefContext,
                true);
     expectBool("real workspace module brief interface context",
                sawRealInterfaceContext,
