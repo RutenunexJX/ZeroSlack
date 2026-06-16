@@ -88,6 +88,23 @@ void appendDiagnostics(QTreeWidget* tree,
     }
 }
 
+void appendContextRows(QTreeWidget* tree,
+                       const QList<ModuleBriefContextRow>& rows)
+{
+    QTreeWidgetItem* group = createGroupItem(tree,
+                                            QStringLiteral("Context"),
+                                            rows.size());
+    for (const ModuleBriefContextRow& row : rows) {
+        createChildItem(group,
+                        row.sectionDisplayName,
+                        row.symbolDisplayName,
+                        row.detailDisplayName,
+                        row.symbol.fileName,
+                        row.symbol.startLine,
+                        row.symbol.startColumn);
+    }
+}
+
 void appendRelationshipSummary(QTreeWidget* tree,
                                const ModuleBriefRelationshipSummary& summary)
 {
@@ -529,6 +546,7 @@ void RtlInsightsPanelCoordinator::refresh()
     appendSymbolGroup(insightsTree,
                       QStringLiteral("Imports"),
                       moduleReport.importRows);
+    appendContextRows(insightsTree, moduleReport.contextRows);
     appendDiagnostics(insightsTree, moduleReport.diagnosticRows);
     appendRelationshipSummary(insightsTree, moduleReport.relationshipSummary);
     appendSignalJourney(insightsTree,

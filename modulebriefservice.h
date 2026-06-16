@@ -5,6 +5,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <memory>
 
@@ -44,6 +45,14 @@ struct ModuleBriefDiagnosticRow {
     QString detailDisplayName;
 };
 
+struct ModuleBriefContextRow {
+    sym_list::SymbolInfo symbol = {};
+    QString sectionDisplayName;
+    QString symbolDisplayName;
+    QString detailDisplayName;
+    QString sourceRoleDisplayName;
+};
+
 struct ModuleBriefReport {
     bool found = false;
     sym_list::SymbolInfo moduleSymbol = {};
@@ -57,6 +66,7 @@ struct ModuleBriefReport {
     QList<ModuleBriefSymbolRow> instanceRows;
     QList<ModuleBriefSymbolRow> importRows;
     QList<ModuleBriefDiagnosticRow> diagnosticRows;
+    QList<ModuleBriefContextRow> contextRows;
     ModuleBriefRelationshipSummary relationshipSummary;
 };
 
@@ -96,11 +106,22 @@ private:
         const QString& sectionDisplayName);
     static QList<ModuleBriefDiagnosticRow> diagnosticRows(
         const QList<SemanticDiagnostic>& diagnostics);
+    static QList<ModuleBriefContextRow> contextRows(
+        const QList<sym_list::SymbolInfo>& imports,
+        const QList<sym_list::SymbolInfo>& ports,
+        const QList<sym_list::SymbolInfo>& instances,
+        const QList<sym_list::SymbolInfo>& allSymbols);
     static QList<ModuleBriefRelationshipRow> relationshipRows(
         const ModuleBriefRelationshipSummary& summary);
     static QString symbolTypeDisplayName(sym_list::sym_type_e type);
     static QString symbolDetailDisplayName(const sym_list::SymbolInfo& symbol);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
+    static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString contextDetailDisplayName(const QString& kind,
+                                            const sym_list::SymbolInfo& symbol);
+    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
+    static QString interfaceBaseName(const QString& dataType);
+    static QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols);
     static QString relationshipDirectionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString relationshipDetailDisplayName(int count);

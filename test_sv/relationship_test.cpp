@@ -2859,6 +2859,30 @@ static void runModuleBriefServiceFixture()
         sym_list::sym_package,
         1));
     symbols.append(makeModuleBriefSymbol(
+        9009,
+        fileName,
+        QStringLiteral("brief_if"),
+        sym_list::sym_interface,
+        3));
+    sym_list::SymbolInfo interfacePort = makeModuleBriefSymbol(
+        9010,
+        fileName,
+        QStringLiteral("if_port"),
+        sym_list::sym_port_interface_modport,
+        15,
+        QStringLiteral("brief_top"));
+    interfacePort.dataType = QStringLiteral("brief_if.master");
+    symbols.append(interfacePort);
+    sym_list::SymbolInfo interfaceInstance = makeModuleBriefSymbol(
+        9011,
+        fileName,
+        QStringLiteral("if_bus"),
+        sym_list::sym_inst,
+        31,
+        QStringLiteral("brief_top"));
+    interfaceInstance.dataType = QStringLiteral("brief_if");
+    symbols.append(interfaceInstance);
+    symbols.append(makeModuleBriefSymbol(
         9008,
         fileName,
         QStringLiteral("outside_port"),
@@ -2963,16 +2987,17 @@ static void runModuleBriefServiceFixture()
                SymbolTaxonomy::declarationGroup(symbols.at(5).symbolType)
                    == SymbolTaxonomy::DeclarationGroup::Instance,
                true);
-    expectInt("module brief port count", report.ports.size(), 3);
+    expectInt("module brief port count", report.ports.size(), 4);
     expectInt("module brief parameter count", report.parameters.size(), 1);
-    expectInt("module brief instance count", report.instances.size(), 1);
+    expectInt("module brief instance count", report.instances.size(), 2);
     expectInt("module brief import count", report.imports.size(), 1);
     expectInt("module brief diagnostic count", report.diagnostics.size(), 1);
-    expectInt("module brief port row count", report.portRows.size(), 3);
+    expectInt("module brief port row count", report.portRows.size(), 4);
     expectInt("module brief parameter row count", report.parameterRows.size(), 1);
-    expectInt("module brief instance row count", report.instanceRows.size(), 1);
+    expectInt("module brief instance row count", report.instanceRows.size(), 2);
     expectInt("module brief import row count", report.importRows.size(), 1);
     expectInt("module brief diagnostic row count", report.diagnosticRows.size(), 1);
+    expectInt("module brief context row count", report.contextRows.size(), 3);
     expectBool("module brief port row display metadata",
                !report.portRows.isEmpty()
                    && report.portRows.first().sectionDisplayName == QStringLiteral("Port")
@@ -2995,6 +3020,28 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief import package",
                !report.imports.isEmpty()
                    && report.imports.first().symbolName == QStringLiteral("brief_pkg"),
+               true);
+    bool hasPackageContext = false;
+    bool hasInterfacePortContext = false;
+    bool hasInterfaceInstanceContext = false;
+    for (const ModuleBriefContextRow& row : report.contextRows) {
+        hasPackageContext = hasPackageContext
+            || (row.sectionDisplayName == QStringLiteral("Package")
+                && row.symbolDisplayName == QStringLiteral("brief_pkg")
+                && row.detailDisplayName == QStringLiteral("package import"));
+        hasInterfacePortContext = hasInterfacePortContext
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolDisplayName == QStringLiteral("if_port")
+                && row.detailDisplayName.contains(QStringLiteral("brief_if.master")));
+        hasInterfaceInstanceContext = hasInterfaceInstanceContext
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolDisplayName == QStringLiteral("if_bus")
+                && row.detailDisplayName.contains(QStringLiteral("brief_if")));
+    }
+    expectBool("module brief package context row", hasPackageContext, true);
+    expectBool("module brief interface port context row", hasInterfacePortContext, true);
+    expectBool("module brief interface instance context row",
+               hasInterfaceInstanceContext,
                true);
     expectInt("module brief outgoing relationships",
               report.relationshipSummary.outgoingCount, 2);
@@ -3751,10 +3798,12 @@ static void runRealWorkspaceIncludeFixture()
                missingRootHeader,
                false);
 
-    const QList<sym_list::SymbolInfo> symbols =
+    QList<sym_list::SymbolInfo> symbols =
         slang.extractWorkspaceSymbols(snapshot.systemVerilogFiles,
                                       snapshot.includeDirs,
                                       snapshot.defines);
+    for (int i = 0; i < symbols.size(); ++i)
+        symbols[i].symbolId = i + 1;
     const int rtlTopId =
         symbolId(symbols, QStringLiteral("rtl_top"), sym_list::sym_module);
     const int packageId =
@@ -3866,8 +3915,25 @@ static void runRealWorkspaceIncludeFixture()
                    == SymbolTaxonomy::SymbolVisibility::ScopeLocal,
                true);
 
+    QList<SemanticRelationship> realRelationships;
+    if (packageId >= 0) {
+        for (const sym_list::SymbolInfo& symbol : symbols) {
+            if (symbol.symbolName != QStringLiteral("rtl_top")
+                || symbol.symbolType != sym_list::sym_module) {
+                continue;
+            }
+            SemanticRelationship packageImportRelationship;
+            packageImportRelationship.fromId = symbol.symbolId;
+            packageImportRelationship.toId = packageId;
+            packageImportRelationship.type = SymbolRelationshipEngine::REFERENCES;
+            realRelationships.append(packageImportRelationship);
+        }
+    }
+
     SemanticIndex index;
-    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(symbols));
+    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        symbols,
+        realRelationships));
     DefinitionService definitionService(&index);
 
     DefinitionQuery packageParamQuery;
@@ -3934,6 +4000,33 @@ static void runRealWorkspaceIncludeFixture()
                CompletionSymbolQuery::namesFromSymbols(
                    completionService.findCommandCompletionSymbols(typedefCompletion))
                    .contains(QStringLiteral("cpld_sw_sp")),
+               true);
+
+    ModuleBriefService moduleBriefService(&index);
+    ModuleBriefQuery moduleBriefQuery;
+    moduleBriefQuery.moduleName = QStringLiteral("rtl_top");
+    moduleBriefQuery.fileName = topPath;
+    const ModuleBriefReport moduleBrief =
+        moduleBriefService.buildModuleBrief(moduleBriefQuery);
+    bool sawRealPackageContext = false;
+    bool sawRealInterfaceContext = false;
+    for (const ModuleBriefContextRow& row : moduleBrief.contextRows) {
+        sawRealPackageContext = sawRealPackageContext
+            || (row.sectionDisplayName == QStringLiteral("Package")
+                && row.symbolDisplayName == QStringLiteral("gl_pkg"));
+        sawRealInterfaceContext = sawRealInterfaceContext
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && (row.symbolDisplayName == QStringLiteral("LR_GENR_IF")
+                    || row.detailDisplayName.contains(QStringLiteral("lr_genr_if"))));
+    }
+    expectBool("real workspace module brief found",
+               moduleBrief.found,
+               true);
+    expectBool("real workspace module brief package context",
+               sawRealPackageContext,
+               true);
+    expectBool("real workspace module brief interface context",
+               sawRealInterfaceContext,
                true);
 }
 

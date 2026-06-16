@@ -43,8 +43,7 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
 
     report.found = true;
     report.moduleSymbol = moduleSymbol;
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticIndex()->getSymbols(moduleSymbol.fileName);
+    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
 
     report.ports = symbolsInModule(
         moduleSymbol,
@@ -65,6 +64,10 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.instanceRows = symbolRows(report.instances, QStringLiteral("Instance"));
     report.importRows = symbolRows(report.imports, QStringLiteral("Import"));
     report.diagnosticRows = diagnosticRows(report.diagnostics);
+    report.contextRows = contextRows(report.imports,
+                                     report.ports,
+                                     report.instances,
+                                     symbols);
     report.relationshipSummary = relationshipSummary(moduleSymbol);
     return report;
 }
@@ -253,6 +256,57 @@ QList<ModuleBriefRelationshipRow> ModuleBriefService::relationshipRows(
     return rows;
 }
 
+QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
+    const QList<sym_list::SymbolInfo>& imports,
+    const QList<sym_list::SymbolInfo>& ports,
+    const QList<sym_list::SymbolInfo>& instances,
+    const QList<sym_list::SymbolInfo>& allSymbols)
+{
+    QList<ModuleBriefContextRow> rows;
+    QSet<QString> seen;
+    const QSet<QString> interfaces = interfaceNames(allSymbols);
+
+    auto appendRow = [&](const QString& section,
+                         const QString& kind,
+                         const sym_list::SymbolInfo& symbol) {
+        const QString key = QStringLiteral("%1:%2:%3")
+                                .arg(section, symbol.symbolName, symbol.dataType);
+        if (seen.contains(key))
+            return;
+        seen.insert(key);
+
+        ModuleBriefContextRow row;
+        row.symbol = symbol;
+        row.sectionDisplayName = section;
+        row.symbolDisplayName = symbolDisplayName(symbol);
+        row.detailDisplayName = contextDetailDisplayName(kind, symbol);
+        row.sourceRoleDisplayName =
+            sourceRoleDisplayName(SymbolTaxonomy::sourceRoleForFileName(symbol.fileName));
+        rows.append(row);
+    };
+
+    for (const sym_list::SymbolInfo& packageSymbol : imports)
+        appendRow(QStringLiteral("Package"), QStringLiteral("package import"), packageSymbol);
+
+    for (const sym_list::SymbolInfo& port : ports) {
+        if (port.symbolType == sym_list::sym_port_interface
+            || port.symbolType == sym_list::sym_port_interface_modport) {
+            appendRow(QStringLiteral("Interface"), QStringLiteral("interface port"), port);
+        }
+    }
+
+    for (const sym_list::SymbolInfo& instance : instances) {
+        const QString interfaceName = interfaceBaseName(instance.dataType);
+        if (!interfaceName.isEmpty() && interfaces.contains(interfaceName)) {
+            appendRow(QStringLiteral("Interface"),
+                      QStringLiteral("interface instance"),
+                      instance);
+        }
+    }
+
+    return rows;
+}
+
 QString ModuleBriefService::symbolTypeDisplayName(sym_list::sym_type_e type)
 {
     return SymbolTaxonomy::symbolTypeLabel(type);
@@ -279,6 +333,55 @@ QString ModuleBriefService::diagnosticSeverityDisplayName(
     default:
         return QStringLiteral("Info");
     }
+}
+
+QString ModuleBriefService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolName.isEmpty()
+        ? QStringLiteral("<unnamed>")
+        : symbol.symbolName;
+}
+
+QString ModuleBriefService::contextDetailDisplayName(
+    const QString& kind,
+    const sym_list::SymbolInfo& symbol)
+{
+    return symbol.dataType.isEmpty()
+        ? kind
+        : QStringLiteral("%1 %2").arg(kind, symbol.dataType);
+}
+
+QString ModuleBriefService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
+{
+    switch (role) {
+    case SymbolTaxonomy::SourceRole::DesignSource:
+        return QStringLiteral("design source");
+    case SymbolTaxonomy::SourceRole::Header:
+        return QStringLiteral("header");
+    case SymbolTaxonomy::SourceRole::Unknown:
+    default:
+        return QStringLiteral("source");
+    }
+}
+
+QString ModuleBriefService::interfaceBaseName(const QString& dataType)
+{
+    const int dot = dataType.indexOf(QLatin1Char('.'));
+    return dot >= 0 ? dataType.left(dot) : dataType;
+}
+
+QSet<QString> ModuleBriefService::interfaceNames(
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    QSet<QString> names;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (SymbolTaxonomy::declarationKind(symbol.symbolType)
+                == SymbolTaxonomy::DeclarationKind::Interface
+            && !symbol.symbolName.isEmpty()) {
+            names.insert(symbol.symbolName);
+        }
+    }
+    return names;
 }
 
 QString ModuleBriefService::relationshipDirectionDisplayName(bool outgoing)
