@@ -323,6 +323,46 @@ RelationshipBrowseQuery RelationshipService::queryForPanel(
     return query;
 }
 
+QList<RelationshipTypeFilterOption>
+RelationshipService::relationshipPanelTypeFilterOptions()
+{
+    const QList<SymbolRelationshipEngine::RelationType> types = {
+        SymbolRelationshipEngine::REFERENCES,
+        SymbolRelationshipEngine::INSTANTIATES,
+        SymbolRelationshipEngine::CALLS,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        SymbolRelationshipEngine::READS_FROM,
+        SymbolRelationshipEngine::CLOCKS,
+        SymbolRelationshipEngine::RESETS,
+        SymbolRelationshipEngine::CONTAINS,
+        SymbolRelationshipEngine::GENERATES,
+    };
+    QList<RelationshipTypeFilterOption> options;
+    options.append({QStringLiteral("All Types"), -1});
+    for (const SymbolRelationshipEngine::RelationType type : types)
+        options.append({relationshipTypeDisplayName(type), static_cast<int>(type)});
+    return options;
+}
+
+QList<RelationshipTypeFilterOption>
+RelationshipService::referencePanelTypeFilterOptions()
+{
+    const QList<SymbolRelationshipEngine::RelationType> types = {
+        SymbolRelationshipEngine::REFERENCES,
+        SymbolRelationshipEngine::INSTANTIATES,
+        SymbolRelationshipEngine::CALLS,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        SymbolRelationshipEngine::READS_FROM,
+        SymbolRelationshipEngine::CLOCKS,
+        SymbolRelationshipEngine::RESETS,
+    };
+    QList<RelationshipTypeFilterOption> options;
+    options.append({QStringLiteral("All Types"), -1});
+    for (const SymbolRelationshipEngine::RelationType type : types)
+        options.append({relationshipTypeDisplayName(type), static_cast<int>(type)});
+    return options;
+}
+
 bool RelationshipService::hasRelationship(
     int fromSymbolId,
     int toSymbolId,

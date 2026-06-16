@@ -43,6 +43,11 @@ struct RelationshipPanelQueryOptions {
     int typeFilter = -1;
 };
 
+struct RelationshipTypeFilterOption {
+    QString displayName;
+    int value = -1;
+};
+
 struct DirectedRelationshipResult {
     enum Direction {
         Outgoing,
@@ -107,6 +112,8 @@ public:
     QList<int> findRelatedSymbolIds(const RelationshipQuery& query) const;
     RelationshipBrowseQuery queryForPanel(
         const RelationshipPanelQueryOptions& options) const;
+    static QList<RelationshipTypeFilterOption> relationshipPanelTypeFilterOptions();
+    static QList<RelationshipTypeFilterOption> referencePanelTypeFilterOptions();
     bool hasRelationship(int fromSymbolId,
                          int toSymbolId,
                          SymbolRelationshipEngine::RelationType type) const;

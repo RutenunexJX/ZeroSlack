@@ -1,8 +1,6 @@
 #ifndef SEMANTICPANELUTILS_H
 #define SEMANTICPANELUTILS_H
 
-#include "symbolrelationshipengine.h"
-
 #include <QSet>
 #include <QString>
 
@@ -10,7 +8,6 @@ class QTreeWidget;
 
 namespace SemanticPanelUtils {
 
-QString relationshipTypeText(SymbolRelationshipEngine::RelationType type);
 QString countLabel(const QString& text, int count);
 
 bool treeHasExpandableItems(QTreeWidget* tree);

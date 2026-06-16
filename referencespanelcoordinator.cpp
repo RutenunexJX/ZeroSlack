@@ -63,28 +63,10 @@ ReferencesPanelCoordinator::ReferencesPanelCoordinator(QWidget* parent)
 
     referenceTypeCombo = new QComboBox(panel);
     referenceTypeCombo->setObjectName(QStringLiteral("referenceTypeCombo"));
-    referenceTypeCombo->addItem(QStringLiteral("All Types"), -1);
-    referenceTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                    SymbolRelationshipEngine::REFERENCES),
-                                static_cast<int>(SymbolRelationshipEngine::REFERENCES));
-    referenceTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                    SymbolRelationshipEngine::INSTANTIATES),
-                                static_cast<int>(SymbolRelationshipEngine::INSTANTIATES));
-    referenceTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                    SymbolRelationshipEngine::CALLS),
-                                static_cast<int>(SymbolRelationshipEngine::CALLS));
-    referenceTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                    SymbolRelationshipEngine::ASSIGNS_TO),
-                                static_cast<int>(SymbolRelationshipEngine::ASSIGNS_TO));
-    referenceTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                    SymbolRelationshipEngine::READS_FROM),
-                                static_cast<int>(SymbolRelationshipEngine::READS_FROM));
-    referenceTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                    SymbolRelationshipEngine::CLOCKS),
-                                static_cast<int>(SymbolRelationshipEngine::CLOCKS));
-    referenceTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                    SymbolRelationshipEngine::RESETS),
-                                static_cast<int>(SymbolRelationshipEngine::RESETS));
+    for (const RelationshipTypeFilterOption& option :
+         RelationshipService::referencePanelTypeFilterOptions()) {
+        referenceTypeCombo->addItem(option.displayName, option.value);
+    }
     referenceTypeCombo->setToolTip(QStringLiteral("Reference type"));
     filtersLayout->addWidget(referenceTypeCombo);
     filtersLayout->addStretch(1);

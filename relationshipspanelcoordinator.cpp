@@ -1,6 +1,6 @@
 #include "relationshipspanelcoordinator.h"
 
-#include "semanticpanelutils.h"
+#include "relationshipservice.h"
 
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -36,34 +36,10 @@ RelationshipsPanelCoordinator::RelationshipsPanelCoordinator(QWidget* parent)
 
     relationshipTypeCombo = new QComboBox(panel);
     relationshipTypeCombo->setObjectName(QStringLiteral("relationshipTypeCombo"));
-    relationshipTypeCombo->addItem(QStringLiteral("All Types"), -1);
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::REFERENCES),
-                                   static_cast<int>(SymbolRelationshipEngine::REFERENCES));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::INSTANTIATES),
-                                   static_cast<int>(SymbolRelationshipEngine::INSTANTIATES));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::CALLS),
-                                   static_cast<int>(SymbolRelationshipEngine::CALLS));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::ASSIGNS_TO),
-                                   static_cast<int>(SymbolRelationshipEngine::ASSIGNS_TO));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::READS_FROM),
-                                   static_cast<int>(SymbolRelationshipEngine::READS_FROM));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::CLOCKS),
-                                   static_cast<int>(SymbolRelationshipEngine::CLOCKS));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::RESETS),
-                                   static_cast<int>(SymbolRelationshipEngine::RESETS));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::CONTAINS),
-                                   static_cast<int>(SymbolRelationshipEngine::CONTAINS));
-    relationshipTypeCombo->addItem(SemanticPanelUtils::relationshipTypeText(
-                                       SymbolRelationshipEngine::GENERATES),
-                                   static_cast<int>(SymbolRelationshipEngine::GENERATES));
+    for (const RelationshipTypeFilterOption& option :
+         RelationshipService::relationshipPanelTypeFilterOptions()) {
+        relationshipTypeCombo->addItem(option.displayName, option.value);
+    }
     relationshipTypeCombo->setToolTip(QStringLiteral("Relationship type"));
     filtersLayout->addWidget(relationshipTypeCombo);
 

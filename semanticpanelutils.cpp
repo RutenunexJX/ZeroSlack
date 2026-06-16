@@ -102,37 +102,6 @@ int restoreExpandedKeys(QTreeWidgetItem* item, const QSet<QString>& keys)
 
 namespace SemanticPanelUtils {
 
-QString relationshipTypeText(SymbolRelationshipEngine::RelationType type)
-{
-    switch (type) {
-    case SymbolRelationshipEngine::CONTAINS:
-        return QStringLiteral("Contains");
-    case SymbolRelationshipEngine::REFERENCES:
-        return QStringLiteral("References");
-    case SymbolRelationshipEngine::INSTANTIATES:
-        return QStringLiteral("Instantiates");
-    case SymbolRelationshipEngine::CALLS:
-        return QStringLiteral("Calls");
-    case SymbolRelationshipEngine::INHERITS:
-        return QStringLiteral("Inherits");
-    case SymbolRelationshipEngine::IMPLEMENTS:
-        return QStringLiteral("Implements");
-    case SymbolRelationshipEngine::ASSIGNS_TO:
-        return QStringLiteral("Assigns To");
-    case SymbolRelationshipEngine::READS_FROM:
-        return QStringLiteral("Reads From");
-    case SymbolRelationshipEngine::CLOCKS:
-        return QStringLiteral("Clocks");
-    case SymbolRelationshipEngine::RESETS:
-        return QStringLiteral("Resets");
-    case SymbolRelationshipEngine::GENERATES:
-        return QStringLiteral("Generates");
-    case SymbolRelationshipEngine::CONSTRAINS:
-        return QStringLiteral("Constrains");
-    }
-    return QStringLiteral("Relationship");
-}
-
 QString countLabel(const QString& text, int count)
 {
     return QStringLiteral("%1 (%2)").arg(text).arg(count);
