@@ -480,6 +480,16 @@ QString SemanticDiffService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole ro
     }
 }
 
+QString SemanticDiffService::symbolScopeDisplayName(
+    const sym_list::SymbolInfo& symbol)
+{
+    if (!symbol.moduleScope.isEmpty())
+        return QStringLiteral("scope %1").arg(symbol.moduleScope);
+    if (SymbolTaxonomy::isGlobalDefinition(symbol.symbolType))
+        return QStringLiteral("global");
+    return QStringLiteral("scope unknown");
+}
+
 QString SemanticDiffService::relationshipTypeDisplayName(
     SymbolRelationshipEngine::RelationType type)
 {
@@ -537,17 +547,21 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
     change.sourceRoleDisplayName =
         sourceRoleDisplayName(
             SymbolTaxonomy::sourceRoleForFileName(change.displaySymbol.fileName));
+    change.symbolTypeDisplayName =
+        SymbolTaxonomy::symbolTypeLabel(change.displaySymbol.symbolType);
+    change.scopeDisplayName = symbolScopeDisplayName(change.displaySymbol);
     change.codeLink = RtlInsightLink::fromSymbol(change.displaySymbol);
 
-    const QString type = SymbolTaxonomy::symbolTypeLabel(change.displaySymbol.symbolType);
     const QString dataType = change.displaySymbol.dataType.isEmpty()
         ? QString()
         : QStringLiteral(" %1").arg(change.displaySymbol.dataType);
     if (change.kind != SemanticDiffChangeKind::Modified) {
-        change.detailDisplayName = QStringLiteral("%1 %2%3")
+        change.detailDisplayName = QStringLiteral("%1 %2%3, %4, %5")
                                        .arg(change.categoryDisplayName,
-                                            type,
-                                            dataType);
+                                            change.symbolTypeDisplayName,
+                                            dataType,
+                                            change.scopeDisplayName,
+                                            change.sourceRoleDisplayName);
         return;
     }
 
@@ -563,10 +577,12 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
                  change.afterSymbol.dataType.isEmpty()
                      ? QString()
                      : QStringLiteral(" %1").arg(change.afterSymbol.dataType));
-    change.detailDisplayName = QStringLiteral("%1 %2 -> %3")
+    change.detailDisplayName = QStringLiteral("%1 %2 -> %3, %4, %5")
                                    .arg(change.categoryDisplayName,
                                         beforeText,
-                                        afterText);
+                                        afterText,
+                                        change.scopeDisplayName,
+                                        change.sourceRoleDisplayName);
 }
 
 void SemanticDiffService::fillDisplayMetadata(

@@ -980,15 +980,18 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
     for (QTreeWidgetItem* item : items) {
         sawModifiedPort = sawModifiedPort
-            || (item->text(0) == QStringLiteral("Modified")
+            || (item->text(0) == QStringLiteral("Modified Ports")
                 && item->text(1) == QStringLiteral("data")
-                && item->text(2).contains(QStringLiteral("input -> output")));
+                && item->text(2).contains(QStringLiteral("input -> output"))
+                && item->text(2).contains(QStringLiteral("scope diff_top")));
         sawAddedSignal = sawAddedSignal
-            || (item->text(0) == QStringLiteral("Added")
-                && item->text(1) == QStringLiteral("state_q"));
+            || (item->text(0) == QStringLiteral("Added Signals")
+                && item->text(1) == QStringLiteral("state_q")
+                && item->text(2).contains(QStringLiteral("scope diff_top")));
         sawRemovedSignal = sawRemovedSignal
-            || (item->text(0) == QStringLiteral("Removed")
-                && item->text(1) == QStringLiteral("stale_q"));
+            || (item->text(0) == QStringLiteral("Removed Signals")
+                && item->text(1) == QStringLiteral("stale_q")
+                && item->text(2).contains(QStringLiteral("scope diff_top")));
         sawAddedRelationship = sawAddedRelationship
             || (item->text(0) == QStringLiteral("Added")
                 && item->text(1) == QStringLiteral("Instantiates")

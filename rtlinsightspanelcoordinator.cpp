@@ -385,7 +385,9 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         const sym_list::SymbolInfo& symbol = change.displaySymbol;
         createChildItem(symbols,
-                        change.kindDisplayName,
+                        QStringLiteral("%1 %2")
+                            .arg(change.kindDisplayName,
+                                 change.categoryGroupDisplayName),
                         symbol.symbolName,
                         change.detailDisplayName,
                         change.codeLink.fileName,

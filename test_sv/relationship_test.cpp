@@ -4262,6 +4262,8 @@ static void runSemanticDiffServiceFixture()
     bool newTypeAdded = false;
     bool symbolDisplayMetadataFound = false;
     bool symbolCodeLinkFound = false;
+    bool symbolScopeMetadataFound = false;
+    bool symbolTypeMetadataFound = false;
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         if (change.kind == SemanticDiffChangeKind::Added)
             ++addedSymbols;
@@ -4279,7 +4281,13 @@ static void runSemanticDiffServiceFixture()
                 change.kindDisplayName == QStringLiteral("Modified")
                 && change.categoryDisplayName == QStringLiteral("port")
                 && change.displaySymbol.symbolName == QStringLiteral("data")
-                && change.detailDisplayName.contains(QStringLiteral("port"));
+                && change.detailDisplayName.contains(QStringLiteral("port"))
+                && change.detailDisplayName.contains(QStringLiteral("scope diff_top"))
+                && change.detailDisplayName.contains(QStringLiteral("design source"));
+            symbolScopeMetadataFound =
+                change.scopeDisplayName == QStringLiteral("scope diff_top");
+            symbolTypeMetadataFound =
+                change.symbolTypeDisplayName == QStringLiteral("output");
             symbolCodeLinkFound =
                 change.codeLink.fileName == fileName
                 && change.codeLink.line == 3
@@ -4402,6 +4410,12 @@ static void runSemanticDiffServiceFixture()
                true);
     expectBool("semantic diff symbol display metadata",
                symbolDisplayMetadataFound, true);
+    expectBool("semantic diff symbol scope metadata",
+               symbolScopeMetadataFound,
+               true);
+    expectBool("semantic diff symbol type metadata",
+               symbolTypeMetadataFound,
+               true);
     expectBool("semantic diff symbol code link",
                symbolCodeLinkFound,
                true);
@@ -5142,11 +5156,19 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealDiffType = false;
     bool sawRealDiffInterfaceLink = false;
     bool sawRealDiffTypeLink = false;
+    bool sawRealDiffInterfaceMetadata = false;
+    bool sawRealDiffTypeMetadata = false;
     for (const SemanticDiffSymbolChange& change : realDiffReport.symbolChanges) {
         sawRealDiffInterface = sawRealDiffInterface
             || (change.category == SemanticDiffSymbolCategory::Interface
                 && change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
                 && change.categoryGroupDisplayName == QStringLiteral("Interfaces"));
+        sawRealDiffInterfaceMetadata = sawRealDiffInterfaceMetadata
+            || (change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
+                && change.symbolTypeDisplayName == QStringLiteral("interface")
+                && change.scopeDisplayName == QStringLiteral("global")
+                && change.sourceRoleDisplayName == QStringLiteral("design source")
+                && change.detailDisplayName.contains(QStringLiteral("global")));
         sawRealDiffInterfaceLink = sawRealDiffInterfaceLink
             || (change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
                 && !change.codeLink.fileName.isEmpty()
@@ -5157,6 +5179,12 @@ static void runRealWorkspaceIncludeFixture()
             || (change.category == SemanticDiffSymbolCategory::Type
                 && change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
                 && change.categoryGroupDisplayName == QStringLiteral("Types"));
+        sawRealDiffTypeMetadata = sawRealDiffTypeMetadata
+            || (change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
+                && change.symbolTypeDisplayName == QStringLiteral("typedef")
+                && change.scopeDisplayName == QStringLiteral("scope gl_pkg")
+                && change.sourceRoleDisplayName == QStringLiteral("design source")
+                && change.detailDisplayName.contains(QStringLiteral("scope gl_pkg")));
         sawRealDiffTypeLink = sawRealDiffTypeLink
             || (change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
                 && !change.codeLink.fileName.isEmpty()
@@ -5173,11 +5201,17 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace semantic diff interface link",
                sawRealDiffInterfaceLink,
                true);
+    expectBool("real workspace semantic diff interface metadata",
+               sawRealDiffInterfaceMetadata,
+               true);
     expectBool("real workspace semantic diff type category",
                sawRealDiffType,
                true);
     expectBool("real workspace semantic diff type link",
                sawRealDiffTypeLink,
+               true);
+    expectBool("real workspace semantic diff type metadata",
+               sawRealDiffTypeMetadata,
                true);
 }
 
