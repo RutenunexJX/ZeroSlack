@@ -1,6 +1,7 @@
 #ifndef MODULEBRIEFSERVICE_H
 #define MODULEBRIEFSERVICE_H
 
+#include "rtlinsightlink.h"
 #include "semanticindex.h"
 
 #include <QList>
@@ -34,6 +35,7 @@ struct ModuleBriefRelationshipSummary {
 
 struct ModuleBriefSymbolRow {
     sym_list::SymbolInfo symbol = {};
+    RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString typeDisplayName;
     QString detailDisplayName;
@@ -41,12 +43,14 @@ struct ModuleBriefSymbolRow {
 
 struct ModuleBriefDiagnosticRow {
     SemanticDiagnostic diagnostic;
+    RtlInsightCodeLink codeLink;
     QString severityDisplayName;
     QString detailDisplayName;
 };
 
 struct ModuleBriefContextRow {
     sym_list::SymbolInfo symbol = {};
+    RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString symbolDisplayName;
     QString detailDisplayName;
@@ -116,6 +120,10 @@ private:
     static QString symbolTypeDisplayName(sym_list::sym_type_e type);
     static QString symbolDetailDisplayName(const sym_list::SymbolInfo& symbol);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
+    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
+    static RtlInsightCodeLink codeLink(const SemanticDiagnostic& diagnostic);
+    static QString fileDisplayName(const QString& fileName);
+    static QString lineDisplayName(int line);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString contextDetailDisplayName(const QString& kind,
                                             const sym_list::SymbolInfo& symbol);

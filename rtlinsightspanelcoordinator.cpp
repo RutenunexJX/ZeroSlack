@@ -64,9 +64,11 @@ void appendSymbolGroup(QTreeWidget* tree,
                         row.sectionDisplayName,
                         symbol.symbolName,
                         row.detailDisplayName,
-                        symbol.fileName,
-                        symbol.startLine,
-                        symbol.startColumn);
+                        row.codeLink.fileName,
+                        row.codeLink.line,
+                        row.codeLink.column,
+                        row.codeLink.fileDisplayName,
+                        row.codeLink.lineDisplayName);
     }
 }
 
@@ -82,9 +84,11 @@ void appendDiagnostics(QTreeWidget* tree,
                         row.severityDisplayName,
                         diagnostic.message,
                         row.detailDisplayName,
-                        diagnostic.fileName,
-                        diagnostic.line,
-                        diagnostic.column);
+                        row.codeLink.fileName,
+                        row.codeLink.line,
+                        row.codeLink.column,
+                        row.codeLink.fileDisplayName,
+                        row.codeLink.lineDisplayName);
     }
 }
 
@@ -99,9 +103,11 @@ void appendContextRows(QTreeWidget* tree,
                         row.sectionDisplayName,
                         row.symbolDisplayName,
                         row.detailDisplayName,
-                        row.symbol.fileName,
-                        row.symbol.startLine,
-                        row.symbol.startColumn);
+                        row.codeLink.fileName,
+                        row.codeLink.line,
+                        row.codeLink.column,
+                        row.codeLink.fileDisplayName,
+                        row.codeLink.lineDisplayName);
     }
 }
 

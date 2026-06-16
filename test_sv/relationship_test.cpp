@@ -3004,11 +3004,31 @@ static void runModuleBriefServiceFixture()
                    && !report.portRows.first().typeDisplayName.isEmpty()
                    && !report.portRows.first().detailDisplayName.isEmpty(),
                true);
+    expectBool("module brief port row code link",
+               !report.portRows.isEmpty()
+                   && report.portRows.first().codeLink.fileName == fileName
+                   && report.portRows.first().codeLink.line == 12
+                   && report.portRows.first().codeLink.column == 1
+                   && report.portRows.first().codeLink.fileDisplayName
+                       == QStringLiteral("module_brief_fixture.sv")
+                   && report.portRows.first().codeLink.lineDisplayName
+                       == QStringLiteral("12"),
+               true);
     expectBool("module brief parameter row display metadata",
                !report.parameterRows.isEmpty()
                    && report.parameterRows.first().sectionDisplayName
                        == QStringLiteral("Parameter")
                    && !report.parameterRows.first().detailDisplayName.isEmpty(),
+               true);
+    expectBool("module brief parameter row code link",
+               !report.parameterRows.isEmpty()
+                   && report.parameterRows.first().codeLink.fileName == fileName
+                   && report.parameterRows.first().codeLink.line == 11
+                   && report.parameterRows.first().codeLink.column == 1
+                   && report.parameterRows.first().codeLink.fileDisplayName
+                       == QStringLiteral("module_brief_fixture.sv")
+                   && report.parameterRows.first().codeLink.lineDisplayName
+                       == QStringLiteral("11"),
                true);
     expectBool("module brief diagnostic row display metadata",
                !report.diagnosticRows.isEmpty()
@@ -3017,6 +3037,16 @@ static void runModuleBriefServiceFixture()
                    && report.diagnosticRows.first().detailDisplayName
                        == QStringLiteral("diagnostic"),
                true);
+    expectBool("module brief diagnostic row code link",
+               !report.diagnosticRows.isEmpty()
+                   && report.diagnosticRows.first().codeLink.fileName == fileName
+                   && report.diagnosticRows.first().codeLink.line == 32
+                   && report.diagnosticRows.first().codeLink.column == 5
+                   && report.diagnosticRows.first().codeLink.fileDisplayName
+                       == QStringLiteral("module_brief_fixture.sv")
+                   && report.diagnosticRows.first().codeLink.lineDisplayName
+                       == QStringLiteral("32"),
+               true);
     expectBool("module brief import package",
                !report.imports.isEmpty()
                    && report.imports.first().symbolName == QStringLiteral("brief_pkg"),
@@ -3024,24 +3054,63 @@ static void runModuleBriefServiceFixture()
     bool hasPackageContext = false;
     bool hasInterfacePortContext = false;
     bool hasInterfaceInstanceContext = false;
+    bool hasPackageContextLink = false;
+    bool hasInterfacePortContextLink = false;
+    bool hasInterfaceInstanceContextLink = false;
     for (const ModuleBriefContextRow& row : report.contextRows) {
         hasPackageContext = hasPackageContext
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("brief_pkg")
                 && row.detailDisplayName == QStringLiteral("package import"));
+        hasPackageContextLink = hasPackageContextLink
+            || (row.sectionDisplayName == QStringLiteral("Package")
+                && row.symbolDisplayName == QStringLiteral("brief_pkg")
+                && row.codeLink.fileName == fileName
+                && row.codeLink.line == 1
+                && row.codeLink.column == 1
+                && row.codeLink.fileDisplayName
+                    == QStringLiteral("module_brief_fixture.sv")
+                && row.codeLink.lineDisplayName == QStringLiteral("1"));
         hasInterfacePortContext = hasInterfacePortContext
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && row.symbolDisplayName == QStringLiteral("if_port")
                 && row.detailDisplayName.contains(QStringLiteral("brief_if.master")));
+        hasInterfacePortContextLink = hasInterfacePortContextLink
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolDisplayName == QStringLiteral("if_port")
+                && row.codeLink.fileName == fileName
+                && row.codeLink.line == 15
+                && row.codeLink.column == 1
+                && row.codeLink.fileDisplayName
+                    == QStringLiteral("module_brief_fixture.sv")
+                && row.codeLink.lineDisplayName == QStringLiteral("15"));
         hasInterfaceInstanceContext = hasInterfaceInstanceContext
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && row.symbolDisplayName == QStringLiteral("if_bus")
                 && row.detailDisplayName.contains(QStringLiteral("brief_if")));
+        hasInterfaceInstanceContextLink = hasInterfaceInstanceContextLink
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolDisplayName == QStringLiteral("if_bus")
+                && row.codeLink.fileName == fileName
+                && row.codeLink.line == 31
+                && row.codeLink.column == 1
+                && row.codeLink.fileDisplayName
+                    == QStringLiteral("module_brief_fixture.sv")
+                && row.codeLink.lineDisplayName == QStringLiteral("31"));
     }
     expectBool("module brief package context row", hasPackageContext, true);
+    expectBool("module brief package context code link",
+               hasPackageContextLink,
+               true);
     expectBool("module brief interface port context row", hasInterfacePortContext, true);
+    expectBool("module brief interface port context code link",
+               hasInterfacePortContextLink,
+               true);
     expectBool("module brief interface instance context row",
                hasInterfaceInstanceContext,
+               true);
+    expectBool("module brief interface instance context code link",
+               hasInterfaceInstanceContextLink,
                true);
     expectInt("module brief outgoing relationships",
               report.relationshipSummary.outgoingCount, 2);
@@ -4301,14 +4370,31 @@ static void runRealWorkspaceIncludeFixture()
         moduleBriefService.buildModuleBrief(moduleBriefQuery);
     bool sawRealPackageContext = false;
     bool sawRealInterfaceContext = false;
+    bool sawRealPackageContextLink = false;
+    bool sawRealInterfaceContextLink = false;
     for (const ModuleBriefContextRow& row : moduleBrief.contextRows) {
         sawRealPackageContext = sawRealPackageContext
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("gl_pkg"));
+        sawRealPackageContextLink = sawRealPackageContextLink
+            || (row.sectionDisplayName == QStringLiteral("Package")
+                && row.symbolDisplayName == QStringLiteral("gl_pkg")
+                && !row.codeLink.fileName.isEmpty()
+                && row.codeLink.line > 0
+                && !row.codeLink.fileDisplayName.isEmpty()
+                && !row.codeLink.lineDisplayName.isEmpty());
         sawRealInterfaceContext = sawRealInterfaceContext
             || (row.sectionDisplayName == QStringLiteral("Interface")
                 && (row.symbolDisplayName == QStringLiteral("LR_GENR_IF")
                     || row.detailDisplayName.contains(QStringLiteral("lr_genr_if"))));
+        sawRealInterfaceContextLink = sawRealInterfaceContextLink
+            || (row.sectionDisplayName == QStringLiteral("Interface")
+                && (row.symbolDisplayName == QStringLiteral("LR_GENR_IF")
+                    || row.detailDisplayName.contains(QStringLiteral("lr_genr_if")))
+                && !row.codeLink.fileName.isEmpty()
+                && row.codeLink.line > 0
+                && !row.codeLink.fileDisplayName.isEmpty()
+                && !row.codeLink.lineDisplayName.isEmpty());
     }
     expectBool("real workspace module brief found",
                moduleBrief.found,
@@ -4316,8 +4402,14 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace module brief package context",
                sawRealPackageContext,
                true);
+    expectBool("real workspace module brief package context code link",
+               sawRealPackageContextLink,
+               true);
     expectBool("real workspace module brief interface context",
                sawRealInterfaceContext,
+               true);
+    expectBool("real workspace module brief interface context code link",
+               sawRealInterfaceContextLink,
                true);
 
     ClockResetDomainService clockResetService(&index);
