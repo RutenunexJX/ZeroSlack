@@ -219,6 +219,7 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
 
     bool inCase = false;
     QString currentState;
+    QString pendingCondition;
     QSet<QString> seenTransitions;
     for (int i = startIndex; i <= endIndex; ++i) {
         const QString code = stripLineComment(lines.at(i));
@@ -231,6 +232,7 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         if (code.contains(endcaseExpression)) {
             inCase = false;
             currentState.clear();
+            pendingCondition.clear();
             continue;
         }
 
@@ -240,9 +242,14 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
             currentState = label == QStringLiteral("default") || stateNames.contains(label)
                 ? label
                 : QString();
+            pendingCondition.clear();
         }
         if (currentState.isEmpty())
             continue;
+
+        const QRegularExpressionMatch conditionMatch = conditionExpression.match(code);
+        if (conditionMatch.hasMatch())
+            pendingCondition = conditionMatch.captured(1).trimmed();
 
         const QRegularExpressionMatch assignmentMatch = assignmentExpression.match(code);
         if (!assignmentMatch.hasMatch())
@@ -269,9 +276,8 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         transition.toState = rhs;
         transition.assignmentTarget = target;
         transition.line = i + 1;
-        const QRegularExpressionMatch conditionMatch = conditionExpression.match(code);
-        if (conditionMatch.hasMatch())
-            transition.condition = conditionMatch.captured(1).trimmed();
+        transition.condition = pendingCondition;
+        pendingCondition.clear();
         fillDisplayMetadata(transition);
         transitions.append(transition);
     }
@@ -322,6 +328,25 @@ QList<FsmStateRow> FsmGraphService::stateRows(
     return rows;
 }
 
+QList<FsmTransitionRow> FsmGraphService::transitionRows(
+    const QList<FsmTransition>& transitions)
+{
+    QList<FsmTransitionRow> rows;
+    rows.reserve(transitions.size());
+    for (const FsmTransition& transition : transitions) {
+        FsmTransitionRow row;
+        row.transition = transition;
+        row.sectionDisplayName = transition.sectionDisplayName;
+        row.fromStateDisplayName = transition.fromState;
+        row.toStateDisplayName = transition.toState;
+        row.conditionDisplayName = transitionConditionDisplayName(transition);
+        row.detailDisplayName = transition.detailDisplayName;
+        row.sourceLineDisplayName = transitionSourceLineDisplayName(transition);
+        rows.append(row);
+    }
+    return rows;
+}
+
 QString FsmGraphService::stateDetailDisplayName(
     const sym_list::SymbolInfo& state)
 {
@@ -347,6 +372,22 @@ QString FsmGraphService::transitionDetailDisplayName(
         .arg(transition.assignmentTarget, transition.condition);
 }
 
+QString FsmGraphService::transitionConditionDisplayName(
+    const FsmTransition& transition)
+{
+    return transition.condition.isEmpty()
+        ? QStringLiteral("unconditional")
+        : transition.condition;
+}
+
+QString FsmGraphService::transitionSourceLineDisplayName(
+    const FsmTransition& transition)
+{
+    return transition.line > 0
+        ? QStringLiteral("line %1").arg(transition.line)
+        : QStringLiteral("line unknown");
+}
+
 void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
 {
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
@@ -356,6 +397,7 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
     graph.stateRows = stateRows(graph.states);
     for (FsmTransition& transition : graph.transitions)
         fillDisplayMetadata(transition);
+    graph.transitionRows = transitionRows(graph.transitions);
 }
 
 void FsmGraphService::fillDisplayMetadata(FsmTransition& transition)

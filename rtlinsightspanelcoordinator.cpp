@@ -270,18 +270,32 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
         transitions->setText(0, SemanticPanelUtils::countLabel(
                                     transitionsGroup,
                                     graph.transitions.size()));
-        for (const FsmTransition& transition : graph.transitions) {
-            createChildItem(transitions,
-                            transition.sectionDisplayName.isEmpty()
-                                ? transition.fromState
-                                : transition.sectionDisplayName,
-                            transition.toState,
-                            transition.detailDisplayName.isEmpty()
-                                ? transition.assignmentTarget
-                                : transition.detailDisplayName,
-                            graph.moduleSymbol.fileName,
-                            transition.line,
-                            1);
+        if (!graph.transitionRows.isEmpty()) {
+            for (const FsmTransitionRow& row : graph.transitionRows) {
+                createChildItem(transitions,
+                                row.sectionDisplayName.isEmpty()
+                                    ? row.fromStateDisplayName
+                                    : row.sectionDisplayName,
+                                row.toStateDisplayName,
+                                row.detailDisplayName,
+                                graph.moduleSymbol.fileName,
+                                row.transition.line,
+                                1);
+            }
+        } else {
+            for (const FsmTransition& transition : graph.transitions) {
+                createChildItem(transitions,
+                                transition.sectionDisplayName.isEmpty()
+                                    ? transition.fromState
+                                    : transition.sectionDisplayName,
+                                transition.toState,
+                                transition.detailDisplayName.isEmpty()
+                                    ? transition.assignmentTarget
+                                    : transition.detailDisplayName,
+                                graph.moduleSymbol.fileName,
+                                transition.line,
+                                1);
+            }
         }
     }
 }

@@ -3419,7 +3419,8 @@ static void runFsmGraphServiceFixture()
         "    state_d = state_q;\n"
         "    case (state_q)\n"
         "      IDLE: begin\n"
-        "        if (start) state_d = RUN;\n"
+        "        if (start)\n"
+        "          state_d = RUN;\n"
         "      end\n"
         "      RUN: state_d = DONE;\n"
         "      DONE: if (!start) state_d = IDLE;\n"
@@ -3435,7 +3436,7 @@ static void runFsmGraphServiceFixture()
         QStringLiteral("fsm_top"),
         sym_list::sym_module,
         1);
-    module.endLine = 16;
+    module.endLine = 17;
     symbols.append(module);
 
     sym_list::SymbolInfo stateQ = makeModuleBriefSymbol(
@@ -3549,6 +3550,9 @@ static void runFsmGraphServiceFixture()
     expectInt("fsm graph transition count",
               report.graphs.isEmpty() ? 0 : report.graphs.first().transitions.size(),
               4);
+    expectInt("fsm graph transition row count",
+              report.graphs.isEmpty() ? 0 : report.graphs.first().transitionRows.size(),
+              4);
     expectBool("fsm graph first transition",
                !report.graphs.isEmpty()
                    && !report.graphs.first().transitions.isEmpty()
@@ -3558,6 +3562,18 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("RUN")
                    && report.graphs.first().transitions.first().condition
                        == QStringLiteral("start"),
+               true);
+    expectBool("fsm graph transition row evidence",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().transitionRows.isEmpty()
+                   && report.graphs.first().transitionRows.first().fromStateDisplayName
+                       == QStringLiteral("IDLE")
+                   && report.graphs.first().transitionRows.first().toStateDisplayName
+                       == QStringLiteral("RUN")
+                   && report.graphs.first().transitionRows.first().conditionDisplayName
+                       == QStringLiteral("start")
+                   && report.graphs.first().transitionRows.first().sourceLineDisplayName
+                       == QStringLiteral("line 10"),
                true);
     expectBool("fsm graph transition display metadata",
                !report.graphs.isEmpty()

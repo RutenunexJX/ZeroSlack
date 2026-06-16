@@ -29,6 +29,16 @@ struct FsmStateRow {
     QString detailDisplayName;
 };
 
+struct FsmTransitionRow {
+    FsmTransition transition;
+    QString sectionDisplayName;
+    QString fromStateDisplayName;
+    QString toStateDisplayName;
+    QString conditionDisplayName;
+    QString detailDisplayName;
+    QString sourceLineDisplayName;
+};
+
 struct FsmGraph {
     sym_list::SymbolInfo moduleSymbol = {};
     sym_list::SymbolInfo stateRegister = {};
@@ -36,6 +46,7 @@ struct FsmGraph {
     QList<sym_list::SymbolInfo> states;
     QList<FsmTransition> transitions;
     QList<FsmStateRow> stateRows;
+    QList<FsmTransitionRow> transitionRows;
     QString stateRegisterSectionDisplayName;
     QString stateRegisterDetailDisplayName;
     QString statesGroupDisplayName;
@@ -86,9 +97,13 @@ private:
     static QString stripLineComment(const QString& line);
     static QList<FsmStateRow> stateRows(
         const QList<sym_list::SymbolInfo>& states);
+    static QList<FsmTransitionRow> transitionRows(
+        const QList<FsmTransition>& transitions);
     static QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
     static QString stateRegisterDetailDisplayName(const FsmGraph& graph);
     static QString transitionDetailDisplayName(const FsmTransition& transition);
+    static QString transitionConditionDisplayName(const FsmTransition& transition);
+    static QString transitionSourceLineDisplayName(const FsmTransition& transition);
     static void fillDisplayMetadata(FsmGraph& graph);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
