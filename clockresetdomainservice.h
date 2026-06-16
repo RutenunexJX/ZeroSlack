@@ -105,9 +105,6 @@ private:
     static QString ambiguityDetailDisplayName(const QString& moduleName,
                                               SymbolRelationshipEngine::RelationType type,
                                               int domainCount);
-    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
-    static QString fileDisplayName(const QString& fileName);
-    static QString lineDisplayName(int line);
     static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillEntryDisplayMetadata(ClockResetDomainEntry& entry,
                                          SymbolRelationshipEngine::RelationType type);

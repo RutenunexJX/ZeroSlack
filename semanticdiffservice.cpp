@@ -1,7 +1,6 @@
 #include "semanticdiffservice.h"
 
 #include <QDir>
-#include <QFileInfo>
 #include <QHash>
 #include <QSet>
 #include <algorithm>
@@ -527,43 +526,6 @@ QString SemanticDiffService::diagnosticSeverityDisplayName(
     }
 }
 
-RtlInsightCodeLink SemanticDiffService::codeLink(
-    const sym_list::SymbolInfo& symbol)
-{
-    RtlInsightCodeLink link;
-    link.fileName = symbol.fileName;
-    link.line = symbol.startLine;
-    link.column = symbol.startColumn;
-    link.fileDisplayName = fileDisplayName(symbol.fileName);
-    link.lineDisplayName = lineDisplayName(symbol.startLine);
-    return link;
-}
-
-RtlInsightCodeLink SemanticDiffService::codeLink(
-    const SemanticDiagnostic& diagnostic)
-{
-    RtlInsightCodeLink link;
-    link.fileName = diagnostic.fileName;
-    link.line = diagnostic.line;
-    link.column = diagnostic.column;
-    link.fileDisplayName = fileDisplayName(diagnostic.fileName);
-    link.lineDisplayName = lineDisplayName(diagnostic.line);
-    return link;
-}
-
-QString SemanticDiffService::fileDisplayName(const QString& fileName)
-{
-    QString displayName = QFileInfo(fileName).fileName();
-    if (displayName.isEmpty())
-        displayName = fileName;
-    return displayName;
-}
-
-QString SemanticDiffService::lineDisplayName(int line)
-{
-    return line > 0 ? QString::number(line) : QString();
-}
-
 void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
 {
     change.displaySymbol = change.kind == SemanticDiffChangeKind::Removed
@@ -575,7 +537,7 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
     change.sourceRoleDisplayName =
         sourceRoleDisplayName(
             SymbolTaxonomy::sourceRoleForFileName(change.displaySymbol.fileName));
-    change.codeLink = codeLink(change.displaySymbol);
+    change.codeLink = RtlInsightLink::fromSymbol(change.displaySymbol);
 
     const QString type = SymbolTaxonomy::symbolTypeLabel(change.displaySymbol.symbolType);
     const QString dataType = change.displaySymbol.dataType.isEmpty()
@@ -624,7 +586,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
     change.categoryGroupDisplayName = QStringLiteral("Relationships");
-    change.codeLink = codeLink(change.displayFromSymbol);
+    change.codeLink = RtlInsightLink::fromSymbol(change.displayFromSymbol);
     change.detailDisplayName =
         change.displayFromSymbol.symbolName.isEmpty()
             || change.displayToSymbol.symbolName.isEmpty()
@@ -644,7 +606,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.severityDisplayName =
         diagnosticSeverityDisplayName(change.displayDiagnostic.severity);
     change.categoryGroupDisplayName = QStringLiteral("Diagnostics");
-    change.codeLink = codeLink(change.displayDiagnostic);
+    change.codeLink = RtlInsightLink::fromDiagnostic(change.displayDiagnostic);
 }
 
 void SemanticDiffService::sortSymbolChanges(

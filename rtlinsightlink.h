@@ -1,6 +1,7 @@
 #ifndef RTLINSIGHTLINK_H
 #define RTLINSIGHTLINK_H
 
+#include <QFileInfo>
 #include <QString>
 
 struct RtlInsightCodeLink {
@@ -10,5 +11,48 @@ struct RtlInsightCodeLink {
     QString fileDisplayName;
     QString lineDisplayName;
 };
+
+namespace RtlInsightLink {
+
+inline QString fileDisplayName(const QString& fileName)
+{
+    QString displayName = QFileInfo(fileName).fileName();
+    if (displayName.isEmpty())
+        displayName = fileName;
+    return displayName;
+}
+
+inline QString lineDisplayName(int line)
+{
+    return line > 0 ? QString::number(line) : QString();
+}
+
+inline RtlInsightCodeLink fromFileLine(
+    const QString& fileName,
+    int line,
+    int column)
+{
+    RtlInsightCodeLink link;
+    link.fileName = fileName;
+    link.line = line;
+    link.column = column;
+    link.fileDisplayName = fileDisplayName(fileName);
+    link.lineDisplayName = lineDisplayName(line);
+    return link;
+}
+
+template <typename Symbol>
+RtlInsightCodeLink fromSymbol(const Symbol& symbol)
+{
+    return fromFileLine(symbol.fileName, symbol.startLine, symbol.startColumn);
+}
+
+template <typename Diagnostic>
+RtlInsightCodeLink fromDiagnostic(const Diagnostic& diagnostic)
+{
+    return fromFileLine(diagnostic.fileName, diagnostic.line, diagnostic.column);
+}
+
+} // namespace RtlInsightLink
 
 #endif // RTLINSIGHTLINK_H

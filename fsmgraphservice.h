@@ -109,10 +109,6 @@ private:
     static QString transitionDetailDisplayName(const FsmTransition& transition);
     static QString transitionConditionDisplayName(const FsmTransition& transition);
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);
-    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
-    static RtlInsightCodeLink codeLink(const QString& fileName, int line, int column);
-    static QString fileDisplayName(const QString& fileName);
-    static QString lineDisplayName(int line);
     static void fillDisplayMetadata(FsmGraph& graph);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);

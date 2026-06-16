@@ -1,6 +1,5 @@
 #include "modulebriefservice.h"
 
-#include <QFileInfo>
 #include <QSet>
 #include <algorithm>
 
@@ -213,7 +212,7 @@ QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
     for (const sym_list::SymbolInfo& symbol : symbols) {
         ModuleBriefSymbolRow row;
         row.symbol = symbol;
-        row.codeLink = codeLink(symbol);
+        row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = sectionDisplayName;
         row.typeDisplayName = symbolTypeDisplayName(symbol.symbolType);
         row.detailDisplayName = symbolDetailDisplayName(symbol);
@@ -229,7 +228,7 @@ QList<ModuleBriefDiagnosticRow> ModuleBriefService::diagnosticRows(
     for (const SemanticDiagnostic& diagnostic : diagnostics) {
         ModuleBriefDiagnosticRow row;
         row.diagnostic = diagnostic;
-        row.codeLink = codeLink(diagnostic);
+        row.codeLink = RtlInsightLink::fromDiagnostic(diagnostic);
         row.severityDisplayName =
             diagnosticSeverityDisplayName(diagnostic.severity);
         row.detailDisplayName = QStringLiteral("diagnostic");
@@ -280,7 +279,7 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
 
         ModuleBriefContextRow row;
         row.symbol = symbol;
-        row.codeLink = codeLink(symbol);
+        row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = section;
         row.symbolDisplayName = symbolDisplayName(symbol);
         row.detailDisplayName = contextDetailDisplayName(kind, symbol);
@@ -337,43 +336,6 @@ QString ModuleBriefService::diagnosticSeverityDisplayName(
     default:
         return QStringLiteral("Info");
     }
-}
-
-RtlInsightCodeLink ModuleBriefService::codeLink(
-    const sym_list::SymbolInfo& symbol)
-{
-    RtlInsightCodeLink link;
-    link.fileName = symbol.fileName;
-    link.line = symbol.startLine;
-    link.column = symbol.startColumn;
-    link.fileDisplayName = fileDisplayName(symbol.fileName);
-    link.lineDisplayName = lineDisplayName(symbol.startLine);
-    return link;
-}
-
-RtlInsightCodeLink ModuleBriefService::codeLink(
-    const SemanticDiagnostic& diagnostic)
-{
-    RtlInsightCodeLink link;
-    link.fileName = diagnostic.fileName;
-    link.line = diagnostic.line;
-    link.column = diagnostic.column;
-    link.fileDisplayName = fileDisplayName(diagnostic.fileName);
-    link.lineDisplayName = lineDisplayName(diagnostic.line);
-    return link;
-}
-
-QString ModuleBriefService::fileDisplayName(const QString& fileName)
-{
-    QString displayName = QFileInfo(fileName).fileName();
-    if (displayName.isEmpty())
-        displayName = fileName;
-    return displayName;
-}
-
-QString ModuleBriefService::lineDisplayName(int line)
-{
-    return line > 0 ? QString::number(line) : QString();
 }
 
 QString ModuleBriefService::symbolDisplayName(const sym_list::SymbolInfo& symbol)

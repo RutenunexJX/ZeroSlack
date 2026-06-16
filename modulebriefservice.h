@@ -120,10 +120,6 @@ private:
     static QString symbolTypeDisplayName(sym_list::sym_type_e type);
     static QString symbolDetailDisplayName(const sym_list::SymbolInfo& symbol);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
-    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
-    static RtlInsightCodeLink codeLink(const SemanticDiagnostic& diagnostic);
-    static QString fileDisplayName(const QString& fileName);
-    static QString lineDisplayName(int line);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString contextDetailDisplayName(const QString& kind,
                                             const sym_list::SymbolInfo& symbol);

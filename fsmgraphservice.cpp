@@ -2,7 +2,6 @@
 
 #include "symboltaxonomy.h"
 
-#include <QFileInfo>
 #include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
@@ -277,7 +276,8 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         transition.toState = rhs;
         transition.assignmentTarget = target;
         transition.line = i + 1;
-        transition.codeLink = codeLink(moduleSymbol.fileName, transition.line, 1);
+        transition.codeLink =
+            RtlInsightLink::fromFileLine(moduleSymbol.fileName, transition.line, 1);
         transition.condition = pendingCondition;
         pendingCondition.clear();
         fillDisplayMetadata(transition);
@@ -323,7 +323,7 @@ QList<FsmStateRow> FsmGraphService::stateRows(
     for (const sym_list::SymbolInfo& state : states) {
         FsmStateRow row;
         row.state = state;
-        row.codeLink = codeLink(state);
+        row.codeLink = RtlInsightLink::fromSymbol(state);
         row.sectionDisplayName = QStringLiteral("State");
         row.detailDisplayName = stateDetailDisplayName(state);
         rows.append(row);
@@ -392,41 +392,9 @@ QString FsmGraphService::transitionSourceLineDisplayName(
         : QStringLiteral("line unknown");
 }
 
-RtlInsightCodeLink FsmGraphService::codeLink(const sym_list::SymbolInfo& symbol)
-{
-    return codeLink(symbol.fileName, symbol.startLine, symbol.startColumn);
-}
-
-RtlInsightCodeLink FsmGraphService::codeLink(
-    const QString& fileName,
-    int line,
-    int column)
-{
-    RtlInsightCodeLink link;
-    link.fileName = fileName;
-    link.line = line;
-    link.column = column;
-    link.fileDisplayName = fileDisplayName(fileName);
-    link.lineDisplayName = lineDisplayName(line);
-    return link;
-}
-
-QString FsmGraphService::fileDisplayName(const QString& fileName)
-{
-    QString displayName = QFileInfo(fileName).fileName();
-    if (displayName.isEmpty())
-        displayName = fileName;
-    return displayName;
-}
-
-QString FsmGraphService::lineDisplayName(int line)
-{
-    return line > 0 ? QString::number(line) : QString();
-}
-
 void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
 {
-    graph.stateRegisterCodeLink = codeLink(graph.stateRegister);
+    graph.stateRegisterCodeLink = RtlInsightLink::fromSymbol(graph.stateRegister);
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDetailDisplayName = stateRegisterDetailDisplayName(graph);
     graph.statesGroupDisplayName = QStringLiteral("States");

@@ -76,9 +76,6 @@ private:
     static QString directionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
-    static QString fileDisplayName(const QString& fileName);
-    static QString lineDisplayName(int line);
-    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
     static QString interfaceBaseName(const QString& dataType);
     static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
     static void fillDisplayMetadata(SignalJourneyItem& item);
