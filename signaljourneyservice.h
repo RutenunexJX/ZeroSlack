@@ -48,6 +48,7 @@ struct SignalJourneyReport {
     QString declarationTypeDisplayName;
     QString declarationFileDisplayName;
     QString declarationLineDisplayName;
+    QString declarationSourceRoleDisplayName;
     QList<SignalJourneyItem> assignments;
     QList<SignalJourneyItem> reads;
     QList<SignalJourneyItem> portConnections;

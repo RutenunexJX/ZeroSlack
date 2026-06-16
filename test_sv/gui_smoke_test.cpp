@@ -916,6 +916,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawFsmFromStateEndpoint = false;
     bool sawFsmToStateEndpoint = false;
     bool sawSignalJourney = false;
+    bool sawSignalJourneyDeclarationSourceRole = false;
     bool sawSignalJourneyFromEndpoint = false;
     bool sawSignalJourneyToEndpoint = false;
     bool sawSignalJourneyInterfaceConnection = false;
@@ -1026,6 +1027,11 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawSignalJourney = sawSignalJourney
             || (item->text(0) == QStringLiteral("Assignments")
                 && item->text(1) == QStringLiteral("next_data"));
+        sawSignalJourneyDeclarationSourceRole =
+            sawSignalJourneyDeclarationSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("data_q"));
         sawSignalJourneyFromEndpoint = sawSignalJourneyFromEndpoint
             || (item->text(0) == QStringLiteral("From")
                 && item->text(1) == QStringLiteral("next_data")
@@ -1125,6 +1131,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                sawFsmToStateEndpoint,
                true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
+    expectBool("RTL insights renders signal journey declaration source role",
+               sawSignalJourneyDeclarationSourceRole,
+               true);
     expectBool("RTL insights renders signal journey from endpoint",
                sawSignalJourneyFromEndpoint,
                true);

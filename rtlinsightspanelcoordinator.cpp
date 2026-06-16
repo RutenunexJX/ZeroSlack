@@ -582,10 +582,20 @@ void appendSignalJourney(QTreeWidget* tree,
                                             QStringLiteral("Signal Journey: %1")
                                                 .arg(report.declaration.symbolName),
                                             totalItems);
-    createChildItem(group,
-                    QStringLiteral("Declaration"),
+    QTreeWidgetItem* declaration =
+        createChildItem(group,
+                        QStringLiteral("Declaration"),
+                        report.declarationDisplayName,
+                        report.declarationTypeDisplayName,
+                        report.declarationCodeLink.fileName,
+                        report.declarationCodeLink.line,
+                        report.declarationCodeLink.column,
+                        report.declarationCodeLink.fileDisplayName,
+                        report.declarationCodeLink.lineDisplayName);
+    createChildItem(declaration,
+                    QStringLiteral("Source Role"),
+                    report.declarationSourceRoleDisplayName,
                     report.declarationDisplayName,
-                    report.declarationTypeDisplayName,
                     report.declarationCodeLink.fileName,
                     report.declarationCodeLink.line,
                     report.declarationCodeLink.column,

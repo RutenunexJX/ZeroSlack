@@ -3398,6 +3398,10 @@ static void runSignalJourneyServiceFixture()
                report.declaration.symbolName == QStringLiteral("data_q"), true);
     expectBool("signal journey declaration display type",
                !report.declarationTypeDisplayName.isEmpty(), true);
+    expectBool("signal journey declaration source role",
+               report.declarationSourceRoleDisplayName
+                   == QStringLiteral("design source"),
+               true);
     expectBool("signal journey declaration code link",
                report.declarationCodeLink.fileName == fileName
                    && report.declarationCodeLink.line == 10
@@ -5438,6 +5442,9 @@ static void runRealWorkspaceIncludeFixture()
                    && !interfaceJourney.declarationCodeLink.fileDisplayName.isEmpty()
                    && !interfaceJourney.declarationCodeLink.lineDisplayName.isEmpty(),
                true);
+    expectBool("real workspace signal journey declaration source role",
+               !interfaceJourney.declarationSourceRoleDisplayName.isEmpty(),
+               true);
     expectBool("real workspace signal journey interface modport",
                sawRealInterfaceModportJourney,
                true);
@@ -5471,6 +5478,9 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace signal journey clock found",
                clockJourney.found,
                true);
+    expectBool("real workspace signal journey clock source role",
+               !clockJourney.declarationSourceRoleDisplayName.isEmpty(),
+               true);
     expectBool("real workspace signal journey clock timing",
                sawRealClockJourney,
                true);
@@ -5500,6 +5510,9 @@ static void runRealWorkspaceIncludeFixture()
     }
     expectBool("real workspace signal journey reset found",
                resetJourney.found,
+               true);
+    expectBool("real workspace signal journey reset source role",
+               !resetJourney.declarationSourceRoleDisplayName.isEmpty(),
                true);
     expectBool("real workspace signal journey reset timing",
                sawRealResetJourney,

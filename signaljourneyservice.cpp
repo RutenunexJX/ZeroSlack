@@ -373,6 +373,9 @@ void SignalJourneyService::fillDeclarationDisplayMetadata(
         report.declarationCodeLink.fileDisplayName;
     report.declarationLineDisplayName =
         report.declarationCodeLink.lineDisplayName;
+    report.declarationSourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(report.declaration.fileName));
 }
 
 void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
