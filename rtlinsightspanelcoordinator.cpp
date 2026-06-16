@@ -212,19 +212,49 @@ void appendClockResetDomains(QTreeWidget* tree,
                                                   domain.domainSignalCodeLink.fileDisplayName,
                                                   domain.domainSignalCodeLink.lineDisplayName);
         for (const ClockResetDomainMember& member : domain.modules) {
-            createChildItem(signal,
-                            member.sectionDisplayName.isEmpty()
-                                ? QStringLiteral("Module")
-                                : member.sectionDisplayName,
-                            member.moduleSymbol.symbolName,
-                            member.detailDisplayName.isEmpty()
-                                ? QStringLiteral("clocked")
-                                : member.detailDisplayName,
+            QTreeWidgetItem* module =
+                createChildItem(signal,
+                                member.sectionDisplayName.isEmpty()
+                                    ? QStringLiteral("Module")
+                                    : member.sectionDisplayName,
+                                member.moduleDisplayName.isEmpty()
+                                    ? member.moduleSymbol.symbolName
+                                    : member.moduleDisplayName,
+                                member.detailDisplayName.isEmpty()
+                                    ? QStringLiteral("clocked")
+                                    : member.detailDisplayName,
+                                member.moduleCodeLink.fileName,
+                                member.moduleCodeLink.line,
+                                member.moduleCodeLink.column,
+                                member.moduleCodeLink.fileDisplayName,
+                                member.moduleCodeLink.lineDisplayName);
+            createChildItem(module,
+                            QStringLiteral("Relationship Type"),
+                            member.relationshipTypeDisplayName,
+                            member.moduleDisplayName,
                             member.moduleCodeLink.fileName,
                             member.moduleCodeLink.line,
                             member.moduleCodeLink.column,
                             member.moduleCodeLink.fileDisplayName,
                             member.moduleCodeLink.lineDisplayName);
+            createChildItem(module,
+                            QStringLiteral("Source Role"),
+                            member.sourceRoleDisplayName,
+                            member.moduleDisplayName,
+                            member.moduleCodeLink.fileName,
+                            member.moduleCodeLink.line,
+                            member.moduleCodeLink.column,
+                            member.moduleCodeLink.fileDisplayName,
+                            member.moduleCodeLink.lineDisplayName);
+            createChildItem(module,
+                            QStringLiteral("Domain Signal"),
+                            domain.domainSignal.symbolName,
+                            domain.sectionDisplayName,
+                            domain.domainSignalCodeLink.fileName,
+                            domain.domainSignalCodeLink.line,
+                            domain.domainSignalCodeLink.column,
+                            domain.domainSignalCodeLink.fileDisplayName,
+                            domain.domainSignalCodeLink.lineDisplayName);
         }
     }
 
@@ -249,19 +279,49 @@ void appendClockResetDomains(QTreeWidget* tree,
                                                   domain.domainSignalCodeLink.fileDisplayName,
                                                   domain.domainSignalCodeLink.lineDisplayName);
         for (const ClockResetDomainMember& member : domain.modules) {
-            createChildItem(signal,
-                            member.sectionDisplayName.isEmpty()
-                                ? QStringLiteral("Module")
-                                : member.sectionDisplayName,
-                            member.moduleSymbol.symbolName,
-                            member.detailDisplayName.isEmpty()
-                                ? QStringLiteral("reset")
-                                : member.detailDisplayName,
+            QTreeWidgetItem* module =
+                createChildItem(signal,
+                                member.sectionDisplayName.isEmpty()
+                                    ? QStringLiteral("Module")
+                                    : member.sectionDisplayName,
+                                member.moduleDisplayName.isEmpty()
+                                    ? member.moduleSymbol.symbolName
+                                    : member.moduleDisplayName,
+                                member.detailDisplayName.isEmpty()
+                                    ? QStringLiteral("reset")
+                                    : member.detailDisplayName,
+                                member.moduleCodeLink.fileName,
+                                member.moduleCodeLink.line,
+                                member.moduleCodeLink.column,
+                                member.moduleCodeLink.fileDisplayName,
+                                member.moduleCodeLink.lineDisplayName);
+            createChildItem(module,
+                            QStringLiteral("Relationship Type"),
+                            member.relationshipTypeDisplayName,
+                            member.moduleDisplayName,
                             member.moduleCodeLink.fileName,
                             member.moduleCodeLink.line,
                             member.moduleCodeLink.column,
                             member.moduleCodeLink.fileDisplayName,
                             member.moduleCodeLink.lineDisplayName);
+            createChildItem(module,
+                            QStringLiteral("Source Role"),
+                            member.sourceRoleDisplayName,
+                            member.moduleDisplayName,
+                            member.moduleCodeLink.fileName,
+                            member.moduleCodeLink.line,
+                            member.moduleCodeLink.column,
+                            member.moduleCodeLink.fileDisplayName,
+                            member.moduleCodeLink.lineDisplayName);
+            createChildItem(module,
+                            QStringLiteral("Domain Signal"),
+                            domain.domainSignal.symbolName,
+                            domain.sectionDisplayName,
+                            domain.domainSignalCodeLink.fileName,
+                            domain.domainSignalCodeLink.line,
+                            domain.domainSignalCodeLink.column,
+                            domain.domainSignalCodeLink.fileDisplayName,
+                            domain.domainSignalCodeLink.lineDisplayName);
         }
     }
 }

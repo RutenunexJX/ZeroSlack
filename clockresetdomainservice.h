@@ -19,7 +19,10 @@ struct ClockResetDomainMember {
     RtlInsightCodeLink moduleCodeLink;
     SemanticRelationshipResult relationship;
     QString sectionDisplayName;
+    QString moduleDisplayName;
+    QString relationshipTypeDisplayName;
     QString detailDisplayName;
+    QString sourceRoleDisplayName;
 };
 
 struct ClockResetDomainEntry {

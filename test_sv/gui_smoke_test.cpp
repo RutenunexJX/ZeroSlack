@@ -827,6 +827,11 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     clockRel.toId = 9601;
     clockRel.type = SymbolRelationshipEngine::CLOCKS;
     relationships.append(clockRel);
+    SemanticRelationship resetRel;
+    resetRel.fromId = 9603;
+    resetRel.toId = 9601;
+    resetRel.type = SymbolRelationshipEngine::RESETS;
+    relationships.append(resetRel);
     SemanticRelationship assignRel;
     assignRel.fromId = 9610;
     assignRel.toId = 9609;
@@ -901,6 +906,11 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawClockRelationshipType = false;
     bool sawClockEvidenceReason = false;
     bool sawClockSourceRole = false;
+    bool sawClockDomainMemberType = false;
+    bool sawClockDomainMemberSourceRole = false;
+    bool sawClockDomainMemberSignal = false;
+    bool sawResetDomainMemberType = false;
+    bool sawResetDomainMemberSignal = false;
     bool sawUnmappedClock = false;
     bool sawTransition = false;
     bool sawFsmFromStateEndpoint = false;
@@ -977,6 +987,26 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("Source Role")
                 && item->text(1) == QStringLiteral("design source")
                 && item->text(2) == QStringLiteral("Clock"));
+        sawClockDomainMemberType = sawClockDomainMemberType
+            || (item->text(0) == QStringLiteral("Relationship Type")
+                && item->text(1) == QStringLiteral("Clock")
+                && item->text(2) == QStringLiteral("insight_top"));
+        sawClockDomainMemberSourceRole = sawClockDomainMemberSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("insight_top"));
+        sawClockDomainMemberSignal = sawClockDomainMemberSignal
+            || (item->text(0) == QStringLiteral("Domain Signal")
+                && item->text(1) == QStringLiteral("clk")
+                && item->text(2) == QStringLiteral("Clock"));
+        sawResetDomainMemberType = sawResetDomainMemberType
+            || (item->text(0) == QStringLiteral("Relationship Type")
+                && item->text(1) == QStringLiteral("Reset")
+                && item->text(2) == QStringLiteral("insight_top"));
+        sawResetDomainMemberSignal = sawResetDomainMemberSignal
+            || (item->text(0) == QStringLiteral("Domain Signal")
+                && item->text(1) == QStringLiteral("rst_n")
+                && item->text(2) == QStringLiteral("Reset"));
         sawUnmappedClock = sawUnmappedClock
             || (item->text(0) == QStringLiteral("Unmapped Clock")
                 && item->text(1) == QStringLiteral("scan_clk")
@@ -1070,6 +1100,21 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders clock source role",
                sawClockSourceRole,
+               true);
+    expectBool("RTL insights renders clock domain member type",
+               sawClockDomainMemberType,
+               true);
+    expectBool("RTL insights renders clock domain member source role",
+               sawClockDomainMemberSourceRole,
+               true);
+    expectBool("RTL insights renders clock domain member signal",
+               sawClockDomainMemberSignal,
+               true);
+    expectBool("RTL insights renders reset domain member type",
+               sawResetDomainMemberType,
+               true);
+    expectBool("RTL insights renders reset domain member signal",
+               sawResetDomainMemberSignal,
                true);
     expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);

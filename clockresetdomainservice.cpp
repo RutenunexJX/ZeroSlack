@@ -498,8 +498,15 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
     for (ClockResetDomainMember& member : entry.modules) {
         if (member.sectionDisplayName.isEmpty())
             member.sectionDisplayName = QStringLiteral("Module");
+        member.moduleDisplayName = member.moduleSymbol.symbolName.isEmpty()
+            ? QStringLiteral("<unnamed>")
+            : member.moduleSymbol.symbolName;
+        member.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
         if (member.detailDisplayName.isEmpty())
             member.detailDisplayName = memberDetailDisplayName(type);
+        member.sourceRoleDisplayName =
+            sourceRoleDisplayName(
+                SymbolTaxonomy::sourceRoleForFileName(member.moduleSymbol.fileName));
     }
 }
 

@@ -3787,7 +3787,13 @@ static void runClockResetDomainServiceFixture()
                    && topReport.clockDomains.first().modules.first()
                           .sectionDisplayName == QStringLiteral("Module")
                    && topReport.clockDomains.first().modules.first()
-                          .detailDisplayName == QStringLiteral("clocked"),
+                          .moduleDisplayName == QStringLiteral("domain_top")
+                   && topReport.clockDomains.first().modules.first()
+                          .relationshipTypeDisplayName == QStringLiteral("Clock")
+                   && topReport.clockDomains.first().modules.first()
+                          .detailDisplayName == QStringLiteral("clocked")
+                   && topReport.clockDomains.first().modules.first()
+                          .sourceRoleDisplayName == QStringLiteral("design source"),
                true);
     expectBool("clock reset top clock target code link",
                !topReport.clockDomains.isEmpty()
@@ -3808,7 +3814,13 @@ static void runClockResetDomainServiceFixture()
                !topReport.resetDomains.isEmpty()
                    && !topReport.resetDomains.first().modules.isEmpty()
                    && topReport.resetDomains.first().modules.first()
-                          .detailDisplayName == QStringLiteral("reset"),
+                          .moduleDisplayName == QStringLiteral("domain_top")
+                   && topReport.resetDomains.first().modules.first()
+                          .relationshipTypeDisplayName == QStringLiteral("Reset")
+                   && topReport.resetDomains.first().modules.first()
+                          .detailDisplayName == QStringLiteral("reset")
+                   && topReport.resetDomains.first().modules.first()
+                          .sourceRoleDisplayName == QStringLiteral("design source"),
                true);
     expectBool("clock reset top evidence row metadata",
                !topReport.evidenceRows.isEmpty()
@@ -5244,9 +5256,43 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealResetEvidenceLink = false;
     bool sawRealClockEvidenceMetadata = false;
     bool sawRealResetEvidenceMetadata = false;
+    bool sawRealClockDomainMemberMetadata = false;
+    bool sawRealResetDomainMemberMetadata = false;
     bool sawRealUnmappedClock = false;
     bool sawRealUnmappedClockLink = false;
     bool sawRealUnmappedClockMetadata = false;
+    for (const ClockResetDomainEntry& domain : clockResetReport.clockDomains) {
+        if (domain.domainSignal.symbolName != QStringLiteral("clk_main"))
+            continue;
+        for (const ClockResetDomainMember& member : domain.modules) {
+            sawRealClockDomainMemberMetadata =
+                sawRealClockDomainMemberMetadata
+                || (member.moduleDisplayName == QStringLiteral("rtl_top")
+                    && member.relationshipTypeDisplayName == QStringLiteral("Clock")
+                    && member.detailDisplayName == QStringLiteral("clocked")
+                    && !member.sourceRoleDisplayName.isEmpty()
+                    && !member.moduleCodeLink.fileName.isEmpty()
+                    && member.moduleCodeLink.line > 0
+                    && !member.moduleCodeLink.fileDisplayName.isEmpty()
+                    && !member.moduleCodeLink.lineDisplayName.isEmpty());
+        }
+    }
+    for (const ClockResetDomainEntry& domain : clockResetReport.resetDomains) {
+        if (domain.domainSignal.symbolName != QStringLiteral("srst_main"))
+            continue;
+        for (const ClockResetDomainMember& member : domain.modules) {
+            sawRealResetDomainMemberMetadata =
+                sawRealResetDomainMemberMetadata
+                || (member.moduleDisplayName == QStringLiteral("rtl_top")
+                    && member.relationshipTypeDisplayName == QStringLiteral("Reset")
+                    && member.detailDisplayName == QStringLiteral("reset")
+                    && !member.sourceRoleDisplayName.isEmpty()
+                    && !member.moduleCodeLink.fileName.isEmpty()
+                    && member.moduleCodeLink.line > 0
+                    && !member.moduleCodeLink.fileDisplayName.isEmpty()
+                    && !member.moduleCodeLink.lineDisplayName.isEmpty());
+        }
+    }
     for (const ClockResetDomainEvidenceRow& row : clockResetReport.evidenceRows) {
         sawRealClockEvidence = sawRealClockEvidence
             || (row.sectionDisplayName == QStringLiteral("Clock")
@@ -5337,6 +5383,12 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace reset evidence row code link",
                sawRealResetEvidenceLink,
+               true);
+    expectBool("real workspace clock domain member metadata",
+               sawRealClockDomainMemberMetadata,
+               true);
+    expectBool("real workspace reset domain member metadata",
+               sawRealResetDomainMemberMetadata,
                true);
     expectBool("real workspace clock reset unmapped clock",
                sawRealUnmappedClock,
