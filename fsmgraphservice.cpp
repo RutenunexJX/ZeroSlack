@@ -616,8 +616,24 @@ QString FsmGraphService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
 void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
 {
     graph.stateRegisterCodeLink = RtlInsightLink::fromSymbol(graph.stateRegister);
+    graph.nextStateSignalCodeLink = RtlInsightLink::fromSymbol(graph.nextStateSignal);
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDetailDisplayName = stateRegisterDetailDisplayName(graph);
+    graph.stateRegisterTypeDisplayName =
+        SymbolTaxonomy::symbolTypeLabel(graph.stateRegister.symbolType);
+    graph.stateRegisterSourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(graph.stateRegister.fileName));
+    graph.nextStateSignalDisplayName = graph.nextStateSignal.symbolId >= 0
+        ? graph.nextStateSignal.symbolName
+        : QString();
+    graph.nextStateSignalTypeDisplayName = graph.nextStateSignal.symbolId >= 0
+        ? SymbolTaxonomy::symbolTypeLabel(graph.nextStateSignal.symbolType)
+        : QString();
+    graph.nextStateSignalSourceRoleDisplayName = graph.nextStateSignal.symbolId >= 0
+        ? sourceRoleDisplayName(
+              SymbolTaxonomy::sourceRoleForFileName(graph.nextStateSignal.fileName))
+        : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
     graph.stateRows = stateRows(graph.states);

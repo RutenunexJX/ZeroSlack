@@ -54,12 +54,18 @@ struct FsmGraph {
     sym_list::SymbolInfo stateRegister = {};
     sym_list::SymbolInfo nextStateSignal = {};
     RtlInsightCodeLink stateRegisterCodeLink;
+    RtlInsightCodeLink nextStateSignalCodeLink;
     QList<sym_list::SymbolInfo> states;
     QList<FsmTransition> transitions;
     QList<FsmStateRow> stateRows;
     QList<FsmTransitionRow> transitionRows;
     QString stateRegisterSectionDisplayName;
     QString stateRegisterDetailDisplayName;
+    QString stateRegisterTypeDisplayName;
+    QString stateRegisterSourceRoleDisplayName;
+    QString nextStateSignalDisplayName;
+    QString nextStateSignalTypeDisplayName;
+    QString nextStateSignalSourceRoleDisplayName;
     QString statesGroupDisplayName;
     QString transitionsGroupDisplayName;
 };

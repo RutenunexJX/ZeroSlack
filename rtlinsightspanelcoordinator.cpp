@@ -415,6 +415,35 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
                             graph.stateRegisterCodeLink.column,
                             graph.stateRegisterCodeLink.fileDisplayName,
                             graph.stateRegisterCodeLink.lineDisplayName);
+        createChildItem(stateRegister,
+                        QStringLiteral("Type"),
+                        graph.stateRegisterTypeDisplayName,
+                        graph.stateRegister.symbolName,
+                        graph.stateRegisterCodeLink.fileName,
+                        graph.stateRegisterCodeLink.line,
+                        graph.stateRegisterCodeLink.column,
+                        graph.stateRegisterCodeLink.fileDisplayName,
+                        graph.stateRegisterCodeLink.lineDisplayName);
+        createChildItem(stateRegister,
+                        QStringLiteral("Source Role"),
+                        graph.stateRegisterSourceRoleDisplayName,
+                        graph.stateRegister.symbolName,
+                        graph.stateRegisterCodeLink.fileName,
+                        graph.stateRegisterCodeLink.line,
+                        graph.stateRegisterCodeLink.column,
+                        graph.stateRegisterCodeLink.fileDisplayName,
+                        graph.stateRegisterCodeLink.lineDisplayName);
+        if (!graph.nextStateSignalDisplayName.isEmpty()) {
+            createChildItem(stateRegister,
+                            QStringLiteral("Next State Signal"),
+                            graph.nextStateSignalDisplayName,
+                            graph.nextStateSignalTypeDisplayName,
+                            graph.nextStateSignalCodeLink.fileName,
+                            graph.nextStateSignalCodeLink.line,
+                            graph.nextStateSignalCodeLink.column,
+                            graph.nextStateSignalCodeLink.fileDisplayName,
+                            graph.nextStateSignalCodeLink.lineDisplayName);
+        }
 
         QTreeWidgetItem* states = new QTreeWidgetItem(stateRegister);
         const QString statesGroup = graph.statesGroupDisplayName.isEmpty()

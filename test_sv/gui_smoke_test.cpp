@@ -913,6 +913,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawResetDomainMemberSignal = false;
     bool sawUnmappedClock = false;
     bool sawTransition = false;
+    bool sawFsmRegisterType = false;
+    bool sawFsmRegisterSourceRole = false;
+    bool sawFsmNextStateSignal = false;
     bool sawFsmFromStateEndpoint = false;
     bool sawFsmToStateEndpoint = false;
     bool sawFsmTransitionSourceRole = false;
@@ -1017,6 +1020,18 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawTransition = sawTransition
             || (item->text(0) == QStringLiteral("IDLE")
                 && item->text(1) == QStringLiteral("RUN"));
+        sawFsmRegisterType = sawFsmRegisterType
+            || (item->text(0) == QStringLiteral("Type")
+                && item->text(1) == QStringLiteral("enum")
+                && item->text(2) == QStringLiteral("state_q"));
+        sawFsmRegisterSourceRole = sawFsmRegisterSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("state_q"));
+        sawFsmNextStateSignal = sawFsmNextStateSignal
+            || (item->text(0) == QStringLiteral("Next State Signal")
+                && item->text(1) == QStringLiteral("state_d")
+                && item->text(2) == QStringLiteral("enum"));
         sawFsmFromStateEndpoint = sawFsmFromStateEndpoint
             || (item->text(0) == QStringLiteral("From State")
                 && item->text(1) == QStringLiteral("IDLE")
@@ -1129,6 +1144,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
+    expectBool("RTL insights renders FSM register type",
+               sawFsmRegisterType,
+               true);
+    expectBool("RTL insights renders FSM register source role",
+               sawFsmRegisterSourceRole,
+               true);
+    expectBool("RTL insights renders FSM next state signal",
+               sawFsmNextStateSignal,
+               true);
     expectBool("RTL insights renders FSM from state endpoint",
                sawFsmFromStateEndpoint,
                true);
