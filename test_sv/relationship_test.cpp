@@ -1310,6 +1310,41 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic snapshot merge deduplicates stable relationship",
               stableDedupedSnapshot.relationships().size(),
               snapshot->relationships().size());
+    sym_list::SymbolInfo reboundTopSymbol = snapshotIndex.getSymbolById(topId);
+    sym_list::SymbolInfo reboundStageSymbol = snapshotIndex.getSymbolById(stageId);
+    reboundTopSymbol.symbolId = topId + 100000;
+    reboundStageSymbol.symbolId = stageId + 100000;
+    SemanticRelationship driftingStableRelationship;
+    driftingStableRelationship.fromId = topId;
+    driftingStableRelationship.toId = stageId;
+    driftingStableRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
+    driftingStableRelationship.fromStableKey = topStableKey;
+    driftingStableRelationship.toStableKey = stageStableKey;
+    const auto reboundSnapshot = std::make_shared<SemanticIndexSnapshot>(
+        QList<sym_list::SymbolInfo>{reboundTopSymbol, reboundStageSymbol},
+        QList<SemanticRelationship>{driftingStableRelationship});
+    const SemanticRelationship reboundRelationship =
+        reboundSnapshot->rebindRelationship(driftingStableRelationship);
+    expectBool("semantic snapshot rebinds stable relationship handles",
+               reboundRelationship.fromId == reboundTopSymbol.symbolId
+                   && reboundRelationship.toId == reboundStageSymbol.symbolId
+                   && reboundRelationship.fromStableKey == topStableKey
+                   && reboundRelationship.toStableKey == stageStableKey,
+               true);
+    const QList<SemanticRelationship> reboundRelationships =
+        reboundSnapshot->getRelationships(reboundTopSymbol.symbolId, true);
+    expectBool("semantic snapshot queries rebound relationship",
+               reboundRelationships.size() == 1
+                   && reboundRelationships.first().fromId == reboundTopSymbol.symbolId
+                   && reboundRelationships.first().toId == reboundStageSymbol.symbolId,
+               true);
+    SemanticIndex reboundIndex;
+    reboundIndex.setSnapshot(reboundSnapshot);
+    expectBool("semantic index resolves rebound stable key",
+               reboundIndex.findSymbolId(topStableKey) == reboundTopSymbol.symbolId
+                   && reboundIndex.getSymbolByStableKey(stageStableKey).symbolId
+                       == reboundStageSymbol.symbolId,
+               true);
     SemanticRelationship duplicateStageRelationship;
     duplicateStageRelationship.fromId = topId;
     duplicateStageRelationship.toId = stageId;

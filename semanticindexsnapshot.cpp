@@ -61,12 +61,47 @@ void fillRelationshipStableKeys(
     }
 }
 
+int snapshotSymbolIdByStableKey(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const SymbolStableKey& key)
+{
+    if (!key.isValid())
+        return -1;
+
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (symbolStableKeyForSymbol(symbol) == key)
+            return symbol.symbolId;
+    }
+    return -1;
+}
+
+SemanticRelationship rebindRelationshipToSnapshot(
+    const SemanticRelationship& relationship,
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    SemanticRelationship rebound = relationship;
+    fillRelationshipStableKeys(&rebound, symbols);
+
+    const int reboundFromId =
+        snapshotSymbolIdByStableKey(symbols, rebound.fromStableKey);
+    if (reboundFromId >= 0)
+        rebound.fromId = reboundFromId;
+
+    const int reboundToId =
+        snapshotSymbolIdByStableKey(symbols, rebound.toStableKey);
+    if (reboundToId >= 0)
+        rebound.toId = reboundToId;
+
+    fillRelationshipStableKeys(&rebound, symbols);
+    return rebound;
+}
+
 QString snapshotRelationshipDedupeKey(
     const SemanticRelationship& relationship,
     const QList<sym_list::SymbolInfo>& symbols)
 {
-    SemanticRelationship keyedRelationship = relationship;
-    fillRelationshipStableKeys(&keyedRelationship, symbols);
+    SemanticRelationship keyedRelationship =
+        rebindRelationshipToSnapshot(relationship, symbols);
 
     const QString stableKey =
         semanticRelationshipStableKeyText(keyedRelationship);
@@ -92,7 +127,7 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
       m_fileContents(std::move(fileContents))
 {
     for (SemanticRelationship& relationship : m_relationships)
-        fillRelationshipStableKeys(&relationship, m_symbols);
+        relationship = rebindRelationshipToSnapshot(relationship, m_symbols);
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
@@ -155,13 +190,14 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
     }
 
     for (const SemanticRelationship& relationship : relationships) {
-        if (relationship.fromId < 0 || relationship.toId < 0)
+        const SemanticRelationship rebound = rebindRelationship(relationship);
+        if (rebound.fromId < 0 || rebound.toId < 0)
             continue;
-        const QString key = snapshotRelationshipDedupeKey(relationship, m_symbols);
+        const QString key = snapshotRelationshipDedupeKey(rebound, m_symbols);
         if (seen.contains(key))
             continue;
         seen.insert(key);
-        merged.append(relationship);
+        merged.append(rebound);
     }
 
     return SemanticIndexSnapshot(m_symbols, merged, m_diagnostics, m_fileContents);

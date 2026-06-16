@@ -186,12 +186,14 @@ public:
         SymbolRelationshipEngine::RelationType type,
         const QString& prefix = QString()) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
+    sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
     SemanticDefinitionResult resolveDefinition(
         const SemanticDefinitionQuery& query) const;
     QList<sym_list::SymbolInfo> findDefinitionSymbols(
         const SemanticDefinitionQuery& query) const;
     int findSymbolId(const QString& name,
                      const SemanticQueryContext& context = {}) const;
+    int findSymbolId(const SymbolStableKey& key) const;
     QString getCachedFileContent(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
     QString getStructTypeForVariable(const QString& variableName,

@@ -62,6 +62,19 @@ sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolById(int symbolId) const
     return missingSnapshotSymbol();
 }
 
+sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolByStableKey(
+    const SymbolStableKey& key) const
+{
+    if (!key.isValid())
+        return missingSnapshotSymbol();
+
+    for (const sym_list::SymbolInfo& symbol : m_symbols) {
+        if (symbolStableKeyForSymbol(symbol) == key)
+            return symbol;
+    }
+    return missingSnapshotSymbol();
+}
+
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::findDefinitions(
     const QString& name,
     const SemanticQueryContext& context) const
@@ -84,6 +97,37 @@ int SemanticIndexSnapshot::findSymbolId(const QString& name,
     if (symbols.isEmpty())
         return -1;
     return symbols.first().symbolId;
+}
+
+int SemanticIndexSnapshot::findSymbolId(const SymbolStableKey& key) const
+{
+    const sym_list::SymbolInfo symbol = getSymbolByStableKey(key);
+    return symbol.symbolId;
+}
+
+SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
+    const SemanticRelationship& relationship) const
+{
+    SemanticRelationship rebound = relationship;
+
+    if (!rebound.fromStableKey.isValid())
+        rebound.fromStableKey =
+            symbolStableKeyForSymbol(getSymbolById(rebound.fromId));
+    if (!rebound.toStableKey.isValid())
+        rebound.toStableKey =
+            symbolStableKeyForSymbol(getSymbolById(rebound.toId));
+
+    const sym_list::SymbolInfo fromSymbol =
+        getSymbolByStableKey(rebound.fromStableKey);
+    if (fromSymbol.symbolId >= 0)
+        rebound.fromId = fromSymbol.symbolId;
+
+    const sym_list::SymbolInfo toSymbol =
+        getSymbolByStableKey(rebound.toStableKey);
+    if (toSymbol.symbolId >= 0)
+        rebound.toId = toSymbol.symbolId;
+
+    return rebound;
 }
 
 QString SemanticIndexSnapshot::getCachedFileContent(const QString& fileName) const
