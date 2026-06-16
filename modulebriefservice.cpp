@@ -69,6 +69,7 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
                                      report.instances,
                                      symbols);
     report.relationshipSummary = relationshipSummary(moduleSymbol);
+    report.relationshipEvidenceRows = relationshipEvidenceRows(moduleSymbol);
     return report;
 }
 
@@ -183,6 +184,42 @@ ModuleBriefRelationshipSummary ModuleBriefService::relationshipSummary(
         summary.incomingTypeCounts[relationship.relationship.type]++;
     summary.rows = relationshipRows(summary);
     return summary;
+}
+
+QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEvidenceRows(
+    const sym_list::SymbolInfo& moduleSymbol) const
+{
+    QList<ModuleBriefRelationshipEvidenceRow> rows;
+    QSet<QString> seen;
+    auto appendRows = [&](bool outgoing) {
+        const QList<SemanticRelationshipResult> relationships =
+            semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, outgoing);
+        for (const SemanticRelationshipResult& relationship : relationships) {
+            const sym_list::SymbolInfo peer =
+                outgoing ? relationship.toSymbol : relationship.fromSymbol;
+            if (peer.symbolId < 0)
+                continue;
+            const QString key = QStringLiteral("%1:%2:%3")
+                                    .arg(relationship.relationship.fromId)
+                                    .arg(relationship.relationship.toId)
+                                    .arg(static_cast<int>(relationship.relationship.type));
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+
+            ModuleBriefRelationshipEvidenceRow row;
+            row.relationship = relationship;
+            row.peerSymbol = peer;
+            row.outgoing = outgoing;
+            fillRelationshipEvidenceMetadata(row);
+            rows.append(row);
+        }
+    };
+
+    appendRows(true);
+    appendRows(false);
+    sortRelationshipEvidenceRows(rows);
+    return rows;
 }
 
 bool ModuleBriefService::isInsideModule(
@@ -427,6 +464,51 @@ QString ModuleBriefService::relationshipTypeDisplayName(
 QString ModuleBriefService::relationshipDetailDisplayName(int count)
 {
     return QStringLiteral("%1 relationships").arg(count);
+}
+
+QString ModuleBriefService::relationshipEvidenceDetailDisplayName(
+    const ModuleBriefRelationshipEvidenceRow& row)
+{
+    return QStringLiteral("%1 %2")
+        .arg(row.directionDisplayName, row.typeDisplayName);
+}
+
+void ModuleBriefService::fillRelationshipEvidenceMetadata(
+    ModuleBriefRelationshipEvidenceRow& row)
+{
+    row.peerCodeLink = RtlInsightLink::fromSymbol(row.peerSymbol);
+    row.directionDisplayName = relationshipDirectionDisplayName(row.outgoing);
+    row.typeDisplayName = relationshipTypeDisplayName(row.relationship.relationship.type);
+    row.peerDisplayName = symbolDisplayName(row.peerSymbol);
+    row.detailDisplayName = relationshipEvidenceDetailDisplayName(row);
+}
+
+void ModuleBriefService::sortRelationshipEvidenceRows(
+    QList<ModuleBriefRelationshipEvidenceRow>& rows)
+{
+    std::sort(rows.begin(),
+              rows.end(),
+              [](const ModuleBriefRelationshipEvidenceRow& lhs,
+                 const ModuleBriefRelationshipEvidenceRow& rhs) {
+                  const sym_list::SymbolInfo& left = lhs.peerSymbol;
+                  const sym_list::SymbolInfo& right = rhs.peerSymbol;
+                  if (lhs.outgoing != rhs.outgoing)
+                      return lhs.outgoing && !rhs.outgoing;
+                  if (lhs.relationship.relationship.type
+                      != rhs.relationship.relationship.type) {
+                      return lhs.relationship.relationship.type
+                          < rhs.relationship.relationship.type;
+                  }
+                  if (left.fileName != right.fileName)
+                      return left.fileName < right.fileName;
+                  if (left.startLine != right.startLine)
+                      return left.startLine < right.startLine;
+                  if (left.startColumn != right.startColumn)
+                      return left.startColumn < right.startColumn;
+                  if (left.symbolName != right.symbolName)
+                      return left.symbolName < right.symbolName;
+                  return left.symbolId < right.symbolId;
+              });
 }
 
 void ModuleBriefService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)

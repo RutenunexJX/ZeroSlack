@@ -2998,6 +2998,9 @@ static void runModuleBriefServiceFixture()
     expectInt("module brief import row count", report.importRows.size(), 1);
     expectInt("module brief diagnostic row count", report.diagnosticRows.size(), 1);
     expectInt("module brief context row count", report.contextRows.size(), 3);
+    expectInt("module brief relationship evidence row count",
+              report.relationshipEvidenceRows.size(),
+              3);
     expectBool("module brief port row display metadata",
                !report.portRows.isEmpty()
                    && report.portRows.first().sectionDisplayName == QStringLiteral("Port")
@@ -3124,6 +3127,49 @@ static void runModuleBriefServiceFixture()
               report.relationshipSummary.incomingTypeCounts.value(
                   SymbolRelationshipEngine::CLOCKS),
               1);
+    bool hasPackageRelationshipEvidence = false;
+    bool hasInstanceRelationshipEvidence = false;
+    bool hasClockRelationshipEvidence = false;
+    bool hasClockRelationshipEvidenceLink = false;
+    for (const ModuleBriefRelationshipEvidenceRow& row
+         : report.relationshipEvidenceRows) {
+        hasPackageRelationshipEvidence = hasPackageRelationshipEvidence
+            || (row.outgoing
+                && row.peerDisplayName == QStringLiteral("brief_pkg")
+                && row.typeDisplayName == QStringLiteral("References")
+                && row.detailDisplayName == QStringLiteral("Outgoing References"));
+        hasInstanceRelationshipEvidence = hasInstanceRelationshipEvidence
+            || (row.outgoing
+                && row.peerDisplayName == QStringLiteral("u_stage")
+                && row.typeDisplayName == QStringLiteral("Instantiates")
+                && row.detailDisplayName == QStringLiteral("Outgoing Instantiates"));
+        hasClockRelationshipEvidence = hasClockRelationshipEvidence
+            || (!row.outgoing
+                && row.peerDisplayName == QStringLiteral("clk")
+                && row.typeDisplayName == QStringLiteral("Clocks")
+                && row.detailDisplayName == QStringLiteral("Incoming Clocks"));
+        hasClockRelationshipEvidenceLink = hasClockRelationshipEvidenceLink
+            || (!row.outgoing
+                && row.peerDisplayName == QStringLiteral("clk")
+                && row.peerCodeLink.fileName == fileName
+                && row.peerCodeLink.line == 12
+                && row.peerCodeLink.column == 1
+                && row.peerCodeLink.fileDisplayName
+                    == QStringLiteral("module_brief_fixture.sv")
+                && row.peerCodeLink.lineDisplayName == QStringLiteral("12"));
+    }
+    expectBool("module brief package relationship evidence",
+               hasPackageRelationshipEvidence,
+               true);
+    expectBool("module brief instance relationship evidence",
+               hasInstanceRelationshipEvidence,
+               true);
+    expectBool("module brief clock relationship evidence",
+               hasClockRelationshipEvidence,
+               true);
+    expectBool("module brief clock relationship evidence code link",
+               hasClockRelationshipEvidenceLink,
+               true);
 }
 
 static void runSignalJourneyServiceFixture()
@@ -4718,6 +4764,69 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace module brief interface context code link",
                sawRealInterfaceContextLink,
+               true);
+    bool sawRealPackageRelationshipEvidence = false;
+    bool sawRealClockRelationshipEvidence = false;
+    bool sawRealResetRelationshipEvidence = false;
+    bool sawRealPackageRelationshipEvidenceLink = false;
+    bool sawRealClockRelationshipEvidenceLink = false;
+    bool sawRealResetRelationshipEvidenceLink = false;
+    for (const ModuleBriefRelationshipEvidenceRow& row
+         : moduleBrief.relationshipEvidenceRows) {
+        sawRealPackageRelationshipEvidence = sawRealPackageRelationshipEvidence
+            || (row.outgoing
+                && row.peerDisplayName == QStringLiteral("gl_pkg")
+                && row.typeDisplayName == QStringLiteral("References")
+                && row.detailDisplayName == QStringLiteral("Outgoing References"));
+        sawRealPackageRelationshipEvidenceLink = sawRealPackageRelationshipEvidenceLink
+            || (row.outgoing
+                && row.peerDisplayName == QStringLiteral("gl_pkg")
+                && !row.peerCodeLink.fileName.isEmpty()
+                && row.peerCodeLink.line > 0
+                && !row.peerCodeLink.fileDisplayName.isEmpty()
+                && !row.peerCodeLink.lineDisplayName.isEmpty());
+        sawRealClockRelationshipEvidence = sawRealClockRelationshipEvidence
+            || (!row.outgoing
+                && row.peerDisplayName == QStringLiteral("clk_main")
+                && row.typeDisplayName == QStringLiteral("Clocks")
+                && row.detailDisplayName == QStringLiteral("Incoming Clocks"));
+        sawRealClockRelationshipEvidenceLink = sawRealClockRelationshipEvidenceLink
+            || (!row.outgoing
+                && row.peerDisplayName == QStringLiteral("clk_main")
+                && !row.peerCodeLink.fileName.isEmpty()
+                && row.peerCodeLink.line > 0
+                && !row.peerCodeLink.fileDisplayName.isEmpty()
+                && !row.peerCodeLink.lineDisplayName.isEmpty());
+        sawRealResetRelationshipEvidence = sawRealResetRelationshipEvidence
+            || (!row.outgoing
+                && row.peerDisplayName == QStringLiteral("srst_main")
+                && row.typeDisplayName == QStringLiteral("Resets")
+                && row.detailDisplayName == QStringLiteral("Incoming Resets"));
+        sawRealResetRelationshipEvidenceLink = sawRealResetRelationshipEvidenceLink
+            || (!row.outgoing
+                && row.peerDisplayName == QStringLiteral("srst_main")
+                && !row.peerCodeLink.fileName.isEmpty()
+                && row.peerCodeLink.line > 0
+                && !row.peerCodeLink.fileDisplayName.isEmpty()
+                && !row.peerCodeLink.lineDisplayName.isEmpty());
+    }
+    expectBool("real workspace module brief package relationship evidence",
+               sawRealPackageRelationshipEvidence,
+               true);
+    expectBool("real workspace module brief package relationship evidence link",
+               sawRealPackageRelationshipEvidenceLink,
+               true);
+    expectBool("real workspace module brief clock relationship evidence",
+               sawRealClockRelationshipEvidence,
+               true);
+    expectBool("real workspace module brief clock relationship evidence link",
+               sawRealClockRelationshipEvidenceLink,
+               true);
+    expectBool("real workspace module brief reset relationship evidence",
+               sawRealResetRelationshipEvidence,
+               true);
+    expectBool("real workspace module brief reset relationship evidence link",
+               sawRealResetRelationshipEvidenceLink,
                true);
 
     ClockResetDomainService clockResetService(&index);

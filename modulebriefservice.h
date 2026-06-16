@@ -24,6 +24,17 @@ struct ModuleBriefRelationshipRow {
     QString detailDisplayName;
 };
 
+struct ModuleBriefRelationshipEvidenceRow {
+    SemanticRelationshipResult relationship;
+    sym_list::SymbolInfo peerSymbol = {};
+    RtlInsightCodeLink peerCodeLink;
+    bool outgoing = false;
+    QString directionDisplayName;
+    QString typeDisplayName;
+    QString peerDisplayName;
+    QString detailDisplayName;
+};
+
 struct ModuleBriefRelationshipSummary {
     int outgoingCount = 0;
     int incomingCount = 0;
@@ -72,6 +83,7 @@ struct ModuleBriefReport {
     QList<ModuleBriefDiagnosticRow> diagnosticRows;
     QList<ModuleBriefContextRow> contextRows;
     ModuleBriefRelationshipSummary relationshipSummary;
+    QList<ModuleBriefRelationshipEvidenceRow> relationshipEvidenceRows;
 };
 
 class ModuleBriefService
@@ -102,6 +114,8 @@ private:
         const sym_list::SymbolInfo& moduleSymbol) const;
     ModuleBriefRelationshipSummary relationshipSummary(
         const sym_list::SymbolInfo& moduleSymbol) const;
+    QList<ModuleBriefRelationshipEvidenceRow> relationshipEvidenceRows(
+        const sym_list::SymbolInfo& moduleSymbol) const;
 
     static bool isInsideModule(const sym_list::SymbolInfo& symbol,
                                const sym_list::SymbolInfo& moduleSymbol);
@@ -129,6 +143,12 @@ private:
     static QString relationshipDirectionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString relationshipDetailDisplayName(int count);
+    static QString relationshipEvidenceDetailDisplayName(
+        const ModuleBriefRelationshipEvidenceRow& row);
+    static void fillRelationshipEvidenceMetadata(
+        ModuleBriefRelationshipEvidenceRow& row);
+    static void sortRelationshipEvidenceRows(
+        QList<ModuleBriefRelationshipEvidenceRow>& rows);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
 };
 
