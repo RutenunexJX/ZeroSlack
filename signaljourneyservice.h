@@ -4,6 +4,7 @@
 #include "semanticindex.h"
 
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <memory>
 
@@ -36,6 +37,7 @@ struct SignalJourneyReport {
     QList<SignalJourneyItem> assignments;
     QList<SignalJourneyItem> reads;
     QList<SignalJourneyItem> portConnections;
+    QList<SignalJourneyItem> interfaceConnections;
 };
 
 class SignalJourneyService
@@ -62,12 +64,18 @@ private:
         const QList<SymbolRelationshipEngine::RelationType>& types) const;
     QList<SignalJourneyItem> portConnectionItems(
         const sym_list::SymbolInfo& signal) const;
+    QList<SignalJourneyItem> interfaceConnectionItems(
+        const sym_list::SymbolInfo& signal) const;
 
+    bool isJourneyDeclaration(const sym_list::SymbolInfo& symbol) const;
+    bool isInterfaceConnectionPeer(const sym_list::SymbolInfo& symbol) const;
+    QSet<QString> interfaceNames() const;
     static QString directionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString fileDisplayName(const QString& fileName);
     static QString lineDisplayName(int line);
+    static QString interfaceBaseName(const QString& dataType);
     static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
     static void fillDisplayMetadata(SignalJourneyItem& item);
     static void sortItems(QList<SignalJourneyItem>& items);

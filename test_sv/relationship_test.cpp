@@ -3099,6 +3099,28 @@ static void runSignalJourneyServiceFixture()
         sym_list::sym_inst_pin,
         40,
         QStringLiteral("journey_top")));
+    symbols.append(makeModuleBriefSymbol(
+        9106,
+        fileName,
+        QStringLiteral("journey_if"),
+        sym_list::sym_interface,
+        45));
+    sym_list::SymbolInfo interfaceInstance = makeModuleBriefSymbol(
+        9107,
+        fileName,
+        QStringLiteral("if_bus"),
+        sym_list::sym_inst,
+        50,
+        QStringLiteral("journey_top"));
+    interfaceInstance.dataType = QStringLiteral("journey_if");
+    symbols.append(interfaceInstance);
+    symbols.append(makeModuleBriefSymbol(
+        9108,
+        fileName,
+        QStringLiteral("ready"),
+        sym_list::sym_logic,
+        55,
+        QStringLiteral("journey_if")));
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship assignment;
@@ -3118,6 +3140,18 @@ static void runSignalJourneyServiceFixture()
     portConnection.toId = 9102;
     portConnection.type = SymbolRelationshipEngine::REFERENCES;
     relationships.append(portConnection);
+
+    SemanticRelationship interfaceConnection;
+    interfaceConnection.fromId = 9107;
+    interfaceConnection.toId = 9102;
+    interfaceConnection.type = SymbolRelationshipEngine::REFERENCES;
+    relationships.append(interfaceConnection);
+
+    SemanticRelationship interfaceMemberConnection;
+    interfaceMemberConnection.fromId = 9102;
+    interfaceMemberConnection.toId = 9108;
+    interfaceMemberConnection.type = SymbolRelationshipEngine::REFERENCES;
+    relationships.append(interfaceMemberConnection);
 
     SemanticIndex index;
     index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
@@ -3147,6 +3181,8 @@ static void runSignalJourneyServiceFixture()
     expectInt("signal journey read count", report.reads.size(), 1);
     expectInt("signal journey port connection count",
               report.portConnections.size(), 1);
+    expectInt("signal journey interface connection count",
+              report.interfaceConnections.size(), 2);
     expectBool("signal journey assignment peer",
                !report.assignments.isEmpty()
                    && report.assignments.first().peerSymbol.symbolName
@@ -3170,6 +3206,22 @@ static void runSignalJourneyServiceFixture()
                    && report.portConnections.first().peerSymbol.symbolName
                        == QStringLiteral("u_stage.data_i")
                    && !report.portConnections.first().detailDisplayName.isEmpty(),
+               true);
+    bool sawInterfaceInstance = false;
+    bool sawInterfaceMember = false;
+    for (const SignalJourneyItem& item : report.interfaceConnections) {
+        sawInterfaceInstance = sawInterfaceInstance
+            || (item.peerSymbolDisplayName == QStringLiteral("if_bus")
+                && item.detailDisplayName == QStringLiteral("interface incoming References"));
+        sawInterfaceMember = sawInterfaceMember
+            || (item.peerSymbolDisplayName == QStringLiteral("ready")
+                && item.detailDisplayName == QStringLiteral("interface outgoing References"));
+    }
+    expectBool("signal journey interface instance peer",
+               sawInterfaceInstance,
+               true);
+    expectBool("signal journey interface member peer",
+               sawInterfaceMember,
                true);
 }
 
@@ -3998,6 +4050,13 @@ static void runRealWorkspaceIncludeFixture()
             }
         }
     }
+    if (interfaceInstId >= 0 && interfaceModportId >= 0) {
+        SemanticRelationship interfaceModportRelationship;
+        interfaceModportRelationship.fromId = interfaceInstId;
+        interfaceModportRelationship.toId = interfaceModportId;
+        interfaceModportRelationship.type = SymbolRelationshipEngine::REFERENCES;
+        realRelationships.append(interfaceModportRelationship);
+    }
 
     SemanticIndex index;
     index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
@@ -4124,6 +4183,26 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace reset evidence row",
                sawRealResetEvidence,
+               true);
+
+    SignalJourneyService signalJourneyService(&index);
+    SignalJourneyQuery interfaceJourneyQuery;
+    interfaceJourneyQuery.signalSymbolId = interfaceInstId;
+    interfaceJourneyQuery.fileName = topPath;
+    interfaceJourneyQuery.moduleName = QStringLiteral("rtl_top");
+    const SignalJourneyReport interfaceJourney =
+        signalJourneyService.buildSignalJourney(interfaceJourneyQuery);
+    bool sawRealInterfaceModportJourney = false;
+    for (const SignalJourneyItem& item : interfaceJourney.interfaceConnections) {
+        sawRealInterfaceModportJourney = sawRealInterfaceModportJourney
+            || (item.peerSymbolDisplayName == QStringLiteral("si")
+                && item.detailDisplayName == QStringLiteral("interface outgoing References"));
+    }
+    expectBool("real workspace signal journey interface found",
+               interfaceJourney.found,
+               true);
+    expectBool("real workspace signal journey interface modport",
+               sawRealInterfaceModportJourney,
                true);
 }
 

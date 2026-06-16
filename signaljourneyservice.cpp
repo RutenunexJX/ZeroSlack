@@ -85,6 +85,7 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
         false,
         {SymbolRelationshipEngine::READS_FROM});
     report.portConnections = portConnectionItems(signal);
+    report.interfaceConnections = interfaceConnectionItems(signal);
     return report;
 }
 
@@ -99,8 +100,7 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     if (query.signalSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.signalSymbolId);
-        return SymbolTaxonomy::isSignalDeclaration(symbol.symbolType)
-            || SymbolTaxonomy::isPortDeclaration(symbol.symbolType)
+        return isJourneyDeclaration(symbol)
             ? symbol
             : missingSignalJourneySymbol();
     }
@@ -113,9 +113,7 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     definitionQuery.moduleName = query.moduleName;
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
-    return definition.found
-            && (SymbolTaxonomy::isSignalDeclaration(definition.symbol.symbolType)
-                || SymbolTaxonomy::isPortDeclaration(definition.symbol.symbolType))
+    return definition.found && isJourneyDeclaration(definition.symbol)
         ? definition.symbol
         : missingSignalJourneySymbol();
 }
@@ -179,6 +177,85 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
     return items;
 }
 
+QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
+    const sym_list::SymbolInfo& signal) const
+{
+    QList<SignalJourneyItem> items;
+    QSet<QString> seen;
+    auto appendDirection = [&](bool outgoing) {
+        const QList<SemanticRelationshipResult> relationships =
+            semanticIndex()->getRelationshipResults(signal.symbolId, outgoing);
+        for (const SemanticRelationshipResult& relationship : relationships) {
+            const sym_list::SymbolInfo peer =
+                outgoing ? relationship.toSymbol : relationship.fromSymbol;
+            if (!isInterfaceConnectionPeer(peer))
+                continue;
+            const QString key = QStringLiteral("%1:%2:%3")
+                                    .arg(relationship.relationship.fromId)
+                                    .arg(relationship.relationship.toId)
+                                    .arg(static_cast<int>(relationship.relationship.type));
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+
+            SignalJourneyItem item;
+            item.relationship = relationship;
+            item.peerSymbol = peer;
+            item.outgoing = outgoing;
+            fillDisplayMetadata(item);
+            item.detailDisplayName = QStringLiteral("interface %1")
+                                         .arg(item.detailDisplayName);
+            items.append(item);
+        }
+    };
+    appendDirection(false);
+    appendDirection(true);
+    sortItems(items);
+    return items;
+}
+
+bool SignalJourneyService::isJourneyDeclaration(
+    const sym_list::SymbolInfo& symbol) const
+{
+    if (SymbolTaxonomy::isSignalDeclaration(symbol.symbolType)
+        || SymbolTaxonomy::isPortDeclaration(symbol.symbolType)) {
+        return true;
+    }
+    return isInterfaceConnectionPeer(symbol);
+}
+
+bool SignalJourneyService::isInterfaceConnectionPeer(
+    const sym_list::SymbolInfo& symbol) const
+{
+    const QSet<QString> interfaces = interfaceNames();
+    if (symbol.symbolType == sym_list::sym_interface
+        || symbol.symbolType == sym_list::sym_interface_modport
+        || symbol.symbolType == sym_list::sym_port_interface
+        || symbol.symbolType == sym_list::sym_port_interface_modport) {
+        return true;
+    }
+    if (symbol.symbolType == sym_list::sym_inst) {
+        const QString interfaceName = interfaceBaseName(symbol.dataType);
+        return !interfaceName.isEmpty() && interfaces.contains(interfaceName);
+    }
+    return !symbol.moduleScope.isEmpty()
+        && interfaces.contains(symbol.moduleScope)
+        && SymbolTaxonomy::isDefinitionCandidate(symbol.symbolType);
+}
+
+QSet<QString> SignalJourneyService::interfaceNames() const
+{
+    QSet<QString> names;
+    for (const sym_list::SymbolInfo& symbol : semanticIndex()->getSymbols()) {
+        if (SymbolTaxonomy::declarationKind(symbol.symbolType)
+                == SymbolTaxonomy::DeclarationKind::Interface
+            && !symbol.symbolName.isEmpty()) {
+            names.insert(symbol.symbolName);
+        }
+    }
+    return names;
+}
+
 QString SignalJourneyService::directionDisplayName(bool outgoing)
 {
     return outgoing ? QStringLiteral("outgoing") : QStringLiteral("incoming");
@@ -206,6 +283,12 @@ QString SignalJourneyService::fileDisplayName(const QString& fileName)
 QString SignalJourneyService::lineDisplayName(int line)
 {
     return QString::number(line);
+}
+
+QString SignalJourneyService::interfaceBaseName(const QString& dataType)
+{
+    const int dot = dataType.indexOf(QLatin1Char('.'));
+    return dot >= 0 ? dataType.left(dot) : dataType;
 }
 
 void SignalJourneyService::fillDeclarationDisplayMetadata(
