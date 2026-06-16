@@ -44,14 +44,19 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
     if (moduleSymbol.symbolId < 0)
         return report;
 
-    const QList<sym_list::SymbolInfo> symbols = symbolsInModule(moduleSymbol);
-    for (const sym_list::SymbolInfo& stateRegister : stateRegisters(symbols)) {
+    const QList<sym_list::SymbolInfo> moduleSymbols = symbolsInModule(moduleSymbol);
+    const QList<sym_list::SymbolInfo> allSymbols = semanticIndex()->getSymbols();
+    for (const sym_list::SymbolInfo& stateRegister
+         : stateRegisters(moduleSymbols, allSymbols)) {
         FsmGraph graph;
         graph.moduleSymbol = moduleSymbol;
         graph.stateRegister = stateRegister;
-        graph.nextStateSignal = nextStateSignal(symbols, stateRegister);
-        graph.states = stateValues(symbols, stateRegister);
-        graph.transitions = parseTransitions(moduleSymbol, stateRegister, graph.states);
+        graph.nextStateSignal = nextStateSignal(moduleSymbols, stateRegister);
+        graph.states = stateValues(moduleSymbols, allSymbols, stateRegister);
+        graph.transitions = parseTransitions(moduleSymbol,
+                                             stateRegister,
+                                             graph.nextStateSignal,
+                                             graph.states);
         if (graph.states.isEmpty() && graph.transitions.isEmpty())
             continue;
         fillDisplayMetadata(graph);
@@ -106,40 +111,24 @@ QList<sym_list::SymbolInfo> FsmGraphService::symbolsInModule(
 }
 
 QList<sym_list::SymbolInfo> FsmGraphService::stateRegisters(
-    const QList<sym_list::SymbolInfo>& symbols) const
+    const QList<sym_list::SymbolInfo>& moduleSymbols,
+    const QList<sym_list::SymbolInfo>& allSymbols) const
 {
     QList<sym_list::SymbolInfo> result;
     QSet<int> seen;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
+    for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
             continue;
-        if (!symbol.symbolName.contains(QStringLiteral("state"), Qt::CaseInsensitive))
+        if (looksLikeNextStateName(symbol.symbolName))
             continue;
-        if (symbol.symbolName.contains(QStringLiteral("next"), Qt::CaseInsensitive))
+        if (!looksLikeCurrentStateName(symbol.symbolName)
+            && !hasPairedNextStateSignal(moduleSymbols, symbol)) {
             continue;
-        if (symbol.symbolName.endsWith(QStringLiteral("_d"), Qt::CaseInsensitive))
-            continue;
-        if (seen.contains(symbol.symbolId))
-            continue;
-        seen.insert(symbol.symbolId);
-        result.append(symbol);
-    }
-    sortSymbols(result);
-    return result;
-}
-
-QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
-    const QList<sym_list::SymbolInfo>& symbols,
-    const sym_list::SymbolInfo& stateRegister) const
-{
-    QList<sym_list::SymbolInfo> result;
-    QSet<int> seen;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType))
-            continue;
-        if (!stateRegister.dataType.isEmpty()
-            && !symbol.dataType.isEmpty()
-            && symbol.dataType != stateRegister.dataType) {
+        }
+        if (!symbol.dataType.isEmpty()
+            && !hasStateValuesForType(allSymbols, symbol.dataType)
+            && !symbol.symbolName.contains(QStringLiteral("state"),
+                                           Qt::CaseInsensitive)) {
             continue;
         }
         if (seen.contains(symbol.symbolId))
@@ -151,21 +140,44 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
     return result;
 }
 
+QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
+    const QList<sym_list::SymbolInfo>& moduleSymbols,
+    const QList<sym_list::SymbolInfo>& allSymbols,
+    const sym_list::SymbolInfo& stateRegister) const
+{
+    QList<sym_list::SymbolInfo> result;
+    QSet<int> seen;
+    const QList<sym_list::SymbolInfo>& source =
+        stateRegister.dataType.isEmpty() ? moduleSymbols : allSymbols;
+    for (const sym_list::SymbolInfo& symbol : source) {
+        if (!SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType))
+            continue;
+        if (!stateRegister.dataType.isEmpty()) {
+            if (symbol.dataType != stateRegister.dataType)
+                continue;
+        }
+        if (seen.contains(symbol.symbolId))
+            continue;
+        seen.insert(symbol.symbolId);
+        result.append(symbol);
+    }
+    sortSymbols(result);
+    return result;
+}
+
 sym_list::SymbolInfo FsmGraphService::nextStateSignal(
-    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<sym_list::SymbolInfo>& moduleSymbols,
     const sym_list::SymbolInfo& stateRegister) const
 {
     QList<sym_list::SymbolInfo> candidates;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
+    for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
-            continue;
-        if (!symbol.symbolName.contains(QStringLiteral("state"), Qt::CaseInsensitive))
             continue;
         if (symbol.symbolId == stateRegister.symbolId)
             continue;
         const bool looksNext =
-            symbol.symbolName.contains(QStringLiteral("next"), Qt::CaseInsensitive)
-            || symbol.symbolName.endsWith(QStringLiteral("_d"), Qt::CaseInsensitive);
+            looksLikeNextStateName(symbol.symbolName)
+            || isPairedNextStateName(stateRegister.symbolName, symbol.symbolName);
         if (!looksNext)
             continue;
         if (!stateRegister.dataType.isEmpty()
@@ -182,6 +194,7 @@ sym_list::SymbolInfo FsmGraphService::nextStateSignal(
 QList<FsmTransition> FsmGraphService::parseTransitions(
     const sym_list::SymbolInfo& moduleSymbol,
     const sym_list::SymbolInfo& stateRegister,
+    const sym_list::SymbolInfo& nextStateSignal,
     const QList<sym_list::SymbolInfo>& states) const
 {
     QList<FsmTransition> transitions;
@@ -259,8 +272,11 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         const QString rhs = assignmentMatch.captured(2);
         if (!stateNames.contains(rhs))
             continue;
-        if (!target.contains(QStringLiteral("state"), Qt::CaseInsensitive))
+        if (!target.contains(QStringLiteral("state"), Qt::CaseInsensitive)
+            && (nextStateSignal.symbolId < 0
+                || target != nextStateSignal.symbolName)) {
             continue;
+        }
 
         const QString key = QStringLiteral("%1:%2:%3:%4")
                                 .arg(currentState)
@@ -305,6 +321,84 @@ bool FsmGraphService::isInsideModule(
     if (symbol.startLine < moduleSymbol.startLine)
         return false;
     return moduleSymbol.endLine <= 0 || symbol.startLine <= moduleSymbol.endLine;
+}
+
+bool FsmGraphService::hasStateValuesForType(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QString& dataType)
+{
+    if (dataType.isEmpty())
+        return false;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType)
+            && symbol.dataType == dataType) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool FsmGraphService::hasPairedNextStateSignal(
+    const QList<sym_list::SymbolInfo>& moduleSymbols,
+    const sym_list::SymbolInfo& stateRegister)
+{
+    for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
+        if (symbol.symbolId == stateRegister.symbolId)
+            continue;
+        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
+            continue;
+        if (!stateRegister.dataType.isEmpty()
+            && !symbol.dataType.isEmpty()
+            && symbol.dataType != stateRegister.dataType) {
+            continue;
+        }
+        if (looksLikeNextStateName(symbol.symbolName)
+            || isPairedNextStateName(stateRegister.symbolName,
+                                     symbol.symbolName)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool FsmGraphService::isPairedNextStateName(
+    const QString& currentName,
+    const QString& candidateName)
+{
+    const QString current = currentName.toLower();
+    const QString candidate = candidateName.toLower();
+    if (current.isEmpty() || candidate.isEmpty())
+        return false;
+    if (current.endsWith(QStringLiteral("_cs")))
+        return candidate == current.left(current.size() - 3) + QStringLiteral("_ns");
+    if (current.endsWith(QStringLiteral("cs")))
+        return candidate == current.left(current.size() - 2) + QStringLiteral("ns");
+    if (current.endsWith(QStringLiteral("_q")))
+        return candidate == current.left(current.size() - 2) + QStringLiteral("_d");
+    if (current.endsWith(QStringLiteral("_cur")))
+        return candidate == current.left(current.size() - 4) + QStringLiteral("_nxt");
+    return false;
+}
+
+bool FsmGraphService::looksLikeCurrentStateName(const QString& name)
+{
+    const QString lower = name.toLower();
+    return lower.contains(QStringLiteral("state"))
+        || lower == QStringLiteral("cs")
+        || lower.endsWith(QStringLiteral("_cs"))
+        || lower.endsWith(QStringLiteral("cs"))
+        || lower.endsWith(QStringLiteral("_q"));
+}
+
+bool FsmGraphService::looksLikeNextStateName(const QString& name)
+{
+    const QString lower = name.toLower();
+    return lower.contains(QStringLiteral("next"))
+        || lower == QStringLiteral("ns")
+        || lower.endsWith(QStringLiteral("_ns"))
+        || lower.endsWith(QStringLiteral("ns"))
+        || lower.endsWith(QStringLiteral("_d"))
+        || lower.endsWith(QStringLiteral("_nxt"));
 }
 
 QString FsmGraphService::stripLineComment(const QString& line)

@@ -85,20 +85,32 @@ private:
     QList<sym_list::SymbolInfo> symbolsInModule(
         const sym_list::SymbolInfo& moduleSymbol) const;
     QList<sym_list::SymbolInfo> stateRegisters(
-        const QList<sym_list::SymbolInfo>& symbols) const;
+        const QList<sym_list::SymbolInfo>& moduleSymbols,
+        const QList<sym_list::SymbolInfo>& allSymbols) const;
     QList<sym_list::SymbolInfo> stateValues(
-        const QList<sym_list::SymbolInfo>& symbols,
+        const QList<sym_list::SymbolInfo>& moduleSymbols,
+        const QList<sym_list::SymbolInfo>& allSymbols,
         const sym_list::SymbolInfo& stateRegister) const;
     sym_list::SymbolInfo nextStateSignal(
-        const QList<sym_list::SymbolInfo>& symbols,
+        const QList<sym_list::SymbolInfo>& moduleSymbols,
         const sym_list::SymbolInfo& stateRegister) const;
     QList<FsmTransition> parseTransitions(
         const sym_list::SymbolInfo& moduleSymbol,
         const sym_list::SymbolInfo& stateRegister,
+        const sym_list::SymbolInfo& nextStateSignal,
         const QList<sym_list::SymbolInfo>& states) const;
 
     static bool isInsideModule(const sym_list::SymbolInfo& symbol,
                                const sym_list::SymbolInfo& moduleSymbol);
+    static bool hasStateValuesForType(const QList<sym_list::SymbolInfo>& symbols,
+                                      const QString& dataType);
+    static bool hasPairedNextStateSignal(
+        const QList<sym_list::SymbolInfo>& moduleSymbols,
+        const sym_list::SymbolInfo& stateRegister);
+    static bool isPairedNextStateName(const QString& currentName,
+                                      const QString& candidateName);
+    static bool looksLikeCurrentStateName(const QString& name);
+    static bool looksLikeNextStateName(const QString& name);
     static QString stripLineComment(const QString& line);
     static QList<FsmStateRow> stateRows(
         const QList<sym_list::SymbolInfo>& states);

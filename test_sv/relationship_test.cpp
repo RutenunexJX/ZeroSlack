@@ -3654,8 +3654,72 @@ static void runFsmGraphServiceFixture()
     done.dataType = QStringLiteral("state_t");
     symbols.append(done);
 
+    const QString packageFileName = QStringLiteral("test_sv/fsm_pkg_fixture.sv");
+    const QString packageModuleFileName =
+        QStringLiteral("test_sv/fsm_pkg_module_fixture.sv");
+    const QString packageModuleContent = QStringLiteral(
+        "module pkg_fsm_top(input logic go);\n"
+        "  pkg_state_e cs;\n"
+        "  pkg_state_e ns;\n"
+        "  always_comb begin\n"
+        "    case (cs)\n"
+        "      IDLE: ns = RUN;\n"
+        "      RUN: ns = IDLE;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
+    sym_list::SymbolInfo packageModule = makeModuleBriefSymbol(
+        9310,
+        packageModuleFileName,
+        QStringLiteral("pkg_fsm_top"),
+        sym_list::sym_module,
+        1);
+    packageModule.endLine = 10;
+    symbols.append(packageModule);
+
+    sym_list::SymbolInfo packageCs = makeModuleBriefSymbol(
+        9311,
+        packageModuleFileName,
+        QStringLiteral("cs"),
+        sym_list::sym_enum_var,
+        2,
+        QStringLiteral("pkg_fsm_top"));
+    packageCs.dataType = QStringLiteral("pkg_state_e");
+    symbols.append(packageCs);
+
+    sym_list::SymbolInfo packageNs = makeModuleBriefSymbol(
+        9312,
+        packageModuleFileName,
+        QStringLiteral("ns"),
+        sym_list::sym_enum_var,
+        3,
+        QStringLiteral("pkg_fsm_top"));
+    packageNs.dataType = QStringLiteral("pkg_state_e");
+    symbols.append(packageNs);
+
+    sym_list::SymbolInfo packageIdle = makeModuleBriefSymbol(
+        9313,
+        packageFileName,
+        QStringLiteral("IDLE"),
+        sym_list::sym_enum_value,
+        3,
+        QStringLiteral("fsm_pkg"));
+    packageIdle.dataType = QStringLiteral("pkg_state_e");
+    symbols.append(packageIdle);
+
+    sym_list::SymbolInfo packageRun = makeModuleBriefSymbol(
+        9314,
+        packageFileName,
+        QStringLiteral("RUN"),
+        sym_list::sym_enum_value,
+        4,
+        QStringLiteral("fsm_pkg"));
+    packageRun.dataType = QStringLiteral("pkg_state_e");
+    symbols.append(packageRun);
+
     QHash<QString, QString> fileContents;
     fileContents.insert(fileName, content);
+    fileContents.insert(packageModuleFileName, packageModuleContent);
     SemanticIndex index;
     index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
         symbols,
@@ -3791,6 +3855,52 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("default")
                    && report.graphs.first().transitions.last().toState
                        == QStringLiteral("IDLE"),
+               true);
+
+    FsmGraphQuery packageQuery;
+    packageQuery.moduleName = QStringLiteral("pkg_fsm_top");
+    packageQuery.fileName = packageModuleFileName;
+    const FsmGraphReport packageReport = service.buildFsmGraph(packageQuery);
+    expectBool("fsm graph package enum found", packageReport.found, true);
+    expectInt("fsm graph package enum graph count",
+              packageReport.graphs.size(),
+              1);
+    expectBool("fsm graph package enum state register",
+               !packageReport.graphs.isEmpty()
+                   && packageReport.graphs.first().stateRegister.symbolName
+                       == QStringLiteral("cs")
+                   && packageReport.graphs.first().nextStateSignal.symbolName
+                       == QStringLiteral("ns"),
+               true);
+    expectInt("fsm graph package enum state count",
+              packageReport.graphs.isEmpty()
+                  ? 0
+                  : packageReport.graphs.first().states.size(),
+              2);
+    expectInt("fsm graph package enum transition count",
+              packageReport.graphs.isEmpty()
+                  ? 0
+                  : packageReport.graphs.first().transitions.size(),
+              2);
+    expectBool("fsm graph package enum transition evidence",
+               !packageReport.graphs.isEmpty()
+                   && !packageReport.graphs.first().transitionRows.isEmpty()
+                   && packageReport.graphs.first().transitionRows.first()
+                          .fromStateDisplayName == QStringLiteral("IDLE")
+                   && packageReport.graphs.first().transitionRows.first()
+                          .toStateDisplayName == QStringLiteral("RUN")
+                   && packageReport.graphs.first().transitionRows.first()
+                          .codeLink.fileName == packageModuleFileName
+                   && packageReport.graphs.first().transitionRows.first()
+                          .codeLink.line == 6,
+               true);
+    expectBool("fsm graph package enum state link",
+               !packageReport.graphs.isEmpty()
+                   && !packageReport.graphs.first().stateRows.isEmpty()
+                   && packageReport.graphs.first().stateRows.first()
+                          .codeLink.fileName == packageFileName
+                   && packageReport.graphs.first().stateRows.first()
+                          .codeLink.line > 0,
                true);
 }
 
