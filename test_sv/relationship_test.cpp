@@ -4067,6 +4067,32 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().transitionRows.first().codeLink.lineDisplayName
                        == QStringLiteral("10"),
                true);
+    expectBool("fsm graph transition state endpoints",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().transitionRows.isEmpty()
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateSymbol.symbolName == QStringLiteral("IDLE")
+                   && report.graphs.first().transitionRows.first()
+                          .toStateSymbol.symbolName == QStringLiteral("RUN")
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateCodeLink.fileName == fileName
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateCodeLink.line == 2
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateCodeLink.fileDisplayName
+                       == QStringLiteral("fsm_graph_fixture.sv")
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateCodeLink.lineDisplayName == QStringLiteral("2")
+                   && report.graphs.first().transitionRows.first()
+                          .toStateCodeLink.fileName == fileName
+                   && report.graphs.first().transitionRows.first()
+                          .toStateCodeLink.line == 2
+                   && report.graphs.first().transitionRows.first()
+                          .toStateCodeLink.fileDisplayName
+                       == QStringLiteral("fsm_graph_fixture.sv")
+                   && report.graphs.first().transitionRows.first()
+                          .toStateCodeLink.lineDisplayName == QStringLiteral("2"),
+               true);
     expectBool("fsm graph transition display metadata",
                !report.graphs.isEmpty()
                    && report.graphs.first().transitionsGroupDisplayName
@@ -4112,6 +4138,7 @@ static void runFsmGraphServiceFixture()
                   : packageReport.graphs.first().transitions.size(),
               3);
     bool sawPackageTernaryTransition = false;
+    bool sawPackageTernaryTransitionStateEndpoints = false;
     for (const FsmTransitionRow& row : packageReport.graphs.first().transitionRows) {
         sawPackageTernaryTransition = sawPackageTernaryTransition
             || (row.fromStateDisplayName == QStringLiteral("IDLE")
@@ -4119,9 +4146,26 @@ static void runFsmGraphServiceFixture()
                 && row.conditionDisplayName == QStringLiteral("go")
                 && row.codeLink.fileName == packageModuleFileName
                 && row.codeLink.line == 6);
+        sawPackageTernaryTransitionStateEndpoints =
+            sawPackageTernaryTransitionStateEndpoints
+            || (row.fromStateDisplayName == QStringLiteral("IDLE")
+                && row.toStateDisplayName == QStringLiteral("RUN")
+                && row.fromStateCodeLink.fileName == packageFileName
+                && row.fromStateCodeLink.line == 3
+                && row.fromStateCodeLink.fileDisplayName
+                    == QStringLiteral("fsm_pkg_fixture.sv")
+                && row.fromStateCodeLink.lineDisplayName == QStringLiteral("3")
+                && row.toStateCodeLink.fileName == packageFileName
+                && row.toStateCodeLink.line == 4
+                && row.toStateCodeLink.fileDisplayName
+                    == QStringLiteral("fsm_pkg_fixture.sv")
+                && row.toStateCodeLink.lineDisplayName == QStringLiteral("4"));
     }
     expectBool("fsm graph package enum transition evidence",
                sawPackageTernaryTransition,
+               true);
+    expectBool("fsm graph package enum transition state endpoints",
+               sawPackageTernaryTransitionStateEndpoints,
                true);
     bool sawPackageTernaryElseTransition = false;
     for (const FsmTransitionRow& row : packageReport.graphs.first().transitionRows) {
@@ -5191,6 +5235,7 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealPhyPassFsm = false;
     bool sawRealPhyPassFsmStateLink = false;
     bool sawRealPhyPassFsmTransition = false;
+    bool sawRealPhyPassFsmTransitionStateLink = false;
     bool sawRealPhyPassTernaryTransition = false;
     bool sawRealPhyPassTernaryElseTransition = false;
     for (const FsmGraph& graph : realFsmReport.graphs) {
@@ -5210,6 +5255,18 @@ static void runRealWorkspaceIncludeFixture()
             && graph.transitionRows.first().codeLink.line > 0
             && !graph.transitionRows.first().sourceLineDisplayName.isEmpty();
         for (const FsmTransitionRow& row : graph.transitionRows) {
+            sawRealPhyPassFsmTransitionStateLink =
+                sawRealPhyPassFsmTransitionStateLink
+                || (!row.fromStateDisplayName.isEmpty()
+                    && !row.toStateDisplayName.isEmpty()
+                    && !row.fromStateCodeLink.fileName.isEmpty()
+                    && row.fromStateCodeLink.line > 0
+                    && !row.fromStateCodeLink.fileDisplayName.isEmpty()
+                    && !row.fromStateCodeLink.lineDisplayName.isEmpty()
+                    && !row.toStateCodeLink.fileName.isEmpty()
+                    && row.toStateCodeLink.line > 0
+                    && !row.toStateCodeLink.fileDisplayName.isEmpty()
+                    && !row.toStateCodeLink.lineDisplayName.isEmpty());
             sawRealPhyPassTernaryTransition = sawRealPhyPassTernaryTransition
                 || (row.fromStateDisplayName == QStringLiteral("S_IDLE")
                     && row.toStateDisplayName == QStringLiteral("S_PRE_DEASSERT_DONE")
@@ -5235,6 +5292,9 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace fsm graph transition evidence",
                sawRealPhyPassFsmTransition,
+               true);
+    expectBool("real workspace fsm graph transition state links",
+               sawRealPhyPassFsmTransitionStateLink,
                true);
     expectBool("real workspace fsm graph ternary transition evidence",
                sawRealPhyPassTernaryTransition,

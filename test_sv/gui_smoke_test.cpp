@@ -856,6 +856,8 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawClockModuleEndpoint = false;
     bool sawUnmappedClock = false;
     bool sawTransition = false;
+    bool sawFsmFromStateEndpoint = false;
+    bool sawFsmToStateEndpoint = false;
     bool sawSignalJourney = false;
     bool sawSignalJourneyFromEndpoint = false;
     bool sawSignalJourneyToEndpoint = false;
@@ -895,6 +897,14 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawTransition = sawTransition
             || (item->text(0) == QStringLiteral("IDLE")
                 && item->text(1) == QStringLiteral("RUN"));
+        sawFsmFromStateEndpoint = sawFsmFromStateEndpoint
+            || (item->text(0) == QStringLiteral("From State")
+                && item->text(1) == QStringLiteral("IDLE")
+                && item->text(2) == QStringLiteral("unconditional"));
+        sawFsmToStateEndpoint = sawFsmToStateEndpoint
+            || (item->text(0) == QStringLiteral("To State")
+                && item->text(1) == QStringLiteral("RUN")
+                && item->text(2) == QStringLiteral("unconditional"));
         sawSignalJourney = sawSignalJourney
             || (item->text(0) == QStringLiteral("Assignments")
                 && item->text(1) == QStringLiteral("next_data"));
@@ -927,6 +937,12 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
+    expectBool("RTL insights renders FSM from state endpoint",
+               sawFsmFromStateEndpoint,
+               true);
+    expectBool("RTL insights renders FSM to state endpoint",
+               sawFsmToStateEndpoint,
+               true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
     expectBool("RTL insights renders signal journey from endpoint",
                sawSignalJourneyFromEndpoint,

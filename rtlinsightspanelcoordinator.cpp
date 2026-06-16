@@ -330,17 +330,36 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
                                     transitionsGroup,
                                     graph.transitions.size()));
         for (const FsmTransitionRow& row : graph.transitionRows) {
-            createChildItem(transitions,
-                            row.sectionDisplayName.isEmpty()
-                                ? row.fromStateDisplayName
-                                : row.sectionDisplayName,
+            QTreeWidgetItem* transition =
+                createChildItem(transitions,
+                                row.sectionDisplayName.isEmpty()
+                                    ? row.fromStateDisplayName
+                                    : row.sectionDisplayName,
+                                row.toStateDisplayName,
+                                row.detailDisplayName,
+                                row.codeLink.fileName,
+                                row.codeLink.line,
+                                row.codeLink.column,
+                                row.codeLink.fileDisplayName,
+                                row.codeLink.lineDisplayName);
+            createChildItem(transition,
+                            QStringLiteral("From State"),
+                            row.fromStateDisplayName,
+                            row.conditionDisplayName,
+                            row.fromStateCodeLink.fileName,
+                            row.fromStateCodeLink.line,
+                            row.fromStateCodeLink.column,
+                            row.fromStateCodeLink.fileDisplayName,
+                            row.fromStateCodeLink.lineDisplayName);
+            createChildItem(transition,
+                            QStringLiteral("To State"),
                             row.toStateDisplayName,
-                            row.detailDisplayName,
-                            row.codeLink.fileName,
-                            row.codeLink.line,
-                            row.codeLink.column,
-                            row.codeLink.fileDisplayName,
-                            row.codeLink.lineDisplayName);
+                            row.conditionDisplayName,
+                            row.toStateCodeLink.fileName,
+                            row.toStateCodeLink.line,
+                            row.toStateCodeLink.column,
+                            row.toStateCodeLink.fileDisplayName,
+                            row.toStateCodeLink.lineDisplayName);
         }
     }
 }

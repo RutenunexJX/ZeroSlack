@@ -34,7 +34,11 @@ struct FsmStateRow {
 
 struct FsmTransitionRow {
     FsmTransition transition;
+    sym_list::SymbolInfo fromStateSymbol = {};
+    sym_list::SymbolInfo toStateSymbol = {};
     RtlInsightCodeLink codeLink;
+    RtlInsightCodeLink fromStateCodeLink;
+    RtlInsightCodeLink toStateCodeLink;
     QString sectionDisplayName;
     QString fromStateDisplayName;
     QString toStateDisplayName;
@@ -129,7 +133,8 @@ private:
     static QList<FsmStateRow> stateRows(
         const QList<sym_list::SymbolInfo>& states);
     static QList<FsmTransitionRow> transitionRows(
-        const QList<FsmTransition>& transitions);
+        const QList<FsmTransition>& transitions,
+        const QList<sym_list::SymbolInfo>& states);
     static QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
     static QString stateRegisterDetailDisplayName(const FsmGraph& graph);
     static QString transitionDetailDisplayName(const FsmTransition& transition);

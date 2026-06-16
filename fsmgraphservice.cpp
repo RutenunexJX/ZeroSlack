@@ -15,6 +15,17 @@ sym_list::SymbolInfo missingFsmSymbol()
     symbol.symbolId = -1;
     return symbol;
 }
+
+sym_list::SymbolInfo stateSymbolByName(
+    const QList<sym_list::SymbolInfo>& states,
+    const QString& stateName)
+{
+    for (const sym_list::SymbolInfo& state : states) {
+        if (state.symbolName == stateName)
+            return state;
+    }
+    return missingFsmSymbol();
+}
 }
 
 FsmGraphService* FsmGraphService::getInstance()
@@ -521,14 +532,19 @@ QList<FsmStateRow> FsmGraphService::stateRows(
 }
 
 QList<FsmTransitionRow> FsmGraphService::transitionRows(
-    const QList<FsmTransition>& transitions)
+    const QList<FsmTransition>& transitions,
+    const QList<sym_list::SymbolInfo>& states)
 {
     QList<FsmTransitionRow> rows;
     rows.reserve(transitions.size());
     for (const FsmTransition& transition : transitions) {
         FsmTransitionRow row;
         row.transition = transition;
+        row.fromStateSymbol = stateSymbolByName(states, transition.fromState);
+        row.toStateSymbol = stateSymbolByName(states, transition.toState);
         row.codeLink = transition.codeLink;
+        row.fromStateCodeLink = RtlInsightLink::fromSymbol(row.fromStateSymbol);
+        row.toStateCodeLink = RtlInsightLink::fromSymbol(row.toStateSymbol);
         row.sectionDisplayName = transition.sectionDisplayName;
         row.fromStateDisplayName = transition.fromState;
         row.toStateDisplayName = transition.toState;
@@ -591,7 +607,7 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
     graph.stateRows = stateRows(graph.states);
     for (FsmTransition& transition : graph.transitions)
         fillDisplayMetadata(transition);
-    graph.transitionRows = transitionRows(graph.transitions);
+    graph.transitionRows = transitionRows(graph.transitions, graph.states);
 }
 
 void FsmGraphService::fillDisplayMetadata(FsmTransition& transition)
