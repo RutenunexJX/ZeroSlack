@@ -14,12 +14,21 @@ struct ModuleBriefQuery {
     QString fileName;
 };
 
+struct ModuleBriefRelationshipRow {
+    SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
+    int count = 0;
+    QString directionDisplayName;
+    QString typeDisplayName;
+    QString detailDisplayName;
+};
+
 struct ModuleBriefRelationshipSummary {
     int outgoingCount = 0;
     int incomingCount = 0;
     int totalCount = 0;
     QMap<SymbolRelationshipEngine::RelationType, int> outgoingTypeCounts;
     QMap<SymbolRelationshipEngine::RelationType, int> incomingTypeCounts;
+    QList<ModuleBriefRelationshipRow> rows;
 };
 
 struct ModuleBriefSymbolRow {
@@ -87,9 +96,14 @@ private:
         const QString& sectionDisplayName);
     static QList<ModuleBriefDiagnosticRow> diagnosticRows(
         const QList<SemanticDiagnostic>& diagnostics);
+    static QList<ModuleBriefRelationshipRow> relationshipRows(
+        const ModuleBriefRelationshipSummary& summary);
     static QString symbolTypeDisplayName(sym_list::sym_type_e type);
     static QString symbolDetailDisplayName(const sym_list::SymbolInfo& symbol);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
+    static QString relationshipDirectionDisplayName(bool outgoing);
+    static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
+    static QString relationshipDetailDisplayName(int count);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
 };
 

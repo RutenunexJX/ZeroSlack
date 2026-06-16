@@ -94,20 +94,15 @@ void appendRelationshipSummary(QTreeWidget* tree,
     QTreeWidgetItem* group = createGroupItem(tree,
                                             QStringLiteral("Relationships"),
                                             summary.totalCount);
-    auto appendCounts = [group](const QString& direction,
-                                const QMap<SymbolRelationshipEngine::RelationType, int>& counts) {
-        for (auto it = counts.constBegin(); it != counts.constEnd(); ++it) {
-            createChildItem(group,
-                            direction,
-                            SemanticPanelUtils::relationshipTypeText(it.key()),
-                            QStringLiteral("%1 relationships").arg(it.value()),
-                            QString(),
-                            0,
-                            0);
-        }
-    };
-    appendCounts(QStringLiteral("Outgoing"), summary.outgoingTypeCounts);
-    appendCounts(QStringLiteral("Incoming"), summary.incomingTypeCounts);
+    for (const ModuleBriefRelationshipRow& row : summary.rows) {
+        createChildItem(group,
+                        row.directionDisplayName,
+                        row.typeDisplayName,
+                        row.detailDisplayName,
+                        QString(),
+                        0,
+                        0);
+    }
 }
 
 void appendClockResetDomains(QTreeWidget* tree,

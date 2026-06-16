@@ -178,6 +178,7 @@ ModuleBriefRelationshipSummary ModuleBriefService::relationshipSummary(
         summary.outgoingTypeCounts[relationship.relationship.type]++;
     for (const SemanticRelationshipResult& relationship : incoming)
         summary.incomingTypeCounts[relationship.relationship.type]++;
+    summary.rows = relationshipRows(summary);
     return summary;
 }
 
@@ -231,6 +232,27 @@ QList<ModuleBriefDiagnosticRow> ModuleBriefService::diagnosticRows(
     return rows;
 }
 
+QList<ModuleBriefRelationshipRow> ModuleBriefService::relationshipRows(
+    const ModuleBriefRelationshipSummary& summary)
+{
+    QList<ModuleBriefRelationshipRow> rows;
+    auto appendRows = [&rows](bool outgoing,
+                              const QMap<SymbolRelationshipEngine::RelationType, int>& counts) {
+        for (auto it = counts.constBegin(); it != counts.constEnd(); ++it) {
+            ModuleBriefRelationshipRow row;
+            row.type = it.key();
+            row.count = it.value();
+            row.directionDisplayName = relationshipDirectionDisplayName(outgoing);
+            row.typeDisplayName = relationshipTypeDisplayName(row.type);
+            row.detailDisplayName = relationshipDetailDisplayName(row.count);
+            rows.append(row);
+        }
+    };
+    appendRows(true, summary.outgoingTypeCounts);
+    appendRows(false, summary.incomingTypeCounts);
+    return rows;
+}
+
 QString ModuleBriefService::symbolTypeDisplayName(sym_list::sym_type_e type)
 {
     return SymbolTaxonomy::symbolTypeLabel(type);
@@ -257,6 +279,48 @@ QString ModuleBriefService::diagnosticSeverityDisplayName(
     default:
         return QStringLiteral("Info");
     }
+}
+
+QString ModuleBriefService::relationshipDirectionDisplayName(bool outgoing)
+{
+    return outgoing ? QStringLiteral("Outgoing") : QStringLiteral("Incoming");
+}
+
+QString ModuleBriefService::relationshipTypeDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    switch (type) {
+    case SymbolRelationshipEngine::CONTAINS:
+        return QStringLiteral("Contains");
+    case SymbolRelationshipEngine::REFERENCES:
+        return QStringLiteral("References");
+    case SymbolRelationshipEngine::INSTANTIATES:
+        return QStringLiteral("Instantiates");
+    case SymbolRelationshipEngine::CALLS:
+        return QStringLiteral("Calls");
+    case SymbolRelationshipEngine::INHERITS:
+        return QStringLiteral("Inherits");
+    case SymbolRelationshipEngine::IMPLEMENTS:
+        return QStringLiteral("Implements");
+    case SymbolRelationshipEngine::ASSIGNS_TO:
+        return QStringLiteral("Assigns To");
+    case SymbolRelationshipEngine::READS_FROM:
+        return QStringLiteral("Reads From");
+    case SymbolRelationshipEngine::CLOCKS:
+        return QStringLiteral("Clocks");
+    case SymbolRelationshipEngine::RESETS:
+        return QStringLiteral("Resets");
+    case SymbolRelationshipEngine::GENERATES:
+        return QStringLiteral("Generates");
+    case SymbolRelationshipEngine::CONSTRAINS:
+        return QStringLiteral("Constrains");
+    }
+    return QStringLiteral("Relationship");
+}
+
+QString ModuleBriefService::relationshipDetailDisplayName(int count)
+{
+    return QStringLiteral("%1 relationships").arg(count);
 }
 
 void ModuleBriefService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)
