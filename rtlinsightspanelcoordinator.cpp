@@ -720,6 +720,15 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                         change.toCodeLink.column,
                         change.toCodeLink.fileDisplayName,
                         change.toCodeLink.lineDisplayName);
+        createChildItem(relationship,
+                        QStringLiteral("Source Role"),
+                        change.sourceRoleDisplayName,
+                        change.relationshipTypeDisplayName,
+                        change.codeLink.fileName,
+                        change.codeLink.line,
+                        change.codeLink.column,
+                        change.codeLink.fileDisplayName,
+                        change.codeLink.lineDisplayName);
     }
 
     QTreeWidgetItem* diagnostics =

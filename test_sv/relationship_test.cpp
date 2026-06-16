@@ -4598,6 +4598,7 @@ static void runSemanticDiffServiceFixture()
                 && change.displayFromSymbol.symbolName == QStringLiteral("diff_top")
                 && change.fromSymbolDisplayName == QStringLiteral("diff_top")
                 && change.toSymbolDisplayName == QStringLiteral("u_new")
+                && change.sourceRoleDisplayName == QStringLiteral("design source")
                 && change.detailDisplayName == QStringLiteral("diff_top -> u_new");
             relationshipCodeLinkFound =
                 change.codeLink.fileName == fileName
@@ -5711,6 +5712,7 @@ static void runRealWorkspaceIncludeFixture()
             || (change.relationshipTypeDisplayName == QStringLiteral("References")
                 && change.fromSymbolDisplayName == QStringLiteral("rtl_top")
                 && change.toSymbolDisplayName == QStringLiteral("LR_GENR_IF")
+                && !change.sourceRoleDisplayName.isEmpty()
                 && !change.fromCodeLink.fileName.isEmpty()
                 && change.fromCodeLink.line > 0
                 && !change.fromCodeLink.fileDisplayName.isEmpty()

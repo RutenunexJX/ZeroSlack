@@ -1303,6 +1303,7 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     bool sawRemovedRelationship = false;
     bool sawAddedRelationshipFromEndpoint = false;
     bool sawAddedRelationshipToEndpoint = false;
+    bool sawAddedRelationshipSourceRole = false;
     bool sawAddedDiagnostic = false;
     bool sawRemovedDiagnostic = false;
     const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
@@ -1344,6 +1345,10 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
             || (item->text(0) == QStringLiteral("To")
                 && item->text(1) == QStringLiteral("u_new")
                 && item->text(2) == QStringLiteral("Instantiates"));
+        sawAddedRelationshipSourceRole = sawAddedRelationshipSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("Instantiates"));
         sawRemovedRelationship = sawRemovedRelationship
             || (item->text(0) == QStringLiteral("Removed")
                 && item->text(1) == QStringLiteral("Instantiates")
@@ -1378,6 +1383,9 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
                true);
     expectBool("RTL insights renders added diff to endpoint",
                sawAddedRelationshipToEndpoint,
+               true);
+    expectBool("RTL insights renders added diff relationship source role",
+               sawAddedRelationshipSourceRole,
                true);
     expectBool("RTL insights renders removed diff relationship",
                sawRemovedRelationship,

@@ -640,6 +640,9 @@ void SemanticDiffService::fillDisplayMetadata(
             : change.displayToSymbol.symbolName;
     change.categoryGroupDisplayName = QStringLiteral("Relationships");
     change.codeLink = change.fromCodeLink;
+    change.sourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(change.displayFromSymbol.fileName));
     change.detailDisplayName =
         change.displayFromSymbol.symbolName.isEmpty()
             || change.displayToSymbol.symbolName.isEmpty()

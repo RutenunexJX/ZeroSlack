@@ -78,6 +78,7 @@ struct SemanticDiffRelationshipChange {
     QString fromSymbolDisplayName;
     QString toSymbolDisplayName;
     QString categoryGroupDisplayName;
+    QString sourceRoleDisplayName;
     QString detailDisplayName;
     RtlInsightCodeLink codeLink;
 };
