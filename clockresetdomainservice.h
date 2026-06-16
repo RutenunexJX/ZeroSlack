@@ -1,6 +1,7 @@
 #ifndef CLOCKRESETDOMAINSERVICE_H
 #define CLOCKRESETDOMAINSERVICE_H
 
+#include "rtlinsightlink.h"
 #include "semanticindex.h"
 
 #include <QList>
@@ -15,6 +16,7 @@ struct ClockResetDomainQuery {
 
 struct ClockResetDomainMember {
     sym_list::SymbolInfo moduleSymbol = {};
+    RtlInsightCodeLink moduleCodeLink;
     SemanticRelationshipResult relationship;
     QString sectionDisplayName;
     QString detailDisplayName;
@@ -22,6 +24,7 @@ struct ClockResetDomainMember {
 
 struct ClockResetDomainEntry {
     sym_list::SymbolInfo domainSignal = {};
+    RtlInsightCodeLink domainSignalCodeLink;
     QString sectionDisplayName;
     QString detailDisplayName;
     QList<ClockResetDomainMember> modules;
@@ -30,6 +33,8 @@ struct ClockResetDomainEntry {
 struct ClockResetDomainEvidenceRow {
     sym_list::SymbolInfo domainSignal = {};
     sym_list::SymbolInfo moduleSymbol = {};
+    RtlInsightCodeLink signalCodeLink;
+    RtlInsightCodeLink moduleCodeLink;
     SymbolRelationshipEngine::RelationType relationshipType =
         SymbolRelationshipEngine::CLOCKS;
     QString sectionDisplayName;
@@ -100,6 +105,9 @@ private:
     static QString ambiguityDetailDisplayName(const QString& moduleName,
                                               SymbolRelationshipEngine::RelationType type,
                                               int domainCount);
+    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
+    static QString fileDisplayName(const QString& fileName);
+    static QString lineDisplayName(int line);
     static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillEntryDisplayMetadata(ClockResetDomainEntry& entry,
                                          SymbolRelationshipEngine::RelationType type);

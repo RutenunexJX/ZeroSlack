@@ -90,12 +90,14 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
             if (!entryBySignalId.contains(signalId)) {
                 ClockResetDomainEntry entry;
                 entry.domainSignal = relationship.fromSymbol;
+                entry.domainSignalCodeLink = codeLink(relationship.fromSymbol);
                 entryBySignalId.insert(signalId, entries.size());
                 entries.append(entry);
             }
 
             ClockResetDomainMember member;
             member.moduleSymbol = relationship.toSymbol;
+            member.moduleCodeLink = codeLink(relationship.toSymbol);
             member.relationship = relationship;
             member.sectionDisplayName = QStringLiteral("Module");
             member.detailDisplayName = memberDetailDisplayName(type);
@@ -257,6 +259,8 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
     ClockResetDomainEvidenceRow row;
     row.domainSignal = entry.domainSignal;
     row.moduleSymbol = member.moduleSymbol;
+    row.signalCodeLink = entry.domainSignalCodeLink;
+    row.moduleCodeLink = member.moduleCodeLink;
     row.relationshipType = type;
     row.sectionDisplayName = domainSectionDisplayName(type);
     row.signalDisplayName = entry.domainSignal.symbolName.isEmpty()
@@ -295,6 +299,31 @@ QString ClockResetDomainService::ambiguityDetailDisplayName(
         ? QStringLiteral("clock domains")
         : QStringLiteral("reset domains");
     return QStringLiteral("%1 has %2 %3").arg(moduleName).arg(domainCount).arg(noun);
+}
+
+RtlInsightCodeLink ClockResetDomainService::codeLink(
+    const sym_list::SymbolInfo& symbol)
+{
+    RtlInsightCodeLink link;
+    link.fileName = symbol.fileName;
+    link.line = symbol.startLine;
+    link.column = symbol.startColumn;
+    link.fileDisplayName = fileDisplayName(symbol.fileName);
+    link.lineDisplayName = lineDisplayName(symbol.startLine);
+    return link;
+}
+
+QString ClockResetDomainService::fileDisplayName(const QString& fileName)
+{
+    QString displayName = QFileInfo(fileName).fileName();
+    if (displayName.isEmpty())
+        displayName = fileName;
+    return displayName;
+}
+
+QString ClockResetDomainService::lineDisplayName(int line)
+{
+    return line > 0 ? QString::number(line) : QString();
 }
 
 QString ClockResetDomainService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)

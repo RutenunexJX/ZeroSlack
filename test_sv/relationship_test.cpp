@@ -3455,6 +3455,17 @@ static void runClockResetDomainServiceFixture()
                    && topReport.clockDomains.first().detailDisplayName
                        == QStringLiteral("drives 1 modules"),
                true);
+    expectBool("clock reset top clock signal code link",
+               !topReport.clockDomains.isEmpty()
+                   && topReport.clockDomains.first().domainSignalCodeLink.fileName
+                       == fileName
+                   && topReport.clockDomains.first().domainSignalCodeLink.line == 10
+                   && topReport.clockDomains.first().domainSignalCodeLink.column == 1
+                   && topReport.clockDomains.first().domainSignalCodeLink.fileDisplayName
+                       == QStringLiteral("clock_reset_domain_fixture.sv")
+                   && topReport.clockDomains.first().domainSignalCodeLink.lineDisplayName
+                       == QStringLiteral("10"),
+               true);
     expectBool("clock reset top reset signal",
                !topReport.resetDomains.isEmpty()
                    && topReport.resetDomains.first().domainSignal.symbolName
@@ -3463,6 +3474,17 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("Reset")
                    && topReport.resetDomains.first().detailDisplayName
                        == QStringLiteral("resets 1 modules"),
+               true);
+    expectBool("clock reset top reset signal code link",
+               !topReport.resetDomains.isEmpty()
+                   && topReport.resetDomains.first().domainSignalCodeLink.fileName
+                       == fileName
+                   && topReport.resetDomains.first().domainSignalCodeLink.line == 11
+                   && topReport.resetDomains.first().domainSignalCodeLink.column == 1
+                   && topReport.resetDomains.first().domainSignalCodeLink.fileDisplayName
+                       == QStringLiteral("clock_reset_domain_fixture.sv")
+                   && topReport.resetDomains.first().domainSignalCodeLink.lineDisplayName
+                       == QStringLiteral("11"),
                true);
     expectBool("clock reset top clock target",
                !topReport.clockDomains.isEmpty()
@@ -3473,6 +3495,21 @@ static void runClockResetDomainServiceFixture()
                           .sectionDisplayName == QStringLiteral("Module")
                    && topReport.clockDomains.first().modules.first()
                           .detailDisplayName == QStringLiteral("clocked"),
+               true);
+    expectBool("clock reset top clock target code link",
+               !topReport.clockDomains.isEmpty()
+                   && !topReport.clockDomains.first().modules.isEmpty()
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleCodeLink.fileName == fileName
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleCodeLink.line == 1
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleCodeLink.column == 1
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleCodeLink.fileDisplayName
+                       == QStringLiteral("clock_reset_domain_fixture.sv")
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleCodeLink.lineDisplayName == QStringLiteral("1"),
                true);
     expectBool("clock reset top reset target metadata",
                !topReport.resetDomains.isEmpty()
@@ -3492,6 +3529,25 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("clk_i clocks domain_top")
                    && topReport.evidenceRows.first().sourceRoleDisplayName
                        == QStringLiteral("design source"),
+               true);
+    expectBool("clock reset top evidence row code link",
+               !topReport.evidenceRows.isEmpty()
+                   && topReport.evidenceRows.first().signalCodeLink.fileName
+                       == fileName
+                   && topReport.evidenceRows.first().signalCodeLink.line == 10
+                   && topReport.evidenceRows.first().signalCodeLink.column == 1
+                   && topReport.evidenceRows.first().signalCodeLink.fileDisplayName
+                       == QStringLiteral("clock_reset_domain_fixture.sv")
+                   && topReport.evidenceRows.first().signalCodeLink.lineDisplayName
+                       == QStringLiteral("10")
+                   && topReport.evidenceRows.first().moduleCodeLink.fileName
+                       == fileName
+                   && topReport.evidenceRows.first().moduleCodeLink.line == 1
+                   && topReport.evidenceRows.first().moduleCodeLink.column == 1
+                   && topReport.evidenceRows.first().moduleCodeLink.fileDisplayName
+                       == QStringLiteral("clock_reset_domain_fixture.sv")
+                   && topReport.evidenceRows.first().moduleCodeLink.lineDisplayName
+                       == QStringLiteral("1"),
                true);
     expectBool("clock reset top ambiguity row metadata",
                !topReport.ambiguityRows.isEmpty()
@@ -4420,15 +4476,41 @@ static void runRealWorkspaceIncludeFixture()
         clockResetService.buildClockResetDomainMap(clockResetQuery);
     bool sawRealClockEvidence = false;
     bool sawRealResetEvidence = false;
+    bool sawRealClockEvidenceLink = false;
+    bool sawRealResetEvidenceLink = false;
     for (const ClockResetDomainEvidenceRow& row : clockResetReport.evidenceRows) {
         sawRealClockEvidence = sawRealClockEvidence
             || (row.sectionDisplayName == QStringLiteral("Clock")
                 && row.signalDisplayName == QStringLiteral("clk_main")
                 && row.moduleDisplayName == QStringLiteral("rtl_top"));
+        sawRealClockEvidenceLink = sawRealClockEvidenceLink
+            || (row.sectionDisplayName == QStringLiteral("Clock")
+                && row.signalDisplayName == QStringLiteral("clk_main")
+                && row.moduleDisplayName == QStringLiteral("rtl_top")
+                && !row.signalCodeLink.fileName.isEmpty()
+                && row.signalCodeLink.line > 0
+                && !row.signalCodeLink.fileDisplayName.isEmpty()
+                && !row.signalCodeLink.lineDisplayName.isEmpty()
+                && !row.moduleCodeLink.fileName.isEmpty()
+                && row.moduleCodeLink.line > 0
+                && !row.moduleCodeLink.fileDisplayName.isEmpty()
+                && !row.moduleCodeLink.lineDisplayName.isEmpty());
         sawRealResetEvidence = sawRealResetEvidence
             || (row.sectionDisplayName == QStringLiteral("Reset")
                 && row.signalDisplayName == QStringLiteral("srst_main")
                 && row.moduleDisplayName == QStringLiteral("rtl_top"));
+        sawRealResetEvidenceLink = sawRealResetEvidenceLink
+            || (row.sectionDisplayName == QStringLiteral("Reset")
+                && row.signalDisplayName == QStringLiteral("srst_main")
+                && row.moduleDisplayName == QStringLiteral("rtl_top")
+                && !row.signalCodeLink.fileName.isEmpty()
+                && row.signalCodeLink.line > 0
+                && !row.signalCodeLink.fileDisplayName.isEmpty()
+                && !row.signalCodeLink.lineDisplayName.isEmpty()
+                && !row.moduleCodeLink.fileName.isEmpty()
+                && row.moduleCodeLink.line > 0
+                && !row.moduleCodeLink.fileDisplayName.isEmpty()
+                && !row.moduleCodeLink.lineDisplayName.isEmpty());
     }
     expectBool("real workspace clock reset found",
                clockResetReport.found,
@@ -4436,8 +4518,14 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace clock evidence row",
                sawRealClockEvidence,
                true);
+    expectBool("real workspace clock evidence row code link",
+               sawRealClockEvidenceLink,
+               true);
     expectBool("real workspace reset evidence row",
                sawRealResetEvidence,
+               true);
+    expectBool("real workspace reset evidence row code link",
+               sawRealResetEvidenceLink,
                true);
 
     SignalJourneyService signalJourneyService(&index);

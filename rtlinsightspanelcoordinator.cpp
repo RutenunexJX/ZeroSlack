@@ -146,9 +146,11 @@ void appendClockResetDomains(QTreeWidget* tree,
                                                       ? QStringLiteral("drives %1 modules")
                                                             .arg(domain.modules.size())
                                                       : domain.detailDisplayName,
-                                                  domain.domainSignal.fileName,
-                                                  domain.domainSignal.startLine,
-                                                  domain.domainSignal.startColumn);
+                                                  domain.domainSignalCodeLink.fileName,
+                                                  domain.domainSignalCodeLink.line,
+                                                  domain.domainSignalCodeLink.column,
+                                                  domain.domainSignalCodeLink.fileDisplayName,
+                                                  domain.domainSignalCodeLink.lineDisplayName);
         for (const ClockResetDomainMember& member : domain.modules) {
             createChildItem(signal,
                             member.sectionDisplayName.isEmpty()
@@ -158,9 +160,11 @@ void appendClockResetDomains(QTreeWidget* tree,
                             member.detailDisplayName.isEmpty()
                                 ? QStringLiteral("clocked")
                                 : member.detailDisplayName,
-                            member.moduleSymbol.fileName,
-                            member.moduleSymbol.startLine,
-                            member.moduleSymbol.startColumn);
+                            member.moduleCodeLink.fileName,
+                            member.moduleCodeLink.line,
+                            member.moduleCodeLink.column,
+                            member.moduleCodeLink.fileDisplayName,
+                            member.moduleCodeLink.lineDisplayName);
         }
     }
 
@@ -179,9 +183,11 @@ void appendClockResetDomains(QTreeWidget* tree,
                                                       ? QStringLiteral("resets %1 modules")
                                                             .arg(domain.modules.size())
                                                       : domain.detailDisplayName,
-                                                  domain.domainSignal.fileName,
-                                                  domain.domainSignal.startLine,
-                                                  domain.domainSignal.startColumn);
+                                                  domain.domainSignalCodeLink.fileName,
+                                                  domain.domainSignalCodeLink.line,
+                                                  domain.domainSignalCodeLink.column,
+                                                  domain.domainSignalCodeLink.fileDisplayName,
+                                                  domain.domainSignalCodeLink.lineDisplayName);
         for (const ClockResetDomainMember& member : domain.modules) {
             createChildItem(signal,
                             member.sectionDisplayName.isEmpty()
@@ -191,9 +197,11 @@ void appendClockResetDomains(QTreeWidget* tree,
                             member.detailDisplayName.isEmpty()
                                 ? QStringLiteral("reset")
                                 : member.detailDisplayName,
-                            member.moduleSymbol.fileName,
-                            member.moduleSymbol.startLine,
-                            member.moduleSymbol.startColumn);
+                            member.moduleCodeLink.fileName,
+                            member.moduleCodeLink.line,
+                            member.moduleCodeLink.column,
+                            member.moduleCodeLink.fileDisplayName,
+                            member.moduleCodeLink.lineDisplayName);
         }
     }
 }
@@ -211,9 +219,11 @@ void appendClockResetEvidenceRows(
                         row.sectionDisplayName,
                         row.signalDisplayName,
                         row.detailDisplayName,
-                        row.domainSignal.fileName,
-                        row.domainSignal.startLine,
-                        row.domainSignal.startColumn);
+                        row.signalCodeLink.fileName,
+                        row.signalCodeLink.line,
+                        row.signalCodeLink.column,
+                        row.signalCodeLink.fileDisplayName,
+                        row.signalCodeLink.lineDisplayName);
     }
 }
 
