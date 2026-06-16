@@ -3643,6 +3643,19 @@ static void runSemanticDiffServiceFixture()
         sym_list::sym_logic,
         12,
         QStringLiteral("diff_top")));
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9407,
+        fileName,
+        QStringLiteral("old_pkg"),
+        sym_list::sym_package,
+        30));
+    beforeSymbols.append(makeModuleBriefSymbol(
+        9408,
+        fileName,
+        QStringLiteral("old_t"),
+        sym_list::sym_typedef,
+        31,
+        QStringLiteral("diff_top")));
 
     QList<sym_list::SymbolInfo> afterSymbols;
     afterSymbols.append(makeModuleBriefSymbol(
@@ -3685,6 +3698,19 @@ static void runSemanticDiffServiceFixture()
         QStringLiteral("state_q"),
         sym_list::sym_logic,
         12,
+        QStringLiteral("diff_top")));
+    afterSymbols.append(makeModuleBriefSymbol(
+        9507,
+        fileName,
+        QStringLiteral("diff_if"),
+        sym_list::sym_interface,
+        30));
+    afterSymbols.append(makeModuleBriefSymbol(
+        9508,
+        fileName,
+        QStringLiteral("state_t"),
+        sym_list::sym_typedef,
+        31,
         QStringLiteral("diff_top")));
 
     QList<SemanticRelationship> beforeRelationships;
@@ -3743,6 +3769,9 @@ static void runSemanticDiffServiceFixture()
     int modifiedSymbols = 0;
     bool dataPortModified = false;
     bool newSignalAdded = false;
+    bool oldPackageRemoved = false;
+    bool newInterfaceAdded = false;
+    bool newTypeAdded = false;
     bool symbolDisplayMetadataFound = false;
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         if (change.kind == SemanticDiffChangeKind::Added)
@@ -3767,6 +3796,28 @@ static void runSemanticDiffServiceFixture()
             && change.category == SemanticDiffSymbolCategory::Signal
             && change.afterSymbol.symbolName == QStringLiteral("state_q")) {
             newSignalAdded = true;
+        }
+        if (change.kind == SemanticDiffChangeKind::Removed
+            && change.category == SemanticDiffSymbolCategory::Package
+            && change.beforeSymbol.symbolName == QStringLiteral("old_pkg")) {
+            oldPackageRemoved =
+                change.categoryDisplayName == QStringLiteral("package")
+                && change.categoryGroupDisplayName == QStringLiteral("Packages")
+                && change.sourceRoleDisplayName == QStringLiteral("design source");
+        }
+        if (change.kind == SemanticDiffChangeKind::Added
+            && change.category == SemanticDiffSymbolCategory::Interface
+            && change.afterSymbol.symbolName == QStringLiteral("diff_if")) {
+            newInterfaceAdded =
+                change.categoryDisplayName == QStringLiteral("interface")
+                && change.categoryGroupDisplayName == QStringLiteral("Interfaces");
+        }
+        if (change.kind == SemanticDiffChangeKind::Added
+            && change.category == SemanticDiffSymbolCategory::Type
+            && change.afterSymbol.symbolName == QStringLiteral("state_t")) {
+            newTypeAdded =
+                change.categoryDisplayName == QStringLiteral("type")
+                && change.categoryGroupDisplayName == QStringLiteral("Types");
         }
     }
 
@@ -3811,11 +3862,32 @@ static void runSemanticDiffServiceFixture()
     }
 
     expectBool("semantic diff found", report.found, true);
-    expectInt("semantic diff added symbols", addedSymbols, 3);
-    expectInt("semantic diff removed symbols", removedSymbols, 3);
+    expectBool("semantic diff report metadata",
+               report.symbolGroupDisplayName == QStringLiteral("Semantic Diff Symbols")
+                   && report.relationshipGroupDisplayName
+                       == QStringLiteral("Semantic Diff Relationships")
+                   && report.diagnosticGroupDisplayName
+                       == QStringLiteral("Semantic Diff Diagnostics")
+                   && report.symbolChangeCount == report.symbolChanges.size()
+                   && report.relationshipChangeCount
+                       == report.relationshipChanges.size()
+                   && report.diagnosticChangeCount
+                       == report.diagnosticChanges.size(),
+               true);
+    expectInt("semantic diff added symbols", addedSymbols, 5);
+    expectInt("semantic diff removed symbols", removedSymbols, 5);
     expectInt("semantic diff modified symbols", modifiedSymbols, 1);
     expectBool("semantic diff modified data port", dataPortModified, true);
     expectBool("semantic diff added state signal", newSignalAdded, true);
+    expectBool("semantic diff removed package metadata",
+               oldPackageRemoved,
+               true);
+    expectBool("semantic diff added interface metadata",
+               newInterfaceAdded,
+               true);
+    expectBool("semantic diff added type metadata",
+               newTypeAdded,
+               true);
     expectBool("semantic diff symbol display metadata",
                symbolDisplayMetadataFound, true);
     expectInt("semantic diff added relationships", addedRelationships, 1);
@@ -3983,6 +4055,8 @@ static void runRealWorkspaceIncludeFixture()
     }
     const sym_list::SymbolInfo packageSymbol =
         symbolByNameAndType(QStringLiteral("gl_pkg"), sym_list::sym_package);
+    const sym_list::SymbolInfo interfaceSymbol =
+        symbolByNameAndType(QStringLiteral("lr_genr_if"), sym_list::sym_interface);
     const sym_list::SymbolInfo packageTypedefSymbol =
         symbolByName(QStringLiteral("cpld_sw_sp"),
                      sym_list::sym_typedef,
@@ -4219,6 +4293,47 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace signal journey interface modport",
                sawRealInterfaceModportJourney,
+               true);
+
+    QList<sym_list::SymbolInfo> realBeforeDiffSymbols;
+    realBeforeDiffSymbols.append(packageSymbol);
+    QList<sym_list::SymbolInfo> realAfterDiffSymbols = realBeforeDiffSymbols;
+    realAfterDiffSymbols.append(interfaceSymbol);
+    realAfterDiffSymbols.append(packageTypedefSymbol);
+    auto realBeforeDiffSnapshot = std::make_shared<SemanticIndexSnapshot>(
+        realBeforeDiffSymbols,
+        QList<SemanticRelationship>(),
+        QList<SemanticDiagnostic>());
+    auto realAfterDiffSnapshot = std::make_shared<SemanticIndexSnapshot>(
+        realAfterDiffSymbols,
+        QList<SemanticRelationship>(),
+        QList<SemanticDiagnostic>());
+    SemanticDiffQuery realDiffQuery;
+    realDiffQuery.beforeSnapshot = realBeforeDiffSnapshot;
+    realDiffQuery.afterSnapshot = realAfterDiffSnapshot;
+    realDiffQuery.moduleName = QStringLiteral("rtl_top");
+    const SemanticDiffReport realDiffReport =
+        SemanticDiffService().buildSemanticDiff(realDiffQuery);
+    bool sawRealDiffInterface = false;
+    bool sawRealDiffType = false;
+    for (const SemanticDiffSymbolChange& change : realDiffReport.symbolChanges) {
+        sawRealDiffInterface = sawRealDiffInterface
+            || (change.category == SemanticDiffSymbolCategory::Interface
+                && change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
+                && change.categoryGroupDisplayName == QStringLiteral("Interfaces"));
+        sawRealDiffType = sawRealDiffType
+            || (change.category == SemanticDiffSymbolCategory::Type
+                && change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
+                && change.categoryGroupDisplayName == QStringLiteral("Types"));
+    }
+    expectBool("real workspace semantic diff found",
+               realDiffReport.found,
+               true);
+    expectBool("real workspace semantic diff interface category",
+               sawRealDiffInterface,
+               true);
+    expectBool("real workspace semantic diff type category",
+               sawRealDiffType,
                true);
 }
 

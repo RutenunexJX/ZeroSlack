@@ -18,7 +18,10 @@ enum class SemanticDiffSymbolCategory {
     Port,
     Parameter,
     Instance,
-    Signal
+    Signal,
+    Package,
+    Interface,
+    Type
 };
 
 struct SemanticDiffQuery {
@@ -38,6 +41,8 @@ struct SemanticDiffSymbolChange {
     sym_list::SymbolInfo displaySymbol = {};
     QString kindDisplayName;
     QString categoryDisplayName;
+    QString categoryGroupDisplayName;
+    QString sourceRoleDisplayName;
     QString detailDisplayName;
 };
 
@@ -54,6 +59,7 @@ struct SemanticDiffRelationshipChange {
     sym_list::SymbolInfo displayToSymbol = {};
     QString kindDisplayName;
     QString relationshipTypeDisplayName;
+    QString categoryGroupDisplayName;
     QString detailDisplayName;
 };
 
@@ -65,10 +71,17 @@ struct SemanticDiffDiagnosticChange {
     SemanticDiagnostic displayDiagnostic;
     QString kindDisplayName;
     QString severityDisplayName;
+    QString categoryGroupDisplayName;
 };
 
 struct SemanticDiffReport {
     bool found = false;
+    QString symbolGroupDisplayName;
+    QString relationshipGroupDisplayName;
+    QString diagnosticGroupDisplayName;
+    int symbolChangeCount = 0;
+    int relationshipChangeCount = 0;
+    int diagnosticChangeCount = 0;
     QList<SemanticDiffSymbolChange> symbolChanges;
     QList<SemanticDiffRelationshipChange> relationshipChanges;
     QList<SemanticDiffDiagnosticChange> diagnosticChanges;
@@ -122,6 +135,8 @@ private:
     static QString changeKindName(SemanticDiffChangeKind kind);
     static QString changeKindDisplayName(SemanticDiffChangeKind kind);
     static QString symbolCategoryDisplayName(SemanticDiffSymbolCategory category);
+    static QString symbolCategoryGroupDisplayName(SemanticDiffSymbolCategory category);
+    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
     static void fillDisplayMetadata(SemanticDiffSymbolChange& change);

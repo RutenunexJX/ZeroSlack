@@ -36,6 +36,14 @@ SemanticDiffReport SemanticDiffService::buildSemanticDiff(
     report.symbolChanges = symbolChanges(query);
     report.relationshipChanges = relationshipChanges(query);
     report.diagnosticChanges = diagnosticChanges(query);
+    report.symbolGroupDisplayName = QStringLiteral("Semantic Diff Symbols");
+    report.relationshipGroupDisplayName =
+        QStringLiteral("Semantic Diff Relationships");
+    report.diagnosticGroupDisplayName =
+        QStringLiteral("Semantic Diff Diagnostics");
+    report.symbolChangeCount = report.symbolChanges.size();
+    report.relationshipChangeCount = report.relationshipChanges.size();
+    report.diagnosticChangeCount = report.diagnosticChanges.size();
     report.found = !report.symbolChanges.isEmpty()
         || !report.relationshipChanges.isEmpty()
         || !report.diagnosticChanges.isEmpty();
@@ -235,6 +243,29 @@ bool SemanticDiffService::symbolCategory(
     sym_list::sym_type_e type,
     SemanticDiffSymbolCategory* category)
 {
+    const SymbolTaxonomy::DeclarationKind kind =
+        SymbolTaxonomy::declarationKind(type);
+    if (kind == SymbolTaxonomy::DeclarationKind::Package) {
+        if (category)
+            *category = SemanticDiffSymbolCategory::Package;
+        return true;
+    }
+    if (kind == SymbolTaxonomy::DeclarationKind::Interface
+        || kind == SymbolTaxonomy::DeclarationKind::Modport) {
+        if (category)
+            *category = SemanticDiffSymbolCategory::Interface;
+        return true;
+    }
+    if (kind == SymbolTaxonomy::DeclarationKind::Typedef
+        || kind == SymbolTaxonomy::DeclarationKind::Enum
+        || kind == SymbolTaxonomy::DeclarationKind::Struct
+        || kind == SymbolTaxonomy::DeclarationKind::StructVariable
+        || kind == SymbolTaxonomy::DeclarationKind::StructMember) {
+        if (category)
+            *category = SemanticDiffSymbolCategory::Type;
+        return true;
+    }
+
     switch (SymbolTaxonomy::declarationGroup(type)) {
     case SymbolTaxonomy::DeclarationGroup::Port:
         if (category)
@@ -266,6 +297,10 @@ bool SemanticDiffService::symbolInScope(
     if (!fileName.isEmpty()
         && normalizedFileName(symbol.fileName) != normalizedFileName(fileName)) {
         return false;
+    }
+    if (SymbolTaxonomy::isGlobalDefinition(symbol.symbolType)
+        || SymbolTaxonomy::isPackageVisibleDefinition(symbol.symbolType)) {
+        return true;
     }
     return SymbolTaxonomy::isSymbolInModuleScope(symbol, moduleName);
 }
@@ -400,8 +435,49 @@ QString SemanticDiffService::symbolCategoryDisplayName(
         return QStringLiteral("instance");
     case SemanticDiffSymbolCategory::Signal:
         return QStringLiteral("signal");
+    case SemanticDiffSymbolCategory::Package:
+        return QStringLiteral("package");
+    case SemanticDiffSymbolCategory::Interface:
+        return QStringLiteral("interface");
+    case SemanticDiffSymbolCategory::Type:
+        return QStringLiteral("type");
     }
     return QStringLiteral("symbol");
+}
+
+QString SemanticDiffService::symbolCategoryGroupDisplayName(
+    SemanticDiffSymbolCategory category)
+{
+    switch (category) {
+    case SemanticDiffSymbolCategory::Port:
+        return QStringLiteral("Ports");
+    case SemanticDiffSymbolCategory::Parameter:
+        return QStringLiteral("Parameters");
+    case SemanticDiffSymbolCategory::Instance:
+        return QStringLiteral("Instances");
+    case SemanticDiffSymbolCategory::Signal:
+        return QStringLiteral("Signals");
+    case SemanticDiffSymbolCategory::Package:
+        return QStringLiteral("Packages");
+    case SemanticDiffSymbolCategory::Interface:
+        return QStringLiteral("Interfaces");
+    case SemanticDiffSymbolCategory::Type:
+        return QStringLiteral("Types");
+    }
+    return QStringLiteral("Symbols");
+}
+
+QString SemanticDiffService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
+{
+    switch (role) {
+    case SymbolTaxonomy::SourceRole::DesignSource:
+        return QStringLiteral("design source");
+    case SymbolTaxonomy::SourceRole::Header:
+        return QStringLiteral("header");
+    case SymbolTaxonomy::SourceRole::Unknown:
+    default:
+        return QStringLiteral("source");
+    }
 }
 
 QString SemanticDiffService::relationshipTypeDisplayName(
@@ -457,6 +533,10 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
         : change.afterSymbol;
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.categoryDisplayName = symbolCategoryDisplayName(change.category);
+    change.categoryGroupDisplayName = symbolCategoryGroupDisplayName(change.category);
+    change.sourceRoleDisplayName =
+        sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleForFileName(change.displaySymbol.fileName));
 
     const QString type = SymbolTaxonomy::symbolTypeLabel(change.displaySymbol.symbolType);
     const QString dataType = change.displaySymbol.dataType.isEmpty()
@@ -504,6 +584,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
+    change.categoryGroupDisplayName = QStringLiteral("Relationships");
     change.detailDisplayName =
         change.displayFromSymbol.symbolName.isEmpty()
             || change.displayToSymbol.symbolName.isEmpty()
@@ -522,6 +603,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.severityDisplayName =
         diagnosticSeverityDisplayName(change.displayDiagnostic.severity);
+    change.categoryGroupDisplayName = QStringLiteral("Diagnostics");
 }
 
 void SemanticDiffService::sortSymbolChanges(

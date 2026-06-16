@@ -367,8 +367,10 @@ void appendSignalJourney(QTreeWidget* tree,
 void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
 {
     QTreeWidgetItem* symbols = createGroupItem(tree,
-                                              QStringLiteral("Semantic Diff Symbols"),
-                                              report.symbolChanges.size());
+                                              report.symbolGroupDisplayName.isEmpty()
+                                                  ? QStringLiteral("Semantic Diff Symbols")
+                                                  : report.symbolGroupDisplayName,
+                                              report.symbolChangeCount);
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         const sym_list::SymbolInfo& symbol = change.displaySymbol;
         createChildItem(symbols,
@@ -382,8 +384,10 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
 
     QTreeWidgetItem* relationships =
         createGroupItem(tree,
-                        QStringLiteral("Semantic Diff Relationships"),
-                        report.relationshipChanges.size());
+                        report.relationshipGroupDisplayName.isEmpty()
+                            ? QStringLiteral("Semantic Diff Relationships")
+                            : report.relationshipGroupDisplayName,
+                        report.relationshipChangeCount);
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
         const sym_list::SymbolInfo& fromSymbol = change.displayFromSymbol;
         createChildItem(relationships,
@@ -397,8 +401,10 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
 
     QTreeWidgetItem* diagnostics =
         createGroupItem(tree,
-                        QStringLiteral("Semantic Diff Diagnostics"),
-                        report.diagnosticChanges.size());
+                        report.diagnosticGroupDisplayName.isEmpty()
+                            ? QStringLiteral("Semantic Diff Diagnostics")
+                            : report.diagnosticGroupDisplayName,
+                        report.diagnosticChangeCount);
     for (const SemanticDiffDiagnosticChange& change : report.diagnosticChanges) {
         const SemanticDiagnostic& diagnostic = change.displayDiagnostic;
         createChildItem(diagnostics,
