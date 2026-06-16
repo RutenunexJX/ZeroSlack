@@ -1,6 +1,7 @@
 #ifndef SEMANTICDIFFSERVICE_H
 #define SEMANTICDIFFSERVICE_H
 
+#include "rtlinsightlink.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 
@@ -44,6 +45,7 @@ struct SemanticDiffSymbolChange {
     QString categoryGroupDisplayName;
     QString sourceRoleDisplayName;
     QString detailDisplayName;
+    RtlInsightCodeLink codeLink;
 };
 
 struct SemanticDiffRelationshipChange {
@@ -61,6 +63,7 @@ struct SemanticDiffRelationshipChange {
     QString relationshipTypeDisplayName;
     QString categoryGroupDisplayName;
     QString detailDisplayName;
+    RtlInsightCodeLink codeLink;
 };
 
 struct SemanticDiffDiagnosticChange {
@@ -72,6 +75,7 @@ struct SemanticDiffDiagnosticChange {
     QString kindDisplayName;
     QString severityDisplayName;
     QString categoryGroupDisplayName;
+    RtlInsightCodeLink codeLink;
 };
 
 struct SemanticDiffReport {
@@ -139,6 +143,10 @@ private:
     static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
+    static RtlInsightCodeLink codeLink(const sym_list::SymbolInfo& symbol);
+    static RtlInsightCodeLink codeLink(const SemanticDiagnostic& diagnostic);
+    static QString fileDisplayName(const QString& fileName);
+    static QString lineDisplayName(int line);
     static void fillDisplayMetadata(SemanticDiffSymbolChange& change);
     static void fillDisplayMetadata(SemanticDiffRelationshipChange& change);
     static void fillDisplayMetadata(SemanticDiffDiagnosticChange& change);

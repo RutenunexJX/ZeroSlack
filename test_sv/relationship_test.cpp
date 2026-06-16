@@ -3773,6 +3773,7 @@ static void runSemanticDiffServiceFixture()
     bool newInterfaceAdded = false;
     bool newTypeAdded = false;
     bool symbolDisplayMetadataFound = false;
+    bool symbolCodeLinkFound = false;
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         if (change.kind == SemanticDiffChangeKind::Added)
             ++addedSymbols;
@@ -3791,6 +3792,13 @@ static void runSemanticDiffServiceFixture()
                 && change.categoryDisplayName == QStringLiteral("port")
                 && change.displaySymbol.symbolName == QStringLiteral("data")
                 && change.detailDisplayName.contains(QStringLiteral("port"));
+            symbolCodeLinkFound =
+                change.codeLink.fileName == fileName
+                && change.codeLink.line == 3
+                && change.codeLink.column == 1
+                && change.codeLink.fileDisplayName
+                    == QStringLiteral("semantic_diff_fixture.sv")
+                && change.codeLink.lineDisplayName == QStringLiteral("3");
         }
         if (change.kind == SemanticDiffChangeKind::Added
             && change.category == SemanticDiffSymbolCategory::Signal
@@ -3826,6 +3834,7 @@ static void runSemanticDiffServiceFixture()
     bool addedRelationshipHasEndpoints = false;
     bool removedRelationshipHasEndpoints = false;
     bool relationshipDisplayMetadataFound = false;
+    bool relationshipCodeLinkFound = false;
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
         if (change.kind == SemanticDiffChangeKind::Added) {
             ++addedRelationships;
@@ -3837,6 +3846,13 @@ static void runSemanticDiffServiceFixture()
                 && change.relationshipTypeDisplayName == QStringLiteral("Instantiates")
                 && change.displayFromSymbol.symbolName == QStringLiteral("diff_top")
                 && change.detailDisplayName == QStringLiteral("diff_top -> u_new");
+            relationshipCodeLinkFound =
+                change.codeLink.fileName == fileName
+                && change.codeLink.line == 1
+                && change.codeLink.column == 1
+                && change.codeLink.fileDisplayName
+                    == QStringLiteral("semantic_diff_fixture.sv")
+                && change.codeLink.lineDisplayName == QStringLiteral("1");
         }
         if (change.kind == SemanticDiffChangeKind::Removed) {
             ++removedRelationships;
@@ -3849,6 +3865,7 @@ static void runSemanticDiffServiceFixture()
     int addedDiagnostics = 0;
     int removedDiagnostics = 0;
     bool diagnosticDisplayMetadataFound = false;
+    bool diagnosticCodeLinkFound = false;
     for (const SemanticDiffDiagnosticChange& change : report.diagnosticChanges) {
         if (change.kind == SemanticDiffChangeKind::Added) {
             ++addedDiagnostics;
@@ -3856,6 +3873,13 @@ static void runSemanticDiffServiceFixture()
                 change.kindDisplayName == QStringLiteral("Added")
                 && change.severityDisplayName == QStringLiteral("Error")
                 && change.displayDiagnostic.message == QStringLiteral("new error");
+            diagnosticCodeLinkFound =
+                change.codeLink.fileName == fileName
+                && change.codeLink.line == 22
+                && change.codeLink.column == 7
+                && change.codeLink.fileDisplayName
+                    == QStringLiteral("semantic_diff_fixture.sv")
+                && change.codeLink.lineDisplayName == QStringLiteral("22");
         }
         if (change.kind == SemanticDiffChangeKind::Removed)
             ++removedDiagnostics;
@@ -3890,6 +3914,9 @@ static void runSemanticDiffServiceFixture()
                true);
     expectBool("semantic diff symbol display metadata",
                symbolDisplayMetadataFound, true);
+    expectBool("semantic diff symbol code link",
+               symbolCodeLinkFound,
+               true);
     expectInt("semantic diff added relationships", addedRelationships, 1);
     expectInt("semantic diff removed relationships", removedRelationships, 1);
     expectBool("semantic diff added relationship endpoints",
@@ -3901,10 +3928,16 @@ static void runSemanticDiffServiceFixture()
     expectBool("semantic diff relationship display metadata",
                relationshipDisplayMetadataFound,
                true);
+    expectBool("semantic diff relationship code link",
+               relationshipCodeLinkFound,
+               true);
     expectInt("semantic diff added diagnostics", addedDiagnostics, 1);
     expectInt("semantic diff removed diagnostics", removedDiagnostics, 1);
     expectBool("semantic diff diagnostic display metadata",
                diagnosticDisplayMetadataFound, true);
+    expectBool("semantic diff diagnostic code link",
+               diagnosticCodeLinkFound,
+               true);
 }
 
 static void runRealWorkspaceIncludeFixture()
@@ -4316,15 +4349,29 @@ static void runRealWorkspaceIncludeFixture()
         SemanticDiffService().buildSemanticDiff(realDiffQuery);
     bool sawRealDiffInterface = false;
     bool sawRealDiffType = false;
+    bool sawRealDiffInterfaceLink = false;
+    bool sawRealDiffTypeLink = false;
     for (const SemanticDiffSymbolChange& change : realDiffReport.symbolChanges) {
         sawRealDiffInterface = sawRealDiffInterface
             || (change.category == SemanticDiffSymbolCategory::Interface
                 && change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
                 && change.categoryGroupDisplayName == QStringLiteral("Interfaces"));
+        sawRealDiffInterfaceLink = sawRealDiffInterfaceLink
+            || (change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
+                && !change.codeLink.fileName.isEmpty()
+                && change.codeLink.line > 0
+                && !change.codeLink.fileDisplayName.isEmpty()
+                && !change.codeLink.lineDisplayName.isEmpty());
         sawRealDiffType = sawRealDiffType
             || (change.category == SemanticDiffSymbolCategory::Type
                 && change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
                 && change.categoryGroupDisplayName == QStringLiteral("Types"));
+        sawRealDiffTypeLink = sawRealDiffTypeLink
+            || (change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
+                && !change.codeLink.fileName.isEmpty()
+                && change.codeLink.line > 0
+                && !change.codeLink.fileDisplayName.isEmpty()
+                && !change.codeLink.lineDisplayName.isEmpty());
     }
     expectBool("real workspace semantic diff found",
                realDiffReport.found,
@@ -4332,8 +4379,14 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace semantic diff interface category",
                sawRealDiffInterface,
                true);
+    expectBool("real workspace semantic diff interface link",
+               sawRealDiffInterfaceLink,
+               true);
     expectBool("real workspace semantic diff type category",
                sawRealDiffType,
+               true);
+    expectBool("real workspace semantic diff type link",
+               sawRealDiffTypeLink,
                true);
 }
 

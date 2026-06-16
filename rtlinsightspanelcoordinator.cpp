@@ -377,9 +377,11 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                         change.kindDisplayName,
                         symbol.symbolName,
                         change.detailDisplayName,
-                        symbol.fileName,
-                        symbol.startLine,
-                        symbol.startColumn);
+                        change.codeLink.fileName,
+                        change.codeLink.line,
+                        change.codeLink.column,
+                        change.codeLink.fileDisplayName,
+                        change.codeLink.lineDisplayName);
     }
 
     QTreeWidgetItem* relationships =
@@ -389,14 +391,15 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                             : report.relationshipGroupDisplayName,
                         report.relationshipChangeCount);
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
-        const sym_list::SymbolInfo& fromSymbol = change.displayFromSymbol;
         createChildItem(relationships,
                         change.kindDisplayName,
                         change.relationshipTypeDisplayName,
                         change.detailDisplayName,
-                        fromSymbol.fileName,
-                        fromSymbol.startLine,
-                        fromSymbol.startColumn);
+                        change.codeLink.fileName,
+                        change.codeLink.line,
+                        change.codeLink.column,
+                        change.codeLink.fileDisplayName,
+                        change.codeLink.lineDisplayName);
     }
 
     QTreeWidgetItem* diagnostics =
@@ -411,9 +414,11 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                         change.kindDisplayName,
                         diagnostic.message,
                         change.severityDisplayName,
-                        diagnostic.fileName,
-                        diagnostic.line,
-                        diagnostic.column);
+                        change.codeLink.fileName,
+                        change.codeLink.line,
+                        change.codeLink.column,
+                        change.codeLink.fileDisplayName,
+                        change.codeLink.lineDisplayName);
     }
 }
 
