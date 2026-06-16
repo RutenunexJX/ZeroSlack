@@ -453,10 +453,20 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
                         graph.stateRegisterCodeLink.fileDisplayName,
                         graph.stateRegisterCodeLink.lineDisplayName);
         if (!graph.nextStateSignalDisplayName.isEmpty()) {
-            createChildItem(stateRegister,
-                            QStringLiteral("Next State Signal"),
+            QTreeWidgetItem* nextState =
+                createChildItem(stateRegister,
+                                QStringLiteral("Next State Signal"),
+                                graph.nextStateSignalDisplayName,
+                                graph.nextStateSignalTypeDisplayName,
+                                graph.nextStateSignalCodeLink.fileName,
+                                graph.nextStateSignalCodeLink.line,
+                                graph.nextStateSignalCodeLink.column,
+                                graph.nextStateSignalCodeLink.fileDisplayName,
+                                graph.nextStateSignalCodeLink.lineDisplayName);
+            createChildItem(nextState,
+                            QStringLiteral("Source Role"),
+                            graph.nextStateSignalSourceRoleDisplayName,
                             graph.nextStateSignalDisplayName,
-                            graph.nextStateSignalTypeDisplayName,
                             graph.nextStateSignalCodeLink.fileName,
                             graph.nextStateSignalCodeLink.line,
                             graph.nextStateSignalCodeLink.column,

@@ -929,6 +929,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawFsmRegisterType = false;
     bool sawFsmRegisterSourceRole = false;
     bool sawFsmNextStateSignal = false;
+    bool sawFsmNextStateSourceRole = false;
     bool sawFsmFromStateEndpoint = false;
     bool sawFsmToStateEndpoint = false;
     bool sawFsmTransitionSourceRole = false;
@@ -1078,6 +1079,10 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("Next State Signal")
                 && item->text(1) == QStringLiteral("state_d")
                 && item->text(2) == QStringLiteral("enum"));
+        sawFsmNextStateSourceRole = sawFsmNextStateSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
+                && item->text(2) == QStringLiteral("state_d"));
         sawFsmFromStateEndpoint = sawFsmFromStateEndpoint
             || (item->text(0) == QStringLiteral("From State")
                 && item->text(1) == QStringLiteral("IDLE")
@@ -1237,6 +1242,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders FSM next state signal",
                sawFsmNextStateSignal,
+               true);
+    expectBool("RTL insights renders FSM next state source role",
+               sawFsmNextStateSourceRole,
                true);
     expectBool("RTL insights renders FSM from state endpoint",
                sawFsmFromStateEndpoint,
