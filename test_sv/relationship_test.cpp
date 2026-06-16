@@ -3754,6 +3754,10 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("clk_i")
                    && topReport.evidenceRows.first().moduleDisplayName
                        == QStringLiteral("domain_top")
+                   && topReport.evidenceRows.first().relationshipTypeDisplayName
+                       == QStringLiteral("Clock")
+                   && topReport.evidenceRows.first().evidenceReasonDisplayName
+                       == QStringLiteral("relationship")
                    && topReport.evidenceRows.first().detailDisplayName
                        == QStringLiteral("clk_i clocks domain_top")
                    && topReport.evidenceRows.first().sourceRoleDisplayName
@@ -3782,6 +3786,10 @@ static void runClockResetDomainServiceFixture()
                !topReport.ambiguityRows.isEmpty()
                    && topReport.ambiguityRows.first().sectionDisplayName
                        == QStringLiteral("Multiple Clocks")
+                   && topReport.ambiguityRows.first().relationshipTypeDisplayName
+                       == QStringLiteral("Clock")
+                   && topReport.ambiguityRows.first().evidenceReasonDisplayName
+                       == QStringLiteral("ambiguous domain membership")
                    && topReport.ambiguityRows.first().detailDisplayName
                        == QStringLiteral("domain_top has 2 clock domains"),
                true);
@@ -3793,6 +3801,10 @@ static void runClockResetDomainServiceFixture()
             || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
                 && row.signalDisplayName == QStringLiteral("scan_clk")
                 && row.moduleDisplayName == QStringLiteral("domain_top")
+                && row.relationshipTypeDisplayName == QStringLiteral("Clock")
+                && row.evidenceReasonDisplayName
+                    == QStringLiteral("missing relationship")
+                && row.sourceRoleDisplayName == QStringLiteral("design source")
                 && row.detailDisplayName
                     == QStringLiteral("scan_clk has no clock domain relationship"));
         sawUnmappedClockLink = sawUnmappedClockLink
@@ -3807,6 +3819,10 @@ static void runClockResetDomainServiceFixture()
             || (row.sectionDisplayName == QStringLiteral("Unmapped Reset")
                 && row.signalDisplayName == QStringLiteral("por_rst_n")
                 && row.moduleDisplayName == QStringLiteral("domain_top")
+                && row.relationshipTypeDisplayName == QStringLiteral("Reset")
+                && row.evidenceReasonDisplayName
+                    == QStringLiteral("missing relationship")
+                && row.sourceRoleDisplayName == QStringLiteral("design source")
                 && row.detailDisplayName
                     == QStringLiteral("por_rst_n has no reset domain relationship"));
     }
@@ -5108,13 +5124,23 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealResetEvidence = false;
     bool sawRealClockEvidenceLink = false;
     bool sawRealResetEvidenceLink = false;
+    bool sawRealClockEvidenceMetadata = false;
+    bool sawRealResetEvidenceMetadata = false;
     bool sawRealUnmappedClock = false;
     bool sawRealUnmappedClockLink = false;
+    bool sawRealUnmappedClockMetadata = false;
     for (const ClockResetDomainEvidenceRow& row : clockResetReport.evidenceRows) {
         sawRealClockEvidence = sawRealClockEvidence
             || (row.sectionDisplayName == QStringLiteral("Clock")
                 && row.signalDisplayName == QStringLiteral("clk_main")
                 && row.moduleDisplayName == QStringLiteral("rtl_top"));
+        sawRealClockEvidenceMetadata = sawRealClockEvidenceMetadata
+            || (row.sectionDisplayName == QStringLiteral("Clock")
+                && row.signalDisplayName == QStringLiteral("clk_main")
+                && row.moduleDisplayName == QStringLiteral("rtl_top")
+                && row.relationshipTypeDisplayName == QStringLiteral("Clock")
+                && row.evidenceReasonDisplayName == QStringLiteral("relationship")
+                && !row.sourceRoleDisplayName.isEmpty());
         sawRealClockEvidenceLink = sawRealClockEvidenceLink
             || (row.sectionDisplayName == QStringLiteral("Clock")
                 && row.signalDisplayName == QStringLiteral("clk_main")
@@ -5131,6 +5157,13 @@ static void runRealWorkspaceIncludeFixture()
             || (row.sectionDisplayName == QStringLiteral("Reset")
                 && row.signalDisplayName == QStringLiteral("srst_main")
                 && row.moduleDisplayName == QStringLiteral("rtl_top"));
+        sawRealResetEvidenceMetadata = sawRealResetEvidenceMetadata
+            || (row.sectionDisplayName == QStringLiteral("Reset")
+                && row.signalDisplayName == QStringLiteral("srst_main")
+                && row.moduleDisplayName == QStringLiteral("rtl_top")
+                && row.relationshipTypeDisplayName == QStringLiteral("Reset")
+                && row.evidenceReasonDisplayName == QStringLiteral("relationship")
+                && !row.sourceRoleDisplayName.isEmpty());
         sawRealResetEvidenceLink = sawRealResetEvidenceLink
             || (row.sectionDisplayName == QStringLiteral("Reset")
                 && row.signalDisplayName == QStringLiteral("srst_main")
@@ -5151,6 +5184,13 @@ static void runRealWorkspaceIncludeFixture()
                 && row.moduleDisplayName == QStringLiteral("rtl_top")
                 && row.detailDisplayName.contains(
                     QStringLiteral("no clock domain relationship")));
+        sawRealUnmappedClockMetadata = sawRealUnmappedClockMetadata
+            || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
+                && row.signalDisplayName.startsWith(QStringLiteral("clk_cpld"))
+                && row.relationshipTypeDisplayName == QStringLiteral("Clock")
+                && row.evidenceReasonDisplayName
+                    == QStringLiteral("missing relationship")
+                && !row.sourceRoleDisplayName.isEmpty());
         sawRealUnmappedClockLink = sawRealUnmappedClockLink
             || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
                 && row.signalDisplayName.startsWith(QStringLiteral("clk_cpld"))
@@ -5165,17 +5205,26 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace clock evidence row",
                sawRealClockEvidence,
                true);
+    expectBool("real workspace clock evidence row metadata",
+               sawRealClockEvidenceMetadata,
+               true);
     expectBool("real workspace clock evidence row code link",
                sawRealClockEvidenceLink,
                true);
     expectBool("real workspace reset evidence row",
                sawRealResetEvidence,
                true);
+    expectBool("real workspace reset evidence row metadata",
+               sawRealResetEvidenceMetadata,
+               true);
     expectBool("real workspace reset evidence row code link",
                sawRealResetEvidenceLink,
                true);
     expectBool("real workspace clock reset unmapped clock",
                sawRealUnmappedClock,
+               true);
+    expectBool("real workspace clock reset unmapped clock metadata",
+               sawRealUnmappedClockMetadata,
                true);
     expectBool("real workspace clock reset unmapped clock code link",
                sawRealUnmappedClockLink,

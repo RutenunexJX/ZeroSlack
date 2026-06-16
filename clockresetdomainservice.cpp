@@ -157,6 +157,8 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
             : moduleSymbol.symbolName;
         if (row.moduleDisplayName.isEmpty())
             row.moduleDisplayName = QStringLiteral("<unknown module>");
+        row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
+        row.evidenceReasonDisplayName = QStringLiteral("missing relationship");
         row.detailDisplayName =
             unmappedDetailDisplayName(row.signalDisplayName, type);
         row.sourceRoleDisplayName =
@@ -386,6 +388,8 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::ambiguityRows(
                     row.sectionDisplayName = type == SymbolRelationshipEngine::CLOCKS
                         ? QStringLiteral("Multiple Clocks")
                         : QStringLiteral("Multiple Resets");
+                    row.evidenceReasonDisplayName =
+                        QStringLiteral("ambiguous domain membership");
                     row.detailDisplayName =
                         ambiguityDetailDisplayName(row.moduleDisplayName,
                                                    type,
@@ -420,6 +424,8 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
     row.moduleDisplayName = member.moduleSymbol.symbolName.isEmpty()
         ? QStringLiteral("<unnamed>")
         : member.moduleSymbol.symbolName;
+    row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
+    row.evidenceReasonDisplayName = QStringLiteral("relationship");
     row.detailDisplayName =
         evidenceDetailDisplayName(row.signalDisplayName,
                                   row.moduleDisplayName,
@@ -439,6 +445,14 @@ QString ClockResetDomainService::evidenceDetailDisplayName(
         ? QStringLiteral("clocks")
         : QStringLiteral("resets");
     return QStringLiteral("%1 %2 %3").arg(signalName, verb, moduleName);
+}
+
+QString ClockResetDomainService::relationshipTypeDisplayName(
+    SymbolRelationshipEngine::RelationType type)
+{
+    return type == SymbolRelationshipEngine::CLOCKS
+        ? QStringLiteral("Clock")
+        : QStringLiteral("Reset");
 }
 
 QString ClockResetDomainService::ambiguityDetailDisplayName(

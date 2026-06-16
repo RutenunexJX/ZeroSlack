@@ -303,6 +303,33 @@ void appendClockResetEvidenceRows(
                         row.moduleCodeLink.column,
                         row.moduleCodeLink.fileDisplayName,
                         row.moduleCodeLink.lineDisplayName);
+        createChildItem(evidence,
+                        QStringLiteral("Relationship Type"),
+                        row.relationshipTypeDisplayName,
+                        row.sectionDisplayName,
+                        row.signalCodeLink.fileName,
+                        row.signalCodeLink.line,
+                        row.signalCodeLink.column,
+                        row.signalCodeLink.fileDisplayName,
+                        row.signalCodeLink.lineDisplayName);
+        createChildItem(evidence,
+                        QStringLiteral("Reason"),
+                        row.evidenceReasonDisplayName,
+                        row.detailDisplayName,
+                        row.signalCodeLink.fileName,
+                        row.signalCodeLink.line,
+                        row.signalCodeLink.column,
+                        row.signalCodeLink.fileDisplayName,
+                        row.signalCodeLink.lineDisplayName);
+        createChildItem(evidence,
+                        QStringLiteral("Source Role"),
+                        row.sourceRoleDisplayName,
+                        row.sectionDisplayName,
+                        row.signalCodeLink.fileName,
+                        row.signalCodeLink.line,
+                        row.signalCodeLink.column,
+                        row.signalCodeLink.fileDisplayName,
+                        row.signalCodeLink.lineDisplayName);
     }
 }
 

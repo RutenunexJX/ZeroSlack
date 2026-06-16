@@ -40,6 +40,8 @@ struct ClockResetDomainEvidenceRow {
     QString sectionDisplayName;
     QString signalDisplayName;
     QString moduleDisplayName;
+    QString relationshipTypeDisplayName;
+    QString evidenceReasonDisplayName;
     QString detailDisplayName;
     QString sourceRoleDisplayName;
 };
@@ -119,6 +121,7 @@ private:
     static QString evidenceDetailDisplayName(const QString& signalName,
                                              const QString& moduleName,
                                              SymbolRelationshipEngine::RelationType type);
+    static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString ambiguityDetailDisplayName(const QString& moduleName,
                                               SymbolRelationshipEngine::RelationType type,
                                               int domainCount);

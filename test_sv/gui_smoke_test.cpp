@@ -868,6 +868,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawContextSourceRole = false;
     bool sawClockSignalEndpoint = false;
     bool sawClockModuleEndpoint = false;
+    bool sawClockRelationshipType = false;
+    bool sawClockEvidenceReason = false;
+    bool sawClockSourceRole = false;
     bool sawUnmappedClock = false;
     bool sawTransition = false;
     bool sawFsmFromStateEndpoint = false;
@@ -914,6 +917,18 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         sawClockModuleEndpoint = sawClockModuleEndpoint
             || (item->text(0) == QStringLiteral("Module")
                 && item->text(1) == QStringLiteral("insight_top")
+                && item->text(2) == QStringLiteral("Clock"));
+        sawClockRelationshipType = sawClockRelationshipType
+            || (item->text(0) == QStringLiteral("Relationship Type")
+                && item->text(1) == QStringLiteral("Clock")
+                && item->text(2) == QStringLiteral("Clock"));
+        sawClockEvidenceReason = sawClockEvidenceReason
+            || (item->text(0) == QStringLiteral("Reason")
+                && item->text(1) == QStringLiteral("relationship")
+                && item->text(2) == QStringLiteral("clk clocks insight_top"));
+        sawClockSourceRole = sawClockSourceRole
+            || (item->text(0) == QStringLiteral("Source Role")
+                && item->text(1) == QStringLiteral("design source")
                 && item->text(2) == QStringLiteral("Clock"));
         sawUnmappedClock = sawUnmappedClock
             || (item->text(0) == QStringLiteral("Unmapped Clock")
@@ -969,6 +984,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders clock module endpoint",
                sawClockModuleEndpoint,
+               true);
+    expectBool("RTL insights renders clock relationship type",
+               sawClockRelationshipType,
+               true);
+    expectBool("RTL insights renders clock evidence reason",
+               sawClockEvidenceReason,
+               true);
+    expectBool("RTL insights renders clock source role",
+               sawClockSourceRole,
                true);
     expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
