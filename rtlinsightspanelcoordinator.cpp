@@ -247,15 +247,34 @@ void appendClockResetEvidenceRows(
                                             groupDisplayName,
                                             rows.size());
     for (const ClockResetDomainEvidenceRow& row : rows) {
-        createChildItem(group,
-                        row.sectionDisplayName,
+        QTreeWidgetItem* evidence =
+            createChildItem(group,
+                            row.sectionDisplayName,
+                            row.signalDisplayName,
+                            row.detailDisplayName,
+                            row.signalCodeLink.fileName,
+                            row.signalCodeLink.line,
+                            row.signalCodeLink.column,
+                            row.signalCodeLink.fileDisplayName,
+                            row.signalCodeLink.lineDisplayName);
+        createChildItem(evidence,
+                        QStringLiteral("Signal"),
                         row.signalDisplayName,
-                        row.detailDisplayName,
+                        row.sectionDisplayName,
                         row.signalCodeLink.fileName,
                         row.signalCodeLink.line,
                         row.signalCodeLink.column,
                         row.signalCodeLink.fileDisplayName,
                         row.signalCodeLink.lineDisplayName);
+        createChildItem(evidence,
+                        QStringLiteral("Module"),
+                        row.moduleDisplayName,
+                        row.sectionDisplayName,
+                        row.moduleCodeLink.fileName,
+                        row.moduleCodeLink.line,
+                        row.moduleCodeLink.column,
+                        row.moduleCodeLink.fileDisplayName,
+                        row.moduleCodeLink.lineDisplayName);
     }
 }
 

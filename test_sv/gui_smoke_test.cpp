@@ -852,6 +852,8 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawRelationshipEvidence = false;
     bool sawRelationshipFromEndpoint = false;
     bool sawRelationshipToEndpoint = false;
+    bool sawClockSignalEndpoint = false;
+    bool sawClockModuleEndpoint = false;
     bool sawUnmappedClock = false;
     bool sawTransition = false;
     bool sawSignalJourney = false;
@@ -875,6 +877,14 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("To")
                 && item->text(1) == QStringLiteral("u_stage")
                 && item->text(2) == QStringLiteral("Instantiates"));
+        sawClockSignalEndpoint = sawClockSignalEndpoint
+            || (item->text(0) == QStringLiteral("Signal")
+                && item->text(1) == QStringLiteral("clk")
+                && item->text(2) == QStringLiteral("Clock"));
+        sawClockModuleEndpoint = sawClockModuleEndpoint
+            || (item->text(0) == QStringLiteral("Module")
+                && item->text(1) == QStringLiteral("insight_top")
+                && item->text(2) == QStringLiteral("Clock"));
         sawUnmappedClock = sawUnmappedClock
             || (item->text(0) == QStringLiteral("Unmapped Clock")
                 && item->text(1) == QStringLiteral("scan_clk")
@@ -898,6 +908,12 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights renders relationship to endpoint",
                sawRelationshipToEndpoint,
+               true);
+    expectBool("RTL insights renders clock signal endpoint",
+               sawClockSignalEndpoint,
+               true);
+    expectBool("RTL insights renders clock module endpoint",
+               sawClockModuleEndpoint,
                true);
     expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
     expectBool("RTL insights renders FSM transition", sawTransition, true);
