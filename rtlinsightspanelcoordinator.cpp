@@ -475,6 +475,15 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
                             row.toStateCodeLink.column,
                             row.toStateCodeLink.fileDisplayName,
                             row.toStateCodeLink.lineDisplayName);
+            createChildItem(transition,
+                            QStringLiteral("Source Role"),
+                            row.sourceRoleDisplayName,
+                            row.sourceLineDisplayName,
+                            row.codeLink.fileName,
+                            row.codeLink.line,
+                            row.codeLink.column,
+                            row.codeLink.fileDisplayName,
+                            row.codeLink.lineDisplayName);
         }
     }
 }

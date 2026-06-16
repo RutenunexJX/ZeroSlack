@@ -551,6 +551,9 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
         row.conditionDisplayName = transitionConditionDisplayName(transition);
         row.detailDisplayName = transition.detailDisplayName;
         row.sourceLineDisplayName = transitionSourceLineDisplayName(transition);
+        row.sourceRoleDisplayName =
+            sourceRoleDisplayName(
+                SymbolTaxonomy::sourceRoleForFileName(row.codeLink.fileName));
         rows.append(row);
     }
     return rows;
@@ -595,6 +598,19 @@ QString FsmGraphService::transitionSourceLineDisplayName(
     return transition.line > 0
         ? QStringLiteral("line %1").arg(transition.line)
         : QStringLiteral("line unknown");
+}
+
+QString FsmGraphService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
+{
+    switch (role) {
+    case SymbolTaxonomy::SourceRole::DesignSource:
+        return QStringLiteral("design source");
+    case SymbolTaxonomy::SourceRole::Header:
+        return QStringLiteral("header");
+    case SymbolTaxonomy::SourceRole::Unknown:
+    default:
+        return QStringLiteral("source");
+    }
 }
 
 void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)

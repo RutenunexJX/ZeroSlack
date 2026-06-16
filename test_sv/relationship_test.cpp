@@ -4179,7 +4179,9 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().transitionRows.first().conditionDisplayName
                        == QStringLiteral("start")
                    && report.graphs.first().transitionRows.first().sourceLineDisplayName
-                       == QStringLiteral("line 10"),
+                       == QStringLiteral("line 10")
+                   && report.graphs.first().transitionRows.first().sourceRoleDisplayName
+                       == QStringLiteral("design source"),
                true);
     expectBool("fsm graph transition row code link",
                !report.graphs.isEmpty()
@@ -4270,6 +4272,7 @@ static void runFsmGraphServiceFixture()
             || (row.fromStateDisplayName == QStringLiteral("IDLE")
                 && row.toStateDisplayName == QStringLiteral("RUN")
                 && row.conditionDisplayName == QStringLiteral("go")
+                && row.sourceRoleDisplayName == QStringLiteral("design source")
                 && row.codeLink.fileName == packageModuleFileName
                 && row.codeLink.line == 6);
         sawPackageTernaryTransitionStateEndpoints =
@@ -5530,6 +5533,7 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealPhyPassFsm = false;
     bool sawRealPhyPassFsmStateLink = false;
     bool sawRealPhyPassFsmTransition = false;
+    bool sawRealPhyPassFsmTransitionSourceRole = false;
     bool sawRealPhyPassFsmTransitionStateLink = false;
     bool sawRealPhyPassTernaryTransition = false;
     bool sawRealPhyPassTernaryElseTransition = false;
@@ -5550,6 +5554,12 @@ static void runRealWorkspaceIncludeFixture()
             && graph.transitionRows.first().codeLink.line > 0
             && !graph.transitionRows.first().sourceLineDisplayName.isEmpty();
         for (const FsmTransitionRow& row : graph.transitionRows) {
+            sawRealPhyPassFsmTransitionSourceRole =
+                sawRealPhyPassFsmTransitionSourceRole
+                || (!row.sourceRoleDisplayName.isEmpty()
+                    && !row.sourceLineDisplayName.isEmpty()
+                    && !row.codeLink.fileName.isEmpty()
+                    && row.codeLink.line > 0);
             sawRealPhyPassFsmTransitionStateLink =
                 sawRealPhyPassFsmTransitionStateLink
                 || (!row.fromStateDisplayName.isEmpty()
@@ -5587,6 +5597,9 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace fsm graph transition evidence",
                sawRealPhyPassFsmTransition,
+               true);
+    expectBool("real workspace fsm graph transition source role",
+               sawRealPhyPassFsmTransitionSourceRole,
                true);
     expectBool("real workspace fsm graph transition state links",
                sawRealPhyPassFsmTransitionStateLink,

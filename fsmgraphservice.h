@@ -3,6 +3,7 @@
 
 #include "rtlinsightlink.h"
 #include "semanticindex.h"
+#include "symboltaxonomy.h"
 
 #include <QList>
 #include <QString>
@@ -45,6 +46,7 @@ struct FsmTransitionRow {
     QString conditionDisplayName;
     QString detailDisplayName;
     QString sourceLineDisplayName;
+    QString sourceRoleDisplayName;
 };
 
 struct FsmGraph {
@@ -140,6 +142,7 @@ private:
     static QString transitionDetailDisplayName(const FsmTransition& transition);
     static QString transitionConditionDisplayName(const FsmTransition& transition);
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);
+    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillDisplayMetadata(FsmGraph& graph);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
