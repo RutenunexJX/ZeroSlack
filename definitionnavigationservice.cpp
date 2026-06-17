@@ -8,6 +8,75 @@
 
 std::unique_ptr<DefinitionNavigationService> DefinitionNavigationService::instance = nullptr;
 
+namespace {
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(fallback);
+    if (!record.isValid())
+        return metadata;
+
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString symbolNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    return fallback.symbolName;
+}
+
+QString fileNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    return record.location.fileName.isEmpty()
+        ? fallback.fileName
+        : record.location.fileName;
+}
+
+int startLineForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    return record.location.startLine > 0
+        ? record.location.startLine
+        : fallback.startLine;
+}
+
+int startColumnForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    return record.location.startColumn > 0
+        ? record.location.startColumn
+        : fallback.startColumn;
+}
+
+QString ownerDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    if (!fallback.moduleScope.isEmpty())
+        return fallback.moduleScope;
+    if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
+        return QStringLiteral("global");
+    return QStringLiteral("global");
+}
+}
+
 DefinitionNavigationService* DefinitionNavigationService::getInstance()
 {
     if (!instance)
@@ -95,16 +164,24 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
     target.found = true;
     target.localFile = result.localFile;
     target.symbol = result.symbol;
-    target.symbolName = result.symbol.symbolName;
-    target.fileName = result.symbol.fileName;
-    target.line = result.symbol.startLine;
-    target.column = result.symbol.startColumn;
+    target.symbolRecord = result.symbolRecord.isValid()
+        ? result.symbolRecord
+        : semanticSymbolRecordForSymbol(result.symbol);
+    target.symbolStableKey = target.symbolRecord.stableKey.isValid()
+        ? target.symbolRecord.stableKey
+        : symbolStableKeyForSymbol(result.symbol);
+    target.symbolName = symbolNameForRecord(target.symbolRecord, result.symbol);
+    target.fileName = fileNameForRecord(target.symbolRecord, result.symbol);
+    target.line = startLineForRecord(target.symbolRecord, result.symbol);
+    target.column = startColumnForRecord(target.symbolRecord, result.symbol);
     target.symbolType = result.symbol.symbolType;
-    target.symbolTypeText = symbolTypeText(result.symbol);
+    target.symbolTypeText =
+        SymbolTaxonomy::symbolTypeLabel(
+            metadataForRecord(target.symbolRecord, result.symbol));
+    target.ownerDisplayName =
+        ownerDisplayNameForRecord(target.symbolRecord, result.symbol);
+    target.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(
+            metadataForRecord(target.symbolRecord, result.symbol).sourceRole);
     return target;
-}
-
-QString DefinitionNavigationService::symbolTypeText(const sym_list::SymbolInfo& symbol)
-{
-    return SymbolTaxonomy::symbolTypeLabel(SymbolTaxonomy::semanticMetadata(symbol));
 }

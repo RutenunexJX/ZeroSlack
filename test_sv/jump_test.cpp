@@ -195,7 +195,18 @@ int main(int argc, char** argv) {
     expectBool("DefinitionNavigation resolves member target",
                memberNavigationTarget.found
                    && memberNavigationTarget.symbolName == QStringLiteral("red")
-                   && memberNavigationTarget.symbolTypeText == QStringLiteral("member"),
+                   && memberNavigationTarget.symbolTypeText == QStringLiteral("member")
+                   && memberNavigationTarget.symbolRecord.isValid()
+                   && memberNavigationTarget.symbolRecord.localHandle
+                       == pixelRed.symbolId
+                   && memberNavigationTarget.symbolRecord.stableKey
+                       == memberNavigationTarget.symbolStableKey
+                   && memberNavigationTarget.symbolRecord.name
+                       == QStringLiteral("red")
+                   && memberNavigationTarget.ownerDisplayName
+                       == QStringLiteral("pixel_t")
+                   && memberNavigationTarget.sourceRoleDisplayName
+                       == QStringLiteral("design source"),
                true);
 
     memberNavigationContext.column = 500;
@@ -338,6 +349,32 @@ int main(int argc, char** argv) {
            snapshotModuleOk ? "PASS" : "FAIL");
     expectBool("DefinitionService canResolve snapshot cross-file module",
                snapshotDefinitionService.canResolveDefinition(snapshotModuleQuery),
+               true);
+
+    DefinitionNavigationService snapshotDefinitionNavigationService(&snapshotIndex);
+    DefinitionNavigationQuery snapshotNavigationQuery;
+    snapshotNavigationQuery.symbolName = QStringLiteral("snap_helper");
+    snapshotNavigationQuery.fileName = QStringLiteral("snapshot_only.sv");
+    const DefinitionNavigationTarget snapshotNavigationTarget =
+        snapshotDefinitionNavigationService.resolveTarget(snapshotNavigationQuery);
+    expectBool("DefinitionNavigation carries snapshot symbol record",
+               snapshotNavigationTarget.found
+                   && snapshotNavigationTarget.symbolRecord.isValid()
+                   && snapshotNavigationTarget.symbolRecord.localHandle
+                       == snapshotHelperModule.symbolId
+                   && snapshotNavigationTarget.symbolRecord.stableKey
+                       == snapshotNavigationTarget.symbolStableKey
+                   && snapshotNavigationTarget.symbolRecord.name
+                       == QStringLiteral("snap_helper")
+                   && snapshotNavigationTarget.fileName.endsWith(
+                       QStringLiteral("snapshot_helper.sv"))
+                   && snapshotNavigationTarget.line == snapshotHelperModule.startLine
+                   && snapshotNavigationTarget.symbolTypeText
+                       == QStringLiteral("module")
+                   && snapshotNavigationTarget.ownerDisplayName
+                       == QStringLiteral("global")
+                   && snapshotNavigationTarget.sourceRoleDisplayName
+                       == QStringLiteral("design source"),
                true);
 
     DefinitionQuery emptyDefinitionQuery;
@@ -888,7 +925,13 @@ int main(int argc, char** argv) {
     ++g_checks;
     bool counterOk = counterTarget.found
         && counterTarget.localFile
-        && counterTarget.line == counter.startLine;
+        && counterTarget.line == counter.startLine
+        && counterTarget.symbolRecord.isValid()
+        && counterTarget.symbolRecord.localHandle == counter.symbolId
+        && counterTarget.symbolRecord.stableKey == counterTarget.symbolStableKey
+        && counterTarget.symbolRecord.name == QStringLiteral("counter")
+        && counterTarget.ownerDisplayName == QStringLiteral("top")
+        && counterTarget.sourceRoleDisplayName == QStringLiteral("design source");
     if (!counterOk) ++g_fails;
     printf("[%s] local target(counter) resolves to startLine\n",
            counterOk ? "PASS" : "FAIL");
