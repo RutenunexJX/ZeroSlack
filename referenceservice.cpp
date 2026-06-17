@@ -15,6 +15,20 @@ QString normalizedReferenceFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
+QStringList normalizedReferenceFileNames(const QStringList& fileNames)
+{
+    QStringList normalized;
+    QSet<QString> seen;
+    for (const QString& fileName : fileNames) {
+        const QString path = normalizedReferenceFileName(fileName);
+        if (path.isEmpty() || seen.contains(path))
+            continue;
+        seen.insert(path);
+        normalized.append(path);
+    }
+    return normalized;
+}
+
 bool referenceLocationLess(const sym_list::SymbolInfo& lhs,
                            const sym_list::SymbolInfo& rhs)
 {
@@ -98,21 +112,22 @@ void ReferenceService::setSemanticIndex(SemanticIndex* semanticIndex)
 
 QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& query) const
 {
-    const int id = resolveSymbolId(query);
+    const ReferenceQuery normalized = normalizedQuery(query);
+    const int id = resolveSymbolId(normalized);
     if (id < 0)
         return {};
 
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolId = id;
     relationshipQuery.outgoing = false;
-    relationshipQuery.types = effectiveTypes(query);
+    relationshipQuery.types = effectiveTypes(normalized);
 
     QList<ReferenceResult> result;
     const QList<RelationshipResult> relationships =
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
         ReferenceResult reference = toReferenceResult(rel);
-        if (!scopeMatches(query, reference.referencingSymbol))
+        if (!scopeMatches(normalized, reference.referencingSymbol))
             continue;
         result.append(reference);
     }
@@ -129,8 +144,9 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
 
 ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& query) const
 {
+    const ReferenceQuery normalized = normalizedQuery(query);
     ReferenceReport report;
-    const int id = resolveSymbolId(query);
+    const int id = resolveSymbolId(normalized);
     report.subjectSymbolId = id;
     if (id < 0) {
         report.notFoundReason = ReferenceReportNotFoundReason::NoSubjectSymbol;
@@ -141,7 +157,7 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
     report.subjectSymbol = semanticIndex()->getSymbolById(id);
     report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
 
-    report.references = findReferences(query);
+    report.references = findReferences(normalized);
     report.totalCount = report.references.size();
     QMap<QString, int> fileGroupIndexes;
     QMap<QString, QMap<SymbolRelationshipEngine::RelationType, int>> typeGroupIndexes;
@@ -214,7 +230,7 @@ ReferenceQuery ReferenceService::queryForPanel(
             static_cast<SymbolRelationshipEngine::RelationType>(options.typeFilter)
         };
     }
-    return query;
+    return normalizedQuery(query);
 }
 
 SemanticIndex* ReferenceService::semanticIndex() const
@@ -256,15 +272,14 @@ bool ReferenceService::scopeMatches(const ReferenceQuery& query,
 {
     const QString normalizedSource = normalizedReferenceFileName(symbol.fileName);
     if (query.currentFileOnly) {
-        const QString normalizedCurrent = normalizedReferenceFileName(query.fileName);
-        if (normalizedSource != normalizedCurrent)
+        if (normalizedSource != query.fileName)
             return false;
     }
 
     if (query.workspaceFilesOnly) {
         QSet<QString> workspaceFiles;
         for (const QString& file : query.workspaceFiles)
-            workspaceFiles.insert(normalizedReferenceFileName(file));
+            workspaceFiles.insert(file);
         if (!workspaceFiles.contains(normalizedSource))
             return false;
     }
@@ -287,6 +302,14 @@ ReferenceResult ReferenceService::toReferenceResult(
     result.relationshipTypeDisplayName =
         referenceTypeDisplayName(relationship.relationship.type);
     return result;
+}
+
+ReferenceQuery ReferenceService::normalizedQuery(const ReferenceQuery& query)
+{
+    ReferenceQuery normalized = query;
+    normalized.fileName = normalizedReferenceFileName(query.fileName);
+    normalized.workspaceFiles = normalizedReferenceFileNames(query.workspaceFiles);
+    return normalized;
 }
 
 QString ReferenceService::referenceFileDisplayName(const QString& fileName)

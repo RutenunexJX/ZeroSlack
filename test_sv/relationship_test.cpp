@@ -2990,13 +2990,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     currentFileStageReferenceQuery.currentFileOnly = true;
     expectInt("reference report current file filter",
               referenceService.findReferenceReport(currentFileStageReferenceQuery).totalCount, 0);
-    currentFileStageReferenceQuery.fileName = topPath;
+    currentFileStageReferenceQuery.fileName =
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
     expectInt("reference report current file keeps matching file",
               referenceService.findReferenceReport(currentFileStageReferenceQuery).totalCount, 1);
 
     ReferenceQuery workspaceStageReferenceQuery = stageReferenceQuery;
     workspaceStageReferenceQuery.workspaceFilesOnly = true;
-    workspaceStageReferenceQuery.workspaceFiles = {topPath};
+    workspaceStageReferenceQuery.workspaceFiles = {
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv")),
+        topPath,
+    };
     expectInt("reference report workspace filter",
               referenceService.findReferenceReport(workspaceStageReferenceQuery).totalCount, 1);
     workspaceStageReferenceQuery.workspaceFiles = {stagePath};
@@ -3005,7 +3009,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     ReferencePanelQueryOptions currentFileReferenceOptions;
     currentFileReferenceOptions.symbolName = QStringLiteral("rel_stage");
-    currentFileReferenceOptions.fileName = topPath;
+    currentFileReferenceOptions.fileName =
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
     currentFileReferenceOptions.scope = ReferencePanelScope::CurrentFile;
     currentFileReferenceOptions.typeFilter =
         static_cast<int>(SymbolRelationshipEngine::INSTANTIATES);
@@ -3027,7 +3032,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     ReferencePanelQueryOptions workspaceReferenceOptions = currentFileReferenceOptions;
     workspaceReferenceOptions.scope = ReferencePanelScope::WorkspaceFiles;
-    workspaceReferenceOptions.workspaceFiles = {stagePath};
+    workspaceReferenceOptions.workspaceFiles = {
+        QDir(QFileInfo(stagePath).dir()).filePath(QStringLiteral("./relationship_stage.sv")),
+        stagePath,
+    };
     const ReferenceQuery workspaceReferencePanelQuery =
         referenceService.queryForPanel(workspaceReferenceOptions);
     expectBool("reference panel query selects workspace files",

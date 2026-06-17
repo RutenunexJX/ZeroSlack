@@ -109,6 +109,7 @@ private:
         const ReferenceQuery& query) const;
     bool scopeMatches(const ReferenceQuery& query, const sym_list::SymbolInfo& symbol) const;
     ReferenceResult toReferenceResult(const RelationshipResult& relationship) const;
+    static ReferenceQuery normalizedQuery(const ReferenceQuery& query);
     static QString referenceFileDisplayName(const QString& fileName);
     static QString referenceLineDisplayName(int line);
 };
