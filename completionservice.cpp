@@ -5,6 +5,65 @@
 
 #include <QVector>
 
+namespace {
+
+QString ownerScopeNameForCompletionItem(
+    const sym_list::SymbolInfo& symbol,
+    const SymbolTaxonomy::SemanticMetadata& metadata)
+{
+    if (!symbol.moduleScope.isEmpty())
+        return symbol.moduleScope;
+
+    switch (metadata.ownerScope) {
+    case SymbolTaxonomy::SymbolOwnerScope::Global:
+        return QStringLiteral("global");
+    case SymbolTaxonomy::SymbolOwnerScope::Module:
+        return QStringLiteral("module");
+    case SymbolTaxonomy::SymbolOwnerScope::Interface:
+        return QStringLiteral("interface");
+    case SymbolTaxonomy::SymbolOwnerScope::Package:
+        return QStringLiteral("package");
+    case SymbolTaxonomy::SymbolOwnerScope::Struct:
+        return QStringLiteral("struct");
+    case SymbolTaxonomy::SymbolOwnerScope::Unknown:
+        break;
+    }
+    return QString();
+}
+
+CompletionResult::SemanticCompletionItem semanticCompletionItemForSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+
+    CompletionResult::SemanticCompletionItem item;
+    item.label = symbol.symbolName;
+    item.insertText = symbol.symbolName;
+    item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
+    item.ownerScopeName = ownerScopeNameForCompletionItem(symbol, metadata);
+    item.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    item.symbolStableKey = symbolStableKeyForSymbol(symbol);
+    item.declarationKind = metadata.declarationKind;
+    item.usageRole = metadata.usageRole;
+    item.ownerScope = metadata.ownerScope;
+    item.sourceRole = metadata.sourceRole;
+    return item;
+}
+
+QList<CompletionResult::SemanticCompletionItem> semanticCompletionItemsForSymbols(
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    QList<CompletionResult::SemanticCompletionItem> items;
+    items.reserve(symbols.size());
+    for (const sym_list::SymbolInfo& symbol : symbols)
+        items.append(semanticCompletionItemForSymbol(symbol));
+    return items;
+}
+
+} // namespace
+
 std::unique_ptr<CompletionService> CompletionService::instance = nullptr;
 
 CompletionService* CompletionService::getInstance()
@@ -37,6 +96,7 @@ CompletionResult CompletionService::findCompletionResult(
     CompletionResult result;
     result.symbols = findCompletionSymbols(query);
     result.names = CompletionSymbolQuery::namesFromSymbols(result.symbols);
+    result.items = semanticCompletionItemsForSymbols(result.symbols);
     return result;
 }
 

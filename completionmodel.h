@@ -4,7 +4,7 @@
 #include <QMetaType>
 #include <QAbstractItemModel>
 #include <QStringList>
-#include "semanticindex.h"
+#include "completiontypes.h"
 
 class CompletionModel : public QAbstractItemModel
 {
@@ -57,6 +57,8 @@ public:
                           const QList<sym_list::SymbolInfo> &symbols,
                           const QString &prefix,
                           CompletionType type = KeywordCompletion);
+    void updateCompletions(const CompletionResult &completion,
+                           const QString &prefix);
     void updateCommandCompletions(const QStringList &commands, const QString &prefix);
     void clear();
 

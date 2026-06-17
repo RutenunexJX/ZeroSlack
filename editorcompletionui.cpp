@@ -141,11 +141,7 @@ void EditorCompletionUi::updateCommandModeCompletions(
 void EditorCompletionUi::updateSymbolCompletions(
     const EditorCompletionState& completionState) const
 {
-    model->updateCompletions(
-        completionState.completion.names,
-        completionState.completion.symbols,
-        completionState.prefix,
-        CompletionModel::SymbolCompletion);
+    model->updateCompletions(completionState.completion, completionState.prefix);
 }
 
 void EditorCompletionUi::updateAlternateModeCompletions(

@@ -66,6 +66,38 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
     endResetModel();
 }
 
+void CompletionModel::updateCompletions(const CompletionResult &completion,
+                                        const QString &prefix)
+{
+    beginResetModel();
+    completions.clear();
+
+    CompletionService* completionService = CompletionService::getInstance();
+    for (const CompletionResult::SemanticCompletionItem &semanticItem : completion.items) {
+        CompletionItem item;
+        item.text = semanticItem.insertText.isEmpty()
+            ? semanticItem.label
+            : semanticItem.insertText;
+        item.type = SymbolCompletion;
+        item.symbolStableKey = semanticItem.symbolStableKey;
+        item.score = completionService->completionItemScore(semanticItem.label, prefix);
+        item.description = semanticItem.typeDisplayName;
+
+        fillDisplayMetadata(item);
+        completions.append(item);
+    }
+
+    sortCompletionsByScore();
+    if (completions.size() > MaxCompletionItems) {
+        completions = completions.mid(0, MaxCompletionItems);
+    }
+    if (completions.size() > 15) {
+        completions = completions.mid(0, 15);
+    }
+
+    endResetModel();
+}
+
 void CompletionModel::updateCommandCompletions(const QStringList &commands, const QString &prefix)
 {
     beginResetModel();

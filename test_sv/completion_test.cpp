@@ -1383,6 +1383,43 @@ int main(int argc, char** argv) {
            moduleResultSymbolsOk ? "PASS" : "FAIL",
            "CompletionService result symbols",
            moduleCompletion.symbols.size());
+    ++g_checks;
+    const bool moduleResultItemsOk = moduleCompletion.items.size() == 1
+        && moduleCompletion.items.first().label == QStringLiteral("enable")
+        && moduleCompletion.items.first().insertText == QStringLiteral("enable")
+        && moduleCompletion.items.first().symbolStableKey
+            == symbolStableKeyForSymbol(moduleCompletion.symbols.first())
+        && moduleCompletion.items.first().declarationKind
+            == SymbolTaxonomy::DeclarationKind::Signal
+        && moduleCompletion.items.first().ownerScope
+            == SymbolTaxonomy::SymbolOwnerScope::Module
+        && moduleCompletion.items.first().sourceRole
+            == SymbolTaxonomy::SourceRole::DesignSource
+        && moduleCompletion.items.first().typeDisplayName == QStringLiteral("logic")
+        && moduleCompletion.items.first().ownerScopeName == QStringLiteral("top");
+    if (!moduleResultItemsOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           moduleResultItemsOk ? "PASS" : "FAIL",
+           "CompletionService result items",
+           moduleCompletion.items.size());
+    CompletionModel semanticResultModel;
+    semanticResultModel.updateCompletions(moduleCompletion, QStringLiteral("en"));
+    ++g_checks;
+    const bool semanticResultModelOk = !moduleCompletion.items.isEmpty()
+        && semanticResultModel.rowCount() == 1
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).text
+            == QStringLiteral("enable")
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).description
+            == QStringLiteral("logic")
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).symbolStableKey
+            == moduleCompletion.items.first().symbolStableKey;
+    if (!semanticResultModelOk)
+        ++g_fails;
+    printf("[%s] %-34s rows=%d\n",
+           semanticResultModelOk ? "PASS" : "FAIL",
+           "CompletionModel semantic result",
+           semanticResultModel.rowCount());
 
     CompletionQuery memberQuery;
     memberQuery.structTypeNameForMember = "pixel_t";
@@ -1408,6 +1445,23 @@ int main(int argc, char** argv) {
            serviceSymbolOk ? "PASS" : "FAIL",
            "CompletionService struct symbols",
            memberSymbols.size());
+    ++g_checks;
+    const bool memberItemsOk = memberCompletion.items.size() == 1
+        && memberCompletion.items.first().label == QStringLiteral("blue")
+        && memberCompletion.items.first().declarationKind
+            == SymbolTaxonomy::DeclarationKind::StructMember
+        && memberCompletion.items.first().ownerScope
+            == SymbolTaxonomy::SymbolOwnerScope::Struct
+        && memberCompletion.items.first().typeDisplayName == QStringLiteral("member")
+        && memberCompletion.items.first().ownerScopeName == QStringLiteral("pixel_t")
+        && memberCompletion.items.first().symbolStableKey
+            == symbolStableKeyForSymbol(memberCompletion.symbols.first());
+    if (!memberItemsOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           memberItemsOk ? "PASS" : "FAIL",
+           "CompletionService member items",
+           memberCompletion.items.size());
     QString parsedVariableName;
     QString parsedMemberPrefix;
     ++g_checks;

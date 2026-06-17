@@ -1,7 +1,7 @@
 #ifndef COMPLETIONTYPES_H
 #define COMPLETIONTYPES_H
 
-#include "syminfo.h"
+#include "semanticindex.h"
 
 #include <QList>
 #include <QPair>
@@ -21,6 +21,23 @@ struct CompletionQuery {
 struct CompletionResult {
     QStringList names;
     QList<sym_list::SymbolInfo> symbols;
+    struct SemanticCompletionItem {
+        QString label;
+        QString insertText;
+        QString typeDisplayName;
+        QString ownerScopeName;
+        QString sourceRoleDisplayName;
+        SymbolStableKey symbolStableKey;
+        SymbolTaxonomy::DeclarationKind declarationKind =
+            SymbolTaxonomy::DeclarationKind::Unknown;
+        SymbolTaxonomy::SymbolUsageRole usageRole =
+            SymbolTaxonomy::SymbolUsageRole::Unknown;
+        SymbolTaxonomy::SymbolOwnerScope ownerScope =
+            SymbolTaxonomy::SymbolOwnerScope::Unknown;
+        SymbolTaxonomy::SourceRole sourceRole =
+            SymbolTaxonomy::SourceRole::Unknown;
+    };
+    QList<SemanticCompletionItem> items;
 };
 
 struct CommandCompletionQuery {
