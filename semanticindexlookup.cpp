@@ -9,6 +9,36 @@
 
 using namespace semantic_index_lookup;
 
+namespace {
+
+SemanticDefinitionResult combinedDefinitionMissEvidence(
+    const SemanticDefinitionResult& local,
+    const SemanticDefinitionResult& global)
+{
+    SemanticDefinitionResult combined;
+    combined.inspectedCandidateCount =
+        local.inspectedCandidateCount + global.inspectedCandidateCount;
+    combined.matchingNameCandidateCount =
+        local.matchingNameCandidateCount + global.matchingNameCandidateCount;
+    combined.typeCompatibleCandidateCount =
+        local.typeCompatibleCandidateCount + global.typeCompatibleCandidateCount;
+    combined.visibleCandidateCount =
+        local.visibleCandidateCount + global.visibleCandidateCount;
+
+    if (combined.inspectedCandidateCount == 0) {
+        combined.missReason = SemanticDefinitionMissReason::NoCandidateSymbols;
+    } else if (combined.matchingNameCandidateCount == 0) {
+        combined.missReason = SemanticDefinitionMissReason::NoMatchingName;
+    } else if (combined.typeCompatibleCandidateCount == 0) {
+        combined.missReason = SemanticDefinitionMissReason::StructMemberTypeMismatch;
+    } else {
+        combined.missReason = SemanticDefinitionMissReason::NotVisibleInContext;
+    }
+    return combined;
+}
+
+}
+
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     const SemanticSymbolSearchQuery& query) const
 {
@@ -98,8 +128,10 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
     const SemanticDefinitionQuery& query) const
 {
     SemanticDefinitionResult empty;
-    if (query.symbolName.isEmpty())
+    if (query.symbolName.isEmpty()) {
+        empty.missReason = SemanticDefinitionMissReason::EmptySymbolName;
         return empty;
+    }
 
     SemanticDefinitionResult local = bestDefinitionFromCandidates(
         getSymbols(query.fileName),
@@ -116,7 +148,11 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
                            return normalizedLookupFileName(symbol.fileName) == queryFile;
                        }),
         globalCandidates.end());
-    return bestDefinitionFromCandidates(globalCandidates, query, false);
+    SemanticDefinitionResult global =
+        bestDefinitionFromCandidates(globalCandidates, query, false);
+    if (global.found)
+        return global;
+    return combinedDefinitionMissEvidence(local, global);
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::findDefinitionSymbols(
@@ -206,21 +242,26 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
     bool localFile) const
 {
     SemanticDefinitionResult best;
+    best.localFile = localFile;
     int bestPriority = 999;
     const QSet<QString> packages =
         SymbolTaxonomy::packageScopeNames(getSymbols());
 
     for (const sym_list::SymbolInfo& symbol : candidates) {
+        ++best.inspectedCandidateCount;
         if (!semanticDefinitionSymbolMatches(symbol, query.symbolName))
             continue;
+        ++best.matchingNameCandidateCount;
         if (semanticDefinitionSkipForStructMemberType(symbol, query))
             continue;
+        ++best.typeCompatibleCandidateCount;
         if (!SymbolTaxonomy::isDefinitionVisibleInContext(
                 symbol,
                 query.moduleName,
                 packages)) {
             continue;
         }
+        ++best.visibleCandidateCount;
 
         int priority = semanticDefinitionTypePriority(symbol)
             + SymbolTaxonomy::definitionContextPriorityAdjustment(
@@ -232,9 +273,22 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
             best.found = true;
             best.localFile = localFile;
             best.symbol = symbol;
+            best.symbolStableKey = symbolStableKeyForSymbol(symbol);
+            best.missReason = SemanticDefinitionMissReason::None;
             bestPriority = priority;
         }
     }
 
+    if (!best.found) {
+        if (best.inspectedCandidateCount == 0) {
+            best.missReason = SemanticDefinitionMissReason::NoCandidateSymbols;
+        } else if (best.matchingNameCandidateCount == 0) {
+            best.missReason = SemanticDefinitionMissReason::NoMatchingName;
+        } else if (best.typeCompatibleCandidateCount == 0) {
+            best.missReason = SemanticDefinitionMissReason::StructMemberTypeMismatch;
+        } else {
+            best.missReason = SemanticDefinitionMissReason::NotVisibleInContext;
+        }
+    }
     return best;
 }

@@ -95,10 +95,26 @@ struct SemanticDefinitionQuery {
     QString structTypeNameForMember;
 };
 
+enum class SemanticDefinitionMissReason {
+    None,
+    EmptySymbolName,
+    NoCandidateSymbols,
+    NoMatchingName,
+    StructMemberTypeMismatch,
+    NotVisibleInContext
+};
+
 struct SemanticDefinitionResult {
     bool found = false;
     bool localFile = false;
     sym_list::SymbolInfo symbol;
+    SymbolStableKey symbolStableKey;
+    int inspectedCandidateCount = 0;
+    int matchingNameCandidateCount = 0;
+    int typeCompatibleCandidateCount = 0;
+    int visibleCandidateCount = 0;
+    SemanticDefinitionMissReason missReason =
+        SemanticDefinitionMissReason::NoCandidateSymbols;
 };
 
 SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol);

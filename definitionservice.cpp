@@ -22,6 +22,12 @@ DefinitionResult toDefinitionResult(const SemanticDefinitionResult& semanticResu
     result.found = semanticResult.found;
     result.localFile = semanticResult.localFile;
     result.symbol = semanticResult.symbol;
+    result.symbolStableKey = semanticResult.symbolStableKey;
+    result.inspectedCandidateCount = semanticResult.inspectedCandidateCount;
+    result.matchingNameCandidateCount = semanticResult.matchingNameCandidateCount;
+    result.typeCompatibleCandidateCount = semanticResult.typeCompatibleCandidateCount;
+    result.visibleCandidateCount = semanticResult.visibleCandidateCount;
+    result.missReason = semanticResult.missReason;
     return result;
 }
 
@@ -49,8 +55,10 @@ void DefinitionService::setSemanticIndex(SemanticIndex* semanticIndex)
 DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& query) const
 {
     DefinitionResult empty;
-    if (query.symbolName.isEmpty())
+    if (query.symbolName.isEmpty()) {
+        empty.missReason = SemanticDefinitionMissReason::EmptySymbolName;
         return empty;
+    }
 
     const DefinitionQuery resolvedQuery = withResolvedMemberContext(query);
     return toDefinitionResult(

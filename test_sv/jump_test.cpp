@@ -97,6 +97,20 @@ int main(int argc, char** argv) {
                EditorSemanticContextService::getInstance()
                    ->canResolveDefinitionTarget(QStringLiteral("a"), topContext),
                false);
+    DefinitionQuery hiddenDefinitionQuery;
+    hiddenDefinitionQuery.symbolName = QStringLiteral("a");
+    hiddenDefinitionQuery.fileName = path;
+    hiddenDefinitionQuery.moduleName = QStringLiteral("top");
+    const DefinitionResult hiddenDefinitionResult =
+        DefinitionService::getInstance()->resolveDefinition(hiddenDefinitionQuery);
+    expectBool("DefinitionService hidden miss reason",
+               !hiddenDefinitionResult.found
+                   && hiddenDefinitionResult.matchingNameCandidateCount > 0
+                   && hiddenDefinitionResult.typeCompatibleCandidateCount > 0
+                   && hiddenDefinitionResult.visibleCandidateCount == 0
+                   && hiddenDefinitionResult.missReason
+                       == SemanticDefinitionMissReason::NotVisibleInContext,
+               true);
     expectBool("canResolve(nonexistent)",
                EditorSemanticContextService::getInstance()
                    ->canResolveDefinitionTarget(QStringLiteral("nope_xyz"), topContext),
@@ -312,13 +326,40 @@ int main(int argc, char** argv) {
     const bool snapshotModuleOk = snapshotModuleResult.found
         && !snapshotModuleResult.localFile
         && snapshotModuleResult.symbol.symbolId == snapshotHelperModule.symbolId
-        && snapshotModuleResult.symbol.fileName == QStringLiteral("snapshot_helper.sv");
+        && snapshotModuleResult.symbol.fileName == QStringLiteral("snapshot_helper.sv")
+        && snapshotModuleResult.symbolStableKey
+            == symbolStableKeyForSymbol(snapshotHelperModule)
+        && snapshotModuleResult.missReason == SemanticDefinitionMissReason::None
+        && snapshotModuleResult.visibleCandidateCount > 0;
     if (!snapshotModuleOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot cross-file module\n",
            snapshotModuleOk ? "PASS" : "FAIL");
     expectBool("DefinitionService canResolve snapshot cross-file module",
                snapshotDefinitionService.canResolveDefinition(snapshotModuleQuery),
+               true);
+
+    DefinitionQuery emptyDefinitionQuery;
+    const DefinitionResult emptyDefinitionResult =
+        snapshotDefinitionService.resolveDefinition(emptyDefinitionQuery);
+    expectBool("DefinitionService empty miss reason",
+               !emptyDefinitionResult.found
+                   && emptyDefinitionResult.inspectedCandidateCount == 0
+                   && emptyDefinitionResult.missReason
+                       == SemanticDefinitionMissReason::EmptySymbolName,
+               true);
+
+    DefinitionQuery missingDefinitionQuery;
+    missingDefinitionQuery.symbolName = QStringLiteral("snap_missing");
+    missingDefinitionQuery.fileName = QStringLiteral("snapshot_only.sv");
+    const DefinitionResult missingDefinitionResult =
+        snapshotDefinitionService.resolveDefinition(missingDefinitionQuery);
+    expectBool("DefinitionService missing miss reason",
+               !missingDefinitionResult.found
+                   && missingDefinitionResult.inspectedCandidateCount > 0
+                   && missingDefinitionResult.matchingNameCandidateCount == 0
+                   && missingDefinitionResult.missReason
+                       == SemanticDefinitionMissReason::NoMatchingName,
                true);
 
     DefinitionQuery snapshotInterfaceQuery;
