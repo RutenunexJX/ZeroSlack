@@ -16,6 +16,8 @@ set(PROTECTED_BOUNDARY_FILES
     analysisscheduler.h
     diagnosticsrefreshcontroller.cpp
     diagnosticsrefreshcontroller.h
+    editorcompletionui.cpp
+    editorcompletionui.h
     editorcoordinator.cpp
     editorcoordinator.h
     mainwindow.cpp

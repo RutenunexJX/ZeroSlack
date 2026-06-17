@@ -37,6 +37,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     state.input = inputState.input;
     state.completionPrefix = inputState.input.trimmed();
     state.command = inputState.command;
+    state.requestedKind = inputState.command.symbolType;
 
     if (state.exitRequested)
         return state;

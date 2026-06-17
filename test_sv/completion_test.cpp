@@ -1197,7 +1197,8 @@ int main(int argc, char** argv) {
         && !commandCompletionState.hidePopup
         && commandCompletionState.showCompletions
         && commandCompletionState.completionPrefix == QStringLiteral("en")
-        && commandCompletionState.command.symbolType == sym_list::sym_logic;
+        && commandCompletionState.command.symbolType == sym_list::sym_logic
+        && commandCompletionState.requestedKind == sym_list::sym_logic;
     if (!commandCompletionStateOk)
         ++g_fails;
     printf("[%s] %-34s prefix=\"%s\"\n",

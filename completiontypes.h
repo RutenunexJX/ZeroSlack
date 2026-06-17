@@ -183,6 +183,7 @@ struct CommandModeCompletionState {
     QString input;
     QString completionPrefix;
     CommandModeCommand command;
+    sym_list::sym_type_e requestedKind = sym_list::sym_user;
     QList<sym_list::SymbolInfo> symbols;
 };
 

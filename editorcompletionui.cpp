@@ -135,7 +135,7 @@ void EditorCompletionUi::updateCommandModeCompletions(
     model->updateSymbolCompletions(
         commandState.completion.symbols,
         commandState.completion.completionPrefix,
-        commandState.completion.command.symbolType);
+        commandState.completion.requestedKind);
 }
 
 void EditorCompletionUi::updateSymbolCompletions(
