@@ -1347,7 +1347,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (reference.relationship.relationship.fromId == topId
                 && reference.relationship.relationship.toId == stageId
                 && reference.referencingSymbol.symbolId == topId
-                && reference.referencedSymbol.symbolId == stageId);
+                && reference.referencedSymbol.symbolId == stageId
+                && reference.referencingSymbolRecord.isValid()
+                && reference.referencingSymbolRecord.stableKey == topStableKey
+                && reference.referencedSymbolRecord.isValid()
+                && reference.referencedSymbolRecord.stableKey == stageStableKey);
     }
     expectBool("snapshot reference service finds stage instantiation",
                snapshotReferenceFoundTop, true);
@@ -1361,6 +1365,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotReferenceReport.subjectSymbol.symbolId == stageId, true);
     expectBool("snapshot reference report subject stable key",
                snapshotReferenceReport.subjectStableKey == stageStableKey,
+               true);
+    expectBool("snapshot reference report subject record",
+               snapshotReferenceReport.subjectSymbolRecord.isValid()
+                   && snapshotReferenceReport.subjectSymbolRecord.localHandle == stageId
+                   && snapshotReferenceReport.subjectSymbolRecord.stableKey == stageStableKey
+                   && snapshotReferenceReport.subjectSymbolRecord.name
+                       == QStringLiteral("rel_stage"),
                true);
     expectBool("snapshot reference report found reason metadata",
                snapshotReferenceReport.notFoundReason
@@ -1407,12 +1418,31 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .references.first()
                           .referencedSymbol.symbolId == stageId,
                true);
+    expectBool("snapshot reference report keeps grouped records",
+               snapshotReferenceReport.fileGroups.size() == 1
+                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
+                   && !snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.isEmpty()
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.first()
+                          .referencingSymbolRecord.stableKey == topStableKey
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.first()
+                          .referencedSymbolRecord.stableKey == stageStableKey,
+               true);
     expectBool("snapshot reference report keeps stable identity",
                !snapshotReferenceReport.references.isEmpty()
                    && snapshotReferenceReport.references.first().referencingStableKey
                           == topStableKey
                    && snapshotReferenceReport.references.first().referencedStableKey
                           == stageStableKey
+                   && snapshotReferenceReport.references.first().referencingSymbolRecord.name
+                          == QStringLiteral("rel_top")
+                   && snapshotReferenceReport.references.first().referencedSymbolRecord.name
+                          == QStringLiteral("rel_stage")
                    && snapshotReferenceReport.fileGroups.size() == 1
                    && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
                    && !snapshotReferenceReport.fileGroups.first()

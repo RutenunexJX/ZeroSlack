@@ -14,16 +14,24 @@ namespace {
 QTreeWidgetItem* createReferenceItem(QTreeWidgetItem* parent,
                                      const ReferenceResult& reference)
 {
-    const sym_list::SymbolInfo& source = reference.referencingSymbol;
+    const QString sourceFile = reference.referencingSymbolRecord.location.fileName.isEmpty()
+        ? reference.referencingSymbol.fileName
+        : reference.referencingSymbolRecord.location.fileName;
+    const int sourceLine = reference.referencingSymbolRecord.location.startLine > 0
+        ? reference.referencingSymbolRecord.location.startLine
+        : reference.referencingSymbol.startLine;
+    const int sourceColumn = reference.referencingSymbolRecord.location.startColumn > 0
+        ? reference.referencingSymbolRecord.location.startColumn
+        : reference.referencingSymbol.startColumn;
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, reference.symbolDisplayName);
     item->setText(1, reference.fileDisplayName);
     item->setText(2, reference.lineDisplayName);
     item->setText(3, reference.relationshipTypeDisplayName);
-    item->setToolTip(1, source.fileName);
-    item->setData(0, Qt::UserRole, source.fileName);
-    item->setData(0, Qt::UserRole + 1, source.startLine);
-    item->setData(0, Qt::UserRole + 2, source.startColumn);
+    item->setToolTip(1, sourceFile);
+    item->setData(0, Qt::UserRole, sourceFile);
+    item->setData(0, Qt::UserRole + 1, sourceLine);
+    item->setData(0, Qt::UserRole + 2, sourceColumn);
     return item;
 }
 
@@ -162,9 +170,11 @@ void ReferencesPanelCoordinator::refresh()
     ReferenceService* referenceService = ReferenceService::getInstance();
     const ReferenceQuery query = referenceService->queryForPanel(queryOptions);
     const ReferenceReport report = referenceService->findReferenceReport(query);
-    const QString subjectName = report.subjectSymbol.symbolName.isEmpty()
-        ? currentReferenceSymbolName
-        : report.subjectSymbol.symbolName;
+    QString subjectName = report.subjectSymbolRecord.name;
+    if (subjectName.isEmpty())
+        subjectName = report.subjectSymbol.symbolName;
+    if (subjectName.isEmpty())
+        subjectName = currentReferenceSymbolName;
 
     const bool hadExpandableItems = SemanticPanelUtils::treeHasExpandableItems(referencesTree);
     const QSet<QString> expandedKeys = SemanticPanelUtils::collectExpandedKeys(referencesTree);

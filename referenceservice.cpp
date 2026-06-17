@@ -29,19 +29,67 @@ QStringList normalizedReferenceFileNames(const QStringList& fileNames)
     return normalized;
 }
 
-bool referenceLocationLess(const sym_list::SymbolInfo& lhs,
-                           const sym_list::SymbolInfo& rhs)
+QString referenceRecordFileName(const SemanticSymbolRecord& record,
+                                const sym_list::SymbolInfo& fallbackSymbol)
 {
-    const int fileCompare = QString::compare(normalizedReferenceFileName(lhs.fileName),
-                                             normalizedReferenceFileName(rhs.fileName),
+    return record.location.fileName.isEmpty()
+        ? fallbackSymbol.fileName
+        : record.location.fileName;
+}
+
+int referenceRecordLine(const SemanticSymbolRecord& record,
+                        const sym_list::SymbolInfo& fallbackSymbol)
+{
+    return record.location.startLine > 0
+        ? record.location.startLine
+        : fallbackSymbol.startLine;
+}
+
+int referenceRecordColumn(const SemanticSymbolRecord& record,
+                          const sym_list::SymbolInfo& fallbackSymbol)
+{
+    return record.location.startColumn > 0
+        ? record.location.startColumn
+        : fallbackSymbol.startColumn;
+}
+
+QString referenceRecordName(const SemanticSymbolRecord& record,
+                            const sym_list::SymbolInfo& fallbackSymbol)
+{
+    return record.name.isEmpty()
+        ? fallbackSymbol.symbolName
+        : record.name;
+}
+
+bool referenceLocationLess(const ReferenceResult& lhs,
+                           const ReferenceResult& rhs)
+{
+    const QString leftFile =
+        referenceRecordFileName(lhs.referencingSymbolRecord, lhs.referencingSymbol);
+    const QString rightFile =
+        referenceRecordFileName(rhs.referencingSymbolRecord, rhs.referencingSymbol);
+    const int fileCompare = QString::compare(normalizedReferenceFileName(leftFile),
+                                             normalizedReferenceFileName(rightFile),
                                              Qt::CaseInsensitive);
     if (fileCompare != 0)
         return fileCompare < 0;
-    if (lhs.startLine != rhs.startLine)
-        return lhs.startLine < rhs.startLine;
-    if (lhs.startColumn != rhs.startColumn)
-        return lhs.startColumn < rhs.startColumn;
-    return QString::compare(lhs.symbolName, rhs.symbolName, Qt::CaseInsensitive) < 0;
+    const int leftLine =
+        referenceRecordLine(lhs.referencingSymbolRecord, lhs.referencingSymbol);
+    const int rightLine =
+        referenceRecordLine(rhs.referencingSymbolRecord, rhs.referencingSymbol);
+    if (leftLine != rightLine)
+        return leftLine < rightLine;
+    const int leftColumn =
+        referenceRecordColumn(lhs.referencingSymbolRecord, lhs.referencingSymbol);
+    const int rightColumn =
+        referenceRecordColumn(rhs.referencingSymbolRecord, rhs.referencingSymbol);
+    if (leftColumn != rightColumn)
+        return leftColumn < rightColumn;
+    return QString::compare(referenceRecordName(lhs.referencingSymbolRecord,
+                                                lhs.referencingSymbol),
+                            referenceRecordName(rhs.referencingSymbolRecord,
+                                                rhs.referencingSymbol),
+                            Qt::CaseInsensitive) < 0;
 }
 
 QString referenceTypeDisplayName(SymbolRelationshipEngine::RelationType type)
@@ -130,7 +178,9 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
         ReferenceResult reference = toReferenceResult(rel);
-        if (!scopeMatches(normalized, reference.referencingSymbol))
+        if (!scopeMatches(normalized,
+                          reference.referencingSymbolRecord,
+                          reference.referencingSymbol))
             continue;
         result.append(reference);
     }
@@ -140,7 +190,7 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
                       return static_cast<int>(lhs.relationship.relationship.type)
                           < static_cast<int>(rhs.relationship.relationship.type);
                   }
-                  return referenceLocationLess(lhs.referencingSymbol, rhs.referencingSymbol);
+                  return referenceLocationLess(lhs, rhs);
               });
     return result;
 }
@@ -158,17 +208,21 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
         return report;
     }
     report.subjectSymbol = semanticIndex()->getSymbolById(id);
-    report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
+    report.subjectSymbolRecord = semanticSymbolRecordForSymbol(report.subjectSymbol);
+    report.subjectStableKey = report.subjectSymbolRecord.stableKey;
 
     report.references = findReferences(normalized);
     report.totalCount = report.references.size();
     QMap<QString, int> fileGroupIndexes;
     QMap<QString, QMap<SymbolRelationshipEngine::RelationType, int>> typeGroupIndexes;
     for (const ReferenceResult& reference : report.references) {
+        const QString referenceFile =
+            referenceRecordFileName(reference.referencingSymbolRecord,
+                                    reference.referencingSymbol);
         const QString normalizedFile =
-            normalizedReferenceFileName(reference.referencingSymbol.fileName);
+            normalizedReferenceFileName(referenceFile);
         const QString fileKey = normalizedFile.isEmpty()
-            ? reference.referencingSymbol.fileName
+            ? referenceFile
             : normalizedFile;
         const SymbolRelationshipEngine::RelationType type =
             reference.relationship.relationship.type;
@@ -178,10 +232,10 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
 
         if (!fileGroupIndexes.contains(fileKey)) {
             ReferenceFileGroup fileGroup;
-            fileGroup.fileName = reference.referencingSymbol.fileName;
+            fileGroup.fileName = referenceFile;
             fileGroup.fileKey = fileKey;
             fileGroup.displayName =
-                referenceFileDisplayName(reference.referencingSymbol.fileName);
+                referenceFileDisplayName(referenceFile);
             fileGroupIndexes.insert(fileKey, report.fileGroups.size());
             report.fileGroups.append(fileGroup);
         }
@@ -273,9 +327,11 @@ QList<SymbolRelationshipEngine::RelationType> ReferenceService::effectiveTypes(
 }
 
 bool ReferenceService::scopeMatches(const ReferenceQuery& query,
-                                    const sym_list::SymbolInfo& symbol) const
+                                    const SemanticSymbolRecord& record,
+                                    const sym_list::SymbolInfo& fallbackSymbol) const
 {
-    const QString normalizedSource = normalizedReferenceFileName(symbol.fileName);
+    const QString normalizedSource = normalizedReferenceFileName(
+        referenceRecordFileName(record, fallbackSymbol));
     if (query.currentFileOnly) {
         if (normalizedSource != query.fileName)
             return false;
@@ -299,11 +355,24 @@ ReferenceResult ReferenceService::toReferenceResult(
     result.relationship = relationship;
     result.referencingSymbol = relationship.fromSymbol;
     result.referencedSymbol = relationship.toSymbol;
-    result.referencingStableKey = relationship.fromStableKey;
-    result.referencedStableKey = relationship.toStableKey;
-    result.symbolDisplayName = relationship.fromSymbol.symbolName;
-    result.fileDisplayName = referenceFileDisplayName(relationship.fromSymbol.fileName);
-    result.lineDisplayName = referenceLineDisplayName(relationship.fromSymbol.startLine);
+    result.referencingSymbolRecord =
+        semanticSymbolRecordForSymbol(result.referencingSymbol);
+    result.referencedSymbolRecord =
+        semanticSymbolRecordForSymbol(result.referencedSymbol);
+    result.referencingStableKey = result.referencingSymbolRecord.stableKey.isValid()
+        ? result.referencingSymbolRecord.stableKey
+        : relationship.fromStableKey;
+    result.referencedStableKey = result.referencedSymbolRecord.stableKey.isValid()
+        ? result.referencedSymbolRecord.stableKey
+        : relationship.toStableKey;
+    const QString sourceFile =
+        referenceRecordFileName(result.referencingSymbolRecord,
+                                result.referencingSymbol);
+    result.symbolDisplayName =
+        referenceRecordName(result.referencingSymbolRecord, result.referencingSymbol);
+    result.fileDisplayName = referenceFileDisplayName(sourceFile);
+    result.lineDisplayName = referenceLineDisplayName(
+        referenceRecordLine(result.referencingSymbolRecord, result.referencingSymbol));
     result.relationshipTypeDisplayName =
         referenceTypeDisplayName(relationship.relationship.type);
     return result;

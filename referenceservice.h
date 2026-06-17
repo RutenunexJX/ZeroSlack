@@ -46,6 +46,8 @@ struct ReferenceResult {
     RelationshipResult relationship;
     sym_list::SymbolInfo referencingSymbol;
     sym_list::SymbolInfo referencedSymbol;
+    SemanticSymbolRecord referencingSymbolRecord;
+    SemanticSymbolRecord referencedSymbolRecord;
     SymbolStableKey referencingStableKey;
     SymbolStableKey referencedStableKey;
     QString symbolDisplayName;
@@ -72,6 +74,7 @@ struct ReferenceFileGroup {
 struct ReferenceReport {
     int subjectSymbolId = -1;
     sym_list::SymbolInfo subjectSymbol = {};
+    SemanticSymbolRecord subjectSymbolRecord;
     SymbolStableKey subjectStableKey;
     ReferenceReportNotFoundReason notFoundReason =
         ReferenceReportNotFoundReason::None;
@@ -108,7 +111,9 @@ private:
     int resolveSymbolId(const ReferenceQuery& query) const;
     QList<SymbolRelationshipEngine::RelationType> effectiveTypes(
         const ReferenceQuery& query) const;
-    bool scopeMatches(const ReferenceQuery& query, const sym_list::SymbolInfo& symbol) const;
+    bool scopeMatches(const ReferenceQuery& query,
+                      const SemanticSymbolRecord& record,
+                      const sym_list::SymbolInfo& fallbackSymbol) const;
     ReferenceResult toReferenceResult(const RelationshipResult& relationship) const;
     static ReferenceQuery normalizedQuery(const ReferenceQuery& query);
     static QString referenceFileDisplayName(const QString& fileName);
