@@ -285,6 +285,37 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata raw compatibility",
                logicMetadata.rawCollectorKind == sym_list::sym_logic,
                true);
+    SymbolTaxonomy::SemanticMetadata syntheticModuleMetadata;
+    syntheticModuleMetadata.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Module;
+    syntheticModuleMetadata.usageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    syntheticModuleMetadata.ownerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Global;
+    syntheticModuleMetadata.visibility =
+        SymbolTaxonomy::SymbolVisibility::Global;
+    syntheticModuleMetadata.rawCollectorKind = sym_list::sym_user;
+    expectBool("SymbolTaxonomy search intent uses semantic metadata",
+               SymbolTaxonomy::matchesSearchIntent(
+                   syntheticModuleMetadata,
+                   SymbolTaxonomy::SymbolSearchIntent::ModuleDeclarations),
+               true);
+    expectBool("SymbolTaxonomy global definition uses semantic metadata",
+               SymbolTaxonomy::isGlobalDefinition(syntheticModuleMetadata),
+               true);
+    sym_list::SymbolInfo metadataKeySymbol;
+    metadataKeySymbol.symbolName = QStringLiteral("metadata_top");
+    metadataKeySymbol.symbolType = sym_list::sym_user;
+    metadataKeySymbol.hasSemanticMetadata = true;
+    metadataKeySymbol.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Module;
+    metadataKeySymbol.rawCollectorKind = sym_list::sym_user;
+    const SymbolStableKey metadataKey =
+        symbolStableKeyForSymbol(metadataKeySymbol);
+    expectBool("stable key uses semantic declaration kind",
+               metadataKey.declarationKind
+                   == SymbolTaxonomy::DeclarationKind::Module,
+               true);
     sym_list::SymbolInfo scopedStruct;
     scopedStruct.symbolType = sym_list::sym_packed_struct;
     scopedStruct.moduleScope = QStringLiteral("pkg_scope");

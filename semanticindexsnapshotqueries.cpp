@@ -247,8 +247,10 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::sortedDefinitions(
                 value += 100;
             if (!context.moduleName.isEmpty() && s.moduleScope == context.moduleName)
                 value += 50;
-            if (SymbolTaxonomy::isGlobalDefinition(s.symbolType))
+            if (SymbolTaxonomy::isGlobalDefinition(
+                    SymbolTaxonomy::semanticMetadata(s))) {
                 value += 10;
+            }
             return value;
         };
 

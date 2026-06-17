@@ -59,6 +59,7 @@ sym_list::SymbolInfo withSemanticMetadata(
 bool isDefinitionCandidate(sym_list::sym_type_e type);
 bool isDefinitionCandidate(const SemanticMetadata& metadata);
 bool isGlobalDefinition(sym_list::sym_type_e type);
+bool isGlobalDefinition(const SemanticMetadata& metadata);
 bool isPackageVisibleDefinition(sym_list::sym_type_e type);
 bool isInterfaceLikeOwner(sym_list::sym_type_e type);
 QString interfaceScopeFromOwner(const sym_list::SymbolInfo& symbol);
@@ -83,11 +84,13 @@ bool isPackageScopeVisibleCompletion(
     sym_list::sym_type_e requestedType,
     const QSet<QString>& packageScopes);
 bool isOutlineSymbol(sym_list::sym_type_e type);
+bool isOutlineSymbol(const SemanticMetadata& metadata);
 int definitionPriority(sym_list::sym_type_e type);
 int definitionPriority(const SemanticMetadata& metadata);
 QList<sym_list::sym_type_e> outlineSymbolTypes();
 QString symbolTypeLabel(sym_list::sym_type_e type);
 bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent);
+bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent intent);
 
 bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                               sym_list::sym_type_e commandType,

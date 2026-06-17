@@ -40,7 +40,7 @@ SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
 
     key.fileName = normalizedStableKeyFileName(symbol.fileName);
     key.symbolName = symbol.symbolName;
-    key.declarationKind = SymbolTaxonomy::declarationKind(symbol.symbolType);
+    key.declarationKind = SymbolTaxonomy::semanticMetadata(symbol).declarationKind;
     key.ownerScope = symbol.moduleScope;
     return key;
 }

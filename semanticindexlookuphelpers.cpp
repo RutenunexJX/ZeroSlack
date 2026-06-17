@@ -14,13 +14,15 @@ QString normalizedLookupFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-bool symbolSearchTypeMatches(sym_list::sym_type_e type,
+bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
                              const QList<sym_list::sym_type_e>& types,
                              SymbolTaxonomy::SymbolSearchIntent intent)
 {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
     if (!types.isEmpty())
-        return types.contains(type);
-    return SymbolTaxonomy::matchesSearchIntent(type, intent);
+        return types.contains(metadata.rawCollectorKind);
+    return SymbolTaxonomy::matchesSearchIntent(metadata, intent);
 }
 
 bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
@@ -33,10 +35,8 @@ bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
         SymbolTaxonomy::semanticMetadata(symbol));
 }
 
-int semanticDefinitionTypePriority(sym_list::sym_type_e type)
+int semanticDefinitionTypePriority(const sym_list::SymbolInfo& symbol)
 {
-    sym_list::SymbolInfo symbol;
-    symbol.symbolType = type;
     return SymbolTaxonomy::definitionPriority(
         SymbolTaxonomy::semanticMetadata(symbol));
 }

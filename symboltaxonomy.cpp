@@ -292,6 +292,13 @@ bool isGlobalDefinition(sym_list::sym_type_e type)
         || type == sym_list::sym_package;
 }
 
+bool isGlobalDefinition(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Module
+        || metadata.declarationKind == DeclarationKind::Interface
+        || metadata.declarationKind == DeclarationKind::Package;
+}
+
 bool isPackageVisibleDefinition(sym_list::sym_type_e type)
 {
     switch (type) {
@@ -439,6 +446,11 @@ bool isOutlineSymbol(sym_list::sym_type_e type)
     return outlineSymbolTypes().contains(type);
 }
 
+bool isOutlineSymbol(const SemanticMetadata& metadata)
+{
+    return isOutlineSymbol(metadata.rawCollectorKind);
+}
+
 int definitionPriority(sym_list::sym_type_e type)
 {
     switch (type) {
@@ -576,25 +588,32 @@ QString symbolTypeLabel(sym_list::sym_type_e type)
 
 bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent)
 {
+    sym_list::SymbolInfo symbol;
+    symbol.symbolType = type;
+    return matchesSearchIntent(semanticMetadata(symbol), intent);
+}
+
+bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent intent)
+{
     switch (intent) {
     case SymbolSearchIntent::Any:
         return true;
     case SymbolSearchIntent::DefinitionCandidates:
-        return isDefinitionCandidate(type);
+        return isDefinitionCandidate(metadata);
     case SymbolSearchIntent::ModuleDeclarations:
-        return isModuleDeclaration(type);
+        return metadata.declarationKind == DeclarationKind::Module;
     case SymbolSearchIntent::GlobalDefinitions:
-        return isGlobalDefinition(type);
+        return isGlobalDefinition(metadata);
     case SymbolSearchIntent::TypeDeclarations: {
-        const DeclarationKind kind = declarationKind(type);
-        return kind == DeclarationKind::Typedef
-            || kind == DeclarationKind::Enum
-            || kind == DeclarationKind::Struct;
+        return metadata.declarationKind == DeclarationKind::Typedef
+            || metadata.declarationKind == DeclarationKind::Enum
+            || metadata.declarationKind == DeclarationKind::Struct;
     }
     case SymbolSearchIntent::OutlineSymbols:
-        return isOutlineSymbol(type);
+        return isOutlineSymbol(metadata);
     case SymbolSearchIntent::SubroutineDeclarations:
-        return isSubroutineDeclaration(type);
+        return metadata.declarationKind == DeclarationKind::Task
+            || metadata.declarationKind == DeclarationKind::Function;
     }
     return false;
 }

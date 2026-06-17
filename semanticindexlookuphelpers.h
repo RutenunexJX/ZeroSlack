@@ -7,14 +7,14 @@ namespace semantic_index_lookup {
 
 QString normalizedLookupFileName(const QString& fileName);
 
-bool symbolSearchTypeMatches(sym_list::sym_type_e type,
+bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
                              const QList<sym_list::sym_type_e>& types,
                              SymbolTaxonomy::SymbolSearchIntent intent);
 
 bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
                                      const QString& searchWord);
 
-int semanticDefinitionTypePriority(sym_list::sym_type_e type);
+int semanticDefinitionTypePriority(const sym_list::SymbolInfo& symbol);
 
 bool semanticDefinitionSkipForStructMemberType(
     const sym_list::SymbolInfo& symbol,

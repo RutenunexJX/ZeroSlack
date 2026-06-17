@@ -15,7 +15,7 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     QList<SemanticSymbolSearchResult> result;
     const QList<sym_list::SymbolInfo> symbols = getSymbols(query.fileName);
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!symbolSearchTypeMatches(symbol.symbolType, query.types, query.intent))
+        if (!symbolSearchTypeMatches(symbol, query.types, query.intent))
             continue;
 
         const int score = symbolSearchMatchScore(symbol.symbolName, query);
@@ -180,8 +180,10 @@ QList<sym_list::SymbolInfo> SemanticIndex::sortedDefinitions(
                 value += 100;
             if (!context.moduleName.isEmpty() && s.moduleScope == context.moduleName)
                 value += 50;
-            if (SymbolTaxonomy::isGlobalDefinition(s.symbolType))
+            if (SymbolTaxonomy::isGlobalDefinition(
+                    SymbolTaxonomy::semanticMetadata(s))) {
                 value += 10;
+            }
             return value;
         };
 
@@ -220,7 +222,7 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
             continue;
         }
 
-        int priority = semanticDefinitionTypePriority(symbol.symbolType)
+        int priority = semanticDefinitionTypePriority(symbol)
             + SymbolTaxonomy::definitionContextPriorityAdjustment(
                 symbol,
                 query.moduleName,
