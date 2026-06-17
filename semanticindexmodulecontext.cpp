@@ -61,13 +61,14 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
     }
 
     auto appendIfMatches = [&](const sym_list::SymbolInfo& symbol, bool fuzzyPrefix) {
-        if (!moduleContextSymbolTypeMatches(symbol, symbolType)) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (!moduleContextSymbolTypeMatches(record, symbolType)) {
             return;
         }
         const bool nameMatches = fuzzyPrefix
-            ? moduleContextNameMatches(symbol.symbolName, prefix)
+            ? moduleContextNameMatches(record.name, prefix)
             : (prefix.isEmpty()
-               || symbol.symbolName.startsWith(prefix, Qt::CaseInsensitive));
+               || record.name.startsWith(prefix, Qt::CaseInsensitive));
         if (nameMatches)
             result.append(symbol);
     };
@@ -80,7 +81,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
                 && symbol.startLine > moduleSymbol.startLine
                 && symbol.startLine < moduleEndLineExclusive;
         } else {
-            correctModule = symbol.moduleScope == moduleName;
+            const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+            correctModule = record.owner.name == moduleName;
         }
 
         if (correctModule)
@@ -149,10 +151,11 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
 
     QSet<int> seenIds;
     auto appendSymbol = [&](const sym_list::SymbolInfo& symbol) {
-        if (!moduleContextSymbolTypeMatches(symbol, symbolType)) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (!moduleContextSymbolTypeMatches(record, symbolType)) {
             return;
         }
-        if (!moduleContextNameMatches(symbol.symbolName, prefix))
+        if (!moduleContextNameMatches(record.name, prefix))
             return;
         if (seenIds.contains(symbol.symbolId))
             return;
@@ -166,7 +169,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         if (isModuleRangeSymbolType(symbolType)) {
             isCorrectModule = inModuleRange(symbol);
         } else {
-            isCorrectModule = symbol.moduleScope == moduleName;
+            const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+            isCorrectModule = record.owner.name == moduleName;
         }
         if (isCorrectModule)
             appendSymbol(symbol);
@@ -224,11 +228,12 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         }
 
         for (const sym_list::SymbolInfo& symbol : allSymbols) {
-            bool imported = starPackages.contains(symbol.moduleScope);
+            const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+            bool imported = starPackages.contains(record.owner.name);
             if (!imported) {
-                auto it = importedSymbolsByPackage.constFind(symbol.moduleScope);
+                auto it = importedSymbolsByPackage.constFind(record.owner.name);
                 imported = it != importedSymbolsByPackage.constEnd()
-                    && it->contains(symbol.symbolName);
+                    && it->contains(record.name);
             }
             if (imported)
                 appendSymbol(symbol);

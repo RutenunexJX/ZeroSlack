@@ -2126,6 +2126,25 @@ int main(int argc, char** argv) {
                                       QStringLiteral("snap_top"),
                                       QString(),
                                       5008));
+    sym_list::SymbolInfo semanticTopSignal =
+        makeSymbol(QStringLiteral("semantic_top_signal"),
+                   sym_list::sym_user,
+                   QStringLiteral("snap_top"),
+                   QString(),
+                   5016);
+    semanticTopSignal.hasSemanticMetadata = true;
+    semanticTopSignal.semanticDeclarationKind =
+        SymbolSemanticMetadata::DeclarationKind::Signal;
+    semanticTopSignal.semanticUsageRole =
+        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
+    semanticTopSignal.semanticOwnerScope =
+        SymbolSemanticMetadata::SymbolOwnerScope::Module;
+    semanticTopSignal.semanticVisibility =
+        SymbolSemanticMetadata::SymbolVisibility::ScopeLocal;
+    semanticTopSignal.semanticSourceRole =
+        SymbolSemanticMetadata::SourceRole::DesignSource;
+    semanticTopSignal.rawCollectorKind = sym_list::sym_user;
+    snapshotSymbols.append(semanticTopSignal);
     snapshotSymbols.append(makeSymbol(QStringLiteral("snap_other_enable"),
                                       sym_list::sym_logic,
                                       QStringLiteral("other_top"),
@@ -2712,6 +2731,12 @@ int main(int argc, char** argv) {
                    sym_list::sym_logic,
                    QStringLiteral("snap_"))),
                {"snap_clk", "snap_enable", "snap_rst_n"});
+    expectList("snapshot metadata module internal type",
+               symbolNames(snapshotCompletionService.findModuleInternalSymbolInfosByType(
+                   QStringLiteral("snap_top"),
+                   sym_list::sym_logic,
+                   QStringLiteral("semantic"))),
+               {"semantic_top_signal"});
     expectList("snapshot module context info symbols",
                symbolNames(snapshotCompletionService.findModuleContextSymbolInfosByType(
                    QStringLiteral("snap_scope"),

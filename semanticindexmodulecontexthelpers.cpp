@@ -8,6 +8,22 @@
 
 namespace semantic_index_module_context {
 
+namespace {
+SymbolTaxonomy::SemanticMetadata moduleContextMetadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+}
+
 QString normalizedModuleContextFileName(const QString& fileName)
 {
     if (fileName.isEmpty())
@@ -28,10 +44,18 @@ bool moduleContextSymbolTypeMatches(sym_list::sym_type_e symbolType,
 bool moduleContextSymbolTypeMatches(const sym_list::SymbolInfo& symbol,
                                     sym_list::sym_type_e commandType)
 {
+    return moduleContextSymbolTypeMatches(
+        semanticSymbolRecordForSymbol(symbol),
+        commandType);
+}
+
+bool moduleContextSymbolTypeMatches(const SemanticSymbolRecord& record,
+                                    sym_list::sym_type_e commandType)
+{
     return SymbolTaxonomy::commandSymbolTypeMatches(
-        SymbolTaxonomy::semanticMetadata(symbol),
+        moduleContextMetadataForRecord(record),
         commandType,
-        symbol.dataType);
+        record.type.rawTypeText);
 }
 
 bool moduleContextNameMatches(const QString& name, const QString& prefix)
