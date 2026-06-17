@@ -59,10 +59,12 @@ void appendSymbolGroup(QTreeWidget* tree,
 {
     QTreeWidgetItem* group = createGroupItem(tree, title, rows.size());
     for (const ModuleBriefSymbolRow& row : rows) {
-        const sym_list::SymbolInfo& symbol = row.symbol;
+        const QString symbolName = row.symbolRecord.name.isEmpty()
+            ? row.symbol.symbolName
+            : row.symbolRecord.name;
         createChildItem(group,
                         row.sectionDisplayName,
-                        symbol.symbolName,
+                        symbolName,
                         row.detailDisplayName,
                         row.codeLink.fileName,
                         row.codeLink.line,

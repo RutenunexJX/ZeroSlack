@@ -12,6 +12,20 @@ sym_list::SymbolInfo missingModuleBriefSymbol()
     symbol.symbolId = -1;
     return symbol;
 }
+
+SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
 }
 
 ModuleBriefService* ModuleBriefService::getInstance()
@@ -48,7 +62,8 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.found = true;
     report.notFoundReason = ModuleBriefNotFoundReason::None;
     report.moduleSymbol = moduleSymbol;
-    report.moduleStableKey = symbolStableKeyForSymbol(moduleSymbol);
+    report.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
+    report.moduleStableKey = report.moduleSymbolRecord.stableKey;
     const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
 
     report.ports = symbolsInModule(
@@ -295,12 +310,14 @@ QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
 {
     QList<ModuleBriefSymbolRow> rows;
     for (const sym_list::SymbolInfo& symbol : symbols) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         ModuleBriefSymbolRow row;
         row.symbol = symbol;
+        row.symbolRecord = record;
         row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = sectionDisplayName;
-        row.typeDisplayName = symbolTypeDisplayName(symbol);
-        row.detailDisplayName = symbolDetailDisplayName(symbol);
+        row.typeDisplayName = symbolTypeDisplayName(record);
+        row.detailDisplayName = symbolDetailDisplayName(record);
         rows.append(row);
     }
     return rows;
@@ -369,17 +386,18 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
             return;
         seen.insert(key);
 
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         ModuleBriefContextRow row;
         row.symbol = symbol;
         row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = section;
-        row.symbolDisplayName = symbolDisplayName(symbol);
+        row.symbolDisplayName = symbolDisplayName(record);
         row.contextKindDisplayName = kind;
-        row.symbolTypeDisplayName = symbolTypeDisplayName(symbol);
+        row.symbolTypeDisplayName = symbolTypeDisplayName(record);
         row.detailDisplayName = contextDetailDisplayName(kind, symbol);
         row.sourceRoleDisplayName =
             SymbolTaxonomy::sourceRoleDisplayName(
-                SymbolTaxonomy::semanticMetadata(symbol).sourceRole);
+                record.sourceRole);
         rows.append(row);
     };
 
@@ -399,7 +417,8 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         for (const sym_list::SymbolInfo& symbol : packageMembers) {
             appendRow(QStringLiteral("Package Member"),
                       QStringLiteral("package %1")
-                          .arg(symbolTypeDisplayName(symbol)),
+                          .arg(symbolTypeDisplayName(
+                              semanticSymbolRecordForSymbol(symbol))),
                       symbol);
         }
     }
@@ -426,19 +445,19 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
 }
 
 QString ModuleBriefService::symbolTypeDisplayName(
-    const sym_list::SymbolInfo& symbol)
+    const SemanticSymbolRecord& record)
 {
     return SymbolTaxonomy::symbolTypeLabel(
-        SymbolTaxonomy::semanticMetadata(symbol));
+        semanticMetadataForRecord(record));
 }
 
 QString ModuleBriefService::symbolDetailDisplayName(
-    const sym_list::SymbolInfo& symbol)
+    const SemanticSymbolRecord& record)
 {
-    const QString type = symbolTypeDisplayName(symbol);
-    return symbol.dataType.isEmpty()
+    const QString type = symbolTypeDisplayName(record);
+    return record.type.rawTypeText.isEmpty()
         ? type
-        : QStringLiteral("%1 %2").arg(type, symbol.dataType);
+        : QStringLiteral("%1 %2").arg(type, record.type.rawTypeText);
 }
 
 QString ModuleBriefService::diagnosticSeverityDisplayName(
@@ -455,11 +474,17 @@ QString ModuleBriefService::diagnosticSeverityDisplayName(
     }
 }
 
+QString ModuleBriefService::symbolDisplayName(
+    const SemanticSymbolRecord& record)
+{
+    return record.name.isEmpty()
+        ? QStringLiteral("<unnamed>")
+        : record.name;
+}
+
 QString ModuleBriefService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
 {
-    return symbol.symbolName.isEmpty()
-        ? QStringLiteral("<unnamed>")
-        : symbol.symbolName;
+    return symbolDisplayName(semanticSymbolRecordForSymbol(symbol));
 }
 
 QString ModuleBriefService::notFoundReasonDisplayName(

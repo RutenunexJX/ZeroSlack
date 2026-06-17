@@ -3525,6 +3525,14 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief subject stable key",
                report.moduleStableKey == symbolStableKeyForSymbol(report.moduleSymbol),
                true);
+    expectBool("module brief subject semantic record",
+               report.moduleSymbolRecord.isValid()
+                   && report.moduleSymbolRecord.localHandle == report.moduleSymbol.symbolId
+                   && report.moduleSymbolRecord.stableKey == report.moduleStableKey
+                   && report.moduleSymbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Module
+                   && report.moduleSymbolRecord.name == QStringLiteral("brief_top"),
+               true);
     ModuleBriefQuery stableModuleBriefQuery;
     stableModuleBriefQuery.moduleStableKey = symbolStableKeyForSymbol(module);
     stableModuleBriefQuery.moduleSymbolId = 9002;
@@ -3658,6 +3666,12 @@ static void runModuleBriefServiceFixture()
               3);
     expectBool("module brief port row display metadata",
                !report.portRows.isEmpty()
+                   && report.portRows.first().symbolRecord.isValid()
+                   && report.portRows.first().symbolRecord.stableKey
+                       == symbolStableKeyForSymbol(report.portRows.first().symbol)
+                   && report.portRows.first().symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Port
+                   && report.portRows.first().symbolRecord.name == QStringLiteral("clk")
                    && report.portRows.first().sectionDisplayName == QStringLiteral("Port")
                    && !report.portRows.first().typeDisplayName.isEmpty()
                    && !report.portRows.first().detailDisplayName.isEmpty(),
@@ -3674,6 +3688,10 @@ static void runModuleBriefServiceFixture()
                true);
     expectBool("module brief parameter row display metadata",
                !report.parameterRows.isEmpty()
+                   && report.parameterRows.first().symbolRecord.isValid()
+                   && report.parameterRows.first().symbolRecord.localHandle == 9002
+                   && report.parameterRows.first().symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Parameter
                    && report.parameterRows.first().sectionDisplayName
                        == QStringLiteral("Parameter")
                    && !report.parameterRows.first().detailDisplayName.isEmpty(),
@@ -3710,6 +3728,14 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief import package",
                !report.imports.isEmpty()
                    && report.imports.first().symbolName == QStringLiteral("brief_pkg"),
+               true);
+    expectBool("module brief import row semantic record",
+               !report.importRows.isEmpty()
+                   && report.importRows.first().symbolRecord.isValid()
+                   && report.importRows.first().symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Package
+                   && report.importRows.first().symbolRecord.name
+                       == QStringLiteral("brief_pkg"),
                true);
     bool hasPackageContext = false;
     bool hasInterfacePortContext = false;

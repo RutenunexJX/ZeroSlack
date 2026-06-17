@@ -69,6 +69,7 @@ struct ModuleBriefRelationshipSummary {
 
 struct ModuleBriefSymbolRow {
     sym_list::SymbolInfo symbol = {};
+    SemanticSymbolRecord symbolRecord;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString typeDisplayName;
@@ -99,6 +100,7 @@ struct ModuleBriefReport {
     ModuleBriefNotFoundReason notFoundReason =
         ModuleBriefNotFoundReason::None;
     sym_list::SymbolInfo moduleSymbol = {};
+    SemanticSymbolRecord moduleSymbolRecord;
     SymbolStableKey moduleStableKey;
     QString notFoundReasonDisplayName;
     QList<sym_list::SymbolInfo> ports;
@@ -163,9 +165,10 @@ private:
         const QList<sym_list::SymbolInfo>& allSymbols);
     static QList<ModuleBriefRelationshipRow> relationshipRows(
         const ModuleBriefRelationshipSummary& summary);
-    static QString symbolTypeDisplayName(const sym_list::SymbolInfo& symbol);
-    static QString symbolDetailDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString symbolTypeDisplayName(const SemanticSymbolRecord& record);
+    static QString symbolDetailDisplayName(const SemanticSymbolRecord& record);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
+    static QString symbolDisplayName(const SemanticSymbolRecord& record);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString notFoundReasonDisplayName(ModuleBriefNotFoundReason reason);
     static QString provenanceDisplayName(RelationshipProvenance provenance);
