@@ -194,6 +194,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
     if (id < 0)
         return report;
     report.subjectSymbol = semanticIndex()->getSymbolById(id);
+    report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
 
     QMap<DirectedRelationshipResult::Direction, int> directionGroupIndexes;
     QMap<DirectedRelationshipResult::Direction,
@@ -210,6 +211,10 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : relationship.fromSymbol;
             if (directed.peerSymbol.symbolId < 0)
                 continue;
+            directed.subjectStableKey = report.subjectStableKey;
+            directed.peerStableKey = direction == DirectedRelationshipResult::Outgoing
+                ? relationship.toStableKey
+                : relationship.fromStableKey;
             directed.directionDisplayName = relationshipDirectionDisplayName(direction);
             directed.typeDisplayName =
                 relationshipTypeDisplayName(relationship.relationship.type);

@@ -119,8 +119,10 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
     ReferenceReport report;
     const int id = resolveSymbolId(query);
     report.subjectSymbolId = id;
-    if (id >= 0)
+    if (id >= 0) {
         report.subjectSymbol = semanticIndex()->getSymbolById(id);
+        report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
+    }
     report.references = findReferences(query);
     report.totalCount = report.references.size();
     QMap<QString, int> fileGroupIndexes;
@@ -252,6 +254,8 @@ ReferenceResult ReferenceService::toReferenceResult(
     result.relationship = relationship;
     result.referencingSymbol = relationship.fromSymbol;
     result.referencedSymbol = relationship.toSymbol;
+    result.referencingStableKey = relationship.fromStableKey;
+    result.referencedStableKey = relationship.toStableKey;
     result.symbolDisplayName = relationship.fromSymbol.symbolName;
     result.fileDisplayName = referenceFileDisplayName(relationship.fromSymbol.fileName);
     result.lineDisplayName = referenceLineDisplayName(relationship.fromSymbol.startLine);

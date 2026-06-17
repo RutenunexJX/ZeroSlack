@@ -57,6 +57,8 @@ struct DirectedRelationshipResult {
     RelationshipResult relationship;
     Direction direction = Outgoing;
     sym_list::SymbolInfo peerSymbol;
+    SymbolStableKey subjectStableKey;
+    SymbolStableKey peerStableKey;
     QString directionDisplayName;
     QString typeDisplayName;
     QString subjectRole;
@@ -84,6 +86,7 @@ struct RelationshipDirectionGroup {
 struct RelationshipReport {
     int subjectSymbolId = -1;
     sym_list::SymbolInfo subjectSymbol = {};
+    SymbolStableKey subjectStableKey;
     QList<DirectedRelationshipResult> relationships;
     QList<RelationshipDirectionGroup> directionGroups;
     int totalCount = 0;

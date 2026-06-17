@@ -39,8 +39,10 @@ struct HierarchyPanelQueryOptions {
 
 struct HierarchyNode {
     sym_list::SymbolInfo symbol;
+    SymbolStableKey symbolStableKey;
     int depth = 0;
     int parentSymbolId = -1;
+    SymbolStableKey parentStableKey;
     int nodeId = -1;
     int parentNodeId = -1;
     HierarchyQuery::Direction direction = HierarchyQuery::Children;

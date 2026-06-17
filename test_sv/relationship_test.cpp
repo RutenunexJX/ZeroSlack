@@ -966,6 +966,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshotRelationshipReport.subjectSymbolId, topId);
     expectBool("snapshot relationship report subject symbol",
                snapshotRelationshipReport.subjectSymbol.symbolId == topId, true);
+    expectBool("snapshot relationship report subject stable key",
+               snapshotRelationshipReport.subjectStableKey == topStableKey,
+               true);
     expectInt("snapshot relationship report outgoing count",
               snapshotRelationshipReport.outgoingCount, 1);
     expectInt("snapshot relationship report total count",
@@ -974,6 +977,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !snapshotRelationshipReport.relationships.isEmpty()
                    && snapshotRelationshipReport.relationships.first()
                           .peerSymbol.symbolId == stageId,
+               true);
+    expectBool("snapshot relationship report keeps stable identity",
+               !snapshotRelationshipReport.relationships.isEmpty()
+                   && snapshotRelationshipReport.relationships.first()
+                          .subjectStableKey == topStableKey
+                   && snapshotRelationshipReport.relationships.first()
+                          .peerStableKey == stageStableKey,
                true);
     expectBool("snapshot relationship report groups outgoing type",
                snapshotRelationshipReport.directionGroups.size() == 1
@@ -1023,6 +1033,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !snapshotIncomingStageReport.relationships.isEmpty()
                    && snapshotIncomingStageReport.relationships.first()
                           .peerSymbol.symbolId == topId,
+               true);
+    expectBool("snapshot incoming relationship report keeps stable identity",
+               snapshotIncomingStageReport.subjectStableKey == stageStableKey
+                   && !snapshotIncomingStageReport.relationships.isEmpty()
+                   && snapshotIncomingStageReport.relationships.first()
+                          .subjectStableKey == stageStableKey
+                   && snapshotIncomingStageReport.relationships.first()
+                          .peerStableKey == topStableKey,
                true);
     expectBool("snapshot relationship report groups incoming type",
                snapshotIncomingStageReport.directionGroups.size() == 1
@@ -1105,6 +1123,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshotReferenceReport.subjectSymbolId, stageId);
     expectBool("snapshot reference report subject symbol",
                snapshotReferenceReport.subjectSymbol.symbolId == stageId, true);
+    expectBool("snapshot reference report subject stable key",
+               snapshotReferenceReport.subjectStableKey == stageStableKey,
+               true);
     expectInt("snapshot reference report total count",
               snapshotReferenceReport.totalCount, 1);
     expectInt("snapshot reference report file count",
@@ -1144,6 +1165,26 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .typeGroups.first()
                           .references.first()
                           .referencedSymbol.symbolId == stageId,
+               true);
+    expectBool("snapshot reference report keeps stable identity",
+               !snapshotReferenceReport.references.isEmpty()
+                   && snapshotReferenceReport.references.first().referencingStableKey
+                          == topStableKey
+                   && snapshotReferenceReport.references.first().referencedStableKey
+                          == stageStableKey
+                   && snapshotReferenceReport.fileGroups.size() == 1
+                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
+                   && !snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.isEmpty()
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.first()
+                          .referencingStableKey == topStableKey
+                   && snapshotReferenceReport.fileGroups.first()
+                          .typeGroups.first()
+                          .references.first()
+                          .referencedStableKey == stageStableKey,
                true);
     ReferenceQuery snapshotCurrentFileReferenceQuery = snapshotReferenceQuery;
     snapshotCurrentFileReferenceQuery.currentFileOnly = true;
@@ -1195,6 +1236,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (node.depth == 1
                 && node.parentSymbolId == topId
                 && node.symbol.symbolId == stageId
+                && node.symbolStableKey == stageStableKey
+                && node.parentStableKey == topStableKey
                 && node.direction == HierarchyQuery::Children
                 && node.viaType == SymbolRelationshipEngine::INSTANTIATES
                 && node.directionDisplayName == QStringLiteral("Outgoing")
@@ -1238,6 +1281,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotHierarchyReport.nodes.size() == 2
                    && snapshotHierarchyReport.nodes.last().symbol.symbolId == stageId
                    && snapshotHierarchyReport.nodes.last().parentSymbolId == topId,
+               true);
+    expectBool("snapshot hierarchy report keeps stable identity",
+               snapshotHierarchyReport.nodes.size() == 2
+                   && snapshotHierarchyReport.nodes.first().symbolStableKey == topStableKey
+                   && !snapshotHierarchyReport.nodes.first().parentStableKey.isValid()
+                   && snapshotHierarchyReport.nodes.last().symbolStableKey == stageStableKey
+                   && snapshotHierarchyReport.nodes.last().parentStableKey == topStableKey,
                true);
     expectBool("snapshot hierarchy report keeps child node links",
                snapshotHierarchyReport.nodes.size() == 2

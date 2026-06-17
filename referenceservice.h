@@ -39,6 +39,8 @@ struct ReferenceResult {
     RelationshipResult relationship;
     sym_list::SymbolInfo referencingSymbol;
     sym_list::SymbolInfo referencedSymbol;
+    SymbolStableKey referencingStableKey;
+    SymbolStableKey referencedStableKey;
     QString symbolDisplayName;
     QString fileDisplayName;
     QString lineDisplayName;
@@ -63,6 +65,7 @@ struct ReferenceFileGroup {
 struct ReferenceReport {
     int subjectSymbolId = -1;
     sym_list::SymbolInfo subjectSymbol = {};
+    SymbolStableKey subjectStableKey;
     QList<ReferenceResult> references;
     QList<ReferenceFileGroup> fileGroups;
     int totalCount = 0;

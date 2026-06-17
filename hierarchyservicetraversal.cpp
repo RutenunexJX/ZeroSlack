@@ -20,6 +20,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
 
     HierarchyNode root;
     root.symbol = semanticIndex()->getSymbolById(rootId);
+    root.symbolStableKey = symbolStableKeyForSymbol(root.symbol);
     root.depth = 0;
     root.parentSymbolId = -1;
     root.nodeId = nextNodeId++;
@@ -57,6 +58,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
 
                 child.depth = current.node.depth + 1;
                 child.parentSymbolId = current.node.symbol.symbolId;
+                child.parentStableKey = current.node.symbolStableKey;
                 child.nodeId = nextNodeId++;
                 child.parentNodeId = current.node.nodeId;
                 child.direction = edgeDirection;

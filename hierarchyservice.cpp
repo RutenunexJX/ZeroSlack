@@ -155,8 +155,10 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
 
         HierarchyNode node;
         node.symbol = rel.toSymbol;
+        node.symbolStableKey = rel.toStableKey;
         node.depth = 1;
         node.parentSymbolId = rel.fromSymbol.symbolId;
+        node.parentStableKey = rel.fromStableKey;
         node.direction = HierarchyQuery::Children;
         node.viaType = rel.relationship.type;
         fillDisplayMetadata(node);
@@ -182,8 +184,10 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
 
         HierarchyNode node;
         node.symbol = rel.fromSymbol;
+        node.symbolStableKey = rel.fromStableKey;
         node.depth = 1;
         node.parentSymbolId = rel.toSymbol.symbolId;
+        node.parentStableKey = rel.toStableKey;
         node.direction = HierarchyQuery::Parents;
         node.viaType = rel.relationship.type;
         fillDisplayMetadata(node);
