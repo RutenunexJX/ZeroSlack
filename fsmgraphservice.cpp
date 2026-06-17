@@ -51,9 +51,13 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
 {
     FsmGraphReport report;
     report.groupDisplayName = QStringLiteral("FSM Graphs");
-    const sym_list::SymbolInfo moduleSymbol = resolveModule(query);
-    if (moduleSymbol.symbolId < 0)
+    const sym_list::SymbolInfo moduleSymbol =
+        resolveModule(query, &report.notFoundReason);
+    if (moduleSymbol.symbolId < 0) {
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
         return report;
+    }
 
     const QList<sym_list::SymbolInfo> moduleSymbols = symbolsInModule(moduleSymbol);
     const QList<sym_list::SymbolInfo> allSymbols = semanticIndex()->getSymbols();
@@ -75,6 +79,13 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
     }
 
     report.found = !report.graphs.isEmpty();
+    if (!report.found) {
+        report.notFoundReason = FsmGraphNotFoundReason::NoFsmGraph;
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
+    } else {
+        report.notFoundReason = FsmGraphNotFoundReason::None;
+    }
     return report;
 }
 
@@ -84,27 +95,49 @@ SemanticIndex* FsmGraphService::semanticIndex() const
 }
 
 sym_list::SymbolInfo FsmGraphService::resolveModule(
-    const FsmGraphQuery& query) const
+    const FsmGraphQuery& query,
+    FsmGraphNotFoundReason* reason) const
 {
+    if (reason)
+        *reason = FsmGraphNotFoundReason::None;
+
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);
-        return SymbolTaxonomy::isModuleDeclaration(symbol)
-            ? symbol
-            : missingFsmSymbol();
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = FsmGraphNotFoundReason::NoMatchingModule;
+            return missingFsmSymbol();
+        }
+        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
+            if (reason)
+                *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
+            return missingFsmSymbol();
+        }
+        return symbol;
     }
-    if (query.moduleName.isEmpty())
+    if (query.moduleName.isEmpty()) {
+        if (reason)
+            *reason = FsmGraphNotFoundReason::EmptyModuleName;
         return missingFsmSymbol();
+    }
 
     SemanticDefinitionQuery definitionQuery;
     definitionQuery.symbolName = query.moduleName;
     definitionQuery.fileName = query.fileName;
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
-    return definition.found
-            && SymbolTaxonomy::isModuleDeclaration(definition.symbol)
-        ? definition.symbol
-        : missingFsmSymbol();
+    if (!definition.found) {
+        if (reason)
+            *reason = FsmGraphNotFoundReason::NoMatchingModule;
+        return missingFsmSymbol();
+    }
+    if (!SymbolTaxonomy::isModuleDeclaration(definition.symbol)) {
+        if (reason)
+            *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
+        return missingFsmSymbol();
+    }
+    return definition.symbol;
 }
 
 QList<sym_list::SymbolInfo> FsmGraphService::symbolsInModule(
@@ -534,6 +567,7 @@ QList<FsmStateRow> FsmGraphService::stateRows(
     for (const sym_list::SymbolInfo& state : states) {
         FsmStateRow row;
         row.state = state;
+        row.stateStableKey = symbolStableKeyForSymbol(state);
         row.codeLink = RtlInsightLink::fromSymbol(state);
         row.sectionDisplayName = QStringLiteral("State");
         row.detailDisplayName = stateDetailDisplayName(state);
@@ -562,6 +596,8 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
         row.transition = transition;
         row.fromStateSymbol = stateSymbolByName(states, transition.fromState);
         row.toStateSymbol = stateSymbolByName(states, transition.toState);
+        row.fromStateStableKey = symbolStableKeyForSymbol(row.fromStateSymbol);
+        row.toStateStableKey = symbolStableKeyForSymbol(row.toStateSymbol);
         row.codeLink = transition.codeLink;
         row.fromStateCodeLink = RtlInsightLink::fromSymbol(row.fromStateSymbol);
         row.toStateCodeLink = RtlInsightLink::fromSymbol(row.toStateSymbol);
@@ -620,8 +656,30 @@ QString FsmGraphService::transitionSourceLineDisplayName(
         : QStringLiteral("line unknown");
 }
 
+QString FsmGraphService::notFoundReasonDisplayName(
+    FsmGraphNotFoundReason reason)
+{
+    switch (reason) {
+    case FsmGraphNotFoundReason::None:
+        return QString();
+    case FsmGraphNotFoundReason::EmptyModuleName:
+        return QStringLiteral("empty module name");
+    case FsmGraphNotFoundReason::NoMatchingModule:
+        return QStringLiteral("no matching module");
+    case FsmGraphNotFoundReason::UnsupportedSymbolKind:
+        return QStringLiteral("unsupported symbol kind");
+    case FsmGraphNotFoundReason::NoFsmGraph:
+        return QStringLiteral("no FSM graph");
+    }
+    return QStringLiteral("FSM graph unavailable");
+}
+
 void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
 {
+    graph.moduleStableKey = symbolStableKeyForSymbol(graph.moduleSymbol);
+    graph.stateRegisterStableKey = symbolStableKeyForSymbol(graph.stateRegister);
+    graph.nextStateSignalStableKey =
+        symbolStableKeyForSymbol(graph.nextStateSignal);
     graph.stateRegisterCodeLink = RtlInsightLink::fromSymbol(graph.stateRegister);
     graph.nextStateSignalCodeLink = RtlInsightLink::fromSymbol(graph.nextStateSignal);
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");

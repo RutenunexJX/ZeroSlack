@@ -4637,6 +4637,15 @@ static void runFsmGraphServiceFixture()
     packageRun.dataType = QStringLiteral("pkg_state_e");
     symbols.append(packageRun);
 
+    sym_list::SymbolInfo noFsmModule = makeModuleBriefSymbol(
+        9315,
+        fileName,
+        QStringLiteral("no_fsm_top"),
+        sym_list::sym_module,
+        20);
+    noFsmModule.endLine = 22;
+    symbols.append(noFsmModule);
+
     QHash<QString, QString> fileContents;
     fileContents.insert(fileName, content);
     fileContents.insert(packageModuleFileName, packageModuleContent);
@@ -4657,6 +4666,10 @@ static void runFsmGraphServiceFixture()
     expectBool("fsm graph group metadata",
                report.groupDisplayName == QStringLiteral("FSM Graphs"),
                true);
+    expectBool("fsm graph found reason metadata",
+               report.notFoundReason == FsmGraphNotFoundReason::None
+                   && report.notFoundReasonDisplayName.isEmpty(),
+               true);
     expectBool("taxonomy recognizes fsm state register",
                SymbolTaxonomy::isFsmStateRegisterDeclaration(stateQ.symbolType),
                true);
@@ -4668,6 +4681,17 @@ static void runFsmGraphServiceFixture()
                !report.graphs.isEmpty()
                    && report.graphs.first().stateRegister.symbolName
                        == QStringLiteral("state_q"),
+               true);
+    expectBool("fsm graph stable keys",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().moduleStableKey
+                       == symbolStableKeyForSymbol(report.graphs.first().moduleSymbol)
+                   && report.graphs.first().stateRegisterStableKey
+                       == symbolStableKeyForSymbol(
+                           report.graphs.first().stateRegister)
+                   && report.graphs.first().nextStateSignalStableKey
+                       == symbolStableKeyForSymbol(
+                           report.graphs.first().nextStateSignal),
                true);
     expectBool("fsm graph next state",
                !report.graphs.isEmpty()
@@ -4732,6 +4756,13 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().stateRows.first().moduleDisplayName
                        == QStringLiteral("fsm_top"),
                true);
+    expectBool("fsm graph state row stable key",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().stateRows.isEmpty()
+                   && report.graphs.first().stateRows.first().stateStableKey
+                       == symbolStableKeyForSymbol(
+                           report.graphs.first().stateRows.first().state),
+               true);
     expectBool("fsm graph state row code link",
                !report.graphs.isEmpty()
                    && !report.graphs.first().stateRows.isEmpty()
@@ -4793,6 +4824,16 @@ static void runFsmGraphServiceFixture()
                           .fromStateSymbol.symbolName == QStringLiteral("IDLE")
                    && report.graphs.first().transitionRows.first()
                           .toStateSymbol.symbolName == QStringLiteral("RUN")
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateStableKey
+                       == symbolStableKeyForSymbol(
+                           report.graphs.first().transitionRows.first()
+                              .fromStateSymbol)
+                   && report.graphs.first().transitionRows.first()
+                          .toStateStableKey
+                       == symbolStableKeyForSymbol(
+                           report.graphs.first().transitionRows.first()
+                              .toStateSymbol)
                    && report.graphs.first().transitionRows.first()
                           .fromStateCodeLink.fileName == fileName
                    && report.graphs.first().transitionRows.first()
@@ -4915,6 +4956,54 @@ static void runFsmGraphServiceFixture()
                           .sourceRoleDisplayName == QStringLiteral("design source")
                    && packageReport.graphs.first().stateRows.first()
                           .moduleDisplayName == QStringLiteral("fsm_pkg"),
+               true);
+
+    FsmGraphQuery emptyModuleQuery;
+    const FsmGraphReport emptyModuleReport =
+        service.buildFsmGraph(emptyModuleQuery);
+    expectBool("fsm graph empty module reason",
+               !emptyModuleReport.found
+                   && emptyModuleReport.notFoundReason
+                       == FsmGraphNotFoundReason::EmptyModuleName
+                   && emptyModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("empty module name"),
+               true);
+
+    FsmGraphQuery missingModuleQuery;
+    missingModuleQuery.moduleName = QStringLiteral("missing_fsm_top");
+    missingModuleQuery.fileName = fileName;
+    const FsmGraphReport missingModuleReport =
+        service.buildFsmGraph(missingModuleQuery);
+    expectBool("fsm graph missing module reason",
+               !missingModuleReport.found
+                   && missingModuleReport.notFoundReason
+                       == FsmGraphNotFoundReason::NoMatchingModule
+                   && missingModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("no matching module"),
+               true);
+
+    FsmGraphQuery unsupportedModuleQuery;
+    unsupportedModuleQuery.moduleSymbolId = stateQ.symbolId;
+    const FsmGraphReport unsupportedModuleReport =
+        service.buildFsmGraph(unsupportedModuleQuery);
+    expectBool("fsm graph unsupported symbol reason",
+               !unsupportedModuleReport.found
+                   && unsupportedModuleReport.notFoundReason
+                       == FsmGraphNotFoundReason::UnsupportedSymbolKind
+                   && unsupportedModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("unsupported symbol kind"),
+               true);
+
+    FsmGraphQuery noFsmGraphQuery;
+    noFsmGraphQuery.moduleSymbolId = noFsmModule.symbolId;
+    const FsmGraphReport noFsmGraphReport =
+        service.buildFsmGraph(noFsmGraphQuery);
+    expectBool("fsm graph no graph reason",
+               !noFsmGraphReport.found
+                   && noFsmGraphReport.notFoundReason
+                       == FsmGraphNotFoundReason::NoFsmGraph
+                   && noFsmGraphReport.notFoundReasonDisplayName
+                       == QStringLiteral("no FSM graph"),
                true);
 }
 

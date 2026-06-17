@@ -15,6 +15,14 @@ struct FsmGraphQuery {
     QString fileName;
 };
 
+enum class FsmGraphNotFoundReason {
+    None,
+    EmptyModuleName,
+    NoMatchingModule,
+    UnsupportedSymbolKind,
+    NoFsmGraph
+};
+
 struct FsmTransition {
     QString fromState;
     QString toState;
@@ -28,6 +36,7 @@ struct FsmTransition {
 
 struct FsmStateRow {
     sym_list::SymbolInfo state = {};
+    SymbolStableKey stateStableKey;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString detailDisplayName;
@@ -40,6 +49,8 @@ struct FsmTransitionRow {
     FsmTransition transition;
     sym_list::SymbolInfo fromStateSymbol = {};
     sym_list::SymbolInfo toStateSymbol = {};
+    SymbolStableKey fromStateStableKey;
+    SymbolStableKey toStateStableKey;
     RtlInsightCodeLink codeLink;
     RtlInsightCodeLink fromStateCodeLink;
     RtlInsightCodeLink toStateCodeLink;
@@ -56,6 +67,9 @@ struct FsmGraph {
     sym_list::SymbolInfo moduleSymbol = {};
     sym_list::SymbolInfo stateRegister = {};
     sym_list::SymbolInfo nextStateSignal = {};
+    SymbolStableKey moduleStableKey;
+    SymbolStableKey stateRegisterStableKey;
+    SymbolStableKey nextStateSignalStableKey;
     RtlInsightCodeLink stateRegisterCodeLink;
     RtlInsightCodeLink nextStateSignalCodeLink;
     QList<sym_list::SymbolInfo> states;
@@ -75,7 +89,10 @@ struct FsmGraph {
 
 struct FsmGraphReport {
     bool found = false;
+    FsmGraphNotFoundReason notFoundReason =
+        FsmGraphNotFoundReason::None;
     QString groupDisplayName;
+    QString notFoundReasonDisplayName;
     QList<FsmGraph> graphs;
 };
 
@@ -96,7 +113,9 @@ private:
     static std::unique_ptr<FsmGraphService> instance;
 
     SemanticIndex* semanticIndex() const;
-    sym_list::SymbolInfo resolveModule(const FsmGraphQuery& query) const;
+    sym_list::SymbolInfo resolveModule(
+        const FsmGraphQuery& query,
+        FsmGraphNotFoundReason* reason) const;
     QList<sym_list::SymbolInfo> symbolsInModule(
         const sym_list::SymbolInfo& moduleSymbol) const;
     QList<sym_list::SymbolInfo> stateRegisters(
@@ -152,6 +171,7 @@ private:
     static QString transitionDetailDisplayName(const FsmTransition& transition);
     static QString transitionConditionDisplayName(const FsmTransition& transition);
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);
+    static QString notFoundReasonDisplayName(FsmGraphNotFoundReason reason);
     static void fillDisplayMetadata(FsmGraph& graph);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
