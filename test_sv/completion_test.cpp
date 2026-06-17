@@ -1247,6 +1247,23 @@ int main(int argc, char** argv) {
            commandCompletionStateOk ? "PASS" : "FAIL",
            "CompletionService command state flags",
            commandCompletionState.completionPrefix.toLocal8Bit().constData());
+    expectBool("CompletionService command state records",
+               commandCompletionState.symbols.size() == 1
+                   && commandCompletionState.symbolRecords.size() == 1
+                   && commandCompletionState.symbolStableKeys.size() == 1
+                   && commandCompletionState.symbolRecords.first().isValid()
+                   && commandCompletionState.symbolRecords.first().localHandle
+                       == commandCompletionState.symbols.first().symbolId
+                   && commandCompletionState.symbolRecords.first().stableKey
+                       == commandCompletionState.symbolStableKeys.first()
+                   && commandCompletionState.symbolRecords.first().name
+                       == QStringLiteral("enable")
+                   && commandCompletionState.symbolRecords.first().owner.name
+                       == QStringLiteral("top")
+                   && commandCompletionState.symbolStableKeys.first()
+                       == symbolStableKeyForSymbol(
+                           commandCompletionState.symbols.first()),
+               true);
 
     CommandModeCompletionQuery commandCompletionExitQuery;
     commandCompletionExitQuery.lineUpToCursor = QStringLiteral("l  ");
@@ -1257,7 +1274,9 @@ int main(int argc, char** argv) {
     const bool commandCompletionExitOk = commandCompletionExitState.matched
         && commandCompletionExitState.exitRequested
         && !commandCompletionExitState.showCompletions
-        && commandCompletionExitState.symbols.isEmpty();
+        && commandCompletionExitState.symbols.isEmpty()
+        && commandCompletionExitState.symbolRecords.isEmpty()
+        && commandCompletionExitState.symbolStableKeys.isEmpty();
     if (!commandCompletionExitOk)
         ++g_fails;
     printf("[%s] %-34s\n",
@@ -1668,6 +1687,17 @@ int main(int argc, char** argv) {
     expectBool("EditorSemanticContext command state range",
                contextCommandState.matched
                    && contextCommandState.prefixPosition == 0,
+               true);
+    expectBool("EditorSemanticContext command state records",
+               contextCommandState.symbols.size() == 1
+                   && contextCommandState.symbolRecords.size() == 1
+                   && contextCommandState.symbolStableKeys.size() == 1
+                   && contextCommandState.symbolRecords.first().stableKey
+                       == contextCommandState.symbolStableKeys.first()
+                   && contextCommandState.symbolRecords.first().name
+                       == QStringLiteral("enable")
+                   && contextCommandState.symbolStableKeys.first()
+                       == symbolStableKeyForSymbol(contextCommandState.symbols.first()),
                true);
     const EditorCommandModeCompletionRefreshState contextRefreshState =
         EditorSemanticContextService::getInstance()

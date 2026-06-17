@@ -58,6 +58,18 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     }
 
     state.showCompletions = true;
+    state.symbolStableKeys.reserve(state.symbols.size());
+    state.symbolRecords.reserve(state.symbols.size());
+    for (const sym_list::SymbolInfo& symbol : state.symbols) {
+        const SemanticSymbolRecord record =
+            semanticSymbolRecordForSymbol(symbol);
+        state.symbolRecords.append(record);
+        if (record.stableKey.isValid()) {
+            state.symbolStableKeys.append(record.stableKey);
+        } else {
+            state.symbolStableKeys.append(symbolStableKeyForSymbol(symbol));
+        }
+    }
     return state;
 }
 

@@ -186,6 +186,8 @@ struct CommandModeCompletionState {
     CommandModeCommand command;
     sym_list::sym_type_e requestedKind = sym_list::sym_user;
     QList<sym_list::SymbolInfo> symbols;
+    QList<SemanticSymbolRecord> symbolRecords;
+    QList<SymbolStableKey> symbolStableKeys;
 };
 
 #endif // COMPLETIONTYPES_H
