@@ -30,6 +30,9 @@ struct SignalJourneyItem {
     sym_list::SymbolInfo peerSymbol = {};
     sym_list::SymbolInfo fromSymbol = {};
     sym_list::SymbolInfo toSymbol = {};
+    SemanticSymbolRecord peerSymbolRecord;
+    SemanticSymbolRecord fromSymbolRecord;
+    SemanticSymbolRecord toSymbolRecord;
     SymbolStableKey peerStableKey;
     SymbolStableKey fromStableKey;
     SymbolStableKey toStableKey;
@@ -66,6 +69,7 @@ struct SignalJourneyReport {
     SignalJourneyNotFoundReason notFoundReason =
         SignalJourneyNotFoundReason::None;
     sym_list::SymbolInfo declaration = {};
+    SemanticSymbolRecord declarationSymbolRecord;
     SymbolStableKey declarationStableKey;
     RtlInsightCodeLink declarationCodeLink;
     QString notFoundReasonDisplayName;

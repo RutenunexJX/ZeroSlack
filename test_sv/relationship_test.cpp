@@ -4309,6 +4309,16 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal journey declaration stable key",
                report.declarationStableKey == symbolStableKeyForSymbol(report.declaration),
                true);
+    expectBool("signal journey declaration semantic record",
+               report.declarationSymbolRecord.isValid()
+                   && report.declarationSymbolRecord.localHandle == 9102
+                   && report.declarationSymbolRecord.stableKey
+                       == report.declarationStableKey
+                   && report.declarationSymbolRecord.name
+                       == QStringLiteral("data_q")
+                   && report.declarationSymbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Signal,
+               true);
     SignalJourneyQuery stableSignalQuery;
     stableSignalQuery.signalStableKey = symbolStableKeyForSymbol(report.declaration);
     stableSignalQuery.signalSymbolId = 9104;
@@ -4320,6 +4330,8 @@ static void runSignalJourneyServiceFixture()
                    && stableSignalReport.declaration.symbolName
                        == QStringLiteral("data_q")
                    && stableSignalReport.declarationStableKey
+                       == stableSignalQuery.signalStableKey
+                   && stableSignalReport.declarationSymbolRecord.stableKey
                        == stableSignalQuery.signalStableKey,
                true);
     expectBool("signal journey declaration display type",
@@ -4407,6 +4419,22 @@ static void runSignalJourneyServiceFixture()
                        == symbolStableKeyForSymbol(report.assignments.first().toSymbol)
                    && report.assignments.first().peerStableKey
                        == report.assignments.first().fromStableKey,
+               true);
+    expectBool("signal journey assignment semantic records",
+               !report.assignments.isEmpty()
+                   && report.assignments.first().fromSymbolRecord.isValid()
+                   && report.assignments.first().fromSymbolRecord.localHandle == 9103
+                   && report.assignments.first().fromSymbolRecord.stableKey
+                       == report.assignments.first().fromStableKey
+                   && report.assignments.first().toSymbolRecord.isValid()
+                   && report.assignments.first().toSymbolRecord.localHandle == 9102
+                   && report.assignments.first().toSymbolRecord.stableKey
+                       == report.assignments.first().toStableKey
+                   && report.assignments.first().peerSymbolRecord.isValid()
+                   && report.assignments.first().peerSymbolRecord.stableKey
+                       == report.assignments.first().peerStableKey
+                   && report.assignments.first().peerSymbolRecord.name
+                       == QStringLiteral("next_data"),
                true);
     expectBool("signal journey assignment relationship metadata",
                !report.assignments.isEmpty()

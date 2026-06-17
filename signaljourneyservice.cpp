@@ -43,6 +43,75 @@ QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type)
     }
     return QStringLiteral("Relationship");
 }
+
+RtlInsightCodeLink codeLinkForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (record.isValid()) {
+        const QString fileName = fallback.fileName.isEmpty()
+            ? record.location.fileName
+            : fallback.fileName;
+        return RtlInsightLink::fromFileLine(fileName,
+                                            record.location.startLine,
+                                            record.location.startColumn);
+    }
+    return RtlInsightLink::fromSymbol(fallback);
+}
+
+QString symbolDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    if (!fallback.symbolName.isEmpty())
+        return fallback.symbolName;
+    return QStringLiteral("<unknown>");
+}
+
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(fallback);
+    if (!record.isValid())
+        return metadata;
+
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString typeDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    return SymbolTaxonomy::symbolTypeLabel(
+        metadataForRecord(record, fallback));
+}
+
+QString sourceRoleDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    return SymbolTaxonomy::sourceRoleDisplayName(
+        metadataForRecord(record, fallback).sourceRole);
+}
+
+QString interfaceBaseDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.type.resolvedTypeName.isEmpty())
+        return record.type.resolvedTypeName;
+    return SymbolTaxonomy::interfaceTypeName(fallback);
+}
 }
 
 SignalJourneyService* SignalJourneyService::getInstance()
@@ -79,6 +148,7 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
     report.found = true;
     report.notFoundReason = SignalJourneyNotFoundReason::None;
     report.declaration = signal;
+    report.declarationSymbolRecord = semanticSymbolRecordForSymbol(signal);
     fillDeclarationDisplayMetadata(report);
     report.assignments = relationshipItems(
         signal,
@@ -452,33 +522,55 @@ QString SignalJourneyService::interfaceBaseDisplayName(
 void SignalJourneyService::fillDeclarationDisplayMetadata(
     SignalJourneyReport& report)
 {
-    report.declarationStableKey = symbolStableKeyForSymbol(report.declaration);
-    report.declarationCodeLink = RtlInsightLink::fromSymbol(report.declaration);
-    report.declarationDisplayName = symbolDisplayName(report.declaration);
+    if (!report.declarationSymbolRecord.isValid())
+        report.declarationSymbolRecord =
+            semanticSymbolRecordForSymbol(report.declaration);
+    report.declarationStableKey =
+        report.declarationSymbolRecord.stableKey.isValid()
+            ? report.declarationSymbolRecord.stableKey
+            : symbolStableKeyForSymbol(report.declaration);
+    report.declarationCodeLink =
+        codeLinkForRecord(report.declarationSymbolRecord, report.declaration);
+    report.declarationDisplayName =
+        symbolDisplayNameForRecord(report.declarationSymbolRecord,
+                                   report.declaration);
     report.declarationTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(
-            SymbolTaxonomy::semanticMetadata(report.declaration));
+        typeDisplayNameForRecord(report.declarationSymbolRecord,
+                                 report.declaration);
     report.declarationFileDisplayName =
         report.declarationCodeLink.fileDisplayName;
     report.declarationLineDisplayName =
         report.declarationCodeLink.lineDisplayName;
     report.declarationSourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(
-            SymbolTaxonomy::semanticMetadata(report.declaration).sourceRole);
+        sourceRoleDisplayNameForRecord(report.declarationSymbolRecord,
+                                       report.declaration);
 }
 
 void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
 {
     item.fromSymbol = item.relationship.fromSymbol;
     item.toSymbol = item.relationship.toSymbol;
-    item.fromStableKey = item.relationship.fromStableKey;
-    item.toStableKey = item.relationship.toStableKey;
-    item.peerStableKey = item.outgoing
-        ? item.relationship.toStableKey
+    item.fromSymbolRecord = semanticSymbolRecordForSymbol(item.fromSymbol);
+    item.toSymbolRecord = semanticSymbolRecordForSymbol(item.toSymbol);
+    item.peerSymbolRecord =
+        item.outgoing ? item.toSymbolRecord : item.fromSymbolRecord;
+    if (!item.peerSymbolRecord.isValid())
+        item.peerSymbolRecord = semanticSymbolRecordForSymbol(item.peerSymbol);
+    item.fromStableKey = item.fromSymbolRecord.stableKey.isValid()
+        ? item.fromSymbolRecord.stableKey
         : item.relationship.fromStableKey;
-    item.peerCodeLink = RtlInsightLink::fromSymbol(item.peerSymbol);
-    item.fromCodeLink = RtlInsightLink::fromSymbol(item.fromSymbol);
-    item.toCodeLink = RtlInsightLink::fromSymbol(item.toSymbol);
+    item.toStableKey = item.toSymbolRecord.stableKey.isValid()
+        ? item.toSymbolRecord.stableKey
+        : item.relationship.toStableKey;
+    item.peerStableKey = item.peerSymbolRecord.stableKey.isValid()
+        ? item.peerSymbolRecord.stableKey
+        : (item.outgoing ? item.toStableKey : item.fromStableKey);
+    item.peerCodeLink = codeLinkForRecord(item.peerSymbolRecord,
+                                          item.peerSymbol);
+    item.fromCodeLink = codeLinkForRecord(item.fromSymbolRecord,
+                                          item.fromSymbol);
+    item.toCodeLink = codeLinkForRecord(item.toSymbolRecord,
+                                        item.toSymbol);
     item.provenance = item.relationship.provenance;
     item.confidence = item.relationship.confidence;
     item.evidenceText = item.relationship.evidenceText;
@@ -488,29 +580,31 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
     item.provenanceDisplayName = provenanceDisplayName(item.provenance);
     item.confidenceDisplayName = confidenceDisplayName(item.confidence);
     item.evidenceDisplayName = evidenceDisplayName(item.evidenceText);
-    item.peerSymbolDisplayName = symbolDisplayName(item.peerSymbol);
-    item.fromSymbolDisplayName = symbolDisplayName(item.fromSymbol);
-    item.toSymbolDisplayName = symbolDisplayName(item.toSymbol);
+    item.peerSymbolDisplayName =
+        symbolDisplayNameForRecord(item.peerSymbolRecord, item.peerSymbol);
+    item.fromSymbolDisplayName =
+        symbolDisplayNameForRecord(item.fromSymbolRecord, item.fromSymbol);
+    item.toSymbolDisplayName =
+        symbolDisplayNameForRecord(item.toSymbolRecord, item.toSymbol);
     item.fromTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(
-            SymbolTaxonomy::semanticMetadata(item.fromSymbol));
+        typeDisplayNameForRecord(item.fromSymbolRecord, item.fromSymbol);
     item.toTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(
-            SymbolTaxonomy::semanticMetadata(item.toSymbol));
+        typeDisplayNameForRecord(item.toSymbolRecord, item.toSymbol);
     item.fromSourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(
-            SymbolTaxonomy::semanticMetadata(item.fromSymbol).sourceRole);
+        sourceRoleDisplayNameForRecord(item.fromSymbolRecord,
+                                       item.fromSymbol);
     item.toSourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(
-            SymbolTaxonomy::semanticMetadata(item.toSymbol).sourceRole);
+        sourceRoleDisplayNameForRecord(item.toSymbolRecord,
+                                       item.toSymbol);
     item.connectionKindDisplayName = QStringLiteral("relationship");
     item.peerTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(
-            SymbolTaxonomy::semanticMetadata(item.peerSymbol));
+        typeDisplayNameForRecord(item.peerSymbolRecord, item.peerSymbol);
     item.peerSourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(
-            SymbolTaxonomy::semanticMetadata(item.peerSymbol).sourceRole);
-    item.interfaceBaseDisplayName = interfaceBaseDisplayName(item.peerSymbol);
+        sourceRoleDisplayNameForRecord(item.peerSymbolRecord,
+                                       item.peerSymbol);
+    item.interfaceBaseDisplayName =
+        interfaceBaseDisplayNameForRecord(item.peerSymbolRecord,
+                                          item.peerSymbol);
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
     item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;
     item.detailDisplayName = QStringLiteral("%1 %2")
@@ -532,14 +626,46 @@ void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)
                  const SignalJourneyItem& rhs) {
                   const sym_list::SymbolInfo& left = lhs.peerSymbol;
                   const sym_list::SymbolInfo& right = rhs.peerSymbol;
-                  if (left.fileName != right.fileName)
-                      return left.fileName < right.fileName;
-                  if (left.startLine != right.startLine)
-                      return left.startLine < right.startLine;
-                  if (left.startColumn != right.startColumn)
-                      return left.startColumn < right.startColumn;
-                  if (left.symbolName != right.symbolName)
-                      return left.symbolName < right.symbolName;
+                  const QString leftFileName =
+                      lhs.peerSymbolRecord.location.fileName.isEmpty()
+                          ? left.fileName
+                          : lhs.peerSymbolRecord.location.fileName;
+                  const QString rightFileName =
+                      rhs.peerSymbolRecord.location.fileName.isEmpty()
+                          ? right.fileName
+                          : rhs.peerSymbolRecord.location.fileName;
+                  const int leftLine =
+                      lhs.peerSymbolRecord.location.startLine > 0
+                          ? lhs.peerSymbolRecord.location.startLine
+                          : left.startLine;
+                  const int rightLine =
+                      rhs.peerSymbolRecord.location.startLine > 0
+                          ? rhs.peerSymbolRecord.location.startLine
+                          : right.startLine;
+                  const int leftColumn =
+                      lhs.peerSymbolRecord.location.startColumn > 0
+                          ? lhs.peerSymbolRecord.location.startColumn
+                          : left.startColumn;
+                  const int rightColumn =
+                      rhs.peerSymbolRecord.location.startColumn > 0
+                          ? rhs.peerSymbolRecord.location.startColumn
+                          : right.startColumn;
+                  const QString leftName =
+                      lhs.peerSymbolRecord.name.isEmpty()
+                          ? left.symbolName
+                          : lhs.peerSymbolRecord.name;
+                  const QString rightName =
+                      rhs.peerSymbolRecord.name.isEmpty()
+                          ? right.symbolName
+                          : rhs.peerSymbolRecord.name;
+                  if (leftFileName != rightFileName)
+                      return leftFileName < rightFileName;
+                  if (leftLine != rightLine)
+                      return leftLine < rightLine;
+                  if (leftColumn != rightColumn)
+                      return leftColumn < rightColumn;
+                  if (leftName != rightName)
+                      return leftName < rightName;
                   return left.symbolId < right.symbolId;
               });
 }
