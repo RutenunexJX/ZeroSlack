@@ -85,6 +85,7 @@ bool isFsmStateRegisterDeclaration(const SemanticMetadata& metadata);
 bool isFsmStateValueDeclaration(sym_list::sym_type_e type);
 bool isFsmStateValueDeclaration(const SemanticMetadata& metadata);
 bool isSubroutineDeclaration(sym_list::sym_type_e type);
+bool isSubroutineDeclaration(const SemanticMetadata& metadata);
 bool isModuleRangeType(sym_list::sym_type_e type);
 bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type);
 bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType);

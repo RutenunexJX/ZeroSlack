@@ -502,6 +502,12 @@ bool isSubroutineDeclaration(sym_list::sym_type_e type)
         || kind == DeclarationKind::Function;
 }
 
+bool isSubroutineDeclaration(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Task
+        || metadata.declarationKind == DeclarationKind::Function;
+}
+
 bool isModuleRangeType(sym_list::sym_type_e type)
 {
     const DeclarationKind kind = declarationKind(type);

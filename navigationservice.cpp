@@ -9,7 +9,7 @@ QString outlineDisplayName(const sym_list::SymbolInfo& symbol)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
         SymbolTaxonomy::semanticMetadata(symbol);
-    QString label = SymbolTaxonomy::symbolTypeLabel(metadata.rawCollectorKind);
+    QString label = SymbolTaxonomy::symbolTypeLabel(metadata);
     if (label.isEmpty() || label == QLatin1String("symbol"))
         return QStringLiteral("Symbols");
     label[0] = label.at(0).toUpper();
@@ -135,18 +135,21 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
 
     QSet<QString> subroutineScopes;
     for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
-        if (SymbolTaxonomy::isSubroutineDeclaration(symbol.symbolType)) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(symbol);
+        if (SymbolTaxonomy::isSubroutineDeclaration(metadata))
             subroutineScopes.insert(symbol.symbolName);
-        }
     }
 
     QHash<sym_list::sym_type_e, QList<sym_list::SymbolInfo>> byType;
     for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(symbol);
         const bool isSubroutine =
-            SymbolTaxonomy::isSubroutineDeclaration(symbol.symbolType);
+            SymbolTaxonomy::isSubroutineDeclaration(metadata);
         if (!isSubroutine && subroutineScopes.contains(symbol.moduleScope))
             continue;
-        byType[symbol.symbolType].append(symbol);
+        byType[metadata.rawCollectorKind].append(symbol);
     }
 
     QList<SymbolOutlineGroup> result;
@@ -189,7 +192,7 @@ NavigationModuleTarget NavigationService::resolveModuleTarget(
     query.symbolName = moduleName;
     const DefinitionNavigationTarget target =
         definitionNavigationService.resolveTarget(query);
-    if (!target.found || !SymbolTaxonomy::isModuleDeclaration(target.symbolType))
+    if (!target.found || !SymbolTaxonomy::isModuleDeclaration(target.symbol))
         return result;
 
     result.found = true;

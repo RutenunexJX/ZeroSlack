@@ -355,6 +355,12 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata fsm state value",
                SymbolTaxonomy::isFsmStateValueDeclaration(stateValueMetadata),
                true);
+    SymbolTaxonomy::SemanticMetadata syntheticTaskMetadata;
+    syntheticTaskMetadata.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Task;
+    expectBool("SymbolTaxonomy metadata subroutine declaration",
+               SymbolTaxonomy::isSubroutineDeclaration(syntheticTaskMetadata),
+               true);
     SymbolTaxonomy::SemanticMetadata syntheticPackageParameterMetadata;
     syntheticPackageParameterMetadata.declarationKind =
         SymbolTaxonomy::DeclarationKind::Parameter;
