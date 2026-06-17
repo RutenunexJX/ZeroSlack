@@ -5249,6 +5249,9 @@ static void runSemanticDiffServiceFixture()
     beforeInst.fromId = 9401;
     beforeInst.toId = 9405;
     beforeInst.type = SymbolRelationshipEngine::INSTANTIATES;
+    beforeInst.provenance = RelationshipProvenance::Workspace;
+    beforeInst.confidence = 70;
+    beforeInst.evidenceText = QStringLiteral("old instance u_old");
     beforeRelationships.append(beforeInst);
 
     QList<SemanticRelationship> afterRelationships;
@@ -5256,6 +5259,9 @@ static void runSemanticDiffServiceFixture()
     afterInst.fromId = 9501;
     afterInst.toId = 9505;
     afterInst.type = SymbolRelationshipEngine::INSTANTIATES;
+    afterInst.provenance = RelationshipProvenance::Inferred;
+    afterInst.confidence = 90;
+    afterInst.evidenceText = QStringLiteral("new instance u_new");
     afterRelationships.append(afterInst);
 
     QList<SemanticDiagnostic> beforeDiagnostics;
@@ -5308,6 +5314,7 @@ static void runSemanticDiffServiceFixture()
     bool symbolScopeMetadataFound = false;
     bool symbolTypeMetadataFound = false;
     bool symbolBeforeAfterMetadataFound = false;
+    bool symbolStableKeyFound = false;
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         if (change.kind == SemanticDiffChangeKind::Added)
             ++addedSymbols;
@@ -5335,6 +5342,10 @@ static void runSemanticDiffServiceFixture()
             symbolBeforeAfterMetadataFound =
                 change.beforeSymbolTypeDisplayName == QStringLiteral("input")
                 && change.afterSymbolTypeDisplayName == QStringLiteral("output")
+                && change.beforeStableKey
+                    == symbolStableKeyForSymbol(change.beforeSymbol)
+                && change.afterStableKey
+                    == symbolStableKeyForSymbol(change.afterSymbol)
                 && change.beforeScopeDisplayName == QStringLiteral("scope diff_top")
                 && change.afterScopeDisplayName == QStringLiteral("scope diff_top")
                 && change.beforeSourceRoleDisplayName
@@ -5358,6 +5369,9 @@ static void runSemanticDiffServiceFixture()
                 && change.codeLink.fileDisplayName
                     == QStringLiteral("semantic_diff_fixture.sv")
                 && change.codeLink.lineDisplayName == QStringLiteral("3");
+            symbolStableKeyFound =
+                change.displayStableKey
+                == symbolStableKeyForSymbol(change.displaySymbol);
         }
         if (change.kind == SemanticDiffChangeKind::Added
             && change.category == SemanticDiffSymbolCategory::Signal
@@ -5395,6 +5409,8 @@ static void runSemanticDiffServiceFixture()
     bool relationshipDisplayMetadataFound = false;
     bool relationshipCodeLinkFound = false;
     bool relationshipEndpointLinksFound = false;
+    bool relationshipStableKeyFound = false;
+    bool relationshipEvidenceMetadataFound = false;
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
         if (change.kind == SemanticDiffChangeKind::Added) {
             ++addedRelationships;
@@ -5425,6 +5441,23 @@ static void runSemanticDiffServiceFixture()
                 && change.toCodeLink.line == 10
                 && change.toCodeLink.fileDisplayName
                     == QStringLiteral("semantic_diff_fixture.sv");
+            relationshipStableKeyFound =
+                change.displayFromStableKey
+                    == symbolStableKeyForSymbol(change.displayFromSymbol)
+                && change.displayToStableKey
+                    == symbolStableKeyForSymbol(change.displayToSymbol)
+                && change.afterFromStableKey
+                    == symbolStableKeyForSymbol(change.afterFromSymbol)
+                && change.afterToStableKey
+                    == symbolStableKeyForSymbol(change.afterToSymbol);
+            relationshipEvidenceMetadataFound =
+                change.provenance == RelationshipProvenance::Inferred
+                && change.provenanceDisplayName == QStringLiteral("inferred")
+                && change.confidence == 90
+                && change.confidenceDisplayName == QStringLiteral("90%")
+                && change.evidenceText == QStringLiteral("new instance u_new")
+                && change.evidenceDisplayName
+                    == QStringLiteral("new instance u_new");
         }
         if (change.kind == SemanticDiffChangeKind::Removed) {
             ++removedRelationships;
@@ -5460,6 +5493,10 @@ static void runSemanticDiffServiceFixture()
     }
 
     expectBool("semantic diff found", report.found, true);
+    expectBool("semantic diff found reason metadata",
+               report.notFoundReason == SemanticDiffNotFoundReason::None
+                   && report.notFoundReasonDisplayName.isEmpty(),
+               true);
     expectBool("semantic diff report metadata",
                report.symbolGroupDisplayName == QStringLiteral("Semantic Diff Symbols")
                    && report.relationshipGroupDisplayName
@@ -5497,6 +5534,9 @@ static void runSemanticDiffServiceFixture()
     expectBool("semantic diff symbol before after metadata",
                symbolBeforeAfterMetadataFound,
                true);
+    expectBool("semantic diff symbol stable key",
+               symbolStableKeyFound,
+               true);
     expectBool("semantic diff symbol code link",
                symbolCodeLinkFound,
                true);
@@ -5517,12 +5557,42 @@ static void runSemanticDiffServiceFixture()
     expectBool("semantic diff relationship endpoint links",
                relationshipEndpointLinksFound,
                true);
+    expectBool("semantic diff relationship stable key",
+               relationshipStableKeyFound,
+               true);
+    expectBool("semantic diff relationship evidence metadata",
+               relationshipEvidenceMetadataFound,
+               true);
     expectInt("semantic diff added diagnostics", addedDiagnostics, 1);
     expectInt("semantic diff removed diagnostics", removedDiagnostics, 1);
     expectBool("semantic diff diagnostic display metadata",
                diagnosticDisplayMetadataFound, true);
     expectBool("semantic diff diagnostic code link",
                diagnosticCodeLinkFound,
+               true);
+
+    SemanticDiffQuery noChangesQuery = query;
+    noChangesQuery.afterSnapshot = beforeSnapshot;
+    const SemanticDiffReport noChangesReport =
+        service.buildSemanticDiff(noChangesQuery);
+    expectBool("semantic diff no changes reason",
+               !noChangesReport.found
+                   && noChangesReport.notFoundReason
+                       == SemanticDiffNotFoundReason::NoChanges
+                   && noChangesReport.notFoundReasonDisplayName
+                       == QStringLiteral("no semantic changes"),
+               true);
+
+    SemanticDiffQuery missingSnapshotQuery = query;
+    missingSnapshotQuery.afterSnapshot.reset();
+    const SemanticDiffReport missingSnapshotReport =
+        service.buildSemanticDiff(missingSnapshotQuery);
+    expectBool("semantic diff missing snapshot reason",
+               !missingSnapshotReport.found
+                   && missingSnapshotReport.notFoundReason
+                       == SemanticDiffNotFoundReason::MissingSnapshot
+                   && missingSnapshotReport.notFoundReasonDisplayName
+                       == QStringLiteral("missing snapshot"),
                true);
 }
 

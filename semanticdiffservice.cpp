@@ -37,23 +37,34 @@ SemanticDiffReport SemanticDiffService::buildSemanticDiff(
     const SemanticDiffQuery& query) const
 {
     SemanticDiffReport report;
-    if (!query.beforeSnapshot || !query.afterSnapshot)
-        return report;
-
-    report.symbolChanges = symbolChanges(query);
-    report.relationshipChanges = relationshipChanges(query);
-    report.diagnosticChanges = diagnosticChanges(query);
     report.symbolGroupDisplayName = QStringLiteral("Semantic Diff Symbols");
     report.relationshipGroupDisplayName =
         QStringLiteral("Semantic Diff Relationships");
     report.diagnosticGroupDisplayName =
         QStringLiteral("Semantic Diff Diagnostics");
+    if (!query.beforeSnapshot || !query.afterSnapshot) {
+        report.notFoundReason = SemanticDiffNotFoundReason::MissingSnapshot;
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
+        return report;
+    }
+
+    report.symbolChanges = symbolChanges(query);
+    report.relationshipChanges = relationshipChanges(query);
+    report.diagnosticChanges = diagnosticChanges(query);
     report.symbolChangeCount = report.symbolChanges.size();
     report.relationshipChangeCount = report.relationshipChanges.size();
     report.diagnosticChangeCount = report.diagnosticChanges.size();
     report.found = !report.symbolChanges.isEmpty()
         || !report.relationshipChanges.isEmpty()
         || !report.diagnosticChanges.isEmpty();
+    if (!report.found) {
+        report.notFoundReason = SemanticDiffNotFoundReason::NoChanges;
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
+    } else {
+        report.notFoundReason = SemanticDiffNotFoundReason::None;
+    }
     return report;
 }
 
@@ -537,11 +548,64 @@ QString SemanticDiffService::diagnosticSeverityDisplayName(
     }
 }
 
+QString SemanticDiffService::notFoundReasonDisplayName(
+    SemanticDiffNotFoundReason reason)
+{
+    switch (reason) {
+    case SemanticDiffNotFoundReason::None:
+        return QString();
+    case SemanticDiffNotFoundReason::MissingSnapshot:
+        return QStringLiteral("missing snapshot");
+    case SemanticDiffNotFoundReason::NoChanges:
+        return QStringLiteral("no semantic changes");
+    }
+    return QStringLiteral("semantic diff unavailable");
+}
+
+QString SemanticDiffService::provenanceDisplayName(
+    RelationshipProvenance provenance)
+{
+    switch (provenance) {
+    case RelationshipProvenance::SlangExtracted:
+        return QStringLiteral("slang extracted");
+    case RelationshipProvenance::Inferred:
+        return QStringLiteral("inferred");
+    case RelationshipProvenance::LexicalFallback:
+        return QStringLiteral("lexical fallback");
+    case RelationshipProvenance::OpenDocument:
+        return QStringLiteral("open document");
+    case RelationshipProvenance::Workspace:
+        return QStringLiteral("workspace");
+    case RelationshipProvenance::FeatureGenerated:
+        return QStringLiteral("feature generated");
+    case RelationshipProvenance::Unknown:
+    default:
+        return QStringLiteral("unknown");
+    }
+}
+
+QString SemanticDiffService::confidenceDisplayName(int confidence)
+{
+    return confidence > 0
+        ? QStringLiteral("%1%").arg(confidence)
+        : QStringLiteral("unknown");
+}
+
+QString SemanticDiffService::evidenceDisplayName(const QString& evidenceText)
+{
+    return evidenceText.isEmpty()
+        ? QStringLiteral("no evidence detail")
+        : evidenceText;
+}
+
 void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
 {
     change.displaySymbol = change.kind == SemanticDiffChangeKind::Removed
         ? change.beforeSymbol
         : change.afterSymbol;
+    change.beforeStableKey = symbolStableKeyForSymbol(change.beforeSymbol);
+    change.afterStableKey = symbolStableKeyForSymbol(change.afterSymbol);
+    change.displayStableKey = symbolStableKeyForSymbol(change.displaySymbol);
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.categoryDisplayName = symbolCategoryDisplayName(change.category);
     change.categoryGroupDisplayName = symbolCategoryGroupDisplayName(change.category);
@@ -624,6 +688,21 @@ void SemanticDiffService::fillDisplayMetadata(
     change.displayToSymbol = change.kind == SemanticDiffChangeKind::Removed
         ? change.beforeToSymbol
         : change.afterToSymbol;
+    change.beforeFromStableKey =
+        symbolStableKeyForSymbol(change.beforeFromSymbol);
+    change.beforeToStableKey =
+        symbolStableKeyForSymbol(change.beforeToSymbol);
+    change.afterFromStableKey =
+        symbolStableKeyForSymbol(change.afterFromSymbol);
+    change.afterToStableKey =
+        symbolStableKeyForSymbol(change.afterToSymbol);
+    change.displayFromStableKey =
+        symbolStableKeyForSymbol(change.displayFromSymbol);
+    change.displayToStableKey =
+        symbolStableKeyForSymbol(change.displayToSymbol);
+    change.provenance = relationship.provenance;
+    change.confidence = relationship.confidence;
+    change.evidenceText = relationship.evidenceText;
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
@@ -637,6 +716,9 @@ void SemanticDiffService::fillDisplayMetadata(
         change.displayToSymbol.symbolName.isEmpty()
             ? QStringLiteral("<unknown>")
             : change.displayToSymbol.symbolName;
+    change.provenanceDisplayName = provenanceDisplayName(change.provenance);
+    change.confidenceDisplayName = confidenceDisplayName(change.confidence);
+    change.evidenceDisplayName = evidenceDisplayName(change.evidenceText);
     change.categoryGroupDisplayName = QStringLiteral("Relationships");
     change.codeLink = change.fromCodeLink;
     change.sourceRoleDisplayName =

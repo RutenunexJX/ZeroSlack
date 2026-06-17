@@ -25,6 +25,12 @@ enum class SemanticDiffSymbolCategory {
     Type
 };
 
+enum class SemanticDiffNotFoundReason {
+    None,
+    MissingSnapshot,
+    NoChanges
+};
+
 struct SemanticDiffQuery {
     std::shared_ptr<const SemanticIndexSnapshot> beforeSnapshot;
     std::shared_ptr<const SemanticIndexSnapshot> afterSnapshot;
@@ -40,6 +46,9 @@ struct SemanticDiffSymbolChange {
     sym_list::SymbolInfo beforeSymbol = {};
     sym_list::SymbolInfo afterSymbol = {};
     sym_list::SymbolInfo displaySymbol = {};
+    SymbolStableKey beforeStableKey;
+    SymbolStableKey afterStableKey;
+    SymbolStableKey displayStableKey;
     QString kindDisplayName;
     QString categoryDisplayName;
     QString categoryGroupDisplayName;
@@ -71,12 +80,24 @@ struct SemanticDiffRelationshipChange {
     sym_list::SymbolInfo afterToSymbol = {};
     sym_list::SymbolInfo displayFromSymbol = {};
     sym_list::SymbolInfo displayToSymbol = {};
+    SymbolStableKey beforeFromStableKey;
+    SymbolStableKey beforeToStableKey;
+    SymbolStableKey afterFromStableKey;
+    SymbolStableKey afterToStableKey;
+    SymbolStableKey displayFromStableKey;
+    SymbolStableKey displayToStableKey;
     RtlInsightCodeLink fromCodeLink;
     RtlInsightCodeLink toCodeLink;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
     QString kindDisplayName;
     QString relationshipTypeDisplayName;
     QString fromSymbolDisplayName;
     QString toSymbolDisplayName;
+    QString provenanceDisplayName;
+    QString confidenceDisplayName;
+    QString evidenceDisplayName;
     QString categoryGroupDisplayName;
     QString sourceRoleDisplayName;
     QString detailDisplayName;
@@ -99,6 +120,9 @@ struct SemanticDiffDiagnosticChange {
 
 struct SemanticDiffReport {
     bool found = false;
+    SemanticDiffNotFoundReason notFoundReason =
+        SemanticDiffNotFoundReason::None;
+    QString notFoundReasonDisplayName;
     QString symbolGroupDisplayName;
     QString relationshipGroupDisplayName;
     QString diagnosticGroupDisplayName;
@@ -163,6 +187,10 @@ private:
     static QString symbolScopeDisplayName(const sym_list::SymbolInfo& symbol);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
+    static QString notFoundReasonDisplayName(SemanticDiffNotFoundReason reason);
+    static QString provenanceDisplayName(RelationshipProvenance provenance);
+    static QString confidenceDisplayName(int confidence);
+    static QString evidenceDisplayName(const QString& evidenceText);
     static void fillDisplayMetadata(SemanticDiffSymbolChange& change);
     static void fillDisplayMetadata(SemanticDiffRelationshipChange& change);
     static void fillDisplayMetadata(SemanticDiffDiagnosticChange& change);
