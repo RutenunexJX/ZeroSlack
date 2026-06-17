@@ -48,15 +48,15 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.ports = symbolsInModule(
         moduleSymbol,
         symbols,
-        SymbolTaxonomy::isPortDeclaration);
+        SymbolTaxonomy::DeclarationGroup::Port);
     report.parameters = symbolsInModule(
         moduleSymbol,
         symbols,
-        SymbolTaxonomy::isParameterDeclaration);
+        SymbolTaxonomy::DeclarationGroup::Parameter);
     report.instances = symbolsInModule(
         moduleSymbol,
         symbols,
-        SymbolTaxonomy::isInstanceDeclaration);
+        SymbolTaxonomy::DeclarationGroup::Instance);
     report.imports = importSymbols(moduleSymbol);
     report.diagnostics = diagnosticsForModule(moduleSymbol);
     report.portRows = symbolRows(report.ports, QStringLiteral("Port"));
@@ -84,7 +84,7 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);
-        return SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
+        return SymbolTaxonomy::isModuleDeclaration(symbol)
             ? symbol
             : missingModuleBriefSymbol();
     }
@@ -97,7 +97,7 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
     return definition.found
-            && SymbolTaxonomy::isModuleDeclaration(definition.symbol.symbolType)
+            && SymbolTaxonomy::isModuleDeclaration(definition.symbol)
         ? definition.symbol
         : missingModuleBriefSymbol();
 }
@@ -105,12 +105,14 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
 QList<sym_list::SymbolInfo> ModuleBriefService::symbolsInModule(
     const sym_list::SymbolInfo& moduleSymbol,
     const QList<sym_list::SymbolInfo>& symbols,
-    bool (*matchesType)(sym_list::sym_type_e)) const
+    SymbolTaxonomy::DeclarationGroup group) const
 {
     QList<sym_list::SymbolInfo> result;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!matchesType(symbol.symbolType))
+        if (SymbolTaxonomy::declarationGroup(
+                SymbolTaxonomy::semanticMetadata(symbol)) != group) {
             continue;
+        }
         if (!isInsideModule(symbol, moduleSymbol))
             continue;
         result.append(symbol);
@@ -127,8 +129,10 @@ QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
     const QList<SemanticRelationshipResult> relationships =
         semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
     for (const SemanticRelationshipResult& relationship : relationships) {
-        if (!SymbolTaxonomy::isPackageDeclaration(relationship.toSymbol.symbolType))
+        if (!SymbolTaxonomy::isPackageDeclaration(
+                SymbolTaxonomy::semanticMetadata(relationship.toSymbol))) {
             continue;
+        }
         if (seen.contains(relationship.toSymbol.symbolId))
             continue;
         seen.insert(relationship.toSymbol.symbolId);
@@ -251,7 +255,7 @@ QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
         row.symbol = symbol;
         row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = sectionDisplayName;
-        row.typeDisplayName = symbolTypeDisplayName(symbol.symbolType);
+        row.typeDisplayName = symbolTypeDisplayName(symbol);
         row.detailDisplayName = symbolDetailDisplayName(symbol);
         rows.append(row);
     }
@@ -327,10 +331,10 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         row.sectionDisplayName = section;
         row.symbolDisplayName = symbolDisplayName(symbol);
         row.contextKindDisplayName = kind;
-        row.symbolTypeDisplayName = symbolTypeDisplayName(symbol.symbolType);
+        row.symbolTypeDisplayName = symbolTypeDisplayName(symbol);
         row.detailDisplayName = contextDetailDisplayName(kind, symbol);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayName(SymbolTaxonomy::sourceRoleForFileName(symbol.fileName));
+            sourceRoleDisplayName(SymbolTaxonomy::semanticMetadata(symbol).sourceRole);
         rows.append(row);
     };
 
@@ -340,22 +344,26 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         for (const sym_list::SymbolInfo& symbol : allSymbols) {
             if (symbol.moduleScope != packageSymbol.symbolName)
                 continue;
-            if (!SymbolTaxonomy::isPackageVisibleDefinition(symbol.symbolType))
+            if (!SymbolTaxonomy::isPackageVisibleDefinition(
+                    SymbolTaxonomy::semanticMetadata(symbol))) {
                 continue;
+            }
             packageMembers.append(symbol);
         }
         sortSymbols(packageMembers);
         for (const sym_list::SymbolInfo& symbol : packageMembers) {
             appendRow(QStringLiteral("Package Member"),
                       QStringLiteral("package %1")
-                          .arg(symbolTypeDisplayName(symbol.symbolType)),
+                          .arg(symbolTypeDisplayName(symbol)),
                       symbol);
         }
     }
 
     for (const sym_list::SymbolInfo& port : ports) {
-        if (port.symbolType == sym_list::sym_port_interface
-            || port.symbolType == sym_list::sym_port_interface_modport) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(port);
+        if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
+            && metadata.interfaceLikeOwner) {
             appendRow(QStringLiteral("Interface"), QStringLiteral("interface port"), port);
         }
     }
@@ -372,15 +380,17 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
     return rows;
 }
 
-QString ModuleBriefService::symbolTypeDisplayName(sym_list::sym_type_e type)
+QString ModuleBriefService::symbolTypeDisplayName(
+    const sym_list::SymbolInfo& symbol)
 {
-    return SymbolTaxonomy::symbolTypeLabel(type);
+    return SymbolTaxonomy::symbolTypeLabel(
+        SymbolTaxonomy::semanticMetadata(symbol));
 }
 
 QString ModuleBriefService::symbolDetailDisplayName(
     const sym_list::SymbolInfo& symbol)
 {
-    const QString type = symbolTypeDisplayName(symbol.symbolType);
+    const QString type = symbolTypeDisplayName(symbol);
     return symbol.dataType.isEmpty()
         ? type
         : QStringLiteral("%1 %2").arg(type, symbol.dataType);
@@ -440,7 +450,7 @@ QSet<QString> ModuleBriefService::interfaceNames(
 {
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::declarationKind(symbol.symbolType)
+        if (SymbolTaxonomy::semanticMetadata(symbol).declarationKind
                 == SymbolTaxonomy::DeclarationKind::Interface
             && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);

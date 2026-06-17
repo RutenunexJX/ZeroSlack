@@ -40,6 +40,7 @@ struct SemanticMetadata {
 DeclarationKind declarationKind(sym_list::sym_type_e type);
 SymbolUsageRole usageRole(sym_list::sym_type_e type);
 DeclarationGroup declarationGroup(sym_list::sym_type_e type);
+DeclarationGroup declarationGroup(const SemanticMetadata& metadata);
 SymbolOwnerScope ownerScope(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {});
@@ -61,10 +62,13 @@ bool isDefinitionCandidate(const SemanticMetadata& metadata);
 bool isGlobalDefinition(sym_list::sym_type_e type);
 bool isGlobalDefinition(const SemanticMetadata& metadata);
 bool isPackageVisibleDefinition(sym_list::sym_type_e type);
+bool isPackageVisibleDefinition(const SemanticMetadata& metadata);
 bool isInterfaceLikeOwner(sym_list::sym_type_e type);
 QString interfaceScopeFromOwner(const sym_list::SymbolInfo& symbol);
 bool isModuleDeclaration(sym_list::sym_type_e type);
 bool isPackageDeclaration(sym_list::sym_type_e type);
+bool isModuleDeclaration(const SemanticMetadata& metadata);
+bool isPackageDeclaration(const SemanticMetadata& metadata);
 bool isModuleDeclaration(const sym_list::SymbolInfo& symbol);
 bool isPackageDeclaration(const sym_list::SymbolInfo& symbol);
 bool isPortDeclaration(sym_list::sym_type_e type);
@@ -89,6 +93,7 @@ int definitionPriority(sym_list::sym_type_e type);
 int definitionPriority(const SemanticMetadata& metadata);
 QList<sym_list::sym_type_e> outlineSymbolTypes();
 QString symbolTypeLabel(sym_list::sym_type_e type);
+QString symbolTypeLabel(const SemanticMetadata& metadata);
 bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent);
 bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent intent);
 

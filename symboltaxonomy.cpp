@@ -135,6 +135,45 @@ DeclarationGroup declarationGroup(sym_list::sym_type_e type)
     return DeclarationGroup::Unknown;
 }
 
+DeclarationGroup declarationGroup(const SemanticMetadata& metadata)
+{
+    switch (metadata.declarationKind) {
+    case DeclarationKind::Port:
+        return DeclarationGroup::Port;
+    case DeclarationKind::Parameter:
+    case DeclarationKind::Localparam:
+        return DeclarationGroup::Parameter;
+    case DeclarationKind::Instance:
+        return metadata.usageRole == SymbolUsageRole::Declaration
+            ? DeclarationGroup::Instance
+            : DeclarationGroup::Unknown;
+    case DeclarationKind::Enum:
+        return metadata.rawCollectorKind == sym_list::sym_enum_var
+            ? DeclarationGroup::Signal
+            : DeclarationGroup::Unknown;
+    case DeclarationKind::Signal:
+    case DeclarationKind::StructVariable:
+        return DeclarationGroup::Signal;
+    case DeclarationKind::Unknown:
+    case DeclarationKind::Module:
+    case DeclarationKind::Interface:
+    case DeclarationKind::Package:
+    case DeclarationKind::Typedef:
+    case DeclarationKind::Struct:
+    case DeclarationKind::StructMember:
+    case DeclarationKind::Modport:
+    case DeclarationKind::Task:
+    case DeclarationKind::Function:
+    case DeclarationKind::Macro:
+    case DeclarationKind::Process:
+    case DeclarationKind::Generate:
+    case DeclarationKind::Constraint:
+    case DeclarationKind::User:
+        break;
+    }
+    return DeclarationGroup::Unknown;
+}
+
 namespace {
 
 SemanticMetadata computedSemanticMetadata(
@@ -315,6 +354,15 @@ bool isPackageVisibleDefinition(sym_list::sym_type_e type)
     }
 }
 
+bool isPackageVisibleDefinition(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Parameter
+        || metadata.declarationKind == DeclarationKind::Localparam
+        || metadata.declarationKind == DeclarationKind::Typedef
+        || metadata.declarationKind == DeclarationKind::Enum
+        || metadata.declarationKind == DeclarationKind::Struct;
+}
+
 bool isInterfaceLikeOwner(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_interface
@@ -346,14 +394,24 @@ bool isPackageDeclaration(sym_list::sym_type_e type)
     return declarationKind(type) == DeclarationKind::Package;
 }
 
+bool isModuleDeclaration(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Module;
+}
+
+bool isPackageDeclaration(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Package;
+}
+
 bool isModuleDeclaration(const sym_list::SymbolInfo& symbol)
 {
-    return isModuleDeclaration(symbol.symbolType);
+    return isModuleDeclaration(semanticMetadata(symbol));
 }
 
 bool isPackageDeclaration(const sym_list::SymbolInfo& symbol)
 {
-    return isPackageDeclaration(symbol.symbolType);
+    return isPackageDeclaration(semanticMetadata(symbol));
 }
 
 bool isPortDeclaration(sym_list::sym_type_e type)
@@ -581,6 +639,61 @@ QString symbolTypeLabel(sym_list::sym_type_e type)
     case DeclarationKind::User:
         return QStringLiteral("user");
     case DeclarationKind::Unknown:
+        break;
+    }
+    return QStringLiteral("symbol");
+}
+
+QString symbolTypeLabel(const SemanticMetadata& metadata)
+{
+    if (metadata.rawCollectorKind != sym_list::sym_user
+        || metadata.declarationKind == DeclarationKind::User) {
+        return symbolTypeLabel(metadata.rawCollectorKind);
+    }
+
+    switch (metadata.declarationKind) {
+    case DeclarationKind::Module:
+        return QStringLiteral("module");
+    case DeclarationKind::Interface:
+        return QStringLiteral("interface");
+    case DeclarationKind::Package:
+        return QStringLiteral("package");
+    case DeclarationKind::Typedef:
+        return QStringLiteral("typedef");
+    case DeclarationKind::Enum:
+        return QStringLiteral("enum");
+    case DeclarationKind::Parameter:
+        return QStringLiteral("parameter");
+    case DeclarationKind::Localparam:
+        return QStringLiteral("localparam");
+    case DeclarationKind::Port:
+        return QStringLiteral("port");
+    case DeclarationKind::Signal:
+        return QStringLiteral("signal");
+    case DeclarationKind::Struct:
+        return QStringLiteral("struct");
+    case DeclarationKind::StructVariable:
+        return QStringLiteral("struct variable");
+    case DeclarationKind::StructMember:
+        return QStringLiteral("member");
+    case DeclarationKind::Instance:
+        return QStringLiteral("instance");
+    case DeclarationKind::Modport:
+        return QStringLiteral("modport");
+    case DeclarationKind::Task:
+        return QStringLiteral("task");
+    case DeclarationKind::Function:
+        return QStringLiteral("function");
+    case DeclarationKind::Macro:
+        return QStringLiteral("macro");
+    case DeclarationKind::Process:
+        return QStringLiteral("process");
+    case DeclarationKind::Generate:
+        return QStringLiteral("generate");
+    case DeclarationKind::Constraint:
+        return QStringLiteral("constraint");
+    case DeclarationKind::Unknown:
+    case DeclarationKind::User:
         break;
     }
     return QStringLiteral("symbol");

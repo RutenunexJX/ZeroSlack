@@ -116,7 +116,7 @@ private:
     QList<sym_list::SymbolInfo> symbolsInModule(
         const sym_list::SymbolInfo& moduleSymbol,
         const QList<sym_list::SymbolInfo>& symbols,
-        bool (*matchesType)(sym_list::sym_type_e)) const;
+        SymbolTaxonomy::DeclarationGroup group) const;
     QList<sym_list::SymbolInfo> importSymbols(
         const sym_list::SymbolInfo& moduleSymbol) const;
     QList<SemanticDiagnostic> diagnosticsForModule(
@@ -140,7 +140,7 @@ private:
         const QList<sym_list::SymbolInfo>& allSymbols);
     static QList<ModuleBriefRelationshipRow> relationshipRows(
         const ModuleBriefRelationshipSummary& summary);
-    static QString symbolTypeDisplayName(sym_list::sym_type_e type);
+    static QString symbolTypeDisplayName(const sym_list::SymbolInfo& symbol);
     static QString symbolDetailDisplayName(const sym_list::SymbolInfo& symbol);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);

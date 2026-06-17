@@ -303,6 +303,9 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy global definition uses semantic metadata",
                SymbolTaxonomy::isGlobalDefinition(syntheticModuleMetadata),
                true);
+    expectEq("SymbolTaxonomy metadata label",
+             SymbolTaxonomy::symbolTypeLabel(syntheticModuleMetadata),
+             QStringLiteral("module"));
     sym_list::SymbolInfo metadataKeySymbol;
     metadataKeySymbol.symbolName = QStringLiteral("metadata_top");
     metadataKeySymbol.symbolType = sym_list::sym_user;
@@ -315,6 +318,22 @@ int main(int argc, char** argv) {
     expectBool("stable key uses semantic declaration kind",
                metadataKey.declarationKind
                    == SymbolTaxonomy::DeclarationKind::Module,
+               true);
+    SymbolTaxonomy::SemanticMetadata syntheticPortMetadata;
+    syntheticPortMetadata.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Port;
+    syntheticPortMetadata.usageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    expectBool("SymbolTaxonomy metadata declaration group",
+               SymbolTaxonomy::declarationGroup(syntheticPortMetadata)
+                   == SymbolTaxonomy::DeclarationGroup::Port,
+               true);
+    SymbolTaxonomy::SemanticMetadata syntheticPackageParameterMetadata;
+    syntheticPackageParameterMetadata.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Parameter;
+    expectBool("SymbolTaxonomy metadata package visibility",
+               SymbolTaxonomy::isPackageVisibleDefinition(
+                   syntheticPackageParameterMetadata),
                true);
     sym_list::SymbolInfo scopedStruct;
     scopedStruct.symbolType = sym_list::sym_packed_struct;
