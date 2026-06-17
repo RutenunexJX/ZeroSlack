@@ -89,7 +89,7 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);
-        return SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
+        return SymbolTaxonomy::isModuleDeclaration(symbol)
             ? symbol
             : missingFsmSymbol();
     }
@@ -102,7 +102,7 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
     return definition.found
-            && SymbolTaxonomy::isModuleDeclaration(definition.symbol.symbolType)
+            && SymbolTaxonomy::isModuleDeclaration(definition.symbol)
         ? definition.symbol
         : missingFsmSymbol();
 }
@@ -128,8 +128,10 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateRegisters(
     QList<sym_list::SymbolInfo> result;
     QSet<int> seen;
     for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
-        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
+        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
+        }
         if (looksLikeNextStateName(symbol.symbolName))
             continue;
         const bool hasNextStatePair =
@@ -164,8 +166,10 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
     const QList<sym_list::SymbolInfo>& source =
         stateRegister.dataType.isEmpty() ? moduleSymbols : allSymbols;
     for (const sym_list::SymbolInfo& symbol : source) {
-        if (!SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType))
+        if (!SymbolTaxonomy::isFsmStateValueDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
+        }
         if (!stateRegister.dataType.isEmpty()) {
             if (symbol.dataType != stateRegister.dataType)
                 continue;
@@ -177,8 +181,10 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
     }
     if (!stateRegister.dataType.isEmpty() && result.isEmpty()) {
         for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
-            if (!SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType))
+            if (!SymbolTaxonomy::isFsmStateValueDeclaration(
+                    SymbolTaxonomy::semanticMetadata(symbol))) {
                 continue;
+            }
             if (!symbol.dataType.isEmpty()
                 && symbol.dataType != stateRegister.dataType) {
                 continue;
@@ -199,8 +205,10 @@ sym_list::SymbolInfo FsmGraphService::nextStateSignal(
 {
     QList<sym_list::SymbolInfo> candidates;
     for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
-        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
+        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
+        }
         if (symbol.symbolId == stateRegister.symbolId)
             continue;
         const bool looksNext =
@@ -345,7 +353,8 @@ bool FsmGraphService::hasStateValuesForType(
     if (dataType.isEmpty())
         return false;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::isFsmStateValueDeclaration(symbol.symbolType)
+        if (SymbolTaxonomy::isFsmStateValueDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))
             && symbol.dataType == dataType) {
             return true;
         }
@@ -360,8 +369,10 @@ bool FsmGraphService::hasPairedNextStateSignal(
     for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
         if (symbol.symbolId == stateRegister.symbolId)
             continue;
-        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(symbol.symbolType))
+        if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
+        }
         if (!stateRegister.dataType.isEmpty()
             && !symbol.dataType.isEmpty()
             && symbol.dataType != stateRegister.dataType) {
@@ -526,10 +537,11 @@ QList<FsmStateRow> FsmGraphService::stateRows(
         row.codeLink = RtlInsightLink::fromSymbol(state);
         row.sectionDisplayName = QStringLiteral("State");
         row.detailDisplayName = stateDetailDisplayName(state);
-        row.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(state.symbolType);
+        row.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(
+            SymbolTaxonomy::semanticMetadata(state));
         row.sourceRoleDisplayName =
             sourceRoleDisplayName(
-                SymbolTaxonomy::sourceRoleForFileName(state.fileName));
+                SymbolTaxonomy::semanticMetadata(state).sourceRole);
         row.moduleDisplayName = state.moduleScope.isEmpty()
             ? QStringLiteral("global")
             : state.moduleScope;
@@ -539,6 +551,7 @@ QList<FsmStateRow> FsmGraphService::stateRows(
 }
 
 QList<FsmTransitionRow> FsmGraphService::transitionRows(
+    const sym_list::SymbolInfo& moduleSymbol,
     const QList<FsmTransition>& transitions,
     const QList<sym_list::SymbolInfo>& states)
 {
@@ -560,7 +573,7 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
         row.sourceLineDisplayName = transitionSourceLineDisplayName(transition);
         row.sourceRoleDisplayName =
             sourceRoleDisplayName(
-                SymbolTaxonomy::sourceRoleForFileName(row.codeLink.fileName));
+                SymbolTaxonomy::semanticMetadata(moduleSymbol).sourceRole);
         rows.append(row);
     }
     return rows;
@@ -627,26 +640,31 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDetailDisplayName = stateRegisterDetailDisplayName(graph);
     graph.stateRegisterTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(graph.stateRegister.symbolType);
+        SymbolTaxonomy::symbolTypeLabel(
+            SymbolTaxonomy::semanticMetadata(graph.stateRegister));
     graph.stateRegisterSourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(graph.stateRegister.fileName));
+            SymbolTaxonomy::semanticMetadata(graph.stateRegister).sourceRole);
     graph.nextStateSignalDisplayName = graph.nextStateSignal.symbolId >= 0
         ? graph.nextStateSignal.symbolName
         : QString();
     graph.nextStateSignalTypeDisplayName = graph.nextStateSignal.symbolId >= 0
-        ? SymbolTaxonomy::symbolTypeLabel(graph.nextStateSignal.symbolType)
+        ? SymbolTaxonomy::symbolTypeLabel(
+              SymbolTaxonomy::semanticMetadata(graph.nextStateSignal))
         : QString();
     graph.nextStateSignalSourceRoleDisplayName = graph.nextStateSignal.symbolId >= 0
         ? sourceRoleDisplayName(
-              SymbolTaxonomy::sourceRoleForFileName(graph.nextStateSignal.fileName))
+              SymbolTaxonomy::semanticMetadata(graph.nextStateSignal).sourceRole)
         : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
     graph.stateRows = stateRows(graph.states);
     for (FsmTransition& transition : graph.transitions)
         fillDisplayMetadata(transition);
-    graph.transitionRows = transitionRows(graph.transitions, graph.states);
+    graph.transitionRows = transitionRows(
+        graph.moduleSymbol,
+        graph.transitions,
+        graph.states);
 }
 
 void FsmGraphService::fillDisplayMetadata(FsmTransition& transition)

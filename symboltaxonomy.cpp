@@ -475,10 +475,24 @@ bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type)
         || type == sym_list::sym_enum_var;
 }
 
+bool isFsmStateRegisterDeclaration(const SemanticMetadata& metadata)
+{
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return isFsmStateRegisterDeclaration(metadata.rawCollectorKind);
+    return false;
+}
+
 bool isFsmStateValueDeclaration(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_enum_value
         || type == sym_list::sym_fsm_state;
+}
+
+bool isFsmStateValueDeclaration(const SemanticMetadata& metadata)
+{
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return isFsmStateValueDeclaration(metadata.rawCollectorKind);
+    return false;
 }
 
 bool isSubroutineDeclaration(sym_list::sym_type_e type)

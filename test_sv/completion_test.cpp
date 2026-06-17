@@ -340,6 +340,21 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata signal declaration",
                SymbolTaxonomy::isSignalDeclaration(syntheticSignalMetadata),
                true);
+    sym_list::SymbolInfo metadataStateRegister;
+    metadataStateRegister.symbolType = sym_list::sym_logic;
+    const SymbolTaxonomy::SemanticMetadata stateRegisterMetadata =
+        SymbolTaxonomy::semanticMetadata(metadataStateRegister);
+    expectBool("SymbolTaxonomy metadata fsm state register",
+               SymbolTaxonomy::isFsmStateRegisterDeclaration(
+                   stateRegisterMetadata),
+               true);
+    sym_list::SymbolInfo metadataStateValue;
+    metadataStateValue.symbolType = sym_list::sym_enum_value;
+    const SymbolTaxonomy::SemanticMetadata stateValueMetadata =
+        SymbolTaxonomy::semanticMetadata(metadataStateValue);
+    expectBool("SymbolTaxonomy metadata fsm state value",
+               SymbolTaxonomy::isFsmStateValueDeclaration(stateValueMetadata),
+               true);
     SymbolTaxonomy::SemanticMetadata syntheticPackageParameterMetadata;
     syntheticPackageParameterMetadata.declarationKind =
         SymbolTaxonomy::DeclarationKind::Parameter;

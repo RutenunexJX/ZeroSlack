@@ -144,6 +144,7 @@ private:
     static QList<FsmStateRow> stateRows(
         const QList<sym_list::SymbolInfo>& states);
     static QList<FsmTransitionRow> transitionRows(
+        const sym_list::SymbolInfo& moduleSymbol,
         const QList<FsmTransition>& transitions,
         const QList<sym_list::SymbolInfo>& states);
     static QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
