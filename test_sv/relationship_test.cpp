@@ -2833,6 +2833,20 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && hierarchyReport.nodes.first().relationshipTypeDisplayName
                        == QStringLiteral("Root"),
                true);
+    HierarchyQuery stableHierarchyQuery = hierarchyQuery;
+    stableHierarchyQuery.symbolStableKey =
+        symbolStableKeyForSymbol(index.getSymbolById(topId));
+    stableHierarchyQuery.symbolId = stageId;
+    const HierarchyReport stableHierarchyReport =
+        hierarchyService.getHierarchyReport(stableHierarchyQuery);
+    expectBool("hierarchy report resolves stable query key",
+               stableHierarchyReport.totalCount == hierarchyReport.totalCount
+                   && !stableHierarchyReport.nodes.isEmpty()
+                   && stableHierarchyReport.nodes.first().symbolStableKey
+                       == stableHierarchyQuery.symbolStableKey
+                   && stableHierarchyReport.nodes.first().symbol.symbolName
+                       == QStringLiteral("rel_top"),
+               true);
     expectBool("hierarchy service exposes all tree types",
                HierarchyService::allRelationshipTypes().contains(SymbolRelationshipEngine::READS_FROM),
                true);

@@ -9,6 +9,7 @@
 #include <memory>
 
 struct HierarchyQuery {
+    SymbolStableKey symbolStableKey;
     int symbolId = -1;
     QString symbolName;
     QString fileName;

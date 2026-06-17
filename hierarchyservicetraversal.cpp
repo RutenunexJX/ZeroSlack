@@ -89,6 +89,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
         };
 
         HierarchyQuery childQuery = normalized;
+        childQuery.symbolStableKey = current.node.symbolStableKey;
         childQuery.symbolId = current.node.symbol.symbolId;
         if (normalized.direction == HierarchyQuery::Children
             || normalized.direction == HierarchyQuery::Both) {
@@ -117,6 +118,9 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
 
     HierarchyQuery resolvedQuery = normalized;
     resolvedQuery.symbolId = rootId;
+    if (!resolvedQuery.symbolStableKey.isValid())
+        resolvedQuery.symbolStableKey =
+            symbolStableKeyForSymbol(semanticIndex()->getSymbolById(rootId));
     report.nodes = getHierarchy(resolvedQuery);
     report.totalCount = report.nodes.size();
     QMap<HierarchyQuery::Direction, int> rootDirectionGroupIndexes;

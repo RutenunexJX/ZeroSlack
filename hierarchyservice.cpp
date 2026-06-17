@@ -150,8 +150,12 @@ void HierarchyService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) const
 {
     const HierarchyQuery normalized = normalizedQuery(query);
+    const int id = resolveSymbolId(normalized);
     RelationshipQuery relationshipQuery;
-    relationshipQuery.symbolId = resolveSymbolId(normalized);
+    relationshipQuery.symbolStableKey = normalized.symbolStableKey.isValid()
+        ? normalized.symbolStableKey
+        : symbolStableKeyForSymbol(semanticIndex()->getSymbolById(id));
+    relationshipQuery.symbolId = id;
     relationshipQuery.outgoing = true;
     relationshipQuery.types = effectiveTypes(normalized);
 
@@ -180,8 +184,12 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
 QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) const
 {
     const HierarchyQuery normalized = normalizedQuery(query);
+    const int id = resolveSymbolId(normalized);
     RelationshipQuery relationshipQuery;
-    relationshipQuery.symbolId = resolveSymbolId(normalized);
+    relationshipQuery.symbolStableKey = normalized.symbolStableKey.isValid()
+        ? normalized.symbolStableKey
+        : symbolStableKeyForSymbol(semanticIndex()->getSymbolById(id));
+    relationshipQuery.symbolId = id;
     relationshipQuery.outgoing = false;
     relationshipQuery.types = effectiveTypes(normalized);
 
@@ -254,6 +262,8 @@ SemanticIndex* HierarchyService::semanticIndex() const
 
 int HierarchyService::resolveSymbolId(const HierarchyQuery& query) const
 {
+    if (query.symbolStableKey.isValid())
+        return semanticIndex()->findSymbolId(query.symbolStableKey);
     if (query.symbolId >= 0)
         return query.symbolId;
     if (query.symbolName.isEmpty())
