@@ -24,11 +24,16 @@ Thin UI consumers
 ## Latest Strategy
 
 - Phase E semantic data model hardening is complete on this branch.
-- The Phase E release gate has passed locally with full Ninja and full CTest.
-- Next work should move into broader RTL feature expansion only through the stable service/report contracts now in place.
+- Phase F0 Legacy Field Retirement is complete on this branch.
+- Phase E and Phase F0 baseline gates have passed locally with full Ninja and full CTest.
+- Next work should continue through F1-F3 before broad RTL feature expansion.
+- F1 Semantic Symbol Record Replacement should introduce or expand a real semantic symbol record, demote `SymbolInfo` to collector/adapter compatibility, and make product/service/report/query layers prefer stable identity plus semantic metadata.
+- F2 Stable Relationship And Index Migration should move relationship engine, snapshot, lookup, and query-service main paths from int `symbolId` / `sym_type_e` toward stable identity plus semantic enum/model contracts.
+- F3 Legacy Compatibility Removal should delete or isolate legacy fields and APIs such as `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, `getSymbolById`, `findSymbolId`, and int-id relationship APIs outside collector/import adapters.
+- After F3, run the release gate again before broad RTL feature expansion.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
-- Keep `sym_type_e` as raw collector compatibility until a dedicated migration removes it safely.
+- Keep remaining legacy compatibility fenced to collector/import boundaries until F3 removes or isolates it safely.
 
 ## Current Architecture
 

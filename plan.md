@@ -109,14 +109,53 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Module Brief, Signal Journey, Clock/Reset Domain Map, FSM Graph, Semantic Diff, and code/document links should share report conventions.
 - Proceed in service-sized batches.
 
-### Release Gate
+### Phase F0: Legacy Field Retirement
 
-- Status: passed locally after Phase E.
-- Keep this product baseline gate before broad RTL feature expansion.
-- `test_sv/new` must validate package/import/typedef/parameter, interface/interface instance/modport, `.svh`/`.vh` includes, completion, navigation, Problems, and RTL Insights sharing one semantic truth.
-- Full Ninja and full CTest must pass.
-- Hygiene scans and forbidden-file guard must pass.
-- No dirty user RTL fixture files may be touched or committed.
+- Status: complete on this branch.
+- This was a cleanup gate, not a feature phase.
+- Direct product dependence on legacy `SymbolInfo` fields has been retired or fenced:
+  - `symbolId`: keep as snapshot-local handle only; introduce or consistently name `SymbolLocalHandle` where local handles must remain visible.
+  - `symbolType` / `sym_type_e`: keep as raw collector compatibility only; feature policy should use semantic metadata, declaration groups, search intent, and semantic roles.
+  - `moduleScope`: split owner semantics into explicit owner kind/name/path/stable key or equivalent owner metadata.
+  - `dataType`: split raw type text from resolved type name, resolved type kind, modport name, and type stable key where useful.
+- Completion APIs now expose structured items with label, insert text, kind, detail, source, semantic role, and stable key metadata.
+- Query services normalize UI string inputs into stable subject/context handles before feature policy where the current service contract needs it.
+- Diagnostic contracts expose explicit source and ownership metadata.
+- `sym_list` remains collector/storage compatibility; broad feature work should read `SemanticIndexSnapshot` and typed query/report models.
+- Product-facing legacy field guards are in CTest and passed with the F0 baseline gate.
+
+### Phase F1: Semantic Symbol Record Replacement
+
+- Introduce or expand a real semantic symbol record.
+- Let `SymbolInfo` degrade into a collector/adapter compatibility carrier.
+- Product, service, report, and query layers should prefer semantic symbol records, stable identity, and semantic metadata.
+- Owner, type, source-role, provenance, and not-found reason metadata should be carried by the semantic model, not by overloading `symbolType`, `moduleScope`, or `dataType`.
+- Keep Qt 6 + CMake + Ninja only.
+- New features must still flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
+
+### Phase F2: Stable Relationship And Index Migration
+
+- Move relationship engine, snapshot, lookup, and query-service main paths from int `symbolId` / `sym_type_e` to stable identity plus semantic enum/model contracts.
+- Keep compatibility APIs only as transition layers.
+- Add or extend guards so product-facing code cannot continue using compatibility APIs.
+- Relationship, reference, hierarchy, and RTL feature reports must expose stable keys, owner/type metadata, source role, provenance, and not-found reasons.
+- Do not restore regex relationship analysis, the old Tree-sitter symbol parser, direct UI Slang execution, or UI workspace scans.
+
+### Phase F3: Legacy Compatibility Removal
+
+- Delete or isolate legacy fields and APIs: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, `getSymbolById`, `findSymbolId`, int-id `getRelationships`, and similar compatibility surfaces.
+- If an internal adapter is still required, keep it limited to the collector/import boundary and guarded.
+- Clean tests and docs that assume legacy identity.
+- After F3, run the release gate before broad RTL feature expansion.
+
+### Release Gate After Phase F3
+
+- Full Ninja must pass.
+- Full CTest must pass.
+- Legacy guard and product-facing API audit must pass.
+- Docs, goal, and plan consistency checks must pass.
+- Real RTL workspace smoke pass must be covered.
+- Confirm qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, and long-lived scattered perflog probes have not returned.
 
 ## Batch Policy
 
@@ -127,6 +166,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - E5 and E6 can be split by service once earlier contracts are stable.
 - Safe batch blocks: focused service tests, independent query-service result migration, UI render-only conversion, and report display-field cleanup.
 - Not suitable for batching: symbol identity changes, `SymbolInfo` layout changes, `sym_type_e` compatibility changes, owner/type model migration, source role migration, snapshot publication rules, relationship rebind rules, and cross-service query contract changes.
+- F1-F3 should proceed in small serial blocks when changing semantic symbol records, relationship identity, compatibility APIs, owner/type metadata, completion item models, or query normalization.
 - Reduce batch size when blocks share core files, API boundaries, or real fixture expectations.
 
 ## Good Work Blocks

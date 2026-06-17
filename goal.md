@@ -90,14 +90,51 @@ UI Layer
 - E5 Relationship Provenance And Query Result Contracts: add provenance, confidence, evidence, candidate counts, failure reasons, and consistent query contracts.
 - E6 Completion Item And RTL Report Model Hardening: formalize completion items and RTL report models with display fields, evidence, confidence, not-found reasons, and stable identity references.
 
-### Release Gate
+### Phase F0: Legacy Field Retirement
 
-- Status: passed locally after Phase E.
-- Keep this product baseline gate before broad RTL feature expansion.
-- `test_sv/new` must validate package/import/typedef/parameter, interface/interface instance/modport, `.svh`/`.vh` includes, completion, navigation, Problems, and RTL Insights sharing one semantic truth.
-- Full Ninja and full CTest must pass.
-- Hygiene scans and forbidden-file guard must pass.
-- No dirty user RTL fixture files may be touched or committed.
+- Status: complete on this branch.
+- This cleanup gate retired or fenced product dependence on legacy `SymbolInfo` fields.
+- `symbolId` is snapshot-local unless a stable identity rule says otherwise.
+- `symbolType` / `sym_type_e` remain raw collector compatibility, not product policy.
+- Product logic should use explicit owner metadata instead of overloaded `moduleScope`.
+- Product logic should use explicit type metadata instead of overloaded `dataType`.
+- Completion models expose structured items with semantic identity and insertion metadata.
+- Query services resolve UI string inputs into stable subject/context handles before feature policy where needed.
+- Diagnostic contracts expose explicit source and ownership metadata.
+- Product-facing guard tests prevent UI, scheduler, analyzer, and feature code from reintroducing direct legacy-field policy.
+
+### Phase F1: Semantic Symbol Record Replacement
+
+- Introduce or expand a real semantic symbol record.
+- Let `SymbolInfo` degrade into a collector/adapter compatibility carrier.
+- Product, service, report, and query layers should consume semantic symbol records, stable identity, and semantic metadata first.
+- Owner, type, source-role, provenance, and not-found reason metadata should be carried by the semantic model, not by reusing `symbolType`, `moduleScope`, or `dataType`.
+- Keep Qt 6 + CMake + Ninja only.
+- New features must still flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
+
+### Phase F2: Stable Relationship And Index Migration
+
+- Move relationship engine, snapshot, lookup, and query-service main paths from int `symbolId` / `sym_type_e` to stable identity plus semantic enum/model contracts.
+- Keep compatibility APIs only as transition layers.
+- Guard product-facing code against continued compatibility API use.
+- Relationship, reference, hierarchy, and RTL feature reports must expose stable keys, owner/type metadata, source role, provenance, and not-found reasons.
+- Do not restore regex relationship analysis, the old Tree-sitter symbol parser, direct UI Slang execution, or UI workspace scans.
+
+### Phase F3: Legacy Compatibility Removal
+
+- Delete or isolate legacy fields and APIs: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, `getSymbolById`, `findSymbolId`, int-id `getRelationships`, and similar compatibility surfaces.
+- If an internal adapter is still required, it must stay limited to the collector/import boundary and be constrained by guards.
+- Clean tests and docs that assume legacy identity.
+- After F3, run the release gate before broad RTL feature expansion.
+
+### Release Gate After Phase F3
+
+- Full Ninja must pass.
+- Full CTest must pass.
+- Legacy guard and product-facing API audit must pass.
+- Docs, goal, and plan consistency checks must pass.
+- Real RTL workspace smoke pass must be covered.
+- Confirm qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, and long-lived scattered perflog probes have not returned.
 
 ## Architecture Rules
 
@@ -124,11 +161,17 @@ The foundation is healthy when:
 - feature reads use stable models, snapshots, Query Services, or feature services
 - stale workspace, open-document, and relationship analysis results cannot overwrite newer semantic snapshots
 - product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
-- product logic is not ready for broad feature expansion until Phase E and the Release Gate pass
+- product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, and the release gate after F3 pass
 - `sym_type_e` remains raw collector compatibility, not the primary product policy surface
 - `symbolId` is snapshot-local unless stable identity rules say otherwise
+- `moduleScope` and `dataType` are not used as overloaded product-policy fields
+- completion items expose structured semantic identity and insertion metadata
+- query services normalize string inputs into stable subject/context handles before feature logic
+- semantic symbol records carry owner, type, source-role, provenance, and not-found reason metadata instead of overloading legacy fields
+- relationship and index main paths use stable identity plus semantic enum/model contracts
+- compatibility APIs are transition-only and guarded away from product-facing code
 - Query Services and RTL feature services consume stable semantic metadata and contracts
-- RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, and the Release Gate are in place
+- RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, Phase F0, F1, F2, F3, and the release gate after F3 are in place
 - Phase D features are done only when service-level behavior, report shape, UI render path, and real fixture evidence are covered
 - UI panels render reports/models without owning semantic policy
 - scheduler, analyzer, project, document, and editor ownership boundaries stay clear
