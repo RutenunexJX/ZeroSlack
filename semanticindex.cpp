@@ -32,6 +32,32 @@ bool SymbolStableKey::operator==(const SymbolStableKey& other) const
         && ownerScope == other.ownerScope;
 }
 
+bool SemanticSymbolLocation::isValid() const
+{
+    return !fileName.isEmpty() && startLine > 0;
+}
+
+bool SemanticSymbolOwner::isValid() const
+{
+    return kind != SymbolTaxonomy::SymbolOwnerScope::Unknown
+        || !name.isEmpty()
+        || stableKey.isValid();
+}
+
+bool SemanticSymbolTypeReference::isValid() const
+{
+    return !rawTypeText.isEmpty()
+        || !resolvedTypeName.isEmpty()
+        || resolvedTypeKind != SymbolTaxonomy::DeclarationKind::Unknown
+        || !modportName.isEmpty()
+        || stableKey.isValid();
+}
+
+bool SemanticSymbolRecord::isValid() const
+{
+    return stableKey.isValid() || !name.isEmpty() || localHandle >= 0;
+}
+
 SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
 {
     SymbolStableKey key;
@@ -43,6 +69,56 @@ SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
     key.declarationKind = SymbolTaxonomy::semanticMetadata(symbol).declarationKind;
     key.ownerScope = symbol.moduleScope;
     return key;
+}
+
+SemanticSymbolRecord semanticSymbolRecordForSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    SemanticSymbolRecord record;
+    if (symbol.symbolId < 0 && symbol.symbolName.isEmpty())
+        return record;
+
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+
+    record.stableKey = symbolStableKeyForSymbol(symbol);
+    record.localHandle = symbol.symbolId;
+    record.name = symbol.symbolName;
+    record.location.fileName = normalizedStableKeyFileName(symbol.fileName);
+    record.location.startLine = symbol.startLine;
+    record.location.startColumn = symbol.startColumn;
+    record.location.endLine = symbol.endLine;
+    record.location.endColumn = symbol.endColumn;
+    record.location.position = symbol.position;
+    record.location.length = symbol.length;
+    record.declarationKind = metadata.declarationKind;
+    record.usageRole = metadata.usageRole;
+    record.visibility = metadata.visibility;
+    record.sourceRole = metadata.sourceRole;
+    record.rawCollectorKind = metadata.rawCollectorKind;
+    record.owner.kind = metadata.ownerScope;
+    record.owner.name = symbol.moduleScope;
+    record.owner.interfaceLike = metadata.interfaceLikeOwner;
+    record.type.rawTypeText = symbol.dataType;
+    record.type.resolvedTypeName = SymbolTaxonomy::interfaceTypeName(symbol);
+    record.type.modportName = SymbolTaxonomy::interfaceModportName(symbol);
+    if (!record.type.resolvedTypeName.isEmpty())
+        record.type.resolvedTypeKind =
+            SymbolTaxonomy::DeclarationKind::Interface;
+    return record;
+}
+
+QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    QList<SemanticSymbolRecord> records;
+    records.reserve(symbols.size());
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (record.isValid())
+            records.append(record);
+    }
+    return records;
 }
 
 QString symbolStableKeyText(const SymbolStableKey& key)

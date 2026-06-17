@@ -39,6 +39,12 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbols(const QString& fil
     return result;
 }
 
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
+    const QString& fileName) const
+{
+    return semanticSymbolRecordsForSymbols(getSymbols(fileName));
+}
+
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbolsByType(
     sym_list::sym_type_e type) const
 {
@@ -62,6 +68,12 @@ sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolById(int symbolId) const
     return missingSnapshotSymbol();
 }
 
+SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByLocalHandle(
+    int localHandle) const
+{
+    return semanticSymbolRecordForSymbol(getSymbolById(localHandle));
+}
+
 sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolByStableKey(
     const SymbolStableKey& key) const
 {
@@ -73,6 +85,12 @@ sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolByStableKey(
             return symbol;
     }
     return missingSnapshotSymbol();
+}
+
+SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
+    const SymbolStableKey& key) const
+{
+    return semanticSymbolRecordForSymbol(getSymbolByStableKey(key));
 }
 
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::findDefinitions(

@@ -116,12 +116,30 @@ QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) c
     return symbols;
 }
 
+QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
+    const QString& fileName) const
+{
+    return semanticSymbolRecordsForSymbols(getSymbols(fileName));
+}
+
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e type) const
 {
     if (m_snapshot)
         return m_snapshot->getSymbolsByType(type);
 
     return symbolDatabase()->findSymbolsByType(type);
+}
+
+SemanticSymbolRecord SemanticIndex::getSymbolRecordByLocalHandle(
+    int localHandle) const
+{
+    return semanticSymbolRecordForSymbol(getSymbolById(localHandle));
+}
+
+SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
+    const SymbolStableKey& key) const
+{
+    return semanticSymbolRecordForSymbol(getSymbolByStableKey(key));
 }
 
 QString SemanticIndex::getCachedFileContent(const QString& fileName) const

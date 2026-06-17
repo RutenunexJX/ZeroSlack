@@ -21,9 +21,14 @@ public:
         QList<SemanticDiagnostic> diagnostics = {});
 
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
+    QList<SemanticSymbolRecord> getSymbolRecords(
+        const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
     sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
+    SemanticSymbolRecord getSymbolRecordByLocalHandle(int localHandle) const;
+    SemanticSymbolRecord getSymbolRecordByStableKey(
+        const SymbolStableKey& key) const;
     QList<sym_list::SymbolInfo> findDefinitions(
         const QString& name,
         const SemanticQueryContext& context = {}) const;

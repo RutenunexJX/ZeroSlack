@@ -43,6 +43,59 @@ struct SymbolStableKey {
     bool operator==(const SymbolStableKey& other) const;
 };
 
+struct SemanticSymbolLocation {
+    QString fileName;
+    int startLine = 0;
+    int startColumn = 0;
+    int endLine = 0;
+    int endColumn = 0;
+    int position = 0;
+    int length = 0;
+
+    bool isValid() const;
+};
+
+struct SemanticSymbolOwner {
+    SymbolTaxonomy::SymbolOwnerScope kind =
+        SymbolTaxonomy::SymbolOwnerScope::Unknown;
+    QString name;
+    SymbolStableKey stableKey;
+    bool interfaceLike = false;
+
+    bool isValid() const;
+};
+
+struct SemanticSymbolTypeReference {
+    QString rawTypeText;
+    QString resolvedTypeName;
+    SymbolTaxonomy::DeclarationKind resolvedTypeKind =
+        SymbolTaxonomy::DeclarationKind::Unknown;
+    QString modportName;
+    SymbolStableKey stableKey;
+
+    bool isValid() const;
+};
+
+struct SemanticSymbolRecord {
+    SymbolStableKey stableKey;
+    int localHandle = -1;
+    QString name;
+    SemanticSymbolLocation location;
+    SymbolTaxonomy::DeclarationKind declarationKind =
+        SymbolTaxonomy::DeclarationKind::Unknown;
+    SymbolTaxonomy::SymbolUsageRole usageRole =
+        SymbolTaxonomy::SymbolUsageRole::Unknown;
+    SymbolTaxonomy::SymbolVisibility visibility =
+        SymbolTaxonomy::SymbolVisibility::Unknown;
+    SymbolTaxonomy::SourceRole sourceRole =
+        SymbolTaxonomy::SourceRole::Unknown;
+    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
+    SemanticSymbolOwner owner;
+    SemanticSymbolTypeReference type;
+
+    bool isValid() const;
+};
+
 enum class RelationshipProvenance {
     Unknown,
     SlangExtracted,
@@ -142,6 +195,10 @@ struct SemanticDefinitionResult {
 };
 
 SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol);
+SemanticSymbolRecord semanticSymbolRecordForSymbol(
+    const sym_list::SymbolInfo& symbol);
+QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
+    const QList<sym_list::SymbolInfo>& symbols);
 QString symbolStableKeyText(const SymbolStableKey& key);
 QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);
@@ -185,6 +242,8 @@ public:
         std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
 
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
+    QList<SemanticSymbolRecord> getSymbolRecords(
+        const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
     QList<SemanticSymbolSearchResult> searchSymbols(
         const SemanticSymbolSearchQuery& query) const;
@@ -227,6 +286,9 @@ public:
         const QString& prefix = QString()) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
     sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
+    SemanticSymbolRecord getSymbolRecordByLocalHandle(int localHandle) const;
+    SemanticSymbolRecord getSymbolRecordByStableKey(
+        const SymbolStableKey& key) const;
     SemanticDefinitionResult resolveDefinition(
         const SemanticDefinitionQuery& query) const;
     QList<sym_list::SymbolInfo> findDefinitionSymbols(

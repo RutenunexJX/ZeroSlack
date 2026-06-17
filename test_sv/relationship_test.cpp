@@ -335,6 +335,30 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !facadeStageDefs.isEmpty() && facadeStageDefs.first().symbolId == stageId, true);
     expectBool("semantic facade gets symbol by id",
                index.getSymbolById(topId).symbolName == QStringLiteral("rel_top"), true);
+    const SemanticSymbolRecord topRecord =
+        index.getSymbolRecordByLocalHandle(topId);
+    const SemanticSymbolRecord stageDataRecord =
+        index.getSymbolRecordByStableKey(
+            symbolStableKeyForSymbol(index.getSymbolById(stageDataId)));
+    expectBool("semantic facade exposes symbol record",
+               topRecord.isValid()
+                   && topRecord.name == QStringLiteral("rel_top")
+                   && topRecord.localHandle == topId
+                   && topRecord.stableKey
+                       == symbolStableKeyForSymbol(index.getSymbolById(topId))
+                   && topRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Module
+                   && topRecord.sourceRole
+                       == SymbolTaxonomy::SourceRole::DesignSource,
+               true);
+    expectBool("semantic facade record carries owner and type",
+               stageDataRecord.isValid()
+                   && stageDataRecord.owner.name == QStringLiteral("rel_top")
+                   && stageDataRecord.owner.kind
+                       == SymbolTaxonomy::SymbolOwnerScope::Module
+                   && stageDataRecord.type.rawTypeText
+                       == index.getSymbolById(stageDataId).dataType,
+               true);
     expectInt("semantic facade finds symbol id",
               index.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
     expectInt("semantic facade returns missing symbol id",
@@ -768,6 +792,18 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     snapshotIndex.setSnapshot(snapshot);
     expectBool("semantic snapshot returns top symbols",
                snapshotIndex.getSymbols(topPath).size() == topSymbols.size(), true);
+    const QList<SemanticSymbolRecord> snapshotTopRecords =
+        snapshotIndex.getSymbolRecords(topPath);
+    const SemanticSymbolRecord snapshotTopRecord =
+        snapshotIndex.getSymbolRecordByStableKey(
+            symbolStableKeyForSymbol(snapshotIndex.getSymbolById(topId)));
+    expectBool("semantic snapshot exposes symbol records",
+               snapshotTopRecords.size() == topSymbols.size()
+                   && snapshotTopRecord.isValid()
+                   && snapshotTopRecord.localHandle == topId
+                   && snapshotTopRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Module,
+               true);
     expectInt("semantic snapshot finds symbol id",
               snapshotIndex.findSymbolId(QStringLiteral("rel_stage"), queryContext), stageId);
     SearchService snapshotSearchService(&snapshotIndex);
