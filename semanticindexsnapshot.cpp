@@ -119,8 +119,10 @@ QList<sym_list::SymbolInfo> symbolsWithSemanticMetadata(
 {
     const QSet<QString> packageScopes =
         SymbolTaxonomy::packageScopeNames(symbols);
-    for (sym_list::SymbolInfo& symbol : symbols)
-        SymbolTaxonomy::attachSemanticMetadata(&symbol, packageScopes);
+    for (sym_list::SymbolInfo& symbol : symbols) {
+        if (!symbol.hasSemanticMetadata)
+            SymbolTaxonomy::attachSemanticMetadata(&symbol, packageScopes);
+    }
     return symbols;
 }
 

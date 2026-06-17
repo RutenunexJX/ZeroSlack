@@ -157,7 +157,7 @@ QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
     QString containingModule;
     int containingModuleStart = -1;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (!SymbolTaxonomy::isModuleDeclaration(symbol.symbolType))
+        if (!SymbolTaxonomy::isModuleDeclaration(symbol))
             continue;
         if (symbol.startLine <= cursorLine
             && (symbol.endLine <= 0 || symbol.endLine >= cursorLine)

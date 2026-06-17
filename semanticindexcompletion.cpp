@@ -107,7 +107,7 @@ QString SemanticIndex::currentModuleAt(const QString& fileName, int cursorPositi
     QList<sym_list::SymbolInfo> modules;
     const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(fileName);
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType))
+        if (SymbolTaxonomy::isModuleDeclaration(symbol))
             modules.append(symbol);
     }
 

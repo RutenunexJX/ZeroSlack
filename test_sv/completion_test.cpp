@@ -1837,6 +1837,48 @@ int main(int argc, char** argv) {
                    6004);
     snapshotReset.fileName = snapshotScopeFile;
     snapshotSymbols.append(snapshotReset);
+    const QString semanticModuleScopeFile =
+        QStringLiteral("semantic_module_scope.sv");
+    const QString semanticModuleScopeContent =
+        QStringLiteral("module semantic_scope;\n"
+                       "  logic semantic_signal;\n"
+                       "endmodule\n");
+    sym_list::SymbolInfo semanticScopeModule =
+        makeSymbol(QStringLiteral("semantic_scope"),
+                   sym_list::sym_user,
+                   QString(),
+                   QString(),
+                   6010);
+    semanticScopeModule.fileName = semanticModuleScopeFile;
+    semanticScopeModule.position =
+        semanticModuleScopeContent.indexOf(QStringLiteral("module semantic_scope"));
+    semanticScopeModule.startLine = 1;
+    semanticScopeModule.endLine = 3;
+    semanticScopeModule.hasSemanticMetadata = true;
+    semanticScopeModule.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Module;
+    semanticScopeModule.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    semanticScopeModule.semanticOwnerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Global;
+    semanticScopeModule.semanticVisibility =
+        SymbolTaxonomy::SymbolVisibility::Global;
+    semanticScopeModule.semanticSourceRole =
+        SymbolTaxonomy::SourceRole::DesignSource;
+    semanticScopeModule.rawCollectorKind = sym_list::sym_user;
+    snapshotSymbols.append(semanticScopeModule);
+    sym_list::SymbolInfo semanticScopeSignal =
+        makeSymbol(QStringLiteral("semantic_signal"),
+                   sym_list::sym_logic,
+                   QStringLiteral("semantic_scope"),
+                   QString(),
+                   6011);
+    semanticScopeSignal.fileName = semanticModuleScopeFile;
+    semanticScopeSignal.position =
+        semanticModuleScopeContent.indexOf(QStringLiteral("semantic_signal"));
+    semanticScopeSignal.startLine = 2;
+    semanticScopeSignal.endLine = 2;
+    snapshotSymbols.append(semanticScopeSignal);
     QList<SemanticRelationship> snapshotRelationships;
     SemanticRelationship containsSnapEnable;
     containsSnapEnable.fromId = 4000;
@@ -1860,6 +1902,7 @@ int main(int argc, char** argv) {
     snapshotRelationships.append(resetDrivesTop);
     QHash<QString, QString> snapshotFileContents;
     snapshotFileContents.insert(snapshotScopeFile, snapshotScopeContent);
+    snapshotFileContents.insert(semanticModuleScopeFile, semanticModuleScopeContent);
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
         std::make_shared<SemanticIndexSnapshot>(
@@ -2065,6 +2108,15 @@ int main(int argc, char** argv) {
     expectEq("snapshot current module",
              snapshotCompletionService.currentModuleAt(snapshotScopeFile, snapshotScopeCursor),
              "snap_scope");
+    const int semanticModuleScopeCursor =
+        semanticModuleScopeContent.indexOf(QStringLiteral("semantic_signal")) + 2;
+    expectEq("snapshot semantic metadata current module",
+             snapshotCompletionService.currentModuleAt(semanticModuleScopeFile,
+                                                       semanticModuleScopeCursor),
+             "semantic_scope");
+    expectList("snapshot semantic metadata scope names",
+               snapshotIndex.getScopeSymbolNames(semanticModuleScopeFile, 2),
+               {"semantic_scope", "semantic_signal"});
     CompletionQuery snapshotScopeQuery;
     snapshotScopeQuery.prefix = QStringLiteral("snap");
     snapshotScopeQuery.fileName = snapshotScopeFile;
