@@ -19,6 +19,7 @@ struct SearchQuery {
 
 struct SearchResult {
     sym_list::SymbolInfo symbol;
+    SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     int score = 0;
 };

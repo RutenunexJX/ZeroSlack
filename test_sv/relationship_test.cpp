@@ -671,12 +671,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool searchFoundTop = false;
     bool searchFoundStage = false;
     bool searchFoundTopStableKey = false;
+    bool searchFoundTopRecord = false;
     for (const SearchResult& result : moduleSearchResults) {
         searchFoundTop = searchFoundTop || result.symbol.symbolId == topId;
         searchFoundStage = searchFoundStage || result.symbol.symbolId == stageId;
         searchFoundTopStableKey = searchFoundTopStableKey
             || (result.symbol.symbolId == topId
                 && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
+        searchFoundTopRecord = searchFoundTopRecord
+            || (result.symbol.symbolId == topId
+                && result.symbolRecord.localHandle == topId
+                && result.symbolRecord.stableKey == result.symbolStableKey
+                && result.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Module);
     }
     expectBool("search service finds top module",
                searchFoundTop, true);
@@ -684,6 +691,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                searchFoundStage, true);
     expectBool("search service result carries stable key",
                searchFoundTopStableKey, true);
+    expectBool("search service result carries semantic record",
+               searchFoundTopRecord, true);
 
     SearchQuery fileModuleSearchQuery = moduleSearchQuery;
     fileModuleSearchQuery.fileName = topPath;
@@ -813,6 +822,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool snapshotSearchFoundStage = false;
     bool snapshotSearchFoundTopStableKey = false;
     bool snapshotSearchFoundStageStableKey = false;
+    bool snapshotSearchFoundStageRecord = false;
     for (const SearchResult& result : snapshotSearchResults) {
         snapshotSearchFoundTop = snapshotSearchFoundTop || result.symbol.symbolId == topId;
         snapshotSearchFoundStage = snapshotSearchFoundStage || result.symbol.symbolId == stageId;
@@ -822,6 +832,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotSearchFoundStageStableKey = snapshotSearchFoundStageStableKey
             || (result.symbol.symbolId == stageId
                 && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
+        snapshotSearchFoundStageRecord = snapshotSearchFoundStageRecord
+            || (result.symbol.symbolId == stageId
+                && result.symbolRecord.localHandle == stageId
+                && result.symbolRecord.stableKey == result.symbolStableKey
+                && result.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Module);
     }
     expectBool("snapshot search service finds top module",
                snapshotSearchFoundTop, true);
@@ -831,6 +847,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotSearchFoundTopStableKey, true);
     expectBool("snapshot search service result carries stage stable key",
                snapshotSearchFoundStageStableKey, true);
+    expectBool("snapshot search service result carries semantic record",
+               snapshotSearchFoundStageRecord, true);
     expectBool("snapshot search service has module matches",
                snapshotSearchService.hasMatches(moduleSearchQuery), true);
     SearchQuery snapshotMissingSearchQuery = moduleSearchQuery;
