@@ -4,6 +4,74 @@
 
 #include <QSet>
 
+namespace {
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(fallback);
+    if (!record.isValid())
+        return metadata;
+
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString ownerScopeNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    if (!fallback.moduleScope.isEmpty())
+        return fallback.moduleScope;
+
+    switch (record.owner.kind) {
+    case SymbolTaxonomy::SymbolOwnerScope::Global:
+        return QStringLiteral("global");
+    case SymbolTaxonomy::SymbolOwnerScope::Module:
+        return QStringLiteral("module");
+    case SymbolTaxonomy::SymbolOwnerScope::Interface:
+        return QStringLiteral("interface");
+    case SymbolTaxonomy::SymbolOwnerScope::Package:
+        return QStringLiteral("package");
+    case SymbolTaxonomy::SymbolOwnerScope::Struct:
+        return QStringLiteral("struct");
+    case SymbolTaxonomy::SymbolOwnerScope::Unknown:
+        break;
+    }
+    return QString();
+}
+
+void fillSymbolMetadataFromRecord(
+    CompletionModel::CompletionItem& item,
+    const sym_list::SymbolInfo& symbol)
+{
+    item.symbolType = symbol.symbolType;
+    item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+    item.symbolStableKey = item.symbolRecord.stableKey.isValid()
+        ? item.symbolRecord.stableKey
+        : symbolStableKeyForSymbol(symbol);
+
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        metadataForRecord(item.symbolRecord, symbol);
+    item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
+    item.ownerScopeName = ownerScopeNameForRecord(item.symbolRecord, symbol);
+    item.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    item.declarationKind = metadata.declarationKind;
+    item.usageRole = metadata.usageRole;
+    item.ownerScope = metadata.ownerScope;
+    item.sourceRole = metadata.sourceRole;
+}
+}
+
 void CompletionModel::updateCompletions(const QStringList &keywords,
                                        const QList<sym_list::SymbolInfo> &symbols,
                                        const QString &prefix,
@@ -28,12 +96,9 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 CompletionItem item;
                 item.text = keywords[i];
                 item.type = SymbolCompletion;
-                item.symbolType = symbols[i].symbolType;
-                item.symbolRecord = semanticSymbolRecordForSymbol(symbols[i]);
-                item.symbolStableKey = item.symbolRecord.stableKey;
+                fillSymbolMetadataFromRecord(item, symbols[i]);
                 item.score = completionService->completionItemScore(keywords[i], prefix);
-                item.description =
-                    completionService->symbolTypeDescription(symbols[i]);
+                item.description = item.typeDisplayName;
 
                 fillDisplayMetadata(item);
                 completions.append(item);
@@ -43,12 +108,9 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 CompletionItem item;
                 item.text = symbol.symbolName;
                 item.type = SymbolCompletion;
-                item.symbolType = symbol.symbolType;
-                item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
-                item.symbolStableKey = item.symbolRecord.stableKey;
+                fillSymbolMetadataFromRecord(item, symbol);
                 item.score = completionService->completionItemScore(symbol.symbolName, prefix);
-                item.description =
-                    completionService->symbolTypeDescription(symbol);
+                item.description = item.typeDisplayName;
 
                 fillDisplayMetadata(item);
                 completions.append(item);
@@ -203,10 +265,12 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         CompletionItem item;
         item.type = SymbolCompletion;
         item.symbolType = symbolType;
-        item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
-        item.symbolStableKey = item.symbolRecord.stableKey;
+        fillSymbolMetadataFromRecord(item, symbol);
+        item.symbolType = symbolType;
         item.text = serviceItem.text;
-        item.description = serviceItem.description;
+        item.description = item.typeDisplayName.isEmpty()
+            ? serviceItem.description
+            : item.typeDisplayName;
         item.defaultValue = serviceItem.defaultValue;
         item.score = serviceItem.score;
 

@@ -229,6 +229,20 @@ int main(int argc, char** argv) {
                    && modelScoring.getItem(modelScoring.index(2, 0))
                           .symbolRecord.localHandle == modelScoringSymbols.at(1).symbolId,
                true);
+    expectBool("CompletionModel symbol semantic metadata",
+               modelScoring.getItem(modelScoring.index(2, 0)).typeDisplayName
+                   == QStringLiteral("logic")
+                   && modelScoring.getItem(modelScoring.index(2, 0)).ownerScopeName
+                       == QStringLiteral("top")
+                   && modelScoring.getItem(modelScoring.index(2, 0))
+                          .sourceRoleDisplayName == QStringLiteral("design source")
+                   && modelScoring.getItem(modelScoring.index(2, 0)).declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Signal
+                   && modelScoring.getItem(modelScoring.index(2, 0)).ownerScope
+                       == SymbolTaxonomy::SymbolOwnerScope::Module
+                   && modelScoring.getItem(modelScoring.index(2, 0)).sourceRole
+                       == SymbolTaxonomy::SourceRole::DesignSource,
+               true);
     expectBool("CompletionModel header selectable",
                modelScoring.getItem(modelScoring.index(0, 0)).selectable,
                false);
@@ -283,6 +297,23 @@ int main(int argc, char** argv) {
                metadataDescriptionModel.getItem(
                    metadataDescriptionModel.index(0, 0)).symbolRecord.declarationKind
                    == SymbolTaxonomy::DeclarationKind::Module,
+               true);
+    expectBool("CompletionModel metadata semantic fields",
+               metadataDescriptionModel.getItem(
+                   metadataDescriptionModel.index(0, 0)).typeDisplayName
+                   == QStringLiteral("module")
+                   && metadataDescriptionModel.getItem(
+                       metadataDescriptionModel.index(0, 0)).ownerScopeName
+                       == QStringLiteral("global")
+                   && metadataDescriptionModel.getItem(
+                       metadataDescriptionModel.index(0, 0)).sourceRoleDisplayName
+                       == QStringLiteral("source")
+                   && metadataDescriptionModel.getItem(
+                       metadataDescriptionModel.index(0, 0)).ownerScope
+                       == SymbolTaxonomy::SymbolOwnerScope::Global
+                   && metadataDescriptionModel.getItem(
+                       metadataDescriptionModel.index(0, 0)).sourceRole
+                       == SymbolTaxonomy::SourceRole::Unknown,
                true);
     CompletionModel commandDisplayModel;
     commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
