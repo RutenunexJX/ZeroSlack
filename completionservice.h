@@ -41,6 +41,7 @@ public:
                                       const QString& abbreviation) const;
     int completionItemScore(const QString& text, const QString& prefix) const;
     QString symbolTypeDescription(sym_list::sym_type_e symbolType) const;
+    QString symbolTypeDescription(const sym_list::SymbolInfo& symbol) const;
     CommandSymbolPresentation commandSymbolPresentation(
         sym_list::sym_type_e symbolType) const;
     CommandSymbolCompletionItem commandSymbolCompletionItem(

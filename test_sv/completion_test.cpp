@@ -230,6 +230,40 @@ int main(int argc, char** argv) {
     expectEq("CompletionModel display role",
              modelScoring.data(modelScoring.index(2, 0), Qt::DisplayRole).toString(),
              QStringLiteral("always_ff (logic)"));
+    sym_list::SymbolInfo metadataModelSymbol =
+        makeSymbol(QStringLiteral("metadata_top"),
+                   sym_list::sym_user,
+                   QString(),
+                   QString(),
+                   9005);
+    metadataModelSymbol.hasSemanticMetadata = true;
+    metadataModelSymbol.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Module;
+    metadataModelSymbol.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    metadataModelSymbol.semanticOwnerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Global;
+    metadataModelSymbol.semanticVisibility =
+        SymbolTaxonomy::SymbolVisibility::Global;
+    metadataModelSymbol.rawCollectorKind = sym_list::sym_user;
+    expectEq("CompletionService symbol metadata desc",
+             CompletionService::getInstance()->symbolTypeDescription(
+                 metadataModelSymbol),
+             QStringLiteral("module"));
+    CompletionModel metadataDescriptionModel;
+    metadataDescriptionModel.updateCompletions(
+        {metadataModelSymbol.symbolName},
+        {metadataModelSymbol},
+        QStringLiteral("meta"),
+        CompletionModel::SymbolCompletion);
+    expectEq("CompletionModel metadata desc",
+             metadataDescriptionModel.getItem(
+                 metadataDescriptionModel.index(0, 0)).description,
+             QStringLiteral("module"));
+    expectEq("CompletionModel metadata display",
+             metadataDescriptionModel.getItem(
+                 metadataDescriptionModel.index(0, 0)).displayText,
+             QStringLiteral("metadata_top (module)"));
     CompletionModel commandDisplayModel;
     commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
                                                  QStringLiteral("s"));

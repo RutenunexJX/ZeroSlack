@@ -31,7 +31,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.symbolType = symbols[i].symbolType;
                 item.score = completionService->completionItemScore(keywords[i], prefix);
                 item.description =
-                    completionService->symbolTypeDescription(symbols[i].symbolType);
+                    completionService->symbolTypeDescription(symbols[i]);
 
                 fillDisplayMetadata(item);
                 completions.append(item);
@@ -44,7 +44,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.symbolType = symbol.symbolType;
                 item.score = completionService->completionItemScore(symbol.symbolName, prefix);
                 item.description =
-                    completionService->symbolTypeDescription(symbol.symbolType);
+                    completionService->symbolTypeDescription(symbol);
 
                 fillDisplayMetadata(item);
                 completions.append(item);
