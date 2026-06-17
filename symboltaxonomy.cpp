@@ -1312,9 +1312,27 @@ SourceRole sourceRoleForFileName(const QString& fileName)
     return SourceRole::Unknown;
 }
 
+QString sourceRoleDisplayName(SourceRole role)
+{
+    switch (role) {
+    case SourceRole::DesignSource:
+        return QStringLiteral("design source");
+    case SourceRole::Header:
+        return QStringLiteral("header");
+    case SourceRole::ExternalHeader:
+        return QStringLiteral("external header");
+    case SourceRole::Generated:
+        return QStringLiteral("generated source");
+    case SourceRole::Unknown:
+    default:
+        return QStringLiteral("source");
+    }
+}
+
 bool isHeaderSourceRole(SourceRole role)
 {
-    return role == SourceRole::Header;
+    return role == SourceRole::Header
+        || role == SourceRole::ExternalHeader;
 }
 
 } // namespace SymbolTaxonomy

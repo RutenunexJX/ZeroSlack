@@ -134,7 +134,6 @@ private:
     static QString unmappedCategoryDisplayName();
     static QString unmappedDetailDisplayName(const QString& signalName,
                                              SymbolRelationshipEngine::RelationType type);
-    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillEntryDisplayMetadata(ClockResetDomainEntry& entry,
                                          SymbolRelationshipEngine::RelationType type);
     static void sortEntries(QList<ClockResetDomainEntry>& entries);

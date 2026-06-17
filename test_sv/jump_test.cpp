@@ -18,6 +18,7 @@
 #include "documentmodel.h"
 #include "definitionservice.h"
 #include "editorsemanticcontextservice.h"
+#include "projectmodel.h"
 #include "sourcenavigationservice.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
@@ -471,6 +472,40 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::sourceRoleForFileName(QStringLiteral("rtl/pkg_defs.svh"))
                    == SymbolTaxonomy::SourceRole::Header,
                true);
+    expectEq("SymbolTaxonomy design source role label",
+             SymbolTaxonomy::sourceRoleDisplayName(
+                 SymbolTaxonomy::SourceRole::DesignSource),
+             QStringLiteral("design source"));
+    expectEq("SymbolTaxonomy external header role label",
+             SymbolTaxonomy::sourceRoleDisplayName(
+                 SymbolTaxonomy::SourceRole::ExternalHeader),
+             QStringLiteral("external header"));
+    expectEq("SymbolTaxonomy generated role label",
+             SymbolTaxonomy::sourceRoleDisplayName(
+                 SymbolTaxonomy::SourceRole::Generated),
+             QStringLiteral("generated source"));
+    expectBool("SymbolTaxonomy external header is header",
+               SymbolTaxonomy::isHeaderSourceRole(
+                   SymbolTaxonomy::SourceRole::ExternalHeader),
+               true);
+    ProjectSnapshot sourceRoleSnapshot;
+    sourceRoleSnapshot.sourceRoles.insert(
+        QStringLiteral("rtl/top.sv"),
+        SymbolTaxonomy::SourceRole::DesignSource);
+    sourceRoleSnapshot.sourceRoles.insert(
+        QStringLiteral("include/pkg_defs.svh"),
+        SymbolTaxonomy::SourceRole::Header);
+    sourceRoleSnapshot.sourceRoles.insert(
+        QStringLiteral("vendor/ext_pkg.svh"),
+        SymbolTaxonomy::SourceRole::ExternalHeader);
+    expectBool("ProjectSnapshot includes external headers",
+               sourceRoleSnapshot.headerSourceFiles().contains(
+                   QStringLiteral("vendor/ext_pkg.svh")),
+               true);
+    expectBool("ProjectSnapshot excludes design from headers",
+               sourceRoleSnapshot.headerSourceFiles().contains(
+                   QStringLiteral("rtl/top.sv")),
+               false);
 
     DefinitionQuery snapshotLocalModuleQuery;
     snapshotLocalModuleQuery.symbolName = QStringLiteral("snap_dup");

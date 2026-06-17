@@ -168,6 +168,7 @@ bool typedCompletionSymbolTypeMatches(
     const QString& dataType = QString());
 
 SourceRole sourceRoleForFileName(const QString& fileName);
+QString sourceRoleDisplayName(SourceRole role);
 bool isHeaderSourceRole(SourceRole role);
 
 } // namespace SymbolTaxonomy

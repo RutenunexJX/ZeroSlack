@@ -540,7 +540,7 @@ QList<FsmStateRow> FsmGraphService::stateRows(
         row.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(
             SymbolTaxonomy::semanticMetadata(state));
         row.sourceRoleDisplayName =
-            sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleDisplayName(
                 SymbolTaxonomy::semanticMetadata(state).sourceRole);
         row.moduleDisplayName = state.moduleScope.isEmpty()
             ? QStringLiteral("global")
@@ -572,7 +572,7 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
         row.detailDisplayName = transition.detailDisplayName;
         row.sourceLineDisplayName = transitionSourceLineDisplayName(transition);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleDisplayName(
                 SymbolTaxonomy::semanticMetadata(moduleSymbol).sourceRole);
         rows.append(row);
     }
@@ -620,19 +620,6 @@ QString FsmGraphService::transitionSourceLineDisplayName(
         : QStringLiteral("line unknown");
 }
 
-QString FsmGraphService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
-{
-    switch (role) {
-    case SymbolTaxonomy::SourceRole::DesignSource:
-        return QStringLiteral("design source");
-    case SymbolTaxonomy::SourceRole::Header:
-        return QStringLiteral("header");
-    case SymbolTaxonomy::SourceRole::Unknown:
-    default:
-        return QStringLiteral("source");
-    }
-}
-
 void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
 {
     graph.stateRegisterCodeLink = RtlInsightLink::fromSymbol(graph.stateRegister);
@@ -643,7 +630,7 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
         SymbolTaxonomy::symbolTypeLabel(
             SymbolTaxonomy::semanticMetadata(graph.stateRegister));
     graph.stateRegisterSourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(graph.stateRegister).sourceRole);
     graph.nextStateSignalDisplayName = graph.nextStateSignal.symbolId >= 0
         ? graph.nextStateSignal.symbolName
@@ -653,7 +640,7 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
               SymbolTaxonomy::semanticMetadata(graph.nextStateSignal))
         : QString();
     graph.nextStateSignalSourceRoleDisplayName = graph.nextStateSignal.symbolId >= 0
-        ? sourceRoleDisplayName(
+        ? SymbolTaxonomy::sourceRoleDisplayName(
               SymbolTaxonomy::semanticMetadata(graph.nextStateSignal).sourceRole)
         : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");

@@ -353,19 +353,6 @@ QString SignalJourneyService::interfaceBaseDisplayName(
     return symbol.moduleScope;
 }
 
-QString SignalJourneyService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
-{
-    switch (role) {
-    case SymbolTaxonomy::SourceRole::DesignSource:
-        return QStringLiteral("design source");
-    case SymbolTaxonomy::SourceRole::Header:
-        return QStringLiteral("header");
-    case SymbolTaxonomy::SourceRole::Unknown:
-    default:
-        return QStringLiteral("source");
-    }
-}
-
 void SignalJourneyService::fillDeclarationDisplayMetadata(
     SignalJourneyReport& report)
 {
@@ -379,7 +366,7 @@ void SignalJourneyService::fillDeclarationDisplayMetadata(
     report.declarationLineDisplayName =
         report.declarationCodeLink.lineDisplayName;
     report.declarationSourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(report.declaration).sourceRole);
 }
 
@@ -403,17 +390,17 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
         SymbolTaxonomy::symbolTypeLabel(
             SymbolTaxonomy::semanticMetadata(item.toSymbol));
     item.fromSourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(item.fromSymbol).sourceRole);
     item.toSourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(item.toSymbol).sourceRole);
     item.connectionKindDisplayName = QStringLiteral("relationship");
     item.peerTypeDisplayName =
         SymbolTaxonomy::symbolTypeLabel(
             SymbolTaxonomy::semanticMetadata(item.peerSymbol));
     item.peerSourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(item.peerSymbol).sourceRole);
     item.interfaceBaseDisplayName = interfaceBaseDisplayName(item.peerSymbol);
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;

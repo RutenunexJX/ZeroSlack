@@ -22,7 +22,13 @@ QStringList ProjectSnapshot::designSourceFiles() const
 
 QStringList ProjectSnapshot::headerSourceFiles() const
 {
-    return filesForSourceRole(SymbolTaxonomy::SourceRole::Header);
+    QStringList files;
+    for (auto it = sourceRoles.cbegin(); it != sourceRoles.cend(); ++it) {
+        if (SymbolTaxonomy::isHeaderSourceRole(it.value()))
+            files.append(it.key());
+    }
+    files.sort(Qt::CaseInsensitive);
+    return files;
 }
 
 ProjectModel::ProjectModel(QObject* parent)

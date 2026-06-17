@@ -163,7 +163,7 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
         row.detailDisplayName =
             unmappedDetailDisplayName(row.signalDisplayName, type);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleDisplayName(
                 SymbolTaxonomy::semanticMetadata(symbol).sourceRole);
         rows.append(row);
     }
@@ -440,7 +440,7 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
                                   row.moduleDisplayName,
                                   type);
     row.sourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(member.moduleSymbol).sourceRole);
     return row;
 }
@@ -500,19 +500,6 @@ QString ClockResetDomainService::unmappedDetailDisplayName(
     return QStringLiteral("%1 has no %2 relationship").arg(signalName, noun);
 }
 
-QString ClockResetDomainService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
-{
-    switch (role) {
-    case SymbolTaxonomy::SourceRole::DesignSource:
-        return QStringLiteral("design source");
-    case SymbolTaxonomy::SourceRole::Header:
-        return QStringLiteral("header");
-    case SymbolTaxonomy::SourceRole::Unknown:
-    default:
-        return QStringLiteral("source");
-    }
-}
-
 void ClockResetDomainService::fillEntryDisplayMetadata(
     ClockResetDomainEntry& entry,
     SymbolRelationshipEngine::RelationType type)
@@ -529,7 +516,7 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
         if (member.detailDisplayName.isEmpty())
             member.detailDisplayName = memberDetailDisplayName(type);
         member.sourceRoleDisplayName =
-            sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleDisplayName(
                 SymbolTaxonomy::semanticMetadata(member.moduleSymbol).sourceRole);
     }
 }

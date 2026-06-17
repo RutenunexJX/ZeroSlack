@@ -152,7 +152,6 @@ private:
     static QString transitionDetailDisplayName(const FsmTransition& transition);
     static QString transitionConditionDisplayName(const FsmTransition& transition);
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);
-    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static void fillDisplayMetadata(FsmGraph& graph);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);

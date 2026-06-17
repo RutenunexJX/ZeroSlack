@@ -31,7 +31,9 @@ enum class DeclarationKind {
 enum class SourceRole {
     Unknown,
     DesignSource,
-    Header
+    Header,
+    ExternalHeader,
+    Generated
 };
 
 enum class SymbolOwnerScope {

@@ -160,7 +160,6 @@ private:
     static QString changeKindDisplayName(SemanticDiffChangeKind kind);
     static QString symbolCategoryDisplayName(SemanticDiffSymbolCategory category);
     static QString symbolCategoryGroupDisplayName(SemanticDiffSymbolCategory category);
-    static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
     static QString symbolScopeDisplayName(const sym_list::SymbolInfo& symbol);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);

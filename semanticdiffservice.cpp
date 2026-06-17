@@ -479,19 +479,6 @@ QString SemanticDiffService::symbolCategoryGroupDisplayName(
     return QStringLiteral("Symbols");
 }
 
-QString SemanticDiffService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
-{
-    switch (role) {
-    case SymbolTaxonomy::SourceRole::DesignSource:
-        return QStringLiteral("design source");
-    case SymbolTaxonomy::SourceRole::Header:
-        return QStringLiteral("header");
-    case SymbolTaxonomy::SourceRole::Unknown:
-    default:
-        return QStringLiteral("source");
-    }
-}
-
 QString SemanticDiffService::symbolScopeDisplayName(
     const sym_list::SymbolInfo& symbol)
 {
@@ -559,7 +546,7 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
     change.categoryDisplayName = symbolCategoryDisplayName(change.category);
     change.categoryGroupDisplayName = symbolCategoryGroupDisplayName(change.category);
     change.sourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(change.displaySymbol).sourceRole);
     change.symbolTypeDisplayName =
         SymbolTaxonomy::symbolTypeLabel(
@@ -572,7 +559,7 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
                 SymbolTaxonomy::semanticMetadata(change.beforeSymbol));
         change.beforeScopeDisplayName = symbolScopeDisplayName(change.beforeSymbol);
         change.beforeSourceRoleDisplayName =
-            sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleDisplayName(
                 SymbolTaxonomy::semanticMetadata(change.beforeSymbol).sourceRole);
         change.beforeDataTypeDisplayName = change.beforeSymbol.dataType;
         change.beforeCodeLink = RtlInsightLink::fromSymbol(change.beforeSymbol);
@@ -583,7 +570,7 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
                 SymbolTaxonomy::semanticMetadata(change.afterSymbol));
         change.afterScopeDisplayName = symbolScopeDisplayName(change.afterSymbol);
         change.afterSourceRoleDisplayName =
-            sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleDisplayName(
                 SymbolTaxonomy::semanticMetadata(change.afterSymbol).sourceRole);
         change.afterDataTypeDisplayName = change.afterSymbol.dataType;
         change.afterCodeLink = RtlInsightLink::fromSymbol(change.afterSymbol);
@@ -653,7 +640,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.categoryGroupDisplayName = QStringLiteral("Relationships");
     change.codeLink = change.fromCodeLink;
     change.sourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::semanticMetadata(change.displayFromSymbol).sourceRole);
     change.detailDisplayName =
         change.displayFromSymbol.symbolName.isEmpty()
@@ -676,7 +663,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.categoryGroupDisplayName = QStringLiteral("Diagnostics");
     change.codeLink = RtlInsightLink::fromDiagnostic(change.displayDiagnostic);
     change.sourceRoleDisplayName =
-        sourceRoleDisplayName(
+        SymbolTaxonomy::sourceRoleDisplayName(
             SymbolTaxonomy::sourceRoleForFileName(change.displayDiagnostic.fileName));
     change.detailDisplayName = QStringLiteral("%1, %2")
                                    .arg(change.severityDisplayName,

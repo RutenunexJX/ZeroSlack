@@ -274,7 +274,7 @@ QList<ModuleBriefDiagnosticRow> ModuleBriefService::diagnosticRows(
             diagnosticSeverityDisplayName(diagnostic.severity);
         row.detailDisplayName = QStringLiteral("diagnostic");
         row.sourceRoleDisplayName =
-            sourceRoleDisplayName(
+            SymbolTaxonomy::sourceRoleDisplayName(
                 SymbolTaxonomy::sourceRoleForFileName(diagnostic.fileName));
         rows.append(row);
     }
@@ -334,7 +334,8 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         row.symbolTypeDisplayName = symbolTypeDisplayName(symbol);
         row.detailDisplayName = contextDetailDisplayName(kind, symbol);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayName(SymbolTaxonomy::semanticMetadata(symbol).sourceRole);
+            SymbolTaxonomy::sourceRoleDisplayName(
+                SymbolTaxonomy::semanticMetadata(symbol).sourceRole);
         rows.append(row);
     };
 
@@ -424,19 +425,6 @@ QString ModuleBriefService::contextDetailDisplayName(
     return symbol.dataType.isEmpty()
         ? kind
         : QStringLiteral("%1 %2").arg(kind, symbol.dataType);
-}
-
-QString ModuleBriefService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole role)
-{
-    switch (role) {
-    case SymbolTaxonomy::SourceRole::DesignSource:
-        return QStringLiteral("design source");
-    case SymbolTaxonomy::SourceRole::Header:
-        return QStringLiteral("header");
-    case SymbolTaxonomy::SourceRole::Unknown:
-    default:
-        return QStringLiteral("source");
-    }
 }
 
 QSet<QString> ModuleBriefService::interfaceNames(
