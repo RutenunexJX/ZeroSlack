@@ -106,6 +106,22 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     if (reason)
         *reason = SignalJourneyNotFoundReason::None;
 
+    if (query.signalStableKey.isValid()) {
+        const sym_list::SymbolInfo symbol =
+            semanticIndex()->getSymbolByStableKey(query.signalStableKey);
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
+            return missingSignalJourneySymbol();
+        }
+        if (!isJourneyDeclaration(symbol)) {
+            if (reason)
+                *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
+            return missingSignalJourneySymbol();
+        }
+        return symbol;
+    }
+
     if (query.signalSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.signalSymbolId);

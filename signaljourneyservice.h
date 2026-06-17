@@ -11,6 +11,7 @@
 #include <memory>
 
 struct SignalJourneyQuery {
+    SymbolStableKey signalStableKey;
     int signalSymbolId = -1;
     QString signalName;
     QString fileName;

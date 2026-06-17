@@ -4041,6 +4041,19 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal journey declaration stable key",
                report.declarationStableKey == symbolStableKeyForSymbol(report.declaration),
                true);
+    SignalJourneyQuery stableSignalQuery;
+    stableSignalQuery.signalStableKey = symbolStableKeyForSymbol(report.declaration);
+    stableSignalQuery.signalSymbolId = 9104;
+    stableSignalQuery.signalName = QStringLiteral("consumer");
+    const SignalJourneyReport stableSignalReport =
+        service.buildSignalJourney(stableSignalQuery);
+    expectBool("signal journey resolves stable signal key",
+               stableSignalReport.found
+                   && stableSignalReport.declaration.symbolName
+                       == QStringLiteral("data_q")
+                   && stableSignalReport.declarationStableKey
+                       == stableSignalQuery.signalStableKey,
+               true);
     expectBool("signal journey declaration display type",
                !report.declarationTypeDisplayName.isEmpty(), true);
     expectBool("signal journey declaration source role",
