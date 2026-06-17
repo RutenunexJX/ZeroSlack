@@ -165,7 +165,7 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
     QList<sym_list::SymbolInfo> fileSymbols = symbols()->findSymbolsByFileName(fileName);
 
     for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
-        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)) {
+        if (SymbolTaxonomy::isModuleDeclaration(symbol)) {
             int moduleId = symbol.symbolId;
             symbolsByFile[fileName].insert(moduleId);
 

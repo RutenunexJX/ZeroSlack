@@ -306,6 +306,32 @@ int main(int argc, char** argv) {
     expectEq("SymbolTaxonomy metadata label",
              SymbolTaxonomy::symbolTypeLabel(syntheticModuleMetadata),
              QStringLiteral("module"));
+    SymbolTaxonomy::SemanticMetadata syntheticInstanceMetadata;
+    syntheticInstanceMetadata.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Instance;
+    syntheticInstanceMetadata.usageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    syntheticInstanceMetadata.rawCollectorKind = sym_list::sym_user;
+    expectBool("SymbolTaxonomy metadata instance declaration",
+               SymbolTaxonomy::isInstanceDeclaration(syntheticInstanceMetadata),
+               true);
+    syntheticInstanceMetadata.usageRole =
+        SymbolTaxonomy::SymbolUsageRole::Reference;
+    expectBool("SymbolTaxonomy metadata instance pin not declaration",
+               SymbolTaxonomy::isInstanceDeclaration(syntheticInstanceMetadata),
+               false);
+    sym_list::SymbolInfo metadataInstanceSymbol;
+    metadataInstanceSymbol.symbolName = QStringLiteral("metadata_u_child");
+    metadataInstanceSymbol.symbolType = sym_list::sym_user;
+    metadataInstanceSymbol.hasSemanticMetadata = true;
+    metadataInstanceSymbol.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Instance;
+    metadataInstanceSymbol.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    metadataInstanceSymbol.rawCollectorKind = sym_list::sym_user;
+    expectBool("SymbolTaxonomy symbol instance declaration",
+               SymbolTaxonomy::isInstanceDeclaration(metadataInstanceSymbol),
+               true);
     sym_list::SymbolInfo metadataKeySymbol;
     metadataKeySymbol.symbolName = QStringLiteral("metadata_top");
     metadataKeySymbol.symbolType = sym_list::sym_user;

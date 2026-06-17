@@ -79,6 +79,8 @@ bool isSignalDeclaration(const SemanticMetadata& metadata);
 bool isLogicDeclaration(sym_list::sym_type_e type);
 bool isLogicDeclaration(const SemanticMetadata& metadata);
 bool isInstanceDeclaration(sym_list::sym_type_e type);
+bool isInstanceDeclaration(const SemanticMetadata& metadata);
+bool isInstanceDeclaration(const sym_list::SymbolInfo& symbol);
 bool isPortConnectionPeer(sym_list::sym_type_e type);
 bool isPortConnectionPeer(const SemanticMetadata& metadata);
 bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type);

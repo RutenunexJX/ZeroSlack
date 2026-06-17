@@ -35,7 +35,7 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
     // Workspace-wide Slang symbol extraction can resolve cross-file instances even when
     // the single-file relationship parse treats the module type as unknown.
     for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
-        if (!SymbolTaxonomy::isInstanceDeclaration(symbol.symbolType)
+        if (!SymbolTaxonomy::isInstanceDeclaration(symbol)
             || symbol.dataType.isEmpty()) {
             continue;
         }
@@ -211,7 +211,7 @@ int SmartRelationshipBuilder::getContainingModuleId(int lineNumber, const Analys
     int foundId = -1;
     int foundStart = -1;
     for (const sym_list::SymbolInfo& s : context.fileSymbols) {
-        if (SymbolTaxonomy::isModuleDeclaration(s.symbolType)
+        if (SymbolTaxonomy::isModuleDeclaration(s)
             && s.startLine <= lineNumber
             && s.endLine >= lineNumber
             && (foundId < 0 || s.startLine > foundStart)) {

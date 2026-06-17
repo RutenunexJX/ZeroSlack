@@ -15,7 +15,7 @@ void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName,
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
         context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
 
-        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
+        if (SymbolTaxonomy::isModuleDeclaration(symbol)
             && context.currentModuleId == -1) {
             context.currentModuleName = symbol.symbolName;
             context.currentModuleId = symbol.symbolId;
@@ -47,7 +47,7 @@ void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(
         context.localSymbolIds[symbol.symbolName] = symbol.symbolId;
         context.symbolIdToType[symbol.symbolId] = symbol.symbolType;
 
-        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)
+        if (SymbolTaxonomy::isModuleDeclaration(symbol)
             && context.currentModuleId == -1) {
             context.currentModuleName = symbol.symbolName;
             context.currentModuleId = symbol.symbolId;

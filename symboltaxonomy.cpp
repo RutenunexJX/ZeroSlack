@@ -461,6 +461,17 @@ bool isInstanceDeclaration(sym_list::sym_type_e type)
     return type == sym_list::sym_inst;
 }
 
+bool isInstanceDeclaration(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Instance
+        && metadata.usageRole == SymbolUsageRole::Declaration;
+}
+
+bool isInstanceDeclaration(const sym_list::SymbolInfo& symbol)
+{
+    return isInstanceDeclaration(semanticMetadata(symbol));
+}
+
 bool isPortConnectionPeer(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_inst_pin
