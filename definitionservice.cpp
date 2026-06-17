@@ -32,6 +32,20 @@ DefinitionResult toDefinitionResult(const SemanticDefinitionResult& semanticResu
     return result;
 }
 
+QString interfaceMemberScopeFromRecord(const SemanticSymbolRecord& record)
+{
+    if (!record.owner.interfaceLike)
+        return QString();
+
+    if (!record.type.resolvedTypeName.isEmpty())
+        return record.type.resolvedTypeName;
+
+    if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Interface)
+        return record.name;
+
+    return QString();
+}
+
 }
 
 DefinitionService* DefinitionService::getInstance()
@@ -117,19 +131,19 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
     if (!resolved.structTypeNameForMember.isEmpty())
         return resolved;
 
-    const QList<sym_list::SymbolInfo> candidates = semanticIndex()->getSymbols();
-    for (const sym_list::SymbolInfo& symbol : candidates) {
-        const SymbolTaxonomy::SemanticMetadata metadata =
-            SymbolTaxonomy::semanticMetadata(symbol);
-        if (symbol.symbolName != variableName
-            || !metadata.interfaceLikeOwner)
+    const QList<SemanticSymbolRecord> candidates =
+        semanticIndex()->getSymbolRecords();
+    for (const SemanticSymbolRecord& record : candidates) {
+        if (record.name != variableName || !record.owner.interfaceLike)
             continue;
+
         if (!query.moduleName.isEmpty()
-            && !symbol.moduleScope.isEmpty()
-            && symbol.moduleScope != query.moduleName) {
+            && !record.owner.name.isEmpty()
+            && record.owner.name != query.moduleName) {
             continue;
         }
-        resolved.structTypeNameForMember = SymbolTaxonomy::interfaceScopeFromOwner(symbol);
+
+        resolved.structTypeNameForMember = interfaceMemberScopeFromRecord(record);
         if (!resolved.structTypeNameForMember.isEmpty())
             return resolved;
     }

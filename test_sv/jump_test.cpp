@@ -291,6 +291,16 @@ int main(int argc, char** argv) {
     snapshotInterfaceModport.symbolId = 6111;
     snapshotDefinitionSymbols.append(snapshotInterfaceModport);
 
+    sym_list::SymbolInfo snapshotInterfacePort = snapshotHelperInterface;
+    snapshotInterfacePort.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotInterfacePort.symbolName = QStringLiteral("snap_bus");
+    snapshotInterfacePort.symbolType = sym_list::sym_port_interface_modport;
+    snapshotInterfacePort.moduleScope = QStringLiteral("snap_top");
+    snapshotInterfacePort.dataType = QStringLiteral("snap_if.slave");
+    snapshotInterfacePort.startLine = 23;
+    snapshotInterfacePort.symbolId = 6112;
+    snapshotDefinitionSymbols.append(snapshotInterfacePort);
+
     sym_list::SymbolInfo snapshotLocalDuplicate;
     snapshotLocalDuplicate.fileName = QStringLiteral("snapshot_only.sv");
     snapshotLocalDuplicate.symbolName = QStringLiteral("snap_dup");
@@ -433,6 +443,27 @@ int main(int argc, char** argv) {
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot interface modport\n",
            snapshotInterfaceModportOk ? "PASS" : "FAIL");
+
+    DefinitionQuery snapshotInterfaceMemberQuery;
+    snapshotInterfaceMemberQuery.symbolName = QStringLiteral("slave");
+    snapshotInterfaceMemberQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotInterfaceMemberQuery.moduleName = QStringLiteral("snap_top");
+    snapshotInterfaceMemberQuery.linePrefixBeforeCursor =
+        QStringLiteral("assign ready = snap_bus.slave");
+    const DefinitionResult snapshotInterfaceMemberResult =
+        snapshotDefinitionService.resolveDefinition(snapshotInterfaceMemberQuery);
+    expectBool("DefinitionService resolves snapshot interface member context",
+               snapshotInterfaceMemberResult.found
+                   && snapshotInterfaceMemberResult.symbol.symbolId
+                       == snapshotInterfaceModport.symbolId
+                   && snapshotInterfaceMemberResult.symbolRecord.isValid()
+                   && snapshotInterfaceMemberResult.symbolRecord.stableKey
+                       == snapshotInterfaceMemberResult.symbolStableKey
+                   && snapshotInterfaceMemberResult.symbolRecord.owner.name
+                       == QStringLiteral("snap_if")
+                   && snapshotInterfaceMemberResult.symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Modport,
+               true);
 
     DefinitionQuery snapshotPackageQuery;
     snapshotPackageQuery.symbolName = QStringLiteral("snap_pkg");
