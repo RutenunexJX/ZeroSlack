@@ -3397,6 +3397,18 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief subject stable key",
                report.moduleStableKey == symbolStableKeyForSymbol(report.moduleSymbol),
                true);
+    ModuleBriefQuery stableModuleBriefQuery;
+    stableModuleBriefQuery.moduleStableKey = symbolStableKeyForSymbol(module);
+    stableModuleBriefQuery.moduleSymbolId = 9002;
+    const ModuleBriefReport stableModuleBriefReport =
+        service.buildModuleBrief(stableModuleBriefQuery);
+    expectBool("module brief resolves stable module key",
+               stableModuleBriefReport.found
+                   && stableModuleBriefReport.moduleSymbol.symbolName
+                       == QStringLiteral("brief_top")
+                   && stableModuleBriefReport.moduleStableKey
+                       == stableModuleBriefQuery.moduleStableKey,
+               true);
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
         SymbolTaxonomy::semanticMetadata(report.moduleSymbol);
     expectBool("semantic metadata keeps raw module kind",
@@ -4479,6 +4491,22 @@ static void runClockResetDomainServiceFixture()
         service.buildClockResetDomainMap(topQuery);
 
     expectBool("clock reset top found", topReport.found, true);
+    ClockResetDomainQuery stableTopQuery;
+    stableTopQuery.moduleStableKey = symbolStableKeyForSymbol(top);
+    stableTopQuery.moduleSymbolId = 9202;
+    stableTopQuery.moduleName = QStringLiteral("other_domain");
+    const ClockResetDomainReport stableTopReport =
+        service.buildClockResetDomainMap(stableTopQuery);
+    expectBool("clock reset resolves stable module key",
+               stableTopReport.found
+                   && stableTopReport.clockDomains.size() == 2
+                   && stableTopReport.resetDomains.size() == 1
+                   && !stableTopReport.clockDomains.isEmpty()
+                   && !stableTopReport.clockDomains.first().modules.isEmpty()
+                   && stableTopReport.clockDomains.first()
+                          .modules.first()
+                          .moduleStableKey == stableTopQuery.moduleStableKey,
+               true);
     expectInt("clock reset top clock domains", topReport.clockDomains.size(), 2);
     expectInt("clock reset top reset domains", topReport.resetDomains.size(), 1);
     expectInt("clock reset top evidence rows", topReport.evidenceRows.size(), 3);
@@ -4940,6 +4968,18 @@ static void runFsmGraphServiceFixture()
     const FsmGraphReport report = service.buildFsmGraph(query);
 
     expectBool("fsm graph found", report.found, true);
+    FsmGraphQuery stableFsmQuery;
+    stableFsmQuery.moduleStableKey = symbolStableKeyForSymbol(module);
+    stableFsmQuery.moduleSymbolId = 9315;
+    const FsmGraphReport stableFsmReport = service.buildFsmGraph(stableFsmQuery);
+    expectBool("fsm graph resolves stable module key",
+               stableFsmReport.found
+                   && !stableFsmReport.graphs.isEmpty()
+                   && stableFsmReport.graphs.first().moduleStableKey
+                       == stableFsmQuery.moduleStableKey
+                   && stableFsmReport.graphs.first().moduleSymbol.symbolName
+                       == QStringLiteral("fsm_top"),
+               true);
     expectBool("fsm graph group metadata",
                report.groupDisplayName == QStringLiteral("FSM Graphs"),
                true);

@@ -7,6 +7,14 @@
 #include <QSet>
 #include <algorithm>
 
+namespace {
+bool stableKeyMatchesSymbol(const SymbolStableKey& key,
+                            const sym_list::SymbolInfo& symbol)
+{
+    return key.isValid() && symbolStableKeyForSymbol(symbol) == key;
+}
+}
+
 std::unique_ptr<ClockResetDomainService> ClockResetDomainService::instance = nullptr;
 
 ClockResetDomainService* ClockResetDomainService::getInstance()
@@ -80,6 +88,23 @@ bool ClockResetDomainService::validateQuery(
 {
     if (reason)
         *reason = ClockResetDomainNotFoundReason::None;
+
+    if (query.moduleStableKey.isValid()) {
+        const sym_list::SymbolInfo symbol =
+            semanticIndex()->getSymbolByStableKey(query.moduleStableKey);
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = ClockResetDomainNotFoundReason::NoMatchingModule;
+            return false;
+        }
+        if (!SymbolTaxonomy::isModuleDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))) {
+            if (reason)
+                *reason = ClockResetDomainNotFoundReason::UnsupportedSymbolKind;
+            return false;
+        }
+        return true;
+    }
 
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
@@ -270,6 +295,13 @@ bool ClockResetDomainService::acceptsRelationship(
             SymbolTaxonomy::semanticMetadata(relationship.toSymbol))) {
         return false;
     }
+    if (query.moduleStableKey.isValid()) {
+        const SymbolStableKey relationshipModuleKey =
+            relationship.toStableKey.isValid()
+                ? relationship.toStableKey
+                : symbolStableKeyForSymbol(relationship.toSymbol);
+        return relationshipModuleKey == query.moduleStableKey;
+    }
     if (query.moduleSymbolId >= 0
         && relationship.toSymbol.symbolId != query.moduleSymbolId) {
         return false;
@@ -291,6 +323,8 @@ bool ClockResetDomainService::acceptsCandidate(
     const ClockResetDomainQuery& query,
     const sym_list::SymbolInfo& moduleSymbol)
 {
+    if (query.moduleStableKey.isValid())
+        return stableKeyMatchesSymbol(query.moduleStableKey, moduleSymbol);
     if (query.moduleSymbolId >= 0
         && moduleSymbol.symbolId != query.moduleSymbolId) {
         return false;

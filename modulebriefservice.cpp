@@ -91,6 +91,22 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
     if (reason)
         *reason = ModuleBriefNotFoundReason::None;
 
+    if (query.moduleStableKey.isValid()) {
+        const sym_list::SymbolInfo symbol =
+            semanticIndex()->getSymbolByStableKey(query.moduleStableKey);
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = ModuleBriefNotFoundReason::NoMatchingModule;
+            return missingModuleBriefSymbol();
+        }
+        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
+            if (reason)
+                *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
+            return missingModuleBriefSymbol();
+        }
+        return symbol;
+    }
+
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);

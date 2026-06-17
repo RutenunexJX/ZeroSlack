@@ -101,6 +101,22 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
     if (reason)
         *reason = FsmGraphNotFoundReason::None;
 
+    if (query.moduleStableKey.isValid()) {
+        const sym_list::SymbolInfo symbol =
+            semanticIndex()->getSymbolByStableKey(query.moduleStableKey);
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = FsmGraphNotFoundReason::NoMatchingModule;
+            return missingFsmSymbol();
+        }
+        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
+            if (reason)
+                *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
+            return missingFsmSymbol();
+        }
+        return symbol;
+    }
+
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);
