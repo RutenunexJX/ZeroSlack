@@ -670,6 +670,25 @@ sym_list::sym_type_e outlineGroupType(const SemanticMetadata& metadata)
     return sym_list::sym_user;
 }
 
+bool matchesRequestedSymbolType(const SemanticMetadata& metadata,
+                                sym_list::sym_type_e requestedType,
+                                const QString& dataType)
+{
+    if (typedCompletionSymbolTypeMatches(
+            metadata.rawCollectorKind,
+            requestedType,
+            dataType)) {
+        return true;
+    }
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return false;
+    return semanticMetadataMatchesRequest(
+        metadata,
+        requestedType,
+        dataType,
+        false);
+}
+
 int definitionPriority(sym_list::sym_type_e type)
 {
     switch (type) {

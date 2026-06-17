@@ -100,6 +100,9 @@ bool isPackageScopeVisibleCompletion(
 bool isOutlineSymbol(sym_list::sym_type_e type);
 bool isOutlineSymbol(const SemanticMetadata& metadata);
 sym_list::sym_type_e outlineGroupType(const SemanticMetadata& metadata);
+bool matchesRequestedSymbolType(const SemanticMetadata& metadata,
+                                sym_list::sym_type_e requestedType,
+                                const QString& dataType = QString());
 int definitionPriority(sym_list::sym_type_e type);
 int definitionPriority(const SemanticMetadata& metadata);
 QList<sym_list::sym_type_e> outlineSymbolTypes();

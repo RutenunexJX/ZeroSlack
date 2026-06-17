@@ -20,8 +20,17 @@ bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
         SymbolTaxonomy::semanticMetadata(symbol);
-    if (!types.isEmpty())
-        return types.contains(metadata.rawCollectorKind);
+    if (!types.isEmpty()) {
+        for (sym_list::sym_type_e type : types) {
+            if (SymbolTaxonomy::matchesRequestedSymbolType(
+                    metadata,
+                    type,
+                    symbol.dataType)) {
+                return true;
+            }
+        }
+        return false;
+    }
     return SymbolTaxonomy::matchesSearchIntent(metadata, intent);
 }
 

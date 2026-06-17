@@ -919,6 +919,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && metadataOutlineSearchResults.first().symbol.symbolId
                        == metadataOutlineModule.symbolId,
                true);
+    SearchQuery metadataTypedSearchQuery;
+    metadataTypedSearchQuery.text = QStringLiteral("metadata_rel_top");
+    metadataTypedSearchQuery.types = {sym_list::sym_module};
+    const QList<SearchResult> metadataTypedSearchResults =
+        metadataOutlineSearchService.findSymbols(metadataTypedSearchQuery);
+    expectBool("metadata typed search finds module",
+               metadataTypedSearchResults.size() == 1
+                   && metadataTypedSearchResults.first().symbol.symbolId
+                       == metadataOutlineModule.symbolId,
+               true);
     NavigationService metadataOutlineNavigationService(&metadataOutlineIndex);
     NavigationSymbolOutlineQuery metadataOutlineQuery;
     metadataOutlineQuery.fileName = topPath;

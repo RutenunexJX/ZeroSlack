@@ -398,6 +398,11 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::outlineGroupType(syntheticModuleMetadata)
                    == sym_list::sym_module,
                true);
+    expectBool("SymbolTaxonomy requested type uses metadata",
+               SymbolTaxonomy::matchesRequestedSymbolType(
+                   syntheticModuleMetadata,
+                   sym_list::sym_module),
+               true);
     expectEq("SymbolTaxonomy metadata label",
              SymbolTaxonomy::symbolTypeLabel(syntheticModuleMetadata),
              QStringLiteral("module"));
