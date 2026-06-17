@@ -389,12 +389,13 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         ModuleBriefContextRow row;
         row.symbol = symbol;
+        row.symbolRecord = record;
         row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = section;
         row.symbolDisplayName = symbolDisplayName(record);
         row.contextKindDisplayName = kind;
         row.symbolTypeDisplayName = symbolTypeDisplayName(record);
-        row.detailDisplayName = contextDetailDisplayName(kind, symbol);
+        row.detailDisplayName = contextDetailDisplayName(kind, record);
         row.sourceRoleDisplayName =
             SymbolTaxonomy::sourceRoleDisplayName(
                 record.sourceRole);
@@ -541,11 +542,11 @@ QString ModuleBriefService::evidenceDisplayName(const QString& evidenceText)
 
 QString ModuleBriefService::contextDetailDisplayName(
     const QString& kind,
-    const sym_list::SymbolInfo& symbol)
+    const SemanticSymbolRecord& record)
 {
-    return symbol.dataType.isEmpty()
+    return record.type.rawTypeText.isEmpty()
         ? kind
-        : QStringLiteral("%1 %2").arg(kind, symbol.dataType);
+        : QStringLiteral("%1 %2").arg(kind, record.type.rawTypeText);
 }
 
 QSet<QString> ModuleBriefService::interfaceNames(

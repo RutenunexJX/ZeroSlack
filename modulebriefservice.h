@@ -86,6 +86,7 @@ struct ModuleBriefDiagnosticRow {
 
 struct ModuleBriefContextRow {
     sym_list::SymbolInfo symbol = {};
+    SemanticSymbolRecord symbolRecord;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString symbolDisplayName;
@@ -175,7 +176,7 @@ private:
     static QString confidenceDisplayName(int confidence);
     static QString evidenceDisplayName(const QString& evidenceText);
     static QString contextDetailDisplayName(const QString& kind,
-                                            const sym_list::SymbolInfo& symbol);
+                                            const SemanticSymbolRecord& record);
     static QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols);
     static QString relationshipDirectionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);

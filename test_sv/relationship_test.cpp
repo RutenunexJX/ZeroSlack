@@ -3751,11 +3751,17 @@ static void runModuleBriefServiceFixture()
     for (const ModuleBriefContextRow& row : report.contextRows) {
         hasPackageContext = hasPackageContext
             || (row.sectionDisplayName == QStringLiteral("Package")
+                && row.symbolRecord.isValid()
+                && row.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Package
+                && row.symbolRecord.name == QStringLiteral("brief_pkg")
                 && row.symbolDisplayName == QStringLiteral("brief_pkg")
                 && row.detailDisplayName == QStringLiteral("package import"));
         hasPackageContextMetadata = hasPackageContextMetadata
             || (row.sectionDisplayName == QStringLiteral("Package")
                 && row.symbolDisplayName == QStringLiteral("brief_pkg")
+                && row.symbolRecord.sourceRole
+                    == SymbolTaxonomy::SourceRole::DesignSource
                 && row.contextKindDisplayName == QStringLiteral("package import")
                 && row.symbolTypeDisplayName == QStringLiteral("package")
                 && row.sourceRoleDisplayName == QStringLiteral("design source"));
@@ -3770,6 +3776,9 @@ static void runModuleBriefServiceFixture()
                 && row.codeLink.lineDisplayName == QStringLiteral("1"));
         hasPackageParameterContext = hasPackageParameterContext
             || (row.sectionDisplayName == QStringLiteral("Package Member")
+                && row.symbolRecord.isValid()
+                && row.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Parameter
                 && row.symbolDisplayName == QStringLiteral("PKG_WIDTH")
                 && row.contextKindDisplayName == QStringLiteral("package parameter")
                 && row.symbolTypeDisplayName == QStringLiteral("parameter")
@@ -3779,6 +3788,9 @@ static void runModuleBriefServiceFixture()
                 && row.codeLink.lineDisplayName == QStringLiteral("2"));
         hasPackageTypedefContext = hasPackageTypedefContext
             || (row.sectionDisplayName == QStringLiteral("Package Member")
+                && row.symbolRecord.isValid()
+                && row.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Typedef
                 && row.symbolDisplayName == QStringLiteral("brief_t")
                 && row.contextKindDisplayName == QStringLiteral("package typedef")
                 && row.symbolTypeDisplayName == QStringLiteral("typedef")
@@ -3788,6 +3800,10 @@ static void runModuleBriefServiceFixture()
                 && row.codeLink.lineDisplayName == QStringLiteral("4"));
         hasInterfacePortContext = hasInterfacePortContext
             || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolRecord.isValid()
+                && row.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Port
+                && row.symbolRecord.owner.interfaceLike
                 && row.symbolDisplayName == QStringLiteral("if_port")
                 && row.detailDisplayName.contains(QStringLiteral("brief_if.master")));
         hasInterfacePortContextMetadata = hasInterfacePortContextMetadata
@@ -3807,6 +3823,11 @@ static void runModuleBriefServiceFixture()
                 && row.codeLink.lineDisplayName == QStringLiteral("15"));
         hasInterfaceInstanceContext = hasInterfaceInstanceContext
             || (row.sectionDisplayName == QStringLiteral("Interface")
+                && row.symbolRecord.isValid()
+                && row.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Instance
+                && row.symbolRecord.type.resolvedTypeName
+                    == QStringLiteral("brief_if")
                 && row.symbolDisplayName == QStringLiteral("if_bus")
                 && row.detailDisplayName.contains(QStringLiteral("brief_if")));
         hasInterfaceInstanceContextMetadata = hasInterfaceInstanceContextMetadata
