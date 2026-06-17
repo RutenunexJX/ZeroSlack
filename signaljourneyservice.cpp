@@ -284,7 +284,7 @@ bool SignalJourneyService::isInterfaceConnectionPeer(
     }
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
         && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration) {
-        const QString interfaceName = interfaceBaseName(symbol.dataType);
+        const QString interfaceName = SymbolTaxonomy::interfaceTypeName(symbol);
         return !interfaceName.isEmpty() && interfaces.contains(interfaceName);
     }
     return !symbol.moduleScope.isEmpty()
@@ -321,12 +321,6 @@ QString SignalJourneyService::symbolDisplayName(const sym_list::SymbolInfo& symb
     return symbol.symbolName;
 }
 
-QString SignalJourneyService::interfaceBaseName(const QString& dataType)
-{
-    const int dot = dataType.indexOf(QLatin1Char('.'));
-    return dot >= 0 ? dataType.left(dot) : dataType;
-}
-
 QString SignalJourneyService::interfaceConnectionKindDisplayName(
     const sym_list::SymbolInfo& symbol)
 {
@@ -342,7 +336,7 @@ QString SignalJourneyService::interfaceConnectionKindDisplayName(
         return QStringLiteral("interface declaration");
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
         && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration
-        && !interfaceBaseName(symbol.dataType).isEmpty()) {
+        && !SymbolTaxonomy::interfaceTypeName(symbol).isEmpty()) {
         return QStringLiteral("interface instance");
     }
     if (!symbol.moduleScope.isEmpty())
@@ -353,7 +347,7 @@ QString SignalJourneyService::interfaceConnectionKindDisplayName(
 QString SignalJourneyService::interfaceBaseDisplayName(
     const sym_list::SymbolInfo& symbol)
 {
-    const QString baseName = interfaceBaseName(symbol.dataType);
+    const QString baseName = SymbolTaxonomy::interfaceTypeName(symbol);
     if (!baseName.isEmpty())
         return baseName;
     return symbol.moduleScope;

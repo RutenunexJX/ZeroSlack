@@ -147,7 +147,6 @@ private:
     static QString contextDetailDisplayName(const QString& kind,
                                             const sym_list::SymbolInfo& symbol);
     static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);
-    static QString interfaceBaseName(const QString& dataType);
     static QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols);
     static QString relationshipDirectionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);

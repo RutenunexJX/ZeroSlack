@@ -416,6 +416,12 @@ int main(int argc, char** argv) {
     expectEq("SymbolTaxonomy modport owner scope",
              SymbolTaxonomy::interfaceScopeFromOwner(taxonomyInterfaceOwner),
              QStringLiteral("if_bus"));
+    expectEq("SymbolTaxonomy interface type name",
+             SymbolTaxonomy::interfaceTypeName(taxonomyInterfaceOwner),
+             QStringLiteral("if_bus"));
+    expectEq("SymbolTaxonomy interface modport name",
+             SymbolTaxonomy::interfaceModportName(taxonomyInterfaceOwner),
+             QStringLiteral("master"));
     expectBool("SymbolTaxonomy modport member-scope candidate",
                SymbolTaxonomy::isMemberScopeDefinitionCandidate(
                    sym_list::sym_interface_modport),

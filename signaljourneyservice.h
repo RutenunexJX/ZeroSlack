@@ -95,7 +95,6 @@ private:
     static QString directionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
-    static QString interfaceBaseName(const QString& dataType);
     static QString interfaceConnectionKindDisplayName(const sym_list::SymbolInfo& symbol);
     static QString interfaceBaseDisplayName(const sym_list::SymbolInfo& symbol);
     static QString sourceRoleDisplayName(SymbolTaxonomy::SourceRole role);

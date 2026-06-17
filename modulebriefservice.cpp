@@ -369,7 +369,7 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
     }
 
     for (const sym_list::SymbolInfo& instance : instances) {
-        const QString interfaceName = interfaceBaseName(instance.dataType);
+        const QString interfaceName = SymbolTaxonomy::interfaceTypeName(instance);
         if (!interfaceName.isEmpty() && interfaces.contains(interfaceName)) {
             appendRow(QStringLiteral("Interface"),
                       QStringLiteral("interface instance"),
@@ -437,12 +437,6 @@ QString ModuleBriefService::sourceRoleDisplayName(SymbolTaxonomy::SourceRole rol
     default:
         return QStringLiteral("source");
     }
-}
-
-QString ModuleBriefService::interfaceBaseName(const QString& dataType)
-{
-    const int dot = dataType.indexOf(QLatin1Char('.'));
-    return dot >= 0 ? dataType.left(dot) : dataType;
 }
 
 QSet<QString> ModuleBriefService::interfaceNames(

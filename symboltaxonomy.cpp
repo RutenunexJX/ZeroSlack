@@ -453,17 +453,43 @@ bool isInterfaceLikeOwner(sym_list::sym_type_e type)
         || type == sym_list::sym_port_interface_modport;
 }
 
+QString interfaceTypeName(const QString& dataType)
+{
+    if (dataType.isEmpty())
+        return QString();
+
+    const int dot = dataType.indexOf(QLatin1Char('.'));
+    return dot >= 0 ? dataType.left(dot) : dataType;
+}
+
+QString interfaceTypeName(const sym_list::SymbolInfo& symbol)
+{
+    const SemanticMetadata metadata = semanticMetadata(symbol);
+    if (metadata.declarationKind == DeclarationKind::Interface)
+        return symbol.symbolName;
+    if (!metadata.interfaceLikeOwner
+        && metadata.declarationKind != DeclarationKind::Instance) {
+        return QString();
+    }
+    return interfaceTypeName(symbol.dataType);
+}
+
+QString interfaceModportName(const QString& dataType)
+{
+    const int dot = dataType.indexOf(QLatin1Char('.'));
+    return dot >= 0 ? dataType.mid(dot + 1) : QString();
+}
+
+QString interfaceModportName(const sym_list::SymbolInfo& symbol)
+{
+    return interfaceModportName(symbol.dataType);
+}
+
 QString interfaceScopeFromOwner(const sym_list::SymbolInfo& symbol)
 {
     if (!isInterfaceLikeOwner(symbol.symbolType))
         return QString();
-    if (declarationKind(symbol.symbolType) == DeclarationKind::Interface)
-        return symbol.symbolName;
-    if (symbol.dataType.isEmpty())
-        return QString();
-
-    const int dot = symbol.dataType.indexOf(QLatin1Char('.'));
-    return dot >= 0 ? symbol.dataType.left(dot) : symbol.dataType;
+    return interfaceTypeName(symbol);
 }
 
 bool isModuleDeclaration(sym_list::sym_type_e type)
