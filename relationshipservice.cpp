@@ -391,6 +391,21 @@ QList<int> RelationshipService::findRelatedSymbolIds(const RelationshipQuery& qu
     return result;
 }
 
+QList<SymbolStableKey> RelationshipService::findRelatedSymbolKeys(
+    const RelationshipQuery& query) const
+{
+    QList<SymbolStableKey> result;
+    const QList<RelationshipResult> relationships = findRelationships(query);
+    for (const RelationshipResult& relationship : relationships) {
+        const SymbolStableKey key = query.outgoing
+            ? relationship.toStableKey
+            : relationship.fromStableKey;
+        if (key.isValid())
+            result.append(key);
+    }
+    return result;
+}
+
 RelationshipBrowseQuery RelationshipService::queryForPanel(
     const RelationshipPanelQueryOptions& options) const
 {

@@ -2422,6 +2422,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    .findRelatedSymbolIds(stableRelatedIdsQuery)
                    .contains(stageId),
                true);
+    expectBool("relationship service returns related stable keys",
+               relationshipService
+                   .findRelatedSymbolKeys(stableRelatedIdsQuery)
+                   .contains(symbolStableKeyForSymbol(index.getSymbolById(stageId))),
+               true);
     expectBool("relationship service exact relationship",
                relationshipService.hasRelationship(topId,
                                                    stageId,

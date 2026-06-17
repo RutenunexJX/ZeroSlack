@@ -130,6 +130,7 @@ public:
     QList<RelationshipResult> findIncomingRelationships(const RelationshipQuery& query) const;
     RelationshipReport findRelationshipReport(const RelationshipBrowseQuery& query) const;
     QList<int> findRelatedSymbolIds(const RelationshipQuery& query) const;
+    QList<SymbolStableKey> findRelatedSymbolKeys(const RelationshipQuery& query) const;
     RelationshipBrowseQuery queryForPanel(
         const RelationshipPanelQueryOptions& options) const;
     static QList<RelationshipTypeFilterOption> relationshipPanelTypeFilterOptions();
