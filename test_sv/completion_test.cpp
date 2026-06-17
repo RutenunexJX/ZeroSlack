@@ -328,6 +328,18 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::declarationGroup(syntheticPortMetadata)
                    == SymbolTaxonomy::DeclarationGroup::Port,
                true);
+    expectBool("SymbolTaxonomy metadata port declaration",
+               SymbolTaxonomy::isPortDeclaration(syntheticPortMetadata),
+               true);
+    expectBool("SymbolTaxonomy metadata port connection peer",
+               SymbolTaxonomy::isPortConnectionPeer(syntheticPortMetadata),
+               true);
+    SymbolTaxonomy::SemanticMetadata syntheticSignalMetadata;
+    syntheticSignalMetadata.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Signal;
+    expectBool("SymbolTaxonomy metadata signal declaration",
+               SymbolTaxonomy::isSignalDeclaration(syntheticSignalMetadata),
+               true);
     SymbolTaxonomy::SemanticMetadata syntheticPackageParameterMetadata;
     syntheticPackageParameterMetadata.declarationKind =
         SymbolTaxonomy::DeclarationKind::Parameter;

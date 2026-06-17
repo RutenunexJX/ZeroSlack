@@ -153,8 +153,10 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
         for (const SemanticRelationshipResult& relationship : relationships) {
             const sym_list::SymbolInfo peer =
                 outgoing ? relationship.toSymbol : relationship.fromSymbol;
-            if (!SymbolTaxonomy::isPortConnectionPeer(peer.symbolType))
+            if (!SymbolTaxonomy::isPortConnectionPeer(
+                    SymbolTaxonomy::semanticMetadata(peer))) {
                 continue;
+            }
             const QString key = QStringLiteral("%1:%2:%3")
                                     .arg(relationship.relationship.fromId)
                                     .arg(relationship.relationship.toId)
@@ -259,8 +261,10 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
 bool SignalJourneyService::isJourneyDeclaration(
     const sym_list::SymbolInfo& symbol) const
 {
-    if (SymbolTaxonomy::isSignalDeclaration(symbol.symbolType)
-        || SymbolTaxonomy::isPortDeclaration(symbol.symbolType)) {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    if (SymbolTaxonomy::isSignalDeclaration(metadata)
+        || SymbolTaxonomy::isPortDeclaration(metadata)) {
         return true;
     }
     return isInterfaceConnectionPeer(symbol);
@@ -270,26 +274,29 @@ bool SignalJourneyService::isInterfaceConnectionPeer(
     const sym_list::SymbolInfo& symbol) const
 {
     const QSet<QString> interfaces = interfaceNames();
-    if (symbol.symbolType == sym_list::sym_interface
-        || symbol.symbolType == sym_list::sym_interface_modport
-        || symbol.symbolType == sym_list::sym_port_interface
-        || symbol.symbolType == sym_list::sym_port_interface_modport) {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface
+        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Modport
+        || (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
+            && metadata.interfaceLikeOwner)) {
         return true;
     }
-    if (symbol.symbolType == sym_list::sym_inst) {
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
+        && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration) {
         const QString interfaceName = interfaceBaseName(symbol.dataType);
         return !interfaceName.isEmpty() && interfaces.contains(interfaceName);
     }
     return !symbol.moduleScope.isEmpty()
         && interfaces.contains(symbol.moduleScope)
-        && SymbolTaxonomy::isDefinitionCandidate(symbol.symbolType);
+        && SymbolTaxonomy::isDefinitionCandidate(metadata);
 }
 
 QSet<QString> SignalJourneyService::interfaceNames() const
 {
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : semanticIndex()->getSymbols()) {
-        if (SymbolTaxonomy::declarationKind(symbol.symbolType)
+        if (SymbolTaxonomy::semanticMetadata(symbol).declarationKind
                 == SymbolTaxonomy::DeclarationKind::Interface
             && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);
@@ -323,15 +330,18 @@ QString SignalJourneyService::interfaceBaseName(const QString& dataType)
 QString SignalJourneyService::interfaceConnectionKindDisplayName(
     const sym_list::SymbolInfo& symbol)
 {
-    if (symbol.symbolType == sym_list::sym_port_interface
-        || symbol.symbolType == sym_list::sym_port_interface_modport) {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
+        && metadata.interfaceLikeOwner) {
         return QStringLiteral("interface port");
     }
-    if (symbol.symbolType == sym_list::sym_interface_modport)
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Modport)
         return QStringLiteral("interface modport");
-    if (symbol.symbolType == sym_list::sym_interface)
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface)
         return QStringLiteral("interface declaration");
-    if (symbol.symbolType == sym_list::sym_inst
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
+        && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration
         && !interfaceBaseName(symbol.dataType).isEmpty()) {
         return QStringLiteral("interface instance");
     }
@@ -368,14 +378,15 @@ void SignalJourneyService::fillDeclarationDisplayMetadata(
     report.declarationCodeLink = RtlInsightLink::fromSymbol(report.declaration);
     report.declarationDisplayName = symbolDisplayName(report.declaration);
     report.declarationTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(report.declaration.symbolType);
+        SymbolTaxonomy::symbolTypeLabel(
+            SymbolTaxonomy::semanticMetadata(report.declaration));
     report.declarationFileDisplayName =
         report.declarationCodeLink.fileDisplayName;
     report.declarationLineDisplayName =
         report.declarationCodeLink.lineDisplayName;
     report.declarationSourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(report.declaration.fileName));
+            SymbolTaxonomy::semanticMetadata(report.declaration).sourceRole);
 }
 
 void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
@@ -392,21 +403,24 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
     item.fromSymbolDisplayName = symbolDisplayName(item.fromSymbol);
     item.toSymbolDisplayName = symbolDisplayName(item.toSymbol);
     item.fromTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(item.fromSymbol.symbolType);
+        SymbolTaxonomy::symbolTypeLabel(
+            SymbolTaxonomy::semanticMetadata(item.fromSymbol));
     item.toTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(item.toSymbol.symbolType);
+        SymbolTaxonomy::symbolTypeLabel(
+            SymbolTaxonomy::semanticMetadata(item.toSymbol));
     item.fromSourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(item.fromSymbol.fileName));
+            SymbolTaxonomy::semanticMetadata(item.fromSymbol).sourceRole);
     item.toSourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(item.toSymbol.fileName));
+            SymbolTaxonomy::semanticMetadata(item.toSymbol).sourceRole);
     item.connectionKindDisplayName = QStringLiteral("relationship");
     item.peerTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(item.peerSymbol.symbolType);
+        SymbolTaxonomy::symbolTypeLabel(
+            SymbolTaxonomy::semanticMetadata(item.peerSymbol));
     item.peerSourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(item.peerSymbol.fileName));
+            SymbolTaxonomy::semanticMetadata(item.peerSymbol).sourceRole);
     item.interfaceBaseDisplayName = interfaceBaseDisplayName(item.peerSymbol);
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
     item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;

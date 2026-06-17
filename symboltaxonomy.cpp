@@ -419,6 +419,11 @@ bool isPortDeclaration(sym_list::sym_type_e type)
     return declarationKind(type) == DeclarationKind::Port;
 }
 
+bool isPortDeclaration(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Port;
+}
+
 bool isParameterDeclaration(sym_list::sym_type_e type)
 {
     const DeclarationKind kind = declarationKind(type);
@@ -432,6 +437,13 @@ bool isSignalDeclaration(sym_list::sym_type_e type)
     return kind == DeclarationKind::Signal
         || kind == DeclarationKind::StructVariable
         || type == sym_list::sym_enum_var;
+}
+
+bool isSignalDeclaration(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::Signal
+        || metadata.declarationKind == DeclarationKind::StructVariable
+        || metadata.rawCollectorKind == sym_list::sym_enum_var;
 }
 
 bool isLogicDeclaration(sym_list::sym_type_e type)
@@ -448,6 +460,12 @@ bool isPortConnectionPeer(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_inst_pin
         || isPortDeclaration(type);
+}
+
+bool isPortConnectionPeer(const SemanticMetadata& metadata)
+{
+    return metadata.rawCollectorKind == sym_list::sym_inst_pin
+        || isPortDeclaration(metadata);
 }
 
 bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type)
