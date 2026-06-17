@@ -29,6 +29,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.text = keywords[i];
                 item.type = SymbolCompletion;
                 item.symbolType = symbols[i].symbolType;
+                item.symbolStableKey = symbolStableKeyForSymbol(symbols[i]);
                 item.score = completionService->completionItemScore(keywords[i], prefix);
                 item.description =
                     completionService->symbolTypeDescription(symbols[i]);
@@ -42,6 +43,7 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.text = symbol.symbolName;
                 item.type = SymbolCompletion;
                 item.symbolType = symbol.symbolType;
+                item.symbolStableKey = symbolStableKeyForSymbol(symbol);
                 item.score = completionService->completionItemScore(symbol.symbolName, prefix);
                 item.description =
                     completionService->symbolTypeDescription(symbol);
@@ -157,6 +159,7 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         CompletionItem item;
         item.type = SymbolCompletion;
         item.symbolType = symbolType;
+        item.symbolStableKey = symbolStableKeyForSymbol(symbol);
         item.text = serviceItem.text;
         item.description = serviceItem.description;
         item.defaultValue = serviceItem.defaultValue;

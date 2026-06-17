@@ -4,7 +4,7 @@
 #include <QMetaType>
 #include <QAbstractItemModel>
 #include <QStringList>
-#include "syminfo.h"
+#include "semanticindex.h"
 
 class CompletionModel : public QAbstractItemModel
 {
@@ -35,6 +35,7 @@ public:
         CompletionType type = KeywordCompletion;
         CompletionVisualKind visualKind = KeywordVisual;
         sym_list::sym_type_e symbolType = sym_list::sym_user;
+        SymbolStableKey symbolStableKey;
         QString defaultValue;
         int score = 0;
         int rowHeight = 18;

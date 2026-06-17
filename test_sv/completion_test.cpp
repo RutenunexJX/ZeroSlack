@@ -219,6 +219,10 @@ int main(int argc, char** argv) {
     expectEq("CompletionModel symbol display",
              modelScoring.getItem(modelScoring.index(2, 0)).displayText,
              QStringLiteral("always_ff (logic)"));
+    expectBool("CompletionModel symbol stable key",
+               modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
+                   == symbolStableKeyForSymbol(modelScoringSymbols.at(1)),
+               true);
     expectBool("CompletionModel header selectable",
                modelScoring.getItem(modelScoring.index(0, 0)).selectable,
                false);
@@ -264,6 +268,11 @@ int main(int argc, char** argv) {
              metadataDescriptionModel.getItem(
                  metadataDescriptionModel.index(0, 0)).displayText,
              QStringLiteral("metadata_top (module)"));
+    expectBool("CompletionModel metadata stable key",
+               metadataDescriptionModel.getItem(
+                   metadataDescriptionModel.index(0, 0)).symbolStableKey
+                   == symbolStableKeyForSymbol(metadataModelSymbol),
+               true);
     CompletionModel commandDisplayModel;
     commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
                                                  QStringLiteral("s"));
