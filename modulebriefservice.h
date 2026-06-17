@@ -16,6 +16,13 @@ struct ModuleBriefQuery {
     QString fileName;
 };
 
+enum class ModuleBriefNotFoundReason {
+    None,
+    EmptyModuleName,
+    NoMatchingModule,
+    UnsupportedSymbolKind
+};
+
 struct ModuleBriefRelationshipRow {
     SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
     int count = 0;
@@ -29,12 +36,21 @@ struct ModuleBriefRelationshipEvidenceRow {
     sym_list::SymbolInfo peerSymbol = {};
     sym_list::SymbolInfo fromSymbol = {};
     sym_list::SymbolInfo toSymbol = {};
+    SymbolStableKey peerStableKey;
+    SymbolStableKey fromStableKey;
+    SymbolStableKey toStableKey;
     RtlInsightCodeLink peerCodeLink;
     RtlInsightCodeLink fromCodeLink;
     RtlInsightCodeLink toCodeLink;
     bool outgoing = false;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
     QString directionDisplayName;
     QString typeDisplayName;
+    QString provenanceDisplayName;
+    QString confidenceDisplayName;
+    QString evidenceDisplayName;
     QString peerDisplayName;
     QString fromSymbolDisplayName;
     QString toSymbolDisplayName;
@@ -79,7 +95,11 @@ struct ModuleBriefContextRow {
 
 struct ModuleBriefReport {
     bool found = false;
+    ModuleBriefNotFoundReason notFoundReason =
+        ModuleBriefNotFoundReason::None;
     sym_list::SymbolInfo moduleSymbol = {};
+    SymbolStableKey moduleStableKey;
+    QString notFoundReasonDisplayName;
     QList<sym_list::SymbolInfo> ports;
     QList<sym_list::SymbolInfo> parameters;
     QList<sym_list::SymbolInfo> instances;
@@ -112,7 +132,9 @@ private:
     static std::unique_ptr<ModuleBriefService> instance;
 
     SemanticIndex* semanticIndex() const;
-    sym_list::SymbolInfo resolveModule(const ModuleBriefQuery& query) const;
+    sym_list::SymbolInfo resolveModule(
+        const ModuleBriefQuery& query,
+        ModuleBriefNotFoundReason* reason) const;
     QList<sym_list::SymbolInfo> symbolsInModule(
         const sym_list::SymbolInfo& moduleSymbol,
         const QList<sym_list::SymbolInfo>& symbols,
@@ -144,6 +166,10 @@ private:
     static QString symbolDetailDisplayName(const sym_list::SymbolInfo& symbol);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString notFoundReasonDisplayName(ModuleBriefNotFoundReason reason);
+    static QString provenanceDisplayName(RelationshipProvenance provenance);
+    static QString confidenceDisplayName(int confidence);
+    static QString evidenceDisplayName(const QString& evidenceText);
     static QString contextDetailDisplayName(const QString& kind,
                                             const sym_list::SymbolInfo& symbol);
     static QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols);

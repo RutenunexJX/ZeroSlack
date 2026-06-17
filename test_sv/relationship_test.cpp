@@ -3181,18 +3181,27 @@ static void runModuleBriefServiceFixture()
     importRel.fromId = 9001;
     importRel.toId = 9007;
     importRel.type = SymbolRelationshipEngine::REFERENCES;
+    importRel.provenance = RelationshipProvenance::Inferred;
+    importRel.confidence = 80;
+    importRel.evidenceText = QStringLiteral("Package import at line 1");
     relationships.append(importRel);
 
     SemanticRelationship instRel;
     instRel.fromId = 9001;
     instRel.toId = 9006;
     instRel.type = SymbolRelationshipEngine::INSTANTIATES;
+    instRel.provenance = RelationshipProvenance::Inferred;
+    instRel.confidence = 90;
+    instRel.evidenceText = QStringLiteral("Instance: u_stage at line 30");
     relationships.append(instRel);
 
     SemanticRelationship clockRel;
     clockRel.fromId = 9003;
     clockRel.toId = 9001;
     clockRel.type = SymbolRelationshipEngine::CLOCKS;
+    clockRel.provenance = RelationshipProvenance::Inferred;
+    clockRel.confidence = 95;
+    clockRel.evidenceText = QStringLiteral("Clock signal clk at line 12");
     relationships.append(clockRel);
 
     QList<SemanticDiagnostic> diagnostics;
@@ -3227,6 +3236,9 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief found module", report.found, true);
     expectBool("module brief subject name",
                report.moduleSymbol.symbolName == QStringLiteral("brief_top"), true);
+    expectBool("module brief subject stable key",
+               report.moduleStableKey == symbolStableKeyForSymbol(report.moduleSymbol),
+               true);
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
         SymbolTaxonomy::semanticMetadata(report.moduleSymbol);
     expectBool("semantic metadata keeps raw module kind",
@@ -3532,6 +3544,7 @@ static void runModuleBriefServiceFixture()
               1);
     bool hasPackageRelationshipEvidence = false;
     bool hasInstanceRelationshipEvidence = false;
+    bool hasInstanceRelationshipMetadata = false;
     bool hasClockRelationshipEvidence = false;
     bool hasClockRelationshipEvidenceLink = false;
     bool hasClockRelationshipEndpointLinks = false;
@@ -3547,6 +3560,18 @@ static void runModuleBriefServiceFixture()
                 && row.peerDisplayName == QStringLiteral("u_stage")
                 && row.typeDisplayName == QStringLiteral("Instantiates")
                 && row.detailDisplayName == QStringLiteral("Outgoing Instantiates"));
+        hasInstanceRelationshipMetadata = hasInstanceRelationshipMetadata
+            || (row.outgoing
+                && row.peerDisplayName == QStringLiteral("u_stage")
+                && row.fromStableKey == symbolStableKeyForSymbol(row.fromSymbol)
+                && row.toStableKey == symbolStableKeyForSymbol(row.toSymbol)
+                && row.peerStableKey == row.toStableKey
+                && row.provenance == RelationshipProvenance::Inferred
+                && row.confidence == 90
+                && row.evidenceText.contains(QStringLiteral("Instance: u_stage"))
+                && row.provenanceDisplayName == QStringLiteral("inferred")
+                && row.confidenceDisplayName == QStringLiteral("90%")
+                && row.evidenceDisplayName.contains(QStringLiteral("Instance: u_stage")));
         hasClockRelationshipEvidence = hasClockRelationshipEvidence
             || (!row.outgoing
                 && row.peerDisplayName == QStringLiteral("clk")
@@ -3580,6 +3605,9 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief instance relationship evidence",
                hasInstanceRelationshipEvidence,
                true);
+    expectBool("module brief instance relationship metadata",
+               hasInstanceRelationshipMetadata,
+               true);
     expectBool("module brief clock relationship evidence",
                hasClockRelationshipEvidence,
                true);
@@ -3588,6 +3616,43 @@ static void runModuleBriefServiceFixture()
                true);
     expectBool("module brief clock relationship endpoint links",
                hasClockRelationshipEndpointLinks,
+               true);
+
+    ModuleBriefQuery emptyModuleQuery;
+    const ModuleBriefReport emptyModuleReport =
+        service.buildModuleBrief(emptyModuleQuery);
+    expectBool("module brief empty module reason",
+               !emptyModuleReport.found
+                   && emptyModuleReport.notFoundReason
+                       == ModuleBriefNotFoundReason::EmptyModuleName
+                   && emptyModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("empty module name"),
+               true);
+
+    ModuleBriefQuery missingModuleQuery;
+    missingModuleQuery.moduleName = QStringLiteral("missing_module");
+    missingModuleQuery.fileName = fileName;
+    const ModuleBriefReport missingModuleReport =
+        service.buildModuleBrief(missingModuleQuery);
+    expectBool("module brief missing module reason",
+               !missingModuleReport.found
+                   && missingModuleReport.notFoundReason
+                       == ModuleBriefNotFoundReason::NoMatchingModule
+                   && missingModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("no matching module"),
+               true);
+
+    ModuleBriefQuery unsupportedModuleQuery;
+    unsupportedModuleQuery.moduleName = QStringLiteral("clk");
+    unsupportedModuleQuery.fileName = fileName;
+    const ModuleBriefReport unsupportedModuleReport =
+        service.buildModuleBrief(unsupportedModuleQuery);
+    expectBool("module brief unsupported symbol reason",
+               !unsupportedModuleReport.found
+                   && unsupportedModuleReport.notFoundReason
+                       == ModuleBriefNotFoundReason::UnsupportedSymbolKind
+                   && unsupportedModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("unsupported symbol kind"),
                true);
 }
 

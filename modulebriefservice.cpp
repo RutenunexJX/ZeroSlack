@@ -37,12 +37,18 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     const ModuleBriefQuery& query) const
 {
     ModuleBriefReport report;
-    const sym_list::SymbolInfo moduleSymbol = resolveModule(query);
-    if (moduleSymbol.symbolId < 0)
+    const sym_list::SymbolInfo moduleSymbol =
+        resolveModule(query, &report.notFoundReason);
+    if (moduleSymbol.symbolId < 0) {
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
         return report;
+    }
 
     report.found = true;
+    report.notFoundReason = ModuleBriefNotFoundReason::None;
     report.moduleSymbol = moduleSymbol;
+    report.moduleStableKey = symbolStableKeyForSymbol(moduleSymbol);
     const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
 
     report.ports = symbolsInModule(
@@ -79,27 +85,49 @@ SemanticIndex* ModuleBriefService::semanticIndex() const
 }
 
 sym_list::SymbolInfo ModuleBriefService::resolveModule(
-    const ModuleBriefQuery& query) const
+    const ModuleBriefQuery& query,
+    ModuleBriefNotFoundReason* reason) const
 {
+    if (reason)
+        *reason = ModuleBriefNotFoundReason::None;
+
     if (query.moduleSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.moduleSymbolId);
-        return SymbolTaxonomy::isModuleDeclaration(symbol)
-            ? symbol
-            : missingModuleBriefSymbol();
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = ModuleBriefNotFoundReason::NoMatchingModule;
+            return missingModuleBriefSymbol();
+        }
+        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
+            if (reason)
+                *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
+            return missingModuleBriefSymbol();
+        }
+        return symbol;
     }
-    if (query.moduleName.isEmpty())
+    if (query.moduleName.isEmpty()) {
+        if (reason)
+            *reason = ModuleBriefNotFoundReason::EmptyModuleName;
         return missingModuleBriefSymbol();
+    }
 
     SemanticDefinitionQuery definitionQuery;
     definitionQuery.symbolName = query.moduleName;
     definitionQuery.fileName = query.fileName;
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
-    return definition.found
-            && SymbolTaxonomy::isModuleDeclaration(definition.symbol)
-        ? definition.symbol
-        : missingModuleBriefSymbol();
+    if (!definition.found) {
+        if (reason)
+            *reason = ModuleBriefNotFoundReason::NoMatchingModule;
+        return missingModuleBriefSymbol();
+    }
+    if (!SymbolTaxonomy::isModuleDeclaration(definition.symbol)) {
+        if (reason)
+            *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
+        return missingModuleBriefSymbol();
+    }
+    return definition.symbol;
 }
 
 QList<sym_list::SymbolInfo> ModuleBriefService::symbolsInModule(
@@ -418,6 +446,58 @@ QString ModuleBriefService::symbolDisplayName(const sym_list::SymbolInfo& symbol
         : symbol.symbolName;
 }
 
+QString ModuleBriefService::notFoundReasonDisplayName(
+    ModuleBriefNotFoundReason reason)
+{
+    switch (reason) {
+    case ModuleBriefNotFoundReason::None:
+        return QString();
+    case ModuleBriefNotFoundReason::EmptyModuleName:
+        return QStringLiteral("empty module name");
+    case ModuleBriefNotFoundReason::NoMatchingModule:
+        return QStringLiteral("no matching module");
+    case ModuleBriefNotFoundReason::UnsupportedSymbolKind:
+        return QStringLiteral("unsupported symbol kind");
+    }
+    return QStringLiteral("module brief unavailable");
+}
+
+QString ModuleBriefService::provenanceDisplayName(
+    RelationshipProvenance provenance)
+{
+    switch (provenance) {
+    case RelationshipProvenance::SlangExtracted:
+        return QStringLiteral("slang extracted");
+    case RelationshipProvenance::Inferred:
+        return QStringLiteral("inferred");
+    case RelationshipProvenance::LexicalFallback:
+        return QStringLiteral("lexical fallback");
+    case RelationshipProvenance::OpenDocument:
+        return QStringLiteral("open document");
+    case RelationshipProvenance::Workspace:
+        return QStringLiteral("workspace");
+    case RelationshipProvenance::FeatureGenerated:
+        return QStringLiteral("feature generated");
+    case RelationshipProvenance::Unknown:
+    default:
+        return QStringLiteral("unknown");
+    }
+}
+
+QString ModuleBriefService::confidenceDisplayName(int confidence)
+{
+    return confidence > 0
+        ? QStringLiteral("%1%").arg(confidence)
+        : QStringLiteral("unknown");
+}
+
+QString ModuleBriefService::evidenceDisplayName(const QString& evidenceText)
+{
+    return evidenceText.isEmpty()
+        ? QStringLiteral("no evidence detail")
+        : evidenceText;
+}
+
 QString ModuleBriefService::contextDetailDisplayName(
     const QString& kind,
     const sym_list::SymbolInfo& symbol)
@@ -495,11 +575,22 @@ void ModuleBriefService::fillRelationshipEvidenceMetadata(
 {
     row.fromSymbol = row.relationship.fromSymbol;
     row.toSymbol = row.relationship.toSymbol;
+    row.fromStableKey = row.relationship.fromStableKey;
+    row.toStableKey = row.relationship.toStableKey;
+    row.peerStableKey = row.outgoing
+        ? row.relationship.toStableKey
+        : row.relationship.fromStableKey;
     row.peerCodeLink = RtlInsightLink::fromSymbol(row.peerSymbol);
     row.fromCodeLink = RtlInsightLink::fromSymbol(row.fromSymbol);
     row.toCodeLink = RtlInsightLink::fromSymbol(row.toSymbol);
+    row.provenance = row.relationship.provenance;
+    row.confidence = row.relationship.confidence;
+    row.evidenceText = row.relationship.evidenceText;
     row.directionDisplayName = relationshipDirectionDisplayName(row.outgoing);
     row.typeDisplayName = relationshipTypeDisplayName(row.relationship.relationship.type);
+    row.provenanceDisplayName = provenanceDisplayName(row.provenance);
+    row.confidenceDisplayName = confidenceDisplayName(row.confidence);
+    row.evidenceDisplayName = evidenceDisplayName(row.evidenceText);
     row.peerDisplayName = symbolDisplayName(row.peerSymbol);
     row.fromSymbolDisplayName = symbolDisplayName(row.fromSymbol);
     row.toSymbolDisplayName = symbolDisplayName(row.toSymbol);
