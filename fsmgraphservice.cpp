@@ -26,6 +26,80 @@ sym_list::SymbolInfo stateSymbolByName(
     }
     return missingFsmSymbol();
 }
+
+RtlInsightCodeLink codeLinkForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (record.isValid()) {
+        const QString fileName = fallback.fileName.isEmpty()
+            ? record.location.fileName
+            : fallback.fileName;
+        return RtlInsightLink::fromFileLine(fileName,
+                                            record.location.startLine,
+                                            record.location.startColumn);
+    }
+    return RtlInsightLink::fromSymbol(fallback);
+}
+
+QString displayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback,
+    const QString& defaultName = QString())
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    if (!fallback.symbolName.isEmpty())
+        return fallback.symbolName;
+    return defaultName;
+}
+
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(fallback);
+    if (!record.isValid())
+        return metadata;
+
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString typeDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    return SymbolTaxonomy::symbolTypeLabel(
+        metadataForRecord(record, fallback));
+}
+
+QString sourceRoleDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    return SymbolTaxonomy::sourceRoleDisplayName(
+        metadataForRecord(record, fallback).sourceRole);
+}
+
+QString moduleDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    if (!fallback.moduleScope.isEmpty())
+        return fallback.moduleScope;
+    if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
+        return QStringLiteral("global");
+    return QStringLiteral("global");
+}
 }
 
 FsmGraphService* FsmGraphService::getInstance()
@@ -583,18 +657,17 @@ QList<FsmStateRow> FsmGraphService::stateRows(
     for (const sym_list::SymbolInfo& state : states) {
         FsmStateRow row;
         row.state = state;
-        row.stateStableKey = symbolStableKeyForSymbol(state);
-        row.codeLink = RtlInsightLink::fromSymbol(state);
+        row.stateRecord = semanticSymbolRecordForSymbol(state);
+        row.stateStableKey = row.stateRecord.isValid()
+            ? row.stateRecord.stableKey
+            : symbolStableKeyForSymbol(state);
+        row.codeLink = codeLinkForRecord(row.stateRecord, state);
         row.sectionDisplayName = QStringLiteral("State");
         row.detailDisplayName = stateDetailDisplayName(state);
-        row.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(
-            SymbolTaxonomy::semanticMetadata(state));
+        row.typeDisplayName = typeDisplayNameForRecord(row.stateRecord, state);
         row.sourceRoleDisplayName =
-            SymbolTaxonomy::sourceRoleDisplayName(
-                SymbolTaxonomy::semanticMetadata(state).sourceRole);
-        row.moduleDisplayName = state.moduleScope.isEmpty()
-            ? QStringLiteral("global")
-            : state.moduleScope;
+            sourceRoleDisplayNameForRecord(row.stateRecord, state);
+        row.moduleDisplayName = moduleDisplayNameForRecord(row.stateRecord, state);
         rows.append(row);
     }
     return rows;
@@ -612,20 +685,34 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
         row.transition = transition;
         row.fromStateSymbol = stateSymbolByName(states, transition.fromState);
         row.toStateSymbol = stateSymbolByName(states, transition.toState);
-        row.fromStateStableKey = symbolStableKeyForSymbol(row.fromStateSymbol);
-        row.toStateStableKey = symbolStableKeyForSymbol(row.toStateSymbol);
+        row.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
+        row.fromStateRecord = semanticSymbolRecordForSymbol(row.fromStateSymbol);
+        row.toStateRecord = semanticSymbolRecordForSymbol(row.toStateSymbol);
+        row.fromStateStableKey = row.fromStateRecord.isValid()
+            ? row.fromStateRecord.stableKey
+            : symbolStableKeyForSymbol(row.fromStateSymbol);
+        row.toStateStableKey = row.toStateRecord.isValid()
+            ? row.toStateRecord.stableKey
+            : symbolStableKeyForSymbol(row.toStateSymbol);
         row.codeLink = transition.codeLink;
-        row.fromStateCodeLink = RtlInsightLink::fromSymbol(row.fromStateSymbol);
-        row.toStateCodeLink = RtlInsightLink::fromSymbol(row.toStateSymbol);
+        row.fromStateCodeLink =
+            codeLinkForRecord(row.fromStateRecord, row.fromStateSymbol);
+        row.toStateCodeLink =
+            codeLinkForRecord(row.toStateRecord, row.toStateSymbol);
         row.sectionDisplayName = transition.sectionDisplayName;
-        row.fromStateDisplayName = transition.fromState;
-        row.toStateDisplayName = transition.toState;
+        row.fromStateDisplayName =
+            displayNameForRecord(row.fromStateRecord,
+                                 row.fromStateSymbol,
+                                 transition.fromState);
+        row.toStateDisplayName =
+            displayNameForRecord(row.toStateRecord,
+                                 row.toStateSymbol,
+                                 transition.toState);
         row.conditionDisplayName = transitionConditionDisplayName(transition);
         row.detailDisplayName = transition.detailDisplayName;
         row.sourceLineDisplayName = transitionSourceLineDisplayName(transition);
         row.sourceRoleDisplayName =
-            SymbolTaxonomy::sourceRoleDisplayName(
-                SymbolTaxonomy::semanticMetadata(moduleSymbol).sourceRole);
+            sourceRoleDisplayNameForRecord(row.moduleSymbolRecord, moduleSymbol);
         rows.append(row);
     }
     return rows;
@@ -692,30 +779,43 @@ QString FsmGraphService::notFoundReasonDisplayName(
 
 void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
 {
-    graph.moduleStableKey = symbolStableKeyForSymbol(graph.moduleSymbol);
-    graph.stateRegisterStableKey = symbolStableKeyForSymbol(graph.stateRegister);
-    graph.nextStateSignalStableKey =
-        symbolStableKeyForSymbol(graph.nextStateSignal);
-    graph.stateRegisterCodeLink = RtlInsightLink::fromSymbol(graph.stateRegister);
-    graph.nextStateSignalCodeLink = RtlInsightLink::fromSymbol(graph.nextStateSignal);
+    graph.moduleSymbolRecord = semanticSymbolRecordForSymbol(graph.moduleSymbol);
+    graph.stateRegisterRecord =
+        semanticSymbolRecordForSymbol(graph.stateRegister);
+    graph.nextStateSignalRecord =
+        semanticSymbolRecordForSymbol(graph.nextStateSignal);
+    graph.moduleStableKey = graph.moduleSymbolRecord.isValid()
+        ? graph.moduleSymbolRecord.stableKey
+        : symbolStableKeyForSymbol(graph.moduleSymbol);
+    graph.stateRegisterStableKey = graph.stateRegisterRecord.isValid()
+        ? graph.stateRegisterRecord.stableKey
+        : symbolStableKeyForSymbol(graph.stateRegister);
+    graph.nextStateSignalStableKey = graph.nextStateSignalRecord.isValid()
+        ? graph.nextStateSignalRecord.stableKey
+        : symbolStableKeyForSymbol(graph.nextStateSignal);
+    graph.stateRegisterCodeLink =
+        codeLinkForRecord(graph.stateRegisterRecord, graph.stateRegister);
+    graph.nextStateSignalCodeLink =
+        codeLinkForRecord(graph.nextStateSignalRecord, graph.nextStateSignal);
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDetailDisplayName = stateRegisterDetailDisplayName(graph);
     graph.stateRegisterTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(
-            SymbolTaxonomy::semanticMetadata(graph.stateRegister));
+        typeDisplayNameForRecord(graph.stateRegisterRecord,
+                                 graph.stateRegister);
     graph.stateRegisterSourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(
-            SymbolTaxonomy::semanticMetadata(graph.stateRegister).sourceRole);
+        sourceRoleDisplayNameForRecord(graph.stateRegisterRecord,
+                                       graph.stateRegister);
     graph.nextStateSignalDisplayName = graph.nextStateSignal.symbolId >= 0
-        ? graph.nextStateSignal.symbolName
+        ? displayNameForRecord(graph.nextStateSignalRecord,
+                               graph.nextStateSignal)
         : QString();
     graph.nextStateSignalTypeDisplayName = graph.nextStateSignal.symbolId >= 0
-        ? SymbolTaxonomy::symbolTypeLabel(
-              SymbolTaxonomy::semanticMetadata(graph.nextStateSignal))
+        ? typeDisplayNameForRecord(graph.nextStateSignalRecord,
+                                   graph.nextStateSignal)
         : QString();
     graph.nextStateSignalSourceRoleDisplayName = graph.nextStateSignal.symbolId >= 0
-        ? SymbolTaxonomy::sourceRoleDisplayName(
-              SymbolTaxonomy::semanticMetadata(graph.nextStateSignal).sourceRole)
+        ? sourceRoleDisplayNameForRecord(graph.nextStateSignalRecord,
+                                         graph.nextStateSignal)
         : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");

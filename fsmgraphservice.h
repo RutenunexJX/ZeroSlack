@@ -37,6 +37,7 @@ struct FsmTransition {
 
 struct FsmStateRow {
     sym_list::SymbolInfo state = {};
+    SemanticSymbolRecord stateRecord;
     SymbolStableKey stateStableKey;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
@@ -50,6 +51,9 @@ struct FsmTransitionRow {
     FsmTransition transition;
     sym_list::SymbolInfo fromStateSymbol = {};
     sym_list::SymbolInfo toStateSymbol = {};
+    SemanticSymbolRecord moduleSymbolRecord;
+    SemanticSymbolRecord fromStateRecord;
+    SemanticSymbolRecord toStateRecord;
     SymbolStableKey fromStateStableKey;
     SymbolStableKey toStateStableKey;
     RtlInsightCodeLink codeLink;
@@ -68,6 +72,9 @@ struct FsmGraph {
     sym_list::SymbolInfo moduleSymbol = {};
     sym_list::SymbolInfo stateRegister = {};
     sym_list::SymbolInfo nextStateSignal = {};
+    SemanticSymbolRecord moduleSymbolRecord;
+    SemanticSymbolRecord stateRegisterRecord;
+    SemanticSymbolRecord nextStateSignalRecord;
     SymbolStableKey moduleStableKey;
     SymbolStableKey stateRegisterStableKey;
     SymbolStableKey nextStateSignalStableKey;

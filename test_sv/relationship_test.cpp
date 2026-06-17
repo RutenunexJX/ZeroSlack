@@ -5358,6 +5358,27 @@ static void runFsmGraphServiceFixture()
                        == symbolStableKeyForSymbol(
                            report.graphs.first().nextStateSignal),
                true);
+    expectBool("fsm graph semantic records",
+               !report.graphs.isEmpty()
+                   && report.graphs.first().moduleSymbolRecord.isValid()
+                   && report.graphs.first().moduleSymbolRecord.localHandle == 9301
+                   && report.graphs.first().moduleSymbolRecord.stableKey
+                       == report.graphs.first().moduleStableKey
+                   && report.graphs.first().moduleSymbolRecord.name
+                       == QStringLiteral("fsm_top")
+                   && report.graphs.first().stateRegisterRecord.isValid()
+                   && report.graphs.first().stateRegisterRecord.localHandle == 9302
+                   && report.graphs.first().stateRegisterRecord.stableKey
+                       == report.graphs.first().stateRegisterStableKey
+                   && report.graphs.first().stateRegisterRecord.name
+                       == QStringLiteral("state_q")
+                   && report.graphs.first().nextStateSignalRecord.isValid()
+                   && report.graphs.first().nextStateSignalRecord.localHandle == 9303
+                   && report.graphs.first().nextStateSignalRecord.stableKey
+                       == report.graphs.first().nextStateSignalStableKey
+                   && report.graphs.first().nextStateSignalRecord.name
+                       == QStringLiteral("state_d"),
+               true);
     expectBool("fsm graph next state",
                !report.graphs.isEmpty()
                    && report.graphs.first().nextStateSignal.symbolName
@@ -5427,6 +5448,17 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().stateRows.first().stateStableKey
                        == symbolStableKeyForSymbol(
                            report.graphs.first().stateRows.first().state),
+               true);
+    expectBool("fsm graph state row semantic record",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().stateRows.isEmpty()
+                   && report.graphs.first().stateRows.first().stateRecord.isValid()
+                   && report.graphs.first().stateRows.first().stateRecord.localHandle
+                       == report.graphs.first().stateRows.first().state.symbolId
+                   && report.graphs.first().stateRows.first().stateRecord.stableKey
+                       == report.graphs.first().stateRows.first().stateStableKey
+                   && report.graphs.first().stateRows.first().stateRecord.name
+                       == report.graphs.first().stateRows.first().state.symbolName,
                true);
     expectBool("fsm graph state row code link",
                !report.graphs.isEmpty()
@@ -5517,6 +5549,31 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("fsm_graph_fixture.sv")
                    && report.graphs.first().transitionRows.first()
                           .toStateCodeLink.lineDisplayName == QStringLiteral("2"),
+               true);
+    expectBool("fsm graph transition semantic records",
+               !report.graphs.isEmpty()
+                   && !report.graphs.first().transitionRows.isEmpty()
+                   && report.graphs.first().transitionRows.first()
+                          .moduleSymbolRecord.isValid()
+                   && report.graphs.first().transitionRows.first()
+                          .moduleSymbolRecord.stableKey
+                       == report.graphs.first().moduleStableKey
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateRecord.isValid()
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateRecord.stableKey
+                       == report.graphs.first().transitionRows.first()
+                          .fromStateStableKey
+                   && report.graphs.first().transitionRows.first()
+                          .fromStateRecord.name == QStringLiteral("IDLE")
+                   && report.graphs.first().transitionRows.first()
+                          .toStateRecord.isValid()
+                   && report.graphs.first().transitionRows.first()
+                          .toStateRecord.stableKey
+                       == report.graphs.first().transitionRows.first()
+                          .toStateStableKey
+                   && report.graphs.first().transitionRows.first()
+                          .toStateRecord.name == QStringLiteral("RUN"),
                true);
     expectBool("fsm graph transition display metadata",
                !report.graphs.isEmpty()
@@ -5615,6 +5672,12 @@ static void runFsmGraphServiceFixture()
     expectBool("fsm graph package enum state metadata",
                !packageReport.graphs.isEmpty()
                    && !packageReport.graphs.first().stateRows.isEmpty()
+                   && packageReport.graphs.first().stateRows.first()
+                          .stateRecord.isValid()
+                   && packageReport.graphs.first().stateRows.first()
+                          .stateRecord.stableKey
+                       == packageReport.graphs.first().stateRows.first()
+                          .stateStableKey
                    && packageReport.graphs.first().stateRows.first()
                           .typeDisplayName == QStringLiteral("enum value")
                    && packageReport.graphs.first().stateRows.first()
