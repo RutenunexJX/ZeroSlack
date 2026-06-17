@@ -5822,6 +5822,7 @@ static void runSemanticDiffServiceFixture()
     bool symbolTypeMetadataFound = false;
     bool symbolBeforeAfterMetadataFound = false;
     bool symbolStableKeyFound = false;
+    bool symbolRecordMetadataFound = false;
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
         if (change.kind == SemanticDiffChangeKind::Added)
             ++addedSymbols;
@@ -5879,6 +5880,29 @@ static void runSemanticDiffServiceFixture()
             symbolStableKeyFound =
                 change.displayStableKey
                 == symbolStableKeyForSymbol(change.displaySymbol);
+            symbolRecordMetadataFound =
+                change.beforeSymbolRecord.isValid()
+                && change.beforeSymbolRecord.localHandle == 9403
+                && change.beforeSymbolRecord.stableKey
+                    == change.beforeStableKey
+                && change.beforeSymbolRecord.name == QStringLiteral("data")
+                && change.beforeSymbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Port
+                && change.afterSymbolRecord.isValid()
+                && change.afterSymbolRecord.localHandle == 9503
+                && change.afterSymbolRecord.stableKey
+                    == change.afterStableKey
+                && change.afterSymbolRecord.name == QStringLiteral("data")
+                && change.afterSymbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Port
+                && change.displaySymbolRecord.isValid()
+                && change.displaySymbolRecord.localHandle == 9503
+                && change.displaySymbolRecord.stableKey
+                    == change.displayStableKey
+                && change.displaySymbolRecord.owner.name
+                    == QStringLiteral("diff_top")
+                && change.displaySymbolRecord.sourceRole
+                    == SymbolTaxonomy::SourceRole::DesignSource;
         }
         if (change.kind == SemanticDiffChangeKind::Added
             && change.category == SemanticDiffSymbolCategory::Signal
@@ -6043,6 +6067,9 @@ static void runSemanticDiffServiceFixture()
                true);
     expectBool("semantic diff symbol stable key",
                symbolStableKeyFound,
+               true);
+    expectBool("semantic diff symbol semantic records",
+               symbolRecordMetadataFound,
                true);
     expectBool("semantic diff symbol code link",
                symbolCodeLinkFound,

@@ -46,6 +46,9 @@ struct SemanticDiffSymbolChange {
     sym_list::SymbolInfo beforeSymbol = {};
     sym_list::SymbolInfo afterSymbol = {};
     sym_list::SymbolInfo displaySymbol = {};
+    SemanticSymbolRecord beforeSymbolRecord;
+    SemanticSymbolRecord afterSymbolRecord;
+    SemanticSymbolRecord displaySymbolRecord;
     SymbolStableKey beforeStableKey;
     SymbolStableKey afterStableKey;
     SymbolStableKey displayStableKey;
