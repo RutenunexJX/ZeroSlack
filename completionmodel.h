@@ -38,6 +38,7 @@ public:
         CompletionType type = KeywordCompletion;
         CompletionVisualKind visualKind = KeywordVisual;
         sym_list::sym_type_e symbolType = sym_list::sym_user;
+        SemanticSymbolRecord symbolRecord;
         SymbolStableKey symbolStableKey;
         SymbolTaxonomy::DeclarationKind declarationKind =
             SymbolTaxonomy::DeclarationKind::Unknown;

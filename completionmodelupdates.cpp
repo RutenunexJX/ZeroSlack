@@ -29,7 +29,8 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.text = keywords[i];
                 item.type = SymbolCompletion;
                 item.symbolType = symbols[i].symbolType;
-                item.symbolStableKey = symbolStableKeyForSymbol(symbols[i]);
+                item.symbolRecord = semanticSymbolRecordForSymbol(symbols[i]);
+                item.symbolStableKey = item.symbolRecord.stableKey;
                 item.score = completionService->completionItemScore(keywords[i], prefix);
                 item.description =
                     completionService->symbolTypeDescription(symbols[i]);
@@ -43,7 +44,8 @@ void CompletionModel::updateCompletions(const QStringList &keywords,
                 item.text = symbol.symbolName;
                 item.type = SymbolCompletion;
                 item.symbolType = symbol.symbolType;
-                item.symbolStableKey = symbolStableKeyForSymbol(symbol);
+                item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+                item.symbolStableKey = item.symbolRecord.stableKey;
                 item.score = completionService->completionItemScore(symbol.symbolName, prefix);
                 item.description =
                     completionService->symbolTypeDescription(symbol);
@@ -79,7 +81,10 @@ void CompletionModel::updateCompletions(const CompletionResult &completion,
             ? semanticItem.label
             : semanticItem.insertText;
         item.type = SymbolCompletion;
-        item.symbolStableKey = semanticItem.symbolStableKey;
+        item.symbolRecord = semanticItem.symbolRecord;
+        item.symbolStableKey = item.symbolRecord.stableKey.isValid()
+            ? item.symbolRecord.stableKey
+            : semanticItem.symbolStableKey;
         item.score = completionService->completionItemScore(semanticItem.label, prefix);
         item.description = semanticItem.typeDisplayName;
         item.typeDisplayName = semanticItem.typeDisplayName;
@@ -198,7 +203,8 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         CompletionItem item;
         item.type = SymbolCompletion;
         item.symbolType = symbolType;
-        item.symbolStableKey = symbolStableKeyForSymbol(symbol);
+        item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+        item.symbolStableKey = item.symbolRecord.stableKey;
         item.text = serviceItem.text;
         item.description = serviceItem.description;
         item.defaultValue = serviceItem.defaultValue;

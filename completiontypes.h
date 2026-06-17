@@ -27,6 +27,7 @@ struct CompletionResult {
         QString typeDisplayName;
         QString ownerScopeName;
         QString sourceRoleDisplayName;
+        SemanticSymbolRecord symbolRecord;
         SymbolStableKey symbolStableKey;
         SymbolTaxonomy::DeclarationKind declarationKind =
             SymbolTaxonomy::DeclarationKind::Unknown;

@@ -223,6 +223,12 @@ int main(int argc, char** argv) {
                modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
                    == symbolStableKeyForSymbol(modelScoringSymbols.at(1)),
                true);
+    expectBool("CompletionModel symbol record",
+               modelScoring.getItem(modelScoring.index(2, 0)).symbolRecord.stableKey
+                   == modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
+                   && modelScoring.getItem(modelScoring.index(2, 0))
+                          .symbolRecord.localHandle == modelScoringSymbols.at(1).symbolId,
+               true);
     expectBool("CompletionModel header selectable",
                modelScoring.getItem(modelScoring.index(0, 0)).selectable,
                false);
@@ -272,6 +278,11 @@ int main(int argc, char** argv) {
                metadataDescriptionModel.getItem(
                    metadataDescriptionModel.index(0, 0)).symbolStableKey
                    == symbolStableKeyForSymbol(metadataModelSymbol),
+               true);
+    expectBool("CompletionModel metadata record",
+               metadataDescriptionModel.getItem(
+                   metadataDescriptionModel.index(0, 0)).symbolRecord.declarationKind
+                   == SymbolTaxonomy::DeclarationKind::Module,
                true);
     CompletionModel commandDisplayModel;
     commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
@@ -1388,6 +1399,11 @@ int main(int argc, char** argv) {
     const bool moduleResultItemsOk = moduleCompletion.items.size() == 1
         && moduleCompletion.items.first().label == QStringLiteral("enable")
         && moduleCompletion.items.first().insertText == QStringLiteral("enable")
+        && moduleCompletion.items.first().symbolRecord.isValid()
+        && moduleCompletion.items.first().symbolRecord.stableKey
+            == moduleCompletion.items.first().symbolStableKey
+        && moduleCompletion.items.first().symbolRecord.owner.name
+            == QStringLiteral("top")
         && moduleCompletion.items.first().symbolStableKey
             == symbolStableKeyForSymbol(moduleCompletion.symbols.first())
         && moduleCompletion.items.first().declarationKind
@@ -1421,6 +1437,8 @@ int main(int argc, char** argv) {
             == QStringLiteral("design source")
         && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScope
             == SymbolTaxonomy::SymbolOwnerScope::Module
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).symbolRecord.stableKey
+            == moduleCompletion.items.first().symbolRecord.stableKey
         && semanticResultModel.getItem(semanticResultModel.index(0, 0)).symbolStableKey
             == moduleCompletion.items.first().symbolStableKey
         && semanticResultModel.data(
@@ -1466,6 +1484,10 @@ int main(int argc, char** argv) {
             == SymbolTaxonomy::SymbolOwnerScope::Struct
         && memberCompletion.items.first().typeDisplayName == QStringLiteral("member")
         && memberCompletion.items.first().ownerScopeName == QStringLiteral("pixel_t")
+        && memberCompletion.items.first().symbolRecord.owner.name
+            == QStringLiteral("pixel_t")
+        && memberCompletion.items.first().symbolRecord.declarationKind
+            == SymbolTaxonomy::DeclarationKind::StructMember
         && memberCompletion.items.first().symbolStableKey
             == symbolStableKeyForSymbol(memberCompletion.symbols.first());
     if (!memberItemsOk)

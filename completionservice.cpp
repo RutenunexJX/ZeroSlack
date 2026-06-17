@@ -36,6 +36,7 @@ CompletionResult::SemanticCompletionItem semanticCompletionItemForSymbol(
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
         SymbolTaxonomy::semanticMetadata(symbol);
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
 
     CompletionResult::SemanticCompletionItem item;
     item.label = symbol.symbolName;
@@ -44,11 +45,12 @@ CompletionResult::SemanticCompletionItem semanticCompletionItemForSymbol(
     item.ownerScopeName = ownerScopeNameForCompletionItem(symbol, metadata);
     item.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
-    item.symbolStableKey = symbolStableKeyForSymbol(symbol);
-    item.declarationKind = metadata.declarationKind;
-    item.usageRole = metadata.usageRole;
-    item.ownerScope = metadata.ownerScope;
-    item.sourceRole = metadata.sourceRole;
+    item.symbolRecord = record;
+    item.symbolStableKey = record.stableKey;
+    item.declarationKind = record.declarationKind;
+    item.usageRole = record.usageRole;
+    item.ownerScope = record.owner.kind;
+    item.sourceRole = record.sourceRole;
     return item;
 }
 
