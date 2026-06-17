@@ -4825,6 +4825,13 @@ static void runClockResetDomainServiceFixture()
                !topReport.clockDomains.isEmpty()
                    && topReport.clockDomains.first().domainSignal.symbolName
                        == QStringLiteral("clk_i")
+                   && topReport.clockDomains.first().domainSignalRecord.isValid()
+                   && topReport.clockDomains.first().domainSignalRecord.localHandle
+                       == 9203
+                   && topReport.clockDomains.first().domainSignalRecord.stableKey
+                       == topReport.clockDomains.first().domainSignalStableKey
+                   && topReport.clockDomains.first().domainSignalRecord.name
+                       == QStringLiteral("clk_i")
                    && topReport.clockDomains.first().domainSignalStableKey
                        == symbolStableKeyForSymbol(
                            topReport.clockDomains.first().domainSignal)
@@ -4868,7 +4875,21 @@ static void runClockResetDomainServiceFixture()
                !topReport.clockDomains.isEmpty()
                    && !topReport.clockDomains.first().modules.isEmpty()
                    && topReport.clockDomains.first().modules.first()
-                       .moduleSymbol.symbolName == QStringLiteral("domain_top")
+                          .moduleSymbol.symbolName == QStringLiteral("domain_top")
+                   && topReport.clockDomains.first().modules.first()
+                          .domainSignalRecord.isValid()
+                   && topReport.clockDomains.first().modules.first()
+                          .domainSignalRecord.stableKey
+                       == topReport.clockDomains.first().modules.first()
+                          .domainSignalStableKey
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleSymbolRecord.isValid()
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleSymbolRecord.localHandle == 9201
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleSymbolRecord.stableKey
+                       == topReport.clockDomains.first().modules.first()
+                          .moduleStableKey
                    && topReport.clockDomains.first().modules.first()
                           .domainSignalStableKey
                        == symbolStableKeyForSymbol(
@@ -4936,6 +4957,16 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("clk_i")
                    && topReport.evidenceRows.first().moduleDisplayName
                        == QStringLiteral("domain_top")
+                   && topReport.evidenceRows.first().domainSignalRecord.isValid()
+                   && topReport.evidenceRows.first().domainSignalRecord.localHandle
+                       == 9203
+                   && topReport.evidenceRows.first().domainSignalRecord.stableKey
+                       == topReport.evidenceRows.first().domainSignalStableKey
+                   && topReport.evidenceRows.first().moduleSymbolRecord.isValid()
+                   && topReport.evidenceRows.first().moduleSymbolRecord.localHandle
+                       == 9201
+                   && topReport.evidenceRows.first().moduleSymbolRecord.stableKey
+                       == topReport.evidenceRows.first().moduleStableKey
                    && topReport.evidenceRows.first().domainSignalStableKey
                        == symbolStableKeyForSymbol(
                            topReport.evidenceRows.first().domainSignal)
@@ -5004,6 +5035,14 @@ static void runClockResetDomainServiceFixture()
             || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
                 && row.signalDisplayName == QStringLiteral("scan_clk")
                 && row.moduleDisplayName == QStringLiteral("domain_top")
+                && row.domainSignalRecord.isValid()
+                && row.domainSignalRecord.localHandle == 9207
+                && row.domainSignalRecord.stableKey
+                    == row.domainSignalStableKey
+                && row.moduleSymbolRecord.isValid()
+                && row.moduleSymbolRecord.localHandle == 9201
+                && row.moduleSymbolRecord.stableKey
+                    == row.moduleStableKey
                 && row.domainSignalStableKey
                     == symbolStableKeyForSymbol(row.domainSignal)
                 && row.moduleStableKey

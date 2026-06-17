@@ -24,6 +24,8 @@ enum class ClockResetDomainNotFoundReason {
 
 struct ClockResetDomainMember {
     sym_list::SymbolInfo moduleSymbol = {};
+    SemanticSymbolRecord domainSignalRecord;
+    SemanticSymbolRecord moduleSymbolRecord;
     SymbolStableKey domainSignalStableKey;
     SymbolStableKey moduleStableKey;
     RtlInsightCodeLink moduleCodeLink;
@@ -43,6 +45,7 @@ struct ClockResetDomainMember {
 
 struct ClockResetDomainEntry {
     sym_list::SymbolInfo domainSignal = {};
+    SemanticSymbolRecord domainSignalRecord;
     SymbolStableKey domainSignalStableKey;
     RtlInsightCodeLink domainSignalCodeLink;
     QString sectionDisplayName;
@@ -53,6 +56,8 @@ struct ClockResetDomainEntry {
 struct ClockResetDomainEvidenceRow {
     sym_list::SymbolInfo domainSignal = {};
     sym_list::SymbolInfo moduleSymbol = {};
+    SemanticSymbolRecord domainSignalRecord;
+    SemanticSymbolRecord moduleSymbolRecord;
     SymbolStableKey domainSignalStableKey;
     SymbolStableKey moduleStableKey;
     RtlInsightCodeLink signalCodeLink;
