@@ -27,6 +27,13 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(int symbolId, bool o
             rel.type = type;
             rel.fromStableKey = symbolStableKeyForSymbol(getSymbolById(rel.fromId));
             rel.toStableKey = symbolStableKeyForSymbol(getSymbolById(rel.toId));
+            const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
+                engine->getRelationshipMetadata(rel.fromId, rel.toId, rel.type);
+            if (metadata.found) {
+                rel.provenance = RelationshipProvenance::Inferred;
+                rel.confidence = metadata.confidence;
+                rel.evidenceText = metadata.context;
+            }
 
             const QString key = QStringLiteral("%1:%2:%3")
                                     .arg(rel.fromId)
@@ -69,6 +76,9 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
             item.relationship.toStableKey = symbolStableKeyForSymbol(item.toSymbol);
         item.fromStableKey = item.relationship.fromStableKey;
         item.toStableKey = item.relationship.toStableKey;
+        item.provenance = item.relationship.provenance;
+        item.confidence = item.relationship.confidence;
+        item.evidenceText = item.relationship.evidenceText;
         result.append(item);
     }
     return result;

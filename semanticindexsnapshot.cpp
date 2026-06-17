@@ -164,6 +164,16 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
                     relationship.fromId = symbol.symbolId;
                     relationship.toId = relatedId;
                     relationship.type = type;
+                    const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
+                        engine->getRelationshipMetadata(
+                            relationship.fromId,
+                            relationship.toId,
+                            relationship.type);
+                    if (metadata.found) {
+                        relationship.provenance = RelationshipProvenance::Inferred;
+                        relationship.confidence = metadata.confidence;
+                        relationship.evidenceText = metadata.context;
+                    }
 
                     const QString key = QStringLiteral("%1:%2:%3")
                                             .arg(relationship.fromId)

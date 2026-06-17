@@ -43,12 +43,25 @@ struct SymbolStableKey {
     bool operator==(const SymbolStableKey& other) const;
 };
 
+enum class RelationshipProvenance {
+    Unknown,
+    SlangExtracted,
+    Inferred,
+    LexicalFallback,
+    OpenDocument,
+    Workspace,
+    FeatureGenerated
+};
+
 struct SemanticRelationship {
     int fromId = -1;
     int toId = -1;
     SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
     SymbolStableKey fromStableKey;
     SymbolStableKey toStableKey;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
 };
 
 struct SemanticRelationshipResult {
@@ -57,6 +70,9 @@ struct SemanticRelationshipResult {
     sym_list::SymbolInfo toSymbol;
     SymbolStableKey fromStableKey;
     SymbolStableKey toStableKey;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
 };
 
 struct SemanticDiagnostic {

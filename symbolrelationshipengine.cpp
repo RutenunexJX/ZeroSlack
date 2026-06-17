@@ -143,6 +143,28 @@ void SymbolRelationshipEngine::clearAllRelationships()
     emit relationshipsCleared();
 }
 
+SymbolRelationshipEngine::RelationshipEdgeMetadata
+SymbolRelationshipEngine::getRelationshipMetadata(
+    int fromSymbolId,
+    int toSymbolId,
+    RelationType type) const
+{
+    RelationshipEdgeMetadata metadata;
+    if (!relationshipGraph.contains(fromSymbolId))
+        return metadata;
+
+    const RelationshipNode& node = relationshipGraph.value(fromSymbolId);
+    for (const RelationshipEdge& edge : node.outgoingEdges) {
+        if (edge.targetId != toSymbolId || edge.type != type)
+            continue;
+        metadata.found = true;
+        metadata.context = edge.context;
+        metadata.confidence = edge.confidence;
+        return metadata;
+    }
+    return metadata;
+}
+
 void SymbolRelationshipEngine::beginUpdate()
 {
     ++updateDepth;

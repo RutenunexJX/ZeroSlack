@@ -33,6 +33,12 @@ public:
     };
     Q_ENUM(RelationType)
 
+    struct RelationshipEdgeMetadata {
+        bool found = false;
+        QString context;
+        int confidence = 0;
+    };
+
     explicit SymbolRelationshipEngine(QObject *parent = nullptr);
     explicit SymbolRelationshipEngine(sym_list* symbols, QObject *parent = nullptr);
     ~SymbolRelationshipEngine();
@@ -47,6 +53,10 @@ public:
 
     QList<int> getRelatedSymbols(int symbolId, RelationType type, bool outgoing = true) const;
     QList<int> getAllRelatedSymbols(int symbolId, bool outgoing = true) const;
+    RelationshipEdgeMetadata getRelationshipMetadata(
+        int fromSymbolId,
+        int toSymbolId,
+        RelationType type) const;
     bool hasRelationship(int fromSymbolId, int toSymbolId, RelationType type) const;
 
     QList<int> getModuleChildren(int moduleId) const;

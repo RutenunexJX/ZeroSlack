@@ -78,6 +78,41 @@ QString relationshipDirectionDisplayName(DirectedRelationshipResult::Direction d
         : QStringLiteral("Incoming");
 }
 
+QString relationshipProvenanceDisplayName(RelationshipProvenance provenance)
+{
+    switch (provenance) {
+    case RelationshipProvenance::SlangExtracted:
+        return QStringLiteral("slang extracted");
+    case RelationshipProvenance::Inferred:
+        return QStringLiteral("inferred");
+    case RelationshipProvenance::LexicalFallback:
+        return QStringLiteral("lexical fallback");
+    case RelationshipProvenance::OpenDocument:
+        return QStringLiteral("open document");
+    case RelationshipProvenance::Workspace:
+        return QStringLiteral("workspace");
+    case RelationshipProvenance::FeatureGenerated:
+        return QStringLiteral("feature generated");
+    case RelationshipProvenance::Unknown:
+    default:
+        return QStringLiteral("unknown");
+    }
+}
+
+QString confidenceDisplayName(int confidence)
+{
+    return confidence > 0
+        ? QStringLiteral("%1%").arg(confidence)
+        : QStringLiteral("unknown");
+}
+
+QString evidenceDisplayName(const QString& evidenceText)
+{
+    return evidenceText.isEmpty()
+        ? QStringLiteral("no evidence detail")
+        : evidenceText;
+}
+
 QString roleFor(SymbolRelationshipEngine::RelationType type, bool sourceSide)
 {
     switch (type) {
@@ -221,6 +256,15 @@ RelationshipReport RelationshipService::findRelationshipReport(
             directed.peerSymbolDisplayName = symbolDisplayName(directed.peerSymbol);
             directed.peerFileDisplayName = fileDisplayName(directed.peerSymbol.fileName);
             directed.peerLineDisplayName = lineDisplayName(directed.peerSymbol.startLine);
+            directed.provenance = relationship.provenance;
+            directed.confidence = relationship.confidence;
+            directed.evidenceText = relationship.evidenceText;
+            directed.provenanceDisplayName =
+                relationshipProvenanceDisplayName(directed.provenance);
+            directed.confidenceDisplayName =
+                confidenceDisplayName(directed.confidence);
+            directed.evidenceDisplayName =
+                evidenceDisplayName(directed.evidenceText);
             const bool subjectIsSource =
                 direction == DirectedRelationshipResult::Outgoing;
             directed.subjectRole =

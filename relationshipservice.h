@@ -64,6 +64,12 @@ struct DirectedRelationshipResult {
     QString subjectRole;
     QString peerRole;
     QString explanation;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
+    QString provenanceDisplayName;
+    QString confidenceDisplayName;
+    QString evidenceDisplayName;
     QString peerSymbolDisplayName;
     QString peerFileDisplayName;
     QString peerLineDisplayName;

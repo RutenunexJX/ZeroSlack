@@ -1017,6 +1017,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotIndex.getRelationshipResults(topId, true);
     bool snapshotFoundStageResult = false;
     bool snapshotFoundStageResultStableKey = false;
+    bool snapshotFoundStageResultMetadata = false;
     for (const SemanticRelationshipResult& relationship : snapshotTopRelationshipResults) {
         snapshotFoundStageResult = snapshotFoundStageResult
             || (relationship.relationship.fromId == topId
@@ -1031,11 +1032,20 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && relationship.toStableKey == stageStableKey
                 && relationship.relationship.fromStableKey == topStableKey
                 && relationship.relationship.toStableKey == stageStableKey);
+        snapshotFoundStageResultMetadata = snapshotFoundStageResultMetadata
+            || (relationship.relationship.fromId == topId
+                && relationship.relationship.toId == stageId
+                && relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES
+                && relationship.provenance == RelationshipProvenance::Inferred
+                && relationship.confidence == 90
+                && relationship.evidenceText.contains(QStringLiteral("Instance:")));
     }
     expectBool("semantic snapshot returns relationship endpoint symbols",
                snapshotFoundStageResult, true);
     expectBool("semantic snapshot returns relationship stable keys",
                snapshotFoundStageResultStableKey, true);
+    expectBool("semantic snapshot returns relationship metadata",
+               snapshotFoundStageResultMetadata, true);
     RelationshipService snapshotRelationshipService(&snapshotIndex);
     RelationshipQuery snapshotRelationshipQuery;
     snapshotRelationshipQuery.symbolId = topId;
@@ -2245,6 +2255,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool serviceFoundStage = false;
     bool serviceFoundTask = false;
     bool serviceFoundRead = false;
+    bool serviceFoundStageMetadata = false;
     for (const RelationshipResult& rel : serviceRels) {
         serviceFoundStage = serviceFoundStage
             || (rel.relationship.toId == stageId
@@ -2258,6 +2269,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (rel.relationship.toId == reqValidId
                 && rel.relationship.type == SymbolRelationshipEngine::READS_FROM
                 && rel.toSymbol.symbolName == QStringLiteral("req_valid"));
+        serviceFoundStageMetadata = serviceFoundStageMetadata
+            || (rel.relationship.toId == stageId
+                && rel.relationship.type == SymbolRelationshipEngine::INSTANTIATES
+                && rel.provenance == RelationshipProvenance::Inferred
+                && rel.confidence == 90
+                && rel.evidenceText.contains(QStringLiteral("Instance:")));
     }
 
     expectBool("relationship service finds instantiation",
@@ -2266,6 +2283,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                serviceFoundTask, true);
     expectBool("relationship service finds condition read",
                serviceFoundRead, true);
+    expectBool("relationship service carries relationship metadata",
+               serviceFoundStageMetadata, true);
     expectBool("relationship service sorts first by type",
                !serviceRels.isEmpty()
                    && serviceRels.first().relationship.type
@@ -2377,6 +2396,26 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !relationshipReport.relationships.isEmpty()
                    && relationshipReport.relationships.first().peerRole
                        == QStringLiteral("instantiated"),
+               true);
+    expectBool("relationship report provenance metadata",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().provenance
+                       == RelationshipProvenance::Inferred
+                   && relationshipReport.relationships.first().provenanceDisplayName
+                       == QStringLiteral("inferred"),
+               true);
+    expectBool("relationship report confidence metadata",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().confidence == 90
+                   && relationshipReport.relationships.first().confidenceDisplayName
+                       == QStringLiteral("90%"),
+               true);
+    expectBool("relationship report evidence metadata",
+               !relationshipReport.relationships.isEmpty()
+                   && relationshipReport.relationships.first().evidenceText.contains(
+                       QStringLiteral("Instance:"))
+                   && relationshipReport.relationships.first().evidenceDisplayName.contains(
+                       QStringLiteral("Instance:")),
                true);
     RelationshipPanelQueryOptions outgoingPanelRelationshipOptions;
     outgoingPanelRelationshipOptions.symbolName = QStringLiteral("rel_top");
