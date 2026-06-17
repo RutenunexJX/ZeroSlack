@@ -448,6 +448,59 @@ int main(int argc, char** argv) {
                    QStringLiteral("top"),
                    packageScopes),
                true);
+    sym_list::SymbolInfo metadataPackageParameter;
+    metadataPackageParameter.symbolType = sym_list::sym_user;
+    metadataPackageParameter.moduleScope = QStringLiteral("pkg_scope");
+    metadataPackageParameter.hasSemanticMetadata = true;
+    metadataPackageParameter.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Parameter;
+    metadataPackageParameter.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    metadataPackageParameter.semanticOwnerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Package;
+    metadataPackageParameter.semanticVisibility =
+        SymbolTaxonomy::SymbolVisibility::PackageVisible;
+    metadataPackageParameter.rawCollectorKind = sym_list::sym_user;
+    expectBool("SymbolTaxonomy metadata package definition visible",
+               SymbolTaxonomy::isDefinitionVisibleInContext(
+                   metadataPackageParameter,
+                   QStringLiteral("top"),
+                   packageScopes),
+               true);
+    sym_list::SymbolInfo metadataStructMember;
+    metadataStructMember.symbolType = sym_list::sym_user;
+    metadataStructMember.moduleScope = QStringLiteral("pixel_t");
+    metadataStructMember.hasSemanticMetadata = true;
+    metadataStructMember.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::StructMember;
+    metadataStructMember.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    metadataStructMember.semanticOwnerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Struct;
+    metadataStructMember.semanticVisibility =
+        SymbolTaxonomy::SymbolVisibility::Member;
+    metadataStructMember.rawCollectorKind = sym_list::sym_user;
+    expectBool("SymbolTaxonomy metadata member definition visible",
+               SymbolTaxonomy::isDefinitionVisibleInContext(
+                   metadataStructMember,
+                   QStringLiteral("top"),
+                   packageScopes),
+               true);
+    sym_list::SymbolInfo metadataEnumValue;
+    metadataEnumValue.symbolType = sym_list::sym_user;
+    metadataEnumValue.moduleScope = QStringLiteral("state_t");
+    metadataEnumValue.hasSemanticMetadata = true;
+    metadataEnumValue.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Enum;
+    metadataEnumValue.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    metadataEnumValue.rawCollectorKind = sym_list::sym_enum_value;
+    expectBool("SymbolTaxonomy metadata enum value definition visible",
+               SymbolTaxonomy::isDefinitionVisibleInContext(
+                   metadataEnumValue,
+                   QStringLiteral("top"),
+                   packageScopes),
+               true);
     expectBool("SymbolTaxonomy scoped logic definition hidden",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    scopedLogic,

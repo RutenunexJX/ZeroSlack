@@ -538,6 +538,12 @@ bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type)
         || kind == DeclarationKind::Modport;
 }
 
+bool isMemberScopeDefinitionCandidate(const SemanticMetadata& metadata)
+{
+    return metadata.declarationKind == DeclarationKind::StructMember
+        || metadata.declarationKind == DeclarationKind::Modport;
+}
+
 bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType)
 {
     return isModuleRangeType(requestedType);
@@ -924,12 +930,13 @@ bool isDefinitionVisibleInContext(
     const QString& moduleName,
     const QSet<QString>& packageScopes)
 {
-    return isMemberScopeDefinitionCandidate(symbol.symbolType)
-        || symbol.symbolType == sym_list::sym_enum_value
-        || isGlobalDefinition(symbol.symbolType)
+    const SemanticMetadata metadata = semanticMetadata(symbol, packageScopes);
+    return isMemberScopeDefinitionCandidate(metadata)
+        || metadata.rawCollectorKind == sym_list::sym_enum_value
+        || isGlobalDefinition(metadata)
         || moduleName.isEmpty()
         || symbol.moduleScope == moduleName
-        || isPackageScopeVisibleDefinition(symbol, packageScopes);
+        || metadata.visibility == SymbolVisibility::PackageVisible;
 }
 
 int definitionContextPriorityAdjustment(

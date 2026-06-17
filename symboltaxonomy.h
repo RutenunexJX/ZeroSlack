@@ -91,6 +91,7 @@ bool isSubroutineDeclaration(sym_list::sym_type_e type);
 bool isSubroutineDeclaration(const SemanticMetadata& metadata);
 bool isModuleRangeType(sym_list::sym_type_e type);
 bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type);
+bool isMemberScopeDefinitionCandidate(const SemanticMetadata& metadata);
 bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType);
 bool isPackageScopeVisibleCompletion(
     const sym_list::SymbolInfo& symbol,
