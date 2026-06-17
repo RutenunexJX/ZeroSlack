@@ -159,6 +159,38 @@ QString symbolDisplayName(const sym_list::SymbolInfo& symbol)
         : symbol.symbolName;
 }
 
+QString symbolRecordDisplayName(const SemanticSymbolRecord& record,
+                                const sym_list::SymbolInfo& fallbackSymbol)
+{
+    return record.name.isEmpty()
+        ? symbolDisplayName(fallbackSymbol)
+        : record.name;
+}
+
+QString symbolRecordFileName(const SemanticSymbolRecord& record,
+                             const sym_list::SymbolInfo& fallbackSymbol)
+{
+    return record.location.fileName.isEmpty()
+        ? fallbackSymbol.fileName
+        : record.location.fileName;
+}
+
+int symbolRecordLine(const SemanticSymbolRecord& record,
+                     const sym_list::SymbolInfo& fallbackSymbol)
+{
+    return record.location.startLine > 0
+        ? record.location.startLine
+        : fallbackSymbol.startLine;
+}
+
+int symbolRecordColumn(const SemanticSymbolRecord& record,
+                       const sym_list::SymbolInfo& fallbackSymbol)
+{
+    return record.location.startColumn > 0
+        ? record.location.startColumn
+        : fallbackSymbol.startColumn;
+}
+
 QString fileDisplayName(const QString& fileName)
 {
     QString displayName = QFileInfo(fileName).fileName();
@@ -258,7 +290,10 @@ RelationshipReport RelationshipService::findRelationshipReport(
         return report;
     }
     report.subjectSymbol = semanticIndex()->getSymbolById(id);
-    report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
+    report.subjectSymbolRecord = semanticSymbolRecordForSymbol(report.subjectSymbol);
+    report.subjectStableKey = report.subjectSymbolRecord.stableKey.isValid()
+        ? report.subjectSymbolRecord.stableKey
+        : symbolStableKeyForSymbol(report.subjectSymbol);
 
     QMap<DirectedRelationshipResult::Direction, int> directionGroupIndexes;
     QMap<DirectedRelationshipResult::Direction,
@@ -275,16 +310,26 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : relationship.fromSymbol;
             if (directed.peerSymbol.symbolId < 0)
                 continue;
+            directed.peerSymbolRecord =
+                semanticSymbolRecordForSymbol(directed.peerSymbol);
             directed.subjectStableKey = report.subjectStableKey;
-            directed.peerStableKey = direction == DirectedRelationshipResult::Outgoing
-                ? relationship.toStableKey
-                : relationship.fromStableKey;
+            directed.peerStableKey = directed.peerSymbolRecord.stableKey.isValid()
+                ? directed.peerSymbolRecord.stableKey
+                : (direction == DirectedRelationshipResult::Outgoing
+                       ? relationship.toStableKey
+                       : relationship.fromStableKey);
             directed.directionDisplayName = relationshipDirectionDisplayName(direction);
             directed.typeDisplayName =
                 relationshipTypeDisplayName(relationship.relationship.type);
-            directed.peerSymbolDisplayName = symbolDisplayName(directed.peerSymbol);
-            directed.peerFileDisplayName = fileDisplayName(directed.peerSymbol.fileName);
-            directed.peerLineDisplayName = lineDisplayName(directed.peerSymbol.startLine);
+            directed.peerSymbolDisplayName =
+                symbolRecordDisplayName(directed.peerSymbolRecord,
+                                        directed.peerSymbol);
+            directed.peerFileDisplayName = fileDisplayName(
+                symbolRecordFileName(directed.peerSymbolRecord,
+                                     directed.peerSymbol));
+            directed.peerLineDisplayName = lineDisplayName(
+                symbolRecordLine(directed.peerSymbolRecord,
+                                 directed.peerSymbol));
             directed.provenance = relationship.provenance;
             directed.confidence = relationship.confidence;
             directed.evidenceText = relationship.evidenceText;
@@ -301,11 +346,15 @@ RelationshipReport RelationshipService::findRelationshipReport(
             directed.peerRole =
                 roleFor(relationship.relationship.type, !subjectIsSource);
             const QString sourceName = subjectIsSource
-                ? symbolDisplayName(report.subjectSymbol)
-                : symbolDisplayName(directed.peerSymbol);
+                ? symbolRecordDisplayName(report.subjectSymbolRecord,
+                                          report.subjectSymbol)
+                : symbolRecordDisplayName(directed.peerSymbolRecord,
+                                          directed.peerSymbol);
             const QString targetName = subjectIsSource
-                ? symbolDisplayName(directed.peerSymbol)
-                : symbolDisplayName(report.subjectSymbol);
+                ? symbolRecordDisplayName(directed.peerSymbolRecord,
+                                          directed.peerSymbol)
+                : symbolRecordDisplayName(report.subjectSymbolRecord,
+                                          report.subjectSymbol);
             directed.explanation = QStringLiteral("%1 %2 %3")
                                        .arg(sourceName,
                                             relationVerb(relationship.relationship.type),

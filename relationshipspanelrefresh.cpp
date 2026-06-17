@@ -10,6 +10,15 @@ QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
                                         const QString& direction)
 {
     const sym_list::SymbolInfo& symbol = relationship.peerSymbol;
+    const QString peerFile = relationship.peerSymbolRecord.location.fileName.isEmpty()
+        ? symbol.fileName
+        : relationship.peerSymbolRecord.location.fileName;
+    const int peerLine = relationship.peerSymbolRecord.location.startLine > 0
+        ? relationship.peerSymbolRecord.location.startLine
+        : symbol.startLine;
+    const int peerColumn = relationship.peerSymbolRecord.location.startColumn > 0
+        ? relationship.peerSymbolRecord.location.startColumn
+        : symbol.startColumn;
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, direction);
     item->setText(1, relationship.peerSymbolDisplayName);
@@ -20,12 +29,12 @@ QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
     item->setText(5, explanation);
     item->setToolTip(0, explanation);
     item->setToolTip(1, explanation);
-    item->setToolTip(2, symbol.fileName);
+    item->setToolTip(2, peerFile);
     item->setToolTip(4, explanation);
     item->setToolTip(5, explanation);
-    item->setData(0, Qt::UserRole, symbol.fileName);
-    item->setData(0, Qt::UserRole + 1, symbol.startLine);
-    item->setData(0, Qt::UserRole + 2, symbol.startColumn);
+    item->setData(0, Qt::UserRole, peerFile);
+    item->setData(0, Qt::UserRole + 1, peerLine);
+    item->setData(0, Qt::UserRole + 2, peerColumn);
     return item;
 }
 
@@ -73,9 +82,11 @@ void RelationshipsPanelCoordinator::refresh()
         relationshipService->queryForPanel(browseOptions);
     const RelationshipReport report =
         relationshipService->findRelationshipReport(browseQuery);
-    const QString subjectName = report.subjectSymbol.symbolName.isEmpty()
-        ? currentRelationshipSymbolName
-        : report.subjectSymbol.symbolName;
+    QString subjectName = report.subjectSymbolRecord.name;
+    if (subjectName.isEmpty())
+        subjectName = report.subjectSymbol.symbolName;
+    if (subjectName.isEmpty())
+        subjectName = currentRelationshipSymbolName;
 
     const bool hadExpandableItems =
         SemanticPanelUtils::treeHasExpandableItems(relationshipsTree);

@@ -1172,6 +1172,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot relationship report subject stable key",
                snapshotRelationshipReport.subjectStableKey == topStableKey,
                true);
+    expectBool("snapshot relationship report subject record",
+               snapshotRelationshipReport.subjectSymbolRecord.isValid()
+                   && snapshotRelationshipReport.subjectSymbolRecord.localHandle == topId
+                   && snapshotRelationshipReport.subjectSymbolRecord.stableKey == topStableKey
+                   && snapshotRelationshipReport.subjectSymbolRecord.name
+                       == QStringLiteral("rel_top"),
+               true);
     expectBool("snapshot relationship report found reason metadata",
                snapshotRelationshipReport.notFoundReason
                        == RelationshipReportNotFoundReason::None
@@ -1184,14 +1191,22 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot relationship report keeps peer symbol",
                !snapshotRelationshipReport.relationships.isEmpty()
                    && snapshotRelationshipReport.relationships.first()
-                          .peerSymbol.symbolId == stageId,
+                          .peerSymbol.symbolId == stageId
+                   && snapshotRelationshipReport.relationships.first()
+                          .peerSymbolRecord.isValid()
+                   && snapshotRelationshipReport.relationships.first()
+                          .peerSymbolRecord.stableKey == stageStableKey
+                   && snapshotRelationshipReport.relationships.first()
+                          .peerSymbolRecord.name == QStringLiteral("rel_stage"),
                true);
     expectBool("snapshot relationship report keeps stable identity",
                !snapshotRelationshipReport.relationships.isEmpty()
                    && snapshotRelationshipReport.relationships.first()
                           .subjectStableKey == topStableKey
                    && snapshotRelationshipReport.relationships.first()
-                          .peerStableKey == stageStableKey,
+                          .peerStableKey == stageStableKey
+                   && snapshotRelationshipReport.relationships.first()
+                          .peerSymbolRecord.localHandle == stageId,
                true);
     expectBool("snapshot relationship report groups outgoing type",
                snapshotRelationshipReport.directionGroups.size() == 1
@@ -1224,7 +1239,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotRelationshipReport.directionGroups.first()
                           .typeGroups.first()
                           .relationships.first()
-                          .peerSymbol.symbolId == stageId,
+                          .peerSymbol.symbolId == stageId
+                   && snapshotRelationshipReport.directionGroups.first()
+                          .typeGroups.first()
+                          .relationships.first()
+                          .peerSymbolRecord.stableKey == stageStableKey,
                true);
     RelationshipBrowseQuery snapshotIncomingStageBrowseQuery;
     snapshotIncomingStageBrowseQuery.symbolId = stageId;
@@ -1240,7 +1259,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot relationship report incoming peer symbol",
                !snapshotIncomingStageReport.relationships.isEmpty()
                    && snapshotIncomingStageReport.relationships.first()
-                          .peerSymbol.symbolId == topId,
+                          .peerSymbol.symbolId == topId
+                   && snapshotIncomingStageReport.relationships.first()
+                          .peerSymbolRecord.isValid()
+                   && snapshotIncomingStageReport.relationships.first()
+                          .peerSymbolRecord.stableKey == topStableKey,
                true);
     expectBool("snapshot incoming relationship report keeps stable identity",
                snapshotIncomingStageReport.subjectStableKey == stageStableKey
@@ -1248,7 +1271,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotIncomingStageReport.relationships.first()
                           .subjectStableKey == stageStableKey
                    && snapshotIncomingStageReport.relationships.first()
-                          .peerStableKey == topStableKey,
+                          .peerStableKey == topStableKey
+                   && snapshotIncomingStageReport.subjectSymbolRecord.stableKey
+                          == stageStableKey,
                true);
     expectBool("snapshot relationship report groups incoming type",
                snapshotIncomingStageReport.directionGroups.size() == 1
