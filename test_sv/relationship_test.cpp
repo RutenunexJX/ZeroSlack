@@ -5941,6 +5941,7 @@ static void runSemanticDiffServiceFixture()
     bool relationshipCodeLinkFound = false;
     bool relationshipEndpointLinksFound = false;
     bool relationshipStableKeyFound = false;
+    bool relationshipRecordMetadataFound = false;
     bool relationshipEvidenceMetadataFound = false;
     for (const SemanticDiffRelationshipChange& change : report.relationshipChanges) {
         if (change.kind == SemanticDiffChangeKind::Added) {
@@ -5981,6 +5982,26 @@ static void runSemanticDiffServiceFixture()
                     == symbolStableKeyForSymbol(change.afterFromSymbol)
                 && change.afterToStableKey
                     == symbolStableKeyForSymbol(change.afterToSymbol);
+            relationshipRecordMetadataFound =
+                change.afterFromSymbolRecord.isValid()
+                && change.afterFromSymbolRecord.localHandle == 9501
+                && change.afterFromSymbolRecord.stableKey
+                    == change.afterFromStableKey
+                && change.afterFromSymbolRecord.name
+                    == QStringLiteral("diff_top")
+                && change.afterToSymbolRecord.isValid()
+                && change.afterToSymbolRecord.localHandle == 9505
+                && change.afterToSymbolRecord.stableKey
+                    == change.afterToStableKey
+                && change.afterToSymbolRecord.name == QStringLiteral("u_new")
+                && change.displayFromSymbolRecord.isValid()
+                && change.displayFromSymbolRecord.stableKey
+                    == change.displayFromStableKey
+                && change.displayToSymbolRecord.isValid()
+                && change.displayToSymbolRecord.stableKey
+                    == change.displayToStableKey
+                && change.displayFromSymbolRecord.sourceRole
+                    == SymbolTaxonomy::SourceRole::DesignSource;
             relationshipEvidenceMetadataFound =
                 change.provenance == RelationshipProvenance::Inferred
                 && change.provenanceDisplayName == QStringLiteral("inferred")
@@ -5994,7 +6015,19 @@ static void runSemanticDiffServiceFixture()
             ++removedRelationships;
             removedRelationshipHasEndpoints =
                 change.beforeFromSymbol.symbolName == QStringLiteral("diff_top")
-                && change.beforeToSymbol.symbolName == QStringLiteral("u_old");
+                && change.beforeToSymbol.symbolName == QStringLiteral("u_old")
+                && change.beforeFromSymbolRecord.isValid()
+                && change.beforeFromSymbolRecord.localHandle == 9401
+                && change.beforeFromSymbolRecord.stableKey
+                    == change.beforeFromStableKey
+                && change.beforeToSymbolRecord.isValid()
+                && change.beforeToSymbolRecord.localHandle == 9405
+                && change.beforeToSymbolRecord.stableKey
+                    == change.beforeToStableKey
+                && change.displayFromSymbolRecord.stableKey
+                    == change.beforeFromStableKey
+                && change.displayToSymbolRecord.stableKey
+                    == change.beforeToStableKey;
         }
     }
 
@@ -6093,6 +6126,9 @@ static void runSemanticDiffServiceFixture()
                true);
     expectBool("semantic diff relationship stable key",
                relationshipStableKeyFound,
+               true);
+    expectBool("semantic diff relationship semantic records",
+               relationshipRecordMetadataFound,
                true);
     expectBool("semantic diff relationship evidence metadata",
                relationshipEvidenceMetadataFound,

@@ -83,6 +83,12 @@ struct SemanticDiffRelationshipChange {
     sym_list::SymbolInfo afterToSymbol = {};
     sym_list::SymbolInfo displayFromSymbol = {};
     sym_list::SymbolInfo displayToSymbol = {};
+    SemanticSymbolRecord beforeFromSymbolRecord;
+    SemanticSymbolRecord beforeToSymbolRecord;
+    SemanticSymbolRecord afterFromSymbolRecord;
+    SemanticSymbolRecord afterToSymbolRecord;
+    SemanticSymbolRecord displayFromSymbolRecord;
+    SemanticSymbolRecord displayToSymbolRecord;
     SymbolStableKey beforeFromStableKey;
     SymbolStableKey beforeToStableKey;
     SymbolStableKey afterFromStableKey;

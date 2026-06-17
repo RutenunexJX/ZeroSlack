@@ -39,6 +39,17 @@ QString symbolTypeDisplayNameForRecord(
         metadataForRecord(record, fallback));
 }
 
+QString symbolDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    if (!fallback.symbolName.isEmpty())
+        return fallback.symbolName;
+    return QStringLiteral("<unknown>");
+}
+
 QString sourceRoleDisplayNameForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
@@ -794,45 +805,73 @@ void SemanticDiffService::fillDisplayMetadata(
     change.displayToSymbol = change.kind == SemanticDiffChangeKind::Removed
         ? change.beforeToSymbol
         : change.afterToSymbol;
+    change.beforeFromSymbolRecord =
+        semanticSymbolRecordForSymbol(change.beforeFromSymbol);
+    change.beforeToSymbolRecord =
+        semanticSymbolRecordForSymbol(change.beforeToSymbol);
+    change.afterFromSymbolRecord =
+        semanticSymbolRecordForSymbol(change.afterFromSymbol);
+    change.afterToSymbolRecord =
+        semanticSymbolRecordForSymbol(change.afterToSymbol);
+    change.displayFromSymbolRecord =
+        change.kind == SemanticDiffChangeKind::Removed
+            ? change.beforeFromSymbolRecord
+            : change.afterFromSymbolRecord;
+    change.displayToSymbolRecord =
+        change.kind == SemanticDiffChangeKind::Removed
+            ? change.beforeToSymbolRecord
+            : change.afterToSymbolRecord;
     change.beforeFromStableKey =
-        symbolStableKeyForSymbol(change.beforeFromSymbol);
+        change.beforeFromSymbolRecord.stableKey.isValid()
+            ? change.beforeFromSymbolRecord.stableKey
+            : symbolStableKeyForSymbol(change.beforeFromSymbol);
     change.beforeToStableKey =
-        symbolStableKeyForSymbol(change.beforeToSymbol);
+        change.beforeToSymbolRecord.stableKey.isValid()
+            ? change.beforeToSymbolRecord.stableKey
+            : symbolStableKeyForSymbol(change.beforeToSymbol);
     change.afterFromStableKey =
-        symbolStableKeyForSymbol(change.afterFromSymbol);
+        change.afterFromSymbolRecord.stableKey.isValid()
+            ? change.afterFromSymbolRecord.stableKey
+            : symbolStableKeyForSymbol(change.afterFromSymbol);
     change.afterToStableKey =
-        symbolStableKeyForSymbol(change.afterToSymbol);
+        change.afterToSymbolRecord.stableKey.isValid()
+            ? change.afterToSymbolRecord.stableKey
+            : symbolStableKeyForSymbol(change.afterToSymbol);
     change.displayFromStableKey =
-        symbolStableKeyForSymbol(change.displayFromSymbol);
+        change.displayFromSymbolRecord.stableKey.isValid()
+            ? change.displayFromSymbolRecord.stableKey
+            : symbolStableKeyForSymbol(change.displayFromSymbol);
     change.displayToStableKey =
-        symbolStableKeyForSymbol(change.displayToSymbol);
+        change.displayToSymbolRecord.stableKey.isValid()
+            ? change.displayToSymbolRecord.stableKey
+            : symbolStableKeyForSymbol(change.displayToSymbol);
     change.provenance = relationship.provenance;
     change.confidence = relationship.confidence;
     change.evidenceText = relationship.evidenceText;
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
-    change.fromCodeLink = RtlInsightLink::fromSymbol(change.displayFromSymbol);
-    change.toCodeLink = RtlInsightLink::fromSymbol(change.displayToSymbol);
+    change.fromCodeLink = codeLinkForRecord(change.displayFromSymbolRecord,
+                                            change.displayFromSymbol);
+    change.toCodeLink = codeLinkForRecord(change.displayToSymbolRecord,
+                                          change.displayToSymbol);
     change.fromSymbolDisplayName =
-        change.displayFromSymbol.symbolName.isEmpty()
-            ? QStringLiteral("<unknown>")
-            : change.displayFromSymbol.symbolName;
+        symbolDisplayNameForRecord(change.displayFromSymbolRecord,
+                                   change.displayFromSymbol);
     change.toSymbolDisplayName =
-        change.displayToSymbol.symbolName.isEmpty()
-            ? QStringLiteral("<unknown>")
-            : change.displayToSymbol.symbolName;
+        symbolDisplayNameForRecord(change.displayToSymbolRecord,
+                                   change.displayToSymbol);
     change.provenanceDisplayName = provenanceDisplayName(change.provenance);
     change.confidenceDisplayName = confidenceDisplayName(change.confidence);
     change.evidenceDisplayName = evidenceDisplayName(change.evidenceText);
     change.categoryGroupDisplayName = QStringLiteral("Relationships");
     change.codeLink = change.fromCodeLink;
     change.sourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(
-            SymbolTaxonomy::semanticMetadata(change.displayFromSymbol).sourceRole);
+        sourceRoleDisplayNameForRecord(change.displayFromSymbolRecord,
+                                       change.displayFromSymbol);
     change.detailDisplayName =
-        change.displayFromSymbol.symbolName.isEmpty()
-            || change.displayToSymbol.symbolName.isEmpty()
+        change.fromSymbolDisplayName == QStringLiteral("<unknown>")
+            || change.toSymbolDisplayName == QStringLiteral("<unknown>")
         ? change.key
         : QStringLiteral("%1 -> %2")
               .arg(change.fromSymbolDisplayName,
