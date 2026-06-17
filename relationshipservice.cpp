@@ -310,8 +310,12 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : relationship.fromSymbol;
             if (directed.peerSymbol.symbolId < 0)
                 continue;
-            directed.peerSymbolRecord =
-                semanticSymbolRecordForSymbol(directed.peerSymbol);
+            directed.peerSymbolRecord = direction == DirectedRelationshipResult::Outgoing
+                ? relationship.toSymbolRecord
+                : relationship.fromSymbolRecord;
+            if (!directed.peerSymbolRecord.isValid())
+                directed.peerSymbolRecord =
+                    semanticSymbolRecordForSymbol(directed.peerSymbol);
             directed.subjectStableKey = report.subjectStableKey;
             directed.peerStableKey = directed.peerSymbolRecord.stableKey.isValid()
                 ? directed.peerSymbolRecord.stableKey

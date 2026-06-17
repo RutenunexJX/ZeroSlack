@@ -1105,6 +1105,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotIndex.getRelationshipResults(topId, true);
     bool snapshotFoundStageResult = false;
     bool snapshotFoundStageResultStableKey = false;
+    bool snapshotFoundStageResultRecords = false;
     bool snapshotFoundStageResultMetadata = false;
     for (const SemanticRelationshipResult& relationship : snapshotTopRelationshipResults) {
         snapshotFoundStageResult = snapshotFoundStageResult
@@ -1120,6 +1121,22 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && relationship.toStableKey == stageStableKey
                 && relationship.relationship.fromStableKey == topStableKey
                 && relationship.relationship.toStableKey == stageStableKey);
+        snapshotFoundStageResultRecords = snapshotFoundStageResultRecords
+            || (relationship.relationship.fromId == topId
+                && relationship.relationship.toId == stageId
+                && relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES
+                && relationship.fromSymbolRecord.isValid()
+                && relationship.fromSymbolRecord.localHandle == topId
+                && relationship.fromSymbolRecord.stableKey == relationship.fromStableKey
+                && relationship.fromSymbolRecord.name == QStringLiteral("rel_top")
+                && relationship.toSymbolRecord.isValid()
+                && relationship.toSymbolRecord.localHandle == stageId
+                && relationship.toSymbolRecord.stableKey == relationship.toStableKey
+                && relationship.toSymbolRecord.name == QStringLiteral("rel_stage")
+                && relationship.toSymbolRecord.owner.kind
+                    == SymbolTaxonomy::SymbolOwnerScope::Global
+                && relationship.toSymbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Module);
         snapshotFoundStageResultMetadata = snapshotFoundStageResultMetadata
             || (relationship.relationship.fromId == topId
                 && relationship.relationship.toId == stageId
@@ -1132,6 +1149,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotFoundStageResult, true);
     expectBool("semantic snapshot returns relationship stable keys",
                snapshotFoundStageResultStableKey, true);
+    expectBool("semantic snapshot returns relationship endpoint records",
+               snapshotFoundStageResultRecords, true);
     expectBool("semantic snapshot returns relationship metadata",
                snapshotFoundStageResultMetadata, true);
     RelationshipService snapshotRelationshipService(&snapshotIndex);

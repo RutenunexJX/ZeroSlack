@@ -70,10 +70,18 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
         item.relationship = relationship;
         item.fromSymbol = getSymbolById(relationship.fromId);
         item.toSymbol = getSymbolById(relationship.toId);
+        item.fromSymbolRecord = semanticSymbolRecordForSymbol(item.fromSymbol);
+        item.toSymbolRecord = semanticSymbolRecordForSymbol(item.toSymbol);
         if (!item.relationship.fromStableKey.isValid())
-            item.relationship.fromStableKey = symbolStableKeyForSymbol(item.fromSymbol);
+            item.relationship.fromStableKey =
+                item.fromSymbolRecord.stableKey.isValid()
+                    ? item.fromSymbolRecord.stableKey
+                    : symbolStableKeyForSymbol(item.fromSymbol);
         if (!item.relationship.toStableKey.isValid())
-            item.relationship.toStableKey = symbolStableKeyForSymbol(item.toSymbol);
+            item.relationship.toStableKey =
+                item.toSymbolRecord.stableKey.isValid()
+                    ? item.toSymbolRecord.stableKey
+                    : symbolStableKeyForSymbol(item.toSymbol);
         item.fromStableKey = item.relationship.fromStableKey;
         item.toStableKey = item.relationship.toStableKey;
         item.provenance = item.relationship.provenance;

@@ -121,6 +121,8 @@ struct SemanticRelationshipResult {
     SemanticRelationship relationship;
     sym_list::SymbolInfo fromSymbol;
     sym_list::SymbolInfo toSymbol;
+    SemanticSymbolRecord fromSymbolRecord;
+    SemanticSymbolRecord toSymbolRecord;
     SymbolStableKey fromStableKey;
     SymbolStableKey toStableKey;
     RelationshipProvenance provenance = RelationshipProvenance::Unknown;
