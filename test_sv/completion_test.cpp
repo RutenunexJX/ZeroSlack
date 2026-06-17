@@ -300,6 +300,32 @@ int main(int argc, char** argv) {
                    sym_list::sym_enum,
                    QStringLiteral("enum")),
                true);
+    sym_list::SymbolInfo metadataSignalSymbol;
+    metadataSignalSymbol.symbolType = sym_list::sym_user;
+    metadataSignalSymbol.hasSemanticMetadata = true;
+    metadataSignalSymbol.semanticDeclarationKind =
+        SymbolSemanticMetadata::DeclarationKind::Signal;
+    metadataSignalSymbol.semanticUsageRole =
+        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
+    metadataSignalSymbol.semanticOwnerScope =
+        SymbolSemanticMetadata::SymbolOwnerScope::Module;
+    metadataSignalSymbol.semanticVisibility =
+        SymbolSemanticMetadata::SymbolVisibility::ScopeLocal;
+    metadataSignalSymbol.semanticSourceRole =
+        SymbolSemanticMetadata::SourceRole::DesignSource;
+    metadataSignalSymbol.rawCollectorKind = sym_list::sym_user;
+    const SymbolTaxonomy::SemanticMetadata metadataSignal =
+        SymbolTaxonomy::semanticMetadata(metadataSignalSymbol);
+    expectBool("SymbolTaxonomy metadata command type",
+               SymbolTaxonomy::commandSymbolTypeMatches(
+                   metadataSignal,
+                   sym_list::sym_logic),
+               true);
+    expectBool("SymbolTaxonomy metadata typed completion",
+               SymbolTaxonomy::typedCompletionSymbolTypeMatches(
+                   metadataSignal,
+                   sym_list::sym_logic),
+               true);
     sym_list::SymbolInfo completionModuleSymbol;
     completionModuleSymbol.symbolType = sym_list::sym_module;
     completionModuleSymbol.fileName = QStringLiteral("rtl/top.sv");
@@ -1923,6 +1949,30 @@ int main(int argc, char** argv) {
     snapshotScopeSignal.startLine = 2;
     snapshotScopeSignal.endLine = 2;
     snapshotSymbols.append(snapshotScopeSignal);
+    sym_list::SymbolInfo snapshotMetadataSignal =
+        makeSymbol(QStringLiteral("meta_signal"),
+                   sym_list::sym_user,
+                   QStringLiteral("snap_scope"),
+                   QString(),
+                   6003);
+    snapshotMetadataSignal.fileName = snapshotScopeFile;
+    snapshotMetadataSignal.position =
+        snapshotScopeContent.indexOf(QStringLiteral("snap_signal"));
+    snapshotMetadataSignal.startLine = 2;
+    snapshotMetadataSignal.endLine = 2;
+    snapshotMetadataSignal.hasSemanticMetadata = true;
+    snapshotMetadataSignal.semanticDeclarationKind =
+        SymbolSemanticMetadata::DeclarationKind::Signal;
+    snapshotMetadataSignal.semanticUsageRole =
+        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
+    snapshotMetadataSignal.semanticOwnerScope =
+        SymbolSemanticMetadata::SymbolOwnerScope::Module;
+    snapshotMetadataSignal.semanticVisibility =
+        SymbolSemanticMetadata::SymbolVisibility::ScopeLocal;
+    snapshotMetadataSignal.semanticSourceRole =
+        SymbolSemanticMetadata::SourceRole::DesignSource;
+    snapshotMetadataSignal.rawCollectorKind = sym_list::sym_user;
+    snapshotSymbols.append(snapshotMetadataSignal);
     sym_list::SymbolInfo snapshotOtherModule =
         makeSymbol(QStringLiteral("other_scope"),
                    sym_list::sym_module,
@@ -2389,6 +2439,13 @@ int main(int argc, char** argv) {
                    sym_list::sym_logic,
                    QStringLiteral("snap"))),
                {"snap_signal"});
+    expectList("snapshot metadata module context type",
+               symbolNames(snapshotCompletionService.findModuleContextSymbolInfosByType(
+                   QStringLiteral("snap_scope"),
+                   snapshotScopeFile,
+                   sym_list::sym_logic,
+                   QStringLiteral("meta"))),
+               {"meta_signal"});
     expectList("snapshot global info symbols by type",
                symbolNames(snapshotCompletionService.findGlobalSymbolInfosByType(
                    sym_list::sym_packed_struct_var,
@@ -2480,6 +2537,13 @@ int main(int argc, char** argv) {
                    sym_list::sym_logic,
                    QStringLiteral("snap"))),
                {"snap_signal"});
+    expectList("CompletionManager metadata context type",
+               symbolNames(cm->getModuleContextSymbolsByType(
+                   QStringLiteral("snap_scope"),
+                   snapshotScopeFile,
+                   sym_list::sym_logic,
+                   QStringLiteral("meta"))),
+               {"meta_signal"});
     expectList("CompletionManager global info delegation",
                symbolNames(cm->getGlobalSymbolsByType_Info(
                    sym_list::sym_packed_struct_var,

@@ -26,9 +26,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
                 symbolType,
                 moduleName,
                 packages)
-            || !commandSymbolTypeMatches(metadata.rawCollectorKind,
-                                        symbolType,
-                                        symbol.dataType)
+            || !commandSymbolTypeMatches(metadata, symbolType, symbol.dataType)
             || !semanticCompletionNameMatches(symbol.symbolName, prefix)) {
             continue;
         }
@@ -65,7 +63,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
         const SymbolTaxonomy::SemanticMetadata metadata =
             SymbolTaxonomy::semanticMetadata(symbol);
         if (SymbolTaxonomy::typedCompletionSymbolTypeMatches(
-                metadata.rawCollectorKind,
+                metadata,
                 symbolType,
                 symbol.dataType)) {
             appendIfMatches(symbol);
@@ -88,9 +86,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getGlobalSymbolInfosByType(
         const SymbolTaxonomy::SemanticMetadata metadata =
             SymbolTaxonomy::semanticMetadata(symbol);
         if (!globalSymbolInfoMetadata(metadata)
-            || !commandSymbolTypeMatches(metadata.rawCollectorKind,
-                                      symbolType,
-                                      symbol.dataType)
+            || !commandSymbolTypeMatches(metadata, symbolType, symbol.dataType)
             || !semanticCompletionNameMatches(symbol.symbolName, prefix)) {
             continue;
         }

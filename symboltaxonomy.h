@@ -110,6 +110,9 @@ bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent in
 bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
                               sym_list::sym_type_e commandType,
                               const QString& dataType = QString());
+bool commandSymbolTypeMatches(const SemanticMetadata& metadata,
+                              sym_list::sym_type_e commandType,
+                              const QString& dataType = QString());
 bool isInternalCompletionCandidate(sym_list::sym_type_e type);
 bool isInternalCompletionCandidate(const SemanticMetadata& metadata);
 bool isGlobalCompletionCandidate(sym_list::sym_type_e type);
@@ -149,6 +152,10 @@ bool isGlobalSymbolInfoVisible(
     sym_list::sym_type_e requestedType);
 bool typedCompletionSymbolTypeMatches(
     sym_list::sym_type_e symbolType,
+    sym_list::sym_type_e requestedType,
+    const QString& dataType = QString());
+bool typedCompletionSymbolTypeMatches(
+    const SemanticMetadata& metadata,
     sym_list::sym_type_e requestedType,
     const QString& dataType = QString());
 

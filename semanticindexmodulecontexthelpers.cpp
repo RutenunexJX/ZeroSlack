@@ -25,6 +25,15 @@ bool moduleContextSymbolTypeMatches(sym_list::sym_type_e symbolType,
         dataType);
 }
 
+bool moduleContextSymbolTypeMatches(const sym_list::SymbolInfo& symbol,
+                                    sym_list::sym_type_e commandType)
+{
+    return SymbolTaxonomy::commandSymbolTypeMatches(
+        SymbolTaxonomy::semanticMetadata(symbol),
+        commandType,
+        symbol.dataType);
+}
+
 bool moduleContextNameMatches(const QString& name, const QString& prefix)
 {
     if (prefix.isEmpty())

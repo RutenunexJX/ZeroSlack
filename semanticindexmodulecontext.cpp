@@ -61,8 +61,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
     }
 
     auto appendIfMatches = [&](const sym_list::SymbolInfo& symbol, bool fuzzyPrefix) {
-        if (!moduleContextSymbolTypeMatches(
-                symbol.symbolType, symbolType, symbol.dataType)) {
+        if (!moduleContextSymbolTypeMatches(symbol, symbolType)) {
             return;
         }
         const bool nameMatches = fuzzyPrefix
@@ -150,8 +149,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
 
     QSet<int> seenIds;
     auto appendSymbol = [&](const sym_list::SymbolInfo& symbol) {
-        if (!moduleContextSymbolTypeMatches(
-                symbol.symbolType, symbolType, symbol.dataType)) {
+        if (!moduleContextSymbolTypeMatches(symbol, symbolType)) {
             return;
         }
         if (!moduleContextNameMatches(symbol.symbolName, prefix))
