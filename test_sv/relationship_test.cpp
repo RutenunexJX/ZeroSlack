@@ -2414,6 +2414,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     relatedIdsQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     expectBool("relationship service returns related ids",
                relationshipService.findRelatedSymbolIds(relatedIdsQuery).contains(stageId), true);
+    RelationshipQuery stableRelatedIdsQuery = relatedIdsQuery;
+    stableRelatedIdsQuery.symbolStableKey = symbolStableKeyForSymbol(index.getSymbolById(topId));
+    stableRelatedIdsQuery.symbolId = stageId;
+    expectBool("relationship service resolves stable query key",
+               relationshipService
+                   .findRelatedSymbolIds(stableRelatedIdsQuery)
+                   .contains(stageId),
+               true);
     expectBool("relationship service exact relationship",
                relationshipService.hasRelationship(topId,
                                                    stageId,
@@ -2534,6 +2542,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        QStringLiteral("Instance:"))
                    && relationshipReport.relationships.first().evidenceDisplayName.contains(
                        QStringLiteral("Instance:")),
+               true);
+    RelationshipBrowseQuery stableRelationshipReportQuery = browseQuery;
+    stableRelationshipReportQuery.symbolStableKey =
+        symbolStableKeyForSymbol(index.getSymbolById(topId));
+    stableRelationshipReportQuery.symbolId = stageId;
+    const RelationshipReport stableRelationshipReport =
+        relationshipService.findRelationshipReport(stableRelationshipReportQuery);
+    expectBool("relationship report resolves stable query key",
+               stableRelationshipReport.totalCount == relationshipReport.totalCount
+                   && stableRelationshipReport.subjectStableKey
+                       == stableRelationshipReportQuery.symbolStableKey
+                   && stableRelationshipReport.subjectSymbol.symbolName
+                       == QStringLiteral("rel_top"),
                true);
     RelationshipPanelQueryOptions outgoingPanelRelationshipOptions;
     outgoingPanelRelationshipOptions.symbolName = QStringLiteral("rel_top");

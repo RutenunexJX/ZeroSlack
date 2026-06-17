@@ -349,6 +349,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
     };
 
     RelationshipQuery relationshipQuery;
+    relationshipQuery.symbolStableKey = report.subjectStableKey;
     relationshipQuery.symbolId = id;
     relationshipQuery.symbolName = normalized.symbolName;
     relationshipQuery.fileName = normalized.fileName;
@@ -505,6 +506,8 @@ SemanticIndex* RelationshipService::semanticIndex() const
 
 int RelationshipService::resolveSymbolId(const RelationshipQuery& query) const
 {
+    if (query.symbolStableKey.isValid())
+        return semanticIndex()->findSymbolId(query.symbolStableKey);
     if (query.symbolId >= 0)
         return query.symbolId;
     if (query.symbolName.isEmpty())
@@ -519,6 +522,8 @@ int RelationshipService::resolveSymbolId(const RelationshipQuery& query) const
 
 int RelationshipService::resolveSymbolId(const RelationshipBrowseQuery& query) const
 {
+    if (query.symbolStableKey.isValid())
+        return semanticIndex()->findSymbolId(query.symbolStableKey);
     if (query.symbolId >= 0)
         return query.symbolId;
     if (query.symbolName.isEmpty())
