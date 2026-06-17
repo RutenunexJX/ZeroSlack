@@ -5,10 +5,30 @@
 #include <QSet>
 
 namespace {
-QString outlineDisplayName(const sym_list::SymbolInfo& symbol)
+SemanticSymbolRecord outlineSymbolRecord(const SearchResult& result)
 {
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
+    if (result.symbolRecord.isValid())
+        return result.symbolRecord;
+    return semanticSymbolRecordForSymbol(result.symbol);
+}
+
+SymbolTaxonomy::SemanticMetadata outlineMetadata(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString outlineDisplayName(const SemanticSymbolRecord& record)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata = outlineMetadata(record);
     QString label = SymbolTaxonomy::symbolTypeLabel(metadata);
     if (label.isEmpty() || label == QLatin1String("symbol"))
         return QStringLiteral("Symbols");
@@ -16,11 +36,9 @@ QString outlineDisplayName(const sym_list::SymbolInfo& symbol)
     return label;
 }
 
-SymbolOutlineIconKind outlineIconKind(const sym_list::SymbolInfo& symbol)
+SymbolOutlineIconKind outlineIconKind(const SemanticSymbolRecord& record)
 {
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
-    switch (metadata.declarationKind) {
+    switch (record.declarationKind) {
     case SymbolTaxonomy::DeclarationKind::Module:
         return SymbolOutlineIconKind::Module;
     case SymbolTaxonomy::DeclarationKind::Signal:
@@ -55,31 +73,42 @@ SymbolOutlineIconKind outlineIconKind(const sym_list::SymbolInfo& symbol)
     }
 }
 
-QString outlineDetailDisplayName(const sym_list::SymbolInfo& symbol)
+QString outlineDetailDisplayName(const SemanticSymbolRecord& record)
 {
-    if (!symbol.dataType.isEmpty())
-        return symbol.dataType;
-    if (!symbol.moduleScope.isEmpty())
-        return symbol.moduleScope;
-    return symbol.fileName;
+    if (!record.type.rawTypeText.isEmpty())
+        return record.type.rawTypeText;
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    return record.location.fileName;
 }
 
 QList<SymbolOutlineSymbolRow> outlineRows(
-    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SearchResult>& results,
     const QString& groupDisplayName)
 {
     QList<SymbolOutlineSymbolRow> rows;
-    rows.reserve(symbols.size());
-    for (const sym_list::SymbolInfo& symbol : symbols) {
+    rows.reserve(results.size());
+    for (const SearchResult& result : results) {
+        const SemanticSymbolRecord record = outlineSymbolRecord(result);
         SymbolOutlineSymbolRow row;
-        row.symbol = symbol;
-        row.displayName = symbol.symbolName;
+        row.symbol = result.symbol;
+        row.symbolRecord = record;
+        row.displayName = record.name;
         row.typeDisplayName = groupDisplayName;
-        row.detailDisplayName = outlineDetailDisplayName(symbol);
-        row.iconKind = outlineIconKind(symbol);
+        row.detailDisplayName = outlineDetailDisplayName(record);
+        row.iconKind = outlineIconKind(record);
         rows.append(row);
     }
     return rows;
+}
+
+QList<sym_list::SymbolInfo> symbolsForResults(const QList<SearchResult>& results)
+{
+    QList<sym_list::SymbolInfo> symbols;
+    symbols.reserve(results.size());
+    for (const SearchResult& result : results)
+        symbols.append(result.symbol);
+    return symbols;
 }
 }
 
@@ -127,54 +156,55 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
     outlineQuery.fileName = query.fileName;
     outlineQuery.intent = SymbolTaxonomy::SymbolSearchIntent::OutlineSymbols;
 
-    QList<sym_list::SymbolInfo> symbols;
     const QList<SearchResult> searchResults = searchService.findSymbols(outlineQuery);
-    symbols.reserve(searchResults.size());
-    for (const SearchResult& result : searchResults)
-        symbols.append(result.symbol);
 
     QSet<QString> subroutineScopes;
-    for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
+    for (const SearchResult& result : searchResults) {
+        const SemanticSymbolRecord record = outlineSymbolRecord(result);
         const SymbolTaxonomy::SemanticMetadata metadata =
-            SymbolTaxonomy::semanticMetadata(symbol);
+            outlineMetadata(record);
         if (SymbolTaxonomy::isSubroutineDeclaration(metadata))
-            subroutineScopes.insert(symbol.symbolName);
+            subroutineScopes.insert(record.name);
     }
 
-    QHash<sym_list::sym_type_e, QList<sym_list::SymbolInfo>> byType;
-    for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
+    QHash<sym_list::sym_type_e, QList<SearchResult>> byType;
+    for (const SearchResult& result : searchResults) {
+        const SemanticSymbolRecord record = outlineSymbolRecord(result);
         const SymbolTaxonomy::SemanticMetadata metadata =
-            SymbolTaxonomy::semanticMetadata(symbol);
+            outlineMetadata(record);
         const bool isSubroutine =
             SymbolTaxonomy::isSubroutineDeclaration(metadata);
-        if (!isSubroutine && subroutineScopes.contains(symbol.moduleScope))
+        if (!isSubroutine && subroutineScopes.contains(record.owner.name))
             continue;
-        byType[SymbolTaxonomy::outlineGroupType(metadata)].append(symbol);
+        byType[SymbolTaxonomy::outlineGroupType(metadata)].append(result);
     }
 
     QList<SymbolOutlineGroup> result;
     for (sym_list::sym_type_e symbolType : SymbolTaxonomy::outlineSymbolTypes()) {
-        QList<sym_list::SymbolInfo> outlineSymbols = byType.value(symbolType);
-        if (outlineSymbols.isEmpty())
+        QList<SearchResult> outlineResults = byType.value(symbolType);
+        if (outlineResults.isEmpty())
             continue;
 
         if (!query.filter.isEmpty()) {
-            QList<sym_list::SymbolInfo> filteredSymbols;
-            filteredSymbols.reserve(outlineSymbols.size());
-            for (const sym_list::SymbolInfo& symbol : std::as_const(outlineSymbols)) {
-                if (symbol.symbolName.contains(query.filter, Qt::CaseInsensitive))
-                    filteredSymbols.append(symbol);
+            QList<SearchResult> filteredResults;
+            filteredResults.reserve(outlineResults.size());
+            for (const SearchResult& searchResult : std::as_const(outlineResults)) {
+                const SemanticSymbolRecord record = outlineSymbolRecord(searchResult);
+                if (record.name.contains(query.filter, Qt::CaseInsensitive))
+                    filteredResults.append(searchResult);
             }
-            outlineSymbols = filteredSymbols;
+            outlineResults = filteredResults;
         }
 
-        if (!outlineSymbols.isEmpty()) {
+        if (!outlineResults.isEmpty()) {
+            const SemanticSymbolRecord firstRecord =
+                outlineSymbolRecord(outlineResults.first());
             SymbolOutlineGroup group;
             group.symbolType = symbolType;
-            group.displayName = outlineDisplayName(outlineSymbols.first());
-            group.iconKind = outlineIconKind(outlineSymbols.first());
-            group.symbols = outlineSymbols;
-            group.symbolRows = outlineRows(outlineSymbols, group.displayName);
+            group.displayName = outlineDisplayName(firstRecord);
+            group.iconKind = outlineIconKind(firstRecord);
+            group.symbols = symbolsForResults(outlineResults);
+            group.symbolRows = outlineRows(outlineResults, group.displayName);
             result.append(group);
         }
     }

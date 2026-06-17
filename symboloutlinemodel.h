@@ -1,6 +1,7 @@
 #ifndef SYMBOLOUTLINEMODEL_H
 #define SYMBOLOUTLINEMODEL_H
 
+#include "semanticindex.h"
 #include "syminfo.h"
 
 #include <QList>
@@ -19,6 +20,7 @@ enum class SymbolOutlineIconKind {
 
 struct SymbolOutlineSymbolRow {
     sym_list::SymbolInfo symbol = {};
+    SemanticSymbolRecord symbolRecord;
     QString displayName;
     QString typeDisplayName;
     QString detailDisplayName;

@@ -962,6 +962,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             const SymbolOutlineSymbolRow& row = group.symbolRows.first();
             snapshotOutlineHasRowMetadata =
                 row.symbol.symbolId == topId
+                && row.symbolRecord.isValid()
+                && row.symbolRecord.localHandle == topId
+                && row.symbolRecord.stableKey == symbolStableKeyForSymbol(row.symbol)
+                && row.symbolRecord.name == QStringLiteral("rel_top")
                 && row.displayName == QStringLiteral("rel_top")
                 && row.typeDisplayName == QStringLiteral("Module")
                 && row.iconKind == SymbolOutlineIconKind::Module
@@ -1053,6 +1057,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             metadataOutlineGroupedAsModule =
                 metadataOutlineGroupedAsModule
                 || (row.symbol.symbolId == metadataOutlineModule.symbolId
+                    && row.symbolRecord.isValid()
+                    && row.symbolRecord.localHandle
+                        == metadataOutlineModule.symbolId
+                    && row.symbolRecord.declarationKind
+                        == SymbolTaxonomy::DeclarationKind::Module
                     && row.displayName == QStringLiteral("metadata_rel_top")
                     && row.iconKind == SymbolOutlineIconKind::Module);
         }
