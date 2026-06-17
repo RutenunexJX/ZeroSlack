@@ -546,7 +546,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     DiagnosticPanelQueryOptions currentFilePanelOptions;
     currentFilePanelOptions.scope = DiagnosticPanelScope::CurrentFile;
     currentFilePanelOptions.severity = DiagnosticSeverityFilter::Warnings;
-    currentFilePanelOptions.currentFileName = topPath;
+    currentFilePanelOptions.currentFileName =
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
     const DiagnosticQuery currentFilePanelQuery =
         diagnosticReportService.queryForPanel(currentFilePanelOptions);
     expectBool("diagnostic panel query selects current file",
@@ -561,10 +562,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   .findDiagnosticReport(currentFilePanelQuery)
                   .totalCount,
               1);
+    DiagnosticQuery unnormalizedTopOnlyDiagnosticQuery;
+    unnormalizedTopOnlyDiagnosticQuery.fileName =
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
+    expectInt("diagnostic report normalizes direct current file query",
+              diagnosticReportService
+                  .findDiagnosticReport(unnormalizedTopOnlyDiagnosticQuery)
+                  .totalCount,
+              2);
 
     DiagnosticPanelQueryOptions workspacePanelOptions;
     workspacePanelOptions.scope = DiagnosticPanelScope::WorkspaceFiles;
-    workspacePanelOptions.workspaceFiles = {stagePath};
+    workspacePanelOptions.workspaceFiles = {
+        QDir(QFileInfo(stagePath).dir()).filePath(QStringLiteral("./relationship_stage.sv")),
+        stagePath,
+    };
     const DiagnosticQuery workspacePanelQuery =
         diagnosticReportService.queryForPanel(workspacePanelOptions);
     expectBool("diagnostic panel query selects workspace files",

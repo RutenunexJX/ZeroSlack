@@ -44,22 +44,20 @@ void DiagnosticService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<DiagnosticResult> DiagnosticService::findDiagnostics(
     const DiagnosticQuery& query) const
 {
+    const DiagnosticQuery normalized = normalizedQuery(query);
     QList<DiagnosticResult> result;
     QSet<QString> normalizedWorkspaceFiles;
-    if (query.workspaceFilesOnly) {
-        for (const QString& fileName : query.workspaceFiles) {
-            const QString normalized = normalizedFileName(fileName);
-            if (!normalized.isEmpty())
-                normalizedWorkspaceFiles.insert(normalized);
-        }
+    if (normalized.workspaceFilesOnly) {
+        for (const QString& fileName : normalized.workspaceFiles)
+            normalizedWorkspaceFiles.insert(fileName);
     }
 
     const QList<SemanticDiagnostic> diagnostics =
-        semanticIndex()->getDiagnostics(query.fileName);
+        semanticIndex()->getDiagnostics(normalized.fileName);
     for (const SemanticDiagnostic& diagnostic : diagnostics) {
-        if (!severityMatches(diagnostic.severity, query))
+        if (!severityMatches(diagnostic.severity, normalized))
             continue;
-        if (query.workspaceFilesOnly
+        if (normalized.workspaceFilesOnly
             && !normalizedWorkspaceFiles.contains(normalizedFileName(diagnostic.fileName))) {
             continue;
         }
@@ -158,7 +156,7 @@ DiagnosticQuery DiagnosticService::queryForPanel(
         || options.severity == DiagnosticSeverityFilter::Warnings;
     query.includeInfo = options.severity == DiagnosticSeverityFilter::All
         || options.severity == DiagnosticSeverityFilter::Info;
-    return query;
+    return normalizedQuery(query);
 }
 
 SemanticIndex* DiagnosticService::semanticIndex() const
@@ -180,11 +178,33 @@ bool DiagnosticService::severityMatches(SemanticDiagnostic::Severity severity,
     return false;
 }
 
+DiagnosticQuery DiagnosticService::normalizedQuery(const DiagnosticQuery& query)
+{
+    DiagnosticQuery normalized = query;
+    normalized.fileName = normalizedFileName(query.fileName);
+    normalized.workspaceFiles = normalizedFileNames(query.workspaceFiles);
+    return normalized;
+}
+
 QString DiagnosticService::normalizedFileName(const QString& fileName)
 {
     if (fileName.isEmpty())
         return QString();
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+QStringList DiagnosticService::normalizedFileNames(const QStringList& fileNames)
+{
+    QStringList normalized;
+    QSet<QString> seen;
+    for (const QString& fileName : fileNames) {
+        const QString path = normalizedFileName(fileName);
+        if (path.isEmpty() || seen.contains(path))
+            continue;
+        seen.insert(path);
+        normalized.append(path);
+    }
+    return normalized;
 }
 
 QString DiagnosticService::severityDisplayName(SemanticDiagnostic::Severity severity)

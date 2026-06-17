@@ -88,7 +88,9 @@ private:
     SemanticIndex* semanticIndex() const;
     bool severityMatches(SemanticDiagnostic::Severity severity,
                          const DiagnosticQuery& query) const;
+    static DiagnosticQuery normalizedQuery(const DiagnosticQuery& query);
     static QString normalizedFileName(const QString& fileName);
+    static QStringList normalizedFileNames(const QStringList& fileNames);
     static QString severityDisplayName(SemanticDiagnostic::Severity severity);
     static QString diagnosticFileDisplayName(const QString& fileName);
     static QString diagnosticLineDisplayName(int line);
