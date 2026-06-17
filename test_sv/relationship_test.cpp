@@ -2537,7 +2537,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     RelationshipPanelQueryOptions outgoingPanelRelationshipOptions;
     outgoingPanelRelationshipOptions.symbolName = QStringLiteral("rel_top");
-    outgoingPanelRelationshipOptions.fileName = topPath;
+    outgoingPanelRelationshipOptions.fileName =
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
     outgoingPanelRelationshipOptions.direction = RelationshipPanelDirection::Outgoing;
     outgoingPanelRelationshipOptions.typeFilter =
         static_cast<int>(SymbolRelationshipEngine::CALLS);
@@ -2545,6 +2546,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         relationshipService.queryForPanel(outgoingPanelRelationshipOptions);
     expectBool("relationship panel query selects outgoing type",
                outgoingPanelRelationshipQuery.symbolName == QStringLiteral("rel_top")
+                   && outgoingPanelRelationshipQuery.fileName == topPath
                    && outgoingPanelRelationshipQuery.includeOutgoing
                    && !outgoingPanelRelationshipQuery.includeIncoming
                    && outgoingPanelRelationshipQuery.types
@@ -2559,7 +2561,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     RelationshipPanelQueryOptions incomingPanelRelationshipOptions;
     incomingPanelRelationshipOptions.symbolName = QStringLiteral("rel_stage");
-    incomingPanelRelationshipOptions.fileName = stagePath;
+    incomingPanelRelationshipOptions.fileName =
+        QDir(QFileInfo(stagePath).dir()).filePath(QStringLiteral("./relationship_stage.sv"));
     incomingPanelRelationshipOptions.direction = RelationshipPanelDirection::Incoming;
     incomingPanelRelationshipOptions.typeFilter =
         static_cast<int>(SymbolRelationshipEngine::INSTANTIATES);
@@ -2575,6 +2578,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("relationship panel incoming count",
               relationshipService
                   .findRelationshipReport(incomingPanelRelationshipQuery)
+                  .totalCount,
+              1);
+
+    RelationshipBrowseQuery unnormalizedNamedBrowseQuery;
+    unnormalizedNamedBrowseQuery.symbolName = QStringLiteral("rel_stage");
+    unnormalizedNamedBrowseQuery.fileName =
+        QDir(QFileInfo(stagePath).dir()).filePath(QStringLiteral("./relationship_stage.sv"));
+    unnormalizedNamedBrowseQuery.includeOutgoing = false;
+    unnormalizedNamedBrowseQuery.includeIncoming = true;
+    unnormalizedNamedBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    expectInt("relationship report normalizes named browse file",
+              relationshipService
+                  .findRelationshipReport(unnormalizedNamedBrowseQuery)
                   .totalCount,
               1);
 

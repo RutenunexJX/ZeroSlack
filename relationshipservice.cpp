@@ -2,6 +2,7 @@
 
 #include "relationshipserviceordering.h"
 
+#include <QDir>
 #include <QFileInfo>
 
 std::unique_ptr<RelationshipService> RelationshipService::instance = nullptr;
@@ -9,6 +10,13 @@ std::unique_ptr<RelationshipService> RelationshipService::instance = nullptr;
 using relationship_service_ordering::sortRelationshipResults;
 
 namespace {
+QString normalizedRelationshipFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
 QString relationVerb(SymbolRelationshipEngine::RelationType type)
 {
     switch (type) {
@@ -200,20 +208,21 @@ void RelationshipService::setSemanticIndex(SemanticIndex* semanticIndex)
 
 QList<RelationshipResult> RelationshipService::findRelationships(const RelationshipQuery& query) const
 {
-    const int id = resolveSymbolId(query);
+    const RelationshipQuery normalized = normalizedQuery(query);
+    const int id = resolveSymbolId(normalized);
     if (id < 0)
         return {};
 
     QList<RelationshipResult> result;
     const QList<SemanticRelationshipResult> relationships =
-        semanticIndex()->getRelationshipResults(id, query.outgoing);
+        semanticIndex()->getRelationshipResults(id, normalized.outgoing);
 
     for (const SemanticRelationshipResult& rel : relationships) {
-        if (!typeMatches(rel.relationship.type, query.types))
+        if (!typeMatches(rel.relationship.type, normalized.types))
             continue;
         result.append(rel);
     }
-    sortRelationshipResults(result, query.outgoing);
+    sortRelationshipResults(result, normalized.outgoing);
 
     return result;
 }
@@ -237,8 +246,9 @@ QList<RelationshipResult> RelationshipService::findIncomingRelationships(
 RelationshipReport RelationshipService::findRelationshipReport(
     const RelationshipBrowseQuery& query) const
 {
+    const RelationshipBrowseQuery normalized = normalizedQuery(query);
     RelationshipReport report;
-    const int id = resolveSymbolId(query);
+    const int id = resolveSymbolId(normalized);
     report.subjectSymbolId = id;
     if (id < 0) {
         report.notFoundReason =
@@ -340,17 +350,17 @@ RelationshipReport RelationshipService::findRelationshipReport(
 
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolId = id;
-    relationshipQuery.symbolName = query.symbolName;
-    relationshipQuery.fileName = query.fileName;
-    relationshipQuery.moduleName = query.moduleName;
-    relationshipQuery.types = query.types;
+    relationshipQuery.symbolName = normalized.symbolName;
+    relationshipQuery.fileName = normalized.fileName;
+    relationshipQuery.moduleName = normalized.moduleName;
+    relationshipQuery.types = normalized.types;
 
-    if (query.includeOutgoing) {
+    if (normalized.includeOutgoing) {
         relationshipQuery.outgoing = true;
         appendRelationships(findRelationships(relationshipQuery),
                             DirectedRelationshipResult::Outgoing);
     }
-    if (query.includeIncoming) {
+    if (normalized.includeIncoming) {
         relationshipQuery.outgoing = false;
         appendRelationships(findRelationships(relationshipQuery),
                             DirectedRelationshipResult::Incoming);
@@ -396,7 +406,7 @@ RelationshipBrowseQuery RelationshipService::queryForPanel(
             static_cast<SymbolRelationshipEngine::RelationType>(options.typeFilter)
         };
     }
-    return query;
+    return normalizedQuery(query);
 }
 
 QList<RelationshipTypeFilterOption>
@@ -519,6 +529,21 @@ int RelationshipService::resolveSymbolId(const RelationshipBrowseQuery& query) c
     context.moduleName = query.moduleName;
 
     return semanticIndex()->findSymbolId(query.symbolName, context);
+}
+
+RelationshipQuery RelationshipService::normalizedQuery(const RelationshipQuery& query)
+{
+    RelationshipQuery normalized = query;
+    normalized.fileName = normalizedRelationshipFileName(query.fileName);
+    return normalized;
+}
+
+RelationshipBrowseQuery RelationshipService::normalizedQuery(
+    const RelationshipBrowseQuery& query)
+{
+    RelationshipBrowseQuery normalized = query;
+    normalized.fileName = normalizedRelationshipFileName(query.fileName);
+    return normalized;
 }
 
 bool RelationshipService::typeMatches(

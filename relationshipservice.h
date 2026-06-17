@@ -147,6 +147,8 @@ private:
     SemanticIndex* semanticIndex() const;
     int resolveSymbolId(const RelationshipQuery& query) const;
     int resolveSymbolId(const RelationshipBrowseQuery& query) const;
+    static RelationshipQuery normalizedQuery(const RelationshipQuery& query);
+    static RelationshipBrowseQuery normalizedQuery(const RelationshipBrowseQuery& query);
     bool typeMatches(SymbolRelationshipEngine::RelationType type,
                      const QList<SymbolRelationshipEngine::RelationType>& allowedTypes) const;
 };
