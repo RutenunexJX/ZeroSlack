@@ -451,6 +451,11 @@ bool isLogicDeclaration(sym_list::sym_type_e type)
     return type == sym_list::sym_logic;
 }
 
+bool isLogicDeclaration(const SemanticMetadata& metadata)
+{
+    return metadata.rawCollectorKind == sym_list::sym_logic;
+}
+
 bool isInstanceDeclaration(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_inst;

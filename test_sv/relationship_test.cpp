@@ -23,6 +23,7 @@
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 #include "syminfo.h"
+#include "scopebandservice.h"
 #include "mycodeeditor.h"
 #include "projectmodel.h"
 #include "symbolanalyzer.h"
@@ -3447,6 +3448,74 @@ static void runModuleBriefServiceFixture()
                true);
 }
 
+static void runScopeBandServiceFixture()
+{
+    printf("\n-- scope band service fixture --\n");
+
+    const QString fileName = QStringLiteral("scope_band_fixture.sv");
+    QList<sym_list::SymbolInfo> symbols;
+
+    sym_list::SymbolInfo module;
+    module.symbolId = 1;
+    module.symbolName = QStringLiteral("scope_top");
+    module.symbolType = sym_list::sym_module;
+    module.fileName = fileName;
+    module.startLine = 1;
+    module.endLine = 5;
+    symbols.append(module);
+
+    sym_list::SymbolInfo logic;
+    logic.symbolId = 2;
+    logic.symbolName = QStringLiteral("enable");
+    logic.symbolType = sym_list::sym_logic;
+    logic.fileName = fileName;
+    logic.moduleScope = QStringLiteral("scope_top");
+    logic.startLine = 2;
+    logic.endLine = 2;
+    symbols.append(logic);
+
+    sym_list::SymbolInfo wire;
+    wire.symbolId = 3;
+    wire.symbolName = QStringLiteral("raw_wire");
+    wire.symbolType = sym_list::sym_wire;
+    wire.fileName = fileName;
+    wire.moduleScope = QStringLiteral("scope_top");
+    wire.startLine = 3;
+    wire.endLine = 3;
+    symbols.append(wire);
+
+    QHash<QString, QString> fileContents;
+    fileContents.insert(
+        fileName,
+        QStringLiteral("module scope_top;\nlogic enable;\nwire raw_wire;\nendmodule\n"));
+    SemanticIndex index;
+    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        symbols,
+        QList<SemanticRelationship>(),
+        QList<SemanticDiagnostic>(),
+        fileContents));
+
+    ScopeBandService service(&index);
+    ScopeBandQuery query;
+    query.fileName = fileName;
+    const ScopeBandReport report = service.scopeBands(query);
+
+    expectInt("scope band module count", report.modules.size(), 1);
+    expectBool("scope band module metadata",
+               !report.modules.isEmpty()
+                   && report.modules.first().symbol.symbolName
+                       == QStringLiteral("scope_top")
+                   && report.modules.first().endLine >= module.startLine,
+               true);
+    expectInt("scope band logic count", report.logics.size(), 1);
+    expectBool("scope band logic metadata",
+               !report.logics.isEmpty()
+                   && report.logics.first().symbol.symbolName
+                       == QStringLiteral("enable")
+                   && report.logics.first().endLine == 2,
+               true);
+}
+
 static void runSignalJourneyServiceFixture()
 {
     printf("\n-- signal journey service fixture --\n");
@@ -6116,6 +6185,7 @@ int main(int argc, char** argv)
     runInlineRelationshipRegression(slang, db, builder);
     runMultiFileRelationshipFixture(slang, db, engine, builder);
     runModuleBriefServiceFixture();
+    runScopeBandServiceFixture();
     runSignalJourneyServiceFixture();
     runClockResetDomainServiceFixture();
     runFsmGraphServiceFixture();

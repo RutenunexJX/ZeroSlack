@@ -32,13 +32,15 @@ ScopeBandReport ScopeBandService::scopeBands(const ScopeBandQuery& query) const
     SemanticIndex* semantic = semanticIndex();
     const QList<sym_list::SymbolInfo> symbols = semantic->getSymbols(query.fileName);
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::isModuleDeclaration(symbol.symbolType)) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            SymbolTaxonomy::semanticMetadata(symbol);
+        if (SymbolTaxonomy::isModuleDeclaration(metadata)) {
             if (!semantic->isValidModuleName(symbol.symbolName))
                 continue;
             const int endLine = semantic->findEndModuleLine(query.fileName, symbol);
             if (endLine >= 0)
                 report.modules.append({symbol, endLine});
-        } else if (SymbolTaxonomy::isLogicDeclaration(symbol.symbolType)) {
+        } else if (SymbolTaxonomy::isLogicDeclaration(metadata)) {
             const int endLine = symbol.endLine < symbol.startLine
                 ? symbol.startLine
                 : symbol.endLine;

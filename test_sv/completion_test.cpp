@@ -340,6 +340,9 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata signal declaration",
                SymbolTaxonomy::isSignalDeclaration(syntheticSignalMetadata),
                true);
+    expectBool("SymbolTaxonomy metadata logic declaration",
+               SymbolTaxonomy::isLogicDeclaration(logicMetadata),
+               true);
     sym_list::SymbolInfo metadataStateRegister;
     metadataStateRegister.symbolType = sym_list::sym_logic;
     const SymbolTaxonomy::SemanticMetadata stateRegisterMetadata =
