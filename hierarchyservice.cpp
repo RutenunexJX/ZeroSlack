@@ -1,5 +1,6 @@
 #include "hierarchyservice.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <algorithm>
 
@@ -22,6 +23,13 @@ static bool hierarchyNodeLess(const HierarchyNode& lhs, const HierarchyNode& rhs
     return QString::compare(lhs.symbol.symbolName,
                             rhs.symbol.symbolName,
                             Qt::CaseInsensitive) < 0;
+}
+
+QString normalizedHierarchyFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
 QString HierarchyService::directionDisplayName(HierarchyQuery::Direction direction)
@@ -141,10 +149,11 @@ void HierarchyService::setSemanticIndex(SemanticIndex* semanticIndex)
 
 QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) const
 {
+    const HierarchyQuery normalized = normalizedQuery(query);
     RelationshipQuery relationshipQuery;
-    relationshipQuery.symbolId = resolveSymbolId(query);
+    relationshipQuery.symbolId = resolveSymbolId(normalized);
     relationshipQuery.outgoing = true;
-    relationshipQuery.types = effectiveTypes(query);
+    relationshipQuery.types = effectiveTypes(normalized);
 
     QList<HierarchyNode> result;
     const QList<RelationshipResult> relationships =
@@ -170,10 +179,11 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
 
 QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) const
 {
+    const HierarchyQuery normalized = normalizedQuery(query);
     RelationshipQuery relationshipQuery;
-    relationshipQuery.symbolId = resolveSymbolId(query);
+    relationshipQuery.symbolId = resolveSymbolId(normalized);
     relationshipQuery.outgoing = false;
-    relationshipQuery.types = effectiveTypes(query);
+    relationshipQuery.types = effectiveTypes(normalized);
 
     QList<HierarchyNode> result;
     const QList<RelationshipResult> relationships =
@@ -224,7 +234,7 @@ HierarchyQuery HierarchyService::queryForPanel(
     } else {
         query.types = allRelationshipTypes();
     }
-    return query;
+    return normalizedQuery(query);
 }
 
 QList<HierarchyNode> HierarchyService::moduleInstantiationChildren(
@@ -253,6 +263,13 @@ int HierarchyService::resolveSymbolId(const HierarchyQuery& query) const
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
     return semanticIndex()->findSymbolId(query.symbolName, context);
+}
+
+HierarchyQuery HierarchyService::normalizedQuery(const HierarchyQuery& query)
+{
+    HierarchyQuery normalized = query;
+    normalized.fileName = normalizedHierarchyFileName(query.fileName);
+    return normalized;
 }
 
 QList<SymbolRelationshipEngine::RelationType> HierarchyService::effectiveTypes(

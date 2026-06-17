@@ -2852,7 +2852,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                parentTreeFoundTop, true);
     HierarchyPanelQueryOptions incomingHierarchyPanelOptions;
     incomingHierarchyPanelOptions.symbolName = QStringLiteral("rel_stage");
-    incomingHierarchyPanelOptions.fileName = stagePath;
+    incomingHierarchyPanelOptions.fileName =
+        QDir(QFileInfo(stagePath).dir()).filePath(QStringLiteral("./relationship_stage.sv"));
     incomingHierarchyPanelOptions.maxDepth = 1;
     incomingHierarchyPanelOptions.direction = HierarchyPanelDirection::Incoming;
     incomingHierarchyPanelOptions.typeFilter =
@@ -2861,6 +2862,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         hierarchyService.queryForPanel(incomingHierarchyPanelOptions);
     expectBool("hierarchy panel query selects incoming type",
                incomingHierarchyPanelQuery.symbolName == QStringLiteral("rel_stage")
+                   && incomingHierarchyPanelQuery.fileName == stagePath
                    && incomingHierarchyPanelQuery.direction == HierarchyQuery::Parents
                    && incomingHierarchyPanelQuery.maxDepth == 1
                    && incomingHierarchyPanelQuery.types
@@ -2872,10 +2874,23 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   .getHierarchyReport(incomingHierarchyPanelQuery)
                   .rootDirectionCounts.value(HierarchyQuery::Parents),
               1);
+    HierarchyQuery unnormalizedNamedHierarchyQuery;
+    unnormalizedNamedHierarchyQuery.symbolName = QStringLiteral("rel_stage");
+    unnormalizedNamedHierarchyQuery.fileName =
+        QDir(QFileInfo(stagePath).dir()).filePath(QStringLiteral("./relationship_stage.sv"));
+    unnormalizedNamedHierarchyQuery.maxDepth = 1;
+    unnormalizedNamedHierarchyQuery.direction = HierarchyQuery::Parents;
+    unnormalizedNamedHierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    expectInt("hierarchy report normalizes named query file",
+              hierarchyService
+                  .getHierarchyReport(unnormalizedNamedHierarchyQuery)
+                  .rootDirectionCounts.value(HierarchyQuery::Parents),
+              1);
 
     HierarchyPanelQueryOptions allHierarchyPanelOptions;
     allHierarchyPanelOptions.symbolName = QStringLiteral("rel_top");
-    allHierarchyPanelOptions.fileName = topPath;
+    allHierarchyPanelOptions.fileName =
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
     allHierarchyPanelOptions.maxDepth = 2;
     allHierarchyPanelOptions.direction = HierarchyPanelDirection::All;
     allHierarchyPanelOptions.typeFilter = -1;
@@ -2883,6 +2898,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         hierarchyService.queryForPanel(allHierarchyPanelOptions);
     expectBool("hierarchy panel query selects all tree types",
                allHierarchyPanelQuery.direction == HierarchyQuery::Both
+                   && allHierarchyPanelQuery.fileName == topPath
                    && allHierarchyPanelQuery.types.contains(SymbolRelationshipEngine::READS_FROM)
                    && allHierarchyPanelQuery.types.contains(SymbolRelationshipEngine::INSTANTIATES),
                true);

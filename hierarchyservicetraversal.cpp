@@ -19,11 +19,12 @@ QString reportNotFoundReasonDisplayName(HierarchyReportNotFoundReason reason)
 
 QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query) const
 {
-    const int rootId = resolveSymbolId(query);
+    const HierarchyQuery normalized = normalizedQuery(query);
+    const int rootId = resolveSymbolId(normalized);
     if (rootId < 0)
         return {};
 
-    const int maxDepth = query.maxDepth < 0 ? 0 : query.maxDepth;
+    const int maxDepth = normalized.maxDepth < 0 ? 0 : normalized.maxDepth;
     QList<HierarchyNode> result;
     struct WorkItem {
         HierarchyNode node;
@@ -40,7 +41,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     root.parentSymbolId = -1;
     root.nodeId = nextNodeId++;
     root.parentNodeId = -1;
-    root.direction = query.direction;
+    root.direction = normalized.direction;
     fillDisplayMetadata(root);
     WorkItem rootItem;
     rootItem.node = root;
@@ -87,14 +88,14 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
             }
         };
 
-        HierarchyQuery childQuery = query;
+        HierarchyQuery childQuery = normalized;
         childQuery.symbolId = current.node.symbol.symbolId;
-        if (query.direction == HierarchyQuery::Children
-            || query.direction == HierarchyQuery::Both) {
+        if (normalized.direction == HierarchyQuery::Children
+            || normalized.direction == HierarchyQuery::Both) {
             appendNext(getChildren(childQuery), HierarchyQuery::Children);
         }
-        if (query.direction == HierarchyQuery::Parents
-            || query.direction == HierarchyQuery::Both) {
+        if (normalized.direction == HierarchyQuery::Parents
+            || normalized.direction == HierarchyQuery::Both) {
             appendNext(getParents(childQuery), HierarchyQuery::Parents);
         }
     }
@@ -104,8 +105,9 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
 
 HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query) const
 {
+    const HierarchyQuery normalized = normalizedQuery(query);
     HierarchyReport report;
-    const int rootId = resolveSymbolId(query);
+    const int rootId = resolveSymbolId(normalized);
     if (rootId < 0) {
         report.notFoundReason = HierarchyReportNotFoundReason::NoRootSymbol;
         report.notFoundReasonDisplayName =
@@ -113,7 +115,7 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
         return report;
     }
 
-    HierarchyQuery resolvedQuery = query;
+    HierarchyQuery resolvedQuery = normalized;
     resolvedQuery.symbolId = rootId;
     report.nodes = getHierarchy(resolvedQuery);
     report.totalCount = report.nodes.size();

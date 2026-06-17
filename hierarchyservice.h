@@ -112,6 +112,7 @@ private:
     static QString fileDisplayName(const QString& fileName);
     static QString lineDisplayName(int line);
     static void fillDisplayMetadata(HierarchyNode& node);
+    static HierarchyQuery normalizedQuery(const HierarchyQuery& query);
 };
 
 #endif // HIERARCHYSERVICE_H
