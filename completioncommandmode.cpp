@@ -95,6 +95,14 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
     const QString& prefix)
 {
     CommandSymbolCompletionItem item;
+    item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+    item.symbolStableKey = item.symbolRecord.stableKey.isValid()
+        ? item.symbolRecord.stableKey
+        : symbolStableKeyForSymbol(symbol);
+    item.declarationKind = item.symbolRecord.declarationKind;
+    item.usageRole = item.symbolRecord.usageRole;
+    item.ownerScope = item.symbolRecord.owner.kind;
+    item.sourceRole = item.symbolRecord.sourceRole;
     item.defaultValue = symbol.symbolName;
     item.description = symbolPresentation(requestedType)
         .typeDescription

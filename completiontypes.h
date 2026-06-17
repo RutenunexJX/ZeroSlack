@@ -143,6 +143,16 @@ struct CommandSymbolCompletionItem {
     QString defaultValue;
     QString description;
     QString uniqueKey;
+    SemanticSymbolRecord symbolRecord;
+    SymbolStableKey symbolStableKey;
+    SymbolTaxonomy::DeclarationKind declarationKind =
+        SymbolTaxonomy::DeclarationKind::Unknown;
+    SymbolTaxonomy::SymbolUsageRole usageRole =
+        SymbolTaxonomy::SymbolUsageRole::Unknown;
+    SymbolTaxonomy::SymbolOwnerScope ownerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Unknown;
+    SymbolTaxonomy::SourceRole sourceRole =
+        SymbolTaxonomy::SourceRole::Unknown;
     int score = 0;
 };
 

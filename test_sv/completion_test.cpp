@@ -930,13 +930,15 @@ int main(int argc, char** argv) {
              logicPresentation.typeDescription,
              QStringLiteral("logic variables"));
 
+    const sym_list::SymbolInfo structPresentationSymbol =
+        makeSymbol(QStringLiteral("pixel"),
+                   sym_list::sym_packed_struct_var,
+                   QStringLiteral("pixel_t"),
+                   QString(),
+                   9003);
     const CommandSymbolCompletionItem structPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
-            makeSymbol(QStringLiteral("pixel"),
-                       sym_list::sym_packed_struct_var,
-                       QStringLiteral("pixel_t"),
-                       QString(),
-                       9003),
+            structPresentationSymbol,
             sym_list::sym_packed_struct_var);
     expectEq("CompletionService struct text",
              structPresentationItem.text,
@@ -944,18 +946,48 @@ int main(int argc, char** argv) {
     expectEq("CompletionService struct key",
              structPresentationItem.uniqueKey,
              QStringLiteral("pixel:pixel_t"));
+    expectBool("CompletionService struct item record",
+               structPresentationItem.symbolRecord.isValid()
+                   && structPresentationItem.symbolRecord.localHandle == 9003
+                   && structPresentationItem.symbolRecord.stableKey
+                       == structPresentationItem.symbolStableKey
+                   && structPresentationItem.symbolStableKey
+                       == symbolStableKeyForSymbol(structPresentationSymbol)
+                   && structPresentationItem.symbolRecord.owner.name
+                       == QStringLiteral("pixel_t")
+                   && structPresentationItem.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::StructVariable
+                   && structPresentationItem.ownerScope
+                       == SymbolTaxonomy::SymbolOwnerScope::Module,
+               true);
 
+    const sym_list::SymbolInfo enumPresentationSymbol =
+        makeSymbol(QStringLiteral("IDLE"),
+                   sym_list::sym_enum_value,
+                   QStringLiteral("top"),
+                   QStringLiteral("state_t"),
+                   9004);
     const CommandSymbolCompletionItem enumPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
-            makeSymbol(QStringLiteral("IDLE"),
-                       sym_list::sym_enum_value,
-                       QStringLiteral("top"),
-                       QStringLiteral("state_t"),
-                       9004),
+            enumPresentationSymbol,
             sym_list::sym_enum_value);
     expectEq("CompletionService enum desc",
              enumPresentationItem.description,
              QStringLiteral("state_t"));
+    expectBool("CompletionService enum item record",
+               enumPresentationItem.symbolRecord.isValid()
+                   && enumPresentationItem.symbolRecord.localHandle == 9004
+                   && enumPresentationItem.symbolRecord.stableKey
+                       == enumPresentationItem.symbolStableKey
+                   && enumPresentationItem.symbolRecord.name
+                       == QStringLiteral("IDLE")
+                   && enumPresentationItem.symbolRecord.type.rawTypeText
+                       == QStringLiteral("state_t")
+                   && enumPresentationItem.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Enum
+                   && enumPresentationItem.ownerScope
+                       == SymbolTaxonomy::SymbolOwnerScope::Module,
+               true);
 
     CompletionActivationQuery editorActivationQuery;
     editorActivationQuery.selectable = true;
