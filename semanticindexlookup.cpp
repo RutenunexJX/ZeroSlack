@@ -54,6 +54,7 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
 
         SemanticSymbolSearchResult item;
         item.symbol = symbol;
+        item.symbolStableKey = symbolStableKeyForSymbol(symbol);
         item.score = score;
         result.append(item);
     }

@@ -39,6 +39,7 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
     for (const SemanticSymbolSearchResult& indexResult : indexResults) {
         SearchResult item;
         item.symbol = indexResult.symbol;
+        item.symbolStableKey = indexResult.symbolStableKey;
         item.score = indexResult.score;
         result.append(item);
     }

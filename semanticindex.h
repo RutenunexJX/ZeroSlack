@@ -85,6 +85,7 @@ struct SemanticSymbolSearchQuery {
 
 struct SemanticSymbolSearchResult {
     sym_list::SymbolInfo symbol;
+    SymbolStableKey symbolStableKey;
     int score = 0;
 };
 

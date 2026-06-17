@@ -621,14 +621,20 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         searchService.findSymbols(moduleSearchQuery);
     bool searchFoundTop = false;
     bool searchFoundStage = false;
+    bool searchFoundTopStableKey = false;
     for (const SearchResult& result : moduleSearchResults) {
         searchFoundTop = searchFoundTop || result.symbol.symbolId == topId;
         searchFoundStage = searchFoundStage || result.symbol.symbolId == stageId;
+        searchFoundTopStableKey = searchFoundTopStableKey
+            || (result.symbol.symbolId == topId
+                && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
     }
     expectBool("search service finds top module",
                searchFoundTop, true);
     expectBool("search service finds stage module",
                searchFoundStage, true);
+    expectBool("search service result carries stable key",
+               searchFoundTopStableKey, true);
 
     SearchQuery fileModuleSearchQuery = moduleSearchQuery;
     fileModuleSearchQuery.fileName = topPath;
@@ -744,14 +750,26 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotSearchService.findSymbols(moduleSearchQuery);
     bool snapshotSearchFoundTop = false;
     bool snapshotSearchFoundStage = false;
+    bool snapshotSearchFoundTopStableKey = false;
+    bool snapshotSearchFoundStageStableKey = false;
     for (const SearchResult& result : snapshotSearchResults) {
         snapshotSearchFoundTop = snapshotSearchFoundTop || result.symbol.symbolId == topId;
         snapshotSearchFoundStage = snapshotSearchFoundStage || result.symbol.symbolId == stageId;
+        snapshotSearchFoundTopStableKey = snapshotSearchFoundTopStableKey
+            || (result.symbol.symbolId == topId
+                && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
+        snapshotSearchFoundStageStableKey = snapshotSearchFoundStageStableKey
+            || (result.symbol.symbolId == stageId
+                && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
     }
     expectBool("snapshot search service finds top module",
                snapshotSearchFoundTop, true);
     expectBool("snapshot search service finds stage module",
                snapshotSearchFoundStage, true);
+    expectBool("snapshot search service result carries top stable key",
+               snapshotSearchFoundTopStableKey, true);
+    expectBool("snapshot search service result carries stage stable key",
+               snapshotSearchFoundStageStableKey, true);
     expectBool("snapshot search service has module matches",
                snapshotSearchService.hasMatches(moduleSearchQuery), true);
     SearchQuery snapshotMissingSearchQuery = moduleSearchQuery;
