@@ -326,6 +326,12 @@ int main(int argc, char** argv) {
                    metadataSignal,
                    sym_list::sym_logic),
                true);
+    expectBool("SymbolTaxonomy metadata signal definition candidate",
+               SymbolTaxonomy::isDefinitionCandidate(metadataSignal),
+               true);
+    expectBool("SymbolTaxonomy metadata signal definition priority",
+               SymbolTaxonomy::definitionPriority(metadataSignal) == 5,
+               true);
     sym_list::SymbolInfo completionModuleSymbol;
     completionModuleSymbol.symbolType = sym_list::sym_module;
     completionModuleSymbol.fileName = QStringLiteral("rtl/top.sv");
@@ -390,6 +396,12 @@ int main(int argc, char** argv) {
                true);
     expectBool("SymbolTaxonomy global definition uses semantic metadata",
                SymbolTaxonomy::isGlobalDefinition(syntheticModuleMetadata),
+               true);
+    expectBool("SymbolTaxonomy definition candidate uses metadata",
+               SymbolTaxonomy::isDefinitionCandidate(syntheticModuleMetadata),
+               true);
+    expectBool("SymbolTaxonomy definition priority uses metadata",
+               SymbolTaxonomy::definitionPriority(syntheticModuleMetadata) == 0,
                true);
     expectBool("SymbolTaxonomy outline uses semantic metadata",
                SymbolTaxonomy::isOutlineSymbol(syntheticModuleMetadata),

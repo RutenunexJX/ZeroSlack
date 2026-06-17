@@ -372,7 +372,38 @@ bool isDefinitionCandidate(const SemanticMetadata& metadata)
 {
     if (metadata.usageRole != SymbolUsageRole::Declaration)
         return false;
-    return isDefinitionCandidate(metadata.rawCollectorKind);
+    if (isDefinitionCandidate(metadata.rawCollectorKind))
+        return true;
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return false;
+
+    switch (metadata.declarationKind) {
+    case DeclarationKind::Module:
+    case DeclarationKind::Interface:
+    case DeclarationKind::Package:
+    case DeclarationKind::Typedef:
+    case DeclarationKind::Enum:
+    case DeclarationKind::Parameter:
+    case DeclarationKind::Localparam:
+    case DeclarationKind::Port:
+    case DeclarationKind::Signal:
+    case DeclarationKind::Struct:
+    case DeclarationKind::StructVariable:
+    case DeclarationKind::StructMember:
+    case DeclarationKind::Instance:
+    case DeclarationKind::Modport:
+    case DeclarationKind::Task:
+    case DeclarationKind::Function:
+        return true;
+    case DeclarationKind::Unknown:
+    case DeclarationKind::Macro:
+    case DeclarationKind::Process:
+    case DeclarationKind::Generate:
+    case DeclarationKind::Constraint:
+    case DeclarationKind::User:
+        break;
+    }
+    return false;
 }
 
 bool isGlobalDefinition(sym_list::sym_type_e type)
@@ -724,7 +755,43 @@ int definitionPriority(sym_list::sym_type_e type)
 
 int definitionPriority(const SemanticMetadata& metadata)
 {
-    return definitionPriority(metadata.rawCollectorKind);
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return definitionPriority(metadata.rawCollectorKind);
+
+    switch (metadata.declarationKind) {
+    case DeclarationKind::Module:
+        return 0;
+    case DeclarationKind::Interface:
+        return 1;
+    case DeclarationKind::Package:
+        return 2;
+    case DeclarationKind::Modport:
+    case DeclarationKind::Port:
+        return 3;
+    case DeclarationKind::Task:
+    case DeclarationKind::Function:
+        return 4;
+    case DeclarationKind::Signal:
+    case DeclarationKind::StructVariable:
+        return 5;
+    case DeclarationKind::Parameter:
+    case DeclarationKind::Localparam:
+    case DeclarationKind::Typedef:
+    case DeclarationKind::Enum:
+    case DeclarationKind::Struct:
+        return 6;
+    case DeclarationKind::StructMember:
+        return 7;
+    case DeclarationKind::Unknown:
+    case DeclarationKind::Instance:
+    case DeclarationKind::Macro:
+    case DeclarationKind::Process:
+    case DeclarationKind::Generate:
+    case DeclarationKind::Constraint:
+    case DeclarationKind::User:
+        break;
+    }
+    return 10;
 }
 
 QList<sym_list::sym_type_e> outlineSymbolTypes()
