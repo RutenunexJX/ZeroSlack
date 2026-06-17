@@ -91,7 +91,7 @@ void RelationshipsPanelCoordinator::refreshHierarchyTree(int typeFilter)
     QTreeWidgetItem* rootItem = nullptr;
     int visibleCount = 0;
     for (const HierarchyNode& node : report.nodes) {
-        if (node.symbol.symbolId < 0)
+        if (!node.symbolStableKey.isValid())
             continue;
 
         QTreeWidgetItem* parent = relationshipsTree->invisibleRootItem();

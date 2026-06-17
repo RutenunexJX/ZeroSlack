@@ -460,4 +460,9 @@ if(BUILD_TESTING)
             $<TARGET_FILE:large_file_perf_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
     )
+    add_test(NAME legacy_field_policy_guard
+        COMMAND ${CMAKE_COMMAND}
+            -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/legacy_field_policy_guard.ctest
+    )
 endif()
