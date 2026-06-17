@@ -3743,12 +3743,18 @@ static void runSignalJourneyServiceFixture()
     assignment.fromId = 9103;
     assignment.toId = 9102;
     assignment.type = SymbolRelationshipEngine::ASSIGNS_TO;
+    assignment.provenance = RelationshipProvenance::Inferred;
+    assignment.confidence = 85;
+    assignment.evidenceText = QStringLiteral("Assigned to data_q at line 20");
     relationships.append(assignment);
 
     SemanticRelationship read;
     read.fromId = 9104;
     read.toId = 9102;
     read.type = SymbolRelationshipEngine::READS_FROM;
+    read.provenance = RelationshipProvenance::Inferred;
+    read.confidence = 80;
+    read.evidenceText = QStringLiteral("Read data_q at line 30");
     relationships.append(read);
 
     SemanticRelationship portConnection;
@@ -3797,6 +3803,9 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal journey found declaration", report.found, true);
     expectBool("signal journey declaration name",
                report.declaration.symbolName == QStringLiteral("data_q"), true);
+    expectBool("signal journey declaration stable key",
+               report.declarationStableKey == symbolStableKeyForSymbol(report.declaration),
+               true);
     expectBool("signal journey declaration display type",
                !report.declarationTypeDisplayName.isEmpty(), true);
     expectBool("signal journey declaration source role",
@@ -3873,6 +3882,29 @@ static void runSignalJourneyServiceFixture()
                        == QStringLiteral("design source")
                    && report.assignments.first().toSourceRoleDisplayName
                        == QStringLiteral("design source"),
+               true);
+    expectBool("signal journey assignment stable keys",
+               !report.assignments.isEmpty()
+                   && report.assignments.first().fromStableKey
+                       == symbolStableKeyForSymbol(report.assignments.first().fromSymbol)
+                   && report.assignments.first().toStableKey
+                       == symbolStableKeyForSymbol(report.assignments.first().toSymbol)
+                   && report.assignments.first().peerStableKey
+                       == report.assignments.first().fromStableKey,
+               true);
+    expectBool("signal journey assignment relationship metadata",
+               !report.assignments.isEmpty()
+                   && report.assignments.first().provenance
+                       == RelationshipProvenance::Inferred
+                   && report.assignments.first().confidence == 85
+                   && report.assignments.first().evidenceText.contains(
+                       QStringLiteral("Assigned to data_q"))
+                   && report.assignments.first().provenanceDisplayName
+                       == QStringLiteral("inferred")
+                   && report.assignments.first().confidenceDisplayName
+                       == QStringLiteral("85%")
+                   && report.assignments.first().evidenceDisplayName.contains(
+                       QStringLiteral("Assigned to data_q")),
                true);
     expectBool("signal journey read peer",
                !report.reads.isEmpty()
@@ -4032,6 +4064,44 @@ static void runSignalJourneyServiceFixture()
                        == QStringLiteral("Resets")
                    && resetReport.timingConnections.first().detailDisplayName
                        == QStringLiteral("timing outgoing Resets"),
+               true);
+
+    SignalJourneyQuery emptySignalQuery;
+    const SignalJourneyReport emptySignalReport =
+        service.buildSignalJourney(emptySignalQuery);
+    expectBool("signal journey empty signal reason",
+               !emptySignalReport.found
+                   && emptySignalReport.notFoundReason
+                       == SignalJourneyNotFoundReason::EmptySignalName
+                   && emptySignalReport.notFoundReasonDisplayName
+                       == QStringLiteral("empty signal name"),
+               true);
+
+    SignalJourneyQuery missingSignalQuery;
+    missingSignalQuery.signalName = QStringLiteral("missing_signal");
+    missingSignalQuery.fileName = fileName;
+    missingSignalQuery.moduleName = QStringLiteral("journey_top");
+    const SignalJourneyReport missingSignalReport =
+        service.buildSignalJourney(missingSignalQuery);
+    expectBool("signal journey missing signal reason",
+               !missingSignalReport.found
+                   && missingSignalReport.notFoundReason
+                       == SignalJourneyNotFoundReason::NoMatchingSignal
+                   && missingSignalReport.notFoundReasonDisplayName
+                       == QStringLiteral("no matching signal"),
+               true);
+
+    SignalJourneyQuery unsupportedSignalQuery;
+    unsupportedSignalQuery.signalName = QStringLiteral("journey_top");
+    unsupportedSignalQuery.fileName = fileName;
+    const SignalJourneyReport unsupportedSignalReport =
+        service.buildSignalJourney(unsupportedSignalQuery);
+    expectBool("signal journey unsupported symbol reason",
+               !unsupportedSignalReport.found
+                   && unsupportedSignalReport.notFoundReason
+                       == SignalJourneyNotFoundReason::UnsupportedSymbolKind
+                   && unsupportedSignalReport.notFoundReasonDisplayName
+                       == QStringLiteral("unsupported symbol kind"),
                true);
 }
 

@@ -68,11 +68,16 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
     const SignalJourneyQuery& query) const
 {
     SignalJourneyReport report;
-    const sym_list::SymbolInfo signal = resolveSignal(query);
-    if (signal.symbolId < 0)
+    const sym_list::SymbolInfo signal =
+        resolveSignal(query, &report.notFoundReason);
+    if (signal.symbolId < 0) {
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
         return report;
+    }
 
     report.found = true;
+    report.notFoundReason = SignalJourneyNotFoundReason::None;
     report.declaration = signal;
     fillDeclarationDisplayMetadata(report);
     report.assignments = relationshipItems(
@@ -95,17 +100,32 @@ SemanticIndex* SignalJourneyService::semanticIndex() const
 }
 
 sym_list::SymbolInfo SignalJourneyService::resolveSignal(
-    const SignalJourneyQuery& query) const
+    const SignalJourneyQuery& query,
+    SignalJourneyNotFoundReason* reason) const
 {
+    if (reason)
+        *reason = SignalJourneyNotFoundReason::None;
+
     if (query.signalSymbolId >= 0) {
         const sym_list::SymbolInfo symbol =
             semanticIndex()->getSymbolById(query.signalSymbolId);
-        return isJourneyDeclaration(symbol)
-            ? symbol
-            : missingSignalJourneySymbol();
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
+            return missingSignalJourneySymbol();
+        }
+        if (!isJourneyDeclaration(symbol)) {
+            if (reason)
+                *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
+            return missingSignalJourneySymbol();
+        }
+        return symbol;
     }
-    if (query.signalName.isEmpty())
+    if (query.signalName.isEmpty()) {
+        if (reason)
+            *reason = SignalJourneyNotFoundReason::EmptySignalName;
         return missingSignalJourneySymbol();
+    }
 
     SemanticDefinitionQuery definitionQuery;
     definitionQuery.symbolName = query.signalName;
@@ -113,9 +133,17 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     definitionQuery.moduleName = query.moduleName;
     const SemanticDefinitionResult definition =
         semanticIndex()->resolveDefinition(definitionQuery);
-    return definition.found && isJourneyDeclaration(definition.symbol)
-        ? definition.symbol
-        : missingSignalJourneySymbol();
+    if (!definition.found) {
+        if (reason)
+            *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
+        return missingSignalJourneySymbol();
+    }
+    if (!isJourneyDeclaration(definition.symbol)) {
+        if (reason)
+            *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
+        return missingSignalJourneySymbol();
+    }
+    return definition.symbol;
 }
 
 QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
@@ -321,6 +349,58 @@ QString SignalJourneyService::symbolDisplayName(const sym_list::SymbolInfo& symb
     return symbol.symbolName;
 }
 
+QString SignalJourneyService::notFoundReasonDisplayName(
+    SignalJourneyNotFoundReason reason)
+{
+    switch (reason) {
+    case SignalJourneyNotFoundReason::None:
+        return QString();
+    case SignalJourneyNotFoundReason::EmptySignalName:
+        return QStringLiteral("empty signal name");
+    case SignalJourneyNotFoundReason::NoMatchingSignal:
+        return QStringLiteral("no matching signal");
+    case SignalJourneyNotFoundReason::UnsupportedSymbolKind:
+        return QStringLiteral("unsupported symbol kind");
+    }
+    return QStringLiteral("signal journey unavailable");
+}
+
+QString SignalJourneyService::provenanceDisplayName(
+    RelationshipProvenance provenance)
+{
+    switch (provenance) {
+    case RelationshipProvenance::SlangExtracted:
+        return QStringLiteral("slang extracted");
+    case RelationshipProvenance::Inferred:
+        return QStringLiteral("inferred");
+    case RelationshipProvenance::LexicalFallback:
+        return QStringLiteral("lexical fallback");
+    case RelationshipProvenance::OpenDocument:
+        return QStringLiteral("open document");
+    case RelationshipProvenance::Workspace:
+        return QStringLiteral("workspace");
+    case RelationshipProvenance::FeatureGenerated:
+        return QStringLiteral("feature generated");
+    case RelationshipProvenance::Unknown:
+    default:
+        return QStringLiteral("unknown");
+    }
+}
+
+QString SignalJourneyService::confidenceDisplayName(int confidence)
+{
+    return confidence > 0
+        ? QStringLiteral("%1%").arg(confidence)
+        : QStringLiteral("unknown");
+}
+
+QString SignalJourneyService::evidenceDisplayName(const QString& evidenceText)
+{
+    return evidenceText.isEmpty()
+        ? QStringLiteral("no evidence detail")
+        : evidenceText;
+}
+
 QString SignalJourneyService::interfaceConnectionKindDisplayName(
     const sym_list::SymbolInfo& symbol)
 {
@@ -356,6 +436,7 @@ QString SignalJourneyService::interfaceBaseDisplayName(
 void SignalJourneyService::fillDeclarationDisplayMetadata(
     SignalJourneyReport& report)
 {
+    report.declarationStableKey = symbolStableKeyForSymbol(report.declaration);
     report.declarationCodeLink = RtlInsightLink::fromSymbol(report.declaration);
     report.declarationDisplayName = symbolDisplayName(report.declaration);
     report.declarationTypeDisplayName =
@@ -374,12 +455,23 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
 {
     item.fromSymbol = item.relationship.fromSymbol;
     item.toSymbol = item.relationship.toSymbol;
+    item.fromStableKey = item.relationship.fromStableKey;
+    item.toStableKey = item.relationship.toStableKey;
+    item.peerStableKey = item.outgoing
+        ? item.relationship.toStableKey
+        : item.relationship.fromStableKey;
     item.peerCodeLink = RtlInsightLink::fromSymbol(item.peerSymbol);
     item.fromCodeLink = RtlInsightLink::fromSymbol(item.fromSymbol);
     item.toCodeLink = RtlInsightLink::fromSymbol(item.toSymbol);
+    item.provenance = item.relationship.provenance;
+    item.confidence = item.relationship.confidence;
+    item.evidenceText = item.relationship.evidenceText;
     item.directionDisplayName = directionDisplayName(item.outgoing);
     item.relationshipTypeDisplayName =
         relationshipTypeDisplayName(item.relationship.relationship.type);
+    item.provenanceDisplayName = provenanceDisplayName(item.provenance);
+    item.confidenceDisplayName = confidenceDisplayName(item.confidence);
+    item.evidenceDisplayName = evidenceDisplayName(item.evidenceText);
     item.peerSymbolDisplayName = symbolDisplayName(item.peerSymbol);
     item.fromSymbolDisplayName = symbolDisplayName(item.fromSymbol);
     item.toSymbolDisplayName = symbolDisplayName(item.toSymbol);

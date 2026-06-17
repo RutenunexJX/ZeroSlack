@@ -17,17 +17,33 @@ struct SignalJourneyQuery {
     QString moduleName;
 };
 
+enum class SignalJourneyNotFoundReason {
+    None,
+    EmptySignalName,
+    NoMatchingSignal,
+    UnsupportedSymbolKind
+};
+
 struct SignalJourneyItem {
     SemanticRelationshipResult relationship;
     sym_list::SymbolInfo peerSymbol = {};
     sym_list::SymbolInfo fromSymbol = {};
     sym_list::SymbolInfo toSymbol = {};
+    SymbolStableKey peerStableKey;
+    SymbolStableKey fromStableKey;
+    SymbolStableKey toStableKey;
     RtlInsightCodeLink peerCodeLink;
     RtlInsightCodeLink fromCodeLink;
     RtlInsightCodeLink toCodeLink;
     bool outgoing = false;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
     QString directionDisplayName;
     QString relationshipTypeDisplayName;
+    QString provenanceDisplayName;
+    QString confidenceDisplayName;
+    QString evidenceDisplayName;
     QString peerSymbolDisplayName;
     QString fromSymbolDisplayName;
     QString toSymbolDisplayName;
@@ -46,8 +62,12 @@ struct SignalJourneyItem {
 
 struct SignalJourneyReport {
     bool found = false;
+    SignalJourneyNotFoundReason notFoundReason =
+        SignalJourneyNotFoundReason::None;
     sym_list::SymbolInfo declaration = {};
+    SymbolStableKey declarationStableKey;
     RtlInsightCodeLink declarationCodeLink;
+    QString notFoundReasonDisplayName;
     QString declarationDisplayName;
     QString declarationTypeDisplayName;
     QString declarationFileDisplayName;
@@ -77,7 +97,9 @@ private:
     static std::unique_ptr<SignalJourneyService> instance;
 
     SemanticIndex* semanticIndex() const;
-    sym_list::SymbolInfo resolveSignal(const SignalJourneyQuery& query) const;
+    sym_list::SymbolInfo resolveSignal(
+        const SignalJourneyQuery& query,
+        SignalJourneyNotFoundReason* reason) const;
     QList<SignalJourneyItem> relationshipItems(
         const sym_list::SymbolInfo& signal,
         bool outgoing,
@@ -95,6 +117,10 @@ private:
     static QString directionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString notFoundReasonDisplayName(SignalJourneyNotFoundReason reason);
+    static QString provenanceDisplayName(RelationshipProvenance provenance);
+    static QString confidenceDisplayName(int confidence);
+    static QString evidenceDisplayName(const QString& evidenceText);
     static QString interfaceConnectionKindDisplayName(const sym_list::SymbolInfo& symbol);
     static QString interfaceBaseDisplayName(const sym_list::SymbolInfo& symbol);
     static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
