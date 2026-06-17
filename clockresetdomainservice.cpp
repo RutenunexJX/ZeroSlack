@@ -39,6 +39,12 @@ ClockResetDomainReport ClockResetDomainService::buildClockResetDomainMap(
     report.evidenceGroupDisplayName = QStringLiteral("Domain Evidence");
     report.ambiguityGroupDisplayName = QStringLiteral("Ambiguity");
     report.unmappedGroupDisplayName = QStringLiteral("Unmapped Timing Signals");
+    if (!validateQuery(query, &report.notFoundReason)) {
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
+        return report;
+    }
+
     report.clockDomains = buildDomains(
         SymbolRelationshipEngine::CLOCKS,
         query,
@@ -53,12 +59,65 @@ ClockResetDomainReport ClockResetDomainService::buildClockResetDomainMap(
     report.found = !report.clockDomains.isEmpty()
         || !report.resetDomains.isEmpty()
         || !report.unmappedRows.isEmpty();
+    if (!report.found) {
+        report.notFoundReason = ClockResetDomainNotFoundReason::NoTimingDomains;
+        report.notFoundReasonDisplayName =
+            notFoundReasonDisplayName(report.notFoundReason);
+    } else {
+        report.notFoundReason = ClockResetDomainNotFoundReason::None;
+    }
     return report;
 }
 
 SemanticIndex* ClockResetDomainService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
+}
+
+bool ClockResetDomainService::validateQuery(
+    const ClockResetDomainQuery& query,
+    ClockResetDomainNotFoundReason* reason) const
+{
+    if (reason)
+        *reason = ClockResetDomainNotFoundReason::None;
+
+    if (query.moduleSymbolId >= 0) {
+        const sym_list::SymbolInfo symbol =
+            semanticIndex()->getSymbolById(query.moduleSymbolId);
+        if (symbol.symbolId < 0) {
+            if (reason)
+                *reason = ClockResetDomainNotFoundReason::NoMatchingModule;
+            return false;
+        }
+        if (!SymbolTaxonomy::isModuleDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))) {
+            if (reason)
+                *reason = ClockResetDomainNotFoundReason::UnsupportedSymbolKind;
+            return false;
+        }
+        return true;
+    }
+
+    if (query.moduleName.isEmpty())
+        return true;
+
+    SemanticDefinitionQuery definitionQuery;
+    definitionQuery.symbolName = query.moduleName;
+    definitionQuery.fileName = query.fileName;
+    const SemanticDefinitionResult definition =
+        semanticIndex()->resolveDefinition(definitionQuery);
+    if (!definition.found) {
+        if (reason)
+            *reason = ClockResetDomainNotFoundReason::NoMatchingModule;
+        return false;
+    }
+    if (!SymbolTaxonomy::isModuleDeclaration(
+            SymbolTaxonomy::semanticMetadata(definition.symbol))) {
+        if (reason)
+            *reason = ClockResetDomainNotFoundReason::UnsupportedSymbolKind;
+        return false;
+    }
+    return true;
 }
 
 QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
@@ -94,6 +153,7 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
             if (!entryBySignalId.contains(signalId)) {
                 ClockResetDomainEntry entry;
                 entry.domainSignal = relationship.fromSymbol;
+                entry.domainSignalStableKey = relationship.fromStableKey;
                 entry.domainSignalCodeLink =
                     RtlInsightLink::fromSymbol(relationship.fromSymbol);
                 entryBySignalId.insert(signalId, entries.size());
@@ -102,9 +162,14 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
 
             ClockResetDomainMember member;
             member.moduleSymbol = relationship.toSymbol;
+            member.domainSignalStableKey = relationship.fromStableKey;
+            member.moduleStableKey = relationship.toStableKey;
             member.moduleCodeLink =
                 RtlInsightLink::fromSymbol(relationship.toSymbol);
             member.relationship = relationship;
+            member.provenance = relationship.provenance;
+            member.confidence = relationship.confidence;
+            member.evidenceText = relationship.evidenceText;
             member.sectionDisplayName = QStringLiteral("Module");
             member.detailDisplayName = memberDetailDisplayName(type);
             entries[entryBySignalId.value(signalId)].modules.append(member);
@@ -143,9 +208,14 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
         ClockResetDomainEvidenceRow row;
         row.domainSignal = symbol;
         row.moduleSymbol = moduleSymbol;
+        row.domainSignalStableKey = symbolStableKeyForSymbol(symbol);
+        row.moduleStableKey = symbolStableKeyForSymbol(moduleSymbol);
         row.signalCodeLink = RtlInsightLink::fromSymbol(symbol);
         row.moduleCodeLink = RtlInsightLink::fromSymbol(moduleSymbol);
         row.relationshipType = type;
+        row.provenance = RelationshipProvenance::FeatureGenerated;
+        row.confidence = 100;
+        row.evidenceText = QStringLiteral("timing-name candidate without mapped relationship");
         row.sectionDisplayName = type == SymbolRelationshipEngine::CLOCKS
             ? QStringLiteral("Unmapped Clock")
             : QStringLiteral("Unmapped Reset");
@@ -158,6 +228,9 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
         if (row.moduleDisplayName.isEmpty())
             row.moduleDisplayName = QStringLiteral("<unknown module>");
         row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
+        row.provenanceDisplayName = provenanceDisplayName(row.provenance);
+        row.confidenceDisplayName = confidenceDisplayName(row.confidence);
+        row.evidenceDisplayName = evidenceDisplayName(row.evidenceText);
         row.categoryDisplayName = unmappedCategoryDisplayName();
         row.evidenceReasonDisplayName = QStringLiteral("missing relationship");
         row.detailDisplayName =
@@ -422,9 +495,14 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
     ClockResetDomainEvidenceRow row;
     row.domainSignal = entry.domainSignal;
     row.moduleSymbol = member.moduleSymbol;
+    row.domainSignalStableKey = entry.domainSignalStableKey;
+    row.moduleStableKey = member.moduleStableKey;
     row.signalCodeLink = entry.domainSignalCodeLink;
     row.moduleCodeLink = member.moduleCodeLink;
     row.relationshipType = type;
+    row.provenance = member.provenance;
+    row.confidence = member.confidence;
+    row.evidenceText = member.evidenceText;
     row.sectionDisplayName = domainSectionDisplayName(type);
     row.signalDisplayName = entry.domainSignal.symbolName.isEmpty()
         ? QStringLiteral("<unnamed>")
@@ -433,6 +511,9 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
         ? QStringLiteral("<unnamed>")
         : member.moduleSymbol.symbolName;
     row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
+    row.provenanceDisplayName = provenanceDisplayName(row.provenance);
+    row.confidenceDisplayName = confidenceDisplayName(row.confidence);
+    row.evidenceDisplayName = evidenceDisplayName(row.evidenceText);
     row.categoryDisplayName = evidenceCategoryDisplayName();
     row.evidenceReasonDisplayName = QStringLiteral("relationship");
     row.detailDisplayName =
@@ -467,6 +548,59 @@ QString ClockResetDomainService::relationshipTypeDisplayName(
     return type == SymbolRelationshipEngine::CLOCKS
         ? QStringLiteral("Clock")
         : QStringLiteral("Reset");
+}
+
+QString ClockResetDomainService::notFoundReasonDisplayName(
+    ClockResetDomainNotFoundReason reason)
+{
+    switch (reason) {
+    case ClockResetDomainNotFoundReason::None:
+        return QString();
+    case ClockResetDomainNotFoundReason::NoMatchingModule:
+        return QStringLiteral("no matching module");
+    case ClockResetDomainNotFoundReason::UnsupportedSymbolKind:
+        return QStringLiteral("unsupported symbol kind");
+    case ClockResetDomainNotFoundReason::NoTimingDomains:
+        return QStringLiteral("no timing domains");
+    }
+    return QStringLiteral("clock reset domain map unavailable");
+}
+
+QString ClockResetDomainService::provenanceDisplayName(
+    RelationshipProvenance provenance)
+{
+    switch (provenance) {
+    case RelationshipProvenance::SlangExtracted:
+        return QStringLiteral("slang extracted");
+    case RelationshipProvenance::Inferred:
+        return QStringLiteral("inferred");
+    case RelationshipProvenance::LexicalFallback:
+        return QStringLiteral("lexical fallback");
+    case RelationshipProvenance::OpenDocument:
+        return QStringLiteral("open document");
+    case RelationshipProvenance::Workspace:
+        return QStringLiteral("workspace");
+    case RelationshipProvenance::FeatureGenerated:
+        return QStringLiteral("feature generated");
+    case RelationshipProvenance::Unknown:
+    default:
+        return QStringLiteral("unknown");
+    }
+}
+
+QString ClockResetDomainService::confidenceDisplayName(int confidence)
+{
+    return confidence > 0
+        ? QStringLiteral("%1%").arg(confidence)
+        : QStringLiteral("unknown");
+}
+
+QString ClockResetDomainService::evidenceDisplayName(
+    const QString& evidenceText)
+{
+    return evidenceText.isEmpty()
+        ? QStringLiteral("no evidence detail")
+        : evidenceText;
 }
 
 QString ClockResetDomainService::ambiguityCategoryDisplayName()
@@ -513,6 +647,9 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
             ? QStringLiteral("<unnamed>")
             : member.moduleSymbol.symbolName;
         member.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
+        member.provenanceDisplayName = provenanceDisplayName(member.provenance);
+        member.confidenceDisplayName = confidenceDisplayName(member.confidence);
+        member.evidenceDisplayName = evidenceDisplayName(member.evidenceText);
         if (member.detailDisplayName.isEmpty())
             member.detailDisplayName = memberDetailDisplayName(type);
         member.sourceRoleDisplayName =

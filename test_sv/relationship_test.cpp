@@ -4232,30 +4232,50 @@ static void runClockResetDomainServiceFixture()
         sym_list::sym_logic,
         14,
         QStringLiteral("domain_top")));
+    sym_list::SymbolInfo noTiming = makeModuleBriefSymbol(
+        9209,
+        fileName,
+        QStringLiteral("no_timing_domain"),
+        sym_list::sym_module,
+        120);
+    noTiming.endLine = 122;
+    symbols.append(noTiming);
 
     QList<SemanticRelationship> relationships;
     SemanticRelationship topClock;
     topClock.fromId = 9203;
     topClock.toId = 9201;
     topClock.type = SymbolRelationshipEngine::CLOCKS;
+    topClock.provenance = RelationshipProvenance::Inferred;
+    topClock.confidence = 85;
+    topClock.evidenceText = QStringLiteral("posedge clk_i");
     relationships.append(topClock);
 
     SemanticRelationship altTopClock;
     altTopClock.fromId = 9206;
     altTopClock.toId = 9201;
     altTopClock.type = SymbolRelationshipEngine::CLOCKS;
+    altTopClock.provenance = RelationshipProvenance::Inferred;
+    altTopClock.confidence = 80;
+    altTopClock.evidenceText = QStringLiteral("posedge alt_clk_i");
     relationships.append(altTopClock);
 
     SemanticRelationship topReset;
     topReset.fromId = 9204;
     topReset.toId = 9201;
     topReset.type = SymbolRelationshipEngine::RESETS;
+    topReset.provenance = RelationshipProvenance::SlangExtracted;
+    topReset.confidence = 95;
+    topReset.evidenceText = QStringLiteral("negedge rst_ni");
     relationships.append(topReset);
 
     SemanticRelationship otherClock;
     otherClock.fromId = 9205;
     otherClock.toId = 9202;
     otherClock.type = SymbolRelationshipEngine::CLOCKS;
+    otherClock.provenance = RelationshipProvenance::Inferred;
+    otherClock.confidence = 75;
+    otherClock.evidenceText = QStringLiteral("posedge other_clk");
     relationships.append(otherClock);
 
     SemanticIndex index;
@@ -4268,6 +4288,10 @@ static void runClockResetDomainServiceFixture()
     const ClockResetDomainReport allReport =
         service.buildClockResetDomainMap();
     expectBool("clock reset all found", allReport.found, true);
+    expectBool("clock reset all found reason metadata",
+               allReport.notFoundReason == ClockResetDomainNotFoundReason::None
+                   && allReport.notFoundReasonDisplayName.isEmpty(),
+               true);
     expectInt("clock reset all clock domains", allReport.clockDomains.size(), 3);
     expectInt("clock reset all reset domains", allReport.resetDomains.size(), 1);
     expectInt("clock reset all clock count",
@@ -4306,6 +4330,9 @@ static void runClockResetDomainServiceFixture()
                !topReport.clockDomains.isEmpty()
                    && topReport.clockDomains.first().domainSignal.symbolName
                        == QStringLiteral("clk_i")
+                   && topReport.clockDomains.first().domainSignalStableKey
+                       == symbolStableKeyForSymbol(
+                           topReport.clockDomains.first().domainSignal)
                    && topReport.clockDomains.first().sectionDisplayName
                        == QStringLiteral("Clock")
                    && topReport.clockDomains.first().detailDisplayName
@@ -4348,11 +4375,32 @@ static void runClockResetDomainServiceFixture()
                    && topReport.clockDomains.first().modules.first()
                        .moduleSymbol.symbolName == QStringLiteral("domain_top")
                    && topReport.clockDomains.first().modules.first()
+                          .domainSignalStableKey
+                       == symbolStableKeyForSymbol(
+                           topReport.clockDomains.first().domainSignal)
+                   && topReport.clockDomains.first().modules.first()
+                          .moduleStableKey
+                       == symbolStableKeyForSymbol(
+                           topReport.clockDomains.first().modules.first()
+                              .moduleSymbol)
+                   && topReport.clockDomains.first().modules.first()
                           .sectionDisplayName == QStringLiteral("Module")
                    && topReport.clockDomains.first().modules.first()
                           .moduleDisplayName == QStringLiteral("domain_top")
                    && topReport.clockDomains.first().modules.first()
                           .relationshipTypeDisplayName == QStringLiteral("Clock")
+                   && topReport.clockDomains.first().modules.first()
+                          .provenance == RelationshipProvenance::Inferred
+                   && topReport.clockDomains.first().modules.first()
+                          .provenanceDisplayName == QStringLiteral("inferred")
+                   && topReport.clockDomains.first().modules.first()
+                          .confidence == 85
+                   && topReport.clockDomains.first().modules.first()
+                          .confidenceDisplayName == QStringLiteral("85%")
+                   && topReport.clockDomains.first().modules.first()
+                          .evidenceText == QStringLiteral("posedge clk_i")
+                   && topReport.clockDomains.first().modules.first()
+                          .evidenceDisplayName == QStringLiteral("posedge clk_i")
                    && topReport.clockDomains.first().modules.first()
                           .detailDisplayName == QStringLiteral("clocked")
                    && topReport.clockDomains.first().modules.first()
@@ -4393,8 +4441,25 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("clk_i")
                    && topReport.evidenceRows.first().moduleDisplayName
                        == QStringLiteral("domain_top")
+                   && topReport.evidenceRows.first().domainSignalStableKey
+                       == symbolStableKeyForSymbol(
+                           topReport.evidenceRows.first().domainSignal)
+                   && topReport.evidenceRows.first().moduleStableKey
+                       == symbolStableKeyForSymbol(
+                           topReport.evidenceRows.first().moduleSymbol)
                    && topReport.evidenceRows.first().relationshipTypeDisplayName
                        == QStringLiteral("Clock")
+                   && topReport.evidenceRows.first().provenance
+                       == RelationshipProvenance::Inferred
+                   && topReport.evidenceRows.first().provenanceDisplayName
+                       == QStringLiteral("inferred")
+                   && topReport.evidenceRows.first().confidence == 85
+                   && topReport.evidenceRows.first().confidenceDisplayName
+                       == QStringLiteral("85%")
+                   && topReport.evidenceRows.first().evidenceText
+                       == QStringLiteral("posedge clk_i")
+                   && topReport.evidenceRows.first().evidenceDisplayName
+                       == QStringLiteral("posedge clk_i")
                    && topReport.evidenceRows.first().categoryDisplayName
                        == QStringLiteral("mapped domain")
                    && topReport.evidenceRows.first().evidenceReasonDisplayName
@@ -4444,7 +4509,23 @@ static void runClockResetDomainServiceFixture()
             || (row.sectionDisplayName == QStringLiteral("Unmapped Clock")
                 && row.signalDisplayName == QStringLiteral("scan_clk")
                 && row.moduleDisplayName == QStringLiteral("domain_top")
+                && row.domainSignalStableKey
+                    == symbolStableKeyForSymbol(row.domainSignal)
+                && row.moduleStableKey
+                    == symbolStableKeyForSymbol(row.moduleSymbol)
                 && row.relationshipTypeDisplayName == QStringLiteral("Clock")
+                && row.provenance
+                    == RelationshipProvenance::FeatureGenerated
+                && row.provenanceDisplayName
+                    == QStringLiteral("feature generated")
+                && row.confidence == 100
+                && row.confidenceDisplayName == QStringLiteral("100%")
+                && row.evidenceText
+                    == QStringLiteral(
+                        "timing-name candidate without mapped relationship")
+                && row.evidenceDisplayName
+                    == QStringLiteral(
+                        "timing-name candidate without mapped relationship")
                 && row.categoryDisplayName == QStringLiteral("unmapped timing")
                 && row.evidenceReasonDisplayName
                     == QStringLiteral("missing relationship")
@@ -4488,6 +4569,44 @@ static void runClockResetDomainServiceFixture()
                        == QStringLiteral("other_clk"),
                true);
     expectInt("clock reset id reset domains", otherReport.resetDomains.size(), 0);
+
+    ClockResetDomainQuery missingModuleQuery;
+    missingModuleQuery.moduleName = QStringLiteral("missing_domain");
+    missingModuleQuery.fileName = fileName;
+    const ClockResetDomainReport missingModuleReport =
+        service.buildClockResetDomainMap(missingModuleQuery);
+    expectBool("clock reset missing module reason",
+               !missingModuleReport.found
+                   && missingModuleReport.notFoundReason
+                       == ClockResetDomainNotFoundReason::NoMatchingModule
+                   && missingModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("no matching module"),
+               true);
+
+    ClockResetDomainQuery unsupportedModuleQuery;
+    unsupportedModuleQuery.moduleSymbolId = 9203;
+    const ClockResetDomainReport unsupportedModuleReport =
+        service.buildClockResetDomainMap(unsupportedModuleQuery);
+    expectBool("clock reset unsupported symbol reason",
+               !unsupportedModuleReport.found
+                   && unsupportedModuleReport.notFoundReason
+                       == ClockResetDomainNotFoundReason::UnsupportedSymbolKind
+                   && unsupportedModuleReport.notFoundReasonDisplayName
+                       == QStringLiteral("unsupported symbol kind"),
+               true);
+
+    ClockResetDomainQuery noTimingQuery;
+    noTimingQuery.moduleName = QStringLiteral("no_timing_domain");
+    noTimingQuery.fileName = fileName;
+    const ClockResetDomainReport noTimingReport =
+        service.buildClockResetDomainMap(noTimingQuery);
+    expectBool("clock reset no timing domains reason",
+               !noTimingReport.found
+                   && noTimingReport.notFoundReason
+                       == ClockResetDomainNotFoundReason::NoTimingDomains
+                   && noTimingReport.notFoundReasonDisplayName
+                       == QStringLiteral("no timing domains"),
+               true);
 }
 
 static void runFsmGraphServiceFixture()

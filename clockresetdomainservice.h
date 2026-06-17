@@ -14,19 +14,35 @@ struct ClockResetDomainQuery {
     QString fileName;
 };
 
+enum class ClockResetDomainNotFoundReason {
+    None,
+    NoMatchingModule,
+    UnsupportedSymbolKind,
+    NoTimingDomains
+};
+
 struct ClockResetDomainMember {
     sym_list::SymbolInfo moduleSymbol = {};
+    SymbolStableKey domainSignalStableKey;
+    SymbolStableKey moduleStableKey;
     RtlInsightCodeLink moduleCodeLink;
     SemanticRelationshipResult relationship;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
     QString sectionDisplayName;
     QString moduleDisplayName;
     QString relationshipTypeDisplayName;
+    QString provenanceDisplayName;
+    QString confidenceDisplayName;
+    QString evidenceDisplayName;
     QString detailDisplayName;
     QString sourceRoleDisplayName;
 };
 
 struct ClockResetDomainEntry {
     sym_list::SymbolInfo domainSignal = {};
+    SymbolStableKey domainSignalStableKey;
     RtlInsightCodeLink domainSignalCodeLink;
     QString sectionDisplayName;
     QString detailDisplayName;
@@ -36,14 +52,22 @@ struct ClockResetDomainEntry {
 struct ClockResetDomainEvidenceRow {
     sym_list::SymbolInfo domainSignal = {};
     sym_list::SymbolInfo moduleSymbol = {};
+    SymbolStableKey domainSignalStableKey;
+    SymbolStableKey moduleStableKey;
     RtlInsightCodeLink signalCodeLink;
     RtlInsightCodeLink moduleCodeLink;
     SymbolRelationshipEngine::RelationType relationshipType =
         SymbolRelationshipEngine::CLOCKS;
+    RelationshipProvenance provenance = RelationshipProvenance::Unknown;
+    int confidence = 0;
+    QString evidenceText;
     QString sectionDisplayName;
     QString signalDisplayName;
     QString moduleDisplayName;
     QString relationshipTypeDisplayName;
+    QString provenanceDisplayName;
+    QString confidenceDisplayName;
+    QString evidenceDisplayName;
     QString categoryDisplayName;
     QString evidenceReasonDisplayName;
     QString detailDisplayName;
@@ -52,6 +76,9 @@ struct ClockResetDomainEvidenceRow {
 
 struct ClockResetDomainReport {
     bool found = false;
+    ClockResetDomainNotFoundReason notFoundReason =
+        ClockResetDomainNotFoundReason::None;
+    QString notFoundReasonDisplayName;
     QString clockGroupDisplayName;
     QString resetGroupDisplayName;
     QString evidenceGroupDisplayName;
@@ -84,6 +111,9 @@ private:
     static std::unique_ptr<ClockResetDomainService> instance;
 
     SemanticIndex* semanticIndex() const;
+    bool validateQuery(
+        const ClockResetDomainQuery& query,
+        ClockResetDomainNotFoundReason* reason) const;
     QList<ClockResetDomainEntry> buildDomains(
         SymbolRelationshipEngine::RelationType type,
         const ClockResetDomainQuery& query,
@@ -127,6 +157,11 @@ private:
                                              SymbolRelationshipEngine::RelationType type);
     static QString evidenceCategoryDisplayName();
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
+    static QString notFoundReasonDisplayName(
+        ClockResetDomainNotFoundReason reason);
+    static QString provenanceDisplayName(RelationshipProvenance provenance);
+    static QString confidenceDisplayName(int confidence);
+    static QString evidenceDisplayName(const QString& evidenceText);
     static QString ambiguityCategoryDisplayName();
     static QString ambiguityDetailDisplayName(const QString& moduleName,
                                               SymbolRelationshipEngine::RelationType type,
