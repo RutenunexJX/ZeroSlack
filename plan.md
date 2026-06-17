@@ -44,7 +44,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Phase D: RTL Insights Expansion
 
-- Current phase.
+- Status: complete baseline.
 - Expand FSM graph, Signal Journey, Module Brief, Clock/Reset Domain Map, Semantic Diff, and code/document links through feature services.
 - Continue small RTL Insights improvements only when they do not require semantic data model changes.
 - Defer features that need `SymbolInfo`, `sym_type_e`, identity, owner/type metadata, source role, relationship provenance, query result, completion item, or report-model changes to Phase E.
@@ -54,6 +54,10 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Keep reports explicit: rows, display names, navigation payloads, diagnostics, and evidence should be shaped before UI render.
 
 ### Phase E: Semantic Data Model Hardening
+
+- Status: complete on this branch.
+- Query services and RTL report models now carry stable identity, semantic metadata, source-role display, relationship provenance/confidence/evidence, and not-found reasons where useful.
+- The local release gate has passed with full Ninja, full CTest, hygiene scans, and forbidden-file guards.
 
 #### E1: Symbol Identity And Snapshot Handles
 
@@ -107,7 +111,8 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Release Gate
 
-- After Phase E, run a product baseline gate before broad RTL feature expansion.
+- Status: passed locally after Phase E.
+- Keep this product baseline gate before broad RTL feature expansion.
 - `test_sv/new` must validate package/import/typedef/parameter, interface/interface instance/modport, `.svh`/`.vh` includes, completion, navigation, Problems, and RTL Insights sharing one semantic truth.
 - Full Ninja and full CTest must pass.
 - Hygiene scans and forbidden-file guard must pass.

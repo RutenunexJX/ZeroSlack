@@ -23,10 +23,10 @@ Thin UI consumers
 
 ## Latest Strategy
 
-- Current priority is finishing RTL Insights carefully while deferring semantic data model changes to Phase E.
+- Phase E semantic data model hardening is complete on this branch.
+- The Phase E release gate has passed locally with full Ninja and full CTest.
+- Next work should move into broader RTL feature expansion only through the stable service/report contracts now in place.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
-- Phase E hardens symbol identity, semantic metadata, owner/type modeling, source roles, relationships, query results, completion items, and RTL report contracts.
-- After Phase E, run a Release Gate on `test_sv/new` before broad RTL feature expansion.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - Keep `sym_type_e` as raw collector compatibility until a dedicated migration removes it safely.
 
