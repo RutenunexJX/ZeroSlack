@@ -65,6 +65,7 @@ void appendDiagnostics(const slang::SourceManager& sourceManager,
         item.column = column == 0 ? 1 : static_cast<int>(column);
         item.message = QString::fromStdString(engine.formatMessage(diagnostic));
         item.severity = mapDiagnosticSeverity(severity);
+        item.owner = SemanticDiagnostic::SlangCompiler;
 
         const QString key = QStringLiteral("%1:%2:%3:%4:%5")
                                 .arg(item.fileName)

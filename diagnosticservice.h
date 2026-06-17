@@ -46,6 +46,7 @@ struct DiagnosticResult {
     QString lineDisplayName;
     QString columnDisplayName;
     QString messageDisplayName;
+    QString ownerDisplayName;
 };
 
 struct DiagnosticFileGroup {
@@ -62,6 +63,7 @@ struct DiagnosticReport {
     int totalCount = 0;
     QMap<QString, int> fileCounts;
     QMap<SemanticDiagnostic::Severity, int> severityCounts;
+    QMap<SemanticDiagnostic::Owner, int> ownerCounts;
 };
 
 class DiagnosticService
@@ -92,6 +94,7 @@ private:
     static QString diagnosticLineDisplayName(int line);
     static QString diagnosticColumnDisplayName(int column);
     static QString diagnosticMessageDisplayName(const QString& message);
+    static QString diagnosticOwnerDisplayName(SemanticDiagnostic::Owner owner);
 };
 
 #endif // DIAGNOSTICSERVICE_H

@@ -405,10 +405,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         expectBool("slang diagnostic has severity",
                    brokenDiagnosticResults.first().diagnostic.severity == SemanticDiagnostic::Error,
                    true);
+        expectBool("slang diagnostic has owner",
+                   brokenDiagnosticResults.first().diagnostic.owner
+                       == SemanticDiagnostic::SlangCompiler,
+                   true);
         expectBool("slang diagnostic exposes display metadata",
                    brokenDiagnosticResults.first().severityDisplayName == QStringLiteral("Error")
                        && brokenDiagnosticResults.first().fileDisplayName
-                          == QStringLiteral("broken_diag.sv"),
+                          == QStringLiteral("broken_diag.sv")
+                       && brokenDiagnosticResults.first().ownerDisplayName
+                          == QStringLiteral("Slang"),
                    true);
     }
 
@@ -418,6 +424,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     infoDiagnostic.column = 3;
     infoDiagnostic.message = QStringLiteral("info message");
     infoDiagnostic.severity = SemanticDiagnostic::Info;
+    infoDiagnostic.owner = SemanticDiagnostic::SemanticIndexOwner;
 
     SemanticDiagnostic warningDiagnostic;
     warningDiagnostic.fileName = topPath;
@@ -425,6 +432,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     warningDiagnostic.column = 1;
     warningDiagnostic.message = QStringLiteral("warning message");
     warningDiagnostic.severity = SemanticDiagnostic::Warning;
+    warningDiagnostic.owner = SemanticDiagnostic::SlangCompiler;
 
     SemanticDiagnostic errorDiagnostic;
     errorDiagnostic.fileName = stagePath;
@@ -432,6 +440,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     errorDiagnostic.column = 7;
     errorDiagnostic.message = QStringLiteral("error message");
     errorDiagnostic.severity = SemanticDiagnostic::Error;
+    errorDiagnostic.owner = SemanticDiagnostic::SlangCompiler;
 
     SemanticIndex diagnosticReportIndex(db);
     diagnosticReportIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
@@ -464,6 +473,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                diagnosticReportFoundTopGroup, true);
     expectInt("diagnostic report severity count",
               diagnosticReport.severityCounts.value(SemanticDiagnostic::Error), 1);
+    expectInt("diagnostic report owner count",
+              diagnosticReport.ownerCounts.value(SemanticDiagnostic::SlangCompiler), 2);
     expectBool("diagnostic report sorts errors first",
                !diagnosticReport.diagnostics.isEmpty()
                    && diagnosticReport.diagnostics.first().diagnostic.severity
@@ -483,7 +494,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && diagnosticReport.diagnostics.first().columnDisplayName
                        == QStringLiteral("7")
                    && diagnosticReport.diagnostics.first().messageDisplayName
-                       == QStringLiteral("error message"),
+                       == QStringLiteral("error message")
+                   && diagnosticReport.diagnostics.first().ownerDisplayName
+                       == QStringLiteral("Slang"),
                true);
 
     DiagnosticQuery topOnlyDiagnosticQuery;

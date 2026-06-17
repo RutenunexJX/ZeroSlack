@@ -71,6 +71,7 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
         item.lineDisplayName = diagnosticLineDisplayName(diagnostic.line);
         item.columnDisplayName = diagnosticColumnDisplayName(diagnostic.column);
         item.messageDisplayName = diagnosticMessageDisplayName(diagnostic.message);
+        item.ownerDisplayName = diagnosticOwnerDisplayName(diagnostic.owner);
         result.append(item);
     }
     std::sort(result.begin(), result.end(),
@@ -110,6 +111,7 @@ DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& 
         const QString fileKey = normalized.isEmpty() ? diagnostic.fileName : normalized;
         report.fileCounts[fileKey]++;
         report.severityCounts[diagnostic.severity]++;
+        report.ownerCounts[diagnostic.owner]++;
 
         if (!fileGroupIndexes.contains(fileKey)) {
             DiagnosticFileGroup group;
@@ -219,4 +221,17 @@ QString DiagnosticService::diagnosticColumnDisplayName(int column)
 QString DiagnosticService::diagnosticMessageDisplayName(const QString& message)
 {
     return message;
+}
+
+QString DiagnosticService::diagnosticOwnerDisplayName(SemanticDiagnostic::Owner owner)
+{
+    switch (owner) {
+    case SemanticDiagnostic::SlangCompiler:
+        return QStringLiteral("Slang");
+    case SemanticDiagnostic::SemanticIndexOwner:
+        return QStringLiteral("Semantic index");
+    case SemanticDiagnostic::UnknownOwner:
+    default:
+        return QStringLiteral("Unknown");
+    }
 }

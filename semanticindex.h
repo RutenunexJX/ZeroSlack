@@ -82,11 +82,18 @@ struct SemanticDiagnostic {
         Error
     };
 
+    enum Owner {
+        UnknownOwner,
+        SlangCompiler,
+        SemanticIndexOwner
+    };
+
     QString fileName;
     int line = 0;
     int column = 0;
     QString message;
     Severity severity = Info;
+    Owner owner = UnknownOwner;
 };
 
 struct SemanticSymbolSearchQuery {
