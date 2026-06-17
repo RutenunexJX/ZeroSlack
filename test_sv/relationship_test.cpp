@@ -3096,6 +3096,16 @@ static void runModuleBriefServiceFixture()
                moduleMetadata.ownerScope == SymbolTaxonomy::SymbolOwnerScope::Global
                    && moduleMetadata.visibility == SymbolTaxonomy::SymbolVisibility::Global,
                true);
+    expectBool("snapshot attaches module semantic metadata",
+               report.moduleSymbol.hasSemanticMetadata
+                   && report.moduleSymbol.semanticDeclarationKind
+                       == SymbolTaxonomy::DeclarationKind::Module
+                   && report.moduleSymbol.semanticOwnerScope
+                       == SymbolTaxonomy::SymbolOwnerScope::Global
+                   && report.moduleSymbol.semanticVisibility
+                       == SymbolTaxonomy::SymbolVisibility::Global
+                   && report.moduleSymbol.rawCollectorKind == sym_list::sym_module,
+               true);
     expectBool("taxonomy recognizes module brief port",
                SymbolTaxonomy::isPortDeclaration(symbols.at(2).symbolType),
                true);
@@ -3110,6 +3120,26 @@ static void runModuleBriefServiceFixture()
                true);
     expectBool("semantic metadata classifies design source",
                portMetadata.sourceRole == SymbolTaxonomy::SourceRole::DesignSource,
+               true);
+    const QList<sym_list::SymbolInfo> snapshotSymbols =
+        index.snapshot()->getSymbols(fileName);
+    sym_list::SymbolInfo snapshotPort;
+    for (const sym_list::SymbolInfo& symbol : snapshotSymbols) {
+        if (symbol.symbolName == QStringLiteral("clk")
+            && symbol.symbolType == sym_list::sym_port_input) {
+            snapshotPort = symbol;
+            break;
+        }
+    }
+    expectBool("snapshot attaches port semantic metadata",
+               snapshotPort.hasSemanticMetadata
+                   && snapshotPort.semanticDeclarationKind
+                       == SymbolTaxonomy::DeclarationKind::Port
+                   && snapshotPort.semanticUsageRole
+                       == SymbolTaxonomy::SymbolUsageRole::Declaration
+                   && snapshotPort.semanticSourceRole
+                       == SymbolTaxonomy::SourceRole::DesignSource
+                   && snapshotPort.rawCollectorKind == sym_list::sym_port_input,
                true);
     expectBool("taxonomy groups module brief port",
                SymbolTaxonomy::declarationGroup(symbols.at(2).symbolType)
@@ -3128,6 +3158,35 @@ static void runModuleBriefServiceFixture()
     expectBool("taxonomy groups module brief instance",
                SymbolTaxonomy::declarationGroup(symbols.at(5).symbolType)
                    == SymbolTaxonomy::DeclarationGroup::Instance,
+               true);
+    QList<sym_list::SymbolInfo> packageSymbols;
+    packageSymbols.append(makeModuleBriefSymbol(100,
+                                                fileName,
+                                                QStringLiteral("brief_pkg"),
+                                                sym_list::sym_package,
+                                                1));
+    packageSymbols.append(makeModuleBriefSymbol(101,
+                                                fileName,
+                                                QStringLiteral("WIDTH"),
+                                                sym_list::sym_parameter,
+                                                2,
+                                                QStringLiteral("brief_pkg")));
+    const SemanticIndexSnapshot packageSnapshot(packageSymbols);
+    const QList<sym_list::SymbolInfo> annotatedPackageSymbols =
+        packageSnapshot.getSymbols(fileName);
+    sym_list::SymbolInfo packageParameter;
+    for (const sym_list::SymbolInfo& symbol : annotatedPackageSymbols) {
+        if (symbol.symbolName == QStringLiteral("WIDTH")) {
+            packageParameter = symbol;
+            break;
+        }
+    }
+    expectBool("snapshot attaches package visibility metadata",
+               packageParameter.hasSemanticMetadata
+                   && packageParameter.semanticOwnerScope
+                       == SymbolTaxonomy::SymbolOwnerScope::Package
+                   && packageParameter.semanticVisibility
+                       == SymbolTaxonomy::SymbolVisibility::PackageVisible,
                true);
     expectInt("module brief port count", report.ports.size(), 4);
     expectInt("module brief parameter count", report.parameters.size(), 1);

@@ -1,6 +1,8 @@
 #ifndef SYMINFO_H
 #define SYMINFO_H
 
+#include "symbolsemanticmetadata.h"
+
 #include <QString>
 #include <QList>
 #include <QHash>
@@ -108,6 +110,20 @@ public:
         QString moduleScope;
         int scopeLevel = 0;
         QString dataType;
+
+        bool hasSemanticMetadata = false;
+        SymbolSemanticMetadata::DeclarationKind semanticDeclarationKind =
+            SymbolSemanticMetadata::DeclarationKind::Unknown;
+        SymbolSemanticMetadata::SymbolUsageRole semanticUsageRole =
+            SymbolSemanticMetadata::SymbolUsageRole::Unknown;
+        SymbolSemanticMetadata::SymbolOwnerScope semanticOwnerScope =
+            SymbolSemanticMetadata::SymbolOwnerScope::Unknown;
+        SymbolSemanticMetadata::SymbolVisibility semanticVisibility =
+            SymbolSemanticMetadata::SymbolVisibility::Unknown;
+        SymbolSemanticMetadata::SourceRole semanticSourceRole =
+            SymbolSemanticMetadata::SourceRole::Unknown;
+        sym_type_e rawCollectorKind = sym_user;
+        bool interfaceLikeOwner = false;
     };
 
     struct RegexMatch {

@@ -114,6 +114,16 @@ QString snapshotRelationshipDedupeKey(
         .arg(static_cast<int>(keyedRelationship.type));
 }
 
+QList<sym_list::SymbolInfo> symbolsWithSemanticMetadata(
+    QList<sym_list::SymbolInfo> symbols)
+{
+    const QSet<QString> packageScopes =
+        SymbolTaxonomy::packageScopeNames(symbols);
+    for (sym_list::SymbolInfo& symbol : symbols)
+        SymbolTaxonomy::attachSemanticMetadata(&symbol, packageScopes);
+    return symbols;
+}
+
 }
 
 SemanticIndexSnapshot::SemanticIndexSnapshot(
@@ -121,7 +131,7 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
     QList<SemanticRelationship> relationships,
     QList<SemanticDiagnostic> diagnostics,
     QHash<QString, QString> fileContents)
-    : m_symbols(std::move(symbols)),
+    : m_symbols(symbolsWithSemanticMetadata(std::move(symbols))),
       m_relationships(std::move(relationships)),
       m_diagnostics(std::move(diagnostics)),
       m_fileContents(std::move(fileContents))

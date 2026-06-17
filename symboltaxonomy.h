@@ -2,6 +2,7 @@
 #define SYMBOLTAXONOMY_H
 
 #include "syminfo.h"
+#include "symbolsemanticmetadata.h"
 
 #include <QList>
 #include <QSet>
@@ -9,68 +10,12 @@
 
 namespace SymbolTaxonomy {
 
-enum class DeclarationKind {
-    Unknown,
-    Module,
-    Interface,
-    Package,
-    Typedef,
-    Enum,
-    Parameter,
-    Localparam,
-    Port,
-    Signal,
-    Struct,
-    StructVariable,
-    StructMember,
-    Instance,
-    Modport,
-    Task,
-    Function,
-    Macro,
-    Process,
-    Generate,
-    Constraint,
-    User
-};
-
-enum class SourceRole {
-    Unknown,
-    DesignSource,
-    Header
-};
-
-enum class SymbolOwnerScope {
-    Unknown,
-    Global,
-    Module,
-    Interface,
-    Package,
-    Struct
-};
-
-enum class SymbolVisibility {
-    Unknown,
-    Global,
-    ScopeLocal,
-    PackageVisible,
-    Member
-};
-
-enum class SymbolUsageRole {
-    Unknown,
-    Declaration,
-    Reference,
-    Process
-};
-
-enum class DeclarationGroup {
-    Unknown,
-    Port,
-    Parameter,
-    Instance,
-    Signal
-};
+using DeclarationKind = SymbolSemanticMetadata::DeclarationKind;
+using SourceRole = SymbolSemanticMetadata::SourceRole;
+using SymbolOwnerScope = SymbolSemanticMetadata::SymbolOwnerScope;
+using SymbolVisibility = SymbolSemanticMetadata::SymbolVisibility;
+using SymbolUsageRole = SymbolSemanticMetadata::SymbolUsageRole;
+using DeclarationGroup = SymbolSemanticMetadata::DeclarationGroup;
 
 enum class SymbolSearchIntent {
     Any,
@@ -102,6 +47,12 @@ SymbolVisibility visibility(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {});
 SemanticMetadata semanticMetadata(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes = {});
+void attachSemanticMetadata(
+    sym_list::SymbolInfo* symbol,
+    const QSet<QString>& packageScopes = {});
+sym_list::SymbolInfo withSemanticMetadata(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {});
 

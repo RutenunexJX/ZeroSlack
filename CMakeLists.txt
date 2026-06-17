@@ -310,6 +310,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzerworkspace.h
     symbolrelationshipengine.h
     symboloutlinemodel.h
+    symbolsemanticmetadata.h
     symboltaxonomy.h
     syminfo.h
     tabdocumentqueries.h

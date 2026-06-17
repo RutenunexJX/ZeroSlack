@@ -135,7 +135,9 @@ DeclarationGroup declarationGroup(sym_list::sym_type_e type)
     return DeclarationGroup::Unknown;
 }
 
-SemanticMetadata semanticMetadata(
+namespace {
+
+SemanticMetadata computedSemanticMetadata(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes)
 {
@@ -148,6 +150,55 @@ SemanticMetadata semanticMetadata(
     metadata.rawCollectorKind = symbol.symbolType;
     metadata.interfaceLikeOwner = isInterfaceLikeOwner(symbol.symbolType);
     return metadata;
+}
+
+} // namespace
+
+SemanticMetadata semanticMetadata(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes)
+{
+    if (symbol.hasSemanticMetadata) {
+        SemanticMetadata metadata;
+        metadata.declarationKind = symbol.semanticDeclarationKind;
+        metadata.usageRole = symbol.semanticUsageRole;
+        metadata.ownerScope = symbol.semanticOwnerScope;
+        metadata.visibility = symbol.semanticVisibility;
+        metadata.sourceRole = symbol.semanticSourceRole;
+        metadata.rawCollectorKind = symbol.rawCollectorKind;
+        metadata.interfaceLikeOwner = symbol.interfaceLikeOwner;
+        return metadata;
+    }
+
+    return computedSemanticMetadata(symbol, packageScopes);
+}
+
+void attachSemanticMetadata(
+    sym_list::SymbolInfo* symbol,
+    const QSet<QString>& packageScopes)
+{
+    if (!symbol)
+        return;
+
+    const SemanticMetadata metadata =
+        computedSemanticMetadata(*symbol, packageScopes);
+    symbol->hasSemanticMetadata = true;
+    symbol->semanticDeclarationKind = metadata.declarationKind;
+    symbol->semanticUsageRole = metadata.usageRole;
+    symbol->semanticOwnerScope = metadata.ownerScope;
+    symbol->semanticVisibility = metadata.visibility;
+    symbol->semanticSourceRole = metadata.sourceRole;
+    symbol->rawCollectorKind = metadata.rawCollectorKind;
+    symbol->interfaceLikeOwner = metadata.interfaceLikeOwner;
+}
+
+sym_list::SymbolInfo withSemanticMetadata(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes)
+{
+    sym_list::SymbolInfo annotated = symbol;
+    attachSemanticMetadata(&annotated, packageScopes);
+    return annotated;
 }
 
 SymbolOwnerScope ownerScope(
