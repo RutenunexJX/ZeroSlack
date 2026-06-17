@@ -33,9 +33,12 @@ set(PROTECTED_BOUNDARY_FILES
     mainwindow.h
     navigationcommandcoordinator.cpp
     navigationcommandcoordinator.h
-    navigationpane.cpp
     navigationpanecoordinator.cpp
     navigationpanecoordinator.h
+    navigationwidget.cpp
+    navigationwidget.h
+    navigationwidgetpresentation.cpp
+    navigationwidgettrees.cpp
     problemspanelcoordinator.cpp
     problemspanelcoordinator.h
     referencespanelcoordinator.cpp
@@ -67,10 +70,12 @@ set(PROTECTED_BOUNDARY_FILES
     tabtitlecontroller.h
 )
 
+set(missing_files)
 set(violations)
 foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
     if(NOT EXISTS "${path}")
+        list(APPEND missing_files "${relative_path}")
         continue()
     endif()
 
@@ -83,14 +88,24 @@ foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
         "(^|[^A-Za-z0-9_])sym_type_e([^A-Za-z0-9_]|$)|(^|[^A-Za-z0-9_])sym_list::sym_[A-Za-z0-9_]+([^A-Za-z0-9_]|$)"
         enum_matches
         "${content}")
+    string(REGEX MATCHALL
+        "(^|[^A-Za-z0-9_])(findSymbolId|getSymbolById|getRelationships)[ \t\r\n]*\\("
+        int_id_api_matches
+        "${content}")
 
-    if(field_matches OR enum_matches)
+    if(field_matches OR enum_matches OR int_id_api_matches)
         list(APPEND violations "${relative_path}")
     endif()
 endforeach()
 
+if(missing_files)
+    list(JOIN missing_files "\n  " missing_file_text)
+    message(FATAL_ERROR
+        "Legacy field guard references missing protected boundary files:\n  ${missing_file_text}")
+endif()
+
 if(violations)
     list(JOIN violations "\n  " violation_text)
     message(FATAL_ERROR
-        "Legacy SymbolInfo product-policy fields are not allowed in protected UI/coordinator/scheduler boundaries:\n  ${violation_text}")
+        "Legacy SymbolInfo product-policy fields or int-id query APIs are not allowed in protected UI/coordinator/scheduler boundaries:\n  ${violation_text}")
 endif()
