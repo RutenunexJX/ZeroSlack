@@ -36,7 +36,10 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
 
     HierarchyNode root;
     root.symbol = semanticIndex()->getSymbolById(rootId);
-    root.symbolStableKey = symbolStableKeyForSymbol(root.symbol);
+    root.symbolRecord = semanticSymbolRecordForSymbol(root.symbol);
+    root.symbolStableKey = root.symbolRecord.stableKey.isValid()
+        ? root.symbolRecord.stableKey
+        : symbolStableKeyForSymbol(root.symbol);
     root.depth = 0;
     root.parentSymbolId = -1;
     root.nodeId = nextNodeId++;
@@ -121,6 +124,11 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
     if (!resolvedQuery.symbolStableKey.isValid())
         resolvedQuery.symbolStableKey =
             symbolStableKeyForSymbol(semanticIndex()->getSymbolById(rootId));
+    report.rootSymbolRecord =
+        semanticSymbolRecordForSymbol(semanticIndex()->getSymbolById(rootId));
+    report.rootStableKey = report.rootSymbolRecord.stableKey.isValid()
+        ? report.rootSymbolRecord.stableKey
+        : resolvedQuery.symbolStableKey;
     report.nodes = getHierarchy(resolvedQuery);
     report.totalCount = report.nodes.size();
     QMap<HierarchyQuery::Direction, int> rootDirectionGroupIndexes;

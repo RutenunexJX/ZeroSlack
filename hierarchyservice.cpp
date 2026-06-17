@@ -11,17 +11,42 @@ static bool hierarchyNodeLess(const HierarchyNode& lhs, const HierarchyNode& rhs
     if (lhs.viaType != rhs.viaType)
         return static_cast<int>(lhs.viaType) < static_cast<int>(rhs.viaType);
 
-    const int fileCompare = QString::compare(lhs.symbol.fileName,
-                                             rhs.symbol.fileName,
+    const QString lhsFileName = lhs.symbolRecord.location.fileName.isEmpty()
+        ? lhs.symbol.fileName
+        : lhs.symbolRecord.location.fileName;
+    const QString rhsFileName = rhs.symbolRecord.location.fileName.isEmpty()
+        ? rhs.symbol.fileName
+        : rhs.symbolRecord.location.fileName;
+    const int lhsStartLine = lhs.symbolRecord.location.startLine > 0
+        ? lhs.symbolRecord.location.startLine
+        : lhs.symbol.startLine;
+    const int rhsStartLine = rhs.symbolRecord.location.startLine > 0
+        ? rhs.symbolRecord.location.startLine
+        : rhs.symbol.startLine;
+    const int lhsStartColumn = lhs.symbolRecord.location.startColumn > 0
+        ? lhs.symbolRecord.location.startColumn
+        : lhs.symbol.startColumn;
+    const int rhsStartColumn = rhs.symbolRecord.location.startColumn > 0
+        ? rhs.symbolRecord.location.startColumn
+        : rhs.symbol.startColumn;
+    const QString lhsName = lhs.symbolRecord.name.isEmpty()
+        ? lhs.symbol.symbolName
+        : lhs.symbolRecord.name;
+    const QString rhsName = rhs.symbolRecord.name.isEmpty()
+        ? rhs.symbol.symbolName
+        : rhs.symbolRecord.name;
+
+    const int fileCompare = QString::compare(lhsFileName,
+                                             rhsFileName,
                                              Qt::CaseInsensitive);
     if (fileCompare != 0)
         return fileCompare < 0;
-    if (lhs.symbol.startLine != rhs.symbol.startLine)
-        return lhs.symbol.startLine < rhs.symbol.startLine;
-    if (lhs.symbol.startColumn != rhs.symbol.startColumn)
-        return lhs.symbol.startColumn < rhs.symbol.startColumn;
-    return QString::compare(lhs.symbol.symbolName,
-                            rhs.symbol.symbolName,
+    if (lhsStartLine != rhsStartLine)
+        return lhsStartLine < rhsStartLine;
+    if (lhsStartColumn != rhsStartColumn)
+        return lhsStartColumn < rhsStartColumn;
+    return QString::compare(lhsName,
+                            rhsName,
                             Qt::CaseInsensitive) < 0;
 }
 
@@ -83,9 +108,17 @@ void HierarchyService::fillDisplayMetadata(HierarchyNode& node)
     node.relationshipTypeDisplayName = node.depth == 0
         ? QStringLiteral("Root")
         : relationshipTypeDisplayName(node.viaType);
-    node.symbolDisplayName = symbolDisplayName(node.symbol);
-    node.fileDisplayName = fileDisplayName(node.symbol.fileName);
-    node.lineDisplayName = lineDisplayName(node.symbol.startLine);
+    node.symbolDisplayName = node.symbolRecord.name.isEmpty()
+        ? symbolDisplayName(node.symbol)
+        : node.symbolRecord.name;
+    const QString fileName = node.symbolRecord.location.fileName.isEmpty()
+        ? node.symbol.fileName
+        : node.symbolRecord.location.fileName;
+    const int startLine = node.symbolRecord.location.startLine > 0
+        ? node.symbolRecord.location.startLine
+        : node.symbol.startLine;
+    node.fileDisplayName = fileDisplayName(fileName);
+    node.lineDisplayName = lineDisplayName(startLine);
 }
 
 QString HierarchyService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
@@ -168,7 +201,10 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
 
         HierarchyNode node;
         node.symbol = rel.toSymbol;
-        node.symbolStableKey = rel.toStableKey;
+        node.symbolRecord = semanticSymbolRecordForSymbol(node.symbol);
+        node.symbolStableKey = node.symbolRecord.stableKey.isValid()
+            ? node.symbolRecord.stableKey
+            : rel.toStableKey;
         node.depth = 1;
         node.parentSymbolId = rel.fromSymbol.symbolId;
         node.parentStableKey = rel.fromStableKey;
@@ -202,7 +238,10 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
 
         HierarchyNode node;
         node.symbol = rel.fromSymbol;
-        node.symbolStableKey = rel.fromStableKey;
+        node.symbolRecord = semanticSymbolRecordForSymbol(node.symbol);
+        node.symbolStableKey = node.symbolRecord.stableKey.isValid()
+            ? node.symbolRecord.stableKey
+            : rel.fromStableKey;
         node.depth = 1;
         node.parentSymbolId = rel.toSymbol.symbolId;
         node.parentStableKey = rel.toStableKey;

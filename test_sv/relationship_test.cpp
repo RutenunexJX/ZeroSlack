@@ -1557,6 +1557,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (node.depth == 1
                 && node.parentSymbolId == topId
                 && node.symbol.symbolId == stageId
+                && node.symbolRecord.isValid()
+                && node.symbolRecord.localHandle == stageId
+                && node.symbolRecord.stableKey == stageStableKey
+                && node.symbolRecord.name == QStringLiteral("rel_stage")
                 && node.symbolStableKey == stageStableKey
                 && node.parentStableKey == topStableKey
                 && node.direction == HierarchyQuery::Children
@@ -1572,6 +1576,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotHierarchyReport.notFoundReason
                        == HierarchyReportNotFoundReason::None
                    && snapshotHierarchyReport.notFoundReasonDisplayName.isEmpty(),
+               true);
+    expectBool("snapshot hierarchy report root semantic record",
+               snapshotHierarchyReport.rootSymbolRecord.isValid()
+                   && snapshotHierarchyReport.rootSymbolRecord.localHandle == topId
+                   && snapshotHierarchyReport.rootSymbolRecord.stableKey == topStableKey
+                   && snapshotHierarchyReport.rootSymbolRecord.name
+                       == QStringLiteral("rel_top")
+                   && snapshotHierarchyReport.rootStableKey == topStableKey,
                true);
     expectInt("snapshot hierarchy report total count",
               snapshotHierarchyReport.totalCount, 2);
@@ -1606,6 +1618,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot hierarchy report keeps child identity",
                snapshotHierarchyReport.nodes.size() == 2
                    && snapshotHierarchyReport.nodes.last().symbol.symbolId == stageId
+                   && snapshotHierarchyReport.nodes.last().symbolRecord.isValid()
+                   && snapshotHierarchyReport.nodes.last().symbolRecord.localHandle
+                       == stageId
+                   && snapshotHierarchyReport.nodes.last().symbolRecord.stableKey
+                       == stageStableKey
                    && snapshotHierarchyReport.nodes.last().parentSymbolId == topId,
                true);
     expectBool("snapshot hierarchy report keeps stable identity",
@@ -2948,6 +2965,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (node.depth == 1
                 && node.parentSymbolId == topId
                 && node.symbol.symbolId == stageId
+                && node.symbolRecord.isValid()
+                && node.symbolRecord.localHandle == stageId
+                && node.symbolRecord.stableKey == stageStableKey
+                && node.symbolRecord.name == QStringLiteral("rel_stage")
                 && node.direction == HierarchyQuery::Children
                 && node.viaType == SymbolRelationshipEngine::INSTANTIATES
                 && node.directionDisplayName == QStringLiteral("Outgoing")
@@ -2961,6 +2982,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("hierarchy report keeps root row metadata",
                !hierarchyReport.nodes.isEmpty()
                    && hierarchyReport.nodes.first().depth == 0
+                   && hierarchyReport.nodes.first().symbolRecord.isValid()
+                   && hierarchyReport.nodes.first().symbolRecord.localHandle == topId
+                   && hierarchyReport.nodes.first().symbolRecord.stableKey == topStableKey
                    && hierarchyReport.nodes.first().symbolDisplayName
                        == QStringLiteral("rel_top")
                    && hierarchyReport.nodes.first().fileDisplayName

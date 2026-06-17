@@ -46,6 +46,7 @@ struct HierarchyPanelQueryOptions {
 
 struct HierarchyNode {
     sym_list::SymbolInfo symbol;
+    SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     int depth = 0;
     int parentSymbolId = -1;
@@ -72,6 +73,8 @@ struct HierarchyReport {
     HierarchyReportNotFoundReason notFoundReason =
         HierarchyReportNotFoundReason::None;
     QString notFoundReasonDisplayName;
+    SemanticSymbolRecord rootSymbolRecord;
+    SymbolStableKey rootStableKey;
     QList<HierarchyNode> nodes;
     QList<HierarchyRootDirectionGroup> rootDirectionGroups;
     int totalCount = 0;

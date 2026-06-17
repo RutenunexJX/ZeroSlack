@@ -31,16 +31,26 @@ QTreeWidgetItem* createHierarchyItem(QTreeWidgetItem* parent,
                                      const HierarchyNode& node,
                                      const QString& roleText)
 {
+    const QString fileName = node.symbolRecord.location.fileName.isEmpty()
+        ? node.symbol.fileName
+        : node.symbolRecord.location.fileName;
+    const int startLine = node.symbolRecord.location.startLine > 0
+        ? node.symbolRecord.location.startLine
+        : node.symbol.startLine;
+    const int startColumn = node.symbolRecord.location.startColumn > 0
+        ? node.symbolRecord.location.startColumn
+        : node.symbol.startColumn;
+
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, roleText);
     item->setText(1, node.symbolDisplayName);
     item->setText(2, node.fileDisplayName);
     item->setText(3, node.lineDisplayName);
     item->setText(4, node.relationshipTypeDisplayName);
-    item->setToolTip(2, node.symbol.fileName);
-    item->setData(0, Qt::UserRole, node.symbol.fileName);
-    item->setData(0, Qt::UserRole + 1, node.symbol.startLine);
-    item->setData(0, Qt::UserRole + 2, node.symbol.startColumn);
+    item->setToolTip(2, fileName);
+    item->setData(0, Qt::UserRole, fileName);
+    item->setData(0, Qt::UserRole + 1, startLine);
+    item->setData(0, Qt::UserRole + 2, startColumn);
     return item;
 }
 
