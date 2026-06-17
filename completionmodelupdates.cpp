@@ -82,6 +82,13 @@ void CompletionModel::updateCompletions(const CompletionResult &completion,
         item.symbolStableKey = semanticItem.symbolStableKey;
         item.score = completionService->completionItemScore(semanticItem.label, prefix);
         item.description = semanticItem.typeDisplayName;
+        item.typeDisplayName = semanticItem.typeDisplayName;
+        item.ownerScopeName = semanticItem.ownerScopeName;
+        item.sourceRoleDisplayName = semanticItem.sourceRoleDisplayName;
+        item.declarationKind = semanticItem.declarationKind;
+        item.usageRole = semanticItem.usageRole;
+        item.ownerScope = semanticItem.ownerScope;
+        item.sourceRole = semanticItem.sourceRole;
 
         fillDisplayMetadata(item);
         completions.append(item);

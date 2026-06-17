@@ -32,10 +32,21 @@ public:
         QString description;
         QString displayText;
         QString toolTipText;
+        QString typeDisplayName;
+        QString ownerScopeName;
+        QString sourceRoleDisplayName;
         CompletionType type = KeywordCompletion;
         CompletionVisualKind visualKind = KeywordVisual;
         sym_list::sym_type_e symbolType = sym_list::sym_user;
         SymbolStableKey symbolStableKey;
+        SymbolTaxonomy::DeclarationKind declarationKind =
+            SymbolTaxonomy::DeclarationKind::Unknown;
+        SymbolTaxonomy::SymbolUsageRole usageRole =
+            SymbolTaxonomy::SymbolUsageRole::Unknown;
+        SymbolTaxonomy::SymbolOwnerScope ownerScope =
+            SymbolTaxonomy::SymbolOwnerScope::Unknown;
+        SymbolTaxonomy::SourceRole sourceRole =
+            SymbolTaxonomy::SourceRole::Unknown;
         QString defaultValue;
         int score = 0;
         int rowHeight = 18;

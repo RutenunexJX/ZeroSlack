@@ -2,6 +2,7 @@
 #include <QFont>
 #include <QColor>
 #include <QSize>
+#include <QStringList>
 #include <algorithm>
 
 static const int CompletionItemMetaTypeId = qRegisterMetaType<CompletionModel::CompletionItem>("CompletionModel::CompletionItem");
@@ -142,9 +143,21 @@ void CompletionModel::fillDisplayMetadata(CompletionItem &item)
                     .arg(defaultType);
         } else {
             item.visualKind = SymbolVisual;
-            if (!item.description.isEmpty())
+            const QString typeText = item.typeDisplayName.isEmpty()
+                ? item.description
+                : item.typeDisplayName;
+            if (!typeText.isEmpty())
                 item.displayText = QStringLiteral("%1 (%2)")
-                    .arg(item.text, item.description);
+                    .arg(item.text, typeText);
+            QStringList tooltipParts;
+            if (!typeText.isEmpty())
+                tooltipParts.append(typeText);
+            if (!item.ownerScopeName.isEmpty())
+                tooltipParts.append(QStringLiteral("owner: %1").arg(item.ownerScopeName));
+            if (!item.sourceRoleDisplayName.isEmpty())
+                tooltipParts.append(item.sourceRoleDisplayName);
+            if (!tooltipParts.isEmpty())
+                item.toolTipText = tooltipParts.join(QStringLiteral(" | "));
         }
         return;
     case CommandCompletion:

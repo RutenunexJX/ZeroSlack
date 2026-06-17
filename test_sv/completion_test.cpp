@@ -1412,8 +1412,19 @@ int main(int argc, char** argv) {
             == QStringLiteral("enable")
         && semanticResultModel.getItem(semanticResultModel.index(0, 0)).description
             == QStringLiteral("logic")
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).typeDisplayName
+            == QStringLiteral("logic")
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScopeName
+            == QStringLiteral("top")
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).sourceRoleDisplayName
+            == QStringLiteral("design source")
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScope
+            == SymbolTaxonomy::SymbolOwnerScope::Module
         && semanticResultModel.getItem(semanticResultModel.index(0, 0)).symbolStableKey
-            == moduleCompletion.items.first().symbolStableKey;
+            == moduleCompletion.items.first().symbolStableKey
+        && semanticResultModel.data(
+               semanticResultModel.index(0, 0),
+               Qt::ToolTipRole).toString().contains(QStringLiteral("owner: top"));
     if (!semanticResultModelOk)
         ++g_fails;
     printf("[%s] %-34s rows=%d\n",
