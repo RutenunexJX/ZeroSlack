@@ -26,6 +26,12 @@ enum class ReferencePanelScope {
     CurrentFile
 };
 
+enum class ReferenceReportNotFoundReason {
+    None,
+    NoSubjectSymbol,
+    NoReferences
+};
+
 struct ReferencePanelQueryOptions {
     QString symbolName;
     QString fileName;
@@ -66,6 +72,9 @@ struct ReferenceReport {
     int subjectSymbolId = -1;
     sym_list::SymbolInfo subjectSymbol = {};
     SymbolStableKey subjectStableKey;
+    ReferenceReportNotFoundReason notFoundReason =
+        ReferenceReportNotFoundReason::None;
+    QString notFoundReasonDisplayName;
     QList<ReferenceResult> references;
     QList<ReferenceFileGroup> fileGroups;
     int totalCount = 0;

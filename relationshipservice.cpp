@@ -163,6 +163,20 @@ QString lineDisplayName(int line)
 {
     return QString::number(line);
 }
+
+QString reportNotFoundReasonDisplayName(
+    RelationshipReportNotFoundReason reason)
+{
+    switch (reason) {
+    case RelationshipReportNotFoundReason::None:
+        return QString();
+    case RelationshipReportNotFoundReason::NoSubjectSymbol:
+        return QStringLiteral("no subject symbol");
+    case RelationshipReportNotFoundReason::NoRelationships:
+        return QStringLiteral("no relationships");
+    }
+    return QStringLiteral("relationship report unavailable");
+}
 }
 
 RelationshipService* RelationshipService::getInstance()
@@ -226,8 +240,13 @@ RelationshipReport RelationshipService::findRelationshipReport(
     RelationshipReport report;
     const int id = resolveSymbolId(query);
     report.subjectSymbolId = id;
-    if (id < 0)
+    if (id < 0) {
+        report.notFoundReason =
+            RelationshipReportNotFoundReason::NoSubjectSymbol;
+        report.notFoundReasonDisplayName =
+            reportNotFoundReasonDisplayName(report.notFoundReason);
         return report;
+    }
     report.subjectSymbol = semanticIndex()->getSymbolById(id);
     report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
 
@@ -338,6 +357,14 @@ RelationshipReport RelationshipService::findRelationshipReport(
     }
 
     report.totalCount = report.relationships.size();
+    if (report.totalCount == 0) {
+        report.notFoundReason =
+            RelationshipReportNotFoundReason::NoRelationships;
+        report.notFoundReasonDisplayName =
+            reportNotFoundReasonDisplayName(report.notFoundReason);
+    } else {
+        report.notFoundReason = RelationshipReportNotFoundReason::None;
+    }
     return report;
 }
 

@@ -1084,6 +1084,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot relationship report subject stable key",
                snapshotRelationshipReport.subjectStableKey == topStableKey,
                true);
+    expectBool("snapshot relationship report found reason metadata",
+               snapshotRelationshipReport.notFoundReason
+                       == RelationshipReportNotFoundReason::None
+                   && snapshotRelationshipReport.notFoundReasonDisplayName.isEmpty(),
+               true);
     expectInt("snapshot relationship report outgoing count",
               snapshotRelationshipReport.outgoingCount, 1);
     expectInt("snapshot relationship report total count",
@@ -1214,6 +1219,34 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotNamedRelationshipReport.relationships.first()
                           .peerSymbol.symbolId == stageId,
                true);
+    RelationshipBrowseQuery snapshotMissingRelationshipBrowseQuery;
+    snapshotMissingRelationshipBrowseQuery.symbolName =
+        QStringLiteral("missing_rel_subject");
+    snapshotMissingRelationshipBrowseQuery.fileName = topPath;
+    const RelationshipReport snapshotMissingRelationshipReport =
+        snapshotRelationshipService.findRelationshipReport(
+            snapshotMissingRelationshipBrowseQuery);
+    expectBool("snapshot relationship report missing subject reason",
+               snapshotMissingRelationshipReport.subjectSymbolId < 0
+                   && snapshotMissingRelationshipReport.notFoundReason
+                       == RelationshipReportNotFoundReason::NoSubjectSymbol
+                   && snapshotMissingRelationshipReport.notFoundReasonDisplayName
+                       == QStringLiteral("no subject symbol"),
+               true);
+    RelationshipBrowseQuery snapshotNoRelationshipBrowseQuery;
+    snapshotNoRelationshipBrowseQuery.symbolId = topId;
+    snapshotNoRelationshipBrowseQuery.types = {SymbolRelationshipEngine::CONSTRAINS};
+    const RelationshipReport snapshotNoRelationshipReport =
+        snapshotRelationshipService.findRelationshipReport(
+            snapshotNoRelationshipBrowseQuery);
+    expectBool("snapshot relationship report no relationships reason",
+               snapshotNoRelationshipReport.subjectSymbolId == topId
+                   && snapshotNoRelationshipReport.totalCount == 0
+                   && snapshotNoRelationshipReport.notFoundReason
+                       == RelationshipReportNotFoundReason::NoRelationships
+                   && snapshotNoRelationshipReport.notFoundReasonDisplayName
+                       == QStringLiteral("no relationships"),
+               true);
     ReferenceService snapshotReferenceService(&snapshotIndex);
     ReferenceQuery snapshotReferenceQuery;
     snapshotReferenceQuery.symbolId = stageId;
@@ -1240,6 +1273,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotReferenceReport.subjectSymbol.symbolId == stageId, true);
     expectBool("snapshot reference report subject stable key",
                snapshotReferenceReport.subjectStableKey == stageStableKey,
+               true);
+    expectBool("snapshot reference report found reason metadata",
+               snapshotReferenceReport.notFoundReason
+                       == ReferenceReportNotFoundReason::None
+                   && snapshotReferenceReport.notFoundReasonDisplayName.isEmpty(),
                true);
     expectInt("snapshot reference report total count",
               snapshotReferenceReport.totalCount, 1);
@@ -1338,6 +1376,31 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotNamedReferenceReport.references.first()
                           .referencingSymbol.symbolId == topId,
                true);
+    ReferenceQuery snapshotMissingReferenceQuery;
+    snapshotMissingReferenceQuery.symbolName = QStringLiteral("missing_reference_subject");
+    snapshotMissingReferenceQuery.fileName = topPath;
+    const ReferenceReport snapshotMissingReferenceReport =
+        snapshotReferenceService.findReferenceReport(snapshotMissingReferenceQuery);
+    expectBool("snapshot reference report missing subject reason",
+               snapshotMissingReferenceReport.subjectSymbolId < 0
+                   && snapshotMissingReferenceReport.notFoundReason
+                       == ReferenceReportNotFoundReason::NoSubjectSymbol
+                   && snapshotMissingReferenceReport.notFoundReasonDisplayName
+                       == QStringLiteral("no subject symbol"),
+               true);
+    ReferenceQuery snapshotNoReferenceQuery;
+    snapshotNoReferenceQuery.symbolId = topId;
+    snapshotNoReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+    const ReferenceReport snapshotNoReferenceReport =
+        snapshotReferenceService.findReferenceReport(snapshotNoReferenceQuery);
+    expectBool("snapshot reference report no references reason",
+               snapshotNoReferenceReport.subjectSymbolId == topId
+                   && snapshotNoReferenceReport.totalCount == 0
+                   && snapshotNoReferenceReport.notFoundReason
+                       == ReferenceReportNotFoundReason::NoReferences
+                   && snapshotNoReferenceReport.notFoundReasonDisplayName
+                       == QStringLiteral("no references"),
+               true);
     HierarchyService snapshotHierarchyService(&snapshotIndex);
     HierarchyQuery snapshotHierarchyQuery;
     snapshotHierarchyQuery.symbolId = topId;
@@ -1362,6 +1425,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotHierarchyFoundStage, true);
     const HierarchyReport snapshotHierarchyReport =
         snapshotHierarchyService.getHierarchyReport(snapshotHierarchyQuery);
+    expectBool("snapshot hierarchy report found reason metadata",
+               snapshotHierarchyReport.notFoundReason
+                       == HierarchyReportNotFoundReason::None
+                   && snapshotHierarchyReport.notFoundReasonDisplayName.isEmpty(),
+               true);
     expectInt("snapshot hierarchy report total count",
               snapshotHierarchyReport.totalCount, 2);
     expectInt("snapshot hierarchy report depth zero count",
@@ -1463,6 +1531,31 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotNamedHierarchyReport.totalCount == 2
                    && snapshotNamedHierarchyReport.nodes.first().symbol.symbolId == topId
                    && snapshotNamedHierarchyReport.nodes.last().symbol.symbolId == stageId,
+               true);
+    HierarchyQuery snapshotMissingHierarchyQuery;
+    snapshotMissingHierarchyQuery.symbolName = QStringLiteral("missing_hierarchy_root");
+    snapshotMissingHierarchyQuery.fileName = topPath;
+    const HierarchyReport snapshotMissingHierarchyReport =
+        snapshotHierarchyService.getHierarchyReport(snapshotMissingHierarchyQuery);
+    expectBool("snapshot hierarchy report missing root reason",
+               snapshotMissingHierarchyReport.totalCount == 0
+                   && snapshotMissingHierarchyReport.notFoundReason
+                       == HierarchyReportNotFoundReason::NoRootSymbol
+                   && snapshotMissingHierarchyReport.notFoundReasonDisplayName
+                       == QStringLiteral("no root symbol"),
+               true);
+    HierarchyQuery snapshotNoHierarchyQuery;
+    snapshotNoHierarchyQuery.symbolId = stageId;
+    snapshotNoHierarchyQuery.maxDepth = 1;
+    snapshotNoHierarchyQuery.types = {SymbolRelationshipEngine::CALLS};
+    const HierarchyReport snapshotNoHierarchyReport =
+        snapshotHierarchyService.getHierarchyReport(snapshotNoHierarchyQuery);
+    expectBool("snapshot hierarchy report no hierarchy reason",
+               snapshotNoHierarchyReport.totalCount == 1
+                   && snapshotNoHierarchyReport.notFoundReason
+                       == HierarchyReportNotFoundReason::NoHierarchy
+                   && snapshotNoHierarchyReport.notFoundReasonDisplayName
+                       == QStringLiteral("no hierarchy"),
                true);
     SemanticRelationship duplicateStableRelationship;
     duplicateStableRelationship.fromId = topId + 100000;

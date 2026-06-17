@@ -28,6 +28,12 @@ enum class HierarchyPanelDirection {
     Incoming
 };
 
+enum class HierarchyReportNotFoundReason {
+    None,
+    NoRootSymbol,
+    NoHierarchy
+};
+
 struct HierarchyPanelQueryOptions {
     QString symbolName;
     QString fileName;
@@ -62,6 +68,9 @@ struct HierarchyRootDirectionGroup {
 };
 
 struct HierarchyReport {
+    HierarchyReportNotFoundReason notFoundReason =
+        HierarchyReportNotFoundReason::None;
+    QString notFoundReasonDisplayName;
     QList<HierarchyNode> nodes;
     QList<HierarchyRootDirectionGroup> rootDirectionGroups;
     int totalCount = 0;

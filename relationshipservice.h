@@ -35,6 +35,12 @@ enum class RelationshipPanelDirection {
     Incoming
 };
 
+enum class RelationshipReportNotFoundReason {
+    None,
+    NoSubjectSymbol,
+    NoRelationships
+};
+
 struct RelationshipPanelQueryOptions {
     QString symbolName;
     QString fileName;
@@ -93,6 +99,9 @@ struct RelationshipReport {
     int subjectSymbolId = -1;
     sym_list::SymbolInfo subjectSymbol = {};
     SymbolStableKey subjectStableKey;
+    RelationshipReportNotFoundReason notFoundReason =
+        RelationshipReportNotFoundReason::None;
+    QString notFoundReasonDisplayName;
     QList<DirectedRelationshipResult> relationships;
     QList<RelationshipDirectionGroup> directionGroups;
     int totalCount = 0;

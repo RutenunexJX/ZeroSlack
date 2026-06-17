@@ -2,6 +2,21 @@
 
 #include <QSet>
 
+namespace {
+QString reportNotFoundReasonDisplayName(HierarchyReportNotFoundReason reason)
+{
+    switch (reason) {
+    case HierarchyReportNotFoundReason::None:
+        return QString();
+    case HierarchyReportNotFoundReason::NoRootSymbol:
+        return QStringLiteral("no root symbol");
+    case HierarchyReportNotFoundReason::NoHierarchy:
+        return QStringLiteral("no hierarchy");
+    }
+    return QStringLiteral("hierarchy report unavailable");
+}
+}
+
 QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query) const
 {
     const int rootId = resolveSymbolId(query);
@@ -90,7 +105,17 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
 HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query) const
 {
     HierarchyReport report;
-    report.nodes = getHierarchy(query);
+    const int rootId = resolveSymbolId(query);
+    if (rootId < 0) {
+        report.notFoundReason = HierarchyReportNotFoundReason::NoRootSymbol;
+        report.notFoundReasonDisplayName =
+            reportNotFoundReasonDisplayName(report.notFoundReason);
+        return report;
+    }
+
+    HierarchyQuery resolvedQuery = query;
+    resolvedQuery.symbolId = rootId;
+    report.nodes = getHierarchy(resolvedQuery);
     report.totalCount = report.nodes.size();
     QMap<HierarchyQuery::Direction, int> rootDirectionGroupIndexes;
     for (const HierarchyNode& node : report.nodes) {
@@ -114,6 +139,13 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
             group.nodes.append(node);
             group.count++;
         }
+    }
+    if (report.totalCount <= 1) {
+        report.notFoundReason = HierarchyReportNotFoundReason::NoHierarchy;
+        report.notFoundReasonDisplayName =
+            reportNotFoundReasonDisplayName(report.notFoundReason);
+    } else {
+        report.notFoundReason = HierarchyReportNotFoundReason::None;
     }
     return report;
 }

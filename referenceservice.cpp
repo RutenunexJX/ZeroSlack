@@ -60,6 +60,19 @@ QString referenceTypeDisplayName(SymbolRelationshipEngine::RelationType type)
     }
     return QStringLiteral("Relationship");
 }
+
+QString reportNotFoundReasonDisplayName(ReferenceReportNotFoundReason reason)
+{
+    switch (reason) {
+    case ReferenceReportNotFoundReason::None:
+        return QString();
+    case ReferenceReportNotFoundReason::NoSubjectSymbol:
+        return QStringLiteral("no subject symbol");
+    case ReferenceReportNotFoundReason::NoReferences:
+        return QStringLiteral("no references");
+    }
+    return QStringLiteral("reference report unavailable");
+}
 }
 
 ReferenceService* ReferenceService::getInstance()
@@ -119,10 +132,15 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
     ReferenceReport report;
     const int id = resolveSymbolId(query);
     report.subjectSymbolId = id;
-    if (id >= 0) {
-        report.subjectSymbol = semanticIndex()->getSymbolById(id);
-        report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
+    if (id < 0) {
+        report.notFoundReason = ReferenceReportNotFoundReason::NoSubjectSymbol;
+        report.notFoundReasonDisplayName =
+            reportNotFoundReasonDisplayName(report.notFoundReason);
+        return report;
     }
+    report.subjectSymbol = semanticIndex()->getSymbolById(id);
+    report.subjectStableKey = symbolStableKeyForSymbol(report.subjectSymbol);
+
     report.references = findReferences(query);
     report.totalCount = report.references.size();
     QMap<QString, int> fileGroupIndexes;
@@ -165,6 +183,13 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
             fileGroup.typeGroups[typeGroupIndexes[fileKey].value(type)];
         typeGroup.references.append(reference);
         typeGroup.count++;
+    }
+    if (report.totalCount == 0) {
+        report.notFoundReason = ReferenceReportNotFoundReason::NoReferences;
+        report.notFoundReasonDisplayName =
+            reportNotFoundReasonDisplayName(report.notFoundReason);
+    } else {
+        report.notFoundReason = ReferenceReportNotFoundReason::None;
     }
     return report;
 }
