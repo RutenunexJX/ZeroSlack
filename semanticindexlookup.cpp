@@ -275,7 +275,8 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
             best.found = true;
             best.localFile = localFile;
             best.symbol = symbol;
-            best.symbolStableKey = symbolStableKeyForSymbol(symbol);
+            best.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+            best.symbolStableKey = best.symbolRecord.stableKey;
             best.missReason = SemanticDefinitionMissReason::None;
             bestPriority = priority;
         }

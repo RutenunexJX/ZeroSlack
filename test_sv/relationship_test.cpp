@@ -6210,6 +6210,13 @@ static void runRealWorkspaceIncludeFixture()
                packageParam.found
                    && packageParam.symbol.moduleScope == QStringLiteral("gl_pkg"),
                true);
+    expectBool("real workspace package parameter definition record",
+               packageParam.symbolRecord.isValid()
+                   && packageParam.symbolRecord.stableKey == packageParam.symbolStableKey
+                   && packageParam.symbolRecord.owner.name == QStringLiteral("gl_pkg")
+                   && packageParam.symbolRecord.sourceRole
+                       == SymbolTaxonomy::SourceRole::DesignSource,
+               true);
 
     DefinitionQuery interfaceQuery;
     interfaceQuery.symbolName = QStringLiteral("lr_genr_if");
@@ -6220,6 +6227,15 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace jumps interface",
                interfaceResult.found
                    && interfaceResult.symbol.symbolType == sym_list::sym_interface,
+               true);
+    expectBool("real workspace interface definition record",
+               interfaceResult.symbolRecord.isValid()
+                   && interfaceResult.symbolRecord.stableKey
+                       == interfaceResult.symbolStableKey
+                   && interfaceResult.symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Interface
+                   && interfaceResult.symbolRecord.owner.kind
+                       == SymbolTaxonomy::SymbolOwnerScope::Global,
                true);
 
     DefinitionQuery modportTypeQuery;
@@ -6234,6 +6250,13 @@ static void runRealWorkspaceIncludeFixture()
                    && modportTypeResult.symbol.symbolType == sym_list::sym_interface_modport
                    && modportTypeResult.symbol.moduleScope == QStringLiteral("lr_genr_if"),
                true);
+    expectBool("real workspace modport type definition record",
+               modportTypeResult.symbolRecord.isValid()
+                   && modportTypeResult.symbolRecord.owner.name
+                       == QStringLiteral("lr_genr_if")
+                   && modportTypeResult.symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Modport,
+               true);
 
     DefinitionQuery modportInstQuery = modportTypeQuery;
     modportInstQuery.linePrefixBeforeCursor = QStringLiteral("LR_GENR_IF.si");
@@ -6243,6 +6266,13 @@ static void runRealWorkspaceIncludeFixture()
                modportInstResult.found
                    && modportInstResult.symbol.symbolType == sym_list::sym_interface_modport
                    && modportInstResult.symbol.moduleScope == QStringLiteral("lr_genr_if"),
+               true);
+    expectBool("real workspace modport instance definition record",
+               modportInstResult.symbolRecord.isValid()
+                   && modportInstResult.symbolRecord.stableKey
+                       == modportTypeResult.symbolRecord.stableKey
+                   && modportInstResult.symbolRecord.owner.name
+                       == QStringLiteral("lr_genr_if"),
                true);
 
     CompletionService completionService(&index);
