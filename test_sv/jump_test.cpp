@@ -175,6 +175,13 @@ int main(int argc, char** argv) {
     expectEq("DefinitionNavigation query prefix",
              memberNavigationQuery.linePrefixBeforeCursor,
              QStringLiteral("assign out = pixel.red"));
+    const DefinitionNavigationTarget memberNavigationTarget =
+        definitionNavigationService.resolveTarget(memberNavigationQuery);
+    expectBool("DefinitionNavigation resolves member target",
+               memberNavigationTarget.found
+                   && memberNavigationTarget.symbolName == QStringLiteral("red")
+                   && memberNavigationTarget.symbolTypeText == QStringLiteral("member"),
+               true);
 
     memberNavigationContext.column = 500;
     const DefinitionNavigationQuery clampedNavigationQuery =
@@ -777,7 +784,7 @@ int main(int argc, char** argv) {
              QStringLiteral("counter"));
     expectEq("Editor symbol action file",
              editorActionContext.fileName,
-             path);
+             QFileInfo(path).absoluteFilePath());
     expectEq("Editor symbol action module",
              editorActionContext.moduleName,
              QStringLiteral("top"));

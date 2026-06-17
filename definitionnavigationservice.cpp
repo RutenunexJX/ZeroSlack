@@ -100,11 +100,11 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
     target.line = result.symbol.startLine;
     target.column = result.symbol.startColumn;
     target.symbolType = result.symbol.symbolType;
-    target.symbolTypeText = symbolTypeText(result.symbol.symbolType);
+    target.symbolTypeText = symbolTypeText(result.symbol);
     return target;
 }
 
-QString DefinitionNavigationService::symbolTypeText(sym_list::sym_type_e symbolType)
+QString DefinitionNavigationService::symbolTypeText(const sym_list::SymbolInfo& symbol)
 {
-    return SymbolTaxonomy::symbolTypeLabel(symbolType);
+    return SymbolTaxonomy::symbolTypeLabel(SymbolTaxonomy::semanticMetadata(symbol));
 }

@@ -62,7 +62,7 @@ private:
     static DefinitionQuery toDefinitionQuery(const DefinitionNavigationQuery& query);
     static DefinitionNavigationTarget toNavigationTarget(
         const DefinitionResult& result);
-    static QString symbolTypeText(sym_list::sym_type_e symbolType);
+    static QString symbolTypeText(const sym_list::SymbolInfo& symbol);
 };
 
 #endif // DEFINITIONNAVIGATIONSERVICE_H
