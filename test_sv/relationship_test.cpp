@@ -4056,6 +4056,13 @@ static void runScopeBandServiceFixture()
     expectInt("scope band module count", report.modules.size(), 1);
     expectBool("scope band module metadata",
                !report.modules.isEmpty()
+                   && report.modules.first().symbolRecord.isValid()
+                   && report.modules.first().symbolRecord.localHandle
+                       == report.modules.first().symbol.symbolId
+                   && report.modules.first().symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Module
+                   && report.modules.first().symbolRecord.name
+                       == QStringLiteral("scope_top")
                    && report.modules.first().symbol.symbolName
                        == QStringLiteral("scope_top")
                    && report.modules.first().endLine >= module.startLine,
@@ -4063,6 +4070,13 @@ static void runScopeBandServiceFixture()
     expectInt("scope band logic count", report.logics.size(), 1);
     expectBool("scope band logic metadata",
                !report.logics.isEmpty()
+                   && report.logics.first().symbolRecord.isValid()
+                   && report.logics.first().symbolRecord.localHandle
+                       == report.logics.first().symbol.symbolId
+                   && report.logics.first().symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Signal
+                   && report.logics.first().symbolRecord.name
+                       == QStringLiteral("enable")
                    && report.logics.first().symbol.symbolName
                        == QStringLiteral("enable")
                    && report.logics.first().endLine == 2,

@@ -14,6 +14,7 @@ struct ScopeBandQuery {
 
 struct ScopeBandSymbolRange {
     sym_list::SymbolInfo symbol;
+    SemanticSymbolRecord symbolRecord;
     int endLine = -1;
 };
 

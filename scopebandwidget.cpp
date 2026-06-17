@@ -119,11 +119,13 @@ void ScopeBandWidget::refresh()
     QVector<ModuleItemInfo> moduleInfos;
 
     for (const ScopeBandSymbolRange& module : report.modules) {
-        const sym_list::SymbolInfo& mod = module.symbol;
+        const int startLine = module.symbolRecord.location.startLine > 0
+            ? module.symbolRecord.location.startLine
+            : module.symbol.startLine;
         const int endLine = module.endLine;
 
         const EditorBlockGeometry startGeometry =
-            m_editor->blockGeometry(mod.startLine);
+            m_editor->blockGeometry(startLine);
         const EditorBlockGeometry endGeometry =
             m_editor->blockGeometry(endLine);
         qreal top = startGeometry.top;
@@ -134,12 +136,13 @@ void ScopeBandWidget::refresh()
         item->setRect(QRectF(0, 0, kBandWidth, h));
         item->setPos(0, top);
         m_scene->addItem(item);
-        moduleInfos.append({ item, mod.startLine, endLine });
+        moduleInfos.append({ item, startLine, endLine });
     }
 
     for (const ScopeBandSymbolRange& logicRange : report.logics) {
-        const sym_list::SymbolInfo& logic = logicRange.symbol;
-        int startLine = logic.startLine;
+        int startLine = logicRange.symbolRecord.location.startLine > 0
+            ? logicRange.symbolRecord.location.startLine
+            : logicRange.symbol.startLine;
         int endLine = logicRange.endLine;
 
         ModuleScopeItem* parentModule = nullptr;

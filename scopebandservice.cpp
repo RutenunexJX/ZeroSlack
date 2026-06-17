@@ -4,6 +4,22 @@
 
 std::unique_ptr<ScopeBandService> ScopeBandService::instance = nullptr;
 
+namespace {
+SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+}
+
 ScopeBandService* ScopeBandService::getInstance()
 {
     if (!instance)
@@ -32,19 +48,20 @@ ScopeBandReport ScopeBandService::scopeBands(const ScopeBandQuery& query) const
     SemanticIndex* semantic = semanticIndex();
     const QList<sym_list::SymbolInfo> symbols = semantic->getSymbols(query.fileName);
     for (const sym_list::SymbolInfo& symbol : symbols) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         const SymbolTaxonomy::SemanticMetadata metadata =
-            SymbolTaxonomy::semanticMetadata(symbol);
+            semanticMetadataForRecord(record);
         if (SymbolTaxonomy::isModuleDeclaration(metadata)) {
-            if (!semantic->isValidModuleName(symbol.symbolName))
+            if (!semantic->isValidModuleName(record.name))
                 continue;
             const int endLine = semantic->findEndModuleLine(query.fileName, symbol);
             if (endLine >= 0)
-                report.modules.append({symbol, endLine});
+                report.modules.append({symbol, record, endLine});
         } else if (SymbolTaxonomy::isLogicDeclaration(metadata)) {
             const int endLine = symbol.endLine < symbol.startLine
                 ? symbol.startLine
                 : symbol.endLine;
-            report.logics.append({symbol, endLine});
+            report.logics.append({symbol, record, endLine});
         }
     }
     return report;
