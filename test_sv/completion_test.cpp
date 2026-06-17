@@ -345,6 +345,34 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata raw compatibility",
                logicMetadata.rawCollectorKind == sym_list::sym_logic,
                true);
+    expectBool("SymbolTaxonomy metadata global completion type",
+               SymbolTaxonomy::isGlobalCompletionCandidate(metadataSignal),
+               false);
+    sym_list::SymbolInfo metadataGlobalModule;
+    metadataGlobalModule.symbolType = sym_list::sym_user;
+    metadataGlobalModule.hasSemanticMetadata = true;
+    metadataGlobalModule.semanticDeclarationKind =
+        SymbolSemanticMetadata::DeclarationKind::Module;
+    metadataGlobalModule.semanticUsageRole =
+        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
+    metadataGlobalModule.semanticOwnerScope =
+        SymbolSemanticMetadata::SymbolOwnerScope::Global;
+    metadataGlobalModule.semanticVisibility =
+        SymbolSemanticMetadata::SymbolVisibility::Global;
+    metadataGlobalModule.semanticSourceRole =
+        SymbolSemanticMetadata::SourceRole::DesignSource;
+    metadataGlobalModule.rawCollectorKind = sym_list::sym_user;
+    const SymbolTaxonomy::SemanticMetadata metadataGlobal =
+        SymbolTaxonomy::semanticMetadata(metadataGlobalModule);
+    expectBool("SymbolTaxonomy metadata global completion candidate",
+               SymbolTaxonomy::isGlobalCompletionCandidate(metadataGlobal),
+               true);
+    expectBool("SymbolTaxonomy metadata command global type",
+               SymbolTaxonomy::isCommandGlobalCompletionType(metadataGlobal),
+               true);
+    expectBool("SymbolTaxonomy metadata global info type",
+               SymbolTaxonomy::isGlobalSymbolInfoType(metadataGlobal),
+               true);
     SymbolTaxonomy::SemanticMetadata syntheticModuleMetadata;
     syntheticModuleMetadata.declarationKind =
         SymbolTaxonomy::DeclarationKind::Module;
@@ -2141,6 +2169,17 @@ int main(int argc, char** argv) {
     expectList("snapshot global completions",
                snapshotCompletionService.findCompletions(snapshotGlobalQuery),
                {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
+    snapshotGlobalQuery.prefix = QStringLiteral("semantic");
+    expectList("snapshot metadata global completions",
+               snapshotCompletionService.findCompletions(snapshotGlobalQuery),
+               {"semantic_scope"});
+    CommandCompletionQuery snapshotMetadataModuleCommandQuery;
+    snapshotMetadataModuleCommandQuery.symbolType = sym_list::sym_module;
+    snapshotMetadataModuleCommandQuery.prefix = QStringLiteral("semantic");
+    expectList("snapshot metadata command module",
+               snapshotCompletionService.findCommandCompletions(
+                   snapshotMetadataModuleCommandQuery),
+               {"semantic_scope"});
     CommandCompletionQuery snapshotTaskCommandQuery;
     snapshotTaskCommandQuery.symbolType = sym_list::sym_task;
     snapshotTaskCommandQuery.prefix = QStringLiteral("snap");
@@ -2451,6 +2490,11 @@ int main(int argc, char** argv) {
                    sym_list::sym_packed_struct_var,
                    QStringLiteral("snap"))),
                {"snap_pixel"});
+    expectList("snapshot metadata global info type",
+               symbolNames(snapshotCompletionService.findGlobalSymbolInfosByType(
+                   sym_list::sym_module,
+                   QStringLiteral("semantic"))),
+               {"semantic_scope"});
     SemanticIndex::getInstance()->setSnapshot(
         std::make_shared<SemanticIndexSnapshot>(
             snapshotSymbols,
@@ -2482,6 +2526,9 @@ int main(int argc, char** argv) {
     expectList("CompletionManager global delegation",
                cm->getGlobalSymbolCompletions(QStringLiteral("snap")),
                {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
+    expectList("CompletionManager metadata global delegation",
+               cm->getGlobalSymbolCompletions(QStringLiteral("semantic")),
+               {"semantic_scope"});
     expectList("CompletionManager type delegation",
                cm->getGlobalSymbolsByType(sym_list::sym_task, QStringLiteral("snap")),
                {"snap_task"});
@@ -2549,6 +2596,11 @@ int main(int argc, char** argv) {
                    sym_list::sym_packed_struct_var,
                    QStringLiteral("snap"))),
                {"snap_pixel"});
+    expectList("CompletionManager metadata global info",
+               symbolNames(cm->getGlobalSymbolsByType_Info(
+                   sym_list::sym_module,
+                   QStringLiteral("semantic"))),
+               {"semantic_scope"});
     SemanticIndex::getInstance()->clearSnapshot();
 
     CommandCompletionQuery snapshotCommandQuery;

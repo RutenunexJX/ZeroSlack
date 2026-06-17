@@ -887,7 +887,13 @@ bool isInternalCompletionCandidate(sym_list::sym_type_e type)
 
 bool isInternalCompletionCandidate(const SemanticMetadata& metadata)
 {
-    return isInternalCompletionCandidate(metadata.rawCollectorKind);
+    if (isInternalCompletionCandidate(metadata.rawCollectorKind))
+        return true;
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return false;
+    return metadata.declarationKind == DeclarationKind::Signal
+        || metadata.declarationKind == DeclarationKind::Parameter
+        || metadata.declarationKind == DeclarationKind::Localparam;
 }
 
 bool isGlobalCompletionCandidate(sym_list::sym_type_e type)
@@ -901,7 +907,15 @@ bool isGlobalCompletionCandidate(sym_list::sym_type_e type)
 
 bool isGlobalCompletionCandidate(const SemanticMetadata& metadata)
 {
-    return isGlobalCompletionCandidate(metadata.rawCollectorKind);
+    if (isGlobalCompletionCandidate(metadata.rawCollectorKind))
+        return true;
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return false;
+    return metadata.declarationKind == DeclarationKind::Module
+        || metadata.declarationKind == DeclarationKind::Task
+        || metadata.declarationKind == DeclarationKind::Function
+        || metadata.declarationKind == DeclarationKind::Interface
+        || metadata.declarationKind == DeclarationKind::Package;
 }
 
 bool isCommandGlobalCompletionType(sym_list::sym_type_e type)
@@ -920,7 +934,19 @@ bool isCommandGlobalCompletionType(sym_list::sym_type_e type)
 
 bool isCommandGlobalCompletionType(const SemanticMetadata& metadata)
 {
-    return isCommandGlobalCompletionType(metadata.rawCollectorKind);
+    if (isCommandGlobalCompletionType(metadata.rawCollectorKind))
+        return true;
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return false;
+    return metadata.declarationKind == DeclarationKind::Module
+        || metadata.declarationKind == DeclarationKind::Task
+        || metadata.declarationKind == DeclarationKind::Function
+        || metadata.declarationKind == DeclarationKind::Interface
+        || metadata.declarationKind == DeclarationKind::Package
+        || metadata.declarationKind == DeclarationKind::Typedef
+        || metadata.declarationKind == DeclarationKind::Macro
+        || metadata.declarationKind == DeclarationKind::Struct
+        || metadata.declarationKind == DeclarationKind::Enum;
 }
 
 bool isGlobalSymbolInfoType(sym_list::sym_type_e type)
@@ -941,7 +967,20 @@ bool isGlobalSymbolInfoType(sym_list::sym_type_e type)
 
 bool isGlobalSymbolInfoType(const SemanticMetadata& metadata)
 {
-    return isGlobalSymbolInfoType(metadata.rawCollectorKind);
+    if (isGlobalSymbolInfoType(metadata.rawCollectorKind))
+        return true;
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return false;
+    return metadata.declarationKind == DeclarationKind::Module
+        || metadata.declarationKind == DeclarationKind::Task
+        || metadata.declarationKind == DeclarationKind::Function
+        || metadata.declarationKind == DeclarationKind::Interface
+        || metadata.declarationKind == DeclarationKind::Package
+        || metadata.declarationKind == DeclarationKind::Typedef
+        || metadata.declarationKind == DeclarationKind::Macro
+        || metadata.declarationKind == DeclarationKind::Struct
+        || metadata.declarationKind == DeclarationKind::StructVariable
+        || metadata.declarationKind == DeclarationKind::Enum;
 }
 
 bool isAlwaysGlobalSymbolInfoType(sym_list::sym_type_e type)
