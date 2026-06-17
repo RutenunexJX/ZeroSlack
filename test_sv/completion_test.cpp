@@ -2081,6 +2081,25 @@ int main(int argc, char** argv) {
                                       QString(),
                                       QString(),
                                       4004));
+    sym_list::SymbolInfo semanticPackageParam =
+        makeSymbol(QStringLiteral("semantic_pkg_param"),
+                   sym_list::sym_user,
+                   QStringLiteral("snap_pkg"),
+                   QString(),
+                   4005);
+    semanticPackageParam.hasSemanticMetadata = true;
+    semanticPackageParam.semanticDeclarationKind =
+        SymbolSemanticMetadata::DeclarationKind::Parameter;
+    semanticPackageParam.semanticUsageRole =
+        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
+    semanticPackageParam.semanticOwnerScope =
+        SymbolSemanticMetadata::SymbolOwnerScope::Package;
+    semanticPackageParam.semanticVisibility =
+        SymbolSemanticMetadata::SymbolVisibility::PackageVisible;
+    semanticPackageParam.semanticSourceRole =
+        SymbolSemanticMetadata::SourceRole::DesignSource;
+    semanticPackageParam.rawCollectorKind = sym_list::sym_user;
+    snapshotSymbols.append(semanticPackageParam);
     snapshotSymbols.append(makeSymbol(QStringLiteral("SNAP_FEATURE"),
                                       sym_list::sym_def_define,
                                       QString(),
@@ -2469,6 +2488,14 @@ int main(int argc, char** argv) {
            snapshotPackageCommandOk ? "PASS" : "FAIL",
            "snapshot command package symbols",
            snapshotPackageCommandSymbols.size());
+    CommandCompletionQuery snapshotSemanticPackageParamQuery;
+    snapshotSemanticPackageParamQuery.moduleName = QStringLiteral("snap_top");
+    snapshotSemanticPackageParamQuery.symbolType = sym_list::sym_parameter;
+    snapshotSemanticPackageParamQuery.prefix = QStringLiteral("semantic");
+    expectList("snapshot semantic package parameter command",
+               snapshotCompletionService.findCommandCompletions(
+                   snapshotSemanticPackageParamQuery),
+               {"semantic_pkg_param"});
     CommandCompletionQuery snapshotDefineCommandQuery;
     snapshotDefineCommandQuery.moduleName = QStringLiteral("snap_top");
     snapshotDefineCommandQuery.symbolType = sym_list::sym_def_define;
