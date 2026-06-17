@@ -149,7 +149,7 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             SymbolTaxonomy::isSubroutineDeclaration(metadata);
         if (!isSubroutine && subroutineScopes.contains(symbol.moduleScope))
             continue;
-        byType[metadata.rawCollectorKind].append(symbol);
+        byType[SymbolTaxonomy::outlineGroupType(metadata)].append(symbol);
     }
 
     QList<SymbolOutlineGroup> result;

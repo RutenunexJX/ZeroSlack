@@ -391,6 +391,13 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy global definition uses semantic metadata",
                SymbolTaxonomy::isGlobalDefinition(syntheticModuleMetadata),
                true);
+    expectBool("SymbolTaxonomy outline uses semantic metadata",
+               SymbolTaxonomy::isOutlineSymbol(syntheticModuleMetadata),
+               true);
+    expectBool("SymbolTaxonomy outline group uses metadata",
+               SymbolTaxonomy::outlineGroupType(syntheticModuleMetadata)
+                   == sym_list::sym_module,
+               true);
     expectEq("SymbolTaxonomy metadata label",
              SymbolTaxonomy::symbolTypeLabel(syntheticModuleMetadata),
              QStringLiteral("module"));

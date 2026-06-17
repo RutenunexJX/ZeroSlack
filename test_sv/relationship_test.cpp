@@ -877,6 +877,71 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot navigation outline exposes row metadata",
                snapshotOutlineHasRowMetadata,
                true);
+    QList<sym_list::SymbolInfo> metadataOutlineSymbols = snapshot->getSymbols();
+    sym_list::SymbolInfo metadataOutlineModule;
+    metadataOutlineModule.fileName = topPath;
+    metadataOutlineModule.symbolName = QStringLiteral("metadata_rel_top");
+    metadataOutlineModule.symbolType = sym_list::sym_user;
+    metadataOutlineModule.startLine = 1;
+    metadataOutlineModule.startColumn = 1;
+    metadataOutlineModule.endLine = 1;
+    metadataOutlineModule.endColumn = 1;
+    metadataOutlineModule.symbolId = 900001;
+    metadataOutlineModule.hasSemanticMetadata = true;
+    metadataOutlineModule.semanticDeclarationKind =
+        SymbolSemanticMetadata::DeclarationKind::Module;
+    metadataOutlineModule.semanticUsageRole =
+        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
+    metadataOutlineModule.semanticOwnerScope =
+        SymbolSemanticMetadata::SymbolOwnerScope::Global;
+    metadataOutlineModule.semanticVisibility =
+        SymbolSemanticMetadata::SymbolVisibility::Global;
+    metadataOutlineModule.semanticSourceRole =
+        SymbolSemanticMetadata::SourceRole::DesignSource;
+    metadataOutlineModule.rawCollectorKind = sym_list::sym_user;
+    metadataOutlineSymbols.append(metadataOutlineModule);
+    SemanticIndex metadataOutlineIndex;
+    metadataOutlineIndex.setSnapshot(
+        std::make_shared<SemanticIndexSnapshot>(
+            metadataOutlineSymbols,
+            snapshot->relationships(),
+            snapshot->diagnostics(),
+            snapshot->fileContents()));
+    SearchService metadataOutlineSearchService(&metadataOutlineIndex);
+    SearchQuery metadataOutlineSearchQuery;
+    metadataOutlineSearchQuery.text = QStringLiteral("metadata_rel_top");
+    metadataOutlineSearchQuery.intent =
+        SymbolTaxonomy::SymbolSearchIntent::OutlineSymbols;
+    const QList<SearchResult> metadataOutlineSearchResults =
+        metadataOutlineSearchService.findSymbols(metadataOutlineSearchQuery);
+    expectBool("metadata outline search finds module",
+               metadataOutlineSearchResults.size() == 1
+                   && metadataOutlineSearchResults.first().symbol.symbolId
+                       == metadataOutlineModule.symbolId,
+               true);
+    NavigationService metadataOutlineNavigationService(&metadataOutlineIndex);
+    NavigationSymbolOutlineQuery metadataOutlineQuery;
+    metadataOutlineQuery.fileName = topPath;
+    metadataOutlineQuery.filter = QStringLiteral("metadata");
+    const QList<SymbolOutlineGroup> metadataOutlineGroups =
+        metadataOutlineNavigationService.findSymbolOutline(metadataOutlineQuery);
+    bool metadataOutlineGroupedAsModule = false;
+    for (const SymbolOutlineGroup& group : metadataOutlineGroups) {
+        if (group.symbolType != sym_list::sym_module
+            || group.displayName != QStringLiteral("Module")) {
+            continue;
+        }
+        for (const SymbolOutlineSymbolRow& row : group.symbolRows) {
+            metadataOutlineGroupedAsModule =
+                metadataOutlineGroupedAsModule
+                || (row.symbol.symbolId == metadataOutlineModule.symbolId
+                    && row.displayName == QStringLiteral("metadata_rel_top")
+                    && row.iconKind == SymbolOutlineIconKind::Module);
+        }
+    }
+    expectBool("metadata navigation outline groups module",
+               metadataOutlineGroupedAsModule,
+               true);
     expectBool("semantic snapshot returns cached file content",
                snapshotIndex.getCachedFileContent(topPath) == contents.value(topPath), true);
     expectBool("semantic snapshot returns scope symbols",

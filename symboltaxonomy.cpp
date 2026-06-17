@@ -617,7 +617,57 @@ bool isOutlineSymbol(sym_list::sym_type_e type)
 
 bool isOutlineSymbol(const SemanticMetadata& metadata)
 {
-    return isOutlineSymbol(metadata.rawCollectorKind);
+    return isOutlineSymbol(outlineGroupType(metadata));
+}
+
+sym_list::sym_type_e outlineGroupType(const SemanticMetadata& metadata)
+{
+    if (isOutlineSymbol(metadata.rawCollectorKind))
+        return metadata.rawCollectorKind;
+    if (metadata.rawCollectorKind != sym_list::sym_user)
+        return sym_list::sym_user;
+
+    switch (metadata.declarationKind) {
+    case DeclarationKind::Module:
+        return sym_list::sym_module;
+    case DeclarationKind::Interface:
+        return sym_list::sym_interface;
+    case DeclarationKind::Package:
+        return sym_list::sym_package;
+    case DeclarationKind::Typedef:
+        return sym_list::sym_typedef;
+    case DeclarationKind::Enum:
+        return sym_list::sym_enum;
+    case DeclarationKind::Parameter:
+        return sym_list::sym_parameter;
+    case DeclarationKind::Localparam:
+        return sym_list::sym_localparam;
+    case DeclarationKind::Port:
+        return sym_list::sym_port_input;
+    case DeclarationKind::Signal:
+        return sym_list::sym_logic;
+    case DeclarationKind::Struct:
+        return sym_list::sym_packed_struct;
+    case DeclarationKind::StructVariable:
+        return sym_list::sym_packed_struct_var;
+    case DeclarationKind::StructMember:
+        return sym_list::sym_struct_member;
+    case DeclarationKind::Instance:
+        return sym_list::sym_inst;
+    case DeclarationKind::Task:
+        return sym_list::sym_task;
+    case DeclarationKind::Function:
+        return sym_list::sym_function;
+    case DeclarationKind::Unknown:
+    case DeclarationKind::Modport:
+    case DeclarationKind::Macro:
+    case DeclarationKind::Process:
+    case DeclarationKind::Generate:
+    case DeclarationKind::Constraint:
+    case DeclarationKind::User:
+        break;
+    }
+    return sym_list::sym_user;
 }
 
 int definitionPriority(sym_list::sym_type_e type)
