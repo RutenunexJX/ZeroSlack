@@ -16,10 +16,19 @@ set(PROTECTED_BOUNDARY_FILES
     analysisscheduler.h
     diagnosticsrefreshcontroller.cpp
     diagnosticsrefreshcontroller.h
+    editorcompletionquery.cpp
+    editorcompletionquery.h
     editorcompletionui.cpp
     editorcompletionui.h
+    editorcompletionworkflow.cpp
+    editorcompletionworkflow.h
+    editorcompletionworkflowkeys.cpp
     editorcoordinator.cpp
     editorcoordinator.h
+    editorsemanticcontextservice.cpp
+    editorsemanticcontextservice.h
+    editorsemanticruntime.cpp
+    editorsemanticruntime.h
     mainwindow.cpp
     mainwindow.h
     navigationcommandcoordinator.cpp
