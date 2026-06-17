@@ -75,8 +75,10 @@ QList<SemanticDiffSymbolChange> SemanticDiffService::symbolChanges(
         const QList<sym_list::SymbolInfo> symbols = snapshot.getSymbols(fileName);
         for (const sym_list::SymbolInfo& symbol : symbols) {
             SemanticDiffSymbolCategory category;
-            if (!symbolCategory(symbol.symbolType, &category))
+            if (!symbolCategory(SymbolTaxonomy::semanticMetadata(symbol),
+                                &category)) {
                 continue;
+            }
             if (!symbolInScope(symbol, query.moduleName, fileName))
                 continue;
             const QString key = symbolKey(symbol, category);
@@ -247,11 +249,10 @@ QList<SemanticDiffDiagnosticChange> SemanticDiffService::diagnosticChanges(
 }
 
 bool SemanticDiffService::symbolCategory(
-    sym_list::sym_type_e type,
+    const SymbolTaxonomy::SemanticMetadata& metadata,
     SemanticDiffSymbolCategory* category)
 {
-    const SymbolTaxonomy::DeclarationKind kind =
-        SymbolTaxonomy::declarationKind(type);
+    const SymbolTaxonomy::DeclarationKind kind = metadata.declarationKind;
     if (kind == SymbolTaxonomy::DeclarationKind::Package) {
         if (category)
             *category = SemanticDiffSymbolCategory::Package;
@@ -273,7 +274,7 @@ bool SemanticDiffService::symbolCategory(
         return true;
     }
 
-    switch (SymbolTaxonomy::declarationGroup(type)) {
+    switch (SymbolTaxonomy::declarationGroup(metadata)) {
     case SymbolTaxonomy::DeclarationGroup::Port:
         if (category)
             *category = SemanticDiffSymbolCategory::Port;
@@ -305,8 +306,10 @@ bool SemanticDiffService::symbolInScope(
         && normalizedFileName(symbol.fileName) != normalizedFileName(fileName)) {
         return false;
     }
-    if (SymbolTaxonomy::isGlobalDefinition(symbol.symbolType)
-        || SymbolTaxonomy::isPackageVisibleDefinition(symbol.symbolType)) {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    if (SymbolTaxonomy::isGlobalDefinition(metadata)
+        || SymbolTaxonomy::isPackageVisibleDefinition(metadata)) {
         return true;
     }
     return SymbolTaxonomy::isSymbolInModuleScope(symbol, moduleName);
@@ -360,8 +363,10 @@ QString SemanticDiffService::symbolKey(
 
 QString SemanticDiffService::symbolSignature(const sym_list::SymbolInfo& symbol)
 {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
     return QStringLiteral("%1:%2")
-        .arg(static_cast<int>(symbol.symbolType))
+        .arg(static_cast<int>(metadata.rawCollectorKind))
         .arg(symbol.dataType);
 }
 
@@ -375,12 +380,12 @@ QString SemanticDiffService::relationshipKey(
         snapshot.getSymbolById(relationship.toId);
     SemanticDiffSymbolCategory fromCategory = SemanticDiffSymbolCategory::Signal;
     SemanticDiffSymbolCategory toCategory = SemanticDiffSymbolCategory::Signal;
-    symbolCategory(fromSymbol.symbolType, &fromCategory);
-    symbolCategory(toSymbol.symbolType, &toCategory);
-    const QString fromKey = SymbolTaxonomy::isModuleDeclaration(fromSymbol.symbolType)
+    symbolCategory(SymbolTaxonomy::semanticMetadata(fromSymbol), &fromCategory);
+    symbolCategory(SymbolTaxonomy::semanticMetadata(toSymbol), &toCategory);
+    const QString fromKey = SymbolTaxonomy::isModuleDeclaration(fromSymbol)
         ? QStringLiteral("module:%1").arg(fromSymbol.symbolName)
         : symbolKey(fromSymbol, fromCategory);
-    const QString toKey = SymbolTaxonomy::isModuleDeclaration(toSymbol.symbolType)
+    const QString toKey = SymbolTaxonomy::isModuleDeclaration(toSymbol)
         ? QStringLiteral("module:%1").arg(toSymbol.symbolName)
         : symbolKey(toSymbol, toCategory);
     return QStringLiteral("%1:%2:%3")
@@ -492,8 +497,10 @@ QString SemanticDiffService::symbolScopeDisplayName(
 {
     if (!symbol.moduleScope.isEmpty())
         return QStringLiteral("scope %1").arg(symbol.moduleScope);
-    if (SymbolTaxonomy::isGlobalDefinition(symbol.symbolType))
+    if (SymbolTaxonomy::isGlobalDefinition(
+            SymbolTaxonomy::semanticMetadata(symbol))) {
         return QStringLiteral("global");
+    }
     return QStringLiteral("scope unknown");
 }
 
@@ -553,28 +560,31 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
     change.categoryGroupDisplayName = symbolCategoryGroupDisplayName(change.category);
     change.sourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(change.displaySymbol.fileName));
+            SymbolTaxonomy::semanticMetadata(change.displaySymbol).sourceRole);
     change.symbolTypeDisplayName =
-        SymbolTaxonomy::symbolTypeLabel(change.displaySymbol.symbolType);
+        SymbolTaxonomy::symbolTypeLabel(
+            SymbolTaxonomy::semanticMetadata(change.displaySymbol));
     change.scopeDisplayName = symbolScopeDisplayName(change.displaySymbol);
     change.codeLink = RtlInsightLink::fromSymbol(change.displaySymbol);
     if (hasDisplaySymbol(change.beforeSymbol)) {
         change.beforeSymbolTypeDisplayName =
-            SymbolTaxonomy::symbolTypeLabel(change.beforeSymbol.symbolType);
+            SymbolTaxonomy::symbolTypeLabel(
+                SymbolTaxonomy::semanticMetadata(change.beforeSymbol));
         change.beforeScopeDisplayName = symbolScopeDisplayName(change.beforeSymbol);
         change.beforeSourceRoleDisplayName =
             sourceRoleDisplayName(
-                SymbolTaxonomy::sourceRoleForFileName(change.beforeSymbol.fileName));
+                SymbolTaxonomy::semanticMetadata(change.beforeSymbol).sourceRole);
         change.beforeDataTypeDisplayName = change.beforeSymbol.dataType;
         change.beforeCodeLink = RtlInsightLink::fromSymbol(change.beforeSymbol);
     }
     if (hasDisplaySymbol(change.afterSymbol)) {
         change.afterSymbolTypeDisplayName =
-            SymbolTaxonomy::symbolTypeLabel(change.afterSymbol.symbolType);
+            SymbolTaxonomy::symbolTypeLabel(
+                SymbolTaxonomy::semanticMetadata(change.afterSymbol));
         change.afterScopeDisplayName = symbolScopeDisplayName(change.afterSymbol);
         change.afterSourceRoleDisplayName =
             sourceRoleDisplayName(
-                SymbolTaxonomy::sourceRoleForFileName(change.afterSymbol.fileName));
+                SymbolTaxonomy::semanticMetadata(change.afterSymbol).sourceRole);
         change.afterDataTypeDisplayName = change.afterSymbol.dataType;
         change.afterCodeLink = RtlInsightLink::fromSymbol(change.afterSymbol);
     }
@@ -594,13 +604,15 @@ void SemanticDiffService::fillDisplayMetadata(SemanticDiffSymbolChange& change)
 
     const QString beforeText =
         QStringLiteral("%1%2")
-            .arg(SymbolTaxonomy::symbolTypeLabel(change.beforeSymbol.symbolType),
+            .arg(SymbolTaxonomy::symbolTypeLabel(
+                     SymbolTaxonomy::semanticMetadata(change.beforeSymbol)),
                  change.beforeSymbol.dataType.isEmpty()
                      ? QString()
                      : QStringLiteral(" %1").arg(change.beforeSymbol.dataType));
     const QString afterText =
         QStringLiteral("%1%2")
-            .arg(SymbolTaxonomy::symbolTypeLabel(change.afterSymbol.symbolType),
+            .arg(SymbolTaxonomy::symbolTypeLabel(
+                     SymbolTaxonomy::semanticMetadata(change.afterSymbol)),
                  change.afterSymbol.dataType.isEmpty()
                      ? QString()
                      : QStringLiteral(" %1").arg(change.afterSymbol.dataType));
@@ -642,7 +654,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.codeLink = change.fromCodeLink;
     change.sourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(change.displayFromSymbol.fileName));
+            SymbolTaxonomy::semanticMetadata(change.displayFromSymbol).sourceRole);
     change.detailDisplayName =
         change.displayFromSymbol.symbolName.isEmpty()
             || change.displayToSymbol.symbolName.isEmpty()

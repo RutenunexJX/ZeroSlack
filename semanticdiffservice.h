@@ -135,8 +135,9 @@ private:
     static QList<SemanticDiffDiagnosticChange> diagnosticChanges(
         const SemanticDiffQuery& query);
 
-    static bool symbolCategory(sym_list::sym_type_e type,
-                               SemanticDiffSymbolCategory* category);
+    static bool symbolCategory(
+        const SymbolTaxonomy::SemanticMetadata& metadata,
+        SemanticDiffSymbolCategory* category);
     static bool symbolInScope(const sym_list::SymbolInfo& symbol,
                               const QString& moduleName,
                               const QString& fileName);
