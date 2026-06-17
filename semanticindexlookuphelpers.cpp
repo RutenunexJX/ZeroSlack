@@ -37,30 +37,64 @@ bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
 bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
                                      const QString& searchWord)
 {
-    if (symbol.symbolName != searchWord)
+    return semanticDefinitionRecordMatches(
+        semanticSymbolRecordForSymbol(symbol),
+        searchWord);
+}
+
+bool semanticDefinitionRecordMatches(const SemanticSymbolRecord& record,
+                                     const QString& searchWord)
+{
+    if (record.name != searchWord)
         return false;
 
     return SymbolTaxonomy::isDefinitionCandidate(
-        SymbolTaxonomy::semanticMetadata(symbol));
+        SymbolTaxonomy::SemanticMetadata{
+            record.declarationKind,
+            record.usageRole,
+            record.owner.kind,
+            record.visibility,
+            record.sourceRole,
+            record.rawCollectorKind,
+            record.owner.interfaceLike});
 }
 
 int semanticDefinitionTypePriority(const sym_list::SymbolInfo& symbol)
 {
+    return semanticDefinitionTypePriority(semanticSymbolRecordForSymbol(symbol));
+}
+
+int semanticDefinitionTypePriority(const SemanticSymbolRecord& record)
+{
     return SymbolTaxonomy::definitionPriority(
-        SymbolTaxonomy::semanticMetadata(symbol));
+        SymbolTaxonomy::SemanticMetadata{
+            record.declarationKind,
+            record.usageRole,
+            record.owner.kind,
+            record.visibility,
+            record.sourceRole,
+            record.rawCollectorKind,
+            record.owner.interfaceLike});
 }
 
 bool semanticDefinitionSkipForStructMemberType(
     const sym_list::SymbolInfo& symbol,
     const SemanticDefinitionQuery& query)
 {
+    return semanticDefinitionSkipForStructMemberType(
+        semanticSymbolRecordForSymbol(symbol),
+        query);
+}
+
+bool semanticDefinitionSkipForStructMemberType(
+    const SemanticSymbolRecord& record,
+    const SemanticDefinitionQuery& query)
+{
     if (query.structTypeNameForMember.isEmpty())
         return false;
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
-    return (metadata.ownerScope == SymbolTaxonomy::SymbolOwnerScope::Interface
-            || metadata.ownerScope == SymbolTaxonomy::SymbolOwnerScope::Struct)
-        && symbol.moduleScope != query.structTypeNameForMember;
+    return (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Interface
+            || record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Struct)
+        && record.owner.name != query.structTypeNameForMember;
 }
 
 int symbolSearchMatchScore(const QString& symbolName,

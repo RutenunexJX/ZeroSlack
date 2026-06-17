@@ -74,12 +74,19 @@ SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
 SemanticSymbolRecord semanticSymbolRecordForSymbol(
     const sym_list::SymbolInfo& symbol)
 {
+    return semanticSymbolRecordForSymbol(symbol, {});
+}
+
+SemanticSymbolRecord semanticSymbolRecordForSymbol(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes)
+{
     SemanticSymbolRecord record;
     if (symbol.symbolId < 0 && symbol.symbolName.isEmpty())
         return record;
 
     const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
+        SymbolTaxonomy::semanticMetadata(symbol, packageScopes);
 
     record.stableKey = symbolStableKeyForSymbol(symbol);
     record.localHandle = symbol.symbolId;
@@ -111,10 +118,18 @@ SemanticSymbolRecord semanticSymbolRecordForSymbol(
 QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     const QList<sym_list::SymbolInfo>& symbols)
 {
+    return semanticSymbolRecordsForSymbols(symbols, {});
+}
+
+QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QSet<QString>& packageScopes)
+{
     QList<SemanticSymbolRecord> records;
     records.reserve(symbols.size());
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        const SemanticSymbolRecord record =
+            semanticSymbolRecordForSymbol(symbol, packageScopes);
         if (record.isValid())
             records.append(record);
     }

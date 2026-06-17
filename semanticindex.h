@@ -6,6 +6,7 @@
 #include "symboltaxonomy.h"
 
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <cstdint>
@@ -201,8 +202,14 @@ struct SemanticDefinitionResult {
 SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol);
 SemanticSymbolRecord semanticSymbolRecordForSymbol(
     const sym_list::SymbolInfo& symbol);
+SemanticSymbolRecord semanticSymbolRecordForSymbol(
+    const sym_list::SymbolInfo& symbol,
+    const QSet<QString>& packageScopes);
 QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     const QList<sym_list::SymbolInfo>& symbols);
+QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QSet<QString>& packageScopes);
 QString symbolStableKeyText(const SymbolStableKey& key);
 QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);

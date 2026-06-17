@@ -37,6 +37,44 @@ SemanticDefinitionResult combinedDefinitionMissEvidence(
     return combined;
 }
 
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+bool definitionRecordVisibleInContext(
+    const SemanticSymbolRecord& record,
+    const QString& moduleName)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata = metadataForRecord(record);
+    return SymbolTaxonomy::isMemberScopeDefinitionCandidate(metadata)
+        || metadata.rawCollectorKind == sym_list::sym_enum_value
+        || SymbolTaxonomy::isGlobalDefinition(metadata)
+        || moduleName.isEmpty()
+        || record.owner.name == moduleName
+        || metadata.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible;
+}
+
+int definitionRecordContextPriorityAdjustment(
+    const SemanticSymbolRecord& record,
+    const QString& moduleName)
+{
+    if (!moduleName.isEmpty() && record.owner.name == moduleName)
+        return -100;
+    if (record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible)
+        return -20;
+    return 0;
+}
+
 }
 
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
@@ -250,32 +288,28 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
         SymbolTaxonomy::packageScopeNames(getSymbols());
 
     for (const sym_list::SymbolInfo& symbol : candidates) {
+        const SemanticSymbolRecord record =
+            semanticSymbolRecordForSymbol(symbol, packages);
         ++best.inspectedCandidateCount;
-        if (!semanticDefinitionSymbolMatches(symbol, query.symbolName))
+        if (!semanticDefinitionRecordMatches(record, query.symbolName))
             continue;
         ++best.matchingNameCandidateCount;
-        if (semanticDefinitionSkipForStructMemberType(symbol, query))
+        if (semanticDefinitionSkipForStructMemberType(record, query))
             continue;
         ++best.typeCompatibleCandidateCount;
-        if (!SymbolTaxonomy::isDefinitionVisibleInContext(
-                symbol,
-                query.moduleName,
-                packages)) {
+        if (!definitionRecordVisibleInContext(record, query.moduleName)) {
             continue;
         }
         ++best.visibleCandidateCount;
 
-        int priority = semanticDefinitionTypePriority(symbol)
-            + SymbolTaxonomy::definitionContextPriorityAdjustment(
-                symbol,
-                query.moduleName,
-                packages);
+        int priority = semanticDefinitionTypePriority(record)
+            + definitionRecordContextPriorityAdjustment(record, query.moduleName);
 
         if (!best.found || priority < bestPriority) {
             best.found = true;
             best.localFile = localFile;
             best.symbol = symbol;
-            best.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+            best.symbolRecord = record;
             best.symbolStableKey = best.symbolRecord.stableKey;
             best.missReason = SemanticDefinitionMissReason::None;
             bestPriority = priority;

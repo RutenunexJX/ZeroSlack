@@ -487,7 +487,14 @@ int main(int argc, char** argv) {
         snapshotDefinitionService.resolveDefinition(snapshotPackageParamQuery);
     ++g_checks;
     const bool snapshotPackageParamOk = snapshotPackageParamResult.found
-        && snapshotPackageParamResult.symbol.symbolId == snapshotPackageParam.symbolId;
+        && snapshotPackageParamResult.symbol.symbolId == snapshotPackageParam.symbolId
+        && snapshotPackageParamResult.symbolRecord.isValid()
+        && snapshotPackageParamResult.symbolRecord.owner.kind
+            == SymbolTaxonomy::SymbolOwnerScope::Package
+        && snapshotPackageParamResult.symbolRecord.owner.name
+            == QStringLiteral("snap_pkg")
+        && snapshotPackageParamResult.symbolRecord.visibility
+            == SymbolTaxonomy::SymbolVisibility::PackageVisible;
     if (!snapshotPackageParamOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot package parameter\n",

@@ -13,11 +13,17 @@ bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
 
 bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
                                      const QString& searchWord);
+bool semanticDefinitionRecordMatches(const SemanticSymbolRecord& record,
+                                     const QString& searchWord);
 
 int semanticDefinitionTypePriority(const sym_list::SymbolInfo& symbol);
+int semanticDefinitionTypePriority(const SemanticSymbolRecord& record);
 
 bool semanticDefinitionSkipForStructMemberType(
     const sym_list::SymbolInfo& symbol,
+    const SemanticDefinitionQuery& query);
+bool semanticDefinitionSkipForStructMemberType(
+    const SemanticSymbolRecord& record,
     const SemanticDefinitionQuery& query);
 
 int symbolSearchMatchScore(const QString& symbolName,
