@@ -163,7 +163,8 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
         row.detailDisplayName =
             unmappedDetailDisplayName(row.signalDisplayName, type);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayName(SymbolTaxonomy::sourceRoleForFileName(symbol.fileName));
+            sourceRoleDisplayName(
+                SymbolTaxonomy::semanticMetadata(symbol).sourceRole);
         rows.append(row);
     }
 
@@ -192,8 +193,10 @@ bool ClockResetDomainService::acceptsRelationship(
 {
     if (relationship.fromSymbol.symbolId < 0 || relationship.toSymbol.symbolId < 0)
         return false;
-    if (!SymbolTaxonomy::isModuleDeclaration(relationship.toSymbol.symbolType))
+    if (!SymbolTaxonomy::isModuleDeclaration(
+            SymbolTaxonomy::semanticMetadata(relationship.toSymbol))) {
         return false;
+    }
     if (query.moduleSymbolId >= 0
         && relationship.toSymbol.symbolId != query.moduleSymbolId) {
         return false;
@@ -240,8 +243,10 @@ bool ClockResetDomainService::isTimingCandidate(
 {
     if (symbol.symbolName.isEmpty() || symbol.moduleScope.isEmpty())
         return false;
-    if (!SymbolTaxonomy::isPortDeclaration(symbol.symbolType)
-        && !SymbolTaxonomy::isSignalDeclaration(symbol.symbolType)) {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    if (!SymbolTaxonomy::isPortDeclaration(metadata)
+        && !SymbolTaxonomy::isSignalDeclaration(metadata)) {
         return false;
     }
 
@@ -284,7 +289,8 @@ sym_list::SymbolInfo ClockResetDomainService::moduleForCandidate(
 {
     for (const sym_list::SymbolInfo& candidate : symbols) {
         if (candidate.symbolName == symbol.moduleScope
-            && SymbolTaxonomy::isModuleDeclaration(candidate.symbolType)) {
+            && SymbolTaxonomy::isModuleDeclaration(
+                SymbolTaxonomy::semanticMetadata(candidate))) {
             return candidate;
         }
     }
@@ -435,7 +441,7 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
                                   type);
     row.sourceRoleDisplayName =
         sourceRoleDisplayName(
-            SymbolTaxonomy::sourceRoleForFileName(member.moduleSymbol.fileName));
+            SymbolTaxonomy::semanticMetadata(member.moduleSymbol).sourceRole);
     return row;
 }
 
@@ -524,7 +530,7 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
             member.detailDisplayName = memberDetailDisplayName(type);
         member.sourceRoleDisplayName =
             sourceRoleDisplayName(
-                SymbolTaxonomy::sourceRoleForFileName(member.moduleSymbol.fileName));
+                SymbolTaxonomy::semanticMetadata(member.moduleSymbol).sourceRole);
     }
 }
 
