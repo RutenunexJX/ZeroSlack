@@ -3037,6 +3037,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                            .references.first()
                            .referencedSymbol.symbolId == stageId,
                true);
+    ReferenceQuery stableStageReferenceQuery = stageReferenceQuery;
+    stableStageReferenceQuery.symbolStableKey =
+        symbolStableKeyForSymbol(index.getSymbolById(stageId));
+    stableStageReferenceQuery.symbolId = topId;
+    const ReferenceReport stableStageReferenceReport =
+        referenceService.findReferenceReport(stableStageReferenceQuery);
+    expectBool("reference report resolves stable query key",
+               stableStageReferenceReport.totalCount == stageReferenceReport.totalCount
+                   && stableStageReferenceReport.subjectStableKey
+                       == stableStageReferenceQuery.symbolStableKey
+                   && stableStageReferenceReport.subjectSymbol.symbolName
+                       == QStringLiteral("rel_stage"),
+               true);
 
     ReferenceQuery currentFileStageReferenceQuery = stageReferenceQuery;
     currentFileStageReferenceQuery.fileName = stagePath;

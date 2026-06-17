@@ -118,6 +118,9 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
         return {};
 
     RelationshipQuery relationshipQuery;
+    relationshipQuery.symbolStableKey = normalized.symbolStableKey.isValid()
+        ? normalized.symbolStableKey
+        : symbolStableKeyForSymbol(semanticIndex()->getSymbolById(id));
     relationshipQuery.symbolId = id;
     relationshipQuery.outgoing = false;
     relationshipQuery.types = effectiveTypes(normalized);
@@ -240,6 +243,8 @@ SemanticIndex* ReferenceService::semanticIndex() const
 
 int ReferenceService::resolveSymbolId(const ReferenceQuery& query) const
 {
+    if (query.symbolStableKey.isValid())
+        return semanticIndex()->findSymbolId(query.symbolStableKey);
     if (query.symbolId >= 0)
         return query.symbolId;
     if (query.symbolName.isEmpty())
