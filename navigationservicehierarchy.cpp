@@ -65,7 +65,7 @@ QList<ModuleHierarchyGroup> NavigationService::buildModuleInstantiationHierarchy
 
         QStringList children;
         const QList<HierarchyNode> childNodes =
-            hierarchyService.moduleInstantiationChildren(module.symbolId);
+            hierarchyService.moduleInstantiationChildren(symbolStableKeyForSymbol(module));
         for (const HierarchyNode& node : childNodes) {
             if (!SymbolTaxonomy::isModuleDeclaration(node.symbol)
                 || node.symbol.symbolName.isEmpty()) {

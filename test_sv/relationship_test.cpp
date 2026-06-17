@@ -2790,6 +2790,18 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("hierarchy service module instantiation children",
                moduleInstantiationChildFoundStage, true);
+    const QList<HierarchyNode> stableModuleInstantiationChildren =
+        hierarchyService.moduleInstantiationChildren(
+            symbolStableKeyForSymbol(index.getSymbolById(topId)));
+    bool stableModuleInstantiationChildFoundStage = false;
+    for (const HierarchyNode& node : stableModuleInstantiationChildren) {
+        stableModuleInstantiationChildFoundStage =
+            stableModuleInstantiationChildFoundStage
+            || (node.symbol.symbolId == stageId
+                && node.viaType == SymbolRelationshipEngine::INSTANTIATES);
+    }
+    expectBool("hierarchy service stable module instantiation children",
+               stableModuleInstantiationChildFoundStage, true);
     const HierarchyReport hierarchyReport =
         hierarchyService.getHierarchyReport(hierarchyQuery);
     expectInt("hierarchy report total count",

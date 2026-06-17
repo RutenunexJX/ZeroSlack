@@ -255,6 +255,16 @@ QList<HierarchyNode> HierarchyService::moduleInstantiationChildren(
     return getChildren(query);
 }
 
+QList<HierarchyNode> HierarchyService::moduleInstantiationChildren(
+    const SymbolStableKey& moduleStableKey) const
+{
+    HierarchyQuery query;
+    query.symbolStableKey = moduleStableKey;
+    query.maxDepth = 1;
+    query.types = {SymbolRelationshipEngine::INSTANTIATES};
+    return getChildren(query);
+}
+
 SemanticIndex* HierarchyService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
