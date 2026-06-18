@@ -7,14 +7,46 @@
 
 namespace {
 
-QString ownerScopeNameForCompletionItem(
-    const sym_list::SymbolInfo& symbol,
-    const SymbolTaxonomy::SemanticMetadata& metadata)
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
 {
-    if (!symbol.moduleScope.isEmpty())
-        return symbol.moduleScope;
+    SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(fallback);
+    if (!record.isValid())
+        return metadata;
 
-    switch (metadata.ownerScope) {
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString displayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    return fallback.symbolName;
+}
+
+QString ownerScopeNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    const SemanticSymbolRecord fallbackRecord =
+        semanticSymbolRecordForSymbol(fallback);
+    if (!fallbackRecord.owner.name.isEmpty())
+        return fallbackRecord.owner.name;
+
+    switch (record.owner.kind) {
     case SymbolTaxonomy::SymbolOwnerScope::Global:
         return QStringLiteral("global");
     case SymbolTaxonomy::SymbolOwnerScope::Module:
@@ -34,23 +66,26 @@ QString ownerScopeNameForCompletionItem(
 CompletionResult::SemanticCompletionItem semanticCompletionItemForSymbol(
     const sym_list::SymbolInfo& symbol)
 {
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
     const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        metadataForRecord(record, symbol);
+    const QString displayName = displayNameForRecord(record, symbol);
 
     CompletionResult::SemanticCompletionItem item;
-    item.label = symbol.symbolName;
-    item.insertText = symbol.symbolName;
+    item.label = displayName;
+    item.insertText = displayName;
     item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
-    item.ownerScopeName = ownerScopeNameForCompletionItem(symbol, metadata);
+    item.ownerScopeName = ownerScopeNameForRecord(record, symbol);
     item.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
     item.symbolRecord = record;
-    item.symbolStableKey = record.stableKey;
-    item.declarationKind = record.declarationKind;
-    item.usageRole = record.usageRole;
-    item.ownerScope = record.owner.kind;
-    item.sourceRole = record.sourceRole;
+    item.symbolStableKey = record.stableKey.isValid()
+        ? record.stableKey
+        : symbolStableKeyForSymbol(symbol);
+    item.declarationKind = metadata.declarationKind;
+    item.usageRole = metadata.usageRole;
+    item.ownerScope = metadata.ownerScope;
+    item.sourceRole = metadata.sourceRole;
     return item;
 }
 

@@ -1508,7 +1508,9 @@ int main(int argc, char** argv) {
         && moduleCompletion.items.first().sourceRole
             == SymbolTaxonomy::SourceRole::DesignSource
         && moduleCompletion.items.first().typeDisplayName == QStringLiteral("logic")
-        && moduleCompletion.items.first().ownerScopeName == QStringLiteral("top");
+        && moduleCompletion.items.first().ownerScopeName == QStringLiteral("top")
+        && moduleCompletion.items.first().ownerScopeName
+            == moduleCompletion.items.first().symbolRecord.owner.name;
     if (!moduleResultItemsOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -1528,6 +1530,9 @@ int main(int argc, char** argv) {
             == QStringLiteral("logic")
         && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScopeName
             == QStringLiteral("top")
+        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScopeName
+            == semanticResultModel.getItem(semanticResultModel.index(0, 0))
+                   .symbolRecord.owner.name
         && semanticResultModel.getItem(semanticResultModel.index(0, 0)).sourceRoleDisplayName
             == QStringLiteral("design source")
         && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScope
@@ -1581,6 +1586,8 @@ int main(int argc, char** argv) {
         && memberCompletion.items.first().ownerScopeName == QStringLiteral("pixel_t")
         && memberCompletion.items.first().symbolRecord.owner.name
             == QStringLiteral("pixel_t")
+        && memberCompletion.items.first().ownerScopeName
+            == memberCompletion.items.first().symbolRecord.owner.name
         && memberCompletion.items.first().symbolRecord.declarationKind
             == SymbolTaxonomy::DeclarationKind::StructMember
         && memberCompletion.items.first().symbolStableKey
