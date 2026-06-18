@@ -4446,6 +4446,17 @@ static void runSignalJourneyServiceFixture()
                    && stableSignalReport.declarationSymbolRecord.stableKey
                        == stableSignalQuery.signalStableKey,
                true);
+    expectBool("signal journey stable key preserves relationships",
+               stableSignalReport.assignments.size() == report.assignments.size()
+                   && stableSignalReport.reads.size() == report.reads.size()
+                   && stableSignalReport.portConnections.size()
+                       == report.portConnections.size()
+                   && stableSignalReport.interfaceConnections.size()
+                       == report.interfaceConnections.size()
+                   && !stableSignalReport.assignments.isEmpty()
+                   && stableSignalReport.assignments.first().toStableKey
+                       == stableSignalQuery.signalStableKey,
+               true);
     expectBool("signal journey declaration display type",
                !report.declarationTypeDisplayName.isEmpty(), true);
     expectBool("signal journey declaration source role",

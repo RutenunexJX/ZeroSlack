@@ -112,6 +112,28 @@ QString interfaceBaseDisplayNameForRecord(
         return record.type.resolvedTypeName;
     return SymbolTaxonomy::interfaceTypeName(fallback);
 }
+
+SymbolStableKey signalJourneyStableKeyForSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    return record.stableKey.isValid()
+        ? record.stableKey
+        : symbolStableKeyForSymbol(symbol);
+}
+
+QList<SemanticRelationshipResult> signalJourneyRelationshipResultsForSymbol(
+    SemanticIndex* index,
+    const sym_list::SymbolInfo& symbol,
+    bool outgoing)
+{
+    if (!index)
+        return {};
+    const SymbolStableKey stableKey = signalJourneyStableKeyForSymbol(symbol);
+    return stableKey.isValid()
+        ? index->getRelationshipResults(stableKey, outgoing)
+        : index->getRelationshipResults(symbol.symbolId, outgoing);
+}
 }
 
 SignalJourneyService* SignalJourneyService::getInstance()
@@ -239,7 +261,9 @@ QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
 {
     QList<SignalJourneyItem> items;
     const QList<SemanticRelationshipResult> relationships =
-        semanticIndex()->getRelationshipResults(signal.symbolId, outgoing);
+        signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+                                                  signal,
+                                                  outgoing);
     for (const SemanticRelationshipResult& relationship : relationships) {
         if (!types.contains(relationship.relationship.type))
             continue;
@@ -263,7 +287,9 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
     QSet<QString> seen;
     auto appendDirection = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
-            semanticIndex()->getRelationshipResults(signal.symbolId, outgoing);
+            signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+                                                      signal,
+                                                      outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
             const sym_list::SymbolInfo peer =
                 outgoing ? relationship.toSymbol : relationship.fromSymbol;
@@ -300,7 +326,9 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
     QSet<QString> seen;
     auto appendDirection = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
-            semanticIndex()->getRelationshipResults(signal.symbolId, outgoing);
+            signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+                                                      signal,
+                                                      outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
             const sym_list::SymbolInfo peer =
                 outgoing ? relationship.toSymbol : relationship.fromSymbol;
@@ -338,7 +366,9 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
     QSet<QString> seen;
     auto appendDirection = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
-            semanticIndex()->getRelationshipResults(signal.symbolId, outgoing);
+            signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+                                                      signal,
+                                                      outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
             if (relationship.relationship.type != SymbolRelationshipEngine::CLOCKS
                 && relationship.relationship.type != SymbolRelationshipEngine::RESETS) {
