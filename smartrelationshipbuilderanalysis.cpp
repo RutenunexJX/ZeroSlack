@@ -138,19 +138,15 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
         if (lineMin >= 0 && (call.lineNumber - 1 < lineMin || call.lineNumber - 1 > lineMax))
             continue;
 
-        int taskId = findSymbolIdByName(call.subroutineName, context);
+        const sym_list::SymbolInfo taskSymbol =
+            findSymbolByName(call.subroutineName, context);
+        const int taskId = taskSymbol.symbolId;
         if (taskId == -1)
             continue;
 
-        sym_list::sym_type_e taskType = sym_list::sym_user;
-        if (context.symbolIdToType.contains(taskId))
-            taskType = context.symbolIdToType[taskId];
-        else {
-            if (context.snapshot)
-                taskType = context.snapshot->getSymbolById(taskId).symbolType;
-            else if (symbolDatabase)
-                taskType = symbolDatabase->getSymbolById(taskId).symbolType;
-        }
+        const sym_list::sym_type_e taskType = context.symbolIdToType.value(
+            taskId,
+            taskSymbol.symbolType);
 
         if (!SymbolTaxonomy::isSubroutineDeclaration(taskType))
             continue;
@@ -170,26 +166,48 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
     }
 }
 
-int SmartRelationshipBuilder::findSymbolIdByName(const QString& symbolName, const AnalysisContext& context)
+sym_list::SymbolInfo SmartRelationshipBuilder::findSymbolByName(
+    const QString& symbolName,
+    const AnalysisContext& context)
 {
     if (context.localSymbolIds.contains(symbolName)) {
-        return context.localSymbolIds[symbolName];
+        const int localId = context.localSymbolIds.value(symbolName);
+        for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
+            if (symbol.symbolId == localId)
+                return symbol;
+        }
+
+        sym_list::SymbolInfo symbol;
+        symbol.symbolId = localId;
+        symbol.symbolName = symbolName;
+        symbol.symbolType = context.symbolIdToType.value(localId, sym_list::sym_user);
+        return symbol;
     }
 
     if (context.snapshot) {
-        const int snapshotId = context.snapshot->findSymbolId(symbolName);
-        if (snapshotId >= 0)
-            return snapshotId;
+        const QList<sym_list::SymbolInfo> definitions =
+            context.snapshot->findDefinitions(symbolName);
+        if (!definitions.isEmpty())
+            return definitions.first();
     }
 
-    if (!symbolDatabase)
-        return -1;
+    if (symbolDatabase) {
+        const QList<sym_list::SymbolInfo> symbols =
+            symbolDatabase->findSymbolsByName(symbolName);
+        if (!symbols.isEmpty())
+            return symbols.first();
+    }
 
-    int id = symbolDatabase->findSymbolIdByName(symbolName);
-    if (id >= 0)
-        return id;
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    return missing;
+}
 
-    return -1;
+int SmartRelationshipBuilder::findSymbolIdByName(
+    const QString& symbolName,
+    const AnalysisContext& context)
+{
+    return findSymbolByName(symbolName, context).symbolId;
 }
 
 void SmartRelationshipBuilder::addRelationshipWithContext(int fromId, int toId,

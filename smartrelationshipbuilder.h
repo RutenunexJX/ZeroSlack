@@ -115,6 +115,8 @@ private:
     void analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeAlwaysBlocks(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
 
+    sym_list::SymbolInfo findSymbolByName(const QString& symbolName,
+                                          const AnalysisContext& context);
     int findSymbolIdByName(const QString& symbolName, const AnalysisContext& context);
     QString findContainingModule(int lineNumber, const AnalysisContext& context);
     int getContainingModuleId(int lineNumber, const AnalysisContext& context);
