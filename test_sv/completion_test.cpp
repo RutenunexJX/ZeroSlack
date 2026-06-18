@@ -2418,6 +2418,29 @@ int main(int argc, char** argv) {
     expectList("snapshot module completions",
                snapshotCompletionService.findCompletions(snapshotModuleQuery),
                {"snap_enable"});
+    CompletionQuery snapshotSemanticModuleQuery;
+    snapshotSemanticModuleQuery.prefix = QStringLiteral("semantic");
+    snapshotSemanticModuleQuery.moduleName = QStringLiteral("snap_top");
+    const CompletionResult snapshotSemanticModuleResult =
+        snapshotCompletionService.findCompletionResult(snapshotSemanticModuleQuery);
+    expectList("snapshot semantic module completions",
+               snapshotSemanticModuleResult.names,
+               {"semantic_top_signal"});
+    ++g_checks;
+    const bool snapshotSemanticModuleItemOk =
+        snapshotSemanticModuleResult.items.size() == 1
+        && snapshotSemanticModuleResult.items.first().label
+            == QStringLiteral("semantic_top_signal")
+        && snapshotSemanticModuleResult.items.first().symbolRecord.owner.name
+            == QStringLiteral("snap_top")
+        && snapshotSemanticModuleResult.items.first().ownerScopeName
+            == snapshotSemanticModuleResult.items.first().symbolRecord.owner.name;
+    if (!snapshotSemanticModuleItemOk)
+        ++g_fails;
+    printf("[%s] %-34s got_count=%d\n",
+           snapshotSemanticModuleItemOk ? "PASS" : "FAIL",
+           "snapshot semantic module items",
+           snapshotSemanticModuleResult.items.size());
     const QList<sym_list::SymbolInfo> snapshotModuleSymbols =
         snapshotCompletionService.findCompletionSymbols(snapshotModuleQuery);
     ++g_checks;
