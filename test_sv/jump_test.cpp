@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
                    && memberNavigationTarget.symbolTypeText == QStringLiteral("member")
                    && memberNavigationTarget.symbolRecord.isValid()
                    && memberNavigationTarget.symbolRecord.localHandle
-                       == pixelRed.symbolId
+                       == memberResult.symbolRecord.localHandle
                    && memberNavigationTarget.symbolRecord.stableKey
                        == memberNavigationTarget.symbolStableKey
                    && memberNavigationTarget.symbolRecord.name
@@ -319,6 +319,34 @@ int main(int argc, char** argv) {
     snapshotRemoteDuplicate.startLine = 31;
     snapshotRemoteDuplicate.symbolId = 6106;
     snapshotDefinitionSymbols.append(snapshotRemoteDuplicate);
+
+    sym_list::SymbolInfo snapshotMetadataScopedDuplicate = snapshotRemoteDuplicate;
+    snapshotMetadataScopedDuplicate.symbolName = QStringLiteral("snap_meta_dup");
+    snapshotMetadataScopedDuplicate.moduleScope = QStringLiteral("snap_top");
+    snapshotMetadataScopedDuplicate.symbolType = sym_list::sym_user;
+    snapshotMetadataScopedDuplicate.symbolId = 6113;
+    snapshotMetadataScopedDuplicate.hasSemanticMetadata = true;
+    snapshotMetadataScopedDuplicate.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Module;
+    snapshotMetadataScopedDuplicate.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    snapshotMetadataScopedDuplicate.semanticOwnerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Module;
+    snapshotMetadataScopedDuplicate.semanticVisibility =
+        SymbolTaxonomy::SymbolVisibility::ScopeLocal;
+    snapshotMetadataScopedDuplicate.semanticSourceRole =
+        SymbolTaxonomy::SourceRole::DesignSource;
+    snapshotMetadataScopedDuplicate.rawCollectorKind = sym_list::sym_user;
+    snapshotDefinitionSymbols.append(snapshotMetadataScopedDuplicate);
+
+    sym_list::SymbolInfo snapshotGlobalMetadataDuplicate =
+        snapshotMetadataScopedDuplicate;
+    snapshotGlobalMetadataDuplicate.semanticOwnerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Global;
+    snapshotGlobalMetadataDuplicate.semanticVisibility =
+        SymbolTaxonomy::SymbolVisibility::Global;
+    snapshotGlobalMetadataDuplicate.symbolId = 6114;
+    snapshotDefinitionSymbols.append(snapshotGlobalMetadataDuplicate);
 
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
@@ -610,6 +638,29 @@ int main(int argc, char** argv) {
         ++g_fails;
     printf("[%s] DefinitionService findDefinitions keeps snapshot local result\n",
            snapshotFindDefinitionsOk ? "PASS" : "FAIL");
+
+    SemanticQueryContext metadataScopedContext;
+    metadataScopedContext.moduleName = QStringLiteral("snap_top");
+    const QList<sym_list::SymbolInfo> metadataScopedDefinitions =
+        snapshotIndex.findDefinitions(QStringLiteral("snap_meta_dup"),
+                                      metadataScopedContext);
+    ++g_checks;
+    const bool metadataScopedDefinitionsOk =
+        metadataScopedDefinitions.size() == 2
+        && metadataScopedDefinitions.first().symbolId
+            == snapshotMetadataScopedDuplicate.symbolId
+        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
+               .owner.name == QStringLiteral("snap_top")
+        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
+               .declarationKind == SymbolTaxonomy::DeclarationKind::Module
+        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
+               .rawCollectorKind == sym_list::sym_user
+        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
+               .stableKey.isValid();
+    if (!metadataScopedDefinitionsOk)
+        ++g_fails;
+    printf("[%s] SemanticIndex sorts definitions by semantic owner\n",
+           metadataScopedDefinitionsOk ? "PASS" : "FAIL");
 
     SourceNavigationService* sourceNavigationService =
         SourceNavigationService::getInstance();

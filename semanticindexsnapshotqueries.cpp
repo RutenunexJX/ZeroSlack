@@ -21,6 +21,11 @@ sym_list::SymbolInfo missingSnapshotSymbol()
     missing.symbolId = -1;
     return missing;
 }
+
+QString snapshotDefinitionSortOwnerName(const sym_list::SymbolInfo& symbol)
+{
+    return semanticSymbolRecordForSymbol(symbol).owner.name;
+}
 }
 
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbols(const QString& fileName) const
@@ -263,7 +268,8 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::sortedDefinitions(
             if (!normalizedContextFile.isEmpty()
                 && normalizedSnapshotQueryFileName(s.fileName) == normalizedContextFile)
                 value += 100;
-            if (!context.moduleName.isEmpty() && s.moduleScope == context.moduleName)
+            if (!context.moduleName.isEmpty()
+                && snapshotDefinitionSortOwnerName(s) == context.moduleName)
                 value += 50;
             if (SymbolTaxonomy::isGlobalDefinition(
                     SymbolTaxonomy::semanticMetadata(s))) {

@@ -75,6 +75,11 @@ int definitionRecordContextPriorityAdjustment(
     return 0;
 }
 
+QString definitionSortOwnerName(const sym_list::SymbolInfo& symbol)
+{
+    return semanticSymbolRecordForSymbol(symbol).owner.name;
+}
+
 }
 
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
@@ -257,7 +262,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::sortedDefinitions(
             if (!normalizedContextFile.isEmpty()
                 && normalizedLookupFileName(s.fileName) == normalizedContextFile)
                 value += 100;
-            if (!context.moduleName.isEmpty() && s.moduleScope == context.moduleName)
+            if (!context.moduleName.isEmpty()
+                && definitionSortOwnerName(s) == context.moduleName)
                 value += 50;
             if (SymbolTaxonomy::isGlobalDefinition(
                     SymbolTaxonomy::semanticMetadata(s))) {
