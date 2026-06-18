@@ -69,8 +69,10 @@ QString ownerDisplayNameForRecord(
 {
     if (!record.owner.name.isEmpty())
         return record.owner.name;
-    if (!fallback.moduleScope.isEmpty())
-        return fallback.moduleScope;
+    const SemanticSymbolRecord fallbackRecord =
+        semanticSymbolRecordForSymbol(fallback);
+    if (!fallbackRecord.owner.name.isEmpty())
+        return fallbackRecord.owner.name;
     if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
         return QStringLiteral("global");
     return QStringLiteral("global");
@@ -174,7 +176,7 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
     target.fileName = fileNameForRecord(target.symbolRecord, result.symbol);
     target.line = startLineForRecord(target.symbolRecord, result.symbol);
     target.column = startColumnForRecord(target.symbolRecord, result.symbol);
-    target.symbolType = result.symbol.symbolType;
+    target.symbolType = target.symbolRecord.rawCollectorKind;
     target.symbolTypeText =
         SymbolTaxonomy::symbolTypeLabel(
             metadataForRecord(target.symbolRecord, result.symbol));
