@@ -255,10 +255,11 @@ QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
         SignalJourneyItem item;
         item.relationship = relationship;
         item.outgoing = outgoing;
-        item.peerSymbol = outgoing ? relationship.toSymbol : relationship.fromSymbol;
-        if (item.peerSymbol.symbolId < 0)
+        const sym_list::SymbolInfo peer =
+            outgoing ? relationship.toSymbol : relationship.fromSymbol;
+        if (peer.symbolId < 0)
             continue;
-        fillDisplayMetadata(item);
+        fillDisplayMetadata(item, peer);
         items.append(item);
     }
     sortItems(items);
@@ -292,9 +293,8 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
 
             SignalJourneyItem item;
             item.relationship = relationship;
-            item.peerSymbol = peer;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item);
+            fillDisplayMetadata(item, peer);
             items.append(item);
         }
     };
@@ -329,10 +329,9 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
 
             SignalJourneyItem item;
             item.relationship = relationship;
-            item.peerSymbol = peer;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item);
-            fillInterfaceDisplayMetadata(item);
+            fillDisplayMetadata(item, peer);
+            fillInterfaceDisplayMetadata(item, peer);
             item.detailDisplayName = QStringLiteral("interface %1")
                                          .arg(item.detailDisplayName);
             items.append(item);
@@ -373,9 +372,8 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
 
             SignalJourneyItem item;
             item.relationship = relationship;
-            item.peerSymbol = peer;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item);
+            fillDisplayMetadata(item, peer);
             item.detailDisplayName = QStringLiteral("timing %1")
                                          .arg(item.detailDisplayName);
             items.append(item);
@@ -566,16 +564,22 @@ void SignalJourneyService::fillDeclarationDisplayMetadata(
                                        report.declaration);
 }
 
-void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
+void SignalJourneyService::fillDisplayMetadata(
+    SignalJourneyItem& item,
+    const sym_list::SymbolInfo& peerSymbol)
 {
-    item.fromSymbol = item.relationship.fromSymbol;
-    item.toSymbol = item.relationship.toSymbol;
-    item.fromSymbolRecord = semanticSymbolRecordForSymbol(item.fromSymbol);
-    item.toSymbolRecord = semanticSymbolRecordForSymbol(item.toSymbol);
+    const sym_list::SymbolInfo fromSymbol = item.relationship.fromSymbol;
+    const sym_list::SymbolInfo toSymbol = item.relationship.toSymbol;
+    item.fromSymbolRecord = item.relationship.fromSymbolRecord.isValid()
+        ? item.relationship.fromSymbolRecord
+        : semanticSymbolRecordForSymbol(fromSymbol);
+    item.toSymbolRecord = item.relationship.toSymbolRecord.isValid()
+        ? item.relationship.toSymbolRecord
+        : semanticSymbolRecordForSymbol(toSymbol);
     item.peerSymbolRecord =
         item.outgoing ? item.toSymbolRecord : item.fromSymbolRecord;
     if (!item.peerSymbolRecord.isValid())
-        item.peerSymbolRecord = semanticSymbolRecordForSymbol(item.peerSymbol);
+        item.peerSymbolRecord = semanticSymbolRecordForSymbol(peerSymbol);
     item.fromStableKey = item.fromSymbolRecord.stableKey.isValid()
         ? item.fromSymbolRecord.stableKey
         : item.relationship.fromStableKey;
@@ -586,11 +590,11 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
         ? item.peerSymbolRecord.stableKey
         : (item.outgoing ? item.toStableKey : item.fromStableKey);
     item.peerCodeLink = codeLinkForRecord(item.peerSymbolRecord,
-                                          item.peerSymbol);
+                                          peerSymbol);
     item.fromCodeLink = codeLinkForRecord(item.fromSymbolRecord,
-                                          item.fromSymbol);
+                                          fromSymbol);
     item.toCodeLink = codeLinkForRecord(item.toSymbolRecord,
-                                        item.toSymbol);
+                                        toSymbol);
     item.provenance = item.relationship.provenance;
     item.confidence = item.relationship.confidence;
     item.evidenceText = item.relationship.evidenceText;
@@ -601,30 +605,30 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
     item.confidenceDisplayName = confidenceDisplayName(item.confidence);
     item.evidenceDisplayName = evidenceDisplayName(item.evidenceText);
     item.peerSymbolDisplayName =
-        symbolDisplayNameForRecord(item.peerSymbolRecord, item.peerSymbol);
+        symbolDisplayNameForRecord(item.peerSymbolRecord, peerSymbol);
     item.fromSymbolDisplayName =
-        symbolDisplayNameForRecord(item.fromSymbolRecord, item.fromSymbol);
+        symbolDisplayNameForRecord(item.fromSymbolRecord, fromSymbol);
     item.toSymbolDisplayName =
-        symbolDisplayNameForRecord(item.toSymbolRecord, item.toSymbol);
+        symbolDisplayNameForRecord(item.toSymbolRecord, toSymbol);
     item.fromTypeDisplayName =
-        typeDisplayNameForRecord(item.fromSymbolRecord, item.fromSymbol);
+        typeDisplayNameForRecord(item.fromSymbolRecord, fromSymbol);
     item.toTypeDisplayName =
-        typeDisplayNameForRecord(item.toSymbolRecord, item.toSymbol);
+        typeDisplayNameForRecord(item.toSymbolRecord, toSymbol);
     item.fromSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(item.fromSymbolRecord,
-                                       item.fromSymbol);
+                                       fromSymbol);
     item.toSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(item.toSymbolRecord,
-                                       item.toSymbol);
+                                       toSymbol);
     item.connectionKindDisplayName = QStringLiteral("relationship");
     item.peerTypeDisplayName =
-        typeDisplayNameForRecord(item.peerSymbolRecord, item.peerSymbol);
+        typeDisplayNameForRecord(item.peerSymbolRecord, peerSymbol);
     item.peerSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(item.peerSymbolRecord,
-                                       item.peerSymbol);
+                                       peerSymbol);
     item.interfaceBaseDisplayName =
         interfaceBaseDisplayNameForRecord(item.peerSymbolRecord,
-                                          item.peerSymbol);
+                                          peerSymbol);
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
     item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;
     item.detailDisplayName = QStringLiteral("%1 %2")
@@ -632,13 +636,15 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
                                       item.relationshipTypeDisplayName);
 }
 
-void SignalJourneyService::fillInterfaceDisplayMetadata(SignalJourneyItem& item)
+void SignalJourneyService::fillInterfaceDisplayMetadata(
+    SignalJourneyItem& item,
+    const sym_list::SymbolInfo& peerSymbol)
 {
     item.connectionKindDisplayName =
         interfaceConnectionKindDisplayName(item.peerSymbolRecord,
-                                           item.peerSymbol);
+                                           peerSymbol);
     item.interfaceBaseDisplayName =
-        interfaceBaseDisplayName(item.peerSymbolRecord, item.peerSymbol);
+        interfaceBaseDisplayName(item.peerSymbolRecord, peerSymbol);
 }
 
 void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)
@@ -646,40 +652,20 @@ void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)
     std::sort(items.begin(), items.end(),
               [](const SignalJourneyItem& lhs,
                  const SignalJourneyItem& rhs) {
-                  const sym_list::SymbolInfo& left = lhs.peerSymbol;
-                  const sym_list::SymbolInfo& right = rhs.peerSymbol;
                   const QString leftFileName =
-                      lhs.peerSymbolRecord.location.fileName.isEmpty()
-                          ? left.fileName
-                          : lhs.peerSymbolRecord.location.fileName;
+                      lhs.peerSymbolRecord.location.fileName;
                   const QString rightFileName =
-                      rhs.peerSymbolRecord.location.fileName.isEmpty()
-                          ? right.fileName
-                          : rhs.peerSymbolRecord.location.fileName;
+                      rhs.peerSymbolRecord.location.fileName;
                   const int leftLine =
-                      lhs.peerSymbolRecord.location.startLine > 0
-                          ? lhs.peerSymbolRecord.location.startLine
-                          : left.startLine;
+                      lhs.peerSymbolRecord.location.startLine;
                   const int rightLine =
-                      rhs.peerSymbolRecord.location.startLine > 0
-                          ? rhs.peerSymbolRecord.location.startLine
-                          : right.startLine;
+                      rhs.peerSymbolRecord.location.startLine;
                   const int leftColumn =
-                      lhs.peerSymbolRecord.location.startColumn > 0
-                          ? lhs.peerSymbolRecord.location.startColumn
-                          : left.startColumn;
+                      lhs.peerSymbolRecord.location.startColumn;
                   const int rightColumn =
-                      rhs.peerSymbolRecord.location.startColumn > 0
-                          ? rhs.peerSymbolRecord.location.startColumn
-                          : right.startColumn;
-                  const QString leftName =
-                      lhs.peerSymbolRecord.name.isEmpty()
-                          ? left.symbolName
-                          : lhs.peerSymbolRecord.name;
-                  const QString rightName =
-                      rhs.peerSymbolRecord.name.isEmpty()
-                          ? right.symbolName
-                          : rhs.peerSymbolRecord.name;
+                      rhs.peerSymbolRecord.location.startColumn;
+                  const QString leftName = lhs.peerSymbolRecord.name;
+                  const QString rightName = rhs.peerSymbolRecord.name;
                   if (leftFileName != rightFileName)
                       return leftFileName < rightFileName;
                   if (leftLine != rightLine)
@@ -688,6 +674,7 @@ void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)
                       return leftColumn < rightColumn;
                   if (leftName != rightName)
                       return leftName < rightName;
-                  return left.symbolId < right.symbolId;
+                  return lhs.peerStableKey.toString()
+                      < rhs.peerStableKey.toString();
               });
 }

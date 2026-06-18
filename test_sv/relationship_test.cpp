@@ -4542,7 +4542,7 @@ static void runSignalJourneyServiceFixture()
               report.timingConnections.size(), 0);
     expectBool("signal journey assignment peer",
                !report.assignments.isEmpty()
-                   && report.assignments.first().peerSymbol.symbolName
+                   && report.assignments.first().peerSymbolDisplayName
                        == QStringLiteral("next_data")
                    && report.assignments.first().directionDisplayName
                        == QStringLiteral("incoming")
@@ -4591,9 +4591,9 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal journey assignment stable keys",
                !report.assignments.isEmpty()
                    && report.assignments.first().fromStableKey
-                       == symbolStableKeyForSymbol(report.assignments.first().fromSymbol)
+                       == report.assignments.first().fromSymbolRecord.stableKey
                    && report.assignments.first().toStableKey
-                       == symbolStableKeyForSymbol(report.assignments.first().toSymbol)
+                       == report.assignments.first().toSymbolRecord.stableKey
                    && report.assignments.first().peerStableKey
                        == report.assignments.first().fromStableKey,
                true);
@@ -4629,14 +4629,14 @@ static void runSignalJourneyServiceFixture()
                true);
     expectBool("signal journey read peer",
                !report.reads.isEmpty()
-                   && report.reads.first().peerSymbol.symbolName
+                   && report.reads.first().peerSymbolDisplayName
                        == QStringLiteral("consumer")
                    && report.reads.first().detailDisplayName
                        == QStringLiteral("incoming Reads From"),
                true);
     expectBool("signal journey port peer",
                !report.portConnections.isEmpty()
-                   && report.portConnections.first().peerSymbol.symbolName
+                   && report.portConnections.first().peerSymbolDisplayName
                        == QStringLiteral("u_stage.data_i")
                    && !report.portConnections.first().detailDisplayName.isEmpty(),
                true);

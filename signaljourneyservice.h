@@ -26,9 +26,6 @@ enum class SignalJourneyNotFoundReason {
 
 struct SignalJourneyItem {
     SemanticRelationshipResult relationship;
-    sym_list::SymbolInfo peerSymbol = {};
-    sym_list::SymbolInfo fromSymbol = {};
-    sym_list::SymbolInfo toSymbol = {};
     SemanticSymbolRecord peerSymbolRecord;
     SemanticSymbolRecord fromSymbolRecord;
     SemanticSymbolRecord toSymbolRecord;
@@ -132,8 +129,11 @@ private:
         const SemanticSymbolRecord& record,
         const sym_list::SymbolInfo& fallback);
     static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
-    static void fillDisplayMetadata(SignalJourneyItem& item);
-    static void fillInterfaceDisplayMetadata(SignalJourneyItem& item);
+    static void fillDisplayMetadata(SignalJourneyItem& item,
+                                    const sym_list::SymbolInfo& peerSymbol);
+    static void fillInterfaceDisplayMetadata(
+        SignalJourneyItem& item,
+        const sym_list::SymbolInfo& peerSymbol);
     static void sortItems(QList<SignalJourneyItem>& items);
 };
 
