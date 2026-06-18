@@ -204,6 +204,18 @@ QString lineDisplayName(int line)
     return QString::number(line);
 }
 
+SymbolStableKey relationshipEndpointStableKey(
+    const SemanticSymbolRecord& record,
+    const SymbolStableKey& relationshipStableKey,
+    const sym_list::SymbolInfo& fallbackSymbol)
+{
+    if (record.stableKey.isValid())
+        return record.stableKey;
+    if (relationshipStableKey.isValid())
+        return relationshipStableKey;
+    return semanticSymbolRecordForSymbol(fallbackSymbol).stableKey;
+}
+
 QString reportNotFoundReasonDisplayName(
     RelationshipReportNotFoundReason reason)
 {
@@ -440,8 +452,12 @@ QList<SymbolStableKey> RelationshipService::findRelatedSymbolKeys(
     const QList<RelationshipResult> relationships = findRelationships(query);
     for (const RelationshipResult& relationship : relationships) {
         const SymbolStableKey key = query.outgoing
-            ? relationship.toStableKey
-            : relationship.fromStableKey;
+            ? relationshipEndpointStableKey(relationship.toSymbolRecord,
+                                            relationship.toStableKey,
+                                            relationship.toSymbol)
+            : relationshipEndpointStableKey(relationship.fromSymbolRecord,
+                                            relationship.fromStableKey,
+                                            relationship.fromSymbol);
         if (key.isValid())
             result.append(key);
     }
@@ -522,12 +538,14 @@ bool RelationshipService::hasRelationship(
 
     const QList<RelationshipResult> relationships = findRelationships(query);
     for (const RelationshipResult& relationship : relationships) {
-        const SymbolStableKey relatedFromKey = relationship.fromStableKey.isValid()
-            ? relationship.fromStableKey
-            : semanticSymbolRecordForSymbol(relationship.fromSymbol).stableKey;
-        const SymbolStableKey relatedToKey = relationship.toStableKey.isValid()
-            ? relationship.toStableKey
-            : semanticSymbolRecordForSymbol(relationship.toSymbol).stableKey;
+        const SymbolStableKey relatedFromKey = relationshipEndpointStableKey(
+            relationship.fromSymbolRecord,
+            relationship.fromStableKey,
+            relationship.fromSymbol);
+        const SymbolStableKey relatedToKey = relationshipEndpointStableKey(
+            relationship.toSymbolRecord,
+            relationship.toStableKey,
+            relationship.toSymbol);
         if (relatedFromKey == fromStableKey
             && relatedToKey == toStableKey
             && relationship.relationship.type == type) {
