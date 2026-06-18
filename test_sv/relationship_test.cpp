@@ -5576,7 +5576,7 @@ static void runFsmGraphServiceFixture()
                    && !stableFsmReport.graphs.isEmpty()
                    && stableFsmReport.graphs.first().moduleStableKey
                        == stableFsmQuery.moduleStableKey
-                   && stableFsmReport.graphs.first().moduleSymbol.symbolName
+                   && stableFsmReport.graphs.first().moduleDisplayName
                        == QStringLiteral("fsm_top"),
                true);
     expectBool("fsm graph group metadata",
@@ -5616,6 +5616,8 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().moduleSymbolRecord.stableKey
                        == report.graphs.first().moduleStableKey
                    && report.graphs.first().moduleSymbolRecord.name
+                       == QStringLiteral("fsm_top")
+                   && report.graphs.first().moduleDisplayName
                        == QStringLiteral("fsm_top")
                    && report.graphs.first().stateRegisterRecord.isValid()
                    && report.graphs.first().stateRegisterRecord.localHandle == 9302
@@ -5679,14 +5681,14 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("4"),
                true);
     expectInt("fsm graph state count",
-              report.graphs.isEmpty() ? 0 : report.graphs.first().states.size(),
+              report.graphs.isEmpty() ? 0 : report.graphs.first().stateCount,
               3);
     expectBool("fsm graph state row metadata",
                !report.graphs.isEmpty()
                    && report.graphs.first().statesGroupDisplayName
                        == QStringLiteral("States")
                    && report.graphs.first().stateRows.size()
-                       == report.graphs.first().states.size()
+                       == report.graphs.first().stateCount
                    && !report.graphs.first().stateRows.isEmpty()
                    && report.graphs.first().stateRows.first().sectionDisplayName
                        == QStringLiteral("State")
@@ -5872,7 +5874,7 @@ static void runFsmGraphServiceFixture()
     expectInt("fsm graph package enum state count",
               packageReport.graphs.isEmpty()
                   ? 0
-                  : packageReport.graphs.first().states.size(),
+                  : packageReport.graphs.first().stateCount,
               2);
     expectInt("fsm graph package enum transition count",
               packageReport.graphs.isEmpty()

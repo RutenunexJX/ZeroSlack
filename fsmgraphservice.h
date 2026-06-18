@@ -81,6 +81,8 @@ struct FsmGraph {
     QList<FsmTransition> transitions;
     QList<FsmStateRow> stateRows;
     QList<FsmTransitionRow> transitionRows;
+    QString moduleDisplayName;
+    int stateCount = 0;
     QString stateRegisterSectionDisplayName;
     QString stateRegisterDisplayName;
     QString stateRegisterDetailDisplayName;

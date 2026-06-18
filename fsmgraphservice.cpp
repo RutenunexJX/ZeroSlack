@@ -811,6 +811,11 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
         codeLinkForRecord(graph.stateRegisterRecord, graph.stateRegister);
     graph.nextStateSignalCodeLink =
         codeLinkForRecord(graph.nextStateSignalRecord, graph.nextStateSignal);
+    graph.moduleDisplayName =
+        displayNameForRecord(graph.moduleSymbolRecord,
+                             graph.moduleSymbol,
+                             QStringLiteral("<unknown>"));
+    graph.stateCount = graph.states.size();
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDisplayName =
         displayNameForRecord(graph.stateRegisterRecord,

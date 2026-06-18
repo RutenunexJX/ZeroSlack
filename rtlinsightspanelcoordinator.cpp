@@ -481,7 +481,7 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
             ? QStringLiteral("States")
             : graph.statesGroupDisplayName;
         states->setText(0, SemanticPanelUtils::countLabel(statesGroup,
-                                                          graph.states.size()));
+                                                          graph.stateCount));
         for (const FsmStateRow& row : graph.stateRows) {
             QTreeWidgetItem* state =
                 createChildItem(states,
