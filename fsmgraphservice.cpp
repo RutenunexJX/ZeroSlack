@@ -675,6 +675,8 @@ QList<FsmStateRow> FsmGraphService::stateRows(
             : symbolStableKeyForSymbol(state);
         row.codeLink = codeLinkForRecord(row.stateRecord, state);
         row.sectionDisplayName = QStringLiteral("State");
+        row.stateDisplayName =
+            displayNameForRecord(row.stateRecord, state, state.symbolName);
         row.detailDisplayName = stateDetailDisplayName(state);
         row.typeDisplayName = typeDisplayNameForRecord(row.stateRecord, state);
         row.sourceRoleDisplayName =

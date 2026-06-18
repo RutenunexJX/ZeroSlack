@@ -5711,6 +5711,8 @@ static void runFsmGraphServiceFixture()
                    && !report.graphs.first().stateRows.isEmpty()
                    && report.graphs.first().stateRows.first().sectionDisplayName
                        == QStringLiteral("State")
+                   && !report.graphs.first().stateRows.first()
+                           .stateDisplayName.isEmpty()
                    && report.graphs.first().stateRows.first().detailDisplayName
                        == QStringLiteral("state_t")
                    && report.graphs.first().stateRows.first().typeDisplayName
@@ -5736,7 +5738,7 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().stateRows.first().stateRecord.stableKey
                        == report.graphs.first().stateRows.first().stateStableKey
                    && report.graphs.first().stateRows.first().stateRecord.name
-                       == report.graphs.first().stateRows.first().state.symbolName
+                       == report.graphs.first().stateRows.first().stateDisplayName
                    && report.graphs.first().stateRows.first()
                           .stateRecord.type.rawTypeText
                        == QStringLiteral("state_t")
@@ -7494,6 +7496,7 @@ static void runRealWorkspaceIncludeFixture()
             && !graph.stateRows.first().codeLink.fileDisplayName.isEmpty()
             && !graph.stateRows.first().codeLink.lineDisplayName.isEmpty();
         sawRealPhyPassFsmStateMetadata = !graph.stateRows.isEmpty()
+            && !graph.stateRows.first().stateDisplayName.isEmpty()
             && !graph.stateRows.first().typeDisplayName.isEmpty()
             && !graph.stateRows.first().sourceRoleDisplayName.isEmpty()
             && !graph.stateRows.first().moduleDisplayName.isEmpty();

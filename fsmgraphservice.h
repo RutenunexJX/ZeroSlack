@@ -40,6 +40,7 @@ struct FsmStateRow {
     SymbolStableKey stateStableKey;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
+    QString stateDisplayName;
     QString detailDisplayName;
     QString typeDisplayName;
     QString sourceRoleDisplayName;
