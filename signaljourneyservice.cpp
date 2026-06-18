@@ -214,21 +214,6 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
         return symbol;
     }
 
-    if (query.signalSymbolId >= 0) {
-        const sym_list::SymbolInfo symbol =
-            semanticIndex()->getSymbolById(query.signalSymbolId);
-        if (symbol.symbolId < 0) {
-            if (reason)
-                *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
-            return missingSignalJourneySymbol();
-        }
-        if (!isJourneyDeclaration(symbol)) {
-            if (reason)
-                *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
-            return missingSignalJourneySymbol();
-        }
-        return symbol;
-    }
     if (query.signalName.isEmpty()) {
         if (reason)
             *reason = SignalJourneyNotFoundReason::EmptySignalName;

@@ -4433,7 +4433,6 @@ static void runSignalJourneyServiceFixture()
                true);
     SignalJourneyQuery stableSignalQuery;
     stableSignalQuery.signalStableKey = symbolStableKeyForSymbol(report.declaration);
-    stableSignalQuery.signalSymbolId = 9104;
     stableSignalQuery.signalName = QStringLiteral("consumer");
     const SignalJourneyReport stableSignalReport =
         service.buildSignalJourney(stableSignalQuery);
@@ -7163,7 +7162,10 @@ static void runRealWorkspaceIncludeFixture()
 
     SignalJourneyService signalJourneyService(&index);
     SignalJourneyQuery interfaceJourneyQuery;
-    interfaceJourneyQuery.signalSymbolId = interfaceInstId;
+    interfaceJourneyQuery.signalStableKey =
+        symbolStableKeyForSymbol(symbolByName(QStringLiteral("LR_GENR_IF"),
+                                              sym_list::sym_inst,
+                                              QStringLiteral("rtl_top")));
     interfaceJourneyQuery.fileName = topPath;
     interfaceJourneyQuery.moduleName = QStringLiteral("rtl_top");
     const SignalJourneyReport interfaceJourney =

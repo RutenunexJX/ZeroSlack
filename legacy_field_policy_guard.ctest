@@ -100,6 +100,11 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
     signaljourneyservice.cpp
 )
 
+set(F3_REMOVED_COMPATIBILITY_PATTERNS
+    "signaljourneyservice.h|signalSymbolId"
+    "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
+)
+
 set(missing_files)
 set(violations)
 foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
@@ -206,4 +211,32 @@ if(stable_key_violations)
     list(JOIN stable_key_violations "\n  " stable_key_violation_text)
     message(FATAL_ERROR
         "Stable-key migrated services must not resolve stable keys through int-id APIs or raw relationship queries:\n  ${stable_key_violation_text}")
+endif()
+
+set(f3_removed_compatibility_violations)
+foreach(entry IN LISTS F3_REMOVED_COMPATIBILITY_PATTERNS)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 relative_path)
+    set(patterns ${parts})
+    list(REMOVE_AT patterns 0)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND f3_removed_compatibility_violations
+             "${relative_path} (missing file)")
+        continue()
+    endif()
+    file(READ "${path}" content)
+    foreach(pattern IN LISTS patterns)
+        string(REGEX MATCH "${pattern}" match "${content}")
+        if(match)
+            list(APPEND f3_removed_compatibility_violations
+                 "${relative_path}: ${pattern}")
+        endif()
+    endforeach()
+endforeach()
+
+if(f3_removed_compatibility_violations)
+    list(JOIN f3_removed_compatibility_violations "\n  " f3_removed_text)
+    message(FATAL_ERROR
+        "Removed Phase F3 compatibility surfaces must not return:\n  ${f3_removed_text}")
 endif()
