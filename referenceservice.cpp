@@ -313,18 +313,6 @@ SemanticSymbolRecord ReferenceService::resolveSubjectSymbolRecord(
     return semanticSymbolRecordForSymbol(definitions.first());
 }
 
-sym_list::SymbolInfo ReferenceService::resolveSubjectSymbol(
-    const ReferenceQuery& query) const
-{
-    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
-    if (!record.stableKey.isValid()) {
-        sym_list::SymbolInfo missing;
-        missing.symbolId = -1;
-        return missing;
-    }
-    return semanticIndex()->getSymbolByStableKey(record.stableKey);
-}
-
 QList<SymbolRelationshipEngine::RelationType> ReferenceService::effectiveTypes(
     const ReferenceQuery& query) const
 {

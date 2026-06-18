@@ -607,30 +607,6 @@ SemanticSymbolRecord RelationshipService::resolveSubjectSymbolRecord(
     return semanticSymbolRecordForSymbol(definitions.first());
 }
 
-sym_list::SymbolInfo RelationshipService::resolveSubjectSymbol(
-    const RelationshipQuery& query) const
-{
-    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
-    if (!record.stableKey.isValid()) {
-        sym_list::SymbolInfo missing;
-        missing.symbolId = -1;
-        return missing;
-    }
-    return semanticIndex()->getSymbolByStableKey(record.stableKey);
-}
-
-sym_list::SymbolInfo RelationshipService::resolveSubjectSymbol(
-    const RelationshipBrowseQuery& query) const
-{
-    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
-    if (!record.stableKey.isValid()) {
-        sym_list::SymbolInfo missing;
-        missing.symbolId = -1;
-        return missing;
-    }
-    return semanticIndex()->getSymbolByStableKey(record.stableKey);
-}
-
 RelationshipQuery RelationshipService::normalizedQuery(const RelationshipQuery& query)
 {
     RelationshipQuery normalized = query;
