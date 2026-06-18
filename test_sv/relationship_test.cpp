@@ -5638,7 +5638,7 @@ static void runFsmGraphServiceFixture()
                true);
     expectBool("fsm graph next state",
                !report.graphs.isEmpty()
-                   && report.graphs.first().nextStateSignal.symbolName
+                   && report.graphs.first().nextStateSignalDisplayName
                        == QStringLiteral("state_d"),
                true);
     expectBool("fsm graph register display metadata",
@@ -5868,7 +5868,7 @@ static void runFsmGraphServiceFixture()
                !packageReport.graphs.isEmpty()
                    && packageReport.graphs.first().stateRegisterDisplayName
                        == QStringLiteral("cs")
-                   && packageReport.graphs.first().nextStateSignal.symbolName
+                   && packageReport.graphs.first().nextStateSignalDisplayName
                        == QStringLiteral("ns"),
                true);
     expectInt("fsm graph package enum state count",
@@ -7422,7 +7422,7 @@ static void runRealWorkspaceIncludeFixture()
             != QStringLiteral("phy_pass_thrg_cfg_cs")) {
             continue;
         }
-        sawRealPhyPassFsm = graph.nextStateSignal.symbolName
+        sawRealPhyPassFsm = graph.nextStateSignalDisplayName
             == QStringLiteral("phy_pass_thrg_cfg_ns");
         sawRealPhyPassFsmRegisterMetadata =
             graph.stateRegisterTypeDisplayName == QStringLiteral("enum")

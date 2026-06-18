@@ -175,7 +175,9 @@ private:
         const QList<FsmTransition>& transitions,
         const QList<sym_list::SymbolInfo>& states);
     static QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
-    static QString stateRegisterDetailDisplayName(const FsmGraph& graph);
+    static QString stateRegisterDetailDisplayName(
+        const FsmGraph& graph,
+        const QString& nextStateSignalDisplayName);
     static QString transitionDetailDisplayName(const FsmTransition& transition);
     static QString transitionConditionDisplayName(const FsmTransition& transition);
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);

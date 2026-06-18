@@ -739,11 +739,12 @@ QString FsmGraphService::stateDetailDisplayName(
 }
 
 QString FsmGraphService::stateRegisterDetailDisplayName(
-    const FsmGraph& graph)
+    const FsmGraph& graph,
+    const QString& nextStateSignalDisplayName)
 {
     if (graph.nextStateSignal.symbolId >= 0) {
         return QStringLiteral("next %1")
-            .arg(graph.nextStateSignal.symbolName);
+            .arg(nextStateSignalDisplayName);
     }
     return QStringLiteral("state register");
 }
@@ -821,7 +822,6 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
         displayNameForRecord(graph.stateRegisterRecord,
                              graph.stateRegister,
                              QStringLiteral("<unknown>"));
-    graph.stateRegisterDetailDisplayName = stateRegisterDetailDisplayName(graph);
     graph.stateRegisterTypeDisplayName =
         typeDisplayNameForRecord(graph.stateRegisterRecord,
                                  graph.stateRegister);
@@ -832,6 +832,9 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
         ? displayNameForRecord(graph.nextStateSignalRecord,
                                graph.nextStateSignal)
         : QString();
+    graph.stateRegisterDetailDisplayName =
+        stateRegisterDetailDisplayName(graph,
+                                       graph.nextStateSignalDisplayName);
     graph.nextStateSignalTypeDisplayName = graph.nextStateSignal.symbolId >= 0
         ? typeDisplayNameForRecord(graph.nextStateSignalRecord,
                                    graph.nextStateSignal)
