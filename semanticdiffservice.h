@@ -43,9 +43,6 @@ struct SemanticDiffSymbolChange {
     SemanticDiffChangeKind kind = SemanticDiffChangeKind::Added;
     SemanticDiffSymbolCategory category = SemanticDiffSymbolCategory::Signal;
     QString key;
-    sym_list::SymbolInfo beforeSymbol = {};
-    sym_list::SymbolInfo afterSymbol = {};
-    sym_list::SymbolInfo displaySymbol = {};
     SemanticSymbolRecord beforeSymbolRecord;
     SemanticSymbolRecord afterSymbolRecord;
     SemanticSymbolRecord displaySymbolRecord;
@@ -55,6 +52,7 @@ struct SemanticDiffSymbolChange {
     QString kindDisplayName;
     QString categoryDisplayName;
     QString categoryGroupDisplayName;
+    QString symbolDisplayName;
     QString sourceRoleDisplayName;
     QString symbolTypeDisplayName;
     QString scopeDisplayName;
@@ -208,7 +206,9 @@ private:
     static QString provenanceDisplayName(RelationshipProvenance provenance);
     static QString confidenceDisplayName(int confidence);
     static QString evidenceDisplayName(const QString& evidenceText);
-    static void fillDisplayMetadata(SemanticDiffSymbolChange& change);
+    static void fillDisplayMetadata(SemanticDiffSymbolChange& change,
+                                    const sym_list::SymbolInfo& beforeSymbol,
+                                    const sym_list::SymbolInfo& afterSymbol);
     static void fillDisplayMetadata(SemanticDiffRelationshipChange& change);
     static void fillDisplayMetadata(SemanticDiffDiagnosticChange& change);
 

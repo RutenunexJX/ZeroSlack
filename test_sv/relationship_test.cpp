@@ -6155,14 +6155,14 @@ static void runSemanticDiffServiceFixture()
             ++modifiedSymbols;
         if (change.kind == SemanticDiffChangeKind::Modified
             && change.category == SemanticDiffSymbolCategory::Port
-            && change.beforeSymbol.symbolName == QStringLiteral("data")
-            && change.beforeSymbol.symbolType == sym_list::sym_port_input
-            && change.afterSymbol.symbolType == sym_list::sym_port_output) {
+            && change.beforeSymbolRecord.name == QStringLiteral("data")
+            && change.beforeSymbolTypeDisplayName == QStringLiteral("input")
+            && change.afterSymbolTypeDisplayName == QStringLiteral("output")) {
             dataPortModified = true;
             symbolDisplayMetadataFound =
                 change.kindDisplayName == QStringLiteral("Modified")
                 && change.categoryDisplayName == QStringLiteral("port")
-                && change.displaySymbol.symbolName == QStringLiteral("data")
+                && change.symbolDisplayName == QStringLiteral("data")
                 && change.detailDisplayName.contains(QStringLiteral("port"))
                 && change.detailDisplayName.contains(QStringLiteral("scope diff_top"))
                 && change.detailDisplayName.contains(QStringLiteral("design source"));
@@ -6174,9 +6174,9 @@ static void runSemanticDiffServiceFixture()
                 change.beforeSymbolTypeDisplayName == QStringLiteral("input")
                 && change.afterSymbolTypeDisplayName == QStringLiteral("output")
                 && change.beforeStableKey
-                    == symbolStableKeyForSymbol(change.beforeSymbol)
+                    == change.beforeSymbolRecord.stableKey
                 && change.afterStableKey
-                    == symbolStableKeyForSymbol(change.afterSymbol)
+                    == change.afterSymbolRecord.stableKey
                 && change.beforeScopeDisplayName == QStringLiteral("scope diff_top")
                 && change.afterScopeDisplayName == QStringLiteral("scope diff_top")
                 && change.beforeSourceRoleDisplayName
@@ -6204,7 +6204,7 @@ static void runSemanticDiffServiceFixture()
                 && change.codeLink.lineDisplayName == QStringLiteral("3");
             symbolStableKeyFound =
                 change.displayStableKey
-                == symbolStableKeyForSymbol(change.displaySymbol);
+                == change.displaySymbolRecord.stableKey;
             symbolRecordMetadataFound =
                 change.beforeSymbolRecord.isValid()
                 && change.beforeSymbolRecord.localHandle == 9403
@@ -6235,12 +6235,12 @@ static void runSemanticDiffServiceFixture()
         }
         if (change.kind == SemanticDiffChangeKind::Added
             && change.category == SemanticDiffSymbolCategory::Signal
-            && change.afterSymbol.symbolName == QStringLiteral("state_q")) {
+            && change.afterSymbolRecord.name == QStringLiteral("state_q")) {
             newSignalAdded = true;
         }
         if (change.kind == SemanticDiffChangeKind::Removed
             && change.category == SemanticDiffSymbolCategory::Package
-            && change.beforeSymbol.symbolName == QStringLiteral("old_pkg")) {
+            && change.beforeSymbolRecord.name == QStringLiteral("old_pkg")) {
             oldPackageRemoved =
                 change.categoryDisplayName == QStringLiteral("package")
                 && change.categoryGroupDisplayName == QStringLiteral("Packages")
@@ -6248,14 +6248,14 @@ static void runSemanticDiffServiceFixture()
         }
         if (change.kind == SemanticDiffChangeKind::Added
             && change.category == SemanticDiffSymbolCategory::Interface
-            && change.afterSymbol.symbolName == QStringLiteral("diff_if")) {
+            && change.afterSymbolRecord.name == QStringLiteral("diff_if")) {
             newInterfaceAdded =
                 change.categoryDisplayName == QStringLiteral("interface")
                 && change.categoryGroupDisplayName == QStringLiteral("Interfaces");
         }
         if (change.kind == SemanticDiffChangeKind::Added
             && change.category == SemanticDiffSymbolCategory::Type
-            && change.afterSymbol.symbolName == QStringLiteral("state_t")) {
+            && change.afterSymbolRecord.name == QStringLiteral("state_t")) {
             newTypeAdded =
                 change.categoryDisplayName == QStringLiteral("type")
                 && change.categoryGroupDisplayName == QStringLiteral("Types");
@@ -7515,16 +7515,16 @@ static void runRealWorkspaceIncludeFixture()
     for (const SemanticDiffSymbolChange& change : realDiffReport.symbolChanges) {
         sawRealDiffInterface = sawRealDiffInterface
             || (change.category == SemanticDiffSymbolCategory::Interface
-                && change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
+                && change.symbolDisplayName == QStringLiteral("lr_genr_if")
                 && change.categoryGroupDisplayName == QStringLiteral("Interfaces"));
         sawRealDiffInterfaceMetadata = sawRealDiffInterfaceMetadata
-            || (change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
+            || (change.symbolDisplayName == QStringLiteral("lr_genr_if")
                 && change.symbolTypeDisplayName == QStringLiteral("interface")
                 && change.scopeDisplayName == QStringLiteral("global")
                 && change.sourceRoleDisplayName == QStringLiteral("design source")
                 && change.detailDisplayName.contains(QStringLiteral("global")));
         sawRealDiffInterfaceAfterMetadata = sawRealDiffInterfaceAfterMetadata
-            || (change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
+            || (change.symbolDisplayName == QStringLiteral("lr_genr_if")
                 && change.beforeSymbolTypeDisplayName.isEmpty()
                 && change.afterSymbolTypeDisplayName == QStringLiteral("interface")
                 && change.afterScopeDisplayName == QStringLiteral("global")
@@ -7535,23 +7535,23 @@ static void runRealWorkspaceIncludeFixture()
                 && !change.afterCodeLink.fileDisplayName.isEmpty()
                 && !change.afterCodeLink.lineDisplayName.isEmpty());
         sawRealDiffInterfaceLink = sawRealDiffInterfaceLink
-            || (change.displaySymbol.symbolName == QStringLiteral("lr_genr_if")
+            || (change.symbolDisplayName == QStringLiteral("lr_genr_if")
                 && !change.codeLink.fileName.isEmpty()
                 && change.codeLink.line > 0
                 && !change.codeLink.fileDisplayName.isEmpty()
                 && !change.codeLink.lineDisplayName.isEmpty());
         sawRealDiffType = sawRealDiffType
             || (change.category == SemanticDiffSymbolCategory::Type
-                && change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
+                && change.symbolDisplayName == QStringLiteral("cpld_sw_sp")
                 && change.categoryGroupDisplayName == QStringLiteral("Types"));
         sawRealDiffTypeMetadata = sawRealDiffTypeMetadata
-            || (change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
+            || (change.symbolDisplayName == QStringLiteral("cpld_sw_sp")
                 && change.symbolTypeDisplayName == QStringLiteral("typedef")
                 && change.scopeDisplayName == QStringLiteral("scope gl_pkg")
                 && change.sourceRoleDisplayName == QStringLiteral("design source")
                 && change.detailDisplayName.contains(QStringLiteral("scope gl_pkg")));
         sawRealDiffTypeAfterMetadata = sawRealDiffTypeAfterMetadata
-            || (change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
+            || (change.symbolDisplayName == QStringLiteral("cpld_sw_sp")
                 && change.beforeSymbolTypeDisplayName.isEmpty()
                 && change.afterSymbolTypeDisplayName == QStringLiteral("typedef")
                 && change.afterScopeDisplayName == QStringLiteral("scope gl_pkg")
@@ -7562,7 +7562,7 @@ static void runRealWorkspaceIncludeFixture()
                 && !change.afterCodeLink.fileDisplayName.isEmpty()
                 && !change.afterCodeLink.lineDisplayName.isEmpty());
         sawRealDiffTypeLink = sawRealDiffTypeLink
-            || (change.displaySymbol.symbolName == QStringLiteral("cpld_sw_sp")
+            || (change.symbolDisplayName == QStringLiteral("cpld_sw_sp")
                 && !change.codeLink.fileName.isEmpty()
                 && change.codeLink.line > 0
                 && !change.codeLink.fileDisplayName.isEmpty()

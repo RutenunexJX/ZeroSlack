@@ -757,13 +757,12 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
                                                   : report.symbolGroupDisplayName,
                                               report.symbolChangeCount);
     for (const SemanticDiffSymbolChange& change : report.symbolChanges) {
-        const sym_list::SymbolInfo& symbol = change.displaySymbol;
         QTreeWidgetItem* symbolChange =
             createChildItem(symbols,
                             QStringLiteral("%1 %2")
                                 .arg(change.kindDisplayName,
                                      change.categoryGroupDisplayName),
-                            symbol.symbolName,
+                            change.symbolDisplayName,
                             change.detailDisplayName,
                             change.codeLink.fileName,
                             change.codeLink.line,
