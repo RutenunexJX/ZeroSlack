@@ -195,15 +195,16 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
     const QList<RelationshipResult> relationships =
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
-        if (rel.toSymbol.symbolId < 0)
-            continue;
-
         HierarchyNode node;
         node.symbol = rel.toSymbol;
-        node.symbolRecord = semanticSymbolRecordForSymbol(node.symbol);
+        node.symbolRecord = rel.toSymbolRecord.isValid()
+            ? rel.toSymbolRecord
+            : semanticSymbolRecordForSymbol(node.symbol);
         node.symbolStableKey = node.symbolRecord.stableKey.isValid()
             ? node.symbolRecord.stableKey
             : rel.toStableKey;
+        if (!node.symbolStableKey.isValid() && node.symbol.symbolId < 0)
+            continue;
         node.depth = 1;
         node.parentSymbolId = rel.fromSymbol.symbolId;
         node.parentStableKey = rel.fromStableKey;
@@ -231,15 +232,16 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
     const QList<RelationshipResult> relationships =
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
-        if (rel.fromSymbol.symbolId < 0)
-            continue;
-
         HierarchyNode node;
         node.symbol = rel.fromSymbol;
-        node.symbolRecord = semanticSymbolRecordForSymbol(node.symbol);
+        node.symbolRecord = rel.fromSymbolRecord.isValid()
+            ? rel.fromSymbolRecord
+            : semanticSymbolRecordForSymbol(node.symbol);
         node.symbolStableKey = node.symbolRecord.stableKey.isValid()
             ? node.symbolRecord.stableKey
             : rel.fromStableKey;
+        if (!node.symbolStableKey.isValid() && node.symbol.symbolId < 0)
+            continue;
         node.depth = 1;
         node.parentSymbolId = rel.toSymbol.symbolId;
         node.parentStableKey = rel.toStableKey;
@@ -314,18 +316,6 @@ SemanticSymbolRecord HierarchyService::resolveSubjectSymbolRecord(
     if (definitions.isEmpty())
         return {};
     return semanticSymbolRecordForSymbol(definitions.first());
-}
-
-sym_list::SymbolInfo HierarchyService::resolveSubjectSymbol(
-    const HierarchyQuery& query) const
-{
-    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
-    if (!record.stableKey.isValid()) {
-        sym_list::SymbolInfo missing;
-        missing.symbolId = -1;
-        return missing;
-    }
-    return semanticIndex()->getSymbolByStableKey(record.stableKey);
 }
 
 HierarchyQuery HierarchyService::normalizedQuery(const HierarchyQuery& query)
