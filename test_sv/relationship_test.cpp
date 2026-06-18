@@ -90,6 +90,19 @@ static int symbolIdInFile(const QList<sym_list::SymbolInfo>& symbols,
     return -1;
 }
 
+static sym_list::SymbolInfo symbolById(const QList<sym_list::SymbolInfo>& symbols,
+                                       int symbolId)
+{
+    for (const auto& symbol : symbols) {
+        if (symbol.symbolId == symbolId)
+            return symbol;
+    }
+
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    return missing;
+}
+
 static bool hasRel(const QVector<RelationshipToAdd>& rels,
                    int fromId,
                    int toId,
@@ -287,6 +300,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
     const QList<sym_list::SymbolInfo> topSymbols = db->findSymbolsByFileName(topPath);
+    const QList<sym_list::SymbolInfo> stageSymbols = db->findSymbolsByFileName(stagePath);
 
     const int packageId = symbolIdInFile(allSymbols, QStringLiteral("rel_pkg"),
                                          sym_list::sym_package, pkgPath);
@@ -333,15 +347,20 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                index.getSymbols(topPath).size() == topSymbols.size(), true);
     expectBool("semantic facade finds cross-file module",
                !facadeStageDefs.isEmpty() && facadeStageDefs.first().symbolId == stageId, true);
-    expectBool("semantic facade gets symbol by id",
-               index.getSymbolById(topId).symbolName == QStringLiteral("rel_top"), true);
+    const sym_list::SymbolInfo topSymbol = symbolById(topSymbols, topId);
+    const sym_list::SymbolInfo stageSymbol = symbolById(stageSymbols, stageId);
+    const sym_list::SymbolInfo captureSymbol = symbolById(topSymbols, captureId);
+    const sym_list::SymbolInfo stageDataSymbol =
+        symbolById(topSymbols, stageDataId);
+    expectBool("semantic facade uses fixture symbol record",
+               topSymbol.symbolName == QStringLiteral("rel_top"), true);
     const SymbolStableKey topFacadeStableKey =
-        symbolStableKeyForSymbol(index.getSymbolById(topId));
+        symbolStableKeyForSymbol(topSymbol);
     const SemanticSymbolRecord topRecord =
         index.getSymbolRecordByStableKey(topFacadeStableKey);
     const SemanticSymbolRecord stageDataRecord =
         index.getSymbolRecordByStableKey(
-            symbolStableKeyForSymbol(index.getSymbolById(stageDataId)));
+            symbolStableKeyForSymbol(stageDataSymbol));
     expectBool("semantic facade exposes symbol record",
                topRecord.isValid()
                    && topRecord.name == QStringLiteral("rel_top")
@@ -358,7 +377,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && stageDataRecord.owner.kind
                        == SymbolTaxonomy::SymbolOwnerScope::Module
                    && stageDataRecord.type.rawTypeText
-                       == index.getSymbolById(stageDataId).dataType,
+                       == stageDataSymbol.dataType,
                true);
     expectBool("semantic facade finds symbol definition",
                !facadeStageDefs.isEmpty()
@@ -383,7 +402,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("fixture top endmodule located", topEndModuleLine >= 0, true);
     expectInt("semantic facade finds module end line",
-              index.findEndModuleLine(topPath, index.getSymbolById(topId)), topEndModuleLine);
+              index.findEndModuleLine(topPath, topSymbol), topEndModuleLine);
 
     DiagnosticService diagnosticService(&index);
     DiagnosticQuery diagnosticQuery;
@@ -809,8 +828,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QList<SemanticSymbolRecord> snapshotTopRecords =
         snapshotIndex.getSymbolRecords(topPath);
     const SemanticSymbolRecord snapshotTopRecord =
-        snapshotIndex.getSymbolRecordByStableKey(
-            symbolStableKeyForSymbol(snapshotIndex.getSymbolById(topId)));
+        snapshotIndex.getSymbolRecordByStableKey(symbolStableKeyForSymbol(topSymbol));
     expectBool("semantic snapshot exposes symbol records",
                snapshotTopRecords.size() == topSymbols.size()
                    && snapshotTopRecord.isValid()
@@ -1097,14 +1115,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("semantic snapshot returns scope symbols",
                snapshotIndex.getScopeSymbolNames(topPath, 20).contains(QStringLiteral("stage_data")),
                true);
-    sym_list::SymbolInfo snapshotTopSymbol = snapshotIndex.getSymbolById(topId);
+    sym_list::SymbolInfo snapshotTopSymbol = topSymbol;
     snapshotTopSymbol.endLine = 0;
     expectInt("semantic snapshot finds module end line from cached content",
               snapshotIndex.findEndModuleLine(topPath, snapshotTopSymbol), topEndModuleLine);
-    const SymbolStableKey topStableKey =
-        symbolStableKeyForSymbol(snapshotIndex.getSymbolById(topId));
-    const SymbolStableKey stageStableKey =
-        symbolStableKeyForSymbol(snapshotIndex.getSymbolById(stageId));
+    const SymbolStableKey topStableKey = symbolStableKeyForSymbol(topSymbol);
+    const SymbolStableKey stageStableKey = symbolStableKeyForSymbol(stageSymbol);
     const QList<SemanticRelationship> snapshotTopRelationships =
         snapshotIndex.getRelationships(topStableKey, true);
     bool snapshotFoundStage = false;
@@ -1810,8 +1826,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic snapshot merge deduplicates stable relationship",
               stableDedupedSnapshot.relationships().size(),
               snapshot->relationships().size());
-    sym_list::SymbolInfo reboundTopSymbol = snapshotIndex.getSymbolById(topId);
-    sym_list::SymbolInfo reboundStageSymbol = snapshotIndex.getSymbolById(stageId);
+    sym_list::SymbolInfo reboundTopSymbol = topSymbol;
+    sym_list::SymbolInfo reboundStageSymbol = stageSymbol;
     reboundTopSymbol.symbolId = topId + 100000;
     reboundStageSymbol.symbolId = stageId + 100000;
     SemanticRelationship driftingStableRelationship;
@@ -1882,8 +1898,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshot->relationships().size() + 1);
     bool enrichedFoundTask = false;
     bool enrichedTaskHasStableKeys = false;
-    const SymbolStableKey captureStableKey =
-        symbolStableKeyForSymbol(snapshotIndex.getSymbolById(captureId));
+    const SymbolStableKey captureStableKey = symbolStableKeyForSymbol(captureSymbol);
     for (const SemanticRelationship& relationship :
          enrichedSnapshot.getRelationships(stageStableKey, true)) {
         enrichedFoundTask = enrichedFoundTask
@@ -2653,13 +2668,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     relatedIdsQuery.symbolStableKey = topStableKey;
     relatedIdsQuery.outgoing = true;
     relatedIdsQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
-    const SymbolStableKey stageQueryKey =
-        symbolStableKeyForSymbol(index.getSymbolById(stageId));
+    const SymbolStableKey stageQueryKey = stageStableKey;
     expectBool("relationship service returns related stable keys",
                relationshipService.findRelatedSymbolKeys(relatedIdsQuery).contains(stageQueryKey),
                true);
     RelationshipQuery stableRelatedIdsQuery = relatedIdsQuery;
-    stableRelatedIdsQuery.symbolStableKey = symbolStableKeyForSymbol(index.getSymbolById(topId));
+    stableRelatedIdsQuery.symbolStableKey = topStableKey;
     expectBool("relationship service resolves stable query key",
                relationshipService
                    .findRelatedSymbolKeys(stableRelatedIdsQuery)
@@ -2790,8 +2804,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        QStringLiteral("Instance:")),
                true);
     RelationshipBrowseQuery stableRelationshipReportQuery = browseQuery;
-    stableRelationshipReportQuery.symbolStableKey =
-        symbolStableKeyForSymbol(index.getSymbolById(topId));
+    stableRelationshipReportQuery.symbolStableKey = topStableKey;
     const RelationshipReport stableRelationshipReport =
         relationshipService.findRelationshipReport(stableRelationshipReportQuery);
     expectBool("relationship report resolves stable query key",
@@ -3026,7 +3039,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                hierarchyFoundStage, true);
     const QList<HierarchyNode> stableModuleInstantiationChildren =
         hierarchyService.moduleInstantiationChildren(
-            symbolStableKeyForSymbol(index.getSymbolById(topId)));
+            topStableKey);
     bool stableModuleInstantiationChildFoundStage = false;
     for (const HierarchyNode& node : stableModuleInstantiationChildren) {
         stableModuleInstantiationChildFoundStage =
@@ -3087,8 +3100,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == QStringLiteral("Root"),
                true);
     HierarchyQuery stableHierarchyQuery = hierarchyQuery;
-    stableHierarchyQuery.symbolStableKey =
-        symbolStableKeyForSymbol(index.getSymbolById(topId));
+    stableHierarchyQuery.symbolStableKey = topStableKey;
     const HierarchyReport stableHierarchyReport =
         hierarchyService.getHierarchyReport(stableHierarchyQuery);
     expectBool("hierarchy report resolves stable query key",
@@ -3302,8 +3314,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                            .referencedSymbol.symbolId == stageId,
                true);
     ReferenceQuery stableStageReferenceQuery = stageReferenceQuery;
-    stableStageReferenceQuery.symbolStableKey =
-        symbolStableKeyForSymbol(index.getSymbolById(stageId));
+    stableStageReferenceQuery.symbolStableKey = stageStableKey;
     const ReferenceReport stableStageReferenceReport =
         referenceService.findReferenceReport(stableStageReferenceQuery);
     expectBool("reference report resolves stable query key",
@@ -3391,7 +3402,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     ReferenceQuery reqValidReferenceQuery;
     reqValidReferenceQuery.symbolStableKey =
-        symbolStableKeyForSymbol(index.getSymbolById(reqValidId));
+        symbolStableKeyForSymbol(symbolById(topSymbols, reqValidId));
     reqValidReferenceQuery.types = {SymbolRelationshipEngine::READS_FROM};
     const QList<ReferenceResult> reqValidReferences =
         referenceService.findReferences(reqValidReferenceQuery);
@@ -3500,7 +3511,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     ReferenceQuery rspDataReferenceQuery;
     rspDataReferenceQuery.symbolStableKey =
-        symbolStableKeyForSymbol(index.getSymbolById(rspDataId));
+        symbolStableKeyForSymbol(symbolById(topSymbols, rspDataId));
     rspDataReferenceQuery.types = {SymbolRelationshipEngine::ASSIGNS_TO};
     const QList<ReferenceResult> rspDataReferences =
         referenceService.findReferences(rspDataReferenceQuery);

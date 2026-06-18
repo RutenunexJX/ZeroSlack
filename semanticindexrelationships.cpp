@@ -13,6 +13,33 @@ SymbolStableKey relationshipStableKeyForSymbol(const sym_list::SymbolInfo& symbo
         : symbolStableKeyForSymbol(symbol);
 }
 
+sym_list::SymbolInfo symbolByLocalHandle(const SemanticIndex& index,
+                                         int symbolId)
+{
+    if (const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+            index.snapshot()) {
+        const sym_list::SymbolInfo symbol = snapshot->getSymbolById(symbolId);
+        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
+            return symbol;
+    }
+
+    if (index.symbolDatabase()) {
+        const sym_list::SymbolInfo symbol =
+            index.symbolDatabase()->getSymbolById(symbolId);
+        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
+            return symbol;
+    }
+
+    for (const sym_list::SymbolInfo& symbol : index.getSymbols()) {
+        if (symbol.symbolId == symbolId)
+            return symbol;
+    }
+
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    return missing;
+}
+
 sym_list::SymbolInfo relationshipEndpointSymbol(const SemanticIndex& index,
                                                 const SemanticRelationship& relationship,
                                                 bool fromEndpoint)
@@ -26,7 +53,8 @@ sym_list::SymbolInfo relationshipEndpointSymbol(const SemanticIndex& index,
             return symbol;
     }
 
-    return index.getSymbolById(fromEndpoint
+    return symbolByLocalHandle(index,
+                               fromEndpoint
                                    ? relationship.fromId
                                    : relationship.toId);
 }
