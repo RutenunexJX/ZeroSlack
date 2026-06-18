@@ -133,8 +133,8 @@ public:
         const RelationshipPanelQueryOptions& options) const;
     static QList<RelationshipTypeFilterOption> relationshipPanelTypeFilterOptions();
     static QList<RelationshipTypeFilterOption> referencePanelTypeFilterOptions();
-    bool hasRelationship(int fromSymbolId,
-                         int toSymbolId,
+    bool hasRelationship(const SymbolStableKey& fromStableKey,
+                         const SymbolStableKey& toStableKey,
                          SymbolRelationshipEngine::RelationType type) const;
     bool hasNamedRelationship(const QString& fromSymbolName,
                               const QString& toSymbolName,

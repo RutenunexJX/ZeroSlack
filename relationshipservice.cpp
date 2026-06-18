@@ -242,13 +242,14 @@ QList<RelationshipResult> RelationshipService::findRelationships(const Relations
 {
     const RelationshipQuery normalized = normalizedQuery(query);
     QList<RelationshipResult> result;
+    const SymbolStableKey subjectStableKey = normalized.symbolStableKey.isValid()
+        ? normalized.symbolStableKey
+        : symbolStableKeyForSymbol(resolveSubjectSymbol(normalized));
+    if (!subjectStableKey.isValid())
+        return result;
     const QList<SemanticRelationshipResult> relationships =
-        normalized.symbolStableKey.isValid()
-            ? semanticIndex()->getRelationshipResults(normalized.symbolStableKey,
-                                                      normalized.outgoing)
-            : semanticIndex()->getRelationshipResults(
-                  resolveSubjectSymbol(normalized).symbolId,
-                  normalized.outgoing);
+        semanticIndex()->getRelationshipResults(subjectStableKey,
+                                                normalized.outgoing);
 
     for (const SemanticRelationshipResult& rel : relationships) {
         if (!typeMatches(rel.relationship.type, normalized.types))
@@ -505,23 +506,28 @@ RelationshipService::referencePanelTypeFilterOptions()
 }
 
 bool RelationshipService::hasRelationship(
-    int fromSymbolId,
-    int toSymbolId,
+    const SymbolStableKey& fromStableKey,
+    const SymbolStableKey& toStableKey,
     SymbolRelationshipEngine::RelationType type) const
 {
-    if (fromSymbolId < 0 || toSymbolId < 0)
+    if (!fromStableKey.isValid() || !toStableKey.isValid())
         return false;
 
     RelationshipQuery query;
-    query.symbolStableKey = symbolStableKeyForSymbol(
-        semanticIndex()->getSymbolById(fromSymbolId));
+    query.symbolStableKey = fromStableKey;
     query.outgoing = true;
     query.types = {type};
 
     const QList<RelationshipResult> relationships = findRelationships(query);
     for (const RelationshipResult& relationship : relationships) {
-        if (relationship.relationship.fromId == fromSymbolId
-            && relationship.relationship.toId == toSymbolId
+        const SymbolStableKey relatedFromKey = relationship.fromStableKey.isValid()
+            ? relationship.fromStableKey
+            : semanticSymbolRecordForSymbol(relationship.fromSymbol).stableKey;
+        const SymbolStableKey relatedToKey = relationship.toStableKey.isValid()
+            ? relationship.toStableKey
+            : semanticSymbolRecordForSymbol(relationship.toSymbol).stableKey;
+        if (relatedFromKey == fromStableKey
+            && relatedToKey == toStableKey
             && relationship.relationship.type == type) {
             return true;
         }

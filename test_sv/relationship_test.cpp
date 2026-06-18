@@ -1193,11 +1193,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotRelationshipService.hasRelationships(snapshotRelationshipQuery), true);
     expectBool("snapshot relationship service exact relationship",
                snapshotRelationshipService.hasRelationship(
-                   topId, stageId, SymbolRelationshipEngine::INSTANTIATES),
+                   topStableKey, stageStableKey, SymbolRelationshipEngine::INSTANTIATES),
                true);
     expectBool("snapshot relationship service rejects reversed relationship",
                snapshotRelationshipService.hasRelationship(
-                   stageId, topId, SymbolRelationshipEngine::INSTANTIATES),
+                   stageStableKey, topStableKey, SymbolRelationshipEngine::INSTANTIATES),
                false);
     RelationshipBrowseQuery snapshotRelationshipBrowseQuery;
     snapshotRelationshipBrowseQuery.symbolStableKey = topStableKey;
@@ -2656,13 +2656,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    .contains(stageQueryKey),
                true);
     expectBool("relationship service exact relationship",
-               relationshipService.hasRelationship(topId,
-                                                   stageId,
+               relationshipService.hasRelationship(topStableKey,
+                                                   stageStableKey,
                                                    SymbolRelationshipEngine::INSTANTIATES),
                true);
     expectBool("relationship service rejects reversed relationship",
-               relationshipService.hasRelationship(stageId,
-                                                   topId,
+               relationshipService.hasRelationship(stageStableKey,
+                                                   topStableKey,
                                                    SymbolRelationshipEngine::INSTANTIATES),
                false);
     RelationshipBrowseQuery browseQuery;
