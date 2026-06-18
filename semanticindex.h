@@ -357,7 +357,6 @@ private:
     std::uint64_t m_snapshotRevision = 0;
     static std::unique_ptr<SemanticIndex> instance;
 
-    sym_list::SymbolInfo getSymbolById(int symbolId) const;
     QList<sym_list::SymbolInfo> sortedDefinitions(const QList<sym_list::SymbolInfo>& symbols,
                                                   const SemanticQueryContext& context) const;
     SemanticDefinitionResult bestDefinitionFromCandidates(

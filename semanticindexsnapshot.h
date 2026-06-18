@@ -54,7 +54,6 @@ private:
     QList<SemanticDiagnostic> m_diagnostics;
     QHash<QString, QString> m_fileContents;
 
-    sym_list::SymbolInfo getSymbolById(int symbolId) const;
     QList<sym_list::SymbolInfo> sortedDefinitions(
         const QList<sym_list::SymbolInfo>& symbols,
         const SemanticQueryContext& context) const;
