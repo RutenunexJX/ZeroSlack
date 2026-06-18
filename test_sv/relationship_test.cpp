@@ -1116,7 +1116,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("semantic snapshot captures relationship stable keys",
                snapshotFoundStageStableKey, true);
     const QList<SemanticRelationshipResult> snapshotTopRelationshipResults =
-        snapshotIndex.getRelationshipResults(topId, true);
+        snapshotIndex.getRelationshipResults(topStableKey, true);
     const QList<SemanticRelationshipResult> snapshotTopStableRelationshipResults =
         snapshotIndex.getRelationshipResults(topStableKey, true);
     bool snapshotFoundStageResult = false;
