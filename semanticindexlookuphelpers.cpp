@@ -18,14 +18,31 @@ bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
                              const QList<sym_list::sym_type_e>& types,
                              SymbolTaxonomy::SymbolSearchIntent intent)
 {
+    return symbolSearchTypeMatches(
+        semanticSymbolRecordForSymbol(symbol),
+        types,
+        intent);
+}
+
+bool symbolSearchTypeMatches(const SemanticSymbolRecord& record,
+                             const QList<sym_list::sym_type_e>& types,
+                             SymbolTaxonomy::SymbolSearchIntent intent)
+{
     const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
+        SymbolTaxonomy::SemanticMetadata{
+            record.declarationKind,
+            record.usageRole,
+            record.owner.kind,
+            record.visibility,
+            record.sourceRole,
+            record.rawCollectorKind,
+            record.owner.interfaceLike};
     if (!types.isEmpty()) {
         for (sym_list::sym_type_e type : types) {
             if (SymbolTaxonomy::matchesRequestedSymbolType(
                     metadata,
                     type,
-                    symbol.dataType)) {
+                    record.type.rawTypeText)) {
                 return true;
             }
         }

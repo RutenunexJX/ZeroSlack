@@ -83,16 +83,17 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     QList<SemanticSymbolSearchResult> result;
     const QList<sym_list::SymbolInfo> symbols = getSymbols(query.fileName);
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!symbolSearchTypeMatches(symbol, query.types, query.intent))
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (!symbolSearchTypeMatches(record, query.types, query.intent))
             continue;
 
-        const int score = symbolSearchMatchScore(symbol.symbolName, query);
+        const int score = symbolSearchMatchScore(record.name, query);
         if (score <= 0)
             continue;
 
         SemanticSymbolSearchResult item;
         item.symbol = symbol;
-        item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+        item.symbolRecord = record;
         item.symbolStableKey = item.symbolRecord.stableKey;
         item.score = score;
         result.append(item);
@@ -103,11 +104,13 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
                         const SemanticSymbolSearchResult& b) {
         if (a.score != b.score)
             return a.score > b.score;
-        if (a.symbol.fileName != b.symbol.fileName)
-            return a.symbol.fileName < b.symbol.fileName;
-        if (a.symbol.startLine != b.symbol.startLine)
-            return a.symbol.startLine < b.symbol.startLine;
-        return a.symbol.symbolName < b.symbol.symbolName;
+        if (a.symbolRecord.location.fileName != b.symbolRecord.location.fileName)
+            return a.symbolRecord.location.fileName
+                < b.symbolRecord.location.fileName;
+        if (a.symbolRecord.location.startLine != b.symbolRecord.location.startLine)
+            return a.symbolRecord.location.startLine
+                < b.symbolRecord.location.startLine;
+        return a.symbolRecord.name < b.symbolRecord.name;
     });
 
     if (query.maxResults >= 0 && result.size() > query.maxResults)

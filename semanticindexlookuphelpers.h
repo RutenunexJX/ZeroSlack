@@ -10,6 +10,9 @@ QString normalizedLookupFileName(const QString& fileName);
 bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
                              const QList<sym_list::sym_type_e>& types,
                              SymbolTaxonomy::SymbolSearchIntent intent);
+bool symbolSearchTypeMatches(const SemanticSymbolRecord& record,
+                             const QList<sym_list::sym_type_e>& types,
+                             SymbolTaxonomy::SymbolSearchIntent intent);
 
 bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
                                      const QString& searchWord);

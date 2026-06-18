@@ -1028,7 +1028,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("metadata typed search finds module",
                metadataTypedSearchResults.size() == 1
                    && metadataTypedSearchResults.first().symbol.symbolId
-                       == metadataOutlineModule.symbolId,
+                       == metadataOutlineModule.symbolId
+                   && metadataTypedSearchResults.first().symbolRecord.isValid()
+                   && metadataTypedSearchResults.first().symbolRecord.stableKey
+                       == metadataTypedSearchResults.first().symbolStableKey
+                   && metadataTypedSearchResults.first().symbolRecord.name
+                       == QStringLiteral("metadata_rel_top")
+                   && metadataTypedSearchResults.first().symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Module
+                   && metadataTypedSearchResults.first().symbolRecord.owner.kind
+                       == SymbolTaxonomy::SymbolOwnerScope::Global,
                true);
     SearchQuery metadataDefinitionSearchQuery;
     metadataDefinitionSearchQuery.text = QStringLiteral("metadata_rel_top");
@@ -1039,7 +1048,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("metadata definition search finds module",
                metadataDefinitionSearchResults.size() == 1
                    && metadataDefinitionSearchResults.first().symbol.symbolId
-                       == metadataOutlineModule.symbolId,
+                       == metadataOutlineModule.symbolId
+                   && metadataDefinitionSearchResults.first()
+                          .symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Module,
                true);
     NavigationService metadataOutlineNavigationService(&metadataOutlineIndex);
     NavigationSymbolOutlineQuery metadataOutlineQuery;
