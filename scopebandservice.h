@@ -1,6 +1,7 @@
 #ifndef SCOPEBANDSERVICE_H
 #define SCOPEBANDSERVICE_H
 
+#include "rtlinsightlink.h"
 #include "semanticindex.h"
 #include "syminfo.h"
 
@@ -15,6 +16,11 @@ struct ScopeBandQuery {
 struct ScopeBandSymbolRange {
     sym_list::SymbolInfo symbol;
     SemanticSymbolRecord symbolRecord;
+    SymbolStableKey symbolStableKey;
+    RtlInsightCodeLink codeLink;
+    QString symbolDisplayName;
+    QString symbolTypeDisplayName;
+    QString sourceRoleDisplayName;
     int endLine = -1;
 };
 

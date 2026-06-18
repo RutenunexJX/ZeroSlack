@@ -4370,12 +4370,24 @@ static void runScopeBandServiceFixture()
                    && report.modules.first().symbolRecord.isValid()
                    && report.modules.first().symbolRecord.localHandle
                        == report.modules.first().symbol.symbolId
+                   && report.modules.first().symbolRecord.stableKey
+                       == report.modules.first().symbolStableKey
                    && report.modules.first().symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module
                    && report.modules.first().symbolRecord.name
                        == QStringLiteral("scope_top")
-                   && report.modules.first().symbol.symbolName
+                   && report.modules.first().symbolDisplayName
                        == QStringLiteral("scope_top")
+                   && report.modules.first().symbolTypeDisplayName
+                       == QStringLiteral("module")
+                   && report.modules.first().sourceRoleDisplayName
+                       == QStringLiteral("design source")
+                   && report.modules.first().codeLink.fileName == fileName
+                   && report.modules.first().codeLink.line == 1
+                   && report.modules.first().codeLink.fileDisplayName
+                       == QStringLiteral("scope_band_fixture.sv")
+                   && report.modules.first().codeLink.lineDisplayName
+                       == QStringLiteral("1")
                    && report.modules.first().endLine >= module.startLine,
                true);
     expectInt("scope band logic count", report.logics.size(), 1);
@@ -4384,12 +4396,24 @@ static void runScopeBandServiceFixture()
                    && report.logics.first().symbolRecord.isValid()
                    && report.logics.first().symbolRecord.localHandle
                        == report.logics.first().symbol.symbolId
+                   && report.logics.first().symbolRecord.stableKey
+                       == report.logics.first().symbolStableKey
                    && report.logics.first().symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Signal
                    && report.logics.first().symbolRecord.name
                        == QStringLiteral("enable")
-                   && report.logics.first().symbol.symbolName
+                   && report.logics.first().symbolDisplayName
                        == QStringLiteral("enable")
+                   && report.logics.first().symbolTypeDisplayName
+                       == QStringLiteral("logic")
+                   && report.logics.first().sourceRoleDisplayName
+                       == QStringLiteral("design source")
+                   && report.logics.first().codeLink.fileName == fileName
+                   && report.logics.first().codeLink.line == 2
+                   && report.logics.first().codeLink.fileDisplayName
+                       == QStringLiteral("scope_band_fixture.sv")
+                   && report.logics.first().codeLink.lineDisplayName
+                       == QStringLiteral("2")
                    && report.logics.first().endLine == 2,
                true);
 }

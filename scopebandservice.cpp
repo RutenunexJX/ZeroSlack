@@ -18,6 +18,57 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
     metadata.interfaceLikeOwner = record.owner.interfaceLike;
     return metadata;
 }
+
+RtlInsightCodeLink codeLinkForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (record.isValid()) {
+        const QString fileName = fallback.fileName.isEmpty()
+            ? record.location.fileName
+            : fallback.fileName;
+        const int line = record.location.startLine > 0
+            ? record.location.startLine
+            : fallback.startLine;
+        const int column = record.location.startColumn > 0
+            ? record.location.startColumn
+            : fallback.startColumn;
+        return RtlInsightLink::fromFileLine(fileName, line, column);
+    }
+    return RtlInsightLink::fromSymbol(fallback);
+}
+
+QString symbolDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    if (!fallback.symbolName.isEmpty())
+        return fallback.symbolName;
+    return QStringLiteral("<unnamed>");
+}
+
+ScopeBandSymbolRange symbolRangeForRecord(
+    const sym_list::SymbolInfo& symbol,
+    const SemanticSymbolRecord& record,
+    const SymbolTaxonomy::SemanticMetadata& metadata,
+    int endLine)
+{
+    ScopeBandSymbolRange row;
+    row.symbol = symbol;
+    row.symbolRecord = record;
+    row.symbolStableKey = record.stableKey.isValid()
+        ? record.stableKey
+        : symbolStableKeyForSymbol(symbol);
+    row.codeLink = codeLinkForRecord(record, symbol);
+    row.symbolDisplayName = symbolDisplayNameForRecord(record, symbol);
+    row.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
+    row.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    row.endLine = endLine;
+    return row;
+}
 }
 
 ScopeBandService* ScopeBandService::getInstance()
@@ -56,12 +107,14 @@ ScopeBandReport ScopeBandService::scopeBands(const ScopeBandQuery& query) const
                 continue;
             const int endLine = semantic->findEndModuleLine(query.fileName, symbol);
             if (endLine >= 0)
-                report.modules.append({symbol, record, endLine});
+                report.modules.append(
+                    symbolRangeForRecord(symbol, record, metadata, endLine));
         } else if (SymbolTaxonomy::isLogicDeclaration(metadata)) {
             const int endLine = symbol.endLine < symbol.startLine
                 ? symbol.startLine
                 : symbol.endLine;
-            report.logics.append({symbol, record, endLine});
+            report.logics.append(
+                symbolRangeForRecord(symbol, record, metadata, endLine));
         }
     }
     return report;
