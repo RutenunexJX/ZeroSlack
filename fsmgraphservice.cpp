@@ -207,21 +207,6 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
         return symbol;
     }
 
-    if (query.moduleSymbolId >= 0) {
-        const sym_list::SymbolInfo symbol =
-            semanticIndex()->getSymbolById(query.moduleSymbolId);
-        if (symbol.symbolId < 0) {
-            if (reason)
-                *reason = FsmGraphNotFoundReason::NoMatchingModule;
-            return missingFsmSymbol();
-        }
-        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
-            if (reason)
-                *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
-            return missingFsmSymbol();
-        }
-        return symbol;
-    }
     if (query.moduleName.isEmpty()) {
         if (reason)
             *reason = FsmGraphNotFoundReason::EmptyModuleName;

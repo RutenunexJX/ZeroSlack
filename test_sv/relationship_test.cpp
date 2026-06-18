@@ -5463,7 +5463,6 @@ static void runFsmGraphServiceFixture()
     expectBool("fsm graph found", report.found, true);
     FsmGraphQuery stableFsmQuery;
     stableFsmQuery.moduleStableKey = symbolStableKeyForSymbol(module);
-    stableFsmQuery.moduleSymbolId = 9315;
     const FsmGraphReport stableFsmReport = service.buildFsmGraph(stableFsmQuery);
     expectBool("fsm graph resolves stable module key",
                stableFsmReport.found
@@ -5870,7 +5869,7 @@ static void runFsmGraphServiceFixture()
                true);
 
     FsmGraphQuery unsupportedModuleQuery;
-    unsupportedModuleQuery.moduleSymbolId = stateQ.symbolId;
+    unsupportedModuleQuery.moduleStableKey = symbolStableKeyForSymbol(stateQ);
     const FsmGraphReport unsupportedModuleReport =
         service.buildFsmGraph(unsupportedModuleQuery);
     expectBool("fsm graph unsupported symbol reason",
@@ -5882,7 +5881,7 @@ static void runFsmGraphServiceFixture()
                true);
 
     FsmGraphQuery noFsmGraphQuery;
-    noFsmGraphQuery.moduleSymbolId = noFsmModule.symbolId;
+    noFsmGraphQuery.moduleStableKey = symbolStableKeyForSymbol(noFsmModule);
     const FsmGraphReport noFsmGraphReport =
         service.buildFsmGraph(noFsmGraphQuery);
     expectBool("fsm graph no graph reason",
