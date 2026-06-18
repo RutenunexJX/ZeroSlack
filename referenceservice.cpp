@@ -70,31 +70,23 @@ QString reportSubjectDisplayName(const SemanticSymbolRecord& record,
 bool referenceLocationLess(const ReferenceResult& lhs,
                            const ReferenceResult& rhs)
 {
-    const QString leftFile =
-        referenceRecordFileName(lhs.referencingSymbolRecord, lhs.referencingSymbol);
-    const QString rightFile =
-        referenceRecordFileName(rhs.referencingSymbolRecord, rhs.referencingSymbol);
+    const QString leftFile = lhs.referencingSymbolRecord.location.fileName;
+    const QString rightFile = rhs.referencingSymbolRecord.location.fileName;
     const int fileCompare = QString::compare(normalizedReferenceFileName(leftFile),
                                              normalizedReferenceFileName(rightFile),
                                              Qt::CaseInsensitive);
     if (fileCompare != 0)
         return fileCompare < 0;
-    const int leftLine =
-        referenceRecordLine(lhs.referencingSymbolRecord, lhs.referencingSymbol);
-    const int rightLine =
-        referenceRecordLine(rhs.referencingSymbolRecord, rhs.referencingSymbol);
+    const int leftLine = lhs.referencingSymbolRecord.location.startLine;
+    const int rightLine = rhs.referencingSymbolRecord.location.startLine;
     if (leftLine != rightLine)
         return leftLine < rightLine;
-    const int leftColumn =
-        referenceRecordColumn(lhs.referencingSymbolRecord, lhs.referencingSymbol);
-    const int rightColumn =
-        referenceRecordColumn(rhs.referencingSymbolRecord, rhs.referencingSymbol);
+    const int leftColumn = lhs.referencingSymbolRecord.location.startColumn;
+    const int rightColumn = rhs.referencingSymbolRecord.location.startColumn;
     if (leftColumn != rightColumn)
         return leftColumn < rightColumn;
-    return QString::compare(referenceRecordName(lhs.referencingSymbolRecord,
-                                                lhs.referencingSymbol),
-                            referenceRecordName(rhs.referencingSymbolRecord,
-                                                rhs.referencingSymbol),
+    return QString::compare(lhs.referencingSymbolRecord.name,
+                            rhs.referencingSymbolRecord.name,
                             Qt::CaseInsensitive) < 0;
 }
 
@@ -184,8 +176,7 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
     for (const RelationshipResult& rel : relationships) {
         ReferenceResult reference = toReferenceResult(rel);
         if (!scopeMatches(normalized,
-                          reference.referencingSymbolRecord,
-                          reference.referencingSymbol))
+                          reference.referencingSymbolRecord))
             continue;
         result.append(reference);
     }
@@ -222,8 +213,7 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
     QMap<QString, QMap<SymbolRelationshipEngine::RelationType, int>> typeGroupIndexes;
     for (const ReferenceResult& reference : report.references) {
         const QString referenceFile =
-            referenceRecordFileName(reference.referencingSymbolRecord,
-                                    reference.referencingSymbol);
+            reference.referencingSymbolRecord.location.fileName;
         const QString normalizedFile =
             normalizedReferenceFileName(referenceFile);
         const QString fileKey = normalizedFile.isEmpty()
@@ -336,11 +326,10 @@ QList<SymbolRelationshipEngine::RelationType> ReferenceService::effectiveTypes(
 }
 
 bool ReferenceService::scopeMatches(const ReferenceQuery& query,
-                                    const SemanticSymbolRecord& record,
-                                    const sym_list::SymbolInfo& fallbackSymbol) const
+                                    const SemanticSymbolRecord& record) const
 {
     const QString normalizedSource = normalizedReferenceFileName(
-        referenceRecordFileName(record, fallbackSymbol));
+        record.location.fileName);
     if (query.currentFileOnly) {
         if (normalizedSource != query.fileName)
             return false;
@@ -362,14 +351,14 @@ ReferenceResult ReferenceService::toReferenceResult(
 {
     ReferenceResult result;
     result.relationship = relationship;
-    result.referencingSymbol = relationship.fromSymbol;
-    result.referencedSymbol = relationship.toSymbol;
+    const sym_list::SymbolInfo referencingSymbol = relationship.fromSymbol;
+    const sym_list::SymbolInfo referencedSymbol = relationship.toSymbol;
     result.referencingSymbolRecord = relationship.fromSymbolRecord.isValid()
         ? relationship.fromSymbolRecord
-        : semanticSymbolRecordForSymbol(result.referencingSymbol);
+        : semanticSymbolRecordForSymbol(referencingSymbol);
     result.referencedSymbolRecord = relationship.toSymbolRecord.isValid()
         ? relationship.toSymbolRecord
-        : semanticSymbolRecordForSymbol(result.referencedSymbol);
+        : semanticSymbolRecordForSymbol(referencedSymbol);
     result.referencingStableKey = result.referencingSymbolRecord.stableKey.isValid()
         ? result.referencingSymbolRecord.stableKey
         : relationship.fromStableKey;
@@ -378,12 +367,12 @@ ReferenceResult ReferenceService::toReferenceResult(
         : relationship.toStableKey;
     const QString sourceFile =
         referenceRecordFileName(result.referencingSymbolRecord,
-                                result.referencingSymbol);
+                                referencingSymbol);
     result.symbolDisplayName =
-        referenceRecordName(result.referencingSymbolRecord, result.referencingSymbol);
+        referenceRecordName(result.referencingSymbolRecord, referencingSymbol);
     result.fileDisplayName = referenceFileDisplayName(sourceFile);
     result.lineDisplayName = referenceLineDisplayName(
-        referenceRecordLine(result.referencingSymbolRecord, result.referencingSymbol));
+        referenceRecordLine(result.referencingSymbolRecord, referencingSymbol));
     result.relationshipTypeDisplayName =
         referenceTypeDisplayName(relationship.relationship.type);
     return result;

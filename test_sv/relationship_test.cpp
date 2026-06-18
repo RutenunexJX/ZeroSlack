@@ -1443,11 +1443,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotReferenceFoundTop = snapshotReferenceFoundTop
             || (reference.relationship.relationship.fromId == topId
                 && reference.relationship.relationship.toId == stageId
-                && reference.referencingSymbol.symbolId == topId
-                && reference.referencedSymbol.symbolId == stageId
                 && reference.referencingSymbolRecord.isValid()
+                && reference.referencingSymbolRecord.localHandle == topId
                 && reference.referencingSymbolRecord.stableKey == topStableKey
                 && reference.referencedSymbolRecord.isValid()
+                && reference.referencedSymbolRecord.localHandle == stageId
                 && reference.referencedSymbolRecord.stableKey == stageStableKey);
     }
     expectBool("snapshot reference service finds stage instantiation",
@@ -1526,17 +1526,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .typeGroups.first()
                           .count == 1,
                true);
-    expectBool("snapshot reference report keeps grouped symbols",
+    expectBool("snapshot reference report keeps grouped records",
                snapshotReferenceReport.fileGroups.size() == 1
                    && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
                    && snapshotReferenceReport.fileGroups.first()
                           .typeGroups.first()
                           .references.first()
-                          .referencingSymbol.symbolId == topId
+                          .referencingSymbolRecord.localHandle == topId
                    && snapshotReferenceReport.fileGroups.first()
                           .typeGroups.first()
                           .references.first()
-                          .referencedSymbol.symbolId == stageId,
+                          .referencedSymbolRecord.localHandle == stageId,
                true);
     expectBool("snapshot reference report keeps grouped records",
                snapshotReferenceReport.fileGroups.size() == 1
@@ -1612,7 +1612,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotNamedReferenceReport.totalCount == 1
                    && !snapshotNamedReferenceReport.references.isEmpty()
                    && snapshotNamedReferenceReport.references.first()
-                          .referencingSymbol.symbolId == topId,
+                          .referencingSymbolRecord.localHandle == topId,
                true);
     ReferenceQuery snapshotMissingReferenceQuery;
     snapshotMissingReferenceQuery.symbolName = QStringLiteral("missing_reference_subject");
@@ -3272,8 +3272,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool referenceFoundTopInstance = false;
     for (const ReferenceResult& ref : stageReferences) {
         referenceFoundTopInstance = referenceFoundTopInstance
-            || (ref.referencingSymbol.symbolId == topId
-                && ref.referencedSymbol.symbolId == stageId
+            || (ref.referencingSymbolRecord.localHandle == topId
+                && ref.referencedSymbolRecord.localHandle == stageId
                 && ref.relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES);
     }
     expectBool("reference service finds stage instantiation",
@@ -3328,7 +3328,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : stageReferenceReport.fileGroups.first().typeGroups.first().references.size(),
               1);
-    expectBool("reference report grouped symbols",
+    expectBool("reference report grouped records",
                !stageReferenceReport.fileGroups.isEmpty()
                    && !stageReferenceReport.fileGroups.first().typeGroups.isEmpty()
                    && !stageReferenceReport.fileGroups.first()
@@ -3337,11 +3337,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && stageReferenceReport.fileGroups.first()
                            .typeGroups.first()
                            .references.first()
-                           .referencingSymbol.symbolId == topId
+                           .referencingSymbolRecord.localHandle == topId
                    && stageReferenceReport.fileGroups.first()
                            .typeGroups.first()
                            .references.first()
-                           .referencedSymbol.symbolId == stageId,
+                           .referencedSymbolRecord.localHandle == stageId,
                true);
     ReferenceQuery stableStageReferenceQuery = stageReferenceQuery;
     stableStageReferenceQuery.symbolStableKey = stageStableKey;
@@ -3439,8 +3439,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool referenceFoundReqRead = false;
     for (const ReferenceResult& ref : reqValidReferences) {
         referenceFoundReqRead = referenceFoundReqRead
-            || (ref.referencingSymbol.symbolId == topId
-                && ref.referencedSymbol.symbolId == reqValidId
+            || (ref.referencingSymbolRecord.localHandle == topId
+                && ref.referencedSymbolRecord.localHandle == reqValidId
                 && ref.relationship.relationship.type == SymbolRelationshipEngine::READS_FROM);
     }
     expectBool("reference service finds condition read",
@@ -3485,7 +3485,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     expectBool("reference report clock referencing symbol",
                !topClockReferenceReport.references.isEmpty()
-                   && topClockReferenceReport.references.first().referencingSymbol.symbolId == topClkId,
+                   && topClockReferenceReport.references.first()
+                          .referencingSymbolRecord.localHandle == topClkId,
                true);
 
     topTimingReferenceQuery.types = {SymbolRelationshipEngine::RESETS};
@@ -3508,7 +3509,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     expectBool("reference report reset referencing symbol",
                !topResetReferenceReport.references.isEmpty()
-                   && topResetReferenceReport.references.first().referencingSymbol.symbolId == topRstId,
+                   && topResetReferenceReport.references.first()
+                          .referencingSymbolRecord.localHandle == topRstId,
                true);
 
     topTimingReferenceQuery.types.clear();
@@ -3548,8 +3550,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool referenceFoundRspWrite = false;
     for (const ReferenceResult& ref : rspDataReferences) {
         referenceFoundRspWrite = referenceFoundRspWrite
-            || (ref.referencingSymbol.symbolId == stageDataId
-                && ref.referencedSymbol.symbolId == rspDataId
+            || (ref.referencingSymbolRecord.localHandle == stageDataId
+                && ref.referencedSymbolRecord.localHandle == rspDataId
                 && ref.relationship.relationship.type == SymbolRelationshipEngine::ASSIGNS_TO);
     }
     expectBool("reference service finds assignment write",

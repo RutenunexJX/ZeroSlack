@@ -43,8 +43,6 @@ struct ReferencePanelQueryOptions {
 
 struct ReferenceResult {
     RelationshipResult relationship;
-    sym_list::SymbolInfo referencingSymbol;
-    sym_list::SymbolInfo referencedSymbol;
     SemanticSymbolRecord referencingSymbolRecord;
     SemanticSymbolRecord referencedSymbolRecord;
     SymbolStableKey referencingStableKey;
@@ -111,8 +109,7 @@ private:
     QList<SymbolRelationshipEngine::RelationType> effectiveTypes(
         const ReferenceQuery& query) const;
     bool scopeMatches(const ReferenceQuery& query,
-                      const SemanticSymbolRecord& record,
-                      const sym_list::SymbolInfo& fallbackSymbol) const;
+                      const SemanticSymbolRecord& record) const;
     ReferenceResult toReferenceResult(const RelationshipResult& relationship) const;
     static ReferenceQuery normalizedQuery(const ReferenceQuery& query);
     static QString referenceFileDisplayName(const QString& fileName);
