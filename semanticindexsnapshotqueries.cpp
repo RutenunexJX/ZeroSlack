@@ -26,6 +26,22 @@ QString snapshotDefinitionSortOwnerName(const sym_list::SymbolInfo& symbol)
 {
     return semanticSymbolRecordForSymbol(symbol).owner.name;
 }
+
+QString snapshotRecordDisplayName(const SemanticSymbolRecord& record,
+                                  const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    return fallback.symbolName;
+}
+
+QString snapshotRecordOwnerName(const SemanticSymbolRecord& record,
+                                const sym_list::SymbolInfo& fallback)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    return semanticSymbolRecordForSymbol(fallback).owner.name;
+}
 }
 
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbols(const QString& fileName) const
@@ -180,29 +196,33 @@ QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
     QString containingModule;
     int containingModuleStart = -1;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (!SymbolTaxonomy::isModuleDeclaration(symbol))
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
             continue;
         if (symbol.startLine <= cursorLine
             && (symbol.endLine <= 0 || symbol.endLine >= cursorLine)
             && symbol.startLine > containingModuleStart) {
-            containingModule = symbol.symbolName;
+            containingModule = snapshotRecordDisplayName(record, symbol);
             containingModuleStart = symbol.startLine;
         }
     }
 
     QSet<QString> seen;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        bool inScope = symbol.moduleScope.isEmpty();
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        const QString displayName = snapshotRecordDisplayName(record, symbol);
+        const QString ownerName = snapshotRecordOwnerName(record, symbol);
+        bool inScope = ownerName.isEmpty();
         if (!containingModule.isEmpty()) {
             inScope = inScope
-                || symbol.moduleScope == containingModule
+                || ownerName == containingModule
                 || (symbol.startLine <= cursorLine
                     && (symbol.endLine <= 0 || symbol.endLine >= cursorLine));
         }
-        if (!inScope || symbol.symbolName.isEmpty() || seen.contains(symbol.symbolName))
+        if (!inScope || displayName.isEmpty() || seen.contains(displayName))
             continue;
-        seen.insert(symbol.symbolName);
-        result.append(symbol.symbolName);
+        seen.insert(displayName);
+        result.append(displayName);
     }
     return result;
 }

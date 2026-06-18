@@ -2347,6 +2347,30 @@ int main(int argc, char** argv) {
     semanticScopeSignal.startLine = 2;
     semanticScopeSignal.endLine = 2;
     snapshotSymbols.append(semanticScopeSignal);
+    sym_list::SymbolInfo semanticScopeMetadataSignal =
+        makeSymbol(QStringLiteral("semantic_metadata_signal"),
+                   sym_list::sym_user,
+                   QStringLiteral("semantic_scope"),
+                   QString(),
+                   6012);
+    semanticScopeMetadataSignal.fileName = semanticModuleScopeFile;
+    semanticScopeMetadataSignal.position =
+        semanticModuleScopeContent.indexOf(QStringLiteral("semantic_signal"));
+    semanticScopeMetadataSignal.startLine = 2;
+    semanticScopeMetadataSignal.endLine = 2;
+    semanticScopeMetadataSignal.hasSemanticMetadata = true;
+    semanticScopeMetadataSignal.semanticDeclarationKind =
+        SymbolTaxonomy::DeclarationKind::Signal;
+    semanticScopeMetadataSignal.semanticUsageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    semanticScopeMetadataSignal.semanticOwnerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Module;
+    semanticScopeMetadataSignal.semanticVisibility =
+        SymbolTaxonomy::SymbolVisibility::ScopeLocal;
+    semanticScopeMetadataSignal.semanticSourceRole =
+        SymbolTaxonomy::SourceRole::DesignSource;
+    semanticScopeMetadataSignal.rawCollectorKind = sym_list::sym_user;
+    snapshotSymbols.append(semanticScopeMetadataSignal);
     QList<SemanticRelationship> snapshotRelationships;
     SemanticRelationship containsSnapEnable;
     containsSnapEnable.fromId = 4000;
@@ -2649,7 +2673,7 @@ int main(int argc, char** argv) {
              "semantic_scope");
     expectList("snapshot semantic metadata scope names",
                snapshotIndex.getScopeSymbolNames(semanticModuleScopeFile, 2),
-               {"semantic_scope", "semantic_signal"});
+               {"semantic_scope", "semantic_signal", "semantic_metadata_signal"});
     CompletionQuery snapshotScopeQuery;
     snapshotScopeQuery.prefix = QStringLiteral("snap");
     snapshotScopeQuery.fileName = snapshotScopeFile;
