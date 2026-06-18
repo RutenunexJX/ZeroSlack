@@ -3889,6 +3889,9 @@ static void runModuleBriefServiceFixture()
                 && row.symbolRecord.isValid()
                 && row.symbolRecord.declarationKind
                     == SymbolTaxonomy::DeclarationKind::Parameter
+                && row.symbolRecord.owner.kind
+                    == SymbolTaxonomy::SymbolOwnerScope::Package
+                && row.symbolRecord.owner.name == QStringLiteral("brief_pkg")
                 && row.symbolDisplayName == QStringLiteral("PKG_WIDTH")
                 && row.contextKindDisplayName == QStringLiteral("package parameter")
                 && row.symbolTypeDisplayName == QStringLiteral("parameter")
@@ -3901,6 +3904,9 @@ static void runModuleBriefServiceFixture()
                 && row.symbolRecord.isValid()
                 && row.symbolRecord.declarationKind
                     == SymbolTaxonomy::DeclarationKind::Typedef
+                && row.symbolRecord.owner.kind
+                    == SymbolTaxonomy::SymbolOwnerScope::Package
+                && row.symbolRecord.owner.name == QStringLiteral("brief_pkg")
                 && row.symbolDisplayName == QStringLiteral("brief_t")
                 && row.contextKindDisplayName == QStringLiteral("package typedef")
                 && row.symbolTypeDisplayName == QStringLiteral("typedef")

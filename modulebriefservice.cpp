@@ -291,8 +291,13 @@ bool ModuleBriefService::isInsideModule(
 {
     if (symbol.symbolId == moduleSymbol.symbolId)
         return false;
-    if (!moduleSymbol.symbolName.isEmpty()
-        && symbol.moduleScope == moduleSymbol.symbolName) {
+
+    const SemanticSymbolRecord symbolRecord =
+        semanticSymbolRecordForSymbol(symbol);
+    const SemanticSymbolRecord moduleRecord =
+        semanticSymbolRecordForSymbol(moduleSymbol);
+    if (!moduleRecord.name.isEmpty()
+        && symbolRecord.owner.name == moduleRecord.name) {
         return true;
     }
     if (symbol.fileName != moduleSymbol.fileName)
@@ -376,17 +381,17 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
     auto appendRow = [&](const QString& section,
                          const QString& kind,
                          const sym_list::SymbolInfo& symbol) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         const QString key = QStringLiteral("%1:%2:%3:%4:%5")
                                 .arg(section)
-                                .arg(symbol.symbolId)
-                                .arg(symbol.moduleScope,
-                                     symbol.symbolName,
-                                     symbol.dataType);
+                                .arg(record.localHandle)
+                                .arg(record.owner.name,
+                                     record.name,
+                                     record.type.rawTypeText);
         if (seen.contains(key))
             return;
         seen.insert(key);
 
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         ModuleBriefContextRow row;
         row.symbol = symbol;
         row.symbolRecord = record;
@@ -404,9 +409,13 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
 
     for (const sym_list::SymbolInfo& packageSymbol : imports) {
         appendRow(QStringLiteral("Package"), QStringLiteral("package import"), packageSymbol);
+        const SemanticSymbolRecord packageRecord =
+            semanticSymbolRecordForSymbol(packageSymbol);
         QList<sym_list::SymbolInfo> packageMembers;
         for (const sym_list::SymbolInfo& symbol : allSymbols) {
-            if (symbol.moduleScope != packageSymbol.symbolName)
+            const SemanticSymbolRecord symbolRecord =
+                semanticSymbolRecordForSymbol(symbol);
+            if (symbolRecord.owner.name != packageRecord.name)
                 continue;
             if (!SymbolTaxonomy::isPackageVisibleDefinition(
                     SymbolTaxonomy::semanticMetadata(symbol))) {
@@ -416,10 +425,11 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         }
         sortSymbols(packageMembers);
         for (const sym_list::SymbolInfo& symbol : packageMembers) {
+            const SemanticSymbolRecord symbolRecord =
+                semanticSymbolRecordForSymbol(symbol);
             appendRow(QStringLiteral("Package Member"),
                       QStringLiteral("package %1")
-                          .arg(symbolTypeDisplayName(
-                              semanticSymbolRecordForSymbol(symbol))),
+                          .arg(symbolTypeDisplayName(symbolRecord)),
                       symbol);
         }
     }
