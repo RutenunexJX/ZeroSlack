@@ -1841,7 +1841,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     SemanticIndex reboundIndex;
     reboundIndex.setSnapshot(reboundSnapshot);
     expectBool("semantic index resolves rebound stable key",
-               reboundIndex.findSymbolId(topStableKey) == reboundTopSymbol.symbolId
+               reboundIndex.getSymbolByStableKey(topStableKey).symbolId
+                       == reboundTopSymbol.symbolId
                    && reboundIndex.getSymbolByStableKey(stageStableKey).symbolId
                        == reboundStageSymbol.symbolId,
                true);

@@ -138,12 +138,6 @@ int SemanticIndexSnapshot::findSymbolId(const QString& name,
     return symbols.first().symbolId;
 }
 
-int SemanticIndexSnapshot::findSymbolId(const SymbolStableKey& key) const
-{
-    const sym_list::SymbolInfo symbol = getSymbolByStableKey(key);
-    return symbol.symbolId;
-}
-
 SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
     const SemanticRelationship& relationship) const
 {

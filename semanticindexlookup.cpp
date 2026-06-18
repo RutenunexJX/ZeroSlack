@@ -225,12 +225,6 @@ int SemanticIndex::findSymbolId(const QString& name,
     return symbols.first().symbolId;
 }
 
-int SemanticIndex::findSymbolId(const SymbolStableKey& key) const
-{
-    const sym_list::SymbolInfo symbol = getSymbolByStableKey(key);
-    return symbol.symbolId;
-}
-
 QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
     const QString& name,
     const SemanticQueryContext& context) const

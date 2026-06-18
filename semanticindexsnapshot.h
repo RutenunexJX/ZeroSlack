@@ -34,7 +34,6 @@ public:
         const SemanticQueryContext& context = {}) const;
     int findSymbolId(const QString& name,
                      const SemanticQueryContext& context = {}) const;
-    int findSymbolId(const SymbolStableKey& key) const;
     QString getCachedFileContent(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
     SemanticRelationship rebindRelationship(
