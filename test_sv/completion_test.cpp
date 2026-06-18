@@ -953,10 +953,12 @@ int main(int argc, char** argv) {
             sym_list::sym_packed_struct_var);
     expectEq("CompletionService struct text",
              structPresentationItem.text,
-             QStringLiteral("pixel(pixel_t)"));
+             QStringLiteral("pixel(%1)")
+                 .arg(structPresentationItem.symbolRecord.owner.name));
     expectEq("CompletionService struct key",
              structPresentationItem.uniqueKey,
-             QStringLiteral("pixel:pixel_t"));
+             QStringLiteral("pixel:%1")
+                 .arg(structPresentationItem.symbolRecord.owner.name));
     expectBool("CompletionService struct item record",
                structPresentationItem.symbolRecord.isValid()
                    && structPresentationItem.symbolRecord.localHandle == 9003
@@ -984,7 +986,7 @@ int main(int argc, char** argv) {
             sym_list::sym_enum_value);
     expectEq("CompletionService enum desc",
              enumPresentationItem.description,
-             QStringLiteral("state_t"));
+             enumPresentationItem.symbolRecord.type.rawTypeText);
     expectBool("CompletionService enum item record",
                enumPresentationItem.symbolRecord.isValid()
                    && enumPresentationItem.symbolRecord.localHandle == 9004

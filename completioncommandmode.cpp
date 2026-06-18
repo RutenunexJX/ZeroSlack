@@ -111,14 +111,16 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
 
     if (requestedType == sym_list::sym_packed_struct_var
         || requestedType == sym_list::sym_unpacked_struct_var) {
-        const QString structTypeName = symbol.moduleScope;
+        const QString structTypeName = item.symbolRecord.owner.name;
         item.text = structTypeName.isEmpty()
             ? symbol.symbolName
             : QStringLiteral("%1(%2)").arg(symbol.symbolName, structTypeName);
         item.uniqueKey = QStringLiteral("%1:%2").arg(symbol.symbolName, structTypeName);
     } else if (requestedType == sym_list::sym_enum_value) {
         item.text = symbol.symbolName;
-        item.description = symbol.dataType.isEmpty() ? QStringLiteral("enum") : symbol.dataType;
+        item.description = item.symbolRecord.type.rawTypeText.isEmpty()
+            ? QStringLiteral("enum")
+            : item.symbolRecord.type.rawTypeText;
         item.uniqueKey = symbol.symbolName;
     } else {
         item.text = symbol.symbolName;
