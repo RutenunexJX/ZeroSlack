@@ -1421,6 +1421,18 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotReferenceFoundTop, true);
     expectBool("snapshot reference service has references",
                snapshotReferenceService.hasReferences(snapshotReferenceQuery), true);
+    ReferenceQuery snapshotStableReferenceQuery = snapshotReferenceQuery;
+    snapshotStableReferenceQuery.symbolStableKey = stageStableKey;
+    snapshotStableReferenceQuery.symbolId = topId;
+    const QList<ReferenceResult> snapshotStableReferenceResults =
+        snapshotReferenceService.findReferences(snapshotStableReferenceQuery);
+    expectBool("snapshot reference service resolves stable query key",
+               snapshotStableReferenceResults.size()
+                   == snapshotReferenceResults.size()
+                   && !snapshotStableReferenceResults.isEmpty()
+                   && snapshotStableReferenceResults.first().referencedStableKey
+                       == stageStableKey,
+               true);
     const ReferenceReport snapshotReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotReferenceQuery);
     expectInt("snapshot reference report subject id",
@@ -1441,6 +1453,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotReferenceReport.notFoundReason
                        == ReferenceReportNotFoundReason::None
                    && snapshotReferenceReport.notFoundReasonDisplayName.isEmpty(),
+               true);
+    const ReferenceReport snapshotStableReferenceReport =
+        snapshotReferenceService.findReferenceReport(snapshotStableReferenceQuery);
+    expectBool("snapshot reference report resolves stable query key",
+               snapshotStableReferenceReport.totalCount
+                   == snapshotReferenceReport.totalCount
+                   && snapshotStableReferenceReport.subjectStableKey == stageStableKey
+                   && snapshotStableReferenceReport.subjectSymbol.symbolId == stageId,
                true);
     expectInt("snapshot reference report total count",
               snapshotReferenceReport.totalCount, 1);

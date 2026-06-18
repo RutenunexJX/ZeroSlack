@@ -161,15 +161,17 @@ void ReferenceService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& query) const
 {
     const ReferenceQuery normalized = normalizedQuery(query);
-    const int id = resolveSymbolId(normalized);
-    if (id < 0)
+    const sym_list::SymbolInfo subjectSymbol = resolveSubjectSymbol(normalized);
+    const SymbolStableKey subjectStableKey = normalized.symbolStableKey.isValid()
+        ? normalized.symbolStableKey
+        : symbolStableKeyForSymbol(subjectSymbol);
+    if (!subjectStableKey.isValid() && subjectSymbol.symbolId < 0)
         return {};
 
     RelationshipQuery relationshipQuery;
-    relationshipQuery.symbolStableKey = normalized.symbolStableKey.isValid()
-        ? normalized.symbolStableKey
-        : symbolStableKeyForSymbol(semanticIndex()->getSymbolById(id));
-    relationshipQuery.symbolId = id;
+    relationshipQuery.symbolStableKey = subjectStableKey;
+    if (!normalized.symbolStableKey.isValid())
+        relationshipQuery.symbolId = subjectSymbol.symbolId;
     relationshipQuery.outgoing = false;
     relationshipQuery.types = effectiveTypes(normalized);
 
@@ -199,17 +201,18 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
 {
     const ReferenceQuery normalized = normalizedQuery(query);
     ReferenceReport report;
-    const int id = resolveSymbolId(normalized);
-    report.subjectSymbolId = id;
-    if (id < 0) {
+    report.subjectSymbol = resolveSubjectSymbol(normalized);
+    report.subjectSymbolId = report.subjectSymbol.symbolId;
+    if (report.subjectSymbolId < 0) {
         report.notFoundReason = ReferenceReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);
         return report;
     }
-    report.subjectSymbol = semanticIndex()->getSymbolById(id);
     report.subjectSymbolRecord = semanticSymbolRecordForSymbol(report.subjectSymbol);
-    report.subjectStableKey = report.subjectSymbolRecord.stableKey;
+    report.subjectStableKey = report.subjectSymbolRecord.stableKey.isValid()
+        ? report.subjectSymbolRecord.stableKey
+        : symbolStableKeyForSymbol(report.subjectSymbol);
 
     report.references = findReferences(normalized);
     report.totalCount = report.references.size();
@@ -295,19 +298,24 @@ SemanticIndex* ReferenceService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-int ReferenceService::resolveSymbolId(const ReferenceQuery& query) const
+sym_list::SymbolInfo ReferenceService::resolveSubjectSymbol(
+    const ReferenceQuery& query) const
 {
     if (query.symbolStableKey.isValid())
-        return semanticIndex()->findSymbolId(query.symbolStableKey);
+        return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
     if (query.symbolId >= 0)
-        return query.symbolId;
+        return semanticIndex()->getSymbolById(query.symbolId);
+
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
     if (query.symbolName.isEmpty())
-        return -1;
+        return missing;
 
     SemanticQueryContext context;
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
-    return semanticIndex()->findSymbolId(query.symbolName, context);
+    const int symbolId = semanticIndex()->findSymbolId(query.symbolName, context);
+    return semanticIndex()->getSymbolById(symbolId);
 }
 
 QList<SymbolRelationshipEngine::RelationType> ReferenceService::effectiveTypes(
