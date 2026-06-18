@@ -82,6 +82,7 @@ struct FsmGraph {
     QList<FsmStateRow> stateRows;
     QList<FsmTransitionRow> transitionRows;
     QString stateRegisterSectionDisplayName;
+    QString stateRegisterDisplayName;
     QString stateRegisterDetailDisplayName;
     QString stateRegisterTypeDisplayName;
     QString stateRegisterSourceRoleDisplayName;

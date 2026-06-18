@@ -427,7 +427,7 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
                             graph.stateRegisterSectionDisplayName.isEmpty()
                                 ? QStringLiteral("State Register")
                                 : graph.stateRegisterSectionDisplayName,
-                            graph.stateRegister.symbolName,
+                            graph.stateRegisterDisplayName,
                             graph.stateRegisterDetailDisplayName.isEmpty()
                                 ? QStringLiteral("state register")
                                 : graph.stateRegisterDetailDisplayName,
@@ -439,7 +439,7 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
         createChildItem(stateRegister,
                         QStringLiteral("Type"),
                         graph.stateRegisterTypeDisplayName,
-                        graph.stateRegister.symbolName,
+                        graph.stateRegisterDisplayName,
                         graph.stateRegisterCodeLink.fileName,
                         graph.stateRegisterCodeLink.line,
                         graph.stateRegisterCodeLink.column,
@@ -448,7 +448,7 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
         createChildItem(stateRegister,
                         QStringLiteral("Source Role"),
                         graph.stateRegisterSourceRoleDisplayName,
-                        graph.stateRegister.symbolName,
+                        graph.stateRegisterDisplayName,
                         graph.stateRegisterCodeLink.fileName,
                         graph.stateRegisterCodeLink.line,
                         graph.stateRegisterCodeLink.column,

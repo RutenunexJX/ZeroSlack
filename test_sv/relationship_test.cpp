@@ -5595,7 +5595,7 @@ static void runFsmGraphServiceFixture()
     expectInt("fsm graph count", report.graphs.size(), 1);
     expectBool("fsm graph state register",
                !report.graphs.isEmpty()
-                   && report.graphs.first().stateRegister.symbolName
+                   && report.graphs.first().stateRegisterDisplayName
                        == QStringLiteral("state_q"),
                true);
     expectBool("fsm graph stable keys",
@@ -5643,6 +5643,8 @@ static void runFsmGraphServiceFixture()
                !report.graphs.isEmpty()
                    && report.graphs.first().stateRegisterSectionDisplayName
                        == QStringLiteral("State Register")
+                   && report.graphs.first().stateRegisterDisplayName
+                       == QStringLiteral("state_q")
                    && report.graphs.first().stateRegisterDetailDisplayName
                        == QStringLiteral("next state_d")
                    && report.graphs.first().stateRegisterTypeDisplayName
@@ -5862,7 +5864,7 @@ static void runFsmGraphServiceFixture()
               1);
     expectBool("fsm graph package enum state register",
                !packageReport.graphs.isEmpty()
-                   && packageReport.graphs.first().stateRegister.symbolName
+                   && packageReport.graphs.first().stateRegisterDisplayName
                        == QStringLiteral("cs")
                    && packageReport.graphs.first().nextStateSignal.symbolName
                        == QStringLiteral("ns"),
@@ -7414,7 +7416,7 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealPhyPassTernaryTransition = false;
     bool sawRealPhyPassTernaryElseTransition = false;
     for (const FsmGraph& graph : realFsmReport.graphs) {
-        if (graph.stateRegister.symbolName
+        if (graph.stateRegisterDisplayName
             != QStringLiteral("phy_pass_thrg_cfg_cs")) {
             continue;
         }
