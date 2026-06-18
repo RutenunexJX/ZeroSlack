@@ -1074,7 +1074,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                         == metadataOutlineModule.symbolId
                     && row.symbolRecord.declarationKind
                         == SymbolTaxonomy::DeclarationKind::Module
+                    && row.symbolRecord.rawCollectorKind == sym_list::sym_user
                     && row.displayName == QStringLiteral("metadata_rel_top")
+                    && row.typeDisplayName == group.displayName
                     && row.iconKind == SymbolOutlineIconKind::Module);
         }
     }

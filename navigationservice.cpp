@@ -36,6 +36,12 @@ QString outlineDisplayName(const SemanticSymbolRecord& record)
     return label;
 }
 
+sym_list::sym_type_e outlineGroupTypeForRecord(
+    const SemanticSymbolRecord& record)
+{
+    return SymbolTaxonomy::outlineGroupType(outlineMetadata(record));
+}
+
 SymbolOutlineIconKind outlineIconKind(const SemanticSymbolRecord& record)
 {
     switch (record.declarationKind) {
@@ -200,7 +206,7 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             const SemanticSymbolRecord firstRecord =
                 outlineSymbolRecord(outlineResults.first());
             SymbolOutlineGroup group;
-            group.symbolType = symbolType;
+            group.symbolType = outlineGroupTypeForRecord(firstRecord);
             group.displayName = outlineDisplayName(firstRecord);
             group.iconKind = outlineIconKind(firstRecord);
             group.symbols = symbolsForResults(outlineResults);
