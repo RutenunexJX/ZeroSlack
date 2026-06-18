@@ -42,6 +42,31 @@ QString snapshotRecordOwnerName(const SemanticSymbolRecord& record,
         return record.owner.name;
     return semanticSymbolRecordForSymbol(fallback).owner.name;
 }
+
+SymbolStableKey stableKeyFromSnapshotSymbol(const sym_list::SymbolInfo& symbol)
+{
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    return record.stableKey.isValid()
+        ? record.stableKey
+        : symbolStableKeyForSymbol(symbol);
+}
+
+SymbolStableKey relationshipEndpointStableKey(
+    const SemanticIndexSnapshot& snapshot,
+    const SemanticRelationship& relationship,
+    bool fromEndpoint)
+{
+    const SymbolStableKey stableKey = fromEndpoint
+        ? relationship.fromStableKey
+        : relationship.toStableKey;
+    if (stableKey.isValid())
+        return stableKey;
+
+    return stableKeyFromSnapshotSymbol(
+        snapshot.getSymbolById(fromEndpoint
+                                   ? relationship.fromId
+                                   : relationship.toId));
+}
 }
 
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbols(const QString& fileName) const
@@ -128,12 +153,10 @@ SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
 {
     SemanticRelationship rebound = relationship;
 
-    if (!rebound.fromStableKey.isValid())
-        rebound.fromStableKey =
-            symbolStableKeyForSymbol(getSymbolById(rebound.fromId));
-    if (!rebound.toStableKey.isValid())
-        rebound.toStableKey =
-            symbolStableKeyForSymbol(getSymbolById(rebound.toId));
+    rebound.fromStableKey =
+        relationshipEndpointStableKey(*this, rebound, true);
+    rebound.toStableKey =
+        relationshipEndpointStableKey(*this, rebound, false);
 
     const sym_list::SymbolInfo fromSymbol =
         getSymbolByStableKey(rebound.fromStableKey);
@@ -216,16 +239,10 @@ QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(
 
     for (const SemanticRelationship& relationship : m_relationships) {
         const SymbolStableKey relationshipKey =
-            outgoing ? relationship.fromStableKey : relationship.toStableKey;
+            relationshipEndpointStableKey(*this, relationship, outgoing);
         if (relationshipKey == key) {
             result.append(relationship);
-            continue;
         }
-
-        const int symbolId = outgoing ? relationship.fromId : relationship.toId;
-        const sym_list::SymbolInfo symbol = getSymbolById(symbolId);
-        if (symbolStableKeyForSymbol(symbol) == key)
-            result.append(relationship);
     }
     return result;
 }
