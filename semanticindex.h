@@ -297,7 +297,6 @@ public:
         const QString& prefix = QString()) const;
     sym_list::SymbolInfo getSymbolById(int symbolId) const;
     sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
-    SemanticSymbolRecord getSymbolRecordByLocalHandle(int localHandle) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     SemanticDefinitionResult resolveDefinition(

@@ -335,8 +335,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !facadeStageDefs.isEmpty() && facadeStageDefs.first().symbolId == stageId, true);
     expectBool("semantic facade gets symbol by id",
                index.getSymbolById(topId).symbolName == QStringLiteral("rel_top"), true);
+    const SymbolStableKey topFacadeStableKey =
+        symbolStableKeyForSymbol(index.getSymbolById(topId));
     const SemanticSymbolRecord topRecord =
-        index.getSymbolRecordByLocalHandle(topId);
+        index.getSymbolRecordByStableKey(topFacadeStableKey);
     const SemanticSymbolRecord stageDataRecord =
         index.getSymbolRecordByStableKey(
             symbolStableKeyForSymbol(index.getSymbolById(stageDataId)));
@@ -344,8 +346,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                topRecord.isValid()
                    && topRecord.name == QStringLiteral("rel_top")
                    && topRecord.localHandle == topId
-                   && topRecord.stableKey
-                       == symbolStableKeyForSymbol(index.getSymbolById(topId))
+                   && topRecord.stableKey == topFacadeStableKey
                    && topRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module
                    && topRecord.sourceRole

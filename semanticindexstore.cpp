@@ -130,12 +130,6 @@ QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e
     return symbolDatabase()->findSymbolsByType(type);
 }
 
-SemanticSymbolRecord SemanticIndex::getSymbolRecordByLocalHandle(
-    int localHandle) const
-{
-    return semanticSymbolRecordForSymbol(getSymbolById(localHandle));
-}
-
 SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {

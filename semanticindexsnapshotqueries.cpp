@@ -89,12 +89,6 @@ sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolById(int symbolId) const
     return missingSnapshotSymbol();
 }
 
-SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByLocalHandle(
-    int localHandle) const
-{
-    return semanticSymbolRecordForSymbol(getSymbolById(localHandle));
-}
-
 sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolByStableKey(
     const SymbolStableKey& key) const
 {
