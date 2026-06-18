@@ -64,7 +64,9 @@ QString dataTypeDisplayNameForRecord(
 {
     if (!record.type.rawTypeText.isEmpty())
         return record.type.rawTypeText;
-    return fallback.dataType;
+    const SemanticSymbolRecord fallbackRecord =
+        semanticSymbolRecordForSymbol(fallback);
+    return fallbackRecord.type.rawTypeText;
 }
 
 QString symbolScopeDisplayNameForRecord(
@@ -75,8 +77,10 @@ QString symbolScopeDisplayNameForRecord(
         return QStringLiteral("global");
     if (!record.owner.name.isEmpty())
         return QStringLiteral("scope %1").arg(record.owner.name);
-    if (!fallback.moduleScope.isEmpty())
-        return QStringLiteral("scope %1").arg(fallback.moduleScope);
+    const SemanticSymbolRecord fallbackRecord =
+        semanticSymbolRecordForSymbol(fallback);
+    if (!fallbackRecord.owner.name.isEmpty())
+        return QStringLiteral("scope %1").arg(fallbackRecord.owner.name);
     if (SymbolTaxonomy::isGlobalDefinition(
             SymbolTaxonomy::semanticMetadata(fallback))) {
         return QStringLiteral("global");
@@ -452,19 +456,19 @@ QString SemanticDiffService::symbolKey(
     const sym_list::SymbolInfo& symbol,
     SemanticDiffSymbolCategory category)
 {
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
     return QStringLiteral("%1:%2:%3")
         .arg(static_cast<int>(category))
-        .arg(symbol.moduleScope)
-        .arg(symbol.symbolName);
+        .arg(record.owner.name)
+        .arg(record.name);
 }
 
 QString SemanticDiffService::symbolSignature(const sym_list::SymbolInfo& symbol)
 {
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
     return QStringLiteral("%1:%2")
-        .arg(static_cast<int>(metadata.rawCollectorKind))
-        .arg(symbol.dataType);
+        .arg(static_cast<int>(record.rawCollectorKind))
+        .arg(record.type.rawTypeText);
 }
 
 QString SemanticDiffService::relationshipKey(
@@ -579,8 +583,9 @@ QString SemanticDiffService::symbolCategoryGroupDisplayName(
 QString SemanticDiffService::symbolScopeDisplayName(
     const sym_list::SymbolInfo& symbol)
 {
-    if (!symbol.moduleScope.isEmpty())
-        return QStringLiteral("scope %1").arg(symbol.moduleScope);
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    if (!record.owner.name.isEmpty())
+        return QStringLiteral("scope %1").arg(record.owner.name);
     if (SymbolTaxonomy::isGlobalDefinition(
             SymbolTaxonomy::semanticMetadata(symbol))) {
         return QStringLiteral("global");

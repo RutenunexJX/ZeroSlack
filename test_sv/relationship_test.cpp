@@ -5792,13 +5792,15 @@ static void runSemanticDiffServiceFixture()
         sym_list::sym_port_input,
         2,
         QStringLiteral("diff_top")));
-    beforeSymbols.append(makeModuleBriefSymbol(
+    sym_list::SymbolInfo beforeDataPort = makeModuleBriefSymbol(
         9403,
         fileName,
         QStringLiteral("data"),
         sym_list::sym_port_input,
         3,
-        QStringLiteral("diff_top")));
+        QStringLiteral("diff_top"));
+    beforeDataPort.dataType = QStringLiteral("logic [7:0]");
+    beforeSymbols.append(beforeDataPort);
     beforeSymbols.append(makeModuleBriefSymbol(
         9404,
         fileName,
@@ -5848,13 +5850,15 @@ static void runSemanticDiffServiceFixture()
         sym_list::sym_port_input,
         2,
         QStringLiteral("diff_top")));
-    afterSymbols.append(makeModuleBriefSymbol(
+    sym_list::SymbolInfo afterDataPort = makeModuleBriefSymbol(
         9503,
         fileName,
         QStringLiteral("data"),
         sym_list::sym_port_output,
         3,
-        QStringLiteral("diff_top")));
+        QStringLiteral("diff_top"));
+    afterDataPort.dataType = QStringLiteral("logic [15:0]");
+    afterSymbols.append(afterDataPort);
     afterSymbols.append(makeModuleBriefSymbol(
         9504,
         fileName,
@@ -5999,8 +6003,10 @@ static void runSemanticDiffServiceFixture()
                     == QStringLiteral("design source")
                 && change.afterSourceRoleDisplayName
                     == QStringLiteral("design source")
-                && change.beforeDataTypeDisplayName.isEmpty()
-                && change.afterDataTypeDisplayName.isEmpty()
+                && change.beforeDataTypeDisplayName
+                    == QStringLiteral("logic [7:0]")
+                && change.afterDataTypeDisplayName
+                    == QStringLiteral("logic [15:0]")
                 && change.beforeCodeLink.fileName == fileName
                 && change.beforeCodeLink.line == 3
                 && change.beforeCodeLink.fileDisplayName
@@ -6027,6 +6033,8 @@ static void runSemanticDiffServiceFixture()
                 && change.beforeSymbolRecord.name == QStringLiteral("data")
                 && change.beforeSymbolRecord.declarationKind
                     == SymbolTaxonomy::DeclarationKind::Port
+                && change.beforeSymbolRecord.type.rawTypeText
+                    == QStringLiteral("logic [7:0]")
                 && change.afterSymbolRecord.isValid()
                 && change.afterSymbolRecord.localHandle == 9503
                 && change.afterSymbolRecord.stableKey
@@ -6034,6 +6042,8 @@ static void runSemanticDiffServiceFixture()
                 && change.afterSymbolRecord.name == QStringLiteral("data")
                 && change.afterSymbolRecord.declarationKind
                     == SymbolTaxonomy::DeclarationKind::Port
+                && change.afterSymbolRecord.type.rawTypeText
+                    == QStringLiteral("logic [15:0]")
                 && change.displaySymbolRecord.isValid()
                 && change.displaySymbolRecord.localHandle == 9503
                 && change.displaySymbolRecord.stableKey
