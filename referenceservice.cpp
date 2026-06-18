@@ -198,17 +198,17 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
 {
     const ReferenceQuery normalized = normalizedQuery(query);
     ReferenceReport report;
-    report.subjectSymbol = resolveSubjectSymbol(normalized);
-    if (report.subjectSymbol.symbolId < 0) {
+    report.subjectSymbolRecord = resolveSubjectSymbolRecord(normalized);
+    report.subjectStableKey = report.subjectSymbolRecord.stableKey;
+    if (!report.subjectStableKey.isValid()) {
+        report.subjectSymbol.symbolId = -1;
         report.notFoundReason = ReferenceReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);
         return report;
     }
-    report.subjectSymbolRecord = semanticSymbolRecordForSymbol(report.subjectSymbol);
-    report.subjectStableKey = report.subjectSymbolRecord.stableKey.isValid()
-        ? report.subjectSymbolRecord.stableKey
-        : symbolStableKeyForSymbol(report.subjectSymbol);
+    report.subjectSymbol = semanticIndex()->getSymbolByStableKey(
+        report.subjectStableKey);
 
     report.references = findReferences(normalized);
     report.totalCount = report.references.size();
@@ -370,10 +370,12 @@ ReferenceResult ReferenceService::toReferenceResult(
     result.relationship = relationship;
     result.referencingSymbol = relationship.fromSymbol;
     result.referencedSymbol = relationship.toSymbol;
-    result.referencingSymbolRecord =
-        semanticSymbolRecordForSymbol(result.referencingSymbol);
-    result.referencedSymbolRecord =
-        semanticSymbolRecordForSymbol(result.referencedSymbol);
+    result.referencingSymbolRecord = relationship.fromSymbolRecord.isValid()
+        ? relationship.fromSymbolRecord
+        : semanticSymbolRecordForSymbol(result.referencingSymbol);
+    result.referencedSymbolRecord = relationship.toSymbolRecord.isValid()
+        ? relationship.toSymbolRecord
+        : semanticSymbolRecordForSymbol(result.referencedSymbol);
     result.referencingStableKey = result.referencingSymbolRecord.stableKey.isValid()
         ? result.referencingSymbolRecord.stableKey
         : relationship.fromStableKey;

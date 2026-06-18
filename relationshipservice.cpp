@@ -282,18 +282,18 @@ RelationshipReport RelationshipService::findRelationshipReport(
 {
     const RelationshipBrowseQuery normalized = normalizedQuery(query);
     RelationshipReport report;
-    report.subjectSymbol = resolveSubjectSymbol(normalized);
-    if (report.subjectSymbol.symbolId < 0) {
+    report.subjectSymbolRecord = resolveSubjectSymbolRecord(normalized);
+    report.subjectStableKey = report.subjectSymbolRecord.stableKey;
+    if (!report.subjectStableKey.isValid()) {
+        report.subjectSymbol.symbolId = -1;
         report.notFoundReason =
             RelationshipReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);
         return report;
     }
-    report.subjectSymbolRecord = semanticSymbolRecordForSymbol(report.subjectSymbol);
-    report.subjectStableKey = report.subjectSymbolRecord.stableKey.isValid()
-        ? report.subjectSymbolRecord.stableKey
-        : symbolStableKeyForSymbol(report.subjectSymbol);
+    report.subjectSymbol = semanticIndex()->getSymbolByStableKey(
+        report.subjectStableKey);
 
     QMap<DirectedRelationshipResult::Direction, int> directionGroupIndexes;
     QMap<DirectedRelationshipResult::Direction,
@@ -308,8 +308,6 @@ RelationshipReport RelationshipService::findRelationshipReport(
             directed.peerSymbol = direction == DirectedRelationshipResult::Outgoing
                 ? relationship.toSymbol
                 : relationship.fromSymbol;
-            if (directed.peerSymbol.symbolId < 0)
-                continue;
             directed.peerSymbolRecord = direction == DirectedRelationshipResult::Outgoing
                 ? relationship.toSymbolRecord
                 : relationship.fromSymbolRecord;
@@ -322,6 +320,10 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : (direction == DirectedRelationshipResult::Outgoing
                        ? relationship.toStableKey
                        : relationship.fromStableKey);
+            if (!directed.peerStableKey.isValid()
+                && directed.peerSymbol.symbolId < 0) {
+                continue;
+            }
             directed.directionDisplayName = relationshipDirectionDisplayName(direction);
             directed.typeDisplayName =
                 relationshipTypeDisplayName(relationship.relationship.type);
