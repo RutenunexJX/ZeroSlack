@@ -48,6 +48,7 @@ struct ClockResetDomainEntry {
     SymbolStableKey domainSignalStableKey;
     RtlInsightCodeLink domainSignalCodeLink;
     QString sectionDisplayName;
+    QString domainSignalDisplayName;
     QString detailDisplayName;
     QList<ClockResetDomainMember> modules;
 };

@@ -213,7 +213,7 @@ void appendClockResetDomains(QTreeWidget* tree,
                                                   domain.sectionDisplayName.isEmpty()
                                                       ? QStringLiteral("Clock")
                                                       : domain.sectionDisplayName,
-                                                  domain.domainSignal.symbolName,
+                                                  domain.domainSignalDisplayName,
                                                   domain.detailDisplayName.isEmpty()
                                                       ? QStringLiteral("drives %1 modules")
                                                             .arg(domain.modules.size())
@@ -230,7 +230,7 @@ void appendClockResetDomains(QTreeWidget* tree,
                                     ? QStringLiteral("Module")
                                     : member.sectionDisplayName,
                                 member.moduleDisplayName.isEmpty()
-                                    ? member.moduleSymbol.symbolName
+                                    ? QStringLiteral("<unnamed>")
                                     : member.moduleDisplayName,
                                 member.detailDisplayName.isEmpty()
                                     ? QStringLiteral("clocked")
@@ -260,7 +260,7 @@ void appendClockResetDomains(QTreeWidget* tree,
                             member.moduleCodeLink.lineDisplayName);
             createChildItem(module,
                             QStringLiteral("Domain Signal"),
-                            domain.domainSignal.symbolName,
+                            domain.domainSignalDisplayName,
                             domain.sectionDisplayName,
                             domain.domainSignalCodeLink.fileName,
                             domain.domainSignalCodeLink.line,
@@ -280,7 +280,7 @@ void appendClockResetDomains(QTreeWidget* tree,
                                                   domain.sectionDisplayName.isEmpty()
                                                       ? QStringLiteral("Reset")
                                                       : domain.sectionDisplayName,
-                                                  domain.domainSignal.symbolName,
+                                                  domain.domainSignalDisplayName,
                                                   domain.detailDisplayName.isEmpty()
                                                       ? QStringLiteral("resets %1 modules")
                                                             .arg(domain.modules.size())
@@ -297,7 +297,7 @@ void appendClockResetDomains(QTreeWidget* tree,
                                     ? QStringLiteral("Module")
                                     : member.sectionDisplayName,
                                 member.moduleDisplayName.isEmpty()
-                                    ? member.moduleSymbol.symbolName
+                                    ? QStringLiteral("<unnamed>")
                                     : member.moduleDisplayName,
                                 member.detailDisplayName.isEmpty()
                                     ? QStringLiteral("reset")
@@ -327,7 +327,7 @@ void appendClockResetDomains(QTreeWidget* tree,
                             member.moduleCodeLink.lineDisplayName);
             createChildItem(module,
                             QStringLiteral("Domain Signal"),
-                            domain.domainSignal.symbolName,
+                            domain.domainSignalDisplayName,
                             domain.sectionDisplayName,
                             domain.domainSignalCodeLink.fileName,
                             domain.domainSignalCodeLink.line,

@@ -5065,7 +5065,7 @@ static void runClockResetDomainServiceFixture()
     expectInt("clock reset top unmapped rows", topReport.unmappedRows.size(), 2);
     expectBool("clock reset top clock signal",
                !topReport.clockDomains.isEmpty()
-                   && topReport.clockDomains.first().domainSignal.symbolName
+                   && topReport.clockDomains.first().domainSignalDisplayName
                        == QStringLiteral("clk_i")
                    && topReport.clockDomains.first().domainSignalRecord.isValid()
                    && topReport.clockDomains.first().domainSignalRecord.localHandle
@@ -5081,6 +5081,8 @@ static void runClockResetDomainServiceFixture()
                            topReport.clockDomains.first().domainSignal)
                    && topReport.clockDomains.first().sectionDisplayName
                        == QStringLiteral("Clock")
+                   && !topReport.clockDomains.first()
+                           .domainSignalDisplayName.isEmpty()
                    && topReport.clockDomains.first().detailDisplayName
                        == QStringLiteral("drives 1 modules"),
                true);
@@ -5097,7 +5099,7 @@ static void runClockResetDomainServiceFixture()
                true);
     expectBool("clock reset top reset signal",
                !topReport.resetDomains.isEmpty()
-                   && topReport.resetDomains.first().domainSignal.symbolName
+                   && topReport.resetDomains.first().domainSignalDisplayName
                        == QStringLiteral("rst_ni")
                    && topReport.resetDomains.first().sectionDisplayName
                        == QStringLiteral("Reset")
@@ -5119,7 +5121,7 @@ static void runClockResetDomainServiceFixture()
                !topReport.clockDomains.isEmpty()
                    && !topReport.clockDomains.first().modules.isEmpty()
                    && topReport.clockDomains.first().modules.first()
-                          .moduleSymbol.symbolName == QStringLiteral("domain_top")
+                          .moduleDisplayName == QStringLiteral("domain_top")
                    && topReport.clockDomains.first().modules.first()
                           .domainSignalRecord.isValid()
                    && topReport.clockDomains.first().modules.first()
@@ -5348,7 +5350,7 @@ static void runClockResetDomainServiceFixture()
               1);
     expectBool("clock reset stable key clock signal",
                !otherReport.clockDomains.isEmpty()
-                   && otherReport.clockDomains.first().domainSignal.symbolName
+                   && otherReport.clockDomains.first().domainSignalDisplayName
                        == QStringLiteral("other_clk"),
                true);
     expectInt("clock reset stable key reset domains",
@@ -7129,7 +7131,7 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealUnmappedClockLink = false;
     bool sawRealUnmappedClockMetadata = false;
     for (const ClockResetDomainEntry& domain : clockResetReport.clockDomains) {
-        if (domain.domainSignal.symbolName != QStringLiteral("clk_main"))
+        if (domain.domainSignalDisplayName != QStringLiteral("clk_main"))
             continue;
         for (const ClockResetDomainMember& member : domain.modules) {
             sawRealClockDomainMemberMetadata =
@@ -7145,7 +7147,7 @@ static void runRealWorkspaceIncludeFixture()
         }
     }
     for (const ClockResetDomainEntry& domain : clockResetReport.resetDomains) {
-        if (domain.domainSignal.symbolName != QStringLiteral("srst_main"))
+        if (domain.domainSignalDisplayName != QStringLiteral("srst_main"))
             continue;
         for (const ClockResetDomainMember& member : domain.modules) {
             sawRealResetDomainMemberMetadata =

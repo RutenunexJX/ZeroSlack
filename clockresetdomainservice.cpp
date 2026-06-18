@@ -788,6 +788,10 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
     SymbolRelationshipEngine::RelationType type)
 {
     entry.sectionDisplayName = domainSectionDisplayName(type);
+    entry.domainSignalDisplayName =
+        displayNameForRecord(entry.domainSignalRecord,
+                             entry.domainSignal,
+                             QStringLiteral("<unnamed>"));
     entry.detailDisplayName = domainDetailDisplayName(type, entry.modules.size());
     for (ClockResetDomainMember& member : entry.modules) {
         if (member.sectionDisplayName.isEmpty())
