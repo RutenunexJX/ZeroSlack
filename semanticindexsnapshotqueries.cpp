@@ -123,15 +123,6 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::findDefinitions(
     return sortedDefinitions(result, context);
 }
 
-int SemanticIndexSnapshot::findSymbolId(const QString& name,
-                                        const SemanticQueryContext& context) const
-{
-    const QList<sym_list::SymbolInfo> symbols = findDefinitions(name, context);
-    if (symbols.isEmpty())
-        return -1;
-    return symbols.first().symbolId;
-}
-
 SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
     const SemanticRelationship& relationship) const
 {
