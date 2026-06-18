@@ -388,8 +388,9 @@ bool SignalJourneyService::isInterfaceConnectionPeer(
     const sym_list::SymbolInfo& symbol) const
 {
     const QSet<QString> interfaces = interfaceNames();
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
     const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
+        metadataForRecord(record, symbol);
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface
         || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Modport
         || (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
@@ -398,11 +399,12 @@ bool SignalJourneyService::isInterfaceConnectionPeer(
     }
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
         && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration) {
-        const QString interfaceName = SymbolTaxonomy::interfaceTypeName(symbol);
+        const QString interfaceName =
+            interfaceBaseDisplayNameForRecord(record, symbol);
         return !interfaceName.isEmpty() && interfaces.contains(interfaceName);
     }
-    return !symbol.moduleScope.isEmpty()
-        && interfaces.contains(symbol.moduleScope)
+    return !record.owner.name.isEmpty()
+        && interfaces.contains(record.owner.name)
         && SymbolTaxonomy::isDefinitionCandidate(metadata);
 }
 
@@ -410,10 +412,11 @@ QSet<QString> SignalJourneyService::interfaceNames() const
 {
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : semanticIndex()->getSymbols()) {
-        if (SymbolTaxonomy::semanticMetadata(symbol).declarationKind
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (record.declarationKind
                 == SymbolTaxonomy::DeclarationKind::Interface
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
+            && !record.name.isEmpty()) {
+            names.insert(record.name);
         }
     }
     return names;
@@ -488,10 +491,11 @@ QString SignalJourneyService::evidenceDisplayName(const QString& evidenceText)
 }
 
 QString SignalJourneyService::interfaceConnectionKindDisplayName(
-    const sym_list::SymbolInfo& symbol)
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
+        metadataForRecord(record, fallback);
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
         && metadata.interfaceLikeOwner) {
         return QStringLiteral("interface port");
@@ -502,21 +506,22 @@ QString SignalJourneyService::interfaceConnectionKindDisplayName(
         return QStringLiteral("interface declaration");
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
         && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration
-        && !SymbolTaxonomy::interfaceTypeName(symbol).isEmpty()) {
+        && !interfaceBaseDisplayNameForRecord(record, fallback).isEmpty()) {
         return QStringLiteral("interface instance");
     }
-    if (!symbol.moduleScope.isEmpty())
+    if (!record.owner.name.isEmpty())
         return QStringLiteral("interface member");
     return QStringLiteral("interface connection");
 }
 
 QString SignalJourneyService::interfaceBaseDisplayName(
-    const sym_list::SymbolInfo& symbol)
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
 {
-    const QString baseName = SymbolTaxonomy::interfaceTypeName(symbol);
+    const QString baseName = interfaceBaseDisplayNameForRecord(record, fallback);
     if (!baseName.isEmpty())
         return baseName;
-    return symbol.moduleScope;
+    return record.owner.name;
 }
 
 void SignalJourneyService::fillDeclarationDisplayMetadata(
@@ -615,8 +620,10 @@ void SignalJourneyService::fillDisplayMetadata(SignalJourneyItem& item)
 void SignalJourneyService::fillInterfaceDisplayMetadata(SignalJourneyItem& item)
 {
     item.connectionKindDisplayName =
-        interfaceConnectionKindDisplayName(item.peerSymbol);
-    item.interfaceBaseDisplayName = interfaceBaseDisplayName(item.peerSymbol);
+        interfaceConnectionKindDisplayName(item.peerSymbolRecord,
+                                           item.peerSymbol);
+    item.interfaceBaseDisplayName =
+        interfaceBaseDisplayName(item.peerSymbolRecord, item.peerSymbol);
 }
 
 void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)

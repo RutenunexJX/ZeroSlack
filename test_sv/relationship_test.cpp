@@ -4567,6 +4567,8 @@ static void runSignalJourneyServiceFixture()
                     == QStringLiteral("interface instance")
                 && item.peerTypeDisplayName == QStringLiteral("instance")
                 && item.interfaceBaseDisplayName == QStringLiteral("journey_if")
+                && item.peerSymbolRecord.type.resolvedTypeName
+                    == QStringLiteral("journey_if")
                 && item.peerSourceRoleDisplayName
                     == QStringLiteral("design source")
                 && item.fromTypeDisplayName == QStringLiteral("instance")
@@ -4581,6 +4583,8 @@ static void runSignalJourneyServiceFixture()
                     == QStringLiteral("interface member")
                 && item.peerTypeDisplayName == QStringLiteral("logic")
                 && item.interfaceBaseDisplayName == QStringLiteral("journey_if")
+                && item.peerSymbolRecord.owner.name
+                    == QStringLiteral("journey_if")
                 && item.peerSourceRoleDisplayName
                     == QStringLiteral("design source")
                 && item.fromTypeDisplayName == QStringLiteral("logic")

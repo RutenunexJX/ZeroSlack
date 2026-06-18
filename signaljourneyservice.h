@@ -126,8 +126,12 @@ private:
     static QString provenanceDisplayName(RelationshipProvenance provenance);
     static QString confidenceDisplayName(int confidence);
     static QString evidenceDisplayName(const QString& evidenceText);
-    static QString interfaceConnectionKindDisplayName(const sym_list::SymbolInfo& symbol);
-    static QString interfaceBaseDisplayName(const sym_list::SymbolInfo& symbol);
+    static QString interfaceConnectionKindDisplayName(
+        const SemanticSymbolRecord& record,
+        const sym_list::SymbolInfo& fallback);
+    static QString interfaceBaseDisplayName(
+        const SemanticSymbolRecord& record,
+        const sym_list::SymbolInfo& fallback);
     static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
     static void fillDisplayMetadata(SignalJourneyItem& item);
     static void fillInterfaceDisplayMetadata(SignalJourneyItem& item);
