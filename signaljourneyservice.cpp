@@ -169,9 +169,8 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
 
     report.found = true;
     report.notFoundReason = SignalJourneyNotFoundReason::None;
-    report.declaration = signal;
     report.declarationSymbolRecord = semanticSymbolRecordForSymbol(signal);
-    fillDeclarationDisplayMetadata(report);
+    fillDeclarationDisplayMetadata(report, signal);
     report.assignments = relationshipItems(
         signal,
         false,
@@ -538,30 +537,31 @@ QString SignalJourneyService::interfaceBaseDisplayName(
 }
 
 void SignalJourneyService::fillDeclarationDisplayMetadata(
-    SignalJourneyReport& report)
+    SignalJourneyReport& report,
+    const sym_list::SymbolInfo& declaration)
 {
     if (!report.declarationSymbolRecord.isValid())
         report.declarationSymbolRecord =
-            semanticSymbolRecordForSymbol(report.declaration);
+            semanticSymbolRecordForSymbol(declaration);
     report.declarationStableKey =
         report.declarationSymbolRecord.stableKey.isValid()
             ? report.declarationSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(report.declaration);
+            : symbolStableKeyForSymbol(declaration);
     report.declarationCodeLink =
-        codeLinkForRecord(report.declarationSymbolRecord, report.declaration);
+        codeLinkForRecord(report.declarationSymbolRecord, declaration);
     report.declarationDisplayName =
         symbolDisplayNameForRecord(report.declarationSymbolRecord,
-                                   report.declaration);
+                                   declaration);
     report.declarationTypeDisplayName =
         typeDisplayNameForRecord(report.declarationSymbolRecord,
-                                 report.declaration);
+                                 declaration);
     report.declarationFileDisplayName =
         report.declarationCodeLink.fileDisplayName;
     report.declarationLineDisplayName =
         report.declarationCodeLink.lineDisplayName;
     report.declarationSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(report.declarationSymbolRecord,
-                                       report.declaration);
+                                       declaration);
 }
 
 void SignalJourneyService::fillDisplayMetadata(

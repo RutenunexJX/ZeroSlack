@@ -4472,9 +4472,11 @@ static void runSignalJourneyServiceFixture()
 
     expectBool("signal journey found declaration", report.found, true);
     expectBool("signal journey declaration name",
-               report.declaration.symbolName == QStringLiteral("data_q"), true);
+               report.declarationDisplayName == QStringLiteral("data_q"),
+               true);
     expectBool("signal journey declaration stable key",
-               report.declarationStableKey == symbolStableKeyForSymbol(report.declaration),
+               report.declarationStableKey
+                   == report.declarationSymbolRecord.stableKey,
                true);
     expectBool("signal journey declaration semantic record",
                report.declarationSymbolRecord.isValid()
@@ -4487,13 +4489,13 @@ static void runSignalJourneyServiceFixture()
                        == SymbolTaxonomy::DeclarationKind::Signal,
                true);
     SignalJourneyQuery stableSignalQuery;
-    stableSignalQuery.signalStableKey = symbolStableKeyForSymbol(report.declaration);
+    stableSignalQuery.signalStableKey = report.declarationStableKey;
     stableSignalQuery.signalName = QStringLiteral("consumer");
     const SignalJourneyReport stableSignalReport =
         service.buildSignalJourney(stableSignalQuery);
     expectBool("signal journey resolves stable signal key",
                stableSignalReport.found
-                   && stableSignalReport.declaration.symbolName
+                   && stableSignalReport.declarationDisplayName
                        == QStringLiteral("data_q")
                    && stableSignalReport.declarationStableKey
                        == stableSignalQuery.signalStableKey
@@ -4527,7 +4529,8 @@ static void runSignalJourneyServiceFixture()
                        == QStringLiteral("10"),
                true);
     expectBool("taxonomy recognizes signal journey declaration",
-               SymbolTaxonomy::isSignalDeclaration(report.declaration.symbolType),
+               report.declarationSymbolRecord.declarationKind
+                   == SymbolTaxonomy::DeclarationKind::Signal,
                true);
     expectBool("taxonomy recognizes signal journey port peer",
                SymbolTaxonomy::isPortConnectionPeer(symbols.at(4).symbolType),

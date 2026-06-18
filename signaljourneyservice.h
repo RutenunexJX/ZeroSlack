@@ -64,7 +64,6 @@ struct SignalJourneyReport {
     bool found = false;
     SignalJourneyNotFoundReason notFoundReason =
         SignalJourneyNotFoundReason::None;
-    sym_list::SymbolInfo declaration = {};
     SemanticSymbolRecord declarationSymbolRecord;
     SymbolStableKey declarationStableKey;
     RtlInsightCodeLink declarationCodeLink;
@@ -128,7 +127,9 @@ private:
     static QString interfaceBaseDisplayName(
         const SemanticSymbolRecord& record,
         const sym_list::SymbolInfo& fallback);
-    static void fillDeclarationDisplayMetadata(SignalJourneyReport& report);
+    static void fillDeclarationDisplayMetadata(
+        SignalJourneyReport& report,
+        const sym_list::SymbolInfo& declaration);
     static void fillDisplayMetadata(SignalJourneyItem& item,
                                     const sym_list::SymbolInfo& peerSymbol);
     static void fillInterfaceDisplayMetadata(

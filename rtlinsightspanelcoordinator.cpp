@@ -715,7 +715,7 @@ void appendSignalJourney(QTreeWidget* tree,
         + report.timingConnections.size();
     QTreeWidgetItem* group = createGroupItem(tree,
                                             QStringLiteral("Signal Journey: %1")
-                                                .arg(report.declaration.symbolName),
+                                                .arg(report.declarationDisplayName),
                                             totalItems);
     QTreeWidgetItem* declaration =
         createChildItem(group,
