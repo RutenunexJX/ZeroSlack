@@ -26,20 +26,43 @@ bool semanticCompletionContextNameMatches(const QString& name, const QString& pr
     return prefixPos == lowerPrefix.length();
 }
 
+QString displayNameForCompletionContextSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    if (!record.name.isEmpty())
+        return record.name;
+    return symbol.symbolName;
+}
+
 QStringList uniqueSortedCompletionContextSymbolNames(
     const QList<sym_list::SymbolInfo>& symbols)
 {
     QStringList result;
     QSet<QString> seenNames;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString key = symbol.symbolName.toCaseFolded();
+        const QString displayName =
+            displayNameForCompletionContextSymbol(symbol);
+        const QString key = displayName.toCaseFolded();
         if (seenNames.contains(key))
             continue;
         seenNames.insert(key);
-        result.append(symbol.symbolName);
+        result.append(displayName);
     }
     result.sort(Qt::CaseInsensitive);
     return result;
+}
+
+QString ownerNameForCompletionContextSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    return semanticSymbolRecordForSymbol(symbol).owner.name;
+}
+
+QString rawTypeTextForCompletionContextSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    return semanticSymbolRecordForSymbol(symbol).type.rawTypeText;
 }
 
 }
@@ -52,9 +75,11 @@ QStringList SemanticIndex::getEnumValueCompletionNames(
     const QList<sym_list::SymbolInfo> symbols =
         getSymbolsByType(sym_list::sym_enum_value);
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!enumTypeName.isEmpty() && symbol.moduleScope != enumTypeName)
+        if (!enumTypeName.isEmpty()
+            && ownerNameForCompletionContextSymbol(symbol) != enumTypeName)
             continue;
-        if (!semanticCompletionContextNameMatches(symbol.symbolName, prefix))
+        if (!semanticCompletionContextNameMatches(
+                displayNameForCompletionContextSymbol(symbol), prefix))
             continue;
         result.append(symbol);
     }
@@ -70,7 +95,7 @@ QString SemanticIndex::enumTypeForVariable(
             getModuleInternalSymbolsByType(moduleName, sym_list::sym_enum_var);
         for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
             if (symbol.symbolName == variableName)
-                return symbol.moduleScope;
+                return ownerNameForCompletionContextSymbol(symbol);
         }
     }
 
@@ -78,7 +103,7 @@ QString SemanticIndex::enumTypeForVariable(
         getSymbolsByType(sym_list::sym_enum_var);
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (symbol.symbolName == variableName)
-            return symbol.moduleScope;
+            return ownerNameForCompletionContextSymbol(symbol);
     }
 
     return QString();
@@ -128,17 +153,23 @@ QString SemanticIndex::getStructTypeForVariable(const QString& variableName,
 
     if (!moduleName.isEmpty()) {
         for (const sym_list::SymbolInfo& symbol : std::as_const(structVariables)) {
+            const QString ownerName =
+                ownerNameForCompletionContextSymbol(symbol);
+            const QString rawTypeText =
+                rawTypeTextForCompletionContextSymbol(symbol);
             if (symbol.symbolName == variableName
-                && symbol.moduleScope == moduleName
-                && !symbol.dataType.isEmpty()) {
-                return symbol.dataType;
+                && ownerName == moduleName
+                && !rawTypeText.isEmpty()) {
+                return rawTypeText;
             }
         }
     }
 
     for (const sym_list::SymbolInfo& symbol : std::as_const(structVariables)) {
-        if (symbol.symbolName == variableName && !symbol.dataType.isEmpty())
-            return symbol.dataType;
+        const QString rawTypeText =
+            rawTypeTextForCompletionContextSymbol(symbol);
+        if (symbol.symbolName == variableName && !rawTypeText.isEmpty())
+            return rawTypeText;
     }
 
     return QString();
@@ -151,7 +182,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getStructMembers(
     const QList<sym_list::SymbolInfo> members =
         getSymbolsByType(sym_list::sym_struct_member);
     for (const sym_list::SymbolInfo& symbol : members) {
-        if (!structTypeName.isEmpty() && symbol.moduleScope != structTypeName)
+        if (!structTypeName.isEmpty()
+            && ownerNameForCompletionContextSymbol(symbol) != structTypeName)
             continue;
         result.append(symbol);
     }
