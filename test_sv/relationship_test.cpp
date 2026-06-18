@@ -1433,8 +1433,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     const ReferenceReport snapshotReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotReferenceQuery);
-    expectInt("snapshot reference report subject id",
-              snapshotReferenceReport.subjectSymbolId, stageId);
     expectBool("snapshot reference report subject symbol",
                snapshotReferenceReport.subjectSymbol.symbolId == stageId, true);
     expectBool("snapshot reference report subject stable key",
@@ -1570,7 +1568,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const ReferenceReport snapshotNamedReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotNamedReferenceQuery);
     expectBool("snapshot reference service resolves query symbol name",
-               snapshotNamedReferenceReport.subjectSymbolId == stageId
+               snapshotNamedReferenceReport.subjectStableKey == stageStableKey
                    && snapshotNamedReferenceReport.totalCount == 1
                    && !snapshotNamedReferenceReport.references.isEmpty()
                    && snapshotNamedReferenceReport.references.first()
@@ -1582,7 +1580,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const ReferenceReport snapshotMissingReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotMissingReferenceQuery);
     expectBool("snapshot reference report missing subject reason",
-               snapshotMissingReferenceReport.subjectSymbolId < 0
+               snapshotMissingReferenceReport.subjectSymbol.symbolId < 0
                    && snapshotMissingReferenceReport.notFoundReason
                        == ReferenceReportNotFoundReason::NoSubjectSymbol
                    && snapshotMissingReferenceReport.notFoundReasonDisplayName
@@ -1594,7 +1592,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const ReferenceReport snapshotNoReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotNoReferenceQuery);
     expectBool("snapshot reference report no references reason",
-               snapshotNoReferenceReport.subjectSymbolId == topId
+               snapshotNoReferenceReport.subjectStableKey == topStableKey
                    && snapshotNoReferenceReport.totalCount == 0
                    && snapshotNoReferenceReport.notFoundReason
                        == ReferenceReportNotFoundReason::NoReferences
@@ -3230,8 +3228,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                referenceFoundTopInstance, true);
     const ReferenceReport stageReferenceReport =
         referenceService.findReferenceReport(stageReferenceQuery);
-    expectInt("reference report subject id",
-              stageReferenceReport.subjectSymbolId, stageId);
     expectBool("reference report subject symbol",
                stageReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_stage"),
                true);

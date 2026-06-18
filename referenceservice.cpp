@@ -202,8 +202,7 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
     const ReferenceQuery normalized = normalizedQuery(query);
     ReferenceReport report;
     report.subjectSymbol = resolveSubjectSymbol(normalized);
-    report.subjectSymbolId = report.subjectSymbol.symbolId;
-    if (report.subjectSymbolId < 0) {
+    if (report.subjectSymbol.symbolId < 0) {
         report.notFoundReason = ReferenceReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);

@@ -72,7 +72,6 @@ struct ReferenceFileGroup {
 };
 
 struct ReferenceReport {
-    int subjectSymbolId = -1;
     sym_list::SymbolInfo subjectSymbol = {};
     SemanticSymbolRecord subjectSymbolRecord;
     SymbolStableKey subjectStableKey;
