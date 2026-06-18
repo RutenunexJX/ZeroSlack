@@ -74,7 +74,7 @@ void RelationshipsPanelCoordinator::refresh()
         relationshipService->queryForPanel(browseOptions);
     const RelationshipReport report =
         relationshipService->findRelationshipReport(browseQuery);
-    QString subjectName = report.subjectSymbolRecord.name;
+    QString subjectName = report.subjectDisplayName;
     if (subjectName.isEmpty())
         subjectName = currentRelationshipSymbolName;
 

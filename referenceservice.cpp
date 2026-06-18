@@ -61,6 +61,12 @@ QString referenceRecordName(const SemanticSymbolRecord& record,
         : record.name;
 }
 
+QString reportSubjectDisplayName(const SemanticSymbolRecord& record,
+                                 const QString& fallbackName)
+{
+    return record.name.isEmpty() ? fallbackName : record.name;
+}
+
 bool referenceLocationLess(const ReferenceResult& lhs,
                            const ReferenceResult& rhs)
 {
@@ -200,6 +206,9 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
     ReferenceReport report;
     report.subjectSymbolRecord = resolveSubjectSymbolRecord(normalized);
     report.subjectStableKey = report.subjectSymbolRecord.stableKey;
+    report.subjectDisplayName =
+        reportSubjectDisplayName(report.subjectSymbolRecord,
+                                 normalized.symbolName);
     if (!report.subjectStableKey.isValid()) {
         report.subjectSymbol.symbolId = -1;
         report.notFoundReason = ReferenceReportNotFoundReason::NoSubjectSymbol;

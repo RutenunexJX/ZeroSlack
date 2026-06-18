@@ -163,7 +163,7 @@ void ReferencesPanelCoordinator::refresh()
     ReferenceService* referenceService = ReferenceService::getInstance();
     const ReferenceQuery query = referenceService->queryForPanel(queryOptions);
     const ReferenceReport report = referenceService->findReferenceReport(query);
-    QString subjectName = report.subjectSymbolRecord.name;
+    QString subjectName = report.subjectDisplayName;
     if (subjectName.isEmpty())
         subjectName = currentReferenceSymbolName;
 

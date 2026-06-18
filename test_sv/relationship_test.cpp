@@ -1241,6 +1241,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotRelationshipReport.subjectSymbolRecord.name
                        == QStringLiteral("rel_top"),
                true);
+    expectBool("snapshot relationship report subject display name",
+               snapshotRelationshipReport.subjectDisplayName
+                   == QStringLiteral("rel_top"),
+               true);
     expectBool("snapshot relationship report found reason metadata",
                snapshotRelationshipReport.notFoundReason
                        == RelationshipReportNotFoundReason::None
@@ -1408,6 +1412,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotMissingRelationshipReport.notFoundReasonDisplayName
                        == QStringLiteral("no subject symbol"),
                true);
+    expectBool("snapshot relationship report missing subject display name",
+               snapshotMissingRelationshipReport.subjectDisplayName
+                   == QStringLiteral("missing_rel_subject"),
+               true);
     RelationshipBrowseQuery snapshotNoRelationshipBrowseQuery;
     snapshotNoRelationshipBrowseQuery.symbolStableKey = topStableKey;
     snapshotNoRelationshipBrowseQuery.types = {SymbolRelationshipEngine::CONSTRAINS};
@@ -1468,6 +1476,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotReferenceReport.subjectSymbolRecord.stableKey == stageStableKey
                    && snapshotReferenceReport.subjectSymbolRecord.name
                        == QStringLiteral("rel_stage"),
+               true);
+    expectBool("snapshot reference report subject display name",
+               snapshotReferenceReport.subjectDisplayName
+                   == QStringLiteral("rel_stage"),
                true);
     expectBool("snapshot reference report found reason metadata",
                snapshotReferenceReport.notFoundReason
@@ -1609,6 +1621,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == ReferenceReportNotFoundReason::NoSubjectSymbol
                    && snapshotMissingReferenceReport.notFoundReasonDisplayName
                        == QStringLiteral("no subject symbol"),
+               true);
+    expectBool("snapshot reference report missing subject display name",
+               snapshotMissingReferenceReport.subjectDisplayName
+                   == QStringLiteral("missing_reference_subject"),
                true);
     ReferenceQuery snapshotNoReferenceQuery;
     snapshotNoReferenceQuery.symbolStableKey = topStableKey;
@@ -3258,6 +3274,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         referenceService.findReferenceReport(stageReferenceQuery);
     expectBool("reference report subject symbol",
                stageReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_stage"),
+               true);
+    expectBool("reference report subject display name",
+               stageReferenceReport.subjectDisplayName == QStringLiteral("rel_stage"),
                true);
     expectInt("reference report total count",
               stageReferenceReport.totalCount, 1);

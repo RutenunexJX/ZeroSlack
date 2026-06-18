@@ -167,6 +167,12 @@ QString symbolRecordDisplayName(const SemanticSymbolRecord& record,
         : record.name;
 }
 
+QString reportSubjectDisplayName(const SemanticSymbolRecord& record,
+                                 const QString& fallbackName)
+{
+    return record.name.isEmpty() ? fallbackName : record.name;
+}
+
 QString symbolRecordFileName(const SemanticSymbolRecord& record,
                              const sym_list::SymbolInfo& fallbackSymbol)
 {
@@ -296,6 +302,9 @@ RelationshipReport RelationshipService::findRelationshipReport(
     RelationshipReport report;
     report.subjectSymbolRecord = resolveSubjectSymbolRecord(normalized);
     report.subjectStableKey = report.subjectSymbolRecord.stableKey;
+    report.subjectDisplayName =
+        reportSubjectDisplayName(report.subjectSymbolRecord,
+                                 normalized.symbolName);
     if (!report.subjectStableKey.isValid()) {
         report.subjectSymbol.symbolId = -1;
         report.notFoundReason =
@@ -364,15 +373,13 @@ RelationshipReport RelationshipService::findRelationshipReport(
             directed.peerRole =
                 roleFor(relationship.relationship.type, !subjectIsSource);
             const QString sourceName = subjectIsSource
-                ? symbolRecordDisplayName(report.subjectSymbolRecord,
-                                          report.subjectSymbol)
+                ? report.subjectDisplayName
                 : symbolRecordDisplayName(directed.peerSymbolRecord,
                                           directed.peerSymbol);
             const QString targetName = subjectIsSource
                 ? symbolRecordDisplayName(directed.peerSymbolRecord,
                                           directed.peerSymbol)
-                : symbolRecordDisplayName(report.subjectSymbolRecord,
-                                          report.subjectSymbol);
+                : report.subjectDisplayName;
             directed.explanation = QStringLiteral("%1 %2 %3")
                                        .arg(sourceName,
                                             relationVerb(relationship.relationship.type),
