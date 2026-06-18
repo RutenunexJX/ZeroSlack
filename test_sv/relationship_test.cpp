@@ -1685,7 +1685,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && node.direction == HierarchyQuery::Children
                 && node.viaType == SymbolRelationshipEngine::INSTANTIATES
                 && node.directionDisplayName == QStringLiteral("Outgoing")
-                && node.relationshipTypeDisplayName == QStringLiteral("Instantiates"));
+                && node.relationshipTypeDisplayName == QStringLiteral("Instantiates")
+                && node.symbolDisplayName == QStringLiteral("rel_stage")
+                && node.symbolTypeDisplayName == QStringLiteral("module")
+                && node.sourceRoleDisplayName == QStringLiteral("design source")
+                && node.codeLink.fileName == stagePath
+                && node.codeLink.line > 0
+                && node.codeLink.fileDisplayName
+                    == QStringLiteral("relationship_stage.sv")
+                && !node.codeLink.lineDisplayName.isEmpty());
     }
     expectBool("snapshot hierarchy service finds stage child",
                snapshotHierarchyFoundStage, true);
@@ -1761,6 +1769,33 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && !snapshotHierarchyReport.nodes.first().parentStableKey.isValid()
                    && snapshotHierarchyReport.nodes.last().symbolStableKey == stageStableKey
                    && snapshotHierarchyReport.nodes.last().parentStableKey == topStableKey,
+               true);
+    expectBool("snapshot hierarchy report exposes node metadata",
+               snapshotHierarchyReport.nodes.size() == 2
+                   && snapshotHierarchyReport.nodes.first().symbolDisplayName
+                       == QStringLiteral("rel_top")
+                   && snapshotHierarchyReport.nodes.first().symbolTypeDisplayName
+                       == QStringLiteral("module")
+                   && snapshotHierarchyReport.nodes.first().sourceRoleDisplayName
+                       == QStringLiteral("design source")
+                   && snapshotHierarchyReport.nodes.first().codeLink.fileName == topPath
+                   && snapshotHierarchyReport.nodes.first().codeLink.line > 0
+                   && snapshotHierarchyReport.nodes.first().codeLink.fileDisplayName
+                       == QStringLiteral("relationship_top.sv")
+                   && !snapshotHierarchyReport.nodes.first()
+                           .codeLink.lineDisplayName.isEmpty()
+                   && snapshotHierarchyReport.nodes.last().symbolDisplayName
+                       == QStringLiteral("rel_stage")
+                   && snapshotHierarchyReport.nodes.last().symbolTypeDisplayName
+                       == QStringLiteral("module")
+                   && snapshotHierarchyReport.nodes.last().sourceRoleDisplayName
+                       == QStringLiteral("design source")
+                   && snapshotHierarchyReport.nodes.last().codeLink.fileName == stagePath
+                   && snapshotHierarchyReport.nodes.last().codeLink.line > 0
+                   && snapshotHierarchyReport.nodes.last().codeLink.fileDisplayName
+                       == QStringLiteral("relationship_stage.sv")
+                   && !snapshotHierarchyReport.nodes.last()
+                           .codeLink.lineDisplayName.isEmpty(),
                true);
     const HierarchyReport snapshotStableHierarchyReport =
         snapshotHierarchyService.getHierarchyReport(snapshotStableHierarchyQuery);

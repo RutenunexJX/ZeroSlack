@@ -2,6 +2,7 @@
 #define HIERARCHYSERVICE_H
 
 #include "relationshipservice.h"
+#include "rtlinsightlink.h"
 
 #include <QList>
 #include <QMap>
@@ -56,6 +57,9 @@ struct HierarchyNode {
     QString directionDisplayName;
     QString relationshipTypeDisplayName;
     QString symbolDisplayName;
+    QString symbolTypeDisplayName;
+    QString sourceRoleDisplayName;
+    RtlInsightCodeLink codeLink;
     QString fileDisplayName;
     QString lineDisplayName;
 };

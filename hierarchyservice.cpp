@@ -57,6 +57,39 @@ QString normalizedHierarchyFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
+SymbolTaxonomy::SemanticMetadata hierarchyMetadataForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(fallback);
+    if (!record.isValid())
+        return metadata;
+
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+RtlInsightCodeLink hierarchyCodeLinkForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (record.isValid()) {
+        const QString fileName = fallback.fileName.isEmpty()
+            ? record.location.fileName
+            : fallback.fileName;
+        return RtlInsightLink::fromFileLine(fileName,
+                                            record.location.startLine,
+                                            record.location.startColumn);
+    }
+    return RtlInsightLink::fromSymbol(fallback);
+}
+
 QString HierarchyService::directionDisplayName(HierarchyQuery::Direction direction)
 {
     switch (direction) {
@@ -111,6 +144,12 @@ void HierarchyService::fillDisplayMetadata(HierarchyNode& node)
     node.symbolDisplayName = node.symbolRecord.name.isEmpty()
         ? symbolDisplayName(node.symbol)
         : node.symbolRecord.name;
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        hierarchyMetadataForRecord(node.symbolRecord, node.symbol);
+    node.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
+    node.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    node.codeLink = hierarchyCodeLinkForRecord(node.symbolRecord, node.symbol);
     const QString fileName = node.symbolRecord.location.fileName.isEmpty()
         ? node.symbol.fileName
         : node.symbolRecord.location.fileName;
