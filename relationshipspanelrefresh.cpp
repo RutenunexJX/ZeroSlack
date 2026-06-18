@@ -76,8 +76,6 @@ void RelationshipsPanelCoordinator::refresh()
         relationshipService->findRelationshipReport(browseQuery);
     QString subjectName = report.subjectSymbolRecord.name;
     if (subjectName.isEmpty())
-        subjectName = report.subjectSymbol.symbolName;
-    if (subjectName.isEmpty())
         subjectName = currentRelationshipSymbolName;
 
     const bool hadExpandableItems =

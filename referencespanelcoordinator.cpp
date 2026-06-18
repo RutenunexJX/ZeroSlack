@@ -165,8 +165,6 @@ void ReferencesPanelCoordinator::refresh()
     const ReferenceReport report = referenceService->findReferenceReport(query);
     QString subjectName = report.subjectSymbolRecord.name;
     if (subjectName.isEmpty())
-        subjectName = report.subjectSymbol.symbolName;
-    if (subjectName.isEmpty())
         subjectName = currentReferenceSymbolName;
 
     const bool hadExpandableItems = SemanticPanelUtils::treeHasExpandableItems(referencesTree);
