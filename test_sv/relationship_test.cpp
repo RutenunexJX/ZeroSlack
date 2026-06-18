@@ -1634,7 +1634,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     for (const HierarchyNode& node : snapshotHierarchy) {
         snapshotHierarchyFoundStage = snapshotHierarchyFoundStage
             || (node.depth == 1
-                && node.parentSymbolId == topId
+                && node.parentStableKey == topStableKey
                 && node.symbol.symbolId == stageId
                 && node.symbolRecord.isValid()
                 && node.symbolRecord.localHandle == stageId
@@ -1712,7 +1712,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == stageId
                    && snapshotHierarchyReport.nodes.last().symbolRecord.stableKey
                        == stageStableKey
-                   && snapshotHierarchyReport.nodes.last().parentSymbolId == topId,
+                   && snapshotHierarchyReport.nodes.last().parentStableKey
+                       == topStableKey,
                true);
     expectBool("snapshot hierarchy report keeps stable identity",
                snapshotHierarchyReport.nodes.size() == 2
@@ -1775,7 +1776,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot hierarchy parent report keeps parent identity",
                snapshotParentHierarchyReport.nodes.size() == 2
                    && snapshotParentHierarchyReport.nodes.last().symbol.symbolId == topId
-                   && snapshotParentHierarchyReport.nodes.last().parentSymbolId == stageId
+                   && snapshotParentHierarchyReport.nodes.last().parentStableKey
+                       == stageStableKey
                    && snapshotParentHierarchyReport.nodes.last().direction == HierarchyQuery::Parents,
                true);
     HierarchyQuery snapshotNamedHierarchyQuery;
@@ -3030,7 +3032,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (node.depth == 0 && node.symbol.symbolId == topId);
         hierarchyFoundStage = hierarchyFoundStage
             || (node.depth == 1
-                && node.parentSymbolId == topId
+                && node.parentStableKey == topStableKey
                 && node.symbol.symbolId == stageId);
     }
     expectBool("hierarchy service includes root",
@@ -3070,7 +3072,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     for (const HierarchyNode& node : hierarchyReport.nodes) {
         hierarchyReportHasStageChild = hierarchyReportHasStageChild
             || (node.depth == 1
-                && node.parentSymbolId == topId
+                && node.parentStableKey == topStableKey
                 && node.symbol.symbolId == stageId
                 && node.symbolRecord.isValid()
                 && node.symbolRecord.localHandle == stageId
@@ -3122,7 +3124,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool parentFoundTop = false;
     for (const HierarchyNode& node : parents) {
         parentFoundTop = parentFoundTop
-            || (node.symbol.symbolId == topId && node.parentSymbolId == stageId);
+            || (node.symbol.symbolId == topId
+                && node.parentStableKey == stageStableKey);
     }
     expectBool("hierarchy service finds parent instance",
                parentFoundTop, true);
@@ -3141,7 +3144,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (node.depth == 0 && node.symbol.symbolId == stageId);
         parentTreeFoundTop = parentTreeFoundTop
             || (node.depth == 1
-                && node.parentSymbolId == stageId
+                && node.parentStableKey == stageStableKey
                 && node.symbol.symbolId == topId
                 && node.direction == HierarchyQuery::Parents);
     }

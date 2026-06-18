@@ -48,7 +48,6 @@ struct HierarchyNode {
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     int depth = 0;
-    int parentSymbolId = -1;
     SymbolStableKey parentStableKey;
     int nodeId = -1;
     int parentNodeId = -1;

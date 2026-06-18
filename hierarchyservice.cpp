@@ -206,7 +206,6 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
         if (!node.symbolStableKey.isValid() && node.symbol.symbolId < 0)
             continue;
         node.depth = 1;
-        node.parentSymbolId = rel.fromSymbol.symbolId;
         node.parentStableKey = rel.fromStableKey;
         node.direction = HierarchyQuery::Children;
         node.viaType = rel.relationship.type;
@@ -243,7 +242,6 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
         if (!node.symbolStableKey.isValid() && node.symbol.symbolId < 0)
             continue;
         node.depth = 1;
-        node.parentSymbolId = rel.toSymbol.symbolId;
         node.parentStableKey = rel.toStableKey;
         node.direction = HierarchyQuery::Parents;
         node.viaType = rel.relationship.type;

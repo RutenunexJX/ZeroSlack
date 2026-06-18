@@ -50,7 +50,6 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     root.symbolRecord = rootRecord;
     root.symbolStableKey = rootStableKey;
     root.depth = 0;
-    root.parentSymbolId = -1;
     root.nodeId = nextNodeId++;
     root.parentNodeId = -1;
     root.direction = normalized.direction;
@@ -88,7 +87,6 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
                 emittedEdges.insert(edgeKey);
 
                 child.depth = current.node.depth + 1;
-                child.parentSymbolId = current.node.symbol.symbolId;
                 child.parentStableKey = current.node.symbolStableKey;
                 child.nodeId = nextNodeId++;
                 child.parentNodeId = current.node.nodeId;
