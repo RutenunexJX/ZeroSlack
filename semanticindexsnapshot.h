@@ -24,7 +24,6 @@ public:
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
     QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
-    sym_list::SymbolInfo getSymbolById(int symbolId) const;
     sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
@@ -55,6 +54,7 @@ private:
     QList<SemanticDiagnostic> m_diagnostics;
     QHash<QString, QString> m_fileContents;
 
+    sym_list::SymbolInfo getSymbolById(int symbolId) const;
     QList<sym_list::SymbolInfo> sortedDefinitions(
         const QList<sym_list::SymbolInfo>& symbols,
         const SemanticQueryContext& context) const;

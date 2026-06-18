@@ -51,6 +51,20 @@ SymbolStableKey stableKeyFromSnapshotSymbol(const sym_list::SymbolInfo& symbol)
         : symbolStableKeyForSymbol(symbol);
 }
 
+sym_list::SymbolInfo snapshotSymbolByLocalHandle(
+    const SemanticIndexSnapshot& snapshot,
+    int symbolId)
+{
+    if (symbolId >= 0) {
+        for (const sym_list::SymbolInfo& symbol : snapshot.getSymbols()) {
+            if (symbol.symbolId == symbolId)
+                return symbol;
+        }
+    }
+
+    return missingSnapshotSymbol();
+}
+
 SymbolStableKey relationshipEndpointStableKey(
     const SemanticIndexSnapshot& snapshot,
     const SemanticRelationship& relationship,
@@ -63,9 +77,10 @@ SymbolStableKey relationshipEndpointStableKey(
         return stableKey;
 
     return stableKeyFromSnapshotSymbol(
-        snapshot.getSymbolById(fromEndpoint
-                                   ? relationship.fromId
-                                   : relationship.toId));
+        snapshotSymbolByLocalHandle(snapshot,
+                                    fromEndpoint
+                                        ? relationship.fromId
+                                        : relationship.toId));
 }
 }
 

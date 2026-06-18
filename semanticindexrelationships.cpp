@@ -18,9 +18,12 @@ sym_list::SymbolInfo symbolByLocalHandle(const SemanticIndex& index,
 {
     if (const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
             index.snapshot()) {
-        const sym_list::SymbolInfo symbol = snapshot->getSymbolById(symbolId);
-        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
-            return symbol;
+        if (symbolId >= 0) {
+            for (const sym_list::SymbolInfo& symbol : snapshot->getSymbols()) {
+                if (symbol.symbolId == symbolId)
+                    return symbol;
+            }
+        }
     }
 
     if (index.symbolDatabase()) {

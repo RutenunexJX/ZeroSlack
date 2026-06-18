@@ -493,9 +493,19 @@ sym_list::SymbolInfo SemanticDiffService::relationshipEndpointSymbol(
             return symbol;
     }
 
-    return snapshot.getSymbolById(fromEndpoint
-                                      ? relationship.fromId
-                                      : relationship.toId);
+    const int localHandle = fromEndpoint
+        ? relationship.fromId
+        : relationship.toId;
+    if (localHandle >= 0) {
+        for (const sym_list::SymbolInfo& symbol : snapshot.getSymbols()) {
+            if (symbol.symbolId == localHandle)
+                return symbol;
+        }
+    }
+
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    return missing;
 }
 
 SemanticSymbolRecord SemanticDiffService::relationshipEndpointRecord(

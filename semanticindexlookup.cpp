@@ -80,6 +80,22 @@ QString definitionSortOwnerName(const sym_list::SymbolInfo& symbol)
     return semanticSymbolRecordForSymbol(symbol).owner.name;
 }
 
+sym_list::SymbolInfo snapshotSymbolByLocalHandle(
+    const SemanticIndexSnapshot& snapshot,
+    int symbolId)
+{
+    if (symbolId >= 0) {
+        for (const sym_list::SymbolInfo& symbol : snapshot.getSymbols()) {
+            if (symbol.symbolId == symbolId)
+                return symbol;
+        }
+    }
+
+    sym_list::SymbolInfo missing;
+    missing.symbolId = -1;
+    return missing;
+}
+
 }
 
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
@@ -126,7 +142,7 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
 sym_list::SymbolInfo SemanticIndex::getSymbolById(int symbolId) const
 {
     if (m_snapshot)
-        return m_snapshot->getSymbolById(symbolId);
+        return snapshotSymbolByLocalHandle(*m_snapshot, symbolId);
 
     if (symbolId < 0) {
         sym_list::SymbolInfo missing;
