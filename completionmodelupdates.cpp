@@ -29,8 +29,10 @@ QString ownerScopeNameForRecord(
 {
     if (!record.owner.name.isEmpty())
         return record.owner.name;
-    if (!fallback.moduleScope.isEmpty())
-        return fallback.moduleScope;
+    const SemanticSymbolRecord fallbackRecord =
+        semanticSymbolRecordForSymbol(fallback);
+    if (!fallbackRecord.owner.name.isEmpty())
+        return fallbackRecord.owner.name;
 
     switch (record.owner.kind) {
     case SymbolTaxonomy::SymbolOwnerScope::Global:
@@ -53,11 +55,11 @@ void fillSymbolMetadataFromRecord(
     CompletionModel::CompletionItem& item,
     const sym_list::SymbolInfo& symbol)
 {
-    item.symbolType = symbol.symbolType;
     item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
     item.symbolStableKey = item.symbolRecord.stableKey.isValid()
         ? item.symbolRecord.stableKey
         : symbolStableKeyForSymbol(symbol);
+    item.symbolType = item.symbolRecord.rawCollectorKind;
 
     const SymbolTaxonomy::SemanticMetadata metadata =
         metadataForRecord(item.symbolRecord, symbol);
@@ -264,9 +266,7 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
 
         CompletionItem item;
         item.type = SymbolCompletion;
-        item.symbolType = symbolType;
         fillSymbolMetadataFromRecord(item, symbol);
-        item.symbolType = symbolType;
         item.text = serviceItem.text;
         item.description = item.typeDisplayName.isEmpty()
             ? serviceItem.description
