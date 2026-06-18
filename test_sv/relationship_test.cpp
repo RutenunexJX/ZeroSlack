@@ -4927,7 +4927,6 @@ static void runClockResetDomainServiceFixture()
     expectBool("clock reset top found", topReport.found, true);
     ClockResetDomainQuery stableTopQuery;
     stableTopQuery.moduleStableKey = symbolStableKeyForSymbol(top);
-    stableTopQuery.moduleSymbolId = 9202;
     stableTopQuery.moduleName = QStringLiteral("other_domain");
     const ClockResetDomainReport stableTopReport =
         service.buildClockResetDomainMap(stableTopQuery);
@@ -5233,17 +5232,21 @@ static void runClockResetDomainServiceFixture()
                true);
     expectBool("clock reset top unmapped reset row", sawUnmappedReset, true);
 
-    ClockResetDomainQuery idQuery;
-    idQuery.moduleSymbolId = 9202;
+    ClockResetDomainQuery otherStableQuery;
+    otherStableQuery.moduleStableKey = symbolStableKeyForSymbol(symbols.at(1));
     const ClockResetDomainReport otherReport =
-        service.buildClockResetDomainMap(idQuery);
-    expectInt("clock reset id clock domains", otherReport.clockDomains.size(), 1);
-    expectBool("clock reset id clock signal",
+        service.buildClockResetDomainMap(otherStableQuery);
+    expectInt("clock reset stable key clock domains",
+              otherReport.clockDomains.size(),
+              1);
+    expectBool("clock reset stable key clock signal",
                !otherReport.clockDomains.isEmpty()
                    && otherReport.clockDomains.first().domainSignal.symbolName
                        == QStringLiteral("other_clk"),
                true);
-    expectInt("clock reset id reset domains", otherReport.resetDomains.size(), 0);
+    expectInt("clock reset stable key reset domains",
+              otherReport.resetDomains.size(),
+              0);
 
     ClockResetDomainQuery missingModuleQuery;
     missingModuleQuery.moduleName = QStringLiteral("missing_domain");
@@ -5259,7 +5262,8 @@ static void runClockResetDomainServiceFixture()
                true);
 
     ClockResetDomainQuery unsupportedModuleQuery;
-    unsupportedModuleQuery.moduleSymbolId = 9203;
+    unsupportedModuleQuery.moduleStableKey =
+        symbolStableKeyForSymbol(symbols.at(2));
     const ClockResetDomainReport unsupportedModuleReport =
         service.buildClockResetDomainMap(unsupportedModuleQuery);
     expectBool("clock reset unsupported symbol reason",
