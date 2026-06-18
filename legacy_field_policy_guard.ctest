@@ -126,6 +126,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexsnapshot.h|getRelationships[ \t\r\n]*\\([ \t\r\n]*int"
     "semanticindexsnapshot.h|findSymbolId[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+SymbolStableKey"
     "semanticindexrelationships.cpp|getRelationships[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbol\\.symbolId|getRelationshipResults[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId"
+    "semanticdiffservice.cpp|query\\.beforeSnapshot->getSymbolById"
+    "semanticdiffservice.cpp|query\\.afterSnapshot->getSymbolById"
     "smartrelationshipbuilderanalysis.cpp|snapshot->[ \t\r\n]*findSymbolId"
     "smartrelationshipbuilderanalysis.cpp|snapshot->[ \t\r\n]*getSymbolById"
     "smartrelationshipbuilderanalysis.cpp|symbolDatabase->[ \t\r\n]*getSymbolById"

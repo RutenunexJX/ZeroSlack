@@ -276,16 +276,24 @@ QList<SemanticDiffRelationshipChange> SemanticDiffService::relationshipChanges(
             change.kind = SemanticDiffChangeKind::Removed;
             change.beforeRelationship = beforeRelationships.value(key);
             change.beforeFromSymbol =
-                query.beforeSnapshot->getSymbolById(change.beforeRelationship.fromId);
+                relationshipEndpointSymbol(change.beforeRelationship,
+                                           *query.beforeSnapshot,
+                                           true);
             change.beforeToSymbol =
-                query.beforeSnapshot->getSymbolById(change.beforeRelationship.toId);
+                relationshipEndpointSymbol(change.beforeRelationship,
+                                           *query.beforeSnapshot,
+                                           false);
         } else {
             change.kind = SemanticDiffChangeKind::Added;
             change.afterRelationship = afterRelationships.value(key);
             change.afterFromSymbol =
-                query.afterSnapshot->getSymbolById(change.afterRelationship.fromId);
+                relationshipEndpointSymbol(change.afterRelationship,
+                                           *query.afterSnapshot,
+                                           true);
             change.afterToSymbol =
-                query.afterSnapshot->getSymbolById(change.afterRelationship.toId);
+                relationshipEndpointSymbol(change.afterRelationship,
+                                           *query.afterSnapshot,
+                                           false);
         }
         fillDisplayMetadata(change);
         changes.append(change);
@@ -423,9 +431,9 @@ bool SemanticDiffService::relationshipInScope(
     bool afterSide)
 {
     const sym_list::SymbolInfo fromSymbol =
-        snapshot.getSymbolById(relationship.fromId);
+        relationshipEndpointSymbol(relationship, snapshot, true);
     const sym_list::SymbolInfo toSymbol =
-        snapshot.getSymbolById(relationship.toId);
+        relationshipEndpointSymbol(relationship, snapshot, false);
     const QString fileName = afterSide ? query.afterFileName : query.beforeFileName;
 
     auto endpointInScope = [&](const sym_list::SymbolInfo& symbol) {
@@ -471,24 +479,75 @@ QString SemanticDiffService::symbolSignature(const sym_list::SymbolInfo& symbol)
         .arg(record.type.rawTypeText);
 }
 
+sym_list::SymbolInfo SemanticDiffService::relationshipEndpointSymbol(
+    const SemanticRelationship& relationship,
+    const SemanticIndexSnapshot& snapshot,
+    bool fromEndpoint)
+{
+    const SymbolStableKey key = fromEndpoint
+        ? relationship.fromStableKey
+        : relationship.toStableKey;
+    if (key.isValid()) {
+        const sym_list::SymbolInfo symbol = snapshot.getSymbolByStableKey(key);
+        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
+            return symbol;
+    }
+
+    return snapshot.getSymbolById(fromEndpoint
+                                      ? relationship.fromId
+                                      : relationship.toId);
+}
+
+SemanticSymbolRecord SemanticDiffService::relationshipEndpointRecord(
+    const SemanticRelationship& relationship,
+    const SemanticIndexSnapshot& snapshot,
+    bool fromEndpoint)
+{
+    const SymbolStableKey key = fromEndpoint
+        ? relationship.fromStableKey
+        : relationship.toStableKey;
+    if (key.isValid()) {
+        const SemanticSymbolRecord record =
+            snapshot.getSymbolRecordByStableKey(key);
+        if (record.isValid())
+            return record;
+    }
+    return semanticSymbolRecordForSymbol(
+        relationshipEndpointSymbol(relationship, snapshot, fromEndpoint));
+}
+
 QString SemanticDiffService::relationshipKey(
     const SemanticRelationship& relationship,
     const SemanticIndexSnapshot& snapshot)
 {
     const sym_list::SymbolInfo fromSymbol =
-        snapshot.getSymbolById(relationship.fromId);
+        relationshipEndpointSymbol(relationship, snapshot, true);
     const sym_list::SymbolInfo toSymbol =
-        snapshot.getSymbolById(relationship.toId);
+        relationshipEndpointSymbol(relationship, snapshot, false);
+    const SemanticSymbolRecord fromRecord =
+        relationshipEndpointRecord(relationship, snapshot, true);
+    const SemanticSymbolRecord toRecord =
+        relationshipEndpointRecord(relationship, snapshot, false);
     SemanticDiffSymbolCategory fromCategory = SemanticDiffSymbolCategory::Signal;
     SemanticDiffSymbolCategory toCategory = SemanticDiffSymbolCategory::Signal;
-    symbolCategory(SymbolTaxonomy::semanticMetadata(fromSymbol), &fromCategory);
-    symbolCategory(SymbolTaxonomy::semanticMetadata(toSymbol), &toCategory);
-    const QString fromKey = SymbolTaxonomy::isModuleDeclaration(fromSymbol)
-        ? QStringLiteral("module:%1").arg(fromSymbol.symbolName)
-        : symbolKey(fromSymbol, fromCategory);
-    const QString toKey = SymbolTaxonomy::isModuleDeclaration(toSymbol)
-        ? QStringLiteral("module:%1").arg(toSymbol.symbolName)
-        : symbolKey(toSymbol, toCategory);
+    symbolCategory(metadataForRecord(fromRecord, fromSymbol), &fromCategory);
+    symbolCategory(metadataForRecord(toRecord, toSymbol), &toCategory);
+    const QString fromName = symbolDisplayNameForRecord(fromRecord, fromSymbol);
+    const QString toName = symbolDisplayNameForRecord(toRecord, toSymbol);
+    const QString fromKey =
+        fromRecord.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+            ? QStringLiteral("module:%1").arg(fromName)
+            : QStringLiteral("%1:%2:%3")
+                  .arg(static_cast<int>(fromCategory))
+                  .arg(fromRecord.owner.name)
+                  .arg(fromName);
+    const QString toKey =
+        toRecord.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+            ? QStringLiteral("module:%1").arg(toName)
+            : QStringLiteral("%1:%2:%3")
+                  .arg(static_cast<int>(toCategory))
+                  .arg(toRecord.owner.name)
+                  .arg(toName);
     return QStringLiteral("%1:%2:%3")
         .arg(static_cast<int>(relationship.type))
         .arg(fromKey)

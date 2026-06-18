@@ -185,6 +185,14 @@ private:
     static QString symbolKey(const sym_list::SymbolInfo& symbol,
                              SemanticDiffSymbolCategory category);
     static QString symbolSignature(const sym_list::SymbolInfo& symbol);
+    static sym_list::SymbolInfo relationshipEndpointSymbol(
+        const SemanticRelationship& relationship,
+        const SemanticIndexSnapshot& snapshot,
+        bool fromEndpoint);
+    static SemanticSymbolRecord relationshipEndpointRecord(
+        const SemanticRelationship& relationship,
+        const SemanticIndexSnapshot& snapshot,
+        bool fromEndpoint);
     static QString relationshipKey(const SemanticRelationship& relationship,
                                    const SemanticIndexSnapshot& snapshot);
     static QString diagnosticKey(const SemanticDiagnostic& diagnostic);
