@@ -145,7 +145,7 @@ private:
     static bool isInsideModule(const sym_list::SymbolInfo& symbol,
                                const sym_list::SymbolInfo& moduleSymbol);
     static bool hasStateValuesForType(const QList<sym_list::SymbolInfo>& symbols,
-                                      const QString& dataType);
+                                      const QString& rawTypeText);
     static bool hasPairedNextStateSignal(
         const QList<sym_list::SymbolInfo>& moduleSymbols,
         const sym_list::SymbolInfo& stateRegister);

@@ -5418,12 +5418,16 @@ static void runFsmGraphServiceFixture()
                        == report.graphs.first().stateRegisterStableKey
                    && report.graphs.first().stateRegisterRecord.name
                        == QStringLiteral("state_q")
+                   && report.graphs.first().stateRegisterRecord.type.rawTypeText
+                       == QStringLiteral("state_t")
                    && report.graphs.first().nextStateSignalRecord.isValid()
                    && report.graphs.first().nextStateSignalRecord.localHandle == 9303
                    && report.graphs.first().nextStateSignalRecord.stableKey
                        == report.graphs.first().nextStateSignalStableKey
                    && report.graphs.first().nextStateSignalRecord.name
-                       == QStringLiteral("state_d"),
+                       == QStringLiteral("state_d")
+                   && report.graphs.first().nextStateSignalRecord.type.rawTypeText
+                       == QStringLiteral("state_t"),
                true);
     expectBool("fsm graph next state",
                !report.graphs.isEmpty()
@@ -5504,7 +5508,12 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().stateRows.first().stateRecord.stableKey
                        == report.graphs.first().stateRows.first().stateStableKey
                    && report.graphs.first().stateRows.first().stateRecord.name
-                       == report.graphs.first().stateRows.first().state.symbolName,
+                       == report.graphs.first().stateRows.first().state.symbolName
+                   && report.graphs.first().stateRows.first()
+                          .stateRecord.type.rawTypeText
+                       == QStringLiteral("state_t")
+                   && report.graphs.first().stateRows.first()
+                          .stateRecord.owner.name == QStringLiteral("fsm_top"),
                true);
     expectBool("fsm graph state row code link",
                !report.graphs.isEmpty()
@@ -5724,6 +5733,11 @@ static void runFsmGraphServiceFixture()
                           .stateRecord.stableKey
                        == packageReport.graphs.first().stateRows.first()
                           .stateStableKey
+                   && packageReport.graphs.first().stateRows.first()
+                          .stateRecord.type.rawTypeText
+                       == QStringLiteral("pkg_state_e")
+                   && packageReport.graphs.first().stateRows.first()
+                          .stateRecord.owner.name == QStringLiteral("fsm_pkg")
                    && packageReport.graphs.first().stateRows.first()
                           .typeDisplayName == QStringLiteral("enum value")
                    && packageReport.graphs.first().stateRows.first()

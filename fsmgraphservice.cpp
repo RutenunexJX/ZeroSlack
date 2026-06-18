@@ -94,11 +94,27 @@ QString moduleDisplayNameForRecord(
 {
     if (!record.owner.name.isEmpty())
         return record.owner.name;
-    if (!fallback.moduleScope.isEmpty())
-        return fallback.moduleScope;
+    const SemanticSymbolRecord fallbackRecord =
+        semanticSymbolRecordForSymbol(fallback);
+    if (!fallbackRecord.owner.name.isEmpty())
+        return fallbackRecord.owner.name;
     if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
         return QStringLiteral("global");
     return QStringLiteral("global");
+}
+
+QString rawTypeTextForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.type.rawTypeText.isEmpty())
+        return record.type.rawTypeText;
+    return semanticSymbolRecordForSymbol(fallback).type.rawTypeText;
+}
+
+QString rawTypeTextForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return rawTypeTextForRecord(semanticSymbolRecordForSymbol(symbol), symbol);
 }
 }
 
@@ -263,8 +279,9 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateRegisters(
             && !hasNextStatePair) {
             continue;
         }
-        if (!symbol.dataType.isEmpty()
-            && !hasStateValuesForType(allSymbols, symbol.dataType)
+        const QString symbolType = rawTypeTextForSymbol(symbol);
+        if (!symbolType.isEmpty()
+            && !hasStateValuesForType(allSymbols, symbolType)
             && !hasNextStatePair
             && !symbol.symbolName.contains(QStringLiteral("state"),
                                            Qt::CaseInsensitive)) {
@@ -286,15 +303,16 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
 {
     QList<sym_list::SymbolInfo> result;
     QSet<int> seen;
+    const QString stateRegisterType = rawTypeTextForSymbol(stateRegister);
     const QList<sym_list::SymbolInfo>& source =
-        stateRegister.dataType.isEmpty() ? moduleSymbols : allSymbols;
+        stateRegisterType.isEmpty() ? moduleSymbols : allSymbols;
     for (const sym_list::SymbolInfo& symbol : source) {
         if (!SymbolTaxonomy::isFsmStateValueDeclaration(
                 SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
         }
-        if (!stateRegister.dataType.isEmpty()) {
-            if (symbol.dataType != stateRegister.dataType)
+        if (!stateRegisterType.isEmpty()) {
+            if (rawTypeTextForSymbol(symbol) != stateRegisterType)
                 continue;
         }
         if (seen.contains(symbol.symbolId))
@@ -302,14 +320,15 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
         seen.insert(symbol.symbolId);
         result.append(symbol);
     }
-    if (!stateRegister.dataType.isEmpty() && result.isEmpty()) {
+    if (!stateRegisterType.isEmpty() && result.isEmpty()) {
         for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
             if (!SymbolTaxonomy::isFsmStateValueDeclaration(
                     SymbolTaxonomy::semanticMetadata(symbol))) {
                 continue;
             }
-            if (!symbol.dataType.isEmpty()
-                && symbol.dataType != stateRegister.dataType) {
+            const QString symbolType = rawTypeTextForSymbol(symbol);
+            if (!symbolType.isEmpty()
+                && symbolType != stateRegisterType) {
                 continue;
             }
             if (seen.contains(symbol.symbolId))
@@ -327,6 +346,7 @@ sym_list::SymbolInfo FsmGraphService::nextStateSignal(
     const sym_list::SymbolInfo& stateRegister) const
 {
     QList<sym_list::SymbolInfo> candidates;
+    const QString stateRegisterType = rawTypeTextForSymbol(stateRegister);
     for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
                 SymbolTaxonomy::semanticMetadata(symbol))) {
@@ -339,9 +359,10 @@ sym_list::SymbolInfo FsmGraphService::nextStateSignal(
             || isPairedNextStateName(stateRegister.symbolName, symbol.symbolName);
         if (!looksNext)
             continue;
-        if (!stateRegister.dataType.isEmpty()
-            && !symbol.dataType.isEmpty()
-            && symbol.dataType != stateRegister.dataType) {
+        const QString symbolType = rawTypeTextForSymbol(symbol);
+        if (!stateRegisterType.isEmpty()
+            && !symbolType.isEmpty()
+            && symbolType != stateRegisterType) {
             continue;
         }
         candidates.append(symbol);
@@ -456,8 +477,12 @@ bool FsmGraphService::isInsideModule(
 {
     if (symbol.symbolId == moduleSymbol.symbolId)
         return false;
-    if (!moduleSymbol.symbolName.isEmpty()
-        && symbol.moduleScope == moduleSymbol.symbolName) {
+    const SemanticSymbolRecord symbolRecord =
+        semanticSymbolRecordForSymbol(symbol);
+    const SemanticSymbolRecord moduleRecord =
+        semanticSymbolRecordForSymbol(moduleSymbol);
+    if (!moduleRecord.name.isEmpty()
+        && symbolRecord.owner.name == moduleRecord.name) {
         return true;
     }
     if (symbol.fileName != moduleSymbol.fileName)
@@ -471,14 +496,14 @@ bool FsmGraphService::isInsideModule(
 
 bool FsmGraphService::hasStateValuesForType(
     const QList<sym_list::SymbolInfo>& symbols,
-    const QString& dataType)
+    const QString& rawTypeText)
 {
-    if (dataType.isEmpty())
+    if (rawTypeText.isEmpty())
         return false;
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (SymbolTaxonomy::isFsmStateValueDeclaration(
                 SymbolTaxonomy::semanticMetadata(symbol))
-            && symbol.dataType == dataType) {
+            && rawTypeTextForSymbol(symbol) == rawTypeText) {
             return true;
         }
     }
@@ -489,6 +514,7 @@ bool FsmGraphService::hasPairedNextStateSignal(
     const QList<sym_list::SymbolInfo>& moduleSymbols,
     const sym_list::SymbolInfo& stateRegister)
 {
+    const QString stateRegisterType = rawTypeTextForSymbol(stateRegister);
     for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
         if (symbol.symbolId == stateRegister.symbolId)
             continue;
@@ -496,9 +522,10 @@ bool FsmGraphService::hasPairedNextStateSignal(
                 SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
         }
-        if (!stateRegister.dataType.isEmpty()
-            && !symbol.dataType.isEmpty()
-            && symbol.dataType != stateRegister.dataType) {
+        const QString symbolType = rawTypeTextForSymbol(symbol);
+        if (!stateRegisterType.isEmpty()
+            && !symbolType.isEmpty()
+            && symbolType != stateRegisterType) {
             continue;
         }
         if (looksLikeNextStateName(symbol.symbolName)
@@ -721,7 +748,7 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
 QString FsmGraphService::stateDetailDisplayName(
     const sym_list::SymbolInfo& state)
 {
-    return state.dataType;
+    return rawTypeTextForSymbol(state);
 }
 
 QString FsmGraphService::stateRegisterDetailDisplayName(
