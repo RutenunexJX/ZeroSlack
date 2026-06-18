@@ -103,6 +103,7 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "clockresetdomainservice.h|moduleSymbolId"
     "clockresetdomainservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
+    "clockresetdomainservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
     "fsmgraphservice.h|moduleSymbolId"
     "fsmgraphservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
     "hierarchyservice.h|struct[ \t\r\n]+HierarchyQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
@@ -110,6 +111,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "hierarchyservice.cpp|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int|moduleSymbolId"
     "modulebriefservice.h|moduleSymbolId"
     "modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
+    "modulebriefservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
     "referenceservice.h|struct[ \t\r\n]+ReferenceQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
     "referenceservice.h|subjectSymbolId"
     "relationshipservice.h|struct[ \t\r\n]+RelationshipQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId|struct[ \t\r\n]+RelationshipBrowseQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
@@ -118,6 +120,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "relationshipservice.h|subjectSymbolId"
     "signaljourneyservice.h|signalSymbolId"
     "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
+    "signaljourneyservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
 )
 
 set(missing_files)

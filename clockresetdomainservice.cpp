@@ -106,7 +106,7 @@ QList<SemanticRelationshipResult> clockResetRelationshipResultsForSymbol(
     const SymbolStableKey stableKey = clockResetStableKeyForSymbol(symbol);
     return stableKey.isValid()
         ? index->getRelationshipResults(stableKey, outgoing)
-        : index->getRelationshipResults(symbol.symbolId, outgoing);
+        : QList<SemanticRelationshipResult>();
 }
 }
 

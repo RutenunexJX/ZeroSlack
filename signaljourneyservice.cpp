@@ -132,7 +132,7 @@ QList<SemanticRelationshipResult> signalJourneyRelationshipResultsForSymbol(
     const SymbolStableKey stableKey = signalJourneyStableKeyForSymbol(symbol);
     return stableKey.isValid()
         ? index->getRelationshipResults(stableKey, outgoing)
-        : index->getRelationshipResults(symbol.symbolId, outgoing);
+        : QList<SemanticRelationshipResult>();
 }
 }
 

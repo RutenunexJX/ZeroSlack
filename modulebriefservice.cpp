@@ -178,7 +178,7 @@ QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
     const QList<SemanticRelationshipResult> relationships =
         moduleStableKey.isValid()
             ? semanticIndex()->getRelationshipResults(moduleStableKey, true)
-            : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
+            : QList<SemanticRelationshipResult>();
     for (const SemanticRelationshipResult& relationship : relationships) {
         if (!SymbolTaxonomy::isPackageDeclaration(
                 SymbolTaxonomy::semanticMetadata(relationship.toSymbol))) {
@@ -229,11 +229,11 @@ ModuleBriefRelationshipSummary ModuleBriefService::relationshipSummary(
     const QList<SemanticRelationshipResult> outgoing =
         moduleStableKey.isValid()
             ? semanticIndex()->getRelationshipResults(moduleStableKey, true)
-            : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
+            : QList<SemanticRelationshipResult>();
     const QList<SemanticRelationshipResult> incoming =
         moduleStableKey.isValid()
             ? semanticIndex()->getRelationshipResults(moduleStableKey, false)
-            : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, false);
+            : QList<SemanticRelationshipResult>();
 
     summary.outgoingCount = outgoing.size();
     summary.incomingCount = incoming.size();
@@ -256,7 +256,7 @@ QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEviden
         const QList<SemanticRelationshipResult> relationships =
             moduleStableKey.isValid()
                 ? semanticIndex()->getRelationshipResults(moduleStableKey, outgoing)
-                : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, outgoing);
+                : QList<SemanticRelationshipResult>();
         for (const SemanticRelationshipResult& relationship : relationships) {
             const sym_list::SymbolInfo peer =
                 outgoing ? relationship.toSymbol : relationship.fromSymbol;
