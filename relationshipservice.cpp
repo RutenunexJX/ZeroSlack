@@ -244,7 +244,7 @@ QList<RelationshipResult> RelationshipService::findRelationships(const Relations
     QList<RelationshipResult> result;
     const SymbolStableKey subjectStableKey = normalized.symbolStableKey.isValid()
         ? normalized.symbolStableKey
-        : symbolStableKeyForSymbol(resolveSubjectSymbol(normalized));
+        : resolveSubjectSymbolRecord(normalized).stableKey;
     if (!subjectStableKey.isValid())
         return result;
     const QList<SemanticRelationshipResult> relationships =
@@ -565,42 +565,68 @@ SemanticIndex* RelationshipService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-sym_list::SymbolInfo RelationshipService::resolveSubjectSymbol(
+SemanticSymbolRecord RelationshipService::resolveSubjectSymbolRecord(
     const RelationshipQuery& query) const
 {
     if (query.symbolStableKey.isValid())
-        return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
+        return semanticIndex()->getSymbolRecordByStableKey(query.symbolStableKey);
 
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
     if (query.symbolName.isEmpty())
-        return missing;
+        return {};
 
     SemanticQueryContext context;
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
 
-    return semanticIndex()->getSymbolById(
-        semanticIndex()->findSymbolId(query.symbolName, context));
+    const QList<sym_list::SymbolInfo> definitions =
+        semanticIndex()->findDefinitions(query.symbolName, context);
+    if (definitions.isEmpty())
+        return {};
+    return semanticSymbolRecordForSymbol(definitions.first());
+}
+
+SemanticSymbolRecord RelationshipService::resolveSubjectSymbolRecord(
+    const RelationshipBrowseQuery& query) const
+{
+    if (query.symbolStableKey.isValid())
+        return semanticIndex()->getSymbolRecordByStableKey(query.symbolStableKey);
+
+    if (query.symbolName.isEmpty())
+        return {};
+
+    SemanticQueryContext context;
+    context.fileName = query.fileName;
+    context.moduleName = query.moduleName;
+
+    const QList<sym_list::SymbolInfo> definitions =
+        semanticIndex()->findDefinitions(query.symbolName, context);
+    if (definitions.isEmpty())
+        return {};
+    return semanticSymbolRecordForSymbol(definitions.first());
+}
+
+sym_list::SymbolInfo RelationshipService::resolveSubjectSymbol(
+    const RelationshipQuery& query) const
+{
+    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
+    if (!record.stableKey.isValid()) {
+        sym_list::SymbolInfo missing;
+        missing.symbolId = -1;
+        return missing;
+    }
+    return semanticIndex()->getSymbolByStableKey(record.stableKey);
 }
 
 sym_list::SymbolInfo RelationshipService::resolveSubjectSymbol(
     const RelationshipBrowseQuery& query) const
 {
-    if (query.symbolStableKey.isValid())
-        return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
-
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    if (query.symbolName.isEmpty())
+    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
+    if (!record.stableKey.isValid()) {
+        sym_list::SymbolInfo missing;
+        missing.symbolId = -1;
         return missing;
-
-    SemanticQueryContext context;
-    context.fileName = query.fileName;
-    context.moduleName = query.moduleName;
-
-    return semanticIndex()->getSymbolById(
-        semanticIndex()->findSymbolId(query.symbolName, context));
+    }
+    return semanticIndex()->getSymbolByStableKey(record.stableKey);
 }
 
 RelationshipQuery RelationshipService::normalizedQuery(const RelationshipQuery& query)

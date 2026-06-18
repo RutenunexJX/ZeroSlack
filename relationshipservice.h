@@ -146,6 +146,10 @@ private:
     static std::unique_ptr<RelationshipService> instance;
 
     SemanticIndex* semanticIndex() const;
+    SemanticSymbolRecord resolveSubjectSymbolRecord(
+        const RelationshipQuery& query) const;
+    SemanticSymbolRecord resolveSubjectSymbolRecord(
+        const RelationshipBrowseQuery& query) const;
     sym_list::SymbolInfo resolveSubjectSymbol(const RelationshipQuery& query) const;
     sym_list::SymbolInfo resolveSubjectSymbol(const RelationshipBrowseQuery& query) const;
     static RelationshipQuery normalizedQuery(const RelationshipQuery& query);
