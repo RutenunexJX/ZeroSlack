@@ -119,7 +119,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
         const QList<SemanticRelationshipResult> relationships =
             moduleStableKey.isValid()
                 ? getRelationshipResults(moduleStableKey, true)
-                : getRelationshipResults(moduleSymbol.symbolId, true);
+                : QList<SemanticRelationshipResult>();
         for (const SemanticRelationshipResult& relationship : relationships) {
             if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
                 continue;
@@ -278,7 +278,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         const QList<SemanticRelationshipResult> relationships =
             moduleStableKey.isValid()
                 ? getRelationshipResults(moduleStableKey, true)
-                : getRelationshipResults(moduleSymbol.symbolId, true);
+                : QList<SemanticRelationshipResult>();
         for (const SemanticRelationshipResult& relationship : relationships) {
             if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
                 continue;
