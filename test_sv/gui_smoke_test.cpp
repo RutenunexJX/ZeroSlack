@@ -2291,9 +2291,19 @@ int main(int argc, char** argv)
         expectBool("reopened workspace analysis completes",
                    waitUntil([&]() { return workspaceSymbolsDone; }, 60000),
                    true);
+        expectBool("problems snapshot keeps external diagnostic after workspace analysis",
+                   waitUntil([&]() {
+                       const auto snapshot = SemanticIndex::getInstance()->snapshot();
+                       return snapshot
+                              && !snapshot->getDiagnostics(diagnosticPath).isEmpty();
+                   }, 2000),
+                   true);
+        problemsScopeCombo(window)->setCurrentIndex(
+            problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
+        semanticPanelRefresh(window)->updateProblemsPanel();
         expectBool("problems keep external diagnostic after workspace analysis",
                    waitUntil([&]() {
-                       return navigableItemCount(problemsTree(window)) == 1;
+                       return hasNavigableFile(problemsTree(window), diagnosticPath);
                    }, 2000),
                    true);
         drainRelationshipWork(window);
