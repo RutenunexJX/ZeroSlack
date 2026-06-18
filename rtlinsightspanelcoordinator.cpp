@@ -59,12 +59,9 @@ void appendSymbolGroup(QTreeWidget* tree,
 {
     QTreeWidgetItem* group = createGroupItem(tree, title, rows.size());
     for (const ModuleBriefSymbolRow& row : rows) {
-        const QString symbolName = row.symbolRecord.name.isEmpty()
-            ? row.symbol.symbolName
-            : row.symbolRecord.name;
         createChildItem(group,
                         row.sectionDisplayName,
-                        symbolName,
+                        row.symbolDisplayName,
                         row.detailDisplayName,
                         row.codeLink.fileName,
                         row.codeLink.line,
@@ -1107,11 +1104,11 @@ void RtlInsightsPanelCoordinator::refresh()
 
     if (insightsDock) {
         insightsDock->setWindowTitle(QStringLiteral("RTL Insights: %1")
-                                         .arg(currentModuleName));
+                                         .arg(moduleReport.moduleDisplayName));
     }
     if (statusMessageHandler) {
         statusMessageHandler(QStringLiteral("Updated RTL insights for %1")
-                                 .arg(currentModuleName),
+                                 .arg(moduleReport.moduleDisplayName),
                              1500);
     }
 }

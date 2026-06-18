@@ -3801,7 +3801,7 @@ static void runModuleBriefServiceFixture()
 
     expectBool("module brief found module", report.found, true);
     expectBool("module brief subject name",
-               report.moduleSymbol.symbolName == QStringLiteral("brief_top"), true);
+               report.moduleDisplayName == QStringLiteral("brief_top"), true);
     expectBool("module brief subject stable key",
                report.moduleStableKey == symbolStableKeyForSymbol(report.moduleSymbol),
                true);
@@ -3819,7 +3819,7 @@ static void runModuleBriefServiceFixture()
         service.buildModuleBrief(stableModuleBriefQuery);
     expectBool("module brief resolves stable module key",
                stableModuleBriefReport.found
-                   && stableModuleBriefReport.moduleSymbol.symbolName
+                   && stableModuleBriefReport.moduleDisplayName
                        == QStringLiteral("brief_top")
                    && stableModuleBriefReport.moduleStableKey
                        == stableModuleBriefQuery.moduleStableKey,
@@ -3960,6 +3960,7 @@ static void runModuleBriefServiceFixture()
                    && report.portRows.first().symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Port
                    && report.portRows.first().symbolRecord.name == QStringLiteral("clk")
+                   && report.portRows.first().symbolDisplayName == QStringLiteral("clk")
                    && report.portRows.first().sectionDisplayName == QStringLiteral("Port")
                    && !report.portRows.first().typeDisplayName.isEmpty()
                    && !report.portRows.first().detailDisplayName.isEmpty(),
@@ -3980,6 +3981,8 @@ static void runModuleBriefServiceFixture()
                    && report.parameterRows.first().symbolRecord.localHandle == 9002
                    && report.parameterRows.first().symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Parameter
+                   && report.parameterRows.first().symbolDisplayName
+                       == QStringLiteral("WIDTH")
                    && report.parameterRows.first().sectionDisplayName
                        == QStringLiteral("Parameter")
                    && !report.parameterRows.first().detailDisplayName.isEmpty(),
@@ -4023,6 +4026,8 @@ static void runModuleBriefServiceFixture()
                    && report.importRows.first().symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Package
                    && report.importRows.first().symbolRecord.name
+                       == QStringLiteral("brief_pkg")
+                   && report.importRows.first().symbolDisplayName
                        == QStringLiteral("brief_pkg"),
                true);
     bool hasPackageContext = false;
@@ -6992,6 +6997,9 @@ static void runRealWorkspaceIncludeFixture()
     }
     expectBool("real workspace module brief found",
                moduleBrief.found,
+               true);
+    expectBool("real workspace module brief subject display metadata",
+               moduleBrief.moduleDisplayName == QStringLiteral("rtl_top"),
                true);
     expectBool("real workspace module brief package context",
                sawRealPackageContext,

@@ -71,6 +71,7 @@ struct ModuleBriefSymbolRow {
     SemanticSymbolRecord symbolRecord;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
+    QString symbolDisplayName;
     QString typeDisplayName;
     QString detailDisplayName;
 };
@@ -102,6 +103,7 @@ struct ModuleBriefReport {
     sym_list::SymbolInfo moduleSymbol = {};
     SemanticSymbolRecord moduleSymbolRecord;
     SymbolStableKey moduleStableKey;
+    QString moduleDisplayName;
     QString notFoundReasonDisplayName;
     QList<sym_list::SymbolInfo> ports;
     QList<sym_list::SymbolInfo> parameters;

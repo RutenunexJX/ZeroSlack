@@ -66,6 +66,7 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.moduleStableKey = report.moduleSymbolRecord.stableKey.isValid()
         ? report.moduleSymbolRecord.stableKey
         : symbolStableKeyForSymbol(moduleSymbol);
+    report.moduleDisplayName = symbolDisplayName(report.moduleSymbolRecord);
     const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
 
     report.ports = symbolsInModule(
@@ -324,6 +325,7 @@ QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
         row.symbolRecord = record;
         row.codeLink = RtlInsightLink::fromSymbol(symbol);
         row.sectionDisplayName = sectionDisplayName;
+        row.symbolDisplayName = symbolDisplayName(record);
         row.typeDisplayName = symbolTypeDisplayName(record);
         row.detailDisplayName = symbolDetailDisplayName(record);
         rows.append(row);
