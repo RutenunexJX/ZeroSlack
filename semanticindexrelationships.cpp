@@ -58,6 +58,17 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(const QString& scope
     return getRelationships(defs.first().symbolId, outgoing);
 }
 
+QList<SemanticRelationship> SemanticIndex::getRelationships(
+    const SymbolStableKey& key,
+    bool outgoing) const
+{
+    if (m_snapshot)
+        return m_snapshot->getRelationships(key, outgoing);
+
+    const sym_list::SymbolInfo symbol = getSymbolByStableKey(key);
+    return getRelationships(symbol.symbolId, outgoing);
+}
+
 QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
     int symbolId,
     bool outgoing) const
@@ -70,6 +81,44 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
         item.relationship = relationship;
         item.fromSymbol = getSymbolById(relationship.fromId);
         item.toSymbol = getSymbolById(relationship.toId);
+        item.fromSymbolRecord = semanticSymbolRecordForSymbol(item.fromSymbol);
+        item.toSymbolRecord = semanticSymbolRecordForSymbol(item.toSymbol);
+        if (!item.relationship.fromStableKey.isValid())
+            item.relationship.fromStableKey =
+                item.fromSymbolRecord.stableKey.isValid()
+                    ? item.fromSymbolRecord.stableKey
+                    : symbolStableKeyForSymbol(item.fromSymbol);
+        if (!item.relationship.toStableKey.isValid())
+            item.relationship.toStableKey =
+                item.toSymbolRecord.stableKey.isValid()
+                    ? item.toSymbolRecord.stableKey
+                    : symbolStableKeyForSymbol(item.toSymbol);
+        item.fromStableKey = item.relationship.fromStableKey;
+        item.toStableKey = item.relationship.toStableKey;
+        item.provenance = item.relationship.provenance;
+        item.confidence = item.relationship.confidence;
+        item.evidenceText = item.relationship.evidenceText;
+        result.append(item);
+    }
+    return result;
+}
+
+QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
+    const SymbolStableKey& key,
+    bool outgoing) const
+{
+    QList<SemanticRelationshipResult> result;
+    const QList<SemanticRelationship> relationships = getRelationships(key, outgoing);
+    result.reserve(relationships.size());
+    for (const SemanticRelationship& relationship : relationships) {
+        SemanticRelationshipResult item;
+        item.relationship = relationship;
+        item.fromSymbol = relationship.fromStableKey.isValid()
+            ? getSymbolByStableKey(relationship.fromStableKey)
+            : getSymbolById(relationship.fromId);
+        item.toSymbol = relationship.toStableKey.isValid()
+            ? getSymbolByStableKey(relationship.toStableKey)
+            : getSymbolById(relationship.toId);
         item.fromSymbolRecord = semanticSymbolRecordForSymbol(item.fromSymbol);
         item.toSymbolRecord = semanticSymbolRecordForSymbol(item.toSymbol);
         if (!item.relationship.fromStableKey.isValid())

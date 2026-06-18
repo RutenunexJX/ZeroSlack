@@ -241,13 +241,14 @@ void RelationshipService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<RelationshipResult> RelationshipService::findRelationships(const RelationshipQuery& query) const
 {
     const RelationshipQuery normalized = normalizedQuery(query);
-    const int id = resolveSymbolId(normalized);
-    if (id < 0)
-        return {};
-
     QList<RelationshipResult> result;
     const QList<SemanticRelationshipResult> relationships =
-        semanticIndex()->getRelationshipResults(id, normalized.outgoing);
+        normalized.symbolStableKey.isValid()
+            ? semanticIndex()->getRelationshipResults(normalized.symbolStableKey,
+                                                      normalized.outgoing)
+            : semanticIndex()->getRelationshipResults(
+                  resolveSymbolId(normalized),
+                  normalized.outgoing);
 
     for (const SemanticRelationshipResult& rel : relationships) {
         if (!typeMatches(rel.relationship.type, normalized.types))
@@ -280,16 +281,17 @@ RelationshipReport RelationshipService::findRelationshipReport(
 {
     const RelationshipBrowseQuery normalized = normalizedQuery(query);
     RelationshipReport report;
-    const int id = resolveSymbolId(normalized);
-    report.subjectSymbolId = id;
-    if (id < 0) {
+    report.subjectSymbol = normalized.symbolStableKey.isValid()
+        ? semanticIndex()->getSymbolByStableKey(normalized.symbolStableKey)
+        : semanticIndex()->getSymbolById(resolveSymbolId(normalized));
+    report.subjectSymbolId = report.subjectSymbol.symbolId;
+    if (report.subjectSymbolId < 0) {
         report.notFoundReason =
             RelationshipReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);
         return report;
     }
-    report.subjectSymbol = semanticIndex()->getSymbolById(id);
     report.subjectSymbolRecord = semanticSymbolRecordForSymbol(report.subjectSymbol);
     report.subjectStableKey = report.subjectSymbolRecord.stableKey.isValid()
         ? report.subjectSymbolRecord.stableKey
@@ -403,7 +405,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
 
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = report.subjectStableKey;
-    relationshipQuery.symbolId = id;
+    relationshipQuery.symbolId = report.subjectSymbolId;
     relationshipQuery.symbolName = normalized.symbolName;
     relationshipQuery.fileName = normalized.fileName;
     relationshipQuery.moduleName = normalized.moduleName;

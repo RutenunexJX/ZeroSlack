@@ -343,10 +343,16 @@ public:
     QStringList findCompletions(const SemanticQueryContext& context) const;
 
     QList<SemanticRelationship> getRelationships(int symbolId, bool outgoing = true) const;
+    QList<SemanticRelationship> getRelationships(
+        const SymbolStableKey& key,
+        bool outgoing = true) const;
     QList<SemanticRelationship> getRelationships(const QString& scopeName,
                                                  bool outgoing = true) const;
     QList<SemanticRelationshipResult> getRelationshipResults(
         int symbolId,
+        bool outgoing = true) const;
+    QList<SemanticRelationshipResult> getRelationshipResults(
+        const SymbolStableKey& key,
         bool outgoing = true) const;
     QList<SemanticRelationshipResult> getRelationshipResults(
         const QString& scopeName,

@@ -1117,6 +1117,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotFoundStageStableKey, true);
     const QList<SemanticRelationshipResult> snapshotTopRelationshipResults =
         snapshotIndex.getRelationshipResults(topId, true);
+    const QList<SemanticRelationshipResult> snapshotTopStableRelationshipResults =
+        snapshotIndex.getRelationshipResults(topStableKey, true);
     bool snapshotFoundStageResult = false;
     bool snapshotFoundStageResultStableKey = false;
     bool snapshotFoundStageResultRecords = false;
@@ -1161,6 +1163,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("semantic snapshot returns relationship endpoint symbols",
                snapshotFoundStageResult, true);
+    expectBool("semantic snapshot queries relationship results by stable key",
+               snapshotTopStableRelationshipResults.size()
+                   == snapshotTopRelationshipResults.size(),
+               true);
     expectBool("semantic snapshot returns relationship stable keys",
                snapshotFoundStageResultStableKey, true);
     expectBool("semantic snapshot returns relationship endpoint records",
@@ -1789,12 +1795,30 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && reboundRelationships.first().fromId == reboundTopSymbol.symbolId
                    && reboundRelationships.first().toId == reboundStageSymbol.symbolId,
                true);
+    const QList<SemanticRelationship> reboundStableRelationships =
+        reboundSnapshot->getRelationships(topStableKey, true);
+    expectBool("semantic snapshot queries rebound relationship by stable key",
+               reboundStableRelationships.size() == 1
+                   && reboundStableRelationships.first().fromId
+                       == reboundTopSymbol.symbolId
+                   && reboundStableRelationships.first().toId
+                       == reboundStageSymbol.symbolId,
+               true);
     SemanticIndex reboundIndex;
     reboundIndex.setSnapshot(reboundSnapshot);
     expectBool("semantic index resolves rebound stable key",
                reboundIndex.findSymbolId(topStableKey) == reboundTopSymbol.symbolId
                    && reboundIndex.getSymbolByStableKey(stageStableKey).symbolId
                        == reboundStageSymbol.symbolId,
+               true);
+    const QList<SemanticRelationshipResult> reboundStableResults =
+        reboundIndex.getRelationshipResults(topStableKey, true);
+    expectBool("semantic index returns rebound relationship results by stable key",
+               reboundStableResults.size() == 1
+                   && reboundStableResults.first().fromSymbolRecord.stableKey
+                       == topStableKey
+                   && reboundStableResults.first().toSymbolRecord.stableKey
+                       == stageStableKey,
                true);
     SemanticRelationship duplicateStageRelationship;
     duplicateStageRelationship.fromId = topId;

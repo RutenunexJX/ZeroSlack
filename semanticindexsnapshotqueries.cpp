@@ -243,6 +243,30 @@ QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(int symbolId
     return result;
 }
 
+QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(
+    const SymbolStableKey& key,
+    bool outgoing) const
+{
+    QList<SemanticRelationship> result;
+    if (!key.isValid())
+        return result;
+
+    for (const SemanticRelationship& relationship : m_relationships) {
+        const SymbolStableKey relationshipKey =
+            outgoing ? relationship.fromStableKey : relationship.toStableKey;
+        if (relationshipKey == key) {
+            result.append(relationship);
+            continue;
+        }
+
+        const int symbolId = outgoing ? relationship.fromId : relationship.toId;
+        const sym_list::SymbolInfo symbol = getSymbolById(symbolId);
+        if (symbolStableKeyForSymbol(symbol) == key)
+            result.append(relationship);
+    }
+    return result;
+}
+
 QList<SemanticDiagnostic> SemanticIndexSnapshot::getDiagnostics(const QString& fileName) const
 {
     if (fileName.isEmpty())
