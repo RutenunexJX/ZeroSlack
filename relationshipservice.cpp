@@ -323,7 +323,8 @@ RelationshipReport RelationshipService::findRelationshipReport(
             DirectedRelationshipResult directed;
             directed.relationship = relationship;
             directed.direction = direction;
-            directed.peerSymbol = direction == DirectedRelationshipResult::Outgoing
+            const sym_list::SymbolInfo peerSymbol =
+                direction == DirectedRelationshipResult::Outgoing
                 ? relationship.toSymbol
                 : relationship.fromSymbol;
             directed.peerSymbolRecord = direction == DirectedRelationshipResult::Outgoing
@@ -331,7 +332,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : relationship.fromSymbolRecord;
             if (!directed.peerSymbolRecord.isValid())
                 directed.peerSymbolRecord =
-                    semanticSymbolRecordForSymbol(directed.peerSymbol);
+                    semanticSymbolRecordForSymbol(peerSymbol);
             directed.subjectStableKey = report.subjectStableKey;
             directed.peerStableKey = directed.peerSymbolRecord.stableKey.isValid()
                 ? directed.peerSymbolRecord.stableKey
@@ -339,7 +340,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
                        ? relationship.toStableKey
                        : relationship.fromStableKey);
             if (!directed.peerStableKey.isValid()
-                && directed.peerSymbol.symbolId < 0) {
+                && peerSymbol.symbolId < 0) {
                 continue;
             }
             directed.directionDisplayName = relationshipDirectionDisplayName(direction);
@@ -347,13 +348,13 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 relationshipTypeDisplayName(relationship.relationship.type);
             directed.peerSymbolDisplayName =
                 symbolRecordDisplayName(directed.peerSymbolRecord,
-                                        directed.peerSymbol);
+                                        peerSymbol);
             directed.peerFileDisplayName = fileDisplayName(
                 symbolRecordFileName(directed.peerSymbolRecord,
-                                     directed.peerSymbol));
+                                     peerSymbol));
             directed.peerLineDisplayName = lineDisplayName(
                 symbolRecordLine(directed.peerSymbolRecord,
-                                 directed.peerSymbol));
+                                 peerSymbol));
             directed.provenance = relationship.provenance;
             directed.confidence = relationship.confidence;
             directed.evidenceText = relationship.evidenceText;
@@ -372,10 +373,10 @@ RelationshipReport RelationshipService::findRelationshipReport(
             const QString sourceName = subjectIsSource
                 ? report.subjectDisplayName
                 : symbolRecordDisplayName(directed.peerSymbolRecord,
-                                          directed.peerSymbol);
+                                          peerSymbol);
             const QString targetName = subjectIsSource
                 ? symbolRecordDisplayName(directed.peerSymbolRecord,
-                                          directed.peerSymbol)
+                                          peerSymbol)
                 : report.subjectDisplayName;
             directed.explanation = QStringLiteral("%1 %2 %3")
                                        .arg(sourceName,

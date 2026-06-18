@@ -62,7 +62,6 @@ struct DirectedRelationshipResult {
 
     RelationshipResult relationship;
     Direction direction = Outgoing;
-    sym_list::SymbolInfo peerSymbol;
     SemanticSymbolRecord peerSymbolRecord;
     SymbolStableKey subjectStableKey;
     SymbolStableKey peerStableKey;

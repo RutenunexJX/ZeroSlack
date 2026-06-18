@@ -1255,12 +1255,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshotRelationshipReport.outgoingCount, 1);
     expectInt("snapshot relationship report total count",
               snapshotRelationshipReport.totalCount, 1);
-    expectBool("snapshot relationship report keeps peer symbol",
+    expectBool("snapshot relationship report keeps peer record",
                !snapshotRelationshipReport.relationships.isEmpty()
                    && snapshotRelationshipReport.relationships.first()
-                          .peerSymbol.symbolId == stageId
-                   && snapshotRelationshipReport.relationships.first()
                           .peerSymbolRecord.isValid()
+                   && snapshotRelationshipReport.relationships.first()
+                          .peerSymbolRecord.localHandle == stageId
                    && snapshotRelationshipReport.relationships.first()
                           .peerSymbolRecord.stableKey == stageStableKey
                    && snapshotRelationshipReport.relationships.first()
@@ -1306,7 +1306,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotRelationshipReport.directionGroups.first()
                           .typeGroups.first()
                           .relationships.first()
-                          .peerSymbol.symbolId == stageId
+                          .peerSymbolRecord.localHandle == stageId
                    && snapshotRelationshipReport.directionGroups.first()
                           .typeGroups.first()
                           .relationships.first()
@@ -1323,12 +1323,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshotIncomingStageReport.totalCount, 1);
     expectInt("snapshot relationship report incoming-only count",
               snapshotIncomingStageReport.incomingCount, 1);
-    expectBool("snapshot relationship report incoming peer symbol",
+    expectBool("snapshot relationship report incoming peer record",
                !snapshotIncomingStageReport.relationships.isEmpty()
                    && snapshotIncomingStageReport.relationships.first()
-                          .peerSymbol.symbolId == topId
-                   && snapshotIncomingStageReport.relationships.first()
                           .peerSymbolRecord.isValid()
+                   && snapshotIncomingStageReport.relationships.first()
+                          .peerSymbolRecord.localHandle == topId
                    && snapshotIncomingStageReport.relationships.first()
                           .peerSymbolRecord.stableKey == topStableKey,
                true);
@@ -1373,7 +1373,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotIncomingStageReport.directionGroups.first()
                           .typeGroups.first()
                           .relationships.first()
-                          .peerSymbol.symbolId == topId,
+                          .peerSymbolRecord.localHandle == topId,
                true);
     RelationshipQuery snapshotNamedRelationshipQuery;
     snapshotNamedRelationshipQuery.symbolName = QStringLiteral("rel_top");
@@ -1397,7 +1397,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotNamedRelationshipReport.totalCount == 1
                    && !snapshotNamedRelationshipReport.relationships.isEmpty()
                    && snapshotNamedRelationshipReport.relationships.first()
-                          .peerSymbol.symbolId == stageId,
+                          .peerSymbolRecord.localHandle == stageId,
                true);
     RelationshipBrowseQuery snapshotMissingRelationshipBrowseQuery;
     snapshotMissingRelationshipBrowseQuery.symbolName =
@@ -2772,9 +2772,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : relationshipReport.directionGroups.first().count,
               serviceRels.size());
-    expectBool("relationship report keeps peer symbol",
+    expectBool("relationship report keeps peer record",
                !relationshipReport.relationships.isEmpty()
-                   && relationshipReport.relationships.first().peerSymbol.symbolId == stageId,
+                   && relationshipReport.relationships.first()
+                          .peerSymbolRecord.localHandle == stageId,
                true);
     expectBool("relationship report explains relationship",
                !relationshipReport.relationships.isEmpty()
@@ -2915,9 +2916,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : callsOnlyReport.directionGroups.first().typeGroups.first().relationships.size(),
               1);
-    expectBool("relationship report calls-only peer symbol",
+    expectBool("relationship report calls-only peer record",
                !callsOnlyReport.relationships.isEmpty()
-                   && callsOnlyReport.relationships.first().peerSymbol.symbolId == captureId,
+                   && callsOnlyReport.relationships.first()
+                          .peerSymbolRecord.localHandle == captureId,
                true);
 
     RelationshipBrowseQuery timingBrowseQuery;
@@ -2948,10 +2950,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     for (const DirectedRelationshipResult& relationship : timingReport.relationships) {
         timingReportHasClockPeer = timingReportHasClockPeer
             || (relationship.relationship.relationship.type == SymbolRelationshipEngine::CLOCKS
-                && relationship.peerSymbol.symbolId == topClkId);
+                && relationship.peerSymbolRecord.localHandle == topClkId);
         timingReportHasResetPeer = timingReportHasResetPeer
             || (relationship.relationship.relationship.type == SymbolRelationshipEngine::RESETS
-                && relationship.peerSymbol.symbolId == topRstId);
+                && relationship.peerSymbolRecord.localHandle == topRstId);
     }
     expectBool("relationship report timing clock peer",
                timingReportHasClockPeer, true);
@@ -2995,9 +2997,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .typeGroups.first()
                           .displayName == QStringLiteral("Instantiates"),
                true);
-    expectBool("relationship report incoming peer symbol",
+    expectBool("relationship report incoming peer record",
                !incomingStageReport.relationships.isEmpty()
-                   && incomingStageReport.relationships.first().peerSymbol.symbolId == topId,
+                   && incomingStageReport.relationships.first()
+                          .peerSymbolRecord.localHandle == topId,
                true);
     expectBool("relationship report incoming explanation",
                !incomingStageReport.relationships.isEmpty()
@@ -3036,7 +3039,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && incomingStageReport.directionGroups.first()
                            .typeGroups.first()
                            .relationships.first()
-                           .peerSymbol.symbolId == topId,
+                           .peerSymbolRecord.localHandle == topId,
                true);
 
     HierarchyService hierarchyService(&index);
