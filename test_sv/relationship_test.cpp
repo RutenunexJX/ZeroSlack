@@ -4926,11 +4926,22 @@ static void runClockResetDomainServiceFixture()
                stableTopReport.found
                    && stableTopReport.clockDomains.size() == 2
                    && stableTopReport.resetDomains.size() == 1
+                   && stableTopReport.evidenceRows.size()
+                       == topReport.evidenceRows.size()
                    && !stableTopReport.clockDomains.isEmpty()
                    && !stableTopReport.clockDomains.first().modules.isEmpty()
                    && stableTopReport.clockDomains.first()
                           .modules.first()
                           .moduleStableKey == stableTopQuery.moduleStableKey,
+               true);
+    expectBool("clock reset stable key preserves relationship evidence",
+               !stableTopReport.evidenceRows.isEmpty()
+                   && stableTopReport.evidenceRows.first().moduleStableKey
+                       == stableTopQuery.moduleStableKey
+                   && stableTopReport.evidenceRows.first()
+                          .domainSignalStableKey.isValid()
+                   && stableTopReport.evidenceRows.first().evidenceReasonDisplayName
+                       == QStringLiteral("relationship"),
                true);
     expectInt("clock reset top clock domains", topReport.clockDomains.size(), 2);
     expectInt("clock reset top reset domains", topReport.resetDomains.size(), 1);

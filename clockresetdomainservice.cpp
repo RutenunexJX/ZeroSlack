@@ -87,6 +87,27 @@ int recordStartColumn(
         ? record.location.startColumn
         : fallback.startColumn;
 }
+
+SymbolStableKey clockResetStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    return record.stableKey.isValid()
+        ? record.stableKey
+        : symbolStableKeyForSymbol(symbol);
+}
+
+QList<SemanticRelationshipResult> clockResetRelationshipResultsForSymbol(
+    SemanticIndex* index,
+    const sym_list::SymbolInfo& symbol,
+    bool outgoing)
+{
+    if (!index)
+        return {};
+    const SymbolStableKey stableKey = clockResetStableKeyForSymbol(symbol);
+    return stableKey.isValid()
+        ? index->getRelationshipResults(stableKey, outgoing)
+        : index->getRelationshipResults(symbol.symbolId, outgoing);
+}
 }
 
 std::unique_ptr<ClockResetDomainService> ClockResetDomainService::instance = nullptr;
@@ -232,7 +253,9 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
     const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const QList<SemanticRelationshipResult> relationships =
-            semanticIndex()->getRelationshipResults(symbol.symbolId, true);
+            clockResetRelationshipResultsForSymbol(semanticIndex(),
+                                                   symbol,
+                                                   true);
         for (const SemanticRelationshipResult& relationship : relationships) {
             if (relationship.relationship.type != type)
                 continue;
@@ -488,7 +511,7 @@ bool ClockResetDomainService::hasMappedTimingRelationship(
     const ClockResetDomainQuery& query)
 {
     const QList<SemanticRelationshipResult> relationships =
-        index->getRelationshipResults(symbol.symbolId, true);
+        clockResetRelationshipResultsForSymbol(index, symbol, true);
     for (const SemanticRelationshipResult& relationship : relationships) {
         if (relationship.relationship.type != type)
             continue;

@@ -90,6 +90,7 @@ set(RECORD_FIRST_METADATA_FILES
 )
 
 set(STABLE_KEY_MIGRATED_SERVICE_FILES
+    clockresetdomainservice.cpp
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
     modulebriefservice.cpp
