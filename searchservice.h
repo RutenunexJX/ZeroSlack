@@ -1,6 +1,7 @@
 #ifndef SEARCHSERVICE_H
 #define SEARCHSERVICE_H
 
+#include "rtlinsightlink.h"
 #include "semanticindex.h"
 
 #include <QList>
@@ -21,6 +22,10 @@ struct SearchResult {
     sym_list::SymbolInfo symbol;
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
+    QString symbolDisplayName;
+    QString symbolTypeDisplayName;
+    QString sourceRoleDisplayName;
+    RtlInsightCodeLink codeLink;
     int score = 0;
 };
 

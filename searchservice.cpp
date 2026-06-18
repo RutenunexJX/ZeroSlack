@@ -2,6 +2,52 @@
 
 std::unique_ptr<SearchService> SearchService::instance = nullptr;
 
+namespace {
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(fallback);
+    if (!record.isValid())
+        return metadata;
+
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString symbolDisplayNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    if (!fallback.symbolName.isEmpty())
+        return fallback.symbolName;
+    return QStringLiteral("<unknown>");
+}
+
+RtlInsightCodeLink codeLinkForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (record.isValid()) {
+        const QString fileName = fallback.fileName.isEmpty()
+            ? record.location.fileName
+            : fallback.fileName;
+        return RtlInsightLink::fromFileLine(fileName,
+                                            record.location.startLine,
+                                            record.location.startColumn);
+    }
+    return RtlInsightLink::fromSymbol(fallback);
+}
+}
+
 SearchService* SearchService::getInstance()
 {
     if (!instance)
@@ -41,6 +87,14 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
         item.symbol = indexResult.symbol;
         item.symbolRecord = indexResult.symbolRecord;
         item.symbolStableKey = item.symbolRecord.stableKey;
+        item.symbolDisplayName =
+            symbolDisplayNameForRecord(item.symbolRecord, item.symbol);
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            metadataForRecord(item.symbolRecord, item.symbol);
+        item.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
+        item.sourceRoleDisplayName =
+            SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+        item.codeLink = codeLinkForRecord(item.symbolRecord, item.symbol);
         item.score = indexResult.score;
         result.append(item);
     }

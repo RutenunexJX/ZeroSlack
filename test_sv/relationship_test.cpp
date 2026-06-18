@@ -1064,7 +1064,20 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && metadataTypedSearchResults.first().symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module
                    && metadataTypedSearchResults.first().symbolRecord.owner.kind
-                       == SymbolTaxonomy::SymbolOwnerScope::Global,
+                       == SymbolTaxonomy::SymbolOwnerScope::Global
+                   && metadataTypedSearchResults.first().symbolDisplayName
+                       == QStringLiteral("metadata_rel_top")
+                   && metadataTypedSearchResults.first().symbolTypeDisplayName
+                       == QStringLiteral("module")
+                   && metadataTypedSearchResults.first().sourceRoleDisplayName
+                       == QStringLiteral("design source")
+                   && metadataTypedSearchResults.first().codeLink.fileName == topPath
+                   && metadataTypedSearchResults.first().codeLink.line == 1
+                   && metadataTypedSearchResults.first().codeLink.column == 1
+                   && metadataTypedSearchResults.first().codeLink.fileDisplayName
+                       == QStringLiteral("relationship_top.sv")
+                   && metadataTypedSearchResults.first().codeLink.lineDisplayName
+                       == QStringLiteral("1"),
                true);
     SearchQuery metadataDefinitionSearchQuery;
     metadataDefinitionSearchQuery.text = QStringLiteral("metadata_rel_top");
