@@ -3721,6 +3721,15 @@ static void runModuleBriefServiceFixture()
                    && stableModuleBriefReport.moduleStableKey
                        == stableModuleBriefQuery.moduleStableKey,
                true);
+    expectBool("module brief stable query keeps relationship metadata",
+               stableModuleBriefReport.relationshipSummary.totalCount
+                       == report.relationshipSummary.totalCount
+                   && stableModuleBriefReport.relationshipEvidenceRows.size()
+                       == report.relationshipEvidenceRows.size()
+                   && !stableModuleBriefReport.relationshipEvidenceRows.isEmpty()
+                   && stableModuleBriefReport.relationshipEvidenceRows.first().fromStableKey
+                       == report.relationshipEvidenceRows.first().fromStableKey,
+               true);
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
         SymbolTaxonomy::semanticMetadata(report.moduleSymbol);
     expectBool("semantic metadata keeps raw module kind",

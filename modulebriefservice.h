@@ -144,13 +144,16 @@ private:
         const QList<sym_list::SymbolInfo>& symbols,
         SymbolTaxonomy::DeclarationGroup group) const;
     QList<sym_list::SymbolInfo> importSymbols(
-        const sym_list::SymbolInfo& moduleSymbol) const;
+        const sym_list::SymbolInfo& moduleSymbol,
+        const SymbolStableKey& moduleStableKey) const;
     QList<SemanticDiagnostic> diagnosticsForModule(
         const sym_list::SymbolInfo& moduleSymbol) const;
     ModuleBriefRelationshipSummary relationshipSummary(
-        const sym_list::SymbolInfo& moduleSymbol) const;
+        const sym_list::SymbolInfo& moduleSymbol,
+        const SymbolStableKey& moduleStableKey) const;
     QList<ModuleBriefRelationshipEvidenceRow> relationshipEvidenceRows(
-        const sym_list::SymbolInfo& moduleSymbol) const;
+        const sym_list::SymbolInfo& moduleSymbol,
+        const SymbolStableKey& moduleStableKey) const;
 
     static bool isInsideModule(const sym_list::SymbolInfo& symbol,
                                const sym_list::SymbolInfo& moduleSymbol);

@@ -63,7 +63,9 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.notFoundReason = ModuleBriefNotFoundReason::None;
     report.moduleSymbol = moduleSymbol;
     report.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
-    report.moduleStableKey = report.moduleSymbolRecord.stableKey;
+    report.moduleStableKey = report.moduleSymbolRecord.stableKey.isValid()
+        ? report.moduleSymbolRecord.stableKey
+        : symbolStableKeyForSymbol(moduleSymbol);
     const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
 
     report.ports = symbolsInModule(
@@ -78,7 +80,7 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
         moduleSymbol,
         symbols,
         SymbolTaxonomy::DeclarationGroup::Instance);
-    report.imports = importSymbols(moduleSymbol);
+    report.imports = importSymbols(moduleSymbol, report.moduleStableKey);
     report.diagnostics = diagnosticsForModule(moduleSymbol);
     report.portRows = symbolRows(report.ports, QStringLiteral("Port"));
     report.parameterRows = symbolRows(report.parameters, QStringLiteral("Parameter"));
@@ -89,8 +91,10 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
                                      report.ports,
                                      report.instances,
                                      symbols);
-    report.relationshipSummary = relationshipSummary(moduleSymbol);
-    report.relationshipEvidenceRows = relationshipEvidenceRows(moduleSymbol);
+    report.relationshipSummary = relationshipSummary(moduleSymbol,
+                                                     report.moduleStableKey);
+    report.relationshipEvidenceRows = relationshipEvidenceRows(moduleSymbol,
+                                                               report.moduleStableKey);
     return report;
 }
 
@@ -181,12 +185,15 @@ QList<sym_list::SymbolInfo> ModuleBriefService::symbolsInModule(
 }
 
 QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
-    const sym_list::SymbolInfo& moduleSymbol) const
+    const sym_list::SymbolInfo& moduleSymbol,
+    const SymbolStableKey& moduleStableKey) const
 {
     QList<sym_list::SymbolInfo> result;
     QSet<int> seen;
     const QList<SemanticRelationshipResult> relationships =
-        semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
+        moduleStableKey.isValid()
+            ? semanticIndex()->getRelationshipResults(moduleStableKey, true)
+            : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
     for (const SemanticRelationshipResult& relationship : relationships) {
         if (!SymbolTaxonomy::isPackageDeclaration(
                 SymbolTaxonomy::semanticMetadata(relationship.toSymbol))) {
@@ -230,13 +237,18 @@ QList<SemanticDiagnostic> ModuleBriefService::diagnosticsForModule(
 }
 
 ModuleBriefRelationshipSummary ModuleBriefService::relationshipSummary(
-    const sym_list::SymbolInfo& moduleSymbol) const
+    const sym_list::SymbolInfo& moduleSymbol,
+    const SymbolStableKey& moduleStableKey) const
 {
     ModuleBriefRelationshipSummary summary;
     const QList<SemanticRelationshipResult> outgoing =
-        semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
+        moduleStableKey.isValid()
+            ? semanticIndex()->getRelationshipResults(moduleStableKey, true)
+            : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, true);
     const QList<SemanticRelationshipResult> incoming =
-        semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, false);
+        moduleStableKey.isValid()
+            ? semanticIndex()->getRelationshipResults(moduleStableKey, false)
+            : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, false);
 
     summary.outgoingCount = outgoing.size();
     summary.incomingCount = incoming.size();
@@ -250,22 +262,28 @@ ModuleBriefRelationshipSummary ModuleBriefService::relationshipSummary(
 }
 
 QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEvidenceRows(
-    const sym_list::SymbolInfo& moduleSymbol) const
+    const sym_list::SymbolInfo& moduleSymbol,
+    const SymbolStableKey& moduleStableKey) const
 {
     QList<ModuleBriefRelationshipEvidenceRow> rows;
     QSet<QString> seen;
     auto appendRows = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
-            semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, outgoing);
+            moduleStableKey.isValid()
+                ? semanticIndex()->getRelationshipResults(moduleStableKey, outgoing)
+                : semanticIndex()->getRelationshipResults(moduleSymbol.symbolId, outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
             const sym_list::SymbolInfo peer =
                 outgoing ? relationship.toSymbol : relationship.fromSymbol;
             if (peer.symbolId < 0)
                 continue;
-            const QString key = QStringLiteral("%1:%2:%3")
-                                    .arg(relationship.relationship.fromId)
-                                    .arg(relationship.relationship.toId)
-                                    .arg(static_cast<int>(relationship.relationship.type));
+            QString key = semanticRelationshipStableKeyText(relationship.relationship);
+            if (key.isEmpty()) {
+                key = QStringLiteral("%1:%2:%3")
+                          .arg(relationship.relationship.fromId)
+                          .arg(relationship.relationship.toId)
+                          .arg(static_cast<int>(relationship.relationship.type));
+            }
             if (seen.contains(key))
                 continue;
             seen.insert(key);
