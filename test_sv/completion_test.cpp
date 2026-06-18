@@ -2353,6 +2353,11 @@ int main(int argc, char** argv) {
     containsSnapEnable.toId = 5008;
     containsSnapEnable.type = SymbolRelationshipEngine::CONTAINS;
     snapshotRelationships.append(containsSnapEnable);
+    SemanticRelationship duplicateContainsSnapEnable;
+    duplicateContainsSnapEnable.fromId = 4000;
+    duplicateContainsSnapEnable.toId = 5017;
+    duplicateContainsSnapEnable.type = SymbolRelationshipEngine::CONTAINS;
+    snapshotRelationships.append(duplicateContainsSnapEnable);
     SemanticRelationship otherReferencesEnable;
     otherReferencesEnable.fromId = 5009;
     otherReferencesEnable.toId = 5008;

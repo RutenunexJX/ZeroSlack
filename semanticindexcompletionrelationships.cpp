@@ -30,14 +30,35 @@ QStringList uniqueSortedRelationshipSymbolNames(const QList<sym_list::SymbolInfo
     QStringList result;
     QSet<QString> seenNames;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString key = symbol.symbolName.toCaseFolded();
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        const QString displayName =
+            record.name.isEmpty() ? symbol.symbolName : record.name;
+        const QString key = displayName.toCaseFolded();
         if (seenNames.contains(key))
             continue;
         seenNames.insert(key);
-        result.append(symbol.symbolName);
+        result.append(displayName);
     }
     result.sort(Qt::CaseInsensitive);
     return result;
+}
+
+QString relationshipRecordDisplayName(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.name.isEmpty())
+        return record.name;
+    return fallback.symbolName;
+}
+
+QString relationshipRecordOwnerName(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    return semanticSymbolRecordForSymbol(fallback).owner.name;
 }
 
 }
@@ -55,22 +76,33 @@ QStringList SemanticIndex::getRelationshipCompletionNames(
     if (symbolId < 0)
         return {};
 
-    QList<sym_list::SymbolInfo> symbols;
-    const QList<SemanticRelationship> relationships = getRelationships(symbolId, outgoing);
-    for (const SemanticRelationship& relationship : relationships) {
-        if (!types.isEmpty() && !types.contains(relationship.type))
+    QStringList names;
+    QSet<QString> seenNames;
+    const QList<SemanticRelationshipResult> relationships =
+        getRelationshipResults(symbolId, outgoing);
+    for (const SemanticRelationshipResult& relationship : relationships) {
+        if (!types.isEmpty() && !types.contains(relationship.relationship.type))
             continue;
 
-        const int peerId = outgoing ? relationship.toId : relationship.fromId;
-        const sym_list::SymbolInfo symbol = getSymbolById(peerId);
+        const sym_list::SymbolInfo symbol =
+            outgoing ? relationship.toSymbol : relationship.fromSymbol;
         if (symbol.symbolId < 0)
             continue;
-        if (!relationshipCompletionNameMatches(symbol.symbolName, prefix))
+        const SemanticSymbolRecord record =
+            outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
+        const QString displayName =
+            relationshipRecordDisplayName(record, symbol);
+        if (!relationshipCompletionNameMatches(displayName, prefix))
             continue;
-        symbols.append(symbol);
+        const QString key = displayName.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        names.append(displayName);
     }
 
-    return uniqueSortedRelationshipSymbolNames(symbols);
+    names.sort(Qt::CaseInsensitive);
+    return names;
 }
 
 QStringList SemanticIndex::getBidirectionalRelationshipCompletionNames(
@@ -92,7 +124,9 @@ QStringList SemanticIndex::getSymbolsWithOutgoingRelationshipCompletionNames(
     QList<sym_list::SymbolInfo> result;
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!relationshipCompletionNameMatches(symbol.symbolName, prefix))
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (!relationshipCompletionNameMatches(
+                relationshipRecordDisplayName(record, symbol), prefix))
             continue;
 
         const QList<SemanticRelationship> relationships =
@@ -123,8 +157,10 @@ int SemanticIndex::scopeScoreForSymbol(const QString& symbolName,
 
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     for (const sym_list::SymbolInfo& candidate : symbols) {
-        if (candidate.symbolName == symbolName
-            && candidate.moduleScope == moduleName) {
+        const SemanticSymbolRecord record =
+            semanticSymbolRecordForSymbol(candidate);
+        if (relationshipRecordDisplayName(record, candidate) == symbolName
+            && relationshipRecordOwnerName(record, candidate) == moduleName) {
             return 20;
         }
     }
