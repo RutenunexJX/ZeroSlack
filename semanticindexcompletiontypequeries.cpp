@@ -45,6 +45,18 @@ bool globalSymbolInfoVisibleForRecord(
         || record.owner.name.isEmpty();
 }
 
+QString stableDedupeKeyForTypedCompletionRecord(
+    const SemanticSymbolRecord& record)
+{
+    const QString stableKey = symbolStableKeyText(record.stableKey);
+    if (!stableKey.isEmpty())
+        return stableKey;
+    return QStringLiteral("%1|%2|%3")
+        .arg(record.owner.name,
+             QString::number(static_cast<int>(record.declarationKind)),
+             record.name);
+}
+
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
@@ -92,16 +104,18 @@ QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
     const QString& prefix) const
 {
     QList<sym_list::SymbolInfo> result;
-    QSet<int> seenIds;
+    QSet<QString> seenStableKeys;
 
     const QList<sym_list::SymbolInfo> symbols = getSymbols();
     auto appendIfMatches = [&](const sym_list::SymbolInfo& symbol,
                                const SemanticSymbolRecord& record) {
-        if (seenIds.contains(symbol.symbolId))
+        const QString dedupeKey =
+            stableDedupeKeyForTypedCompletionRecord(record);
+        if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
             return;
         if (!semanticCompletionNameMatches(record.name, prefix))
             return;
-        seenIds.insert(symbol.symbolId);
+        seenStableKeys.insert(dedupeKey);
         result.append(symbol);
     };
 

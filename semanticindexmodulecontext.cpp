@@ -14,6 +14,20 @@
 
 using namespace semantic_index_module_context;
 
+namespace {
+QString stableDedupeKeyForModuleContextRecord(
+    const SemanticSymbolRecord& record)
+{
+    const QString stableKey = symbolStableKeyText(record.stableKey);
+    if (!stableKey.isEmpty())
+        return stableKey;
+    return QStringLiteral("%1|%2|%3")
+        .arg(record.owner.name,
+             QString::number(static_cast<int>(record.declarationKind)),
+             record.name);
+}
+}
+
 QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,
@@ -60,6 +74,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
         }
     }
 
+    QSet<QString> seenStableKeys;
     auto appendIfMatches = [&](const sym_list::SymbolInfo& symbol, bool fuzzyPrefix) {
         const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         if (!moduleContextSymbolTypeMatches(record, symbolType)) {
@@ -69,8 +84,14 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
             ? moduleContextNameMatches(record.name, prefix)
             : (prefix.isEmpty()
                || record.name.startsWith(prefix, Qt::CaseInsensitive));
-        if (nameMatches)
-            result.append(symbol);
+        if (!nameMatches)
+            return;
+        const QString dedupeKey =
+            stableDedupeKeyForModuleContextRecord(record);
+        if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
+            return;
+        seenStableKeys.insert(dedupeKey);
+        result.append(symbol);
     };
 
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
@@ -149,7 +170,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
             && symbol.startLine < moduleEndLineExclusive;
     };
 
-    QSet<int> seenIds;
+    QSet<QString> seenStableKeys;
     auto appendSymbol = [&](const sym_list::SymbolInfo& symbol) {
         const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         if (!moduleContextSymbolTypeMatches(record, symbolType)) {
@@ -157,9 +178,11 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         }
         if (!moduleContextNameMatches(record.name, prefix))
             return;
-        if (seenIds.contains(symbol.symbolId))
+        const QString dedupeKey =
+            stableDedupeKeyForModuleContextRecord(record);
+        if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
             return;
-        seenIds.insert(symbol.symbolId);
+        seenStableKeys.insert(dedupeKey);
         result.append(symbol);
     };
 

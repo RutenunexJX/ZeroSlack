@@ -2146,6 +2146,11 @@ int main(int argc, char** argv) {
                                       QStringLiteral("snap_top"),
                                       QString(),
                                       5008));
+    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_enable"),
+                                      sym_list::sym_logic,
+                                      QStringLiteral("snap_top"),
+                                      QString(),
+                                      5017));
     sym_list::SymbolInfo semanticTopSignal =
         makeSymbol(QStringLiteral("semantic_top_signal"),
                    sym_list::sym_user,
@@ -2782,6 +2787,24 @@ int main(int argc, char** argv) {
                    sym_list::sym_logic,
                    QStringLiteral("snap_e")),
                {"snap_enable", "snap_other_enable"});
+    const QList<sym_list::SymbolInfo> snapshotTypedSymbols =
+        snapshotIndex.getTypedCompletionSymbols(
+            sym_list::sym_logic,
+            QStringLiteral("snap_e"));
+    int snapshotEnableTypedCount = 0;
+    bool snapshotTypedStableKeyOk = false;
+    for (const sym_list::SymbolInfo& symbol : snapshotTypedSymbols) {
+        const SemanticSymbolRecord record =
+            semanticSymbolRecordForSymbol(symbol);
+        if (record.name == QStringLiteral("snap_enable")) {
+            ++snapshotEnableTypedCount;
+            snapshotTypedStableKeyOk = record.stableKey.isValid()
+                && record.stableKey == symbolStableKeyForSymbol(symbol);
+        }
+    }
+    expectBool("snapshot typed stable dedupe",
+               snapshotEnableTypedCount == 1 && snapshotTypedStableKeyOk,
+               true);
     expectList("snapshot scored typed symbol completions",
                symbolNamesFromScored(snapshotCompletionService.findScoredSymbolCompletionsByType(
                    sym_list::sym_logic,
