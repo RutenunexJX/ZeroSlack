@@ -96,6 +96,7 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
     modulebriefservice.cpp
     referenceservice.cpp
     relationshipservice.cpp
+    semanticindexmodulecontext.cpp
     signaljourneyservice.cpp
 )
 

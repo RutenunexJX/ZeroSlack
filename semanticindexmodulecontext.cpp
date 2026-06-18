@@ -111,14 +111,20 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
     }
 
     if (useRelationshipFallback && result.isEmpty()) {
-        const int moduleId = findSymbolId(moduleName);
-        const QList<SemanticRelationship> relationships = getRelationships(moduleId, true);
-        for (const SemanticRelationship& relationship : relationships) {
-            if (relationship.type != SymbolRelationshipEngine::CONTAINS)
+        const SemanticSymbolRecord moduleRecord =
+            semanticSymbolRecordForSymbol(moduleSymbol);
+        const SymbolStableKey moduleStableKey = moduleRecord.stableKey.isValid()
+            ? moduleRecord.stableKey
+            : symbolStableKeyForSymbol(moduleSymbol);
+        const QList<SemanticRelationshipResult> relationships =
+            moduleStableKey.isValid()
+                ? getRelationshipResults(moduleStableKey, true)
+                : getRelationshipResults(moduleSymbol.symbolId, true);
+        for (const SemanticRelationshipResult& relationship : relationships) {
+            if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
                 continue;
-            const sym_list::SymbolInfo symbol = getSymbolById(relationship.toId);
-            if (symbol.symbolId >= 0)
-                appendIfMatches(symbol, false);
+            if (relationship.toSymbol.symbolId >= 0)
+                appendIfMatches(relationship.toSymbol, false);
         }
     }
 
@@ -264,13 +270,19 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
     }
 
     if (result.isEmpty()) {
-        const int moduleId = findSymbolId(moduleName);
-        const QList<SemanticRelationship> relationships =
-            getRelationships(moduleId, true);
-        for (const SemanticRelationship& relationship : relationships) {
-            if (relationship.type != SymbolRelationshipEngine::CONTAINS)
+        const SemanticSymbolRecord moduleRecord =
+            semanticSymbolRecordForSymbol(moduleSymbol);
+        const SymbolStableKey moduleStableKey = moduleRecord.stableKey.isValid()
+            ? moduleRecord.stableKey
+            : symbolStableKeyForSymbol(moduleSymbol);
+        const QList<SemanticRelationshipResult> relationships =
+            moduleStableKey.isValid()
+                ? getRelationshipResults(moduleStableKey, true)
+                : getRelationshipResults(moduleSymbol.symbolId, true);
+        for (const SemanticRelationshipResult& relationship : relationships) {
+            if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
                 continue;
-            appendSymbol(getSymbolById(relationship.toId));
+            appendSymbol(relationship.toSymbol);
         }
     }
 
