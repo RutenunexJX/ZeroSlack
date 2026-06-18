@@ -14,24 +14,17 @@ namespace {
 QTreeWidgetItem* createReferenceItem(QTreeWidgetItem* parent,
                                      const ReferenceResult& reference)
 {
-    const QString sourceFile = reference.referencingSymbolRecord.location.fileName.isEmpty()
-        ? reference.referencingSymbol.fileName
-        : reference.referencingSymbolRecord.location.fileName;
-    const int sourceLine = reference.referencingSymbolRecord.location.startLine > 0
-        ? reference.referencingSymbolRecord.location.startLine
-        : reference.referencingSymbol.startLine;
-    const int sourceColumn = reference.referencingSymbolRecord.location.startColumn > 0
-        ? reference.referencingSymbolRecord.location.startColumn
-        : reference.referencingSymbol.startColumn;
+    const SemanticSymbolLocation sourceLocation =
+        reference.referencingSymbolRecord.location;
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, reference.symbolDisplayName);
     item->setText(1, reference.fileDisplayName);
     item->setText(2, reference.lineDisplayName);
     item->setText(3, reference.relationshipTypeDisplayName);
-    item->setToolTip(1, sourceFile);
-    item->setData(0, Qt::UserRole, sourceFile);
-    item->setData(0, Qt::UserRole + 1, sourceLine);
-    item->setData(0, Qt::UserRole + 2, sourceColumn);
+    item->setToolTip(1, sourceLocation.fileName);
+    item->setData(0, Qt::UserRole, sourceLocation.fileName);
+    item->setData(0, Qt::UserRole + 1, sourceLocation.startLine);
+    item->setData(0, Qt::UserRole + 2, sourceLocation.startColumn);
     return item;
 }
 
