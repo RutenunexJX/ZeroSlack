@@ -112,6 +112,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "modulebriefservice.h|moduleSymbolId"
     "modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
     "modulebriefservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
+    "semanticindexcompletionrelationships.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbolId"
     "semanticindexmodulecontext.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
     "referenceservice.h|struct[ \t\r\n]+ReferenceQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
     "referenceservice.h|subjectSymbolId"

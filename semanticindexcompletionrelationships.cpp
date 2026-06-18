@@ -72,14 +72,21 @@ QStringList SemanticIndex::getRelationshipCompletionNames(
     if (symbolName.isEmpty())
         return {};
 
-    const int symbolId = findSymbolId(symbolName);
-    if (symbolId < 0)
+    SemanticDefinitionQuery definitionQuery;
+    definitionQuery.symbolName = symbolName;
+    const SemanticDefinitionResult definition = resolveDefinition(definitionQuery);
+    if (!definition.found)
+        return {};
+    const SymbolStableKey symbolStableKey = definition.symbolStableKey.isValid()
+        ? definition.symbolStableKey
+        : symbolStableKeyForSymbol(definition.symbol);
+    if (!symbolStableKey.isValid())
         return {};
 
     QStringList names;
     QSet<QString> seenNames;
     const QList<SemanticRelationshipResult> relationships =
-        getRelationshipResults(symbolId, outgoing);
+        getRelationshipResults(symbolStableKey, outgoing);
     for (const SemanticRelationshipResult& relationship : relationships) {
         if (!types.isEmpty() && !types.contains(relationship.relationship.type))
             continue;
@@ -129,8 +136,13 @@ QStringList SemanticIndex::getSymbolsWithOutgoingRelationshipCompletionNames(
                 relationshipRecordDisplayName(record, symbol), prefix))
             continue;
 
+        const SymbolStableKey symbolStableKey = record.stableKey.isValid()
+            ? record.stableKey
+            : symbolStableKeyForSymbol(symbol);
+        if (!symbolStableKey.isValid())
+            continue;
         const QList<SemanticRelationship> relationships =
-            getRelationships(symbol.symbolId, true);
+            getRelationships(symbolStableKey, true);
         for (const SemanticRelationship& relationship : relationships) {
             if (relationship.type == type) {
                 result.append(symbol);

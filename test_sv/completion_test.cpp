@@ -2081,11 +2081,13 @@ int main(int argc, char** argv) {
            "CompletionService command struct hidden");
 
     QList<sym_list::SymbolInfo> snapshotSymbols;
-    snapshotSymbols.append(makeSymbol(QStringLiteral("snap_top"),
-                                      sym_list::sym_module,
-                                      QString(),
-                                      QString(),
-                                      4000));
+    const sym_list::SymbolInfo snapshotTop =
+        makeSymbol(QStringLiteral("snap_top"),
+                   sym_list::sym_module,
+                   QString(),
+                   QString(),
+                   4000);
+    snapshotSymbols.append(snapshotTop);
     snapshotSymbols.append(makeSymbol(QStringLiteral("snap_child"),
                                       sym_list::sym_module,
                                       QString(),
@@ -2391,11 +2393,15 @@ int main(int argc, char** argv) {
     clockDrivesTop.fromId = 6003;
     clockDrivesTop.toId = 4000;
     clockDrivesTop.type = SymbolRelationshipEngine::CLOCKS;
+    clockDrivesTop.fromStableKey = symbolStableKeyForSymbol(snapshotClock);
+    clockDrivesTop.toStableKey = symbolStableKeyForSymbol(snapshotTop);
     snapshotRelationships.append(clockDrivesTop);
     SemanticRelationship resetDrivesTop;
     resetDrivesTop.fromId = 6004;
     resetDrivesTop.toId = 4000;
     resetDrivesTop.type = SymbolRelationshipEngine::RESETS;
+    resetDrivesTop.fromStableKey = symbolStableKeyForSymbol(snapshotReset);
+    resetDrivesTop.toStableKey = symbolStableKeyForSymbol(snapshotTop);
     snapshotRelationships.append(resetDrivesTop);
     QHash<QString, QString> snapshotFileContents;
     snapshotFileContents.insert(snapshotScopeFile, snapshotScopeContent);
