@@ -170,8 +170,6 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
 
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = subjectStableKey;
-    if (!normalized.symbolStableKey.isValid())
-        relationshipQuery.symbolId = subjectSymbol.symbolId;
     relationshipQuery.outgoing = false;
     relationshipQuery.types = effectiveTypes(normalized);
 
@@ -302,8 +300,6 @@ sym_list::SymbolInfo ReferenceService::resolveSubjectSymbol(
 {
     if (query.symbolStableKey.isValid())
         return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
-    if (query.symbolId >= 0)
-        return semanticIndex()->getSymbolById(query.symbolId);
 
     sym_list::SymbolInfo missing;
     missing.symbolId = -1;

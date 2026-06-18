@@ -1175,7 +1175,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotFoundStageResultMetadata, true);
     RelationshipService snapshotRelationshipService(&snapshotIndex);
     RelationshipQuery snapshotRelationshipQuery;
-    snapshotRelationshipQuery.symbolId = topId;
+    snapshotRelationshipQuery.symbolStableKey = topStableKey;
     snapshotRelationshipQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const QList<RelationshipResult> snapshotRelationshipResults =
         snapshotRelationshipService.findOutgoingRelationships(snapshotRelationshipQuery);
@@ -1200,7 +1200,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    stageId, topId, SymbolRelationshipEngine::INSTANTIATES),
                false);
     RelationshipBrowseQuery snapshotRelationshipBrowseQuery;
-    snapshotRelationshipBrowseQuery.symbolId = topId;
+    snapshotRelationshipBrowseQuery.symbolStableKey = topStableKey;
     snapshotRelationshipBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const RelationshipReport snapshotRelationshipReport =
         snapshotRelationshipService.findRelationshipReport(snapshotRelationshipBrowseQuery);
@@ -1283,7 +1283,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .peerSymbolRecord.stableKey == stageStableKey,
                true);
     RelationshipBrowseQuery snapshotIncomingStageBrowseQuery;
-    snapshotIncomingStageBrowseQuery.symbolId = stageId;
+    snapshotIncomingStageBrowseQuery.symbolStableKey = stageStableKey;
     snapshotIncomingStageBrowseQuery.includeOutgoing = false;
     snapshotIncomingStageBrowseQuery.includeIncoming = true;
     snapshotIncomingStageBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
@@ -1384,7 +1384,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == QStringLiteral("no subject symbol"),
                true);
     RelationshipBrowseQuery snapshotNoRelationshipBrowseQuery;
-    snapshotNoRelationshipBrowseQuery.symbolId = topId;
+    snapshotNoRelationshipBrowseQuery.symbolStableKey = topStableKey;
     snapshotNoRelationshipBrowseQuery.types = {SymbolRelationshipEngine::CONSTRAINS};
     const RelationshipReport snapshotNoRelationshipReport =
         snapshotRelationshipService.findRelationshipReport(
@@ -1399,7 +1399,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     ReferenceService snapshotReferenceService(&snapshotIndex);
     ReferenceQuery snapshotReferenceQuery;
-    snapshotReferenceQuery.symbolId = stageId;
+    snapshotReferenceQuery.symbolStableKey = stageStableKey;
     snapshotReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const QList<ReferenceResult> snapshotReferenceResults =
         snapshotReferenceService.findReferences(snapshotReferenceQuery);
@@ -1421,7 +1421,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotReferenceService.hasReferences(snapshotReferenceQuery), true);
     ReferenceQuery snapshotStableReferenceQuery = snapshotReferenceQuery;
     snapshotStableReferenceQuery.symbolStableKey = stageStableKey;
-    snapshotStableReferenceQuery.symbolId = topId;
     const QList<ReferenceResult> snapshotStableReferenceResults =
         snapshotReferenceService.findReferences(snapshotStableReferenceQuery);
     expectBool("snapshot reference service resolves stable query key",
@@ -1587,7 +1586,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == QStringLiteral("no subject symbol"),
                true);
     ReferenceQuery snapshotNoReferenceQuery;
-    snapshotNoReferenceQuery.symbolId = topId;
+    snapshotNoReferenceQuery.symbolStableKey = topStableKey;
     snapshotNoReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const ReferenceReport snapshotNoReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotNoReferenceQuery);
@@ -1601,7 +1600,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     HierarchyService snapshotHierarchyService(&snapshotIndex);
     HierarchyQuery snapshotHierarchyQuery;
-    snapshotHierarchyQuery.symbolId = topId;
+    snapshotHierarchyQuery.symbolStableKey = topStableKey;
     snapshotHierarchyQuery.maxDepth = 1;
     snapshotHierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const QList<HierarchyNode> snapshotHierarchy =
@@ -1627,7 +1626,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotHierarchyFoundStage, true);
     HierarchyQuery snapshotStableHierarchyQuery = snapshotHierarchyQuery;
     snapshotStableHierarchyQuery.symbolStableKey = topStableKey;
-    snapshotStableHierarchyQuery.symbolId = stageId;
     const QList<HierarchyNode> snapshotStableHierarchy =
         snapshotHierarchyService.getHierarchy(snapshotStableHierarchyQuery);
     expectBool("snapshot hierarchy service resolves stable query key",
@@ -1717,7 +1715,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotHierarchyReport.nodes.last().parentNodeId == 0,
                true);
     HierarchyQuery snapshotParentHierarchyQuery;
-    snapshotParentHierarchyQuery.symbolId = stageId;
+    snapshotParentHierarchyQuery.symbolStableKey = stageStableKey;
     snapshotParentHierarchyQuery.direction = HierarchyQuery::Parents;
     snapshotParentHierarchyQuery.maxDepth = 1;
     snapshotParentHierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
@@ -1780,7 +1778,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == QStringLiteral("no root symbol"),
                true);
     HierarchyQuery snapshotNoHierarchyQuery;
-    snapshotNoHierarchyQuery.symbolId = stageId;
+    snapshotNoHierarchyQuery.symbolStableKey = stageStableKey;
     snapshotNoHierarchyQuery.maxDepth = 1;
     snapshotNoHierarchyQuery.types = {SymbolRelationshipEngine::CALLS};
     const HierarchyReport snapshotNoHierarchyReport =
@@ -2588,7 +2586,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     RelationshipService relationshipService(&index);
 
     RelationshipQuery relationshipQuery;
-    relationshipQuery.symbolId = topId;
+    relationshipQuery.symbolStableKey = topStableKey;
     relationshipQuery.outgoing = true;
     relationshipQuery.types = {
         SymbolRelationshipEngine::INSTANTIATES,
@@ -2637,14 +2635,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == SymbolRelationshipEngine::INSTANTIATES,
                true);
     RelationshipQuery relatedIdsQuery;
-    relatedIdsQuery.symbolId = topId;
+    relatedIdsQuery.symbolStableKey = topStableKey;
     relatedIdsQuery.outgoing = true;
     relatedIdsQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     expectBool("relationship service returns related ids",
                relationshipService.findRelatedSymbolIds(relatedIdsQuery).contains(stageId), true);
     RelationshipQuery stableRelatedIdsQuery = relatedIdsQuery;
     stableRelatedIdsQuery.symbolStableKey = symbolStableKeyForSymbol(index.getSymbolById(topId));
-    stableRelatedIdsQuery.symbolId = stageId;
     expectBool("relationship service resolves stable query key",
                relationshipService
                    .findRelatedSymbolIds(stableRelatedIdsQuery)
@@ -2666,7 +2663,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                                                    SymbolRelationshipEngine::INSTANTIATES),
                false);
     RelationshipBrowseQuery browseQuery;
-    browseQuery.symbolId = topId;
+    browseQuery.symbolStableKey = topStableKey;
     browseQuery.includeOutgoing = true;
     browseQuery.includeIncoming = true;
     browseQuery.types = {
@@ -2777,7 +2774,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     RelationshipBrowseQuery stableRelationshipReportQuery = browseQuery;
     stableRelationshipReportQuery.symbolStableKey =
         symbolStableKeyForSymbol(index.getSymbolById(topId));
-    stableRelationshipReportQuery.symbolId = stageId;
     const RelationshipReport stableRelationshipReport =
         relationshipService.findRelationshipReport(stableRelationshipReportQuery);
     expectBool("relationship report resolves stable query key",
@@ -2847,7 +2843,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               1);
 
     RelationshipBrowseQuery callsOnlyBrowseQuery;
-    callsOnlyBrowseQuery.symbolId = topId;
+    callsOnlyBrowseQuery.symbolStableKey = topStableKey;
     callsOnlyBrowseQuery.includeOutgoing = true;
     callsOnlyBrowseQuery.includeIncoming = false;
     callsOnlyBrowseQuery.types = {SymbolRelationshipEngine::CALLS};
@@ -2871,7 +2867,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     RelationshipBrowseQuery timingBrowseQuery;
-    timingBrowseQuery.symbolId = topId;
+    timingBrowseQuery.symbolStableKey = topStableKey;
     timingBrowseQuery.includeOutgoing = false;
     timingBrowseQuery.includeIncoming = true;
     timingBrowseQuery.types = {
@@ -2909,7 +2905,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                timingReportHasResetPeer, true);
 
     RelationshipBrowseQuery incomingStageBrowseQuery;
-    incomingStageBrowseQuery.symbolId = stageId;
+    incomingStageBrowseQuery.symbolStableKey = stageStableKey;
     incomingStageBrowseQuery.includeOutgoing = false;
     incomingStageBrowseQuery.includeIncoming = true;
     incomingStageBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
@@ -2991,7 +2987,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     HierarchyService hierarchyService(&index);
     HierarchyQuery hierarchyQuery;
-    hierarchyQuery.symbolId = topId;
+    hierarchyQuery.symbolStableKey = topStableKey;
     hierarchyQuery.maxDepth = 1;
     hierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
 
@@ -3075,7 +3071,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     HierarchyQuery stableHierarchyQuery = hierarchyQuery;
     stableHierarchyQuery.symbolStableKey =
         symbolStableKeyForSymbol(index.getSymbolById(topId));
-    stableHierarchyQuery.symbolId = stageId;
     const HierarchyReport stableHierarchyReport =
         hierarchyService.getHierarchyReport(stableHierarchyQuery);
     expectBool("hierarchy report resolves stable query key",
@@ -3091,7 +3086,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     HierarchyQuery parentQuery;
-    parentQuery.symbolId = stageId;
+    parentQuery.symbolStableKey = stageStableKey;
     parentQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const QList<HierarchyNode> parents = hierarchyService.getParents(parentQuery);
     bool parentFoundTop = false;
@@ -3103,7 +3098,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                parentFoundTop, true);
 
     HierarchyQuery parentTreeQuery;
-    parentTreeQuery.symbolId = stageId;
+    parentTreeQuery.symbolStableKey = stageStableKey;
     parentTreeQuery.maxDepth = 1;
     parentTreeQuery.direction = HierarchyQuery::Parents;
     parentTreeQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
@@ -3180,7 +3175,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     engine.addRelationship(stageId, topId, SymbolRelationshipEngine::INSTANTIATES,
                            QStringLiteral("cycle guard probe"));
     HierarchyQuery cycleQuery;
-    cycleQuery.symbolId = topId;
+    cycleQuery.symbolStableKey = topStableKey;
     cycleQuery.maxDepth = 4;
     cycleQuery.direction = HierarchyQuery::Both;
     cycleQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
@@ -3213,7 +3208,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ReferenceService referenceService(&index);
 
     ReferenceQuery stageReferenceQuery;
-    stageReferenceQuery.symbolId = stageId;
+    stageReferenceQuery.symbolStableKey = stageStableKey;
     stageReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const QList<ReferenceResult> stageReferences =
         referenceService.findReferences(stageReferenceQuery);
@@ -3291,7 +3286,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ReferenceQuery stableStageReferenceQuery = stageReferenceQuery;
     stableStageReferenceQuery.symbolStableKey =
         symbolStableKeyForSymbol(index.getSymbolById(stageId));
-    stableStageReferenceQuery.symbolId = topId;
     const ReferenceReport stableStageReferenceReport =
         referenceService.findReferenceReport(stableStageReferenceQuery);
     expectBool("reference report resolves stable query key",
@@ -3378,7 +3372,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     ReferenceQuery reqValidReferenceQuery;
-    reqValidReferenceQuery.symbolId = reqValidId;
+    reqValidReferenceQuery.symbolStableKey =
+        symbolStableKeyForSymbol(index.getSymbolById(reqValidId));
     reqValidReferenceQuery.types = {SymbolRelationshipEngine::READS_FROM};
     const QList<ReferenceResult> reqValidReferences =
         referenceService.findReferences(reqValidReferenceQuery);
@@ -3410,7 +3405,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     ReferenceQuery topTimingReferenceQuery;
-    topTimingReferenceQuery.symbolId = topId;
+    topTimingReferenceQuery.symbolStableKey = topStableKey;
     topTimingReferenceQuery.types = {SymbolRelationshipEngine::CLOCKS};
     const ReferenceReport topClockReferenceReport =
         referenceService.findReferenceReport(topTimingReferenceQuery);
@@ -3486,7 +3481,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                defaultHasResetGroup, true);
 
     ReferenceQuery rspDataReferenceQuery;
-    rspDataReferenceQuery.symbolId = rspDataId;
+    rspDataReferenceQuery.symbolStableKey =
+        symbolStableKeyForSymbol(index.getSymbolById(rspDataId));
     rspDataReferenceQuery.types = {SymbolRelationshipEngine::ASSIGNS_TO};
     const QList<ReferenceResult> rspDataReferences =
         referenceService.findReferences(rspDataReferenceQuery);

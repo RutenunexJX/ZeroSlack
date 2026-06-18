@@ -102,8 +102,6 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
 
         HierarchyQuery childQuery = normalized;
         childQuery.symbolStableKey = current.node.symbolStableKey;
-        if (!childQuery.symbolStableKey.isValid())
-            childQuery.symbolId = current.node.symbol.symbolId;
         if (normalized.direction == HierarchyQuery::Children
             || normalized.direction == HierarchyQuery::Both) {
             appendNext(getChildren(childQuery), HierarchyQuery::Children);
@@ -130,7 +128,6 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
     }
 
     HierarchyQuery resolvedQuery = normalized;
-    resolvedQuery.symbolId = rootSymbol.symbolId;
     if (!resolvedQuery.symbolStableKey.isValid())
         resolvedQuery.symbolStableKey =
             symbolStableKeyForSymbol(rootSymbol);

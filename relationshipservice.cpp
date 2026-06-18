@@ -525,7 +525,8 @@ bool RelationshipService::hasRelationship(
         return false;
 
     RelationshipQuery query;
-    query.symbolId = fromSymbolId;
+    query.symbolStableKey = symbolStableKeyForSymbol(
+        semanticIndex()->getSymbolById(fromSymbolId));
     query.outgoing = true;
     query.types = {type};
 
@@ -575,8 +576,6 @@ sym_list::SymbolInfo RelationshipService::resolveSubjectSymbol(
 {
     if (query.symbolStableKey.isValid())
         return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
-    if (query.symbolId >= 0)
-        return semanticIndex()->getSymbolById(query.symbolId);
 
     sym_list::SymbolInfo missing;
     missing.symbolId = -1;
@@ -596,8 +595,6 @@ sym_list::SymbolInfo RelationshipService::resolveSubjectSymbol(
 {
     if (query.symbolStableKey.isValid())
         return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
-    if (query.symbolId >= 0)
-        return semanticIndex()->getSymbolById(query.symbolId);
 
     sym_list::SymbolInfo missing;
     missing.symbolId = -1;

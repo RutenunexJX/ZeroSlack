@@ -197,8 +197,6 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
         : hierarchyStableKeyForSymbol(subjectSymbol);
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = subjectStableKey;
-    if (!normalized.symbolStableKey.isValid())
-        relationshipQuery.symbolId = subjectSymbol.symbolId;
     relationshipQuery.outgoing = true;
     relationshipQuery.types = effectiveTypes(normalized);
 
@@ -236,8 +234,6 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
         : hierarchyStableKeyForSymbol(subjectSymbol);
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = subjectStableKey;
-    if (!normalized.symbolStableKey.isValid())
-        relationshipQuery.symbolId = subjectSymbol.symbolId;
     relationshipQuery.outgoing = false;
     relationshipQuery.types = effectiveTypes(normalized);
 
@@ -316,8 +312,6 @@ sym_list::SymbolInfo HierarchyService::resolveSubjectSymbol(
 {
     if (query.symbolStableKey.isValid())
         return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
-    if (query.symbolId >= 0)
-        return semanticIndex()->getSymbolById(query.symbolId);
 
     sym_list::SymbolInfo missing;
     missing.symbolId = -1;

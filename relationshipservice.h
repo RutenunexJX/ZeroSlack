@@ -10,7 +10,6 @@
 
 struct RelationshipQuery {
     SymbolStableKey symbolStableKey;
-    int symbolId = -1;
     QString symbolName;
     QString fileName;
     QString moduleName;
@@ -22,7 +21,6 @@ using RelationshipResult = SemanticRelationshipResult;
 
 struct RelationshipBrowseQuery {
     SymbolStableKey symbolStableKey;
-    int symbolId = -1;
     QString symbolName;
     QString fileName;
     QString moduleName;

@@ -11,7 +11,6 @@
 
 struct ReferenceQuery {
     SymbolStableKey symbolStableKey;
-    int symbolId = -1;
     QString symbolName;
     QString fileName;
     QString moduleName;
