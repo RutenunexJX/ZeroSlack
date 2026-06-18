@@ -70,6 +70,25 @@ set(PROTECTED_BOUNDARY_FILES
     tabtitlecontroller.h
 )
 
+set(RECORD_FIRST_METADATA_FILES
+    clockresetdomainservice.cpp
+    completionmodelupdates.cpp
+    completionservice.cpp
+    definitionnavigationservice.cpp
+    fsmgraphservice.cpp
+    modulebriefservice.cpp
+    navigationservice.cpp
+    semanticdiffservice.cpp
+    semanticindexcompletioncontext.cpp
+    semanticindexcompletionqueries.cpp
+    semanticindexcompletionrelationships.cpp
+    semanticindexcompletiontypequeries.cpp
+    semanticindexlookup.cpp
+    semanticindexmodulecontext.cpp
+    semanticindexsnapshotqueries.cpp
+    signaljourneyservice.cpp
+)
+
 set(missing_files)
 set(violations)
 foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
@@ -108,4 +127,36 @@ if(violations)
     list(JOIN violations "\n  " violation_text)
     message(FATAL_ERROR
         "Legacy SymbolInfo product-policy fields or int-id query APIs are not allowed in protected UI/coordinator/scheduler boundaries:\n  ${violation_text}")
+endif()
+
+set(record_first_missing_files)
+set(record_first_violations)
+foreach(relative_path IN LISTS RECORD_FIRST_METADATA_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND record_first_missing_files "${relative_path}")
+        continue()
+    endif()
+
+    file(READ "${path}" content)
+    string(REGEX MATCHALL
+        "\\.(moduleScope|dataType)([^A-Za-z0-9_]|$)"
+        record_first_field_matches
+        "${content}")
+
+    if(record_first_field_matches)
+        list(APPEND record_first_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(record_first_missing_files)
+    list(JOIN record_first_missing_files "\n  " record_first_missing_text)
+    message(FATAL_ERROR
+        "Record-first metadata guard references missing migrated files:\n  ${record_first_missing_text}")
+endif()
+
+if(record_first_violations)
+    list(JOIN record_first_violations "\n  " record_first_violation_text)
+    message(FATAL_ERROR
+        "Migrated semantic service/query files must not read SymbolInfo moduleScope/dataType directly:\n  ${record_first_violation_text}")
 endif()
