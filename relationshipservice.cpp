@@ -306,15 +306,12 @@ RelationshipReport RelationshipService::findRelationshipReport(
         reportSubjectDisplayName(report.subjectSymbolRecord,
                                  normalized.symbolName);
     if (!report.subjectStableKey.isValid()) {
-        report.subjectSymbol.symbolId = -1;
         report.notFoundReason =
             RelationshipReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);
         return report;
     }
-    report.subjectSymbol = semanticIndex()->getSymbolByStableKey(
-        report.subjectStableKey);
 
     QMap<DirectedRelationshipResult::Direction, int> directionGroupIndexes;
     QMap<DirectedRelationshipResult::Direction,

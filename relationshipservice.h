@@ -97,7 +97,6 @@ struct RelationshipDirectionGroup {
 };
 
 struct RelationshipReport {
-    sym_list::SymbolInfo subjectSymbol = {};
     SemanticSymbolRecord subjectSymbolRecord;
     SymbolStableKey subjectStableKey;
     QString subjectDisplayName;

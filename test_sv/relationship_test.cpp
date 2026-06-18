@@ -1229,8 +1229,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     snapshotRelationshipBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const RelationshipReport snapshotRelationshipReport =
         snapshotRelationshipService.findRelationshipReport(snapshotRelationshipBrowseQuery);
-    expectBool("snapshot relationship report subject symbol",
-               snapshotRelationshipReport.subjectSymbol.symbolId == topId, true);
+    expectBool("snapshot relationship report subject local handle",
+               snapshotRelationshipReport.subjectSymbolRecord.localHandle == topId,
+               true);
     expectBool("snapshot relationship report subject stable key",
                snapshotRelationshipReport.subjectStableKey == topStableKey,
                true);
@@ -1406,7 +1407,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotRelationshipService.findRelationshipReport(
             snapshotMissingRelationshipBrowseQuery);
     expectBool("snapshot relationship report missing subject reason",
-               snapshotMissingRelationshipReport.subjectSymbol.symbolId < 0
+               !snapshotMissingRelationshipReport.subjectStableKey.isValid()
+                   && !snapshotMissingRelationshipReport.subjectSymbolRecord.isValid()
                    && snapshotMissingRelationshipReport.notFoundReason
                        == RelationshipReportNotFoundReason::NoSubjectSymbol
                    && snapshotMissingRelationshipReport.notFoundReasonDisplayName
@@ -1465,8 +1467,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     const ReferenceReport snapshotReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotReferenceQuery);
-    expectBool("snapshot reference report subject symbol",
-               snapshotReferenceReport.subjectSymbol.symbolId == stageId, true);
+    expectBool("snapshot reference report subject local handle",
+               snapshotReferenceReport.subjectSymbolRecord.localHandle == stageId,
+               true);
     expectBool("snapshot reference report subject stable key",
                snapshotReferenceReport.subjectStableKey == stageStableKey,
                true);
@@ -1492,7 +1495,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotStableReferenceReport.totalCount
                    == snapshotReferenceReport.totalCount
                    && snapshotStableReferenceReport.subjectStableKey == stageStableKey
-                   && snapshotStableReferenceReport.subjectSymbol.symbolId == stageId,
+                   && snapshotStableReferenceReport.subjectSymbolRecord.localHandle
+                       == stageId,
                true);
     expectInt("snapshot reference report total count",
               snapshotReferenceReport.totalCount, 1);
@@ -1616,7 +1620,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const ReferenceReport snapshotMissingReferenceReport =
         snapshotReferenceService.findReferenceReport(snapshotMissingReferenceQuery);
     expectBool("snapshot reference report missing subject reason",
-               snapshotMissingReferenceReport.subjectSymbol.symbolId < 0
+               !snapshotMissingReferenceReport.subjectStableKey.isValid()
+                   && !snapshotMissingReferenceReport.subjectSymbolRecord.isValid()
                    && snapshotMissingReferenceReport.notFoundReason
                        == ReferenceReportNotFoundReason::NoSubjectSymbol
                    && snapshotMissingReferenceReport.notFoundReasonDisplayName
@@ -2723,8 +2728,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     };
     const RelationshipReport relationshipReport =
         relationshipService.findRelationshipReport(browseQuery);
-    expectBool("relationship report subject symbol",
-               relationshipReport.subjectSymbol.symbolName == QStringLiteral("rel_top"),
+    expectBool("relationship report subject display name",
+               relationshipReport.subjectDisplayName == QStringLiteral("rel_top"),
                true);
     expectInt("relationship report total count",
               relationshipReport.totalCount, serviceRels.size());
@@ -2829,7 +2834,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                stableRelationshipReport.totalCount == relationshipReport.totalCount
                    && stableRelationshipReport.subjectStableKey
                        == stableRelationshipReportQuery.symbolStableKey
-                   && stableRelationshipReport.subjectSymbol.symbolName
+                   && stableRelationshipReport.subjectDisplayName
                        == QStringLiteral("rel_top"),
                true);
     RelationshipPanelQueryOptions outgoingPanelRelationshipOptions;
@@ -3272,8 +3277,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                referenceFoundTopInstance, true);
     const ReferenceReport stageReferenceReport =
         referenceService.findReferenceReport(stageReferenceQuery);
-    expectBool("reference report subject symbol",
-               stageReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_stage"),
+    expectBool("reference report subject record",
+               stageReferenceReport.subjectSymbolRecord.name == QStringLiteral("rel_stage"),
                true);
     expectBool("reference report subject display name",
                stageReferenceReport.subjectDisplayName == QStringLiteral("rel_stage"),
@@ -3343,7 +3348,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                stableStageReferenceReport.totalCount == stageReferenceReport.totalCount
                    && stableStageReferenceReport.subjectStableKey
                        == stableStageReferenceQuery.symbolStableKey
-                   && stableStageReferenceReport.subjectSymbol.symbolName
+                   && stableStageReferenceReport.subjectDisplayName
                        == QStringLiteral("rel_stage"),
                true);
 
@@ -3451,8 +3456,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : reqValidReferenceReport.fileGroups.first().typeGroups.first().references.size(),
               1);
-    expectBool("reference report condition read subject symbol",
-               reqValidReferenceReport.subjectSymbol.symbolName == QStringLiteral("req_valid"),
+    expectBool("reference report condition read subject display name",
+               reqValidReferenceReport.subjectDisplayName == QStringLiteral("req_valid"),
                true);
 
     ReferenceQuery topTimingReferenceQuery;
@@ -3472,8 +3477,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : topClockReferenceReport.fileGroups.first().typeGroups.first().references.size(),
               1);
-    expectBool("reference report clock subject symbol",
-               topClockReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_top"),
+    expectBool("reference report clock subject display name",
+               topClockReferenceReport.subjectDisplayName == QStringLiteral("rel_top"),
                true);
     expectBool("reference report clock referencing symbol",
                !topClockReferenceReport.references.isEmpty()
@@ -3495,8 +3500,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : topResetReferenceReport.fileGroups.first().typeGroups.first().references.size(),
               1);
-    expectBool("reference report reset subject symbol",
-               topResetReferenceReport.subjectSymbol.symbolName == QStringLiteral("rel_top"),
+    expectBool("reference report reset subject display name",
+               topResetReferenceReport.subjectDisplayName == QStringLiteral("rel_top"),
                true);
     expectBool("reference report reset referencing symbol",
                !topResetReferenceReport.references.isEmpty()
@@ -3560,8 +3565,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   ? 0
                   : rspDataReferenceReport.fileGroups.first().typeGroups.first().references.size(),
               1);
-    expectBool("reference report assignment write subject symbol",
-               rspDataReferenceReport.subjectSymbol.symbolName == QStringLiteral("rsp_data"),
+    expectBool("reference report assignment write subject display name",
+               rspDataReferenceReport.subjectDisplayName == QStringLiteral("rsp_data"),
                true);
 }
 

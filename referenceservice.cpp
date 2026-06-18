@@ -210,14 +210,11 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
         reportSubjectDisplayName(report.subjectSymbolRecord,
                                  normalized.symbolName);
     if (!report.subjectStableKey.isValid()) {
-        report.subjectSymbol.symbolId = -1;
         report.notFoundReason = ReferenceReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);
         return report;
     }
-    report.subjectSymbol = semanticIndex()->getSymbolByStableKey(
-        report.subjectStableKey);
 
     report.references = findReferences(normalized);
     report.totalCount = report.references.size();

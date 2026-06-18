@@ -71,7 +71,6 @@ struct ReferenceFileGroup {
 };
 
 struct ReferenceReport {
-    sym_list::SymbolInfo subjectSymbol = {};
     SemanticSymbolRecord subjectSymbolRecord;
     SymbolStableKey subjectStableKey;
     QString subjectDisplayName;
