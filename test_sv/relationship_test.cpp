@@ -4873,6 +4873,8 @@ static void runClockResetDomainServiceFixture()
                        == topReport.clockDomains.first().domainSignalStableKey
                    && topReport.clockDomains.first().domainSignalRecord.name
                        == QStringLiteral("clk_i")
+                   && topReport.clockDomains.first().domainSignalRecord.owner.name
+                       == QStringLiteral("domain_top")
                    && topReport.clockDomains.first().domainSignalStableKey
                        == symbolStableKeyForSymbol(
                            topReport.clockDomains.first().domainSignal)
@@ -5078,10 +5080,13 @@ static void runClockResetDomainServiceFixture()
                 && row.moduleDisplayName == QStringLiteral("domain_top")
                 && row.domainSignalRecord.isValid()
                 && row.domainSignalRecord.localHandle == 9207
+                && row.domainSignalRecord.owner.name
+                    == QStringLiteral("domain_top")
                 && row.domainSignalRecord.stableKey
                     == row.domainSignalStableKey
                 && row.moduleSymbolRecord.isValid()
                 && row.moduleSymbolRecord.localHandle == 9201
+                && row.moduleSymbolRecord.name == QStringLiteral("domain_top")
                 && row.moduleSymbolRecord.stableKey
                     == row.moduleStableKey
                 && row.domainSignalStableKey

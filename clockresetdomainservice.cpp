@@ -52,6 +52,15 @@ QString sourceRoleDisplayNameForRecord(
     return SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
 }
 
+QString ownerNameForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
+    return semanticSymbolRecordForSymbol(fallback).owner.name;
+}
+
 QString recordFileName(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
@@ -337,11 +346,13 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
             displayNameForRecord(row.domainSignalRecord,
                                  symbol,
                                  QStringLiteral("<unnamed>"));
-        row.moduleDisplayName = moduleSymbol.symbolName.isEmpty()
-            ? symbol.moduleScope
+        const QString ownerName =
+            ownerNameForRecord(row.domainSignalRecord, symbol);
+        row.moduleDisplayName = row.moduleSymbolRecord.name.isEmpty()
+            ? ownerName
             : displayNameForRecord(row.moduleSymbolRecord,
                                    moduleSymbol,
-                                   symbol.moduleScope);
+                                   ownerName);
         if (row.moduleDisplayName.isEmpty())
             row.moduleDisplayName = QStringLiteral("<unknown module>");
         row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
@@ -414,6 +425,11 @@ bool ClockResetDomainService::acceptsCandidate(
     const ClockResetDomainQuery& query,
     const sym_list::SymbolInfo& moduleSymbol)
 {
+    const SemanticSymbolRecord signalRecord =
+        semanticSymbolRecordForSymbol(symbol);
+    const SemanticSymbolRecord moduleRecord =
+        semanticSymbolRecordForSymbol(moduleSymbol);
+    const QString ownerName = ownerNameForRecord(signalRecord, symbol);
     if (query.moduleStableKey.isValid())
         return stableKeyMatchesSymbol(query.moduleStableKey, moduleSymbol);
     if (query.moduleSymbolId >= 0
@@ -421,8 +437,8 @@ bool ClockResetDomainService::acceptsCandidate(
         return false;
     }
     if (!query.moduleName.isEmpty()
-        && symbol.moduleScope != query.moduleName
-        && moduleSymbol.symbolName != query.moduleName) {
+        && ownerName != query.moduleName
+        && moduleRecord.name != query.moduleName) {
         return false;
     }
     if (!query.fileName.isEmpty()
@@ -439,7 +455,8 @@ bool ClockResetDomainService::isTimingCandidate(
     const sym_list::SymbolInfo& symbol,
     SymbolRelationshipEngine::RelationType* type)
 {
-    if (symbol.symbolName.isEmpty() || symbol.moduleScope.isEmpty())
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    if (record.name.isEmpty() || record.owner.name.isEmpty())
         return false;
     const SymbolTaxonomy::SemanticMetadata metadata =
         SymbolTaxonomy::semanticMetadata(symbol);
@@ -448,7 +465,7 @@ bool ClockResetDomainService::isTimingCandidate(
         return false;
     }
 
-    const QString name = symbol.symbolName.toLower();
+    const QString name = record.name.toLower();
     if (name.contains(QStringLiteral("reset"))
         || name.contains(QStringLiteral("rst"))) {
         if (type)
@@ -485,8 +502,13 @@ sym_list::SymbolInfo ClockResetDomainService::moduleForCandidate(
     const sym_list::SymbolInfo& symbol,
     const QList<sym_list::SymbolInfo>& symbols)
 {
+    const SemanticSymbolRecord symbolRecord =
+        semanticSymbolRecordForSymbol(symbol);
+    const QString ownerName = ownerNameForRecord(symbolRecord, symbol);
     for (const sym_list::SymbolInfo& candidate : symbols) {
-        if (candidate.symbolName == symbol.moduleScope
+        const SemanticSymbolRecord candidateRecord =
+            semanticSymbolRecordForSymbol(candidate);
+        if (candidateRecord.name == ownerName
             && SymbolTaxonomy::isModuleDeclaration(
                 SymbolTaxonomy::semanticMetadata(candidate))) {
             return candidate;
@@ -494,7 +516,7 @@ sym_list::SymbolInfo ClockResetDomainService::moduleForCandidate(
     }
     sym_list::SymbolInfo missing;
     missing.symbolId = -1;
-    missing.symbolName = symbol.moduleScope;
+    missing.symbolName = ownerName;
     missing.fileName = symbol.fileName;
     return missing;
 }
