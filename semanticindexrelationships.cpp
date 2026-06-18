@@ -14,51 +14,6 @@ SymbolStableKey relationshipStableKeyForSymbol(const sym_list::SymbolInfo& symbo
 }
 }
 
-QList<SemanticRelationship> SemanticIndex::getRelationships(int symbolId, bool outgoing) const
-{
-    if (m_snapshot)
-        return m_snapshot->getRelationships(symbolId, outgoing);
-
-    QList<SemanticRelationship> result;
-    if (symbolId < 0)
-        return result;
-
-    SymbolRelationshipEngine* engine = symbolDatabase()->getRelationshipEngine();
-    if (!engine)
-        return result;
-
-    QSet<QString> seen;
-    for (SymbolRelationshipEngine::RelationType type : relationshipTypes()) {
-        const QList<int> related = engine->getRelatedSymbols(symbolId, type, outgoing);
-        for (int otherId : related) {
-            SemanticRelationship rel;
-            rel.fromId = outgoing ? symbolId : otherId;
-            rel.toId = outgoing ? otherId : symbolId;
-            rel.type = type;
-            rel.fromStableKey = relationshipStableKeyForSymbol(getSymbolById(rel.fromId));
-            rel.toStableKey = relationshipStableKeyForSymbol(getSymbolById(rel.toId));
-            const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
-                engine->getRelationshipMetadata(rel.fromId, rel.toId, rel.type);
-            if (metadata.found) {
-                rel.provenance = RelationshipProvenance::Inferred;
-                rel.confidence = metadata.confidence;
-                rel.evidenceText = metadata.context;
-            }
-
-            const QString key = QStringLiteral("%1:%2:%3")
-                                    .arg(rel.fromId)
-                                    .arg(rel.toId)
-                                    .arg(static_cast<int>(rel.type));
-            if (seen.contains(key))
-                continue;
-            seen.insert(key);
-            result.append(rel);
-        }
-    }
-
-    return result;
-}
-
 QList<SemanticRelationship> SemanticIndex::getRelationships(const QString& scopeName,
                                                             bool outgoing) const
 {

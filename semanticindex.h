@@ -342,7 +342,6 @@ public:
                                                 const SemanticQueryContext& context = {}) const;
     QStringList findCompletions(const SemanticQueryContext& context) const;
 
-    QList<SemanticRelationship> getRelationships(int symbolId, bool outgoing = true) const;
     QList<SemanticRelationship> getRelationships(
         const SymbolStableKey& key,
         bool outgoing = true) const;

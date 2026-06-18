@@ -227,22 +227,6 @@ QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
     return result;
 }
 
-QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(int symbolId,
-                                                                    bool outgoing) const
-{
-    QList<SemanticRelationship> result;
-    if (symbolId < 0)
-        return result;
-
-    for (const SemanticRelationship& relationship : m_relationships) {
-        if ((outgoing && relationship.fromId == symbolId)
-            || (!outgoing && relationship.toId == symbolId)) {
-            result.append(relationship);
-        }
-    }
-    return result;
-}
-
 QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(
     const SymbolStableKey& key,
     bool outgoing) const

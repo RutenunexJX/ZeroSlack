@@ -45,7 +45,6 @@ public:
         const QStringList& fileNames,
         const QList<SemanticDiagnostic>& diagnostics) const;
 
-    QList<SemanticRelationship> getRelationships(int symbolId, bool outgoing = true) const;
     QList<SemanticRelationship> getRelationships(
         const SymbolStableKey& key,
         bool outgoing = true) const;
