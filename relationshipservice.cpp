@@ -574,7 +574,10 @@ bool RelationshipService::hasNamedRelationship(
     query.types = {type};
     const QList<RelationshipResult> relationships = findRelationships(query);
     for (const RelationshipResult& relationship : relationships) {
-        if (relationship.toSymbol.symbolName == toSymbolName)
+        const QString candidateName =
+            symbolRecordDisplayName(relationship.toSymbolRecord,
+                                    relationship.toSymbol);
+        if (candidateName == toSymbolName)
             return true;
     }
     return false;

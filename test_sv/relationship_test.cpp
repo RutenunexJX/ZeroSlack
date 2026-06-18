@@ -1220,6 +1220,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotRelationshipService.hasRelationship(
                    topStableKey, stageStableKey, SymbolRelationshipEngine::INSTANTIATES),
                true);
+    expectBool("snapshot relationship service exact named relationship",
+               snapshotRelationshipService.hasNamedRelationship(
+                   QStringLiteral("rel_top"),
+                   QStringLiteral("rel_stage"),
+                   SymbolRelationshipEngine::INSTANTIATES),
+               true);
     expectBool("snapshot relationship service rejects reversed relationship",
                snapshotRelationshipService.hasRelationship(
                    stageStableKey, topStableKey, SymbolRelationshipEngine::INSTANTIATES),
@@ -2712,10 +2718,22 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                                                    stageStableKey,
                                                    SymbolRelationshipEngine::INSTANTIATES),
                true);
+    expectBool("relationship service exact named relationship",
+               relationshipService.hasNamedRelationship(
+                   QStringLiteral("rel_top"),
+                   QStringLiteral("rel_stage"),
+                   SymbolRelationshipEngine::INSTANTIATES),
+               true);
     expectBool("relationship service rejects reversed relationship",
                relationshipService.hasRelationship(stageStableKey,
                                                    topStableKey,
                                                    SymbolRelationshipEngine::INSTANTIATES),
+               false);
+    expectBool("relationship service rejects reversed named relationship",
+               relationshipService.hasNamedRelationship(
+                   QStringLiteral("rel_stage"),
+                   QStringLiteral("rel_top"),
+                   SymbolRelationshipEngine::INSTANTIATES),
                false);
     RelationshipBrowseQuery browseQuery;
     browseQuery.symbolStableKey = topStableKey;
