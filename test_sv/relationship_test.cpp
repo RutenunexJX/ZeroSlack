@@ -6276,12 +6276,11 @@ static void runSemanticDiffServiceFixture()
         if (change.kind == SemanticDiffChangeKind::Added) {
             ++addedRelationships;
             addedRelationshipHasEndpoints =
-                change.afterFromSymbol.symbolName == QStringLiteral("diff_top")
-                && change.afterToSymbol.symbolName == QStringLiteral("u_new");
+                change.afterFromSymbolRecord.name == QStringLiteral("diff_top")
+                && change.afterToSymbolRecord.name == QStringLiteral("u_new");
             relationshipDisplayMetadataFound =
                 change.kindDisplayName == QStringLiteral("Added")
                 && change.relationshipTypeDisplayName == QStringLiteral("Instantiates")
-                && change.displayFromSymbol.symbolName == QStringLiteral("diff_top")
                 && change.fromSymbolDisplayName == QStringLiteral("diff_top")
                 && change.toSymbolDisplayName == QStringLiteral("u_new")
                 && change.sourceRoleDisplayName == QStringLiteral("design source")
@@ -6304,13 +6303,13 @@ static void runSemanticDiffServiceFixture()
                     == QStringLiteral("semantic_diff_fixture.sv");
             relationshipStableKeyFound =
                 change.displayFromStableKey
-                    == symbolStableKeyForSymbol(change.displayFromSymbol)
+                    == change.displayFromSymbolRecord.stableKey
                 && change.displayToStableKey
-                    == symbolStableKeyForSymbol(change.displayToSymbol)
+                    == change.displayToSymbolRecord.stableKey
                 && change.afterFromStableKey
-                    == symbolStableKeyForSymbol(change.afterFromSymbol)
+                    == change.afterFromSymbolRecord.stableKey
                 && change.afterToStableKey
-                    == symbolStableKeyForSymbol(change.afterToSymbol);
+                    == change.afterToSymbolRecord.stableKey;
             relationshipRecordMetadataFound =
                 change.afterFromSymbolRecord.isValid()
                 && change.afterFromSymbolRecord.localHandle == 9501
@@ -6343,8 +6342,8 @@ static void runSemanticDiffServiceFixture()
         if (change.kind == SemanticDiffChangeKind::Removed) {
             ++removedRelationships;
             removedRelationshipHasEndpoints =
-                change.beforeFromSymbol.symbolName == QStringLiteral("diff_top")
-                && change.beforeToSymbol.symbolName == QStringLiteral("u_old")
+                change.beforeFromSymbolRecord.name == QStringLiteral("diff_top")
+                && change.beforeToSymbolRecord.name == QStringLiteral("u_old")
                 && change.beforeFromSymbolRecord.isValid()
                 && change.beforeFromSymbolRecord.localHandle == 9401
                 && change.beforeFromSymbolRecord.stableKey

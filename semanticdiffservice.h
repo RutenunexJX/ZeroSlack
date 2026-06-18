@@ -74,13 +74,7 @@ struct SemanticDiffRelationshipChange {
     SemanticDiffChangeKind kind = SemanticDiffChangeKind::Added;
     QString key;
     SemanticRelationship beforeRelationship;
-    sym_list::SymbolInfo beforeFromSymbol = {};
-    sym_list::SymbolInfo beforeToSymbol = {};
     SemanticRelationship afterRelationship;
-    sym_list::SymbolInfo afterFromSymbol = {};
-    sym_list::SymbolInfo afterToSymbol = {};
-    sym_list::SymbolInfo displayFromSymbol = {};
-    sym_list::SymbolInfo displayToSymbol = {};
     SemanticSymbolRecord beforeFromSymbolRecord;
     SemanticSymbolRecord beforeToSymbolRecord;
     SemanticSymbolRecord afterFromSymbolRecord;
@@ -209,7 +203,11 @@ private:
     static void fillDisplayMetadata(SemanticDiffSymbolChange& change,
                                     const sym_list::SymbolInfo& beforeSymbol,
                                     const sym_list::SymbolInfo& afterSymbol);
-    static void fillDisplayMetadata(SemanticDiffRelationshipChange& change);
+    static void fillDisplayMetadata(SemanticDiffRelationshipChange& change,
+                                    const sym_list::SymbolInfo& beforeFromSymbol,
+                                    const sym_list::SymbolInfo& beforeToSymbol,
+                                    const sym_list::SymbolInfo& afterFromSymbol,
+                                    const sym_list::SymbolInfo& afterToSymbol);
     static void fillDisplayMetadata(SemanticDiffDiagnosticChange& change);
 
     static void sortSymbolChanges(QList<SemanticDiffSymbolChange>& changes);

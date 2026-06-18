@@ -273,30 +273,38 @@ QList<SemanticDiffRelationshipChange> SemanticDiffService::relationshipChanges(
 
         SemanticDiffRelationshipChange change;
         change.key = key;
+        sym_list::SymbolInfo beforeFromSymbol;
+        sym_list::SymbolInfo beforeToSymbol;
+        sym_list::SymbolInfo afterFromSymbol;
+        sym_list::SymbolInfo afterToSymbol;
         if (hasBefore) {
             change.kind = SemanticDiffChangeKind::Removed;
             change.beforeRelationship = beforeRelationships.value(key);
-            change.beforeFromSymbol =
+            beforeFromSymbol =
                 relationshipEndpointSymbol(change.beforeRelationship,
                                            *query.beforeSnapshot,
                                            true);
-            change.beforeToSymbol =
+            beforeToSymbol =
                 relationshipEndpointSymbol(change.beforeRelationship,
                                            *query.beforeSnapshot,
                                            false);
         } else {
             change.kind = SemanticDiffChangeKind::Added;
             change.afterRelationship = afterRelationships.value(key);
-            change.afterFromSymbol =
+            afterFromSymbol =
                 relationshipEndpointSymbol(change.afterRelationship,
                                            *query.afterSnapshot,
                                            true);
-            change.afterToSymbol =
+            afterToSymbol =
                 relationshipEndpointSymbol(change.afterRelationship,
                                            *query.afterSnapshot,
                                            false);
         }
-        fillDisplayMetadata(change);
+        fillDisplayMetadata(change,
+                            beforeFromSymbol,
+                            beforeToSymbol,
+                            afterFromSymbol,
+                            afterToSymbol);
         changes.append(change);
     }
 
@@ -872,26 +880,32 @@ void SemanticDiffService::fillDisplayMetadata(
 }
 
 void SemanticDiffService::fillDisplayMetadata(
-    SemanticDiffRelationshipChange& change)
+    SemanticDiffRelationshipChange& change,
+    const sym_list::SymbolInfo& beforeFromSymbol,
+    const sym_list::SymbolInfo& beforeToSymbol,
+    const sym_list::SymbolInfo& afterFromSymbol,
+    const sym_list::SymbolInfo& afterToSymbol)
 {
     const SemanticRelationship& relationship =
         change.kind == SemanticDiffChangeKind::Removed
             ? change.beforeRelationship
             : change.afterRelationship;
-    change.displayFromSymbol = change.kind == SemanticDiffChangeKind::Removed
-        ? change.beforeFromSymbol
-        : change.afterFromSymbol;
-    change.displayToSymbol = change.kind == SemanticDiffChangeKind::Removed
-        ? change.beforeToSymbol
-        : change.afterToSymbol;
+    const sym_list::SymbolInfo displayFromSymbol =
+        change.kind == SemanticDiffChangeKind::Removed
+            ? beforeFromSymbol
+            : afterFromSymbol;
+    const sym_list::SymbolInfo displayToSymbol =
+        change.kind == SemanticDiffChangeKind::Removed
+            ? beforeToSymbol
+            : afterToSymbol;
     change.beforeFromSymbolRecord =
-        semanticSymbolRecordForSymbol(change.beforeFromSymbol);
+        semanticSymbolRecordForSymbol(beforeFromSymbol);
     change.beforeToSymbolRecord =
-        semanticSymbolRecordForSymbol(change.beforeToSymbol);
+        semanticSymbolRecordForSymbol(beforeToSymbol);
     change.afterFromSymbolRecord =
-        semanticSymbolRecordForSymbol(change.afterFromSymbol);
+        semanticSymbolRecordForSymbol(afterFromSymbol);
     change.afterToSymbolRecord =
-        semanticSymbolRecordForSymbol(change.afterToSymbol);
+        semanticSymbolRecordForSymbol(afterToSymbol);
     change.displayFromSymbolRecord =
         change.kind == SemanticDiffChangeKind::Removed
             ? change.beforeFromSymbolRecord
@@ -903,27 +917,27 @@ void SemanticDiffService::fillDisplayMetadata(
     change.beforeFromStableKey =
         change.beforeFromSymbolRecord.stableKey.isValid()
             ? change.beforeFromSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(change.beforeFromSymbol);
+            : symbolStableKeyForSymbol(beforeFromSymbol);
     change.beforeToStableKey =
         change.beforeToSymbolRecord.stableKey.isValid()
             ? change.beforeToSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(change.beforeToSymbol);
+            : symbolStableKeyForSymbol(beforeToSymbol);
     change.afterFromStableKey =
         change.afterFromSymbolRecord.stableKey.isValid()
             ? change.afterFromSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(change.afterFromSymbol);
+            : symbolStableKeyForSymbol(afterFromSymbol);
     change.afterToStableKey =
         change.afterToSymbolRecord.stableKey.isValid()
             ? change.afterToSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(change.afterToSymbol);
+            : symbolStableKeyForSymbol(afterToSymbol);
     change.displayFromStableKey =
         change.displayFromSymbolRecord.stableKey.isValid()
             ? change.displayFromSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(change.displayFromSymbol);
+            : symbolStableKeyForSymbol(displayFromSymbol);
     change.displayToStableKey =
         change.displayToSymbolRecord.stableKey.isValid()
             ? change.displayToSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(change.displayToSymbol);
+            : symbolStableKeyForSymbol(displayToSymbol);
     change.provenance = relationship.provenance;
     change.confidence = relationship.confidence;
     change.evidenceText = relationship.evidenceText;
@@ -931,15 +945,15 @@ void SemanticDiffService::fillDisplayMetadata(
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
     change.fromCodeLink = codeLinkForRecord(change.displayFromSymbolRecord,
-                                            change.displayFromSymbol);
+                                            displayFromSymbol);
     change.toCodeLink = codeLinkForRecord(change.displayToSymbolRecord,
-                                          change.displayToSymbol);
+                                          displayToSymbol);
     change.fromSymbolDisplayName =
         symbolDisplayNameForRecord(change.displayFromSymbolRecord,
-                                   change.displayFromSymbol);
+                                   displayFromSymbol);
     change.toSymbolDisplayName =
         symbolDisplayNameForRecord(change.displayToSymbolRecord,
-                                   change.displayToSymbol);
+                                   displayToSymbol);
     change.provenanceDisplayName = provenanceDisplayName(change.provenance);
     change.confidenceDisplayName = confidenceDisplayName(change.confidence);
     change.evidenceDisplayName = evidenceDisplayName(change.evidenceText);
@@ -947,7 +961,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.codeLink = change.fromCodeLink;
     change.sourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(change.displayFromSymbolRecord,
-                                       change.displayFromSymbol);
+                                       displayFromSymbol);
     change.detailDisplayName =
         change.fromSymbolDisplayName == QStringLiteral("<unknown>")
             || change.toSymbolDisplayName == QStringLiteral("<unknown>")
