@@ -86,7 +86,11 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
         SearchResult item;
         item.symbol = indexResult.symbol;
         item.symbolRecord = indexResult.symbolRecord;
-        item.symbolStableKey = item.symbolRecord.stableKey;
+        item.symbolStableKey = item.symbolRecord.stableKey.isValid()
+            ? item.symbolRecord.stableKey
+            : indexResult.symbolStableKey;
+        if (!item.symbolStableKey.isValid())
+            item.symbolStableKey = symbolStableKeyForSymbol(item.symbol);
         item.symbolDisplayName =
             symbolDisplayNameForRecord(item.symbolRecord, item.symbol);
         const SymbolTaxonomy::SemanticMetadata metadata =

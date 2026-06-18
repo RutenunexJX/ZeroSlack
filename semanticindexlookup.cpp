@@ -99,7 +99,9 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
         SemanticSymbolSearchResult item;
         item.symbol = symbol;
         item.symbolRecord = record;
-        item.symbolStableKey = item.symbolRecord.stableKey;
+        item.symbolStableKey = item.symbolRecord.stableKey.isValid()
+            ? item.symbolRecord.stableKey
+            : symbolStableKeyForSymbol(item.symbol);
         item.score = score;
         result.append(item);
     }
