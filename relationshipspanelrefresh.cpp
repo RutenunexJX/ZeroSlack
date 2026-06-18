@@ -9,16 +9,8 @@ QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
                                         const DirectedRelationshipResult& relationship,
                                         const QString& direction)
 {
-    const sym_list::SymbolInfo& symbol = relationship.peerSymbol;
-    const QString peerFile = relationship.peerSymbolRecord.location.fileName.isEmpty()
-        ? symbol.fileName
-        : relationship.peerSymbolRecord.location.fileName;
-    const int peerLine = relationship.peerSymbolRecord.location.startLine > 0
-        ? relationship.peerSymbolRecord.location.startLine
-        : symbol.startLine;
-    const int peerColumn = relationship.peerSymbolRecord.location.startColumn > 0
-        ? relationship.peerSymbolRecord.location.startColumn
-        : symbol.startColumn;
+    const SemanticSymbolLocation peerLocation =
+        relationship.peerSymbolRecord.location;
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, direction);
     item->setText(1, relationship.peerSymbolDisplayName);
@@ -29,12 +21,12 @@ QTreeWidgetItem* createRelationshipItem(QTreeWidgetItem* parent,
     item->setText(5, explanation);
     item->setToolTip(0, explanation);
     item->setToolTip(1, explanation);
-    item->setToolTip(2, peerFile);
+    item->setToolTip(2, peerLocation.fileName);
     item->setToolTip(4, explanation);
     item->setToolTip(5, explanation);
-    item->setData(0, Qt::UserRole, peerFile);
-    item->setData(0, Qt::UserRole + 1, peerLine);
-    item->setData(0, Qt::UserRole + 2, peerColumn);
+    item->setData(0, Qt::UserRole, peerLocation.fileName);
+    item->setData(0, Qt::UserRole + 1, peerLocation.startLine);
+    item->setData(0, Qt::UserRole + 2, peerLocation.startColumn);
     return item;
 }
 
