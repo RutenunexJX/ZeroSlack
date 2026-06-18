@@ -76,6 +76,25 @@ SymbolStableKey relationshipEndpointStableKey(
     return relationshipStableKeyForSymbol(
         relationshipEndpointSymbol(index, relationship, fromEndpoint));
 }
+
+SemanticSymbolRecord relationshipEndpointRecord(
+    const SemanticIndex& index,
+    const SemanticRelationship& relationship,
+    bool fromEndpoint)
+{
+    const SymbolStableKey stableKey = fromEndpoint
+        ? relationship.fromStableKey
+        : relationship.toStableKey;
+    if (stableKey.isValid()) {
+        const SemanticSymbolRecord record =
+            index.getSymbolRecordByStableKey(stableKey);
+        if (record.isValid())
+            return record;
+    }
+
+    return semanticSymbolRecordForSymbol(
+        relationshipEndpointSymbol(index, relationship, fromEndpoint));
+}
 }
 
 QList<SemanticRelationship> SemanticIndex::getRelationships(const QString& scopeName,
@@ -152,20 +171,22 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
     for (const SemanticRelationship& relationship : relationships) {
         SemanticRelationshipResult item;
         item.relationship = relationship;
-        item.fromSymbol = relationshipEndpointSymbol(*this, relationship, true);
-        item.toSymbol = relationshipEndpointSymbol(*this, relationship, false);
-        item.fromSymbolRecord = semanticSymbolRecordForSymbol(item.fromSymbol);
-        item.toSymbolRecord = semanticSymbolRecordForSymbol(item.toSymbol);
+        item.fromSymbolRecord =
+            relationshipEndpointRecord(*this, item.relationship, true);
+        item.toSymbolRecord =
+            relationshipEndpointRecord(*this, item.relationship, false);
         if (!item.relationship.fromStableKey.isValid())
             item.relationship.fromStableKey =
                 item.fromSymbolRecord.stableKey.isValid()
                     ? item.fromSymbolRecord.stableKey
-                    : symbolStableKeyForSymbol(item.fromSymbol);
+                    : relationshipEndpointStableKey(*this, item.relationship, true);
         if (!item.relationship.toStableKey.isValid())
             item.relationship.toStableKey =
                 item.toSymbolRecord.stableKey.isValid()
                     ? item.toSymbolRecord.stableKey
-                    : symbolStableKeyForSymbol(item.toSymbol);
+                    : relationshipEndpointStableKey(*this, item.relationship, false);
+        item.fromSymbol = relationshipEndpointSymbol(*this, item.relationship, true);
+        item.toSymbol = relationshipEndpointSymbol(*this, item.relationship, false);
         item.fromStableKey = item.relationship.fromStableKey;
         item.toStableKey = item.relationship.toStableKey;
         item.provenance = item.relationship.provenance;
