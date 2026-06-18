@@ -430,18 +430,6 @@ RelationshipReport RelationshipService::findRelationshipReport(
     return report;
 }
 
-QList<int> RelationshipService::findRelatedSymbolIds(const RelationshipQuery& query) const
-{
-    QList<int> result;
-    const QList<RelationshipResult> relationships = findRelationships(query);
-    for (const RelationshipResult& relationship : relationships) {
-        result.append(query.outgoing
-                          ? relationship.relationship.toId
-                          : relationship.relationship.fromId);
-    }
-    return result;
-}
-
 QList<SymbolStableKey> RelationshipService::findRelatedSymbolKeys(
     const RelationshipQuery& query) const
 {

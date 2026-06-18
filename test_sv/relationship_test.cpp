@@ -2638,19 +2638,22 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     relatedIdsQuery.symbolStableKey = topStableKey;
     relatedIdsQuery.outgoing = true;
     relatedIdsQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
-    expectBool("relationship service returns related ids",
-               relationshipService.findRelatedSymbolIds(relatedIdsQuery).contains(stageId), true);
+    const SymbolStableKey stageQueryKey =
+        symbolStableKeyForSymbol(index.getSymbolById(stageId));
+    expectBool("relationship service returns related stable keys",
+               relationshipService.findRelatedSymbolKeys(relatedIdsQuery).contains(stageQueryKey),
+               true);
     RelationshipQuery stableRelatedIdsQuery = relatedIdsQuery;
     stableRelatedIdsQuery.symbolStableKey = symbolStableKeyForSymbol(index.getSymbolById(topId));
     expectBool("relationship service resolves stable query key",
                relationshipService
-                   .findRelatedSymbolIds(stableRelatedIdsQuery)
-                   .contains(stageId),
+                   .findRelatedSymbolKeys(stableRelatedIdsQuery)
+                   .contains(stageQueryKey),
                true);
-    expectBool("relationship service returns related stable keys",
+    expectBool("relationship service keeps stable-key query result",
                relationshipService
                    .findRelatedSymbolKeys(stableRelatedIdsQuery)
-                   .contains(symbolStableKeyForSymbol(index.getSymbolById(stageId))),
+                   .contains(stageQueryKey),
                true);
     expectBool("relationship service exact relationship",
                relationshipService.hasRelationship(topId,

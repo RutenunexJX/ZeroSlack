@@ -113,6 +113,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "referenceservice.h|struct[ \t\r\n]+ReferenceQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
     "referenceservice.h|subjectSymbolId"
     "relationshipservice.h|struct[ \t\r\n]+RelationshipQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId|struct[ \t\r\n]+RelationshipBrowseQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
+    "relationshipservice.h|findRelatedSymbolIds[ \t\r\n]*\\("
     "relationshipservice.h|subjectSymbolId"
     "signaljourneyservice.h|signalSymbolId"
     "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
