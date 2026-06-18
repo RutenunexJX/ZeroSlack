@@ -1629,6 +1629,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     }
     expectBool("snapshot hierarchy service finds stage child",
                snapshotHierarchyFoundStage, true);
+    HierarchyQuery snapshotStableHierarchyQuery = snapshotHierarchyQuery;
+    snapshotStableHierarchyQuery.symbolStableKey = topStableKey;
+    snapshotStableHierarchyQuery.symbolId = stageId;
+    const QList<HierarchyNode> snapshotStableHierarchy =
+        snapshotHierarchyService.getHierarchy(snapshotStableHierarchyQuery);
+    expectBool("snapshot hierarchy service resolves stable query key",
+               snapshotStableHierarchy.size() == snapshotHierarchy.size()
+                   && !snapshotStableHierarchy.isEmpty()
+                   && snapshotStableHierarchy.first().symbolStableKey == topStableKey
+                   && snapshotStableHierarchy.first().symbol.symbolId == topId,
+               true);
     const HierarchyReport snapshotHierarchyReport =
         snapshotHierarchyService.getHierarchyReport(snapshotHierarchyQuery);
     expectBool("snapshot hierarchy report found reason metadata",
@@ -1690,6 +1701,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && !snapshotHierarchyReport.nodes.first().parentStableKey.isValid()
                    && snapshotHierarchyReport.nodes.last().symbolStableKey == stageStableKey
                    && snapshotHierarchyReport.nodes.last().parentStableKey == topStableKey,
+               true);
+    const HierarchyReport snapshotStableHierarchyReport =
+        snapshotHierarchyService.getHierarchyReport(snapshotStableHierarchyQuery);
+    expectBool("snapshot hierarchy report resolves stable query key",
+               snapshotStableHierarchyReport.totalCount
+                   == snapshotHierarchyReport.totalCount
+                   && snapshotStableHierarchyReport.rootStableKey == topStableKey
+                   && !snapshotStableHierarchyReport.nodes.isEmpty()
+                   && snapshotStableHierarchyReport.nodes.first().symbol.symbolId == topId,
                true);
     expectBool("snapshot hierarchy report keeps child node links",
                snapshotHierarchyReport.nodes.size() == 2

@@ -15,27 +15,35 @@ QString reportNotFoundReasonDisplayName(HierarchyReportNotFoundReason reason)
     }
     return QStringLiteral("hierarchy report unavailable");
 }
+
+QString hierarchyNodePathKey(const HierarchyNode& node)
+{
+    const QString stableKey = symbolStableKeyText(node.symbolStableKey);
+    if (!stableKey.isEmpty())
+        return stableKey;
+    return QStringLiteral("local:%1").arg(node.symbol.symbolId);
+}
 }
 
 QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query) const
 {
     const HierarchyQuery normalized = normalizedQuery(query);
-    const int rootId = resolveSymbolId(normalized);
-    if (rootId < 0)
+    const sym_list::SymbolInfo rootSymbol = resolveSubjectSymbol(normalized);
+    if (rootSymbol.symbolId < 0)
         return {};
 
     const int maxDepth = normalized.maxDepth < 0 ? 0 : normalized.maxDepth;
     QList<HierarchyNode> result;
     struct WorkItem {
         HierarchyNode node;
-        QSet<int> path;
+        QSet<QString> path;
     };
     QList<WorkItem> queue;
     QSet<QString> emittedEdges;
     int nextNodeId = 0;
 
     HierarchyNode root;
-    root.symbol = semanticIndex()->getSymbolById(rootId);
+    root.symbol = rootSymbol;
     root.symbolRecord = semanticSymbolRecordForSymbol(root.symbol);
     root.symbolStableKey = root.symbolRecord.stableKey.isValid()
         ? root.symbolRecord.stableKey
@@ -48,7 +56,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     fillDisplayMetadata(root);
     WorkItem rootItem;
     rootItem.node = root;
-    rootItem.path.insert(rootId);
+    rootItem.path.insert(hierarchyNodePathKey(root));
     queue.append(rootItem);
 
     while (!queue.isEmpty()) {
@@ -63,14 +71,15 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
             for (HierarchyNode child : nextNodes) {
                 if (child.symbol.symbolId < 0)
                     continue;
-                if (current.path.contains(child.symbol.symbolId))
+                const QString childPathKey = hierarchyNodePathKey(child);
+                if (current.path.contains(childPathKey))
                     continue;
 
                 const QString edgeKey = QStringLiteral("%1:%2:%3:%4")
                     .arg(current.node.nodeId)
                     .arg(static_cast<int>(edgeDirection))
                     .arg(static_cast<int>(child.viaType))
-                    .arg(child.symbol.symbolId);
+                    .arg(childPathKey);
                 if (emittedEdges.contains(edgeKey))
                     continue;
                 emittedEdges.insert(edgeKey);
@@ -86,14 +95,15 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
                 WorkItem childItem;
                 childItem.node = child;
                 childItem.path = current.path;
-                childItem.path.insert(child.symbol.symbolId);
+                childItem.path.insert(childPathKey);
                 queue.append(childItem);
             }
         };
 
         HierarchyQuery childQuery = normalized;
         childQuery.symbolStableKey = current.node.symbolStableKey;
-        childQuery.symbolId = current.node.symbol.symbolId;
+        if (!childQuery.symbolStableKey.isValid())
+            childQuery.symbolId = current.node.symbol.symbolId;
         if (normalized.direction == HierarchyQuery::Children
             || normalized.direction == HierarchyQuery::Both) {
             appendNext(getChildren(childQuery), HierarchyQuery::Children);
@@ -111,8 +121,8 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
 {
     const HierarchyQuery normalized = normalizedQuery(query);
     HierarchyReport report;
-    const int rootId = resolveSymbolId(normalized);
-    if (rootId < 0) {
+    const sym_list::SymbolInfo rootSymbol = resolveSubjectSymbol(normalized);
+    if (rootSymbol.symbolId < 0) {
         report.notFoundReason = HierarchyReportNotFoundReason::NoRootSymbol;
         report.notFoundReasonDisplayName =
             reportNotFoundReasonDisplayName(report.notFoundReason);
@@ -120,12 +130,11 @@ HierarchyReport HierarchyService::getHierarchyReport(const HierarchyQuery& query
     }
 
     HierarchyQuery resolvedQuery = normalized;
-    resolvedQuery.symbolId = rootId;
+    resolvedQuery.symbolId = rootSymbol.symbolId;
     if (!resolvedQuery.symbolStableKey.isValid())
         resolvedQuery.symbolStableKey =
-            symbolStableKeyForSymbol(semanticIndex()->getSymbolById(rootId));
-    report.rootSymbolRecord =
-        semanticSymbolRecordForSymbol(semanticIndex()->getSymbolById(rootId));
+            symbolStableKeyForSymbol(rootSymbol);
+    report.rootSymbolRecord = semanticSymbolRecordForSymbol(rootSymbol);
     report.rootStableKey = report.rootSymbolRecord.stableKey.isValid()
         ? report.rootSymbolRecord.stableKey
         : resolvedQuery.symbolStableKey;
