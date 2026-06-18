@@ -5778,19 +5778,17 @@ static void runFsmGraphServiceFixture()
                !report.graphs.isEmpty()
                    && !report.graphs.first().transitionRows.isEmpty()
                    && report.graphs.first().transitionRows.first()
-                          .fromStateSymbol.symbolName == QStringLiteral("IDLE")
+                          .fromStateDisplayName == QStringLiteral("IDLE")
                    && report.graphs.first().transitionRows.first()
-                          .toStateSymbol.symbolName == QStringLiteral("RUN")
+                          .toStateDisplayName == QStringLiteral("RUN")
                    && report.graphs.first().transitionRows.first()
                           .fromStateStableKey
-                       == symbolStableKeyForSymbol(
-                           report.graphs.first().transitionRows.first()
-                              .fromStateSymbol)
+                       == report.graphs.first().transitionRows.first()
+                              .fromStateRecord.stableKey
                    && report.graphs.first().transitionRows.first()
                           .toStateStableKey
-                       == symbolStableKeyForSymbol(
-                           report.graphs.first().transitionRows.first()
-                              .toStateSymbol)
+                       == report.graphs.first().transitionRows.first()
+                              .toStateRecord.stableKey
                    && report.graphs.first().transitionRows.first()
                           .fromStateCodeLink.fileName == fileName
                    && report.graphs.first().transitionRows.first()

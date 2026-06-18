@@ -48,8 +48,6 @@ struct FsmStateRow {
 
 struct FsmTransitionRow {
     FsmTransition transition;
-    sym_list::SymbolInfo fromStateSymbol = {};
-    sym_list::SymbolInfo toStateSymbol = {};
     SemanticSymbolRecord moduleSymbolRecord;
     SemanticSymbolRecord fromStateRecord;
     SemanticSymbolRecord toStateRecord;

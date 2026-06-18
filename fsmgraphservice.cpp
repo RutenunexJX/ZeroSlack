@@ -695,30 +695,32 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
     for (const FsmTransition& transition : transitions) {
         FsmTransitionRow row;
         row.transition = transition;
-        row.fromStateSymbol = stateSymbolByName(states, transition.fromState);
-        row.toStateSymbol = stateSymbolByName(states, transition.toState);
+        const sym_list::SymbolInfo fromStateSymbol =
+            stateSymbolByName(states, transition.fromState);
+        const sym_list::SymbolInfo toStateSymbol =
+            stateSymbolByName(states, transition.toState);
         row.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
-        row.fromStateRecord = semanticSymbolRecordForSymbol(row.fromStateSymbol);
-        row.toStateRecord = semanticSymbolRecordForSymbol(row.toStateSymbol);
+        row.fromStateRecord = semanticSymbolRecordForSymbol(fromStateSymbol);
+        row.toStateRecord = semanticSymbolRecordForSymbol(toStateSymbol);
         row.fromStateStableKey = row.fromStateRecord.isValid()
             ? row.fromStateRecord.stableKey
-            : symbolStableKeyForSymbol(row.fromStateSymbol);
+            : symbolStableKeyForSymbol(fromStateSymbol);
         row.toStateStableKey = row.toStateRecord.isValid()
             ? row.toStateRecord.stableKey
-            : symbolStableKeyForSymbol(row.toStateSymbol);
+            : symbolStableKeyForSymbol(toStateSymbol);
         row.codeLink = transition.codeLink;
         row.fromStateCodeLink =
-            codeLinkForRecord(row.fromStateRecord, row.fromStateSymbol);
+            codeLinkForRecord(row.fromStateRecord, fromStateSymbol);
         row.toStateCodeLink =
-            codeLinkForRecord(row.toStateRecord, row.toStateSymbol);
+            codeLinkForRecord(row.toStateRecord, toStateSymbol);
         row.sectionDisplayName = transition.sectionDisplayName;
         row.fromStateDisplayName =
             displayNameForRecord(row.fromStateRecord,
-                                 row.fromStateSymbol,
+                                 fromStateSymbol,
                                  transition.fromState);
         row.toStateDisplayName =
             displayNameForRecord(row.toStateRecord,
-                                 row.toStateSymbol,
+                                 toStateSymbol,
                                  transition.toState);
         row.conditionDisplayName = transitionConditionDisplayName(transition);
         row.detailDisplayName = transition.detailDisplayName;
