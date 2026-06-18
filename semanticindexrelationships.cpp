@@ -12,6 +12,39 @@ SymbolStableKey relationshipStableKeyForSymbol(const sym_list::SymbolInfo& symbo
         ? record.stableKey
         : symbolStableKeyForSymbol(symbol);
 }
+
+sym_list::SymbolInfo relationshipEndpointSymbol(const SemanticIndex& index,
+                                                const SemanticRelationship& relationship,
+                                                bool fromEndpoint)
+{
+    const SymbolStableKey stableKey = fromEndpoint
+        ? relationship.fromStableKey
+        : relationship.toStableKey;
+    if (stableKey.isValid()) {
+        const sym_list::SymbolInfo symbol = index.getSymbolByStableKey(stableKey);
+        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
+            return symbol;
+    }
+
+    return index.getSymbolById(fromEndpoint
+                                   ? relationship.fromId
+                                   : relationship.toId);
+}
+
+SymbolStableKey relationshipEndpointStableKey(
+    const SemanticIndex& index,
+    const SemanticRelationship& relationship,
+    bool fromEndpoint)
+{
+    const SymbolStableKey stableKey = fromEndpoint
+        ? relationship.fromStableKey
+        : relationship.toStableKey;
+    if (stableKey.isValid())
+        return stableKey;
+
+    return relationshipStableKeyForSymbol(
+        relationshipEndpointSymbol(index, relationship, fromEndpoint));
+}
 }
 
 QList<SemanticRelationship> SemanticIndex::getRelationships(const QString& scopeName,
@@ -52,8 +85,8 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(
             rel.fromId = outgoing ? subject.symbolId : otherId;
             rel.toId = outgoing ? otherId : subject.symbolId;
             rel.type = type;
-            rel.fromStableKey = relationshipStableKeyForSymbol(getSymbolById(rel.fromId));
-            rel.toStableKey = relationshipStableKeyForSymbol(getSymbolById(rel.toId));
+            rel.fromStableKey = relationshipEndpointStableKey(*this, rel, true);
+            rel.toStableKey = relationshipEndpointStableKey(*this, rel, false);
             const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
                 engine->getRelationshipMetadata(rel.fromId, rel.toId, rel.type);
             if (metadata.found) {
@@ -88,12 +121,8 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
     for (const SemanticRelationship& relationship : relationships) {
         SemanticRelationshipResult item;
         item.relationship = relationship;
-        item.fromSymbol = relationship.fromStableKey.isValid()
-            ? getSymbolByStableKey(relationship.fromStableKey)
-            : getSymbolById(relationship.fromId);
-        item.toSymbol = relationship.toStableKey.isValid()
-            ? getSymbolByStableKey(relationship.toStableKey)
-            : getSymbolById(relationship.toId);
+        item.fromSymbol = relationshipEndpointSymbol(*this, relationship, true);
+        item.toSymbol = relationshipEndpointSymbol(*this, relationship, false);
         item.fromSymbolRecord = semanticSymbolRecordForSymbol(item.fromSymbol);
         item.toSymbolRecord = semanticSymbolRecordForSymbol(item.toSymbol);
         if (!item.relationship.fromStableKey.isValid())
