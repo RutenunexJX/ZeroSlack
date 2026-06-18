@@ -297,16 +297,6 @@ HierarchyQuery HierarchyService::queryForPanel(
 }
 
 QList<HierarchyNode> HierarchyService::moduleInstantiationChildren(
-    int moduleSymbolId) const
-{
-    HierarchyQuery query;
-    query.symbolId = moduleSymbolId;
-    query.maxDepth = 1;
-    query.types = {SymbolRelationshipEngine::INSTANTIATES};
-    return getChildren(query);
-}
-
-QList<HierarchyNode> HierarchyService::moduleInstantiationChildren(
     const SymbolStableKey& moduleStableKey) const
 {
     HierarchyQuery query;

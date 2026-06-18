@@ -3016,17 +3016,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                hierarchyFoundRoot, true);
     expectBool("hierarchy service finds child instance",
                hierarchyFoundStage, true);
-    const QList<HierarchyNode> moduleInstantiationChildren =
-        hierarchyService.moduleInstantiationChildren(topId);
-    bool moduleInstantiationChildFoundStage = false;
-    for (const HierarchyNode& node : moduleInstantiationChildren) {
-        moduleInstantiationChildFoundStage =
-            moduleInstantiationChildFoundStage
-            || (node.symbol.symbolId == stageId
-                && node.viaType == SymbolRelationshipEngine::INSTANTIATES);
-    }
-    expectBool("hierarchy service module instantiation children",
-               moduleInstantiationChildFoundStage, true);
     const QList<HierarchyNode> stableModuleInstantiationChildren =
         hierarchyService.moduleInstantiationChildren(
             symbolStableKeyForSymbol(index.getSymbolById(topId)));
