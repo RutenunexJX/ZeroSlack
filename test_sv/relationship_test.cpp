@@ -3711,7 +3711,6 @@ static void runModuleBriefServiceFixture()
                true);
     ModuleBriefQuery stableModuleBriefQuery;
     stableModuleBriefQuery.moduleStableKey = symbolStableKeyForSymbol(module);
-    stableModuleBriefQuery.moduleSymbolId = 9002;
     const ModuleBriefReport stableModuleBriefReport =
         service.buildModuleBrief(stableModuleBriefQuery);
     expectBool("module brief resolves stable module key",

@@ -126,21 +126,6 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
         return symbol;
     }
 
-    if (query.moduleSymbolId >= 0) {
-        const sym_list::SymbolInfo symbol =
-            semanticIndex()->getSymbolById(query.moduleSymbolId);
-        if (symbol.symbolId < 0) {
-            if (reason)
-                *reason = ModuleBriefNotFoundReason::NoMatchingModule;
-            return missingModuleBriefSymbol();
-        }
-        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
-            if (reason)
-                *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
-            return missingModuleBriefSymbol();
-        }
-        return symbol;
-    }
     if (query.moduleName.isEmpty()) {
         if (reason)
             *reason = ModuleBriefNotFoundReason::EmptyModuleName;

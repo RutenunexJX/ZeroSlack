@@ -101,6 +101,8 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
+    "modulebriefservice.h|moduleSymbolId"
+    "modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
     "signaljourneyservice.h|signalSymbolId"
     "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
 )

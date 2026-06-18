@@ -12,7 +12,6 @@
 
 struct ModuleBriefQuery {
     SymbolStableKey moduleStableKey;
-    int moduleSymbolId = -1;
     QString moduleName;
     QString fileName;
 };
