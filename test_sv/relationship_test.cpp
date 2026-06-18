@@ -1204,8 +1204,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     snapshotRelationshipBrowseQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
     const RelationshipReport snapshotRelationshipReport =
         snapshotRelationshipService.findRelationshipReport(snapshotRelationshipBrowseQuery);
-    expectInt("snapshot relationship report subject id",
-              snapshotRelationshipReport.subjectSymbolId, topId);
     expectBool("snapshot relationship report subject symbol",
                snapshotRelationshipReport.subjectSymbol.symbolId == topId, true);
     expectBool("snapshot relationship report subject stable key",
@@ -1365,7 +1363,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const RelationshipReport snapshotNamedRelationshipReport =
         snapshotRelationshipService.findRelationshipReport(snapshotNamedRelationshipBrowseQuery);
     expectBool("snapshot relationship report resolves query symbol name",
-               snapshotNamedRelationshipReport.subjectSymbolId == topId
+               snapshotNamedRelationshipReport.subjectStableKey == topStableKey
                    && snapshotNamedRelationshipReport.totalCount == 1
                    && !snapshotNamedRelationshipReport.relationships.isEmpty()
                    && snapshotNamedRelationshipReport.relationships.first()
@@ -1379,7 +1377,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotRelationshipService.findRelationshipReport(
             snapshotMissingRelationshipBrowseQuery);
     expectBool("snapshot relationship report missing subject reason",
-               snapshotMissingRelationshipReport.subjectSymbolId < 0
+               snapshotMissingRelationshipReport.subjectSymbol.symbolId < 0
                    && snapshotMissingRelationshipReport.notFoundReason
                        == RelationshipReportNotFoundReason::NoSubjectSymbol
                    && snapshotMissingRelationshipReport.notFoundReasonDisplayName
@@ -1392,7 +1390,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotRelationshipService.findRelationshipReport(
             snapshotNoRelationshipBrowseQuery);
     expectBool("snapshot relationship report no relationships reason",
-               snapshotNoRelationshipReport.subjectSymbolId == topId
+               snapshotNoRelationshipReport.subjectStableKey == topStableKey
                    && snapshotNoRelationshipReport.totalCount == 0
                    && snapshotNoRelationshipReport.notFoundReason
                        == RelationshipReportNotFoundReason::NoRelationships
@@ -2680,8 +2678,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     };
     const RelationshipReport relationshipReport =
         relationshipService.findRelationshipReport(browseQuery);
-    expectInt("relationship report subject id",
-              relationshipReport.subjectSymbolId, topId);
     expectBool("relationship report subject symbol",
                relationshipReport.subjectSymbol.symbolName == QStringLiteral("rel_top"),
                true);

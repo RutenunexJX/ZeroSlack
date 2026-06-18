@@ -109,6 +109,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "hierarchyservice.cpp|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int|moduleSymbolId"
     "modulebriefservice.h|moduleSymbolId"
     "modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
+    "relationshipservice.h|subjectSymbolId"
     "signaljourneyservice.h|signalSymbolId"
     "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
 )

@@ -282,8 +282,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
     const RelationshipBrowseQuery normalized = normalizedQuery(query);
     RelationshipReport report;
     report.subjectSymbol = resolveSubjectSymbol(normalized);
-    report.subjectSymbolId = report.subjectSymbol.symbolId;
-    if (report.subjectSymbolId < 0) {
+    if (report.subjectSymbol.symbolId < 0) {
         report.notFoundReason =
             RelationshipReportNotFoundReason::NoSubjectSymbol;
         report.notFoundReasonDisplayName =
@@ -403,7 +402,6 @@ RelationshipReport RelationshipService::findRelationshipReport(
 
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = report.subjectStableKey;
-    relationshipQuery.symbolId = report.subjectSymbolId;
     relationshipQuery.symbolName = normalized.symbolName;
     relationshipQuery.fileName = normalized.fileName;
     relationshipQuery.moduleName = normalized.moduleName;

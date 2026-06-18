@@ -99,7 +99,6 @@ struct RelationshipDirectionGroup {
 };
 
 struct RelationshipReport {
-    int subjectSymbolId = -1;
     sym_list::SymbolInfo subjectSymbol = {};
     SemanticSymbolRecord subjectSymbolRecord;
     SymbolStableKey subjectStableKey;
