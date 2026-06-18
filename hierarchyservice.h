@@ -107,6 +107,8 @@ private:
     static std::unique_ptr<HierarchyService> instance;
 
     SemanticIndex* semanticIndex() const;
+    SemanticSymbolRecord resolveSubjectSymbolRecord(
+        const HierarchyQuery& query) const;
     sym_list::SymbolInfo resolveSubjectSymbol(const HierarchyQuery& query) const;
     QList<SymbolRelationshipEngine::RelationType> effectiveTypes(const HierarchyQuery& query) const;
     static QString directionDisplayName(HierarchyQuery::Direction direction);

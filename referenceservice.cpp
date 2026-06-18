@@ -161,11 +161,10 @@ void ReferenceService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& query) const
 {
     const ReferenceQuery normalized = normalizedQuery(query);
-    const sym_list::SymbolInfo subjectSymbol = resolveSubjectSymbol(normalized);
     const SymbolStableKey subjectStableKey = normalized.symbolStableKey.isValid()
         ? normalized.symbolStableKey
-        : symbolStableKeyForSymbol(subjectSymbol);
-    if (!subjectStableKey.isValid() && subjectSymbol.symbolId < 0)
+        : resolveSubjectSymbolRecord(normalized).stableKey;
+    if (!subjectStableKey.isValid())
         return {};
 
     RelationshipQuery relationshipQuery;
@@ -295,22 +294,35 @@ SemanticIndex* ReferenceService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-sym_list::SymbolInfo ReferenceService::resolveSubjectSymbol(
+SemanticSymbolRecord ReferenceService::resolveSubjectSymbolRecord(
     const ReferenceQuery& query) const
 {
     if (query.symbolStableKey.isValid())
-        return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
+        return semanticIndex()->getSymbolRecordByStableKey(query.symbolStableKey);
 
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
     if (query.symbolName.isEmpty())
-        return missing;
+        return {};
 
     SemanticQueryContext context;
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
-    const int symbolId = semanticIndex()->findSymbolId(query.symbolName, context);
-    return semanticIndex()->getSymbolById(symbolId);
+    const QList<sym_list::SymbolInfo> definitions =
+        semanticIndex()->findDefinitions(query.symbolName, context);
+    if (definitions.isEmpty())
+        return {};
+    return semanticSymbolRecordForSymbol(definitions.first());
+}
+
+sym_list::SymbolInfo ReferenceService::resolveSubjectSymbol(
+    const ReferenceQuery& query) const
+{
+    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
+    if (!record.stableKey.isValid()) {
+        sym_list::SymbolInfo missing;
+        missing.symbolId = -1;
+        return missing;
+    }
+    return semanticIndex()->getSymbolByStableKey(record.stableKey);
 }
 
 QList<SymbolRelationshipEngine::RelationType> ReferenceService::effectiveTypes(

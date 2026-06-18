@@ -57,14 +57,6 @@ QString normalizedHierarchyFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-SymbolStableKey hierarchyStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    return record.stableKey.isValid()
-        ? record.stableKey
-        : symbolStableKeyForSymbol(symbol);
-}
-
 QString HierarchyService::directionDisplayName(HierarchyQuery::Direction direction)
 {
     switch (direction) {
@@ -191,10 +183,9 @@ void HierarchyService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) const
 {
     const HierarchyQuery normalized = normalizedQuery(query);
-    const sym_list::SymbolInfo subjectSymbol = resolveSubjectSymbol(normalized);
     const SymbolStableKey subjectStableKey = normalized.symbolStableKey.isValid()
         ? normalized.symbolStableKey
-        : hierarchyStableKeyForSymbol(subjectSymbol);
+        : resolveSubjectSymbolRecord(normalized).stableKey;
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = subjectStableKey;
     relationshipQuery.outgoing = true;
@@ -228,10 +219,9 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
 QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) const
 {
     const HierarchyQuery normalized = normalizedQuery(query);
-    const sym_list::SymbolInfo subjectSymbol = resolveSubjectSymbol(normalized);
     const SymbolStableKey subjectStableKey = normalized.symbolStableKey.isValid()
         ? normalized.symbolStableKey
-        : hierarchyStableKeyForSymbol(subjectSymbol);
+        : resolveSubjectSymbolRecord(normalized).stableKey;
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = subjectStableKey;
     relationshipQuery.outgoing = false;
@@ -307,22 +297,35 @@ SemanticIndex* HierarchyService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-sym_list::SymbolInfo HierarchyService::resolveSubjectSymbol(
+SemanticSymbolRecord HierarchyService::resolveSubjectSymbolRecord(
     const HierarchyQuery& query) const
 {
     if (query.symbolStableKey.isValid())
-        return semanticIndex()->getSymbolByStableKey(query.symbolStableKey);
+        return semanticIndex()->getSymbolRecordByStableKey(query.symbolStableKey);
 
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
     if (query.symbolName.isEmpty())
-        return missing;
+        return {};
 
     SemanticQueryContext context;
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
-    const int symbolId = semanticIndex()->findSymbolId(query.symbolName, context);
-    return semanticIndex()->getSymbolById(symbolId);
+    const QList<sym_list::SymbolInfo> definitions =
+        semanticIndex()->findDefinitions(query.symbolName, context);
+    if (definitions.isEmpty())
+        return {};
+    return semanticSymbolRecordForSymbol(definitions.first());
+}
+
+sym_list::SymbolInfo HierarchyService::resolveSubjectSymbol(
+    const HierarchyQuery& query) const
+{
+    const SemanticSymbolRecord record = resolveSubjectSymbolRecord(query);
+    if (!record.stableKey.isValid()) {
+        sym_list::SymbolInfo missing;
+        missing.symbolId = -1;
+        return missing;
+    }
+    return semanticIndex()->getSymbolByStableKey(record.stableKey);
 }
 
 HierarchyQuery HierarchyService::normalizedQuery(const HierarchyQuery& query)

@@ -216,11 +216,15 @@ foreach(relative_path IN LISTS STABLE_KEY_MIGRATED_SERVICE_FILES)
         stable_key_find_id_matches
         "${content}")
     string(REGEX MATCHALL
+        "(^|[^A-Za-z0-9_])(findSymbolId|getSymbolById)[ \t\r\n]*\\("
+        stable_key_int_id_matches
+        "${content}")
+    string(REGEX MATCHALL
         "(^|[^A-Za-z0-9_])getRelationships[ \t\r\n]*\\("
         raw_relationship_matches
         "${content}")
 
-    if(stable_key_find_id_matches OR raw_relationship_matches)
+    if(stable_key_find_id_matches OR stable_key_int_id_matches OR raw_relationship_matches)
         list(APPEND stable_key_violations "${relative_path}")
     endif()
 endforeach()
@@ -234,7 +238,7 @@ endif()
 if(stable_key_violations)
     list(JOIN stable_key_violations "\n  " stable_key_violation_text)
     message(FATAL_ERROR
-        "Stable-key migrated services must not resolve stable keys through int-id APIs or raw relationship queries:\n  ${stable_key_violation_text}")
+        "Stable-key migrated services must not resolve through int-id APIs or raw relationship queries:\n  ${stable_key_violation_text}")
 endif()
 
 set(f3_removed_compatibility_violations)

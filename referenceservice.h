@@ -106,6 +106,8 @@ private:
     static std::unique_ptr<ReferenceService> instance;
 
     SemanticIndex* semanticIndex() const;
+    SemanticSymbolRecord resolveSubjectSymbolRecord(
+        const ReferenceQuery& query) const;
     sym_list::SymbolInfo resolveSubjectSymbol(const ReferenceQuery& query) const;
     QList<SymbolRelationshipEngine::RelationType> effectiveTypes(
         const ReferenceQuery& query) const;
