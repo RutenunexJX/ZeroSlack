@@ -4210,6 +4210,12 @@ static void runModuleBriefServiceFixture()
                 && row.fromStableKey == symbolStableKeyForSymbol(row.fromSymbol)
                 && row.toStableKey == symbolStableKeyForSymbol(row.toSymbol)
                 && row.peerStableKey == row.toStableKey
+                && row.peerSymbolRecord.isValid()
+                && row.peerSymbolRecord.stableKey == row.peerStableKey
+                && row.fromSymbolRecord.isValid()
+                && row.fromSymbolRecord.stableKey == row.fromStableKey
+                && row.toSymbolRecord.isValid()
+                && row.toSymbolRecord.stableKey == row.toStableKey
                 && row.provenance == RelationshipProvenance::Inferred
                 && row.confidence == 90
                 && row.evidenceText.contains(QStringLiteral("Instance: u_stage"))
@@ -4234,6 +4240,12 @@ static void runModuleBriefServiceFixture()
             || (!row.outgoing
                 && row.fromSymbolDisplayName == QStringLiteral("clk")
                 && row.toSymbolDisplayName == QStringLiteral("brief_top")
+                && row.peerSymbolRecord.isValid()
+                && row.peerSymbolRecord.name == QStringLiteral("clk")
+                && row.fromSymbolRecord.isValid()
+                && row.fromSymbolRecord.name == QStringLiteral("clk")
+                && row.toSymbolRecord.isValid()
+                && row.toSymbolRecord.name == QStringLiteral("brief_top")
                 && row.fromCodeLink.fileName == fileName
                 && row.fromCodeLink.line == 12
                 && row.fromCodeLink.fileDisplayName
@@ -7033,6 +7045,8 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealResetRelationshipEvidenceLink = false;
     bool sawRealClockRelationshipEndpointLinks = false;
     bool sawRealResetRelationshipEndpointLinks = false;
+    bool sawRealClockRelationshipEndpointRecords = false;
+    bool sawRealResetRelationshipEndpointRecords = false;
     for (const ModuleBriefRelationshipEvidenceRow& row
          : moduleBrief.relationshipEvidenceRows) {
         sawRealPackageRelationshipEvidence = sawRealPackageRelationshipEvidence
@@ -7071,6 +7085,17 @@ static void runRealWorkspaceIncludeFixture()
                 && row.toCodeLink.line > 0
                 && !row.toCodeLink.fileDisplayName.isEmpty()
                 && !row.toCodeLink.lineDisplayName.isEmpty());
+        sawRealClockRelationshipEndpointRecords =
+            sawRealClockRelationshipEndpointRecords
+            || (!row.outgoing
+                && row.fromSymbolDisplayName == QStringLiteral("clk_main")
+                && row.toSymbolDisplayName == QStringLiteral("rtl_top")
+                && row.peerSymbolRecord.isValid()
+                && row.peerSymbolRecord.stableKey == row.peerStableKey
+                && row.fromSymbolRecord.isValid()
+                && row.fromSymbolRecord.stableKey == row.fromStableKey
+                && row.toSymbolRecord.isValid()
+                && row.toSymbolRecord.stableKey == row.toStableKey);
         sawRealResetRelationshipEvidence = sawRealResetRelationshipEvidence
             || (!row.outgoing
                 && row.peerDisplayName == QStringLiteral("srst_main")
@@ -7095,6 +7120,17 @@ static void runRealWorkspaceIncludeFixture()
                 && row.toCodeLink.line > 0
                 && !row.toCodeLink.fileDisplayName.isEmpty()
                 && !row.toCodeLink.lineDisplayName.isEmpty());
+        sawRealResetRelationshipEndpointRecords =
+            sawRealResetRelationshipEndpointRecords
+            || (!row.outgoing
+                && row.fromSymbolDisplayName == QStringLiteral("srst_main")
+                && row.toSymbolDisplayName == QStringLiteral("rtl_top")
+                && row.peerSymbolRecord.isValid()
+                && row.peerSymbolRecord.stableKey == row.peerStableKey
+                && row.fromSymbolRecord.isValid()
+                && row.fromSymbolRecord.stableKey == row.fromStableKey
+                && row.toSymbolRecord.isValid()
+                && row.toSymbolRecord.stableKey == row.toStableKey);
     }
     expectBool("real workspace module brief package relationship evidence",
                sawRealPackageRelationshipEvidence,
@@ -7111,6 +7147,9 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace module brief clock relationship endpoint links",
                sawRealClockRelationshipEndpointLinks,
                true);
+    expectBool("real workspace module brief clock relationship endpoint records",
+               sawRealClockRelationshipEndpointRecords,
+               true);
     expectBool("real workspace module brief reset relationship evidence",
                sawRealResetRelationshipEvidence,
                true);
@@ -7119,6 +7158,9 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace module brief reset relationship endpoint links",
                sawRealResetRelationshipEndpointLinks,
+               true);
+    expectBool("real workspace module brief reset relationship endpoint records",
+               sawRealResetRelationshipEndpointRecords,
                true);
 
     ClockResetDomainService clockResetService(&index);

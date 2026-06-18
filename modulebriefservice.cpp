@@ -26,6 +26,25 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
     metadata.interfaceLikeOwner = record.owner.interfaceLike;
     return metadata;
 }
+
+RtlInsightCodeLink codeLinkForRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (record.isValid()) {
+        const QString fileName = fallback.fileName.isEmpty()
+            ? record.location.fileName
+            : fallback.fileName;
+        const int line = record.location.startLine > 0
+            ? record.location.startLine
+            : fallback.startLine;
+        const int column = record.location.startColumn > 0
+            ? record.location.startColumn
+            : fallback.startColumn;
+        return RtlInsightLink::fromFileLine(fileName, line, column);
+    }
+    return RtlInsightLink::fromSymbol(fallback);
+}
 }
 
 ModuleBriefService* ModuleBriefService::getInstance()
@@ -323,7 +342,7 @@ QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
         ModuleBriefSymbolRow row;
         row.symbol = symbol;
         row.symbolRecord = record;
-        row.codeLink = RtlInsightLink::fromSymbol(symbol);
+        row.codeLink = codeLinkForRecord(record, symbol);
         row.sectionDisplayName = sectionDisplayName;
         row.symbolDisplayName = symbolDisplayName(record);
         row.typeDisplayName = symbolTypeDisplayName(record);
@@ -400,7 +419,7 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         ModuleBriefContextRow row;
         row.symbol = symbol;
         row.symbolRecord = record;
-        row.codeLink = RtlInsightLink::fromSymbol(symbol);
+        row.codeLink = codeLinkForRecord(record, symbol);
         row.sectionDisplayName = section;
         row.symbolDisplayName = symbolDisplayName(record);
         row.contextKindDisplayName = kind;
@@ -632,14 +651,17 @@ void ModuleBriefService::fillRelationshipEvidenceMetadata(
 {
     row.fromSymbol = row.relationship.fromSymbol;
     row.toSymbol = row.relationship.toSymbol;
+    row.peerSymbolRecord = semanticSymbolRecordForSymbol(row.peerSymbol);
+    row.fromSymbolRecord = semanticSymbolRecordForSymbol(row.fromSymbol);
+    row.toSymbolRecord = semanticSymbolRecordForSymbol(row.toSymbol);
     row.fromStableKey = row.relationship.fromStableKey;
     row.toStableKey = row.relationship.toStableKey;
     row.peerStableKey = row.outgoing
         ? row.relationship.toStableKey
         : row.relationship.fromStableKey;
-    row.peerCodeLink = RtlInsightLink::fromSymbol(row.peerSymbol);
-    row.fromCodeLink = RtlInsightLink::fromSymbol(row.fromSymbol);
-    row.toCodeLink = RtlInsightLink::fromSymbol(row.toSymbol);
+    row.peerCodeLink = codeLinkForRecord(row.peerSymbolRecord, row.peerSymbol);
+    row.fromCodeLink = codeLinkForRecord(row.fromSymbolRecord, row.fromSymbol);
+    row.toCodeLink = codeLinkForRecord(row.toSymbolRecord, row.toSymbol);
     row.provenance = row.relationship.provenance;
     row.confidence = row.relationship.confidence;
     row.evidenceText = row.relationship.evidenceText;
@@ -648,9 +670,9 @@ void ModuleBriefService::fillRelationshipEvidenceMetadata(
     row.provenanceDisplayName = provenanceDisplayName(row.provenance);
     row.confidenceDisplayName = confidenceDisplayName(row.confidence);
     row.evidenceDisplayName = evidenceDisplayName(row.evidenceText);
-    row.peerDisplayName = symbolDisplayName(row.peerSymbol);
-    row.fromSymbolDisplayName = symbolDisplayName(row.fromSymbol);
-    row.toSymbolDisplayName = symbolDisplayName(row.toSymbol);
+    row.peerDisplayName = symbolDisplayName(row.peerSymbolRecord);
+    row.fromSymbolDisplayName = symbolDisplayName(row.fromSymbolRecord);
+    row.toSymbolDisplayName = symbolDisplayName(row.toSymbolRecord);
     row.detailDisplayName = relationshipEvidenceDetailDisplayName(row);
 }
 
