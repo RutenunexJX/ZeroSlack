@@ -120,6 +120,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "relationshipservice.h|findRelatedSymbolIds[ \t\r\n]*\\("
     "relationshipservice.h|hasRelationship[ \t\r\n]*\\([ \t\r\n]*int"
     "relationshipservice.h|subjectSymbolId"
+    "semanticindexrelationships.cpp|getRelationships[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbol\\.symbolId|getRelationshipResults[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId"
     "signaljourneyservice.h|signalSymbolId"
     "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
     "signaljourneyservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
