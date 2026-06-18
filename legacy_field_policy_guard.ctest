@@ -89,6 +89,13 @@ set(RECORD_FIRST_METADATA_FILES
     signaljourneyservice.cpp
 )
 
+set(STABLE_KEY_MIGRATED_SERVICE_FILES
+    hierarchyservice.cpp
+    hierarchyservicetraversal.cpp
+    referenceservice.cpp
+    relationshipservice.cpp
+)
+
 set(missing_files)
 set(violations)
 foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
@@ -159,4 +166,40 @@ if(record_first_violations)
     list(JOIN record_first_violations "\n  " record_first_violation_text)
     message(FATAL_ERROR
         "Migrated semantic service/query files must not read SymbolInfo moduleScope/dataType directly:\n  ${record_first_violation_text}")
+endif()
+
+set(stable_key_missing_files)
+set(stable_key_violations)
+foreach(relative_path IN LISTS STABLE_KEY_MIGRATED_SERVICE_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND stable_key_missing_files "${relative_path}")
+        continue()
+    endif()
+
+    file(READ "${path}" content)
+    string(REGEX MATCHALL
+        "findSymbolId[ \t\r\n]*\\([^\\)]*symbolStableKey"
+        stable_key_find_id_matches
+        "${content}")
+    string(REGEX MATCHALL
+        "(^|[^A-Za-z0-9_])getRelationships[ \t\r\n]*\\("
+        raw_relationship_matches
+        "${content}")
+
+    if(stable_key_find_id_matches OR raw_relationship_matches)
+        list(APPEND stable_key_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(stable_key_missing_files)
+    list(JOIN stable_key_missing_files "\n  " stable_key_missing_text)
+    message(FATAL_ERROR
+        "Stable-key service guard references missing migrated files:\n  ${stable_key_missing_text}")
+endif()
+
+if(stable_key_violations)
+    list(JOIN stable_key_violations "\n  " stable_key_violation_text)
+    message(FATAL_ERROR
+        "Stable-key migrated services must not resolve stable keys through int-id APIs or raw relationship queries:\n  ${stable_key_violation_text}")
 endif()
