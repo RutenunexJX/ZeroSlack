@@ -232,6 +232,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "relationshipservice.h|findRelatedSymbolIds[ \t\r\n]*\\("
     "relationshipservice.h|hasRelationship[ \t\r\n]*\\([ \t\r\n]*int"
     "relationshipservice.h|subjectSymbolId"
+    "relationshipserviceordering.cpp|lhsSymbol[ \t\r\n]*="
+    "relationshipserviceordering.cpp|relationshipSymbolLess[ \t\r\n]*\\("
     "semanticindex.h|getRelationships[ \t\r\n]*\\([ \t\r\n]*int"
     "semanticindex.h|getRelationshipResults[ \t\r\n]*\\([ \t\r\n]*int"
     "semanticindex.h|findSymbolId[ \t\r\n]*\\("
