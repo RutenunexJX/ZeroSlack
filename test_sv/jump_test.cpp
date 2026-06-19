@@ -161,8 +161,8 @@ int main(int argc, char** argv) {
         DefinitionService::getInstance()->resolveDefinition(memberQuery);
     ++g_checks;
     bool memberOk = memberResult.found
-        && memberResult.symbol.moduleScope == QStringLiteral("pixel_t")
-        && memberResult.symbol.startLine == pixelRed.startLine;
+        && memberResult.symbolRecord.owner.name == QStringLiteral("pixel_t")
+        && memberResult.symbolRecord.location.startLine == pixelRed.startLine;
     if (!memberOk) ++g_fails;
     printf("[%s] DefinitionService resolves pixel.red member context to pixel_t.red\n",
            memberOk ? "PASS" : "FAIL");
@@ -362,8 +362,8 @@ int main(int argc, char** argv) {
         snapshotDefinitionService.resolveDefinition(snapshotMemberQuery);
     ++g_checks;
     const bool snapshotMemberOk = snapshotMemberResult.found
-        && snapshotMemberResult.symbol.symbolId == snapshotPixelRed.symbolId
-        && snapshotMemberResult.symbol.moduleScope == QStringLiteral("snap_pixel_t");
+        && snapshotMemberResult.symbolRecord.localHandle == snapshotPixelRed.symbolId
+        && snapshotMemberResult.symbolRecord.owner.name == QStringLiteral("snap_pixel_t");
     if (!snapshotMemberOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot struct-member context\n",
@@ -377,8 +377,9 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotModuleOk = snapshotModuleResult.found
         && !snapshotModuleResult.localFile
-        && snapshotModuleResult.symbol.symbolId == snapshotHelperModule.symbolId
-        && snapshotModuleResult.symbol.fileName == QStringLiteral("snapshot_helper.sv")
+        && snapshotModuleResult.symbolRecord.localHandle == snapshotHelperModule.symbolId
+        && QFileInfo(snapshotModuleResult.symbolRecord.location.fileName).fileName()
+            == QStringLiteral("snapshot_helper.sv")
         && snapshotModuleResult.symbolStableKey
             == symbolStableKeyForSymbol(snapshotHelperModule)
         && snapshotModuleResult.missReason == SemanticDefinitionMissReason::None
@@ -450,8 +451,10 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotInterfaceOk = snapshotInterfaceResult.found
         && !snapshotInterfaceResult.localFile
-        && snapshotInterfaceResult.symbol.symbolId == snapshotHelperInterface.symbolId
-        && snapshotInterfaceResult.symbol.symbolType == sym_list::sym_interface;
+        && snapshotInterfaceResult.symbolRecord.localHandle
+            == snapshotHelperInterface.symbolId
+        && snapshotInterfaceResult.symbolRecord.rawCollectorKind
+            == sym_list::sym_interface;
     if (!snapshotInterfaceOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot cross-file interface\n",
@@ -468,9 +471,10 @@ int main(int argc, char** argv) {
         snapshotDefinitionService.resolveDefinition(snapshotInterfaceModportQuery);
     ++g_checks;
     const bool snapshotInterfaceModportOk = snapshotInterfaceModportResult.found
-        && snapshotInterfaceModportResult.symbol.symbolId
+        && snapshotInterfaceModportResult.symbolRecord.localHandle
             == snapshotInterfaceModport.symbolId
-        && snapshotInterfaceModportResult.symbol.moduleScope == QStringLiteral("snap_if");
+        && snapshotInterfaceModportResult.symbolRecord.owner.name
+            == QStringLiteral("snap_if");
     if (!snapshotInterfaceModportOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot interface modport\n",
@@ -486,7 +490,7 @@ int main(int argc, char** argv) {
         snapshotDefinitionService.resolveDefinition(snapshotInterfaceMemberQuery);
     expectBool("DefinitionService resolves snapshot interface member context",
                snapshotInterfaceMemberResult.found
-                   && snapshotInterfaceMemberResult.symbol.symbolId
+                   && snapshotInterfaceMemberResult.symbolRecord.localHandle
                        == snapshotInterfaceModport.symbolId
                    && snapshotInterfaceMemberResult.symbolRecord.isValid()
                    && snapshotInterfaceMemberResult.symbolRecord.stableKey
@@ -519,7 +523,8 @@ int main(int argc, char** argv) {
         snapshotDefinitionService.resolveDefinition(snapshotPackageParamQuery);
     ++g_checks;
     const bool snapshotPackageParamOk = snapshotPackageParamResult.found
-        && snapshotPackageParamResult.symbol.symbolId == snapshotPackageParam.symbolId
+        && snapshotPackageParamResult.symbolRecord.localHandle
+            == snapshotPackageParam.symbolId
         && snapshotPackageParamResult.symbolRecord.isValid()
         && snapshotPackageParamResult.symbolRecord.owner.kind
             == SymbolTaxonomy::SymbolOwnerScope::Package
@@ -540,7 +545,8 @@ int main(int argc, char** argv) {
         snapshotDefinitionService.resolveDefinition(snapshotPackageTypedefQuery);
     ++g_checks;
     const bool snapshotPackageTypedefOk = snapshotPackageTypedefResult.found
-        && snapshotPackageTypedefResult.symbol.symbolId == snapshotPackageTypedef.symbolId;
+        && snapshotPackageTypedefResult.symbolRecord.localHandle
+            == snapshotPackageTypedef.symbolId;
     if (!snapshotPackageTypedefOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot package typedef\n",
@@ -622,8 +628,10 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotLocalModuleOk = snapshotLocalModuleResult.found
         && snapshotLocalModuleResult.localFile
-        && snapshotLocalModuleResult.symbol.symbolId == snapshotLocalDuplicate.symbolId
-        && snapshotLocalModuleResult.symbol.fileName == QStringLiteral("snapshot_only.sv");
+        && snapshotLocalModuleResult.symbolRecord.localHandle
+            == snapshotLocalDuplicate.symbolId
+        && QFileInfo(snapshotLocalModuleResult.symbolRecord.location.fileName).fileName()
+            == QStringLiteral("snapshot_only.sv");
     if (!snapshotLocalModuleOk)
         ++g_fails;
     printf("[%s] DefinitionService prefers snapshot local definition\n",

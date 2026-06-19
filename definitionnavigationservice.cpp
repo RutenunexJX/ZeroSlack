@@ -10,16 +10,12 @@ std::unique_ptr<DefinitionNavigationService> DefinitionNavigationService::instan
 
 namespace {
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
-    if (!record.isValid())
-        return metadata;
-
+    SymbolTaxonomy::SemanticMetadata metadata;
     metadata.declarationKind = record.declarationKind;
     metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
     metadata.visibility = record.visibility;
     metadata.sourceRole = record.sourceRole;
     metadata.rawCollectorKind = record.rawCollectorKind;
@@ -27,52 +23,32 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
     return metadata;
 }
 
-QString symbolNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString symbolNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.name.isEmpty())
         return record.name;
-    return fallback.symbolName;
+    return QStringLiteral("<unnamed>");
 }
 
-QString fileNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString fileNameForRecord(const SemanticSymbolRecord& record)
 {
-    return record.location.fileName.isEmpty()
-        ? fallback.fileName
-        : record.location.fileName;
+    return record.location.fileName;
 }
 
-int startLineForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+int startLineForRecord(const SemanticSymbolRecord& record)
 {
-    return record.location.startLine > 0
-        ? record.location.startLine
-        : fallback.startLine;
+    return record.location.startLine;
 }
 
-int startColumnForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+int startColumnForRecord(const SemanticSymbolRecord& record)
 {
-    return record.location.startColumn > 0
-        ? record.location.startColumn
-        : fallback.startColumn;
+    return record.location.startColumn;
 }
 
-QString ownerDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString ownerDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.owner.name.isEmpty())
         return record.owner.name;
-    const SemanticSymbolRecord fallbackRecord =
-        semanticSymbolRecordForSymbol(fallback);
-    if (!fallbackRecord.owner.name.isEmpty())
-        return fallbackRecord.owner.name;
     if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
         return QStringLiteral("global");
     return QStringLiteral("global");
@@ -165,23 +141,21 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
 
     target.found = true;
     target.localFile = result.localFile;
-    target.symbolRecord = result.symbolRecord.isValid()
-        ? result.symbolRecord
-        : semanticSymbolRecordForSymbol(result.symbol);
+    target.symbolRecord = result.symbolRecord;
     target.symbolStableKey = target.symbolRecord.stableKey.isValid()
         ? target.symbolRecord.stableKey
-        : symbolStableKeyForSymbol(result.symbol);
-    target.symbolName = symbolNameForRecord(target.symbolRecord, result.symbol);
-    target.fileName = fileNameForRecord(target.symbolRecord, result.symbol);
-    target.line = startLineForRecord(target.symbolRecord, result.symbol);
-    target.column = startColumnForRecord(target.symbolRecord, result.symbol);
+        : result.symbolStableKey;
+    target.symbolName = symbolNameForRecord(target.symbolRecord);
+    target.fileName = fileNameForRecord(target.symbolRecord);
+    target.line = startLineForRecord(target.symbolRecord);
+    target.column = startColumnForRecord(target.symbolRecord);
     target.symbolTypeText =
         SymbolTaxonomy::symbolTypeLabel(
-            metadataForRecord(target.symbolRecord, result.symbol));
+            metadataForRecord(target.symbolRecord));
     target.ownerDisplayName =
-        ownerDisplayNameForRecord(target.symbolRecord, result.symbol);
+        ownerDisplayNameForRecord(target.symbolRecord);
     target.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(
-            metadataForRecord(target.symbolRecord, result.symbol).sourceRole);
+            metadataForRecord(target.symbolRecord).sourceRole);
     return target;
 }

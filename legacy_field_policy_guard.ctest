@@ -107,6 +107,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "clockresetdomainservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
     "definitionnavigationservice.h|struct[ \t\r\n]+DefinitionNavigationTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "definitionnavigationservice.cpp|target\\.symbol[ \t\r\n]*="
+    "definitionservice.h|struct[ \t\r\n]+DefinitionResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "definitionservice.cpp|result\\.symbol[ \t\r\n]*="
     "definitionnavigationservice.h|sym_list::sym_type_e[ \t\r\n]+symbolType"
     "definitionnavigationservice.cpp|target\\.symbolType[ \t\r\n]*="
     "fsmgraphservice.h|moduleSymbolId"

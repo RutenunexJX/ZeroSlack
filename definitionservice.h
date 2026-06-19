@@ -18,7 +18,6 @@ struct DefinitionQuery {
 struct DefinitionResult {
     bool found = false;
     bool localFile = false;
-    sym_list::SymbolInfo symbol;
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     int inspectedCandidateCount = 0;

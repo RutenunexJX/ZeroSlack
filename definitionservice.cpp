@@ -21,9 +21,10 @@ DefinitionResult toDefinitionResult(const SemanticDefinitionResult& semanticResu
     DefinitionResult result;
     result.found = semanticResult.found;
     result.localFile = semanticResult.localFile;
-    result.symbol = semanticResult.symbol;
     result.symbolRecord = semanticResult.symbolRecord;
-    result.symbolStableKey = result.symbolRecord.stableKey;
+    result.symbolStableKey = result.symbolRecord.stableKey.isValid()
+        ? result.symbolRecord.stableKey
+        : semanticResult.symbolStableKey;
     result.inspectedCandidateCount = semanticResult.inspectedCandidateCount;
     result.matchingNameCandidateCount = semanticResult.matchingNameCandidateCount;
     result.typeCompatibleCandidateCount = semanticResult.typeCompatibleCandidateCount;
