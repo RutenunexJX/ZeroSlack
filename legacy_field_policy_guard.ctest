@@ -148,6 +148,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefContextRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
     "modulebriefservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
+    "referenceservice.h|struct[ \t\r\n]+ReferenceResult[ \t\r\n]*\\{[^}]*RelationshipResult[ \t\r\n]+relationship"
     "navigationservice.h|struct[ \t\r\n]+NavigationModuleTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "navigationservice.cpp|result\\.symbol[ \t\r\n]*="
     "navigationcommandcoordinator.h|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"

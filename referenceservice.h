@@ -42,11 +42,12 @@ struct ReferencePanelQueryOptions {
 };
 
 struct ReferenceResult {
-    RelationshipResult relationship;
     SemanticSymbolRecord referencingSymbolRecord;
     SemanticSymbolRecord referencedSymbolRecord;
     SymbolStableKey referencingStableKey;
     SymbolStableKey referencedStableKey;
+    SymbolRelationshipEngine::RelationType relationshipType =
+        SymbolRelationshipEngine::REFERENCES;
     QString symbolDisplayName;
     QString fileDisplayName;
     QString lineDisplayName;

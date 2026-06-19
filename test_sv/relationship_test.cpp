@@ -1471,8 +1471,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool snapshotReferenceFoundTop = false;
     for (const ReferenceResult& reference : snapshotReferenceResults) {
         snapshotReferenceFoundTop = snapshotReferenceFoundTop
-            || (reference.relationship.relationship.fromId == topId
-                && reference.relationship.relationship.toId == stageId
+            || (reference.relationshipType == SymbolRelationshipEngine::INSTANTIATES
                 && reference.referencingSymbolRecord.isValid()
                 && reference.referencingSymbolRecord.localHandle == topId
                 && reference.referencingSymbolRecord.stableKey == topStableKey
@@ -3356,7 +3355,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         referenceFoundTopInstance = referenceFoundTopInstance
             || (ref.referencingSymbolRecord.localHandle == topId
                 && ref.referencedSymbolRecord.localHandle == stageId
-                && ref.relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES);
+                && ref.relationshipType == SymbolRelationshipEngine::INSTANTIATES);
     }
     expectBool("reference service finds stage instantiation",
                referenceFoundTopInstance, true);
@@ -3523,7 +3522,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         referenceFoundReqRead = referenceFoundReqRead
             || (ref.referencingSymbolRecord.localHandle == topId
                 && ref.referencedSymbolRecord.localHandle == reqValidId
-                && ref.relationship.relationship.type == SymbolRelationshipEngine::READS_FROM);
+                && ref.relationshipType == SymbolRelationshipEngine::READS_FROM);
     }
     expectBool("reference service finds condition read",
                referenceFoundReqRead, true);
@@ -3634,7 +3633,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         referenceFoundRspWrite = referenceFoundRspWrite
             || (ref.referencingSymbolRecord.localHandle == stageDataId
                 && ref.referencedSymbolRecord.localHandle == rspDataId
-                && ref.relationship.relationship.type == SymbolRelationshipEngine::ASSIGNS_TO);
+                && ref.relationshipType == SymbolRelationshipEngine::ASSIGNS_TO);
     }
     expectBool("reference service finds assignment write",
                referenceFoundRspWrite, true);

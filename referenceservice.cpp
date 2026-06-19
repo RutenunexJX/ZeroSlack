@@ -182,9 +182,9 @@ QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& qu
     }
     std::sort(result.begin(), result.end(),
               [](const ReferenceResult& lhs, const ReferenceResult& rhs) {
-                  if (lhs.relationship.relationship.type != rhs.relationship.relationship.type) {
-                      return static_cast<int>(lhs.relationship.relationship.type)
-                          < static_cast<int>(rhs.relationship.relationship.type);
+                  if (lhs.relationshipType != rhs.relationshipType) {
+                      return static_cast<int>(lhs.relationshipType)
+                          < static_cast<int>(rhs.relationshipType);
                   }
                   return referenceLocationLess(lhs, rhs);
               });
@@ -220,7 +220,7 @@ ReferenceReport ReferenceService::findReferenceReport(const ReferenceQuery& quer
             ? referenceFile
             : normalizedFile;
         const SymbolRelationshipEngine::RelationType type =
-            reference.relationship.relationship.type;
+            reference.relationshipType;
         report.fileCounts[fileKey]++;
         report.typeCounts[type]++;
         report.fileTypeCounts[fileKey][type]++;
@@ -350,9 +350,9 @@ ReferenceResult ReferenceService::toReferenceResult(
     const RelationshipResult& relationship) const
 {
     ReferenceResult result;
-    result.relationship = relationship;
     const sym_list::SymbolInfo referencingSymbol = relationship.fromSymbol;
     const sym_list::SymbolInfo referencedSymbol = relationship.toSymbol;
+    result.relationshipType = relationship.relationship.type;
     result.referencingSymbolRecord = relationship.fromSymbolRecord.isValid()
         ? relationship.fromSymbolRecord
         : semanticSymbolRecordForSymbol(referencingSymbol);
@@ -374,7 +374,7 @@ ReferenceResult ReferenceService::toReferenceResult(
     result.lineDisplayName = referenceLineDisplayName(
         referenceRecordLine(result.referencingSymbolRecord, referencingSymbol));
     result.relationshipTypeDisplayName =
-        referenceTypeDisplayName(relationship.relationship.type);
+        referenceTypeDisplayName(result.relationshipType);
     return result;
 }
 
