@@ -30,12 +30,17 @@ QList<SymbolRelationshipEngine::RelationType> snapshotRelationshipTypes()
     };
 }
 
+int snapshotLocalHandleForSymbol(const sym_list::SymbolInfo& entry)
+{
+    return entry.symbolId;
+}
+
 sym_list::SymbolInfo snapshotSymbolByLocalHandle(
     const QList<sym_list::SymbolInfo>& symbols,
     int localHandle)
 {
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolId == localHandle)
+        if (snapshotLocalHandleForSymbol(symbol) == localHandle)
             return symbol;
     }
 
@@ -72,7 +77,7 @@ int snapshotLocalHandleByStableKey(
 
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (symbolStableKeyForSymbol(symbol) == key)
-            return symbol.symbolId;
+            return snapshotLocalHandleForSymbol(symbol);
     }
     return -1;
 }
@@ -157,13 +162,16 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
     if (engine) {
         QSet<QString> seen;
         for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (symbol.symbolId < 0)
+            const int symbolHandle = snapshotLocalHandleForSymbol(symbol);
+            if (symbolHandle < 0)
                 continue;
             for (SymbolRelationshipEngine::RelationType type : snapshotRelationshipTypes()) {
-                const QList<int> related = engine->getRelatedSymbols(symbol.symbolId, type, true);
+                const QList<int> related = engine->getRelatedSymbols(symbolHandle,
+                                                                      type,
+                                                                      true);
                 for (int relatedHandle : related) {
                     SemanticRelationship relationship;
-                    relationship.fromId = symbol.symbolId;
+                    relationship.fromId = symbolHandle;
                     relationship.toId = relatedHandle;
                     relationship.type = type;
                     const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
