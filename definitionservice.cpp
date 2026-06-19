@@ -81,25 +81,9 @@ DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& que
         semanticIndex()->resolveDefinition(toSemanticDefinitionQuery(resolvedQuery)));
 }
 
-QList<sym_list::SymbolInfo> DefinitionService::findDefinitions(const DefinitionQuery& query) const
-{
-    const DefinitionQuery resolvedQuery = withResolvedMemberContext(query);
-    return semanticIndex()->findDefinitionSymbols(toSemanticDefinitionQuery(resolvedQuery));
-}
-
 bool DefinitionService::canResolveDefinition(const DefinitionQuery& query) const
 {
     return resolveDefinition(query).found;
-}
-
-bool DefinitionService::isDefinition(const sym_list::SymbolInfo& symbol,
-                                     const QString& searchWord) const
-{
-    if (symbol.symbolName != searchWord)
-        return false;
-
-    return SymbolTaxonomy::isDefinitionCandidate(
-        SymbolTaxonomy::semanticMetadata(symbol));
 }
 
 SemanticIndex* DefinitionService::semanticIndex() const

@@ -39,9 +39,7 @@ public:
     void setSemanticIndex(SemanticIndex* semanticIndex);
 
     DefinitionResult resolveDefinition(const DefinitionQuery& query) const;
-    QList<sym_list::SymbolInfo> findDefinitions(const DefinitionQuery& query) const;
     bool canResolveDefinition(const DefinitionQuery& query) const;
-    bool isDefinition(const sym_list::SymbolInfo& symbol, const QString& searchWord) const;
 
 private:
     SemanticIndex* index = nullptr;

@@ -504,15 +504,17 @@ int main(int argc, char** argv) {
     DefinitionQuery snapshotPackageQuery;
     snapshotPackageQuery.symbolName = QStringLiteral("snap_pkg");
     snapshotPackageQuery.fileName = QStringLiteral("snapshot_only.sv");
-    const QList<sym_list::SymbolInfo> snapshotPackageDefinitions =
-        snapshotDefinitionService.findDefinitions(snapshotPackageQuery);
+    const DefinitionResult snapshotPackageDefinition =
+        snapshotDefinitionService.resolveDefinition(snapshotPackageQuery);
     ++g_checks;
-    const bool snapshotPackageOk = snapshotPackageDefinitions.size() == 1
-        && snapshotPackageDefinitions.first().symbolId == snapshotHelperPackage.symbolId
-        && snapshotPackageDefinitions.first().symbolType == sym_list::sym_package;
+    const bool snapshotPackageOk = snapshotPackageDefinition.found
+        && snapshotPackageDefinition.symbolRecord.localHandle
+            == snapshotHelperPackage.symbolId
+        && snapshotPackageDefinition.symbolRecord.declarationKind
+            == SymbolTaxonomy::DeclarationKind::Package;
     if (!snapshotPackageOk)
         ++g_fails;
-    printf("[%s] DefinitionService findDefinitions resolves snapshot package\n",
+    printf("[%s] DefinitionService resolves snapshot package\n",
            snapshotPackageOk ? "PASS" : "FAIL");
 
     DefinitionQuery snapshotPackageParamQuery;
@@ -637,15 +639,16 @@ int main(int argc, char** argv) {
     printf("[%s] DefinitionService prefers snapshot local definition\n",
            snapshotLocalModuleOk ? "PASS" : "FAIL");
 
-    const QList<sym_list::SymbolInfo> snapshotLocalDefinitions =
-        snapshotDefinitionService.findDefinitions(snapshotLocalModuleQuery);
+    const DefinitionResult snapshotLocalDefinition =
+        snapshotDefinitionService.resolveDefinition(snapshotLocalModuleQuery);
     ++g_checks;
-    const bool snapshotFindDefinitionsOk = snapshotLocalDefinitions.size() == 1
-        && snapshotLocalDefinitions.first().symbolId == snapshotLocalDuplicate.symbolId;
-    if (!snapshotFindDefinitionsOk)
+    const bool snapshotResolveDefinitionOk = snapshotLocalDefinition.found
+        && snapshotLocalDefinition.symbolRecord.localHandle
+            == snapshotLocalDuplicate.symbolId;
+    if (!snapshotResolveDefinitionOk)
         ++g_fails;
-    printf("[%s] DefinitionService findDefinitions keeps snapshot local result\n",
-           snapshotFindDefinitionsOk ? "PASS" : "FAIL");
+    printf("[%s] DefinitionService keeps snapshot local result\n",
+           snapshotResolveDefinitionOk ? "PASS" : "FAIL");
 
     SemanticQueryContext metadataScopedContext;
     metadataScopedContext.moduleName = QStringLiteral("snap_top");
