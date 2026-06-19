@@ -29,36 +29,19 @@ QStringList normalizedReferenceFileNames(const QStringList& fileNames)
     return normalized;
 }
 
-QString referenceRecordFileName(const SemanticSymbolRecord& record,
-                                const sym_list::SymbolInfo& fallbackSymbol)
+QString referenceRecordFileName(const SemanticSymbolRecord& record)
 {
-    return record.location.fileName.isEmpty()
-        ? fallbackSymbol.fileName
-        : record.location.fileName;
+    return record.location.fileName;
 }
 
-int referenceRecordLine(const SemanticSymbolRecord& record,
-                        const sym_list::SymbolInfo& fallbackSymbol)
+int referenceRecordLine(const SemanticSymbolRecord& record)
 {
-    return record.location.startLine > 0
-        ? record.location.startLine
-        : fallbackSymbol.startLine;
+    return record.location.startLine;
 }
 
-int referenceRecordColumn(const SemanticSymbolRecord& record,
-                          const sym_list::SymbolInfo& fallbackSymbol)
+QString referenceRecordName(const SemanticSymbolRecord& record)
 {
-    return record.location.startColumn > 0
-        ? record.location.startColumn
-        : fallbackSymbol.startColumn;
-}
-
-QString referenceRecordName(const SemanticSymbolRecord& record,
-                            const sym_list::SymbolInfo& fallbackSymbol)
-{
-    return record.name.isEmpty()
-        ? fallbackSymbol.symbolName
-        : record.name;
+    return record.name.isEmpty() ? QStringLiteral("<unnamed>") : record.name;
 }
 
 QString reportSubjectDisplayName(const SemanticSymbolRecord& record,
@@ -350,15 +333,9 @@ ReferenceResult ReferenceService::toReferenceResult(
     const RelationshipResult& relationship) const
 {
     ReferenceResult result;
-    const sym_list::SymbolInfo referencingSymbol = relationship.fromSymbol;
-    const sym_list::SymbolInfo referencedSymbol = relationship.toSymbol;
     result.relationshipType = relationship.relationship.type;
-    result.referencingSymbolRecord = relationship.fromSymbolRecord.isValid()
-        ? relationship.fromSymbolRecord
-        : semanticSymbolRecordForSymbol(referencingSymbol);
-    result.referencedSymbolRecord = relationship.toSymbolRecord.isValid()
-        ? relationship.toSymbolRecord
-        : semanticSymbolRecordForSymbol(referencedSymbol);
+    result.referencingSymbolRecord = relationship.fromSymbolRecord;
+    result.referencedSymbolRecord = relationship.toSymbolRecord;
     result.referencingStableKey = result.referencingSymbolRecord.stableKey.isValid()
         ? result.referencingSymbolRecord.stableKey
         : relationship.fromStableKey;
@@ -366,13 +343,12 @@ ReferenceResult ReferenceService::toReferenceResult(
         ? result.referencedSymbolRecord.stableKey
         : relationship.toStableKey;
     const QString sourceFile =
-        referenceRecordFileName(result.referencingSymbolRecord,
-                                referencingSymbol);
+        referenceRecordFileName(result.referencingSymbolRecord);
     result.symbolDisplayName =
-        referenceRecordName(result.referencingSymbolRecord, referencingSymbol);
+        referenceRecordName(result.referencingSymbolRecord);
     result.fileDisplayName = referenceFileDisplayName(sourceFile);
     result.lineDisplayName = referenceLineDisplayName(
-        referenceRecordLine(result.referencingSymbolRecord, referencingSymbol));
+        referenceRecordLine(result.referencingSymbolRecord));
     result.relationshipTypeDisplayName =
         referenceTypeDisplayName(result.relationshipType);
     return result;
