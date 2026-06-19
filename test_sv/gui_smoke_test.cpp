@@ -2137,7 +2137,8 @@ int main(int argc, char** argv)
     expectBool("symbol fixture analysis remains complete",
                waitUntil([&]() {
                    const auto snapshot = SemanticIndex::getInstance()->snapshot();
-                   return snapshot && !snapshot->getSymbols(symbolFixturePath).isEmpty();
+                   return snapshot
+                       && !snapshot->getSymbolRecords(symbolFixturePath).isEmpty();
                }, 10000),
                true);
 

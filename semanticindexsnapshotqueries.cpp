@@ -15,49 +15,18 @@ QString normalizedSnapshotQueryFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-sym_list::SymbolInfo missingSnapshotSymbol()
-{
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    return missing;
-}
-
-QString snapshotRecordDisplayName(const SemanticSymbolRecord& record,
-                                  const sym_list::SymbolInfo& fallback)
-{
-    if (!record.name.isEmpty())
-        return record.name;
-    return fallback.symbolName;
-}
-
-QString snapshotRecordOwnerName(const SemanticSymbolRecord& record,
-                                const sym_list::SymbolInfo& fallback)
-{
-    if (!record.owner.name.isEmpty())
-        return record.owner.name;
-    return semanticSymbolRecordForSymbol(fallback).owner.name;
-}
-
-SymbolStableKey stableKeyFromSnapshotSymbol(const sym_list::SymbolInfo& symbol)
-{
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    return record.stableKey.isValid()
-        ? record.stableKey
-        : symbolStableKeyForSymbol(symbol);
-}
-
-sym_list::SymbolInfo snapshotSymbolByLocalHandle(
+SemanticSymbolRecord snapshotRecordByLocalHandle(
     const SemanticIndexSnapshot& snapshot,
-    int symbolId)
+    int localHandle)
 {
-    if (symbolId >= 0) {
-        for (const sym_list::SymbolInfo& symbol : snapshot.getSymbols()) {
-            if (symbol.symbolId == symbolId)
-                return symbol;
+    if (localHandle >= 0) {
+        for (const SemanticSymbolRecord& record : snapshot.getSymbolRecords()) {
+            if (record.localHandle == localHandle)
+                return record;
         }
     }
 
-    return missingSnapshotSymbol();
+    return {};
 }
 
 SymbolStableKey relationshipEndpointStableKey(
@@ -71,11 +40,12 @@ SymbolStableKey relationshipEndpointStableKey(
     if (stableKey.isValid())
         return stableKey;
 
-    return stableKeyFromSnapshotSymbol(
-        snapshotSymbolByLocalHandle(snapshot,
+    const SemanticSymbolRecord record =
+        snapshotRecordByLocalHandle(snapshot,
                                     fromEndpoint
                                         ? relationship.fromId
-                                        : relationship.toId));
+                                        : relationship.toId);
+    return record.stableKey;
 }
 }
 
@@ -98,7 +68,18 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbols(const QString& fil
 QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
     const QString& fileName) const
 {
-    return semanticSymbolRecordsForSymbols(getSymbols(fileName));
+    if (fileName.isEmpty())
+        return semanticSymbolRecordsForSymbols(m_symbols);
+
+    QList<SemanticSymbolRecord> result;
+    const QString normalizedTarget = normalizedSnapshotQueryFileName(fileName);
+    for (const sym_list::SymbolInfo& symbol : m_symbols) {
+        if (symbol.fileName == fileName
+            || normalizedSnapshotQueryFileName(symbol.fileName) == normalizedTarget) {
+            result.append(semanticSymbolRecordForSymbol(symbol));
+        }
+    }
+    return result;
 }
 
 SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
@@ -176,32 +157,32 @@ QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
     if (fileName.isEmpty() || cursorLine < 0)
         return result;
 
-    const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(fileName);
+    const QList<SemanticSymbolRecord> fileRecords = getSymbolRecords(fileName);
     QString containingModule;
     int containingModuleStart = -1;
-    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : fileRecords) {
         if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
             continue;
-        if (symbol.startLine <= cursorLine
-            && (symbol.endLine <= 0 || symbol.endLine >= cursorLine)
-            && symbol.startLine > containingModuleStart) {
-            containingModule = snapshotRecordDisplayName(record, symbol);
-            containingModuleStart = symbol.startLine;
+        if (record.location.startLine <= cursorLine
+            && (record.location.endLine <= 0
+                || record.location.endLine >= cursorLine)
+            && record.location.startLine > containingModuleStart) {
+            containingModule = record.name;
+            containingModuleStart = record.location.startLine;
         }
     }
 
     QSet<QString> seen;
-    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-        const QString displayName = snapshotRecordDisplayName(record, symbol);
-        const QString ownerName = snapshotRecordOwnerName(record, symbol);
+    for (const SemanticSymbolRecord& record : fileRecords) {
+        const QString displayName = record.name;
+        const QString ownerName = record.owner.name;
         bool inScope = ownerName.isEmpty();
         if (!containingModule.isEmpty()) {
             inScope = inScope
                 || ownerName == containingModule
-                || (symbol.startLine <= cursorLine
-                    && (symbol.endLine <= 0 || symbol.endLine >= cursorLine));
+                || (record.location.startLine <= cursorLine
+                    && (record.location.endLine <= 0
+                        || record.location.endLine >= cursorLine));
         }
         if (!inScope || displayName.isEmpty() || seen.contains(displayName))
             continue;

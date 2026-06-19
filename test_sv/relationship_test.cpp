@@ -344,7 +344,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QList<SemanticSymbolRecord> facadeStageDefs =
         index.findDefinitionRecords(QStringLiteral("rel_stage"), queryContext);
     expectBool("semantic facade returns top symbols",
-               index.getSymbols(topPath).size() == topSymbols.size(), true);
+               index.getSymbolRecords(topPath).size() == topSymbols.size(), true);
     expectBool("semantic facade finds cross-file module",
                !facadeStageDefs.isEmpty()
                    && facadeStageDefs.first().localHandle == stageId,
@@ -799,7 +799,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QVector<RelationshipToAdd> snapshotBackedRels =
         snapshotBuilder.computeRelationships(topPath,
                                              contents.value(topPath),
-                                             symbolOnlySnapshot->getSymbols(topPath),
+                                             semanticSymbolInfoCarriersForRecords(
+                                                 symbolOnlySnapshot->getSymbolRecords(topPath)),
                                              symbolOnlySnapshot.get());
     expectBool("snapshot builder resolves cross-file stage",
                hasRel(snapshotBackedRels, topId, stageId, SymbolRelationshipEngine::INSTANTIATES),
@@ -829,7 +830,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         SemanticIndexSnapshot::fromSymbolDatabase(db));
     snapshotIndex.setSnapshot(snapshot);
     expectBool("semantic snapshot returns top symbols",
-               snapshotIndex.getSymbols(topPath).size() == topSymbols.size(), true);
+               snapshotIndex.getSymbolRecords(topPath).size() == topSymbols.size(), true);
     const QList<SemanticSymbolRecord> snapshotTopRecords =
         snapshotIndex.getSymbolRecords(topPath);
     const SemanticSymbolRecord snapshotTopRecord =
@@ -1019,7 +1020,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot navigation outline exposes row metadata",
                snapshotOutlineHasRowMetadata,
                true);
-    QList<sym_list::SymbolInfo> metadataOutlineSymbols = snapshot->getSymbols();
+    QList<sym_list::SymbolInfo> metadataOutlineSymbols =
+        semanticSymbolInfoCarriersForRecords(snapshot->getSymbolRecords());
     sym_list::SymbolInfo metadataOutlineModule;
     metadataOutlineModule.fileName = topPath;
     metadataOutlineModule.symbolName = QStringLiteral("metadata_rel_top");
@@ -2033,7 +2035,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const auto capturedSnapshot =
         captureIndex.captureSnapshotPreservingDiagnostics();
     captureIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
-        capturedSnapshot->getSymbols(),
+        semanticSymbolInfoCarriersForRecords(capturedSnapshot->getSymbolRecords()),
         capturedSnapshot->relationships(),
         QList<SemanticDiagnostic>{errorDiagnostic},
         capturedSnapshot->fileContents()));
@@ -2042,7 +2044,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic index capture preserves diagnostics",
               recapturedSnapshot->diagnostics().size(), 1);
     captureIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
-        recapturedSnapshot->getSymbols(),
+        semanticSymbolInfoCarriersForRecords(recapturedSnapshot->getSymbolRecords()),
         recapturedSnapshot->relationships(),
         QList<SemanticDiagnostic>{warningDiagnostic, errorDiagnostic},
         recapturedSnapshot->fileContents()));
@@ -2284,14 +2286,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool dirtySnapshotHasOpen = false;
     bool dirtySnapshotHasDisk = false;
     if (const auto snapshot = SemanticIndex::getInstance()->snapshot()) {
-        for (const sym_list::SymbolInfo& symbol :
-             snapshot->getSymbols(dirtyWorkspaceFilePath)) {
+        for (const SemanticSymbolRecord& record :
+             snapshot->getSymbolRecords(dirtyWorkspaceFilePath)) {
             dirtySnapshotHasOpen = dirtySnapshotHasOpen
-                || symbol.symbolName == QStringLiteral("dirty_open")
-                || symbol.symbolName == QStringLiteral("dirty_signal");
+                || record.name == QStringLiteral("dirty_open")
+                || record.name == QStringLiteral("dirty_signal");
             dirtySnapshotHasDisk = dirtySnapshotHasDisk
-                || symbol.symbolName == QStringLiteral("dirty_disk")
-                || symbol.symbolName == QStringLiteral("disk_signal");
+                || record.name == QStringLiteral("dirty_disk")
+                || record.name == QStringLiteral("disk_signal");
         }
     }
     expectBool("workspace skips dirty open document publication",
@@ -2352,14 +2354,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool dirtyExternalSnapshotHasOpen = false;
     bool dirtyExternalSnapshotHasDisk = false;
     if (const auto snapshot = SemanticIndex::getInstance()->snapshot()) {
-        for (const sym_list::SymbolInfo& symbol :
-             snapshot->getSymbols(dirtyExternalPath)) {
+        for (const SemanticSymbolRecord& record :
+             snapshot->getSymbolRecords(dirtyExternalPath)) {
             dirtyExternalSnapshotHasOpen = dirtyExternalSnapshotHasOpen
-                || symbol.symbolName == QStringLiteral("external_open")
-                || symbol.symbolName == QStringLiteral("external_dirty_signal");
+                || record.name == QStringLiteral("external_open")
+                || record.name == QStringLiteral("external_dirty_signal");
             dirtyExternalSnapshotHasDisk = dirtyExternalSnapshotHasDisk
-                || symbol.symbolName == QStringLiteral("external_disk")
-                || symbol.symbolName == QStringLiteral("external_disk_signal");
+                || record.name == QStringLiteral("external_disk")
+                || record.name == QStringLiteral("external_disk_signal");
         }
     }
     expectBool("external change skips dirty open document analysis",
@@ -2580,7 +2582,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                      [&](const QString& fileName, int symbolsFound) {
                          if (fileName == staleFilePath && symbolsFound > 0) {
                              const auto snapshot = SemanticIndex::getInstance()->snapshot();
-                             if (snapshot && !snapshot->getSymbols(staleFilePath).isEmpty())
+                             if (snapshot && !snapshot->getSymbolRecords(staleFilePath).isEmpty())
                                  staleFileLoop.quit();
                          }
                      });
@@ -2590,15 +2592,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool staleSnapshotHasNew = false;
     bool staleSnapshotHasOld = false;
     if (const auto snapshot = SemanticIndex::getInstance()->snapshot()) {
-        const QList<sym_list::SymbolInfo> symbols =
-            snapshot->getSymbols(staleFilePath);
-        for (const sym_list::SymbolInfo& symbol : symbols) {
+        const QList<SemanticSymbolRecord> records =
+            snapshot->getSymbolRecords(staleFilePath);
+        for (const SemanticSymbolRecord& record : records) {
             staleSnapshotHasNew = staleSnapshotHasNew
-                || symbol.symbolName == QStringLiteral("stale_new")
-                || symbol.symbolName == QStringLiteral("new_signal");
+                || record.name == QStringLiteral("stale_new")
+                || record.name == QStringLiteral("new_signal");
             staleSnapshotHasOld = staleSnapshotHasOld
-                || symbol.symbolName.startsWith(QStringLiteral("stale_old_"))
-                || symbol.symbolName.startsWith(QStringLiteral("old_signal_"));
+                || record.name.startsWith(QStringLiteral("stale_old_"))
+                || record.name.startsWith(QStringLiteral("old_signal_"));
         }
     }
     expectBool("stale async file analysis keeps latest symbols",
@@ -3890,23 +3892,23 @@ static void runModuleBriefServiceFixture()
     expectBool("semantic metadata classifies design source",
                portMetadata.sourceRole == SymbolTaxonomy::SourceRole::DesignSource,
                true);
-    const QList<sym_list::SymbolInfo> snapshotSymbols =
-        index.snapshot()->getSymbols(fileName);
-    sym_list::SymbolInfo snapshotPort;
-    for (const sym_list::SymbolInfo& symbol : snapshotSymbols) {
-        if (symbol.symbolName == QStringLiteral("clk")
-            && symbol.symbolType == sym_list::sym_port_input) {
-            snapshotPort = symbol;
+    const QList<SemanticSymbolRecord> snapshotRecords =
+        index.snapshot()->getSymbolRecords(fileName);
+    SemanticSymbolRecord snapshotPort;
+    for (const SemanticSymbolRecord& record : snapshotRecords) {
+        if (record.name == QStringLiteral("clk")
+            && record.rawCollectorKind == sym_list::sym_port_input) {
+            snapshotPort = record;
             break;
         }
     }
     expectBool("snapshot attaches port semantic metadata",
-               snapshotPort.hasSemanticMetadata
-                   && snapshotPort.semanticDeclarationKind
+               snapshotPort.isValid()
+                   && snapshotPort.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Port
-                   && snapshotPort.semanticUsageRole
+                   && snapshotPort.usageRole
                        == SymbolTaxonomy::SymbolUsageRole::Declaration
-                   && snapshotPort.semanticSourceRole
+                   && snapshotPort.sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource
                    && snapshotPort.rawCollectorKind == sym_list::sym_port_input,
                true);
@@ -3941,20 +3943,20 @@ static void runModuleBriefServiceFixture()
                                                 2,
                                                 QStringLiteral("brief_pkg")));
     const SemanticIndexSnapshot packageSnapshot(packageSymbols);
-    const QList<sym_list::SymbolInfo> annotatedPackageSymbols =
-        packageSnapshot.getSymbols(fileName);
-    sym_list::SymbolInfo packageParameter;
-    for (const sym_list::SymbolInfo& symbol : annotatedPackageSymbols) {
-        if (symbol.symbolName == QStringLiteral("WIDTH")) {
-            packageParameter = symbol;
+    const QList<SemanticSymbolRecord> annotatedPackageRecords =
+        packageSnapshot.getSymbolRecords(fileName);
+    SemanticSymbolRecord packageParameter;
+    for (const SemanticSymbolRecord& record : annotatedPackageRecords) {
+        if (record.name == QStringLiteral("WIDTH")) {
+            packageParameter = record;
             break;
         }
     }
     expectBool("snapshot attaches package visibility metadata",
-               packageParameter.hasSemanticMetadata
-                   && packageParameter.semanticOwnerScope
+               packageParameter.isValid()
+                   && packageParameter.owner.kind
                        == SymbolTaxonomy::SymbolOwnerScope::Package
-                   && packageParameter.semanticVisibility
+                   && packageParameter.visibility
                        == SymbolTaxonomy::SymbolVisibility::PackageVisible,
                true);
     expectInt("module brief port count", report.portRows.size(), 4);

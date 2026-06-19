@@ -119,7 +119,45 @@ QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) c
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
     const QString& fileName) const
 {
-    return semanticSymbolRecordsForSymbols(getSymbols(fileName));
+    sym_list* db = symbolDatabase();
+    if (m_snapshot) {
+        QList<SemanticSymbolRecord> records =
+            m_snapshot->getSymbolRecords(fileName);
+        if (!fileName.isEmpty()) {
+            if (!records.isEmpty())
+                return records;
+        } else {
+            QSet<QString> snapshotFiles;
+            for (const SemanticSymbolRecord& record : std::as_const(records)) {
+                const QString normalized =
+                    normalizedStoreFileName(record.location.fileName);
+                if (!normalized.isEmpty())
+                    snapshotFiles.insert(normalized);
+            }
+            for (const sym_list::SymbolInfo& symbol : db->getAllSymbols()) {
+                const QString normalized = normalizedStoreFileName(symbol.fileName);
+                if (!normalized.isEmpty() && !snapshotFiles.contains(normalized))
+                    records.append(semanticSymbolRecordForSymbol(symbol));
+            }
+            return records;
+        }
+    }
+
+    if (fileName.isEmpty())
+        return semanticSymbolRecordsForSymbols(db->getAllSymbols());
+
+    QList<sym_list::SymbolInfo> symbols = db->findSymbolsByFileName(fileName);
+    if (!symbols.isEmpty())
+        return semanticSymbolRecordsForSymbols(symbols);
+
+    QList<SemanticSymbolRecord> records;
+    const QString normalizedTarget = normalizedStoreFileName(fileName);
+    const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        if (normalizedStoreFileName(symbol.fileName) == normalizedTarget)
+            records.append(semanticSymbolRecordForSymbol(symbol));
+    }
+    return records;
 }
 
 sym_list::SymbolInfo semanticSymbolInfoCarrierForRecord(
@@ -154,6 +192,16 @@ sym_list::SymbolInfo semanticSymbolInfoCarrierForRecord(
     return symbol;
 }
 
+QList<sym_list::SymbolInfo> semanticSymbolInfoCarriersForRecords(
+    const QList<SemanticSymbolRecord>& records)
+{
+    QList<sym_list::SymbolInfo> symbols;
+    symbols.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records)
+        symbols.append(semanticSymbolInfoCarrierForRecord(record));
+    return symbols;
+}
+
 SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {
@@ -167,8 +215,7 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
             return record;
     }
 
-    for (const sym_list::SymbolInfo& symbol : getSymbols()) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : getSymbolRecords()) {
         if (record.stableKey == key)
             return record;
     }
