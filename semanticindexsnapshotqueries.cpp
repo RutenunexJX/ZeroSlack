@@ -133,7 +133,15 @@ sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolByStableKey(
 SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {
-    return semanticSymbolRecordForSymbol(getSymbolByStableKey(key));
+    if (!key.isValid())
+        return {};
+
+    for (const sym_list::SymbolInfo& symbol : m_symbols) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (record.stableKey == key)
+            return record;
+    }
+    return {};
 }
 
 QList<sym_list::SymbolInfo> SemanticIndexSnapshot::findDefinitions(
@@ -161,15 +169,15 @@ SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
     rebound.toStableKey =
         relationshipEndpointStableKey(*this, rebound, false);
 
-    const sym_list::SymbolInfo fromSymbol =
-        getSymbolByStableKey(rebound.fromStableKey);
-    if (fromSymbol.symbolId >= 0)
-        rebound.fromId = fromSymbol.symbolId;
+    const SemanticSymbolRecord fromRecord =
+        getSymbolRecordByStableKey(rebound.fromStableKey);
+    if (fromRecord.localHandle >= 0)
+        rebound.fromId = fromRecord.localHandle;
 
-    const sym_list::SymbolInfo toSymbol =
-        getSymbolByStableKey(rebound.toStableKey);
-    if (toSymbol.symbolId >= 0)
-        rebound.toId = toSymbol.symbolId;
+    const SemanticSymbolRecord toRecord =
+        getSymbolRecordByStableKey(rebound.toStableKey);
+    if (toRecord.localHandle >= 0)
+        rebound.toId = toRecord.localHandle;
 
     return rebound;
 }

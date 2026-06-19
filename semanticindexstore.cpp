@@ -133,7 +133,22 @@ QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e
 SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {
-    return semanticSymbolRecordForSymbol(getSymbolByStableKey(key));
+    if (!key.isValid())
+        return {};
+
+    if (m_snapshot) {
+        const SemanticSymbolRecord record =
+            m_snapshot->getSymbolRecordByStableKey(key);
+        if (record.isValid())
+            return record;
+    }
+
+    for (const sym_list::SymbolInfo& symbol : getSymbols()) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (record.stableKey == key)
+            return record;
+    }
+    return {};
 }
 
 QString SemanticIndex::getCachedFileContent(const QString& fileName) const
