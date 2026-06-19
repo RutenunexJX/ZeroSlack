@@ -74,7 +74,6 @@ struct FsmGraph {
     SymbolStableKey nextStateSignalStableKey;
     RtlInsightCodeLink stateRegisterCodeLink;
     RtlInsightCodeLink nextStateSignalCodeLink;
-    QList<sym_list::SymbolInfo> states;
     QList<FsmTransition> transitions;
     QList<FsmStateRow> stateRows;
     QList<FsmTransitionRow> transitionRows;
@@ -182,7 +181,8 @@ private:
     static void fillDisplayMetadata(FsmGraph& graph,
                                     const sym_list::SymbolInfo& moduleSymbol,
                                     const sym_list::SymbolInfo& stateRegister,
-                                    const sym_list::SymbolInfo& nextStateSignal);
+                                    const sym_list::SymbolInfo& nextStateSignal,
+                                    const QList<sym_list::SymbolInfo>& states);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
     static void sortTransitions(QList<FsmTransition>& transitions);

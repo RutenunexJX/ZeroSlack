@@ -156,14 +156,15 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
         FsmGraph graph;
         const sym_list::SymbolInfo nextState =
             nextStateSignal(moduleSymbols, stateRegister);
-        graph.states = stateValues(moduleSymbols, allSymbols, stateRegister);
+        const QList<sym_list::SymbolInfo> states =
+            stateValues(moduleSymbols, allSymbols, stateRegister);
         graph.transitions = parseTransitions(moduleSymbol,
                                              stateRegister,
                                              nextState,
-                                             graph.states);
-        if (graph.states.isEmpty() && graph.transitions.isEmpty())
+                                             states);
+        if (states.isEmpty() && graph.transitions.isEmpty())
             continue;
-        fillDisplayMetadata(graph, moduleSymbol, stateRegister, nextState);
+        fillDisplayMetadata(graph, moduleSymbol, stateRegister, nextState, states);
         report.graphs.append(graph);
     }
 
@@ -796,7 +797,8 @@ void FsmGraphService::fillDisplayMetadata(
     FsmGraph& graph,
     const sym_list::SymbolInfo& moduleSymbol,
     const sym_list::SymbolInfo& stateRegister,
-    const sym_list::SymbolInfo& nextStateSignal)
+    const sym_list::SymbolInfo& nextStateSignal,
+    const QList<sym_list::SymbolInfo>& states)
 {
     graph.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
     graph.stateRegisterRecord =
@@ -820,7 +822,7 @@ void FsmGraphService::fillDisplayMetadata(
         displayNameForRecord(graph.moduleSymbolRecord,
                              moduleSymbol,
                              QStringLiteral("<unknown>"));
-    graph.stateCount = graph.states.size();
+    graph.stateCount = states.size();
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDisplayName =
         displayNameForRecord(graph.stateRegisterRecord,
@@ -849,13 +851,13 @@ void FsmGraphService::fillDisplayMetadata(
         : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
-    graph.stateRows = stateRows(graph.states);
+    graph.stateRows = stateRows(states);
     for (FsmTransition& transition : graph.transitions)
         fillDisplayMetadata(transition);
     graph.transitionRows = transitionRows(
         moduleSymbol,
         graph.transitions,
-        graph.states);
+        states);
 }
 
 void FsmGraphService::fillDisplayMetadata(FsmTransition& transition)
