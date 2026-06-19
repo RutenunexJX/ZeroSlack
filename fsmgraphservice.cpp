@@ -667,7 +667,6 @@ QList<FsmStateRow> FsmGraphService::stateRows(
     rows.reserve(states.size());
     for (const sym_list::SymbolInfo& state : states) {
         FsmStateRow row;
-        row.state = state;
         row.stateRecord = semanticSymbolRecordForSymbol(state);
         row.stateStableKey = row.stateRecord.isValid()
             ? row.stateRecord.stableKey

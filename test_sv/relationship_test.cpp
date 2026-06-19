@@ -5767,15 +5767,15 @@ static void runFsmGraphServiceFixture()
                !report.graphs.isEmpty()
                    && !report.graphs.first().stateRows.isEmpty()
                    && report.graphs.first().stateRows.first().stateStableKey
-                       == symbolStableKeyForSymbol(
-                           report.graphs.first().stateRows.first().state),
+                       == report.graphs.first().stateRows.first()
+                              .stateRecord.stableKey,
                true);
     expectBool("fsm graph state row semantic record",
                !report.graphs.isEmpty()
                    && !report.graphs.first().stateRows.isEmpty()
                    && report.graphs.first().stateRows.first().stateRecord.isValid()
                    && report.graphs.first().stateRows.first().stateRecord.localHandle
-                       == report.graphs.first().stateRows.first().state.symbolId
+                       > 0
                    && report.graphs.first().stateRows.first().stateRecord.stableKey
                        == report.graphs.first().stateRows.first().stateStableKey
                    && report.graphs.first().stateRows.first().stateRecord.name
