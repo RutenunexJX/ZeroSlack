@@ -21,32 +21,32 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
     return metadata;
 }
 
-QString moduleHierarchyStableKeyText(const sym_list::SymbolInfo& symbol)
+QString moduleHierarchyStableKeyText(const SemanticSymbolRecord& record)
 {
-    return symbolStableKeyText(symbolStableKeyForSymbol(symbol));
+    return symbolStableKeyText(record.stableKey);
 }
 }
 
-QList<sym_list::SymbolInfo> NavigationService::moduleSymbols() const
+QList<SemanticSymbolRecord> NavigationService::moduleRecords() const
 {
     SearchQuery moduleQuery;
     moduleQuery.intent = SymbolTaxonomy::SymbolSearchIntent::ModuleDeclarations;
 
-    QList<sym_list::SymbolInfo> modules;
+    QList<SemanticSymbolRecord> modules;
     const QList<SearchResult> moduleResults = searchService.findSymbols(moduleQuery);
     modules.reserve(moduleResults.size());
     for (const SearchResult& result : moduleResults)
-        modules.append(symbolOutlineCompatibilitySymbolForRecord(result.symbolRecord));
+        modules.append(result.symbolRecord);
     return modules;
 }
 
 QList<ModuleHierarchyGroup> NavigationService::buildModuleFileGroups(
-    const QList<sym_list::SymbolInfo>& modules) const
+    const QList<SemanticSymbolRecord>& modules) const
 {
     QHash<QString, QStringList> groups;
-    for (const sym_list::SymbolInfo& module : modules) {
-        if (!module.fileName.isEmpty() && !module.symbolName.isEmpty())
-            groups[module.fileName].append(module.symbolName);
+    for (const SemanticSymbolRecord& module : modules) {
+        if (!module.location.fileName.isEmpty() && !module.name.isEmpty())
+            groups[module.location.fileName].append(module.name);
     }
 
     for (auto it = groups.begin(); it != groups.end(); ++it) {
@@ -74,20 +74,20 @@ QList<ModuleHierarchyGroup> NavigationService::buildModuleFileGroups(
 }
 
 QList<ModuleHierarchyGroup> NavigationService::buildModuleInstantiationHierarchy(
-    const QList<sym_list::SymbolInfo>& modules) const
+    const QList<SemanticSymbolRecord>& modules) const
 {
     QList<ModuleHierarchyGroup> hierarchy;
     QSet<QString> childModuleKeys;
     QHash<QString, QStringList> childrenByParentKey;
 
-    for (const sym_list::SymbolInfo& module : modules) {
+    for (const SemanticSymbolRecord& module : modules) {
         const QString parentKey = moduleHierarchyStableKeyText(module);
-        if (parentKey.isEmpty() || module.symbolName.isEmpty())
+        if (parentKey.isEmpty() || module.name.isEmpty())
             continue;
 
         QStringList children;
         const QList<HierarchyNode> childNodes =
-            hierarchyService.moduleInstantiationChildren(symbolStableKeyForSymbol(module));
+            hierarchyService.moduleInstantiationChildren(module.stableKey);
         for (const HierarchyNode& node : childNodes) {
             if (!SymbolTaxonomy::isModuleDeclaration(
                     semanticMetadataForRecord(node.symbolRecord))
@@ -107,30 +107,30 @@ QList<ModuleHierarchyGroup> NavigationService::buildModuleInstantiationHierarchy
         }
     }
 
-    for (const sym_list::SymbolInfo& module : modules) {
+    for (const SemanticSymbolRecord& module : modules) {
         const QString parentKey = moduleHierarchyStableKeyText(module);
         if (!childrenByParentKey.contains(parentKey))
             continue;
         if (!childModuleKeys.contains(parentKey)) {
             ModuleHierarchyGroup group;
             group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
-            group.rootName = module.symbolName;
-            group.rootDisplayName = module.symbolName;
-            group.rootToolTip = QStringLiteral("Module: %1").arg(module.symbolName);
+            group.rootName = module.name;
+            group.rootDisplayName = module.name;
+            group.rootToolTip = QStringLiteral("Module: %1").arg(module.name);
             group.childModules = childrenByParentKey.value(parentKey);
             hierarchy.append(group);
         }
     }
 
     if (hierarchy.isEmpty()) {
-        for (const sym_list::SymbolInfo& module : modules) {
+        for (const SemanticSymbolRecord& module : modules) {
             const QString parentKey = moduleHierarchyStableKeyText(module);
             if (childrenByParentKey.contains(parentKey)) {
                 ModuleHierarchyGroup group;
                 group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
-                group.rootName = module.symbolName;
-                group.rootDisplayName = module.symbolName;
-                group.rootToolTip = QStringLiteral("Module: %1").arg(module.symbolName);
+                group.rootName = module.name;
+                group.rootDisplayName = module.name;
+                group.rootToolTip = QStringLiteral("Module: %1").arg(module.name);
                 group.childModules = childrenByParentKey.value(parentKey);
                 hierarchy.append(group);
             }

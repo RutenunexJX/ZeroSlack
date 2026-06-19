@@ -148,7 +148,7 @@ void NavigationService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<ModuleHierarchyGroup> NavigationService::findModuleHierarchy(
     const NavigationModuleQuery& query) const
 {
-    const QList<sym_list::SymbolInfo> modules = moduleSymbols();
+    const QList<SemanticSymbolRecord> modules = moduleRecords();
     QList<ModuleHierarchyGroup> hierarchy = buildModuleInstantiationHierarchy(modules);
     if (hierarchy.isEmpty())
         hierarchy = buildModuleFileGroups(modules);

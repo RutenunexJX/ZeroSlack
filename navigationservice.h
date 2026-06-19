@@ -48,11 +48,11 @@ private:
     HierarchyService hierarchyService;
     static std::unique_ptr<NavigationService> instance;
 
-    QList<sym_list::SymbolInfo> moduleSymbols() const;
+    QList<SemanticSymbolRecord> moduleRecords() const;
     QList<ModuleHierarchyGroup> buildModuleFileGroups(
-        const QList<sym_list::SymbolInfo>& modules) const;
+        const QList<SemanticSymbolRecord>& modules) const;
     QList<ModuleHierarchyGroup> buildModuleInstantiationHierarchy(
-        const QList<sym_list::SymbolInfo>& modules) const;
+        const QList<SemanticSymbolRecord>& modules) const;
     QList<ModuleHierarchyGroup> filterModuleHierarchy(
         const QList<ModuleHierarchyGroup>& hierarchy,
         const QString& filter) const;
