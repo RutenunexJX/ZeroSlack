@@ -5,14 +5,6 @@
 #include <QSet>
 
 namespace {
-SymbolStableKey relationshipStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    return record.stableKey.isValid()
-        ? record.stableKey
-        : symbolStableKeyForSymbol(symbol);
-}
-
 SemanticSymbolRecord recordByLocalHandle(const SemanticIndex& index,
                                          int symbolId)
 {
@@ -83,10 +75,10 @@ SemanticSymbolRecord relationshipEndpointRecord(
 QList<SemanticRelationship> SemanticIndex::getRelationships(const QString& scopeName,
                                                             bool outgoing) const
 {
-    const QList<sym_list::SymbolInfo> defs = findDefinitions(scopeName);
+    const QList<SemanticSymbolRecord> defs = findDefinitionRecords(scopeName);
     if (defs.isEmpty())
         return {};
-    return getRelationships(relationshipStableKeyForSymbol(defs.first()), outgoing);
+    return getRelationships(defs.first().stableKey, outgoing);
 }
 
 QList<SemanticRelationship> SemanticIndex::getRelationships(
@@ -182,10 +174,10 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
     const QString& scopeName,
     bool outgoing) const
 {
-    const QList<sym_list::SymbolInfo> defs = findDefinitions(scopeName);
+    const QList<SemanticSymbolRecord> defs = findDefinitionRecords(scopeName);
     if (defs.isEmpty())
         return {};
-    return getRelationshipResults(relationshipStableKeyForSymbol(defs.first()), outgoing);
+    return getRelationshipResults(defs.first().stableKey, outgoing);
 }
 
 QList<SymbolRelationshipEngine::RelationType> SemanticIndex::relationshipTypes() const

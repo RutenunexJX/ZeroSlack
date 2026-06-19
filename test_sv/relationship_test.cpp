@@ -341,12 +341,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     SemanticQueryContext queryContext;
     queryContext.fileName = topPath;
     queryContext.moduleName = QStringLiteral("rel_top");
-    const QList<sym_list::SymbolInfo> facadeStageDefs =
-        index.findDefinitions(QStringLiteral("rel_stage"), queryContext);
+    const QList<SemanticSymbolRecord> facadeStageDefs =
+        index.findDefinitionRecords(QStringLiteral("rel_stage"), queryContext);
     expectBool("semantic facade returns top symbols",
                index.getSymbols(topPath).size() == topSymbols.size(), true);
     expectBool("semantic facade finds cross-file module",
-               !facadeStageDefs.isEmpty() && facadeStageDefs.first().symbolId == stageId, true);
+               !facadeStageDefs.isEmpty()
+                   && facadeStageDefs.first().localHandle == stageId,
+               true);
     const sym_list::SymbolInfo topSymbol = symbolById(topSymbols, topId);
     const sym_list::SymbolInfo stageSymbol = symbolById(stageSymbols, stageId);
     const sym_list::SymbolInfo captureSymbol = symbolById(topSymbols, captureId);
@@ -381,11 +383,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     expectBool("semantic facade finds symbol definition",
                !facadeStageDefs.isEmpty()
-                   && facadeStageDefs.first().symbolId == stageId,
+                   && facadeStageDefs.first().localHandle == stageId,
                true);
     expectBool("semantic facade returns missing symbol definition",
-               index.findDefinitions(QStringLiteral("missing_symbol"),
-                                     queryContext).isEmpty(),
+               index.findDefinitionRecords(QStringLiteral("missing_symbol"),
+                                           queryContext).isEmpty(),
                true);
     expectBool("semantic facade returns cached file content",
                index.getCachedFileContent(topPath) == contents.value(topPath), true);
@@ -839,11 +841,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotTopRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module,
                true);
-    const QList<sym_list::SymbolInfo> snapshotStageDefs =
-        snapshotIndex.findDefinitions(QStringLiteral("rel_stage"), queryContext);
+    const QList<SemanticSymbolRecord> snapshotStageDefs =
+        snapshotIndex.findDefinitionRecords(QStringLiteral("rel_stage"),
+                                            queryContext);
     expectBool("semantic snapshot finds symbol definition",
                !snapshotStageDefs.isEmpty()
-                   && snapshotStageDefs.first().symbolId == stageId,
+                   && snapshotStageDefs.first().localHandle == stageId,
                true);
     SearchService snapshotSearchService(&snapshotIndex);
     const QList<SearchResult> snapshotSearchResults =
@@ -2081,11 +2084,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                guardedIndex.snapshot() == staleRelationshipSnapshot,
                true);
     snapshotIndex.clearSnapshot();
-    const QList<sym_list::SymbolInfo> restoredStageDefs =
-        snapshotIndex.findDefinitions(QStringLiteral("rel_stage"), queryContext);
+    const QList<SemanticSymbolRecord> restoredStageDefs =
+        snapshotIndex.findDefinitionRecords(QStringLiteral("rel_stage"),
+                                            queryContext);
     expectBool("semantic snapshot clear restores live index",
                !restoredStageDefs.isEmpty()
-                   && restoredStageDefs.first().symbolId == stageId,
+                   && restoredStageDefs.first().localHandle == stageId,
                true);
 
     engine.clearAllRelationships();

@@ -75,11 +75,6 @@ int definitionRecordContextPriorityAdjustment(
     return 0;
 }
 
-QString definitionSortOwnerName(const sym_list::SymbolInfo& symbol)
-{
-    return semanticSymbolRecordForSymbol(symbol).owner.name;
-}
-
 }
 
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
@@ -160,18 +155,20 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
     }
 
     SemanticDefinitionResult local = bestDefinitionFromCandidates(
-        getSymbols(query.fileName),
+        getSymbolRecords(query.fileName),
         query,
         true);
     if (local.found)
         return local;
 
-    QList<sym_list::SymbolInfo> globalCandidates = findDefinitions(query.symbolName);
+    QList<SemanticSymbolRecord> globalCandidates =
+        findDefinitionRecords(query.symbolName);
     const QString queryFile = normalizedLookupFileName(query.fileName);
     globalCandidates.erase(
         std::remove_if(globalCandidates.begin(), globalCandidates.end(),
-                       [&queryFile](const sym_list::SymbolInfo& symbol) {
-                           return normalizedLookupFileName(symbol.fileName) == queryFile;
+                       [&queryFile](const SemanticSymbolRecord& record) {
+                           return normalizedLookupFileName(
+                                      record.location.fileName) == queryFile;
                        }),
         globalCandidates.end());
     SemanticDefinitionResult global =
@@ -181,7 +178,7 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
     return combinedDefinitionMissEvidence(local, global);
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
+QList<SemanticSymbolRecord> SemanticIndex::findDefinitionRecords(
     const QString& name,
     const SemanticQueryContext& context) const
 {
@@ -189,34 +186,27 @@ QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
         return {};
 
     if (m_snapshot)
-        return m_snapshot->findDefinitions(name, context);
+        return m_snapshot->findDefinitionRecords(name, context);
 
     QList<sym_list::SymbolInfo> symbols = symbolDatabase()->findSymbolsByName(name);
     if (symbols.isEmpty())
-        return symbols;
+        return {};
 
-    return sortedDefinitions(symbols, context);
-}
-
-QList<sym_list::SymbolInfo> SemanticIndex::sortedDefinitions(
-    const QList<sym_list::SymbolInfo>& symbols,
-    const SemanticQueryContext& context) const
-{
-    QList<sym_list::SymbolInfo> sorted = symbols;
+    QList<SemanticSymbolRecord> sorted =
+        semanticSymbolRecordsForSymbols(symbols);
     const QString normalizedContextFile = normalizedLookupFileName(context.fileName);
     std::stable_sort(sorted.begin(), sorted.end(),
-                     [&context, &normalizedContextFile](const sym_list::SymbolInfo& a,
-                                                        const sym_list::SymbolInfo& b) {
-        auto score = [&context, &normalizedContextFile](const sym_list::SymbolInfo& s) {
+                     [&context, &normalizedContextFile](const SemanticSymbolRecord& a,
+                                                        const SemanticSymbolRecord& b) {
+        auto score = [&context, &normalizedContextFile](const SemanticSymbolRecord& s) {
             int value = 0;
             if (!normalizedContextFile.isEmpty()
-                && normalizedLookupFileName(s.fileName) == normalizedContextFile)
+                && normalizedLookupFileName(s.location.fileName) == normalizedContextFile)
                 value += 100;
             if (!context.moduleName.isEmpty()
-                && definitionSortOwnerName(s) == context.moduleName)
+                && s.owner.name == context.moduleName)
                 value += 50;
-            if (SymbolTaxonomy::isGlobalDefinition(
-                    SymbolTaxonomy::semanticMetadata(s))) {
+            if (SymbolTaxonomy::isGlobalDefinition(metadataForRecord(s))) {
                 value += 10;
             }
             return value;
@@ -226,29 +216,25 @@ QList<sym_list::SymbolInfo> SemanticIndex::sortedDefinitions(
         const int bScore = score(b);
         if (aScore != bScore)
             return aScore > bScore;
-        if (a.fileName != b.fileName)
-            return a.fileName < b.fileName;
-        if (a.startLine != b.startLine)
-            return a.startLine < b.startLine;
-        return a.symbolId < b.symbolId;
+        if (a.location.fileName != b.location.fileName)
+            return a.location.fileName < b.location.fileName;
+        if (a.location.startLine != b.location.startLine)
+            return a.location.startLine < b.location.startLine;
+        return a.localHandle < b.localHandle;
     });
     return sorted;
 }
 
 SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
-    const QList<sym_list::SymbolInfo>& candidates,
+    const QList<SemanticSymbolRecord>& candidates,
     const SemanticDefinitionQuery& query,
     bool localFile) const
 {
     SemanticDefinitionResult best;
     best.localFile = localFile;
     int bestPriority = 999;
-    const QSet<QString> packages =
-        SymbolTaxonomy::packageScopeNames(getSymbols());
 
-    for (const sym_list::SymbolInfo& symbol : candidates) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(symbol, packages);
+    for (const SemanticSymbolRecord& record : candidates) {
         ++best.inspectedCandidateCount;
         if (!semanticDefinitionRecordMatches(record, query.symbolName))
             continue;

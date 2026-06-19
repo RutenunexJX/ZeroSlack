@@ -652,22 +652,19 @@ int main(int argc, char** argv) {
 
     SemanticQueryContext metadataScopedContext;
     metadataScopedContext.moduleName = QStringLiteral("snap_top");
-    const QList<sym_list::SymbolInfo> metadataScopedDefinitions =
-        snapshotIndex.findDefinitions(QStringLiteral("snap_meta_dup"),
-                                      metadataScopedContext);
+    const QList<SemanticSymbolRecord> metadataScopedDefinitions =
+        snapshotIndex.findDefinitionRecords(QStringLiteral("snap_meta_dup"),
+                                            metadataScopedContext);
     ++g_checks;
     const bool metadataScopedDefinitionsOk =
         metadataScopedDefinitions.size() == 2
-        && metadataScopedDefinitions.first().symbolId
+        && metadataScopedDefinitions.first().localHandle
             == snapshotMetadataScopedDuplicate.symbolId
-        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
-               .owner.name == QStringLiteral("snap_top")
-        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
-               .declarationKind == SymbolTaxonomy::DeclarationKind::Module
-        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
-               .rawCollectorKind == sym_list::sym_user
-        && semanticSymbolRecordForSymbol(metadataScopedDefinitions.first())
-               .stableKey.isValid();
+        && metadataScopedDefinitions.first().owner.name == QStringLiteral("snap_top")
+        && metadataScopedDefinitions.first().declarationKind
+               == SymbolTaxonomy::DeclarationKind::Module
+        && metadataScopedDefinitions.first().rawCollectorKind == sym_list::sym_user
+        && metadataScopedDefinitions.first().stableKey.isValid();
     if (!metadataScopedDefinitionsOk)
         ++g_fails;
     printf("[%s] SemanticIndex sorts definitions by semantic owner\n",

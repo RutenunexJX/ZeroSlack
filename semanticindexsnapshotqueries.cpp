@@ -22,11 +22,6 @@ sym_list::SymbolInfo missingSnapshotSymbol()
     return missing;
 }
 
-QString snapshotDefinitionSortOwnerName(const sym_list::SymbolInfo& symbol)
-{
-    return semanticSymbolRecordForSymbol(symbol).owner.name;
-}
-
 QString snapshotRecordDisplayName(const SemanticSymbolRecord& record,
                                   const sym_list::SymbolInfo& fallback)
 {
@@ -144,19 +139,19 @@ SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     return {};
 }
 
-QList<sym_list::SymbolInfo> SemanticIndexSnapshot::findDefinitions(
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::findDefinitionRecords(
     const QString& name,
     const SemanticQueryContext& context) const
 {
     if (name.isEmpty())
         return {};
 
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     for (const sym_list::SymbolInfo& symbol : m_symbols) {
         if (symbol.symbolName == name)
-            result.append(symbol);
+            result.append(semanticSymbolRecordForSymbol(symbol));
     }
-    return sortedDefinitions(result, context);
+    return sortedDefinitionRecords(result, context);
 }
 
 SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
@@ -289,25 +284,33 @@ QHash<QString, QString> SemanticIndexSnapshot::fileContents() const
     return m_fileContents;
 }
 
-QList<sym_list::SymbolInfo> SemanticIndexSnapshot::sortedDefinitions(
-    const QList<sym_list::SymbolInfo>& symbols,
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::sortedDefinitionRecords(
+    const QList<SemanticSymbolRecord>& records,
     const SemanticQueryContext& context) const
 {
-    QList<sym_list::SymbolInfo> sorted = symbols;
+    QList<SemanticSymbolRecord> sorted = records;
     const QString normalizedContextFile = normalizedSnapshotQueryFileName(context.fileName);
     std::stable_sort(sorted.begin(), sorted.end(),
-                     [&context, &normalizedContextFile](const sym_list::SymbolInfo& a,
-                                                        const sym_list::SymbolInfo& b) {
-        auto score = [&context, &normalizedContextFile](const sym_list::SymbolInfo& s) {
+                     [&context, &normalizedContextFile](const SemanticSymbolRecord& a,
+                                                        const SemanticSymbolRecord& b) {
+        auto score = [&context, &normalizedContextFile](const SemanticSymbolRecord& s) {
             int value = 0;
             if (!normalizedContextFile.isEmpty()
-                && normalizedSnapshotQueryFileName(s.fileName) == normalizedContextFile)
+                && normalizedSnapshotQueryFileName(s.location.fileName)
+                    == normalizedContextFile)
                 value += 100;
             if (!context.moduleName.isEmpty()
-                && snapshotDefinitionSortOwnerName(s) == context.moduleName)
+                && s.owner.name == context.moduleName)
                 value += 50;
-            if (SymbolTaxonomy::isGlobalDefinition(
-                    SymbolTaxonomy::semanticMetadata(s))) {
+            SymbolTaxonomy::SemanticMetadata metadata;
+            metadata.declarationKind = s.declarationKind;
+            metadata.usageRole = s.usageRole;
+            metadata.ownerScope = s.owner.kind;
+            metadata.visibility = s.visibility;
+            metadata.sourceRole = s.sourceRole;
+            metadata.rawCollectorKind = s.rawCollectorKind;
+            metadata.interfaceLikeOwner = s.owner.interfaceLike;
+            if (SymbolTaxonomy::isGlobalDefinition(metadata)) {
                 value += 10;
             }
             return value;
@@ -317,11 +320,11 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::sortedDefinitions(
         const int bScore = score(b);
         if (aScore != bScore)
             return aScore > bScore;
-        if (a.fileName != b.fileName)
-            return a.fileName < b.fileName;
-        if (a.startLine != b.startLine)
-            return a.startLine < b.startLine;
-        return a.symbolId < b.symbolId;
+        if (a.location.fileName != b.location.fileName)
+            return a.location.fileName < b.location.fileName;
+        if (a.location.startLine != b.location.startLine)
+            return a.location.startLine < b.location.startLine;
+        return a.localHandle < b.localHandle;
     });
     return sorted;
 }

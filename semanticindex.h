@@ -299,6 +299,9 @@ public:
     sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
+    QList<SemanticSymbolRecord> findDefinitionRecords(
+        const QString& name,
+        const SemanticQueryContext& context = {}) const;
     SemanticDefinitionResult resolveDefinition(
         const SemanticDefinitionQuery& query) const;
     QString getCachedFileContent(const QString& fileName) const;
@@ -332,8 +335,6 @@ public:
         SlangManager* slangManager,
         QObject* parent = nullptr) const;
 
-    QList<sym_list::SymbolInfo> findDefinitions(const QString& name,
-                                                const SemanticQueryContext& context = {}) const;
     QStringList findCompletions(const SemanticQueryContext& context) const;
 
     QList<SemanticRelationship> getRelationships(
@@ -356,10 +357,8 @@ private:
     std::uint64_t m_snapshotRevision = 0;
     static std::unique_ptr<SemanticIndex> instance;
 
-    QList<sym_list::SymbolInfo> sortedDefinitions(const QList<sym_list::SymbolInfo>& symbols,
-                                                  const SemanticQueryContext& context) const;
     SemanticDefinitionResult bestDefinitionFromCandidates(
-        const QList<sym_list::SymbolInfo>& candidates,
+        const QList<SemanticSymbolRecord>& candidates,
         const SemanticDefinitionQuery& query,
         bool localFile) const;
     QList<SymbolRelationshipEngine::RelationType> relationshipTypes() const;

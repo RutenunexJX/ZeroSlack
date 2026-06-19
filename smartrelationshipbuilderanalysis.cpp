@@ -185,10 +185,23 @@ sym_list::SymbolInfo SmartRelationshipBuilder::findSymbolByName(
     }
 
     if (context.snapshot) {
-        const QList<sym_list::SymbolInfo> definitions =
-            context.snapshot->findDefinitions(symbolName);
-        if (!definitions.isEmpty())
-            return definitions.first();
+        const QList<SemanticSymbolRecord> definitions =
+            context.snapshot->findDefinitionRecords(symbolName);
+        if (!definitions.isEmpty()) {
+            const SemanticSymbolRecord record = definitions.first();
+            sym_list::SymbolInfo symbol;
+            symbol.symbolId = record.localHandle;
+            symbol.symbolName = record.name;
+            symbol.symbolType = record.rawCollectorKind;
+            symbol.fileName = record.location.fileName;
+            symbol.startLine = record.location.startLine;
+            symbol.startColumn = record.location.startColumn;
+            symbol.endLine = record.location.endLine;
+            symbol.endColumn = record.location.endColumn;
+            symbol.moduleScope = record.owner.name;
+            symbol.dataType = record.type.rawTypeText;
+            return symbol;
+        }
     }
 
     if (symbolDatabase) {

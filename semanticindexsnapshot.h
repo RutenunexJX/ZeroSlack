@@ -27,7 +27,7 @@ public:
     sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
-    QList<sym_list::SymbolInfo> findDefinitions(
+    QList<SemanticSymbolRecord> findDefinitionRecords(
         const QString& name,
         const SemanticQueryContext& context = {}) const;
     QString getCachedFileContent(const QString& fileName) const;
@@ -54,8 +54,8 @@ private:
     QList<SemanticDiagnostic> m_diagnostics;
     QHash<QString, QString> m_fileContents;
 
-    QList<sym_list::SymbolInfo> sortedDefinitions(
-        const QList<sym_list::SymbolInfo>& symbols,
+    QList<SemanticSymbolRecord> sortedDefinitionRecords(
+        const QList<SemanticSymbolRecord>& records,
         const SemanticQueryContext& context) const;
 };
 

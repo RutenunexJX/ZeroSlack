@@ -566,11 +566,11 @@ SemanticSymbolRecord RelationshipService::resolveSubjectSymbolRecord(
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
 
-    const QList<sym_list::SymbolInfo> definitions =
-        semanticIndex()->findDefinitions(query.symbolName, context);
+    const QList<SemanticSymbolRecord> definitions =
+        semanticIndex()->findDefinitionRecords(query.symbolName, context);
     if (definitions.isEmpty())
         return {};
-    return semanticSymbolRecordForSymbol(definitions.first());
+    return definitions.first();
 }
 
 SemanticSymbolRecord RelationshipService::resolveSubjectSymbolRecord(
@@ -586,11 +586,11 @@ SemanticSymbolRecord RelationshipService::resolveSubjectSymbolRecord(
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
 
-    const QList<sym_list::SymbolInfo> definitions =
-        semanticIndex()->findDefinitions(query.symbolName, context);
+    const QList<SemanticSymbolRecord> definitions =
+        semanticIndex()->findDefinitionRecords(query.symbolName, context);
     if (definitions.isEmpty())
         return {};
-    return semanticSymbolRecordForSymbol(definitions.first());
+    return definitions.first();
 }
 
 RelationshipQuery RelationshipService::normalizedQuery(const RelationshipQuery& query)
