@@ -286,13 +286,17 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     }
     if (!isJourneyDeclaration(
             definition.symbolRecord,
-            definition.symbol,
+            {},
             interfaceNames())) {
         if (reason)
             *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
         return missingSignalJourneySymbol();
     }
-    return definition.symbol;
+    const sym_list::SymbolInfo symbol =
+        semanticIndex()->getSymbolByStableKey(definition.symbolStableKey);
+    if (symbol.symbolId < 0)
+        return missingSignalJourneySymbol();
+    return symbol;
 }
 
 QList<SignalJourneyItem> SignalJourneyService::relationshipItems(

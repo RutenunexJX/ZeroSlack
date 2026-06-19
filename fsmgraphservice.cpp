@@ -236,12 +236,16 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
         return missingFsmSymbol();
     }
     if (!SymbolTaxonomy::isModuleDeclaration(
-            metadataForRecord(definition.symbolRecord, definition.symbol))) {
+            metadataForRecord(definition.symbolRecord, {}))) {
         if (reason)
             *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
         return missingFsmSymbol();
     }
-    return definition.symbol;
+    const sym_list::SymbolInfo symbol =
+        semanticIndex()->getSymbolByStableKey(definition.symbolStableKey);
+    if (symbol.symbolId < 0)
+        return missingFsmSymbol();
+    return symbol;
 }
 
 QList<sym_list::SymbolInfo> FsmGraphService::symbolsInModule(

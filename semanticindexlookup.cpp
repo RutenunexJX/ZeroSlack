@@ -267,7 +267,6 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
         if (!best.found || priority < bestPriority) {
             best.found = true;
             best.localFile = localFile;
-            best.symbol = symbol;
             best.symbolRecord = record;
             best.symbolStableKey = best.symbolRecord.stableKey;
             best.missReason = SemanticDefinitionMissReason::None;

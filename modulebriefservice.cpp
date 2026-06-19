@@ -174,7 +174,11 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
             *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
         return missingModuleBriefSymbol();
     }
-    return definition.symbol;
+    const sym_list::SymbolInfo symbol =
+        semanticIndex()->getSymbolByStableKey(definition.symbolStableKey);
+    if (symbol.symbolId < 0)
+        return missingModuleBriefSymbol();
+    return symbol;
 }
 
 QList<sym_list::SymbolInfo> ModuleBriefService::symbolsInModule(
