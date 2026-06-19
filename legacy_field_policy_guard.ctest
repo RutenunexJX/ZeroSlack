@@ -248,6 +248,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "searchservice.h|struct[ \t\r\n]+SearchQuery[ \t\r\n]*\\{[^}]*sym_list::sym_type_e"
     "searchservice.h|struct[ \t\r\n]+SearchQuery[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::sym_type_e>"
     "searchservice.cpp|item\\.symbol[ \t\r\n]*="
+    "semanticindex.h|struct[ \t\r\n]+SemanticSymbolSearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "semanticindexlookup.cpp|item\\.symbol[ \t\r\n]*="
     "signaljourneyservice.h|struct[ \t\r\n]+SignalJourneyItem[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
     "scopebandservice.h|struct[ \t\r\n]+ScopeBandSymbolRange[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "scopebandwidget.cpp|ScopeBandSymbolRange[^;]*\\.symbol\\."

@@ -100,11 +100,10 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
             continue;
 
         SemanticSymbolSearchResult item;
-        item.symbol = symbol;
         item.symbolRecord = record;
         item.symbolStableKey = item.symbolRecord.stableKey.isValid()
             ? item.symbolRecord.stableKey
-            : symbolStableKeyForSymbol(item.symbol);
+            : symbolStableKeyForSymbol(symbol);
         item.score = score;
         result.append(item);
     }
