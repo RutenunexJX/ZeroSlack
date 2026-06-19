@@ -26,10 +26,6 @@ public:
         int maxResults = 20) const;
     QStringList findAllSymbolCompletions(const QString& prefix,
                                          int maxResults = 15) const;
-    QVector<QPair<sym_list::SymbolInfo, int>> findScoredSymbolCompletionsByType(
-        sym_list::sym_type_e symbolType,
-        const QString& prefix,
-        int maxResults = 15) const;
     QStringList findSymbolCompletionsByType(
         sym_list::sym_type_e symbolType,
         const QString& prefix,
@@ -116,19 +112,6 @@ public:
                                     const QString& moduleName = QString()) const;
     QStringList findModulePortCompletions(const QString& prefix,
                                           const QString& moduleTypeName) const;
-    QList<sym_list::SymbolInfo> findModuleInternalSymbolInfosByType(
-        const QString& moduleName,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix = QString(),
-        bool useRelationshipFallback = true) const;
-    QList<sym_list::SymbolInfo> findModuleContextSymbolInfosByType(
-        const QString& moduleName,
-        const QString& fileName,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix = QString()) const;
-    QList<sym_list::SymbolInfo> findGlobalSymbolInfosByType(
-        sym_list::sym_type_e symbolType,
-        const QString& prefix = QString()) const;
     QString currentModuleAt(const QString& fileName, int cursorPosition) const;
     QString getStructTypeForVariable(const QString& variableName, const QString& moduleName) const;
     bool tryParseStructMemberContext(const QString& line,

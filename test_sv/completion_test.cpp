@@ -83,14 +83,6 @@ static QStringList scoredNames(const QVector<QPair<QString, int>>& scored) {
     return names;
 }
 
-static QStringList symbolNamesFromScored(
-    const QVector<QPair<sym_list::SymbolInfo, int>>& scored) {
-    QStringList names;
-    for (const auto& item : scored)
-        names << item.first.symbolName;
-    return names;
-}
-
 static sym_list::SymbolInfo makeSymbol(const QString& name,
                                        sym_list::sym_type_e type,
                                        const QString& moduleScope,
@@ -2749,6 +2741,12 @@ int main(int argc, char** argv) {
                    sym_list::sym_logic,
                    QStringLiteral("snap_e")),
                {"snap_enable"});
+    expectList("snapshot metadata module symbols by type",
+               snapshotCompletionService.findModuleSymbolsByType(
+                   QStringLiteral("snap_top"),
+                   sym_list::sym_logic,
+                   QStringLiteral("semantic")),
+               {"semantic_top_signal"});
     expectList("snapshot global symbol names",
                snapshotCompletionService.findGlobalSymbolCompletions(QStringLiteral("snap")),
                {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
@@ -2757,6 +2755,11 @@ int main(int argc, char** argv) {
                    sym_list::sym_task,
                    QStringLiteral("snap")),
                {"snap_task"});
+    expectList("snapshot metadata global symbols by type",
+               snapshotCompletionService.findGlobalSymbolsByType(
+                   sym_list::sym_module,
+                   QStringLiteral("semantic")),
+               {"semantic_scope"});
     expectList("snapshot global struct variables are not type completions",
                snapshotCompletionService.findGlobalSymbolsByType(
                    sym_list::sym_packed_struct_var,
@@ -2855,11 +2858,6 @@ int main(int argc, char** argv) {
     expectBool("snapshot typed stable dedupe",
                snapshotEnableTypedCount == 1 && snapshotTypedStableKeyOk,
                true);
-    expectList("snapshot scored typed symbol completions",
-               symbolNamesFromScored(snapshotCompletionService.findScoredSymbolCompletionsByType(
-                   sym_list::sym_logic,
-                   QStringLiteral("snap_e"))),
-               {"snap_enable", "snap_other_enable"});
     expectList("snapshot smart completions no relationships",
                scoredNames(snapshotCompletionService.findSmartCompletions(
                    QStringLiteral("snap_clk"),
@@ -2874,42 +2872,6 @@ int main(int argc, char** argv) {
                    snapshotScopeCursor,
                    true)),
                {"snap_signal"});
-    expectList("snapshot module info symbols by type",
-               symbolNames(snapshotCompletionService.findModuleInternalSymbolInfosByType(
-                   QStringLiteral("snap_top"),
-                   sym_list::sym_logic,
-                   QStringLiteral("snap_"))),
-               {"snap_clk", "snap_enable", "snap_rst_n"});
-    expectList("snapshot metadata module internal type",
-               symbolNames(snapshotCompletionService.findModuleInternalSymbolInfosByType(
-                   QStringLiteral("snap_top"),
-                   sym_list::sym_logic,
-                   QStringLiteral("semantic"))),
-               {"semantic_top_signal"});
-    expectList("snapshot module context info symbols",
-               symbolNames(snapshotCompletionService.findModuleContextSymbolInfosByType(
-                   QStringLiteral("snap_scope"),
-                   snapshotScopeFile,
-                   sym_list::sym_logic,
-                   QStringLiteral("snap"))),
-               {"snap_signal"});
-    expectList("snapshot metadata module context type",
-               symbolNames(snapshotCompletionService.findModuleContextSymbolInfosByType(
-                   QStringLiteral("snap_scope"),
-                   snapshotScopeFile,
-                   sym_list::sym_logic,
-                   QStringLiteral("meta"))),
-               {"meta_signal"});
-    expectList("snapshot global info symbols by type",
-               symbolNames(snapshotCompletionService.findGlobalSymbolInfosByType(
-                   sym_list::sym_packed_struct_var,
-                   QStringLiteral("snap"))),
-               {"snap_pixel"});
-    expectList("snapshot metadata global info type",
-               symbolNames(snapshotCompletionService.findGlobalSymbolInfosByType(
-                   sym_list::sym_module,
-                   QStringLiteral("semantic"))),
-               {"semantic_scope"});
     SemanticIndex::getInstance()->setSnapshot(
         std::make_shared<SemanticIndexSnapshot>(
             snapshotSymbols,

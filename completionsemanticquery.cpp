@@ -64,49 +64,6 @@ QStringList CompletionSemanticQuery::modulePortCompletions(
         : QStringList();
 }
 
-QList<sym_list::SymbolInfo>
-CompletionSemanticQuery::moduleInternalSymbolInfosByType(
-    SemanticIndex* semanticIndex,
-    const QString& moduleName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix,
-    bool useRelationshipFallback)
-{
-    return semanticIndex
-        ? semanticIndex->getModuleInternalSymbolsByType(
-              moduleName,
-              symbolType,
-              prefix,
-              useRelationshipFallback)
-        : QList<sym_list::SymbolInfo>();
-}
-
-QList<sym_list::SymbolInfo> CompletionSemanticQuery::moduleContextSymbolInfosByType(
-    SemanticIndex* semanticIndex,
-    const QString& moduleName,
-    const QString& fileName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix)
-{
-    return semanticIndex
-        ? semanticIndex->getModuleContextSymbolsByType(
-              moduleName,
-              fileName,
-              symbolType,
-              prefix)
-        : QList<sym_list::SymbolInfo>();
-}
-
-QList<sym_list::SymbolInfo> CompletionSemanticQuery::globalSymbolInfosByType(
-    SemanticIndex* semanticIndex,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix)
-{
-    return semanticIndex
-        ? semanticIndex->getGlobalSymbolInfosByType(symbolType, prefix)
-        : QList<sym_list::SymbolInfo>();
-}
-
 QString CompletionSemanticQuery::currentModuleAt(
     SemanticIndex* semanticIndex,
     const QString& fileName,

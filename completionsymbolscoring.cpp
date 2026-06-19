@@ -33,35 +33,46 @@ QVector<QPair<QString, int>> CompletionSymbolQuery::scoredNames(
     return scored;
 }
 
-QVector<QPair<sym_list::SymbolInfo, int>>
-CompletionSymbolQuery::scoredTypedSymbols(
+QVector<QPair<QString, int>>
+CompletionSymbolQuery::scoredTypedSymbolNames(
     SemanticIndex* semanticIndex,
     sym_list::sym_type_e symbolType,
     const QString& prefix,
     int maxResults)
 {
-    QVector<QPair<sym_list::SymbolInfo, int>> result;
+    QVector<QPair<QString, int>> scored;
     if (!semanticIndex)
-        return result;
+        return scored;
 
     const QList<sym_list::SymbolInfo> symbols =
         semanticIndex->getTypedCompletionSymbols(symbolType);
 
-    result.reserve(qMin(symbols.size(), maxResults > 0 ? maxResults : symbols.size()));
+    scored.reserve(qMin(symbols.size(), maxResults > 0 ? maxResults : symbols.size()));
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const int score =
             CompletionMatcher::calculateSymbolTypeScore(symbol.symbolName, prefix);
         if (score > 0)
-            result.append(qMakePair(symbol, score));
+            scored.append(qMakePair(symbol.symbolName, score));
     }
 
-    std::sort(result.begin(), result.end(),
-              [](const QPair<sym_list::SymbolInfo, int>& left,
-                 const QPair<sym_list::SymbolInfo, int>& right) {
+    std::sort(scored.begin(), scored.end(),
+              [](const QPair<QString, int>& left,
+                 const QPair<QString, int>& right) {
                   if (left.second != right.second)
                       return left.second > right.second;
-                  return left.first.symbolName < right.first.symbolName;
+                  return left.first < right.first;
               });
+
+    QVector<QPair<QString, int>> result;
+    result.reserve(scored.size());
+    QSet<QString> seenNames;
+    for (const auto& match : scored) {
+        const QString key = match.first.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(match);
+    }
 
     if (maxResults > 0 && result.size() > maxResults)
         result = result.mid(0, maxResults);
@@ -77,23 +88,6 @@ QStringList CompletionSymbolQuery::namesFromScored(
     result.reserve(scored.size());
     for (const auto& match : scored)
         result.append(match.first);
-
-    if (maxResults > 0 && result.size() > maxResults)
-        result = result.mid(0, maxResults);
-
-    return result;
-}
-
-QStringList CompletionSymbolQuery::symbolNamesFromScored(
-    const QVector<QPair<sym_list::SymbolInfo, int>>& scored,
-    int maxResults)
-{
-    QStringList result;
-    result.reserve(scored.size());
-    for (const auto& match : scored) {
-        if (!result.contains(match.first.symbolName))
-            result.append(match.first.symbolName);
-    }
 
     if (maxResults > 0 && result.size() > maxResults)
         result = result.mid(0, maxResults);

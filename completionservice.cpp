@@ -177,24 +177,15 @@ QStringList CompletionService::findAllSymbolCompletions(
     return CompletionSymbolQuery::namesFromScored(scored, maxResults);
 }
 
-QVector<QPair<sym_list::SymbolInfo, int>>
-CompletionService::findScoredSymbolCompletionsByType(
-    sym_list::sym_type_e symbolType,
-    const QString& prefix,
-    int maxResults) const
-{
-    return CompletionSymbolQuery::scoredTypedSymbols(
-        semanticIndex(), symbolType, prefix, maxResults);
-}
-
 QStringList CompletionService::findSymbolCompletionsByType(
     sym_list::sym_type_e symbolType,
     const QString& prefix,
     int maxResults) const
 {
-    const QVector<QPair<sym_list::SymbolInfo, int>> scored =
-        findScoredSymbolCompletionsByType(symbolType, prefix, maxResults);
-    return CompletionSymbolQuery::symbolNamesFromScored(scored, maxResults);
+    const QVector<QPair<QString, int>> scored =
+        CompletionSymbolQuery::scoredTypedSymbolNames(
+            semanticIndex(), symbolType, prefix, maxResults);
+    return CompletionSymbolQuery::namesFromScored(scored, maxResults);
 }
 
 SemanticIndex* CompletionService::semanticIndex() const

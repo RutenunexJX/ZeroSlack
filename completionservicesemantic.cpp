@@ -106,42 +106,6 @@ QStringList CompletionService::findModulePortCompletions(
         semanticIndex(), prefix, moduleTypeName);
 }
 
-QList<sym_list::SymbolInfo> CompletionService::findModuleInternalSymbolInfosByType(
-    const QString& moduleName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix,
-    bool useRelationshipFallback) const
-{
-    return CompletionSemanticQuery::moduleInternalSymbolInfosByType(
-        semanticIndex(),
-        moduleName,
-        symbolType,
-        prefix,
-        useRelationshipFallback);
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findModuleContextSymbolInfosByType(
-    const QString& moduleName,
-    const QString& fileName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix) const
-{
-    return CompletionSemanticQuery::moduleContextSymbolInfosByType(
-        semanticIndex(),
-        moduleName,
-        fileName,
-        symbolType,
-        prefix);
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findGlobalSymbolInfosByType(
-    sym_list::sym_type_e symbolType,
-    const QString& prefix) const
-{
-    return CompletionSemanticQuery::globalSymbolInfosByType(
-        semanticIndex(), symbolType, prefix);
-}
-
 QString CompletionService::currentModuleAt(const QString& fileName, int cursorPosition) const
 {
     return CompletionSemanticQuery::currentModuleAt(

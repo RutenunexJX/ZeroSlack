@@ -16,16 +16,13 @@ public:
         const QStringList& names,
         const QString& prefix,
         int maxResults);
-    static QVector<QPair<sym_list::SymbolInfo, int>> scoredTypedSymbols(
+    static QVector<QPair<QString, int>> scoredTypedSymbolNames(
         SemanticIndex* semanticIndex,
         sym_list::sym_type_e symbolType,
         const QString& prefix,
         int maxResults);
     static QStringList namesFromScored(
         const QVector<QPair<QString, int>>& scored,
-        int maxResults);
-    static QStringList symbolNamesFromScored(
-        const QVector<QPair<sym_list::SymbolInfo, int>>& scored,
         int maxResults);
     static QStringList namesFromSymbols(
         const QList<sym_list::SymbolInfo>& symbols);

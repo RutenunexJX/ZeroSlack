@@ -27,22 +27,6 @@ public:
         SemanticIndex* semanticIndex,
         const QString& prefix,
         const QString& moduleTypeName);
-    static QList<sym_list::SymbolInfo> moduleInternalSymbolInfosByType(
-        SemanticIndex* semanticIndex,
-        const QString& moduleName,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix,
-        bool useRelationshipFallback);
-    static QList<sym_list::SymbolInfo> moduleContextSymbolInfosByType(
-        SemanticIndex* semanticIndex,
-        const QString& moduleName,
-        const QString& fileName,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix);
-    static QList<sym_list::SymbolInfo> globalSymbolInfosByType(
-        SemanticIndex* semanticIndex,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix);
     static QString currentModuleAt(
         SemanticIndex* semanticIndex,
         const QString& fileName,
