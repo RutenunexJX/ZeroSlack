@@ -79,6 +79,7 @@ set(RECORD_FIRST_METADATA_FILES
     modulebriefservice.cpp
     navigationservice.cpp
     semanticdiffservice.cpp
+    scopebandservice.cpp
     semanticindexcompletioncontext.cpp
     semanticindexcompletionqueries.cpp
     semanticindexcompletionrelationships.cpp
@@ -163,6 +164,10 @@ foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
         field_matches
         "${content}")
     string(REGEX MATCHALL
+        "[A-Za-z0-9_]+\\.symbol\\.symbolName([^A-Za-z0-9_]|$)"
+        symbol_payload_name_matches
+        "${content}")
+    string(REGEX MATCHALL
         "(^|[^A-Za-z0-9_])sym_type_e([^A-Za-z0-9_]|$)|(^|[^A-Za-z0-9_])sym_list::sym_[A-Za-z0-9_]+([^A-Za-z0-9_]|$)"
         enum_matches
         "${content}")
@@ -171,7 +176,7 @@ foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
         int_id_api_matches
         "${content}")
 
-    if(field_matches OR enum_matches OR int_id_api_matches)
+    if(field_matches OR symbol_payload_name_matches OR enum_matches OR int_id_api_matches)
         list(APPEND violations "${relative_path}")
     endif()
 endforeach()
@@ -185,7 +190,7 @@ endif()
 if(violations)
     list(JOIN violations "\n  " violation_text)
     message(FATAL_ERROR
-        "Legacy SymbolInfo product-policy fields or int-id query APIs are not allowed in protected UI/coordinator/scheduler boundaries:\n  ${violation_text}")
+        "Legacy SymbolInfo product-policy fields, direct embedded SymbolInfo display names, or int-id query APIs are not allowed in protected UI/coordinator/scheduler boundaries:\n  ${violation_text}")
 endif()
 
 set(record_first_missing_files)

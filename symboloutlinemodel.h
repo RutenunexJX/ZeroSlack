@@ -35,4 +35,7 @@ struct SymbolOutlineGroup {
     QList<SymbolOutlineSymbolRow> symbolRows;
 };
 
+QList<SymbolOutlineGroup> symbolOutlineGroupsWithRows(
+    const QList<SymbolOutlineGroup>& groups);
+
 #endif // SYMBOLOUTLINEMODEL_H

@@ -96,8 +96,6 @@ private:
     QTreeWidgetItem* createFileItem(const QString& filePath);
     QTreeWidgetItem* createModuleItem(const QString& moduleName, const QString& fileName);
     QTreeWidgetItem* createSymbolItem(const SymbolOutlineSymbolRow& row);
-    QTreeWidgetItem* createLegacySymbolItem(const sym_list::SymbolInfo& symbol,
-                                            const QString& displayName);
     QIcon getFileIcon(const QString& filePath);
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);
     void expandCurrentFileNodes();

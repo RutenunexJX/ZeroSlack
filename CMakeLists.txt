@@ -130,6 +130,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationpanecoordinator.cpp
     navigationservice.cpp
     navigationservicehierarchy.cpp
+    symboloutlinemodel.cpp
     navigationwidgetpresentation.cpp
     navigationwidgettrees.cpp
     navigationwidget.cpp
