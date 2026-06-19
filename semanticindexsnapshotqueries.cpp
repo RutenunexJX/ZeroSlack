@@ -101,17 +101,6 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
     return semanticSymbolRecordsForSymbols(getSymbols(fileName));
 }
 
-QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbolsByType(
-    sym_list::sym_type_e type) const
-{
-    QList<sym_list::SymbolInfo> result;
-    for (const sym_list::SymbolInfo& symbol : m_symbols) {
-        if (symbol.symbolType == type)
-            result.append(symbol);
-    }
-    return result;
-}
-
 SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {

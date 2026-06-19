@@ -254,7 +254,6 @@ public:
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
-    QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
     QList<SemanticSymbolSearchResult> searchSymbols(
         const SemanticSymbolSearchQuery& query) const;
     QList<sym_list::SymbolInfo> getModuleCompletionSymbols(

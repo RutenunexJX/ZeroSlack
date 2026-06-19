@@ -23,7 +23,6 @@ public:
     QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
-    QList<sym_list::SymbolInfo> getSymbolsByType(sym_list::sym_type_e type) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     QList<SemanticSymbolRecord> findDefinitionRecords(

@@ -154,14 +154,6 @@ sym_list::SymbolInfo semanticSymbolInfoCarrierForRecord(
     return symbol;
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e type) const
-{
-    if (m_snapshot)
-        return m_snapshot->getSymbolsByType(type);
-
-    return symbolDatabase()->findSymbolsByType(type);
-}
-
 SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {

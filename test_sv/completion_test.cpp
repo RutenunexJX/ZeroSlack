@@ -2451,12 +2451,12 @@ int main(int argc, char** argv) {
     expectEq("snapshot unpacked struct var",
              snapshotCompletionService.getStructTypeForVariable("snap_pair", "snap_top"),
              "snap_pair_t");
-    const QList<sym_list::SymbolInfo> snapshotStructVars =
-        snapshotIndex.getSymbolsByType(sym_list::sym_packed_struct_var);
+    const QList<SemanticSymbolRecord> snapshotStructRecords =
+        snapshotIndex.getSymbolRecords();
     bool snapshotStructRecordOk = false;
-    for (const sym_list::SymbolInfo& symbol : snapshotStructVars) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : snapshotStructRecords) {
+        if (record.rawCollectorKind != sym_list::sym_packed_struct_var)
+            continue;
         if (record.name == QStringLiteral("snap_pixel")
             && record.owner.name == QStringLiteral("snap_top")
             && record.type.rawTypeText == QStringLiteral("snap_pixel_t")) {
@@ -2804,12 +2804,12 @@ int main(int argc, char** argv) {
                    QStringLiteral("SNAP_"),
                    QStringLiteral("snap_top")),
                {"SNAP_IDLE", "SNAP_RUN"});
-    const QList<sym_list::SymbolInfo> snapshotEnumValues =
-        snapshotIndex.getSymbolsByType(sym_list::sym_enum_value);
+    const QList<SemanticSymbolRecord> snapshotEnumRecords =
+        snapshotIndex.getSymbolRecords();
     bool snapshotEnumRecordOk = false;
-    for (const sym_list::SymbolInfo& symbol : snapshotEnumValues) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : snapshotEnumRecords) {
+        if (record.rawCollectorKind != sym_list::sym_enum_value)
+            continue;
         if (record.name == QStringLiteral("SNAP_IDLE")
             && record.owner.name == QStringLiteral("snap_top")) {
             snapshotEnumRecordOk = true;
