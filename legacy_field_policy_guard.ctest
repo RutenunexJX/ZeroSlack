@@ -376,6 +376,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "signaljourneyservice.h|isInterfaceConnectionPeer[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
     "signaljourneyservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
+    "signaljourneyservice.cpp|signal\\.symbolId"
+    "signaljourneyservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
 )
 
 set(missing_files)

@@ -13,6 +13,11 @@ sym_list::SymbolInfo missingSignalJourneySymbol()
     return symbol;
 }
 
+int signalJourneyLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolId;
+}
+
 sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
 {
     return semanticSymbolInfoCarrierForRecord(record);
@@ -220,7 +225,7 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
     SignalJourneyReport report;
     const sym_list::SymbolInfo signal =
         resolveSignal(query, &report.notFoundReason);
-    if (signal.symbolId < 0) {
+    if (signalJourneyLocalHandleForSymbol(signal) < 0) {
         report.notFoundReasonDisplayName =
             notFoundReasonDisplayName(report.notFoundReason);
         return report;
@@ -299,7 +304,7 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     }
     const sym_list::SymbolInfo symbol =
         symbolInfoForRecord(definition.symbolRecord);
-    if (symbol.symbolId < 0)
+    if (signalJourneyLocalHandleForSymbol(symbol) < 0)
         return missingSignalJourneySymbol();
     return symbol;
 }
