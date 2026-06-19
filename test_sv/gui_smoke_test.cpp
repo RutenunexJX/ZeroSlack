@@ -1616,11 +1616,11 @@ static void runNavigationHierarchyModelRegression()
                                                  QStringLiteral("rel_top"));
 
     bool symbolClicked = false;
-    sym_list::SymbolInfo clickedSymbol;
-    QObject::connect(&widget, &NavigationWidget::symbolDoubleClicked,
-                     &widget, [&](const sym_list::SymbolInfo& symbol) {
+    SymbolOutlineSymbolRow clickedRow;
+    QObject::connect(&widget, &NavigationWidget::symbolRowDoubleClicked,
+                     &widget, [&](const SymbolOutlineSymbolRow& row) {
                          symbolClicked = true;
-                         clickedSymbol = symbol;
+                         clickedRow = row;
                      });
 
     expectBool("symbol outline item rendered", symbolItem != nullptr, true);
@@ -1628,14 +1628,17 @@ static void runNavigationHierarchyModelRegression()
         widget.onSymbolTreeDoubleClicked(symbolItem, 0);
     expectBool("symbol outline emits payload", symbolClicked, true);
     expectBool("symbol outline preserves file",
-               clickedSymbol.fileName == outlineSymbol.fileName,
+               clickedRow.symbolRecord.location.fileName == outlineSymbol.fileName,
                true);
     expectBool("symbol outline preserves location",
-               clickedSymbol.startLine == outlineSymbol.startLine
-                   && clickedSymbol.startColumn == outlineSymbol.startColumn,
+               clickedRow.symbolRecord.location.startLine == outlineSymbol.startLine
+                   && clickedRow.symbolRecord.location.startColumn == outlineSymbol.startColumn,
                true);
     expectBool("symbol outline preserves id",
-               clickedSymbol.symbolId == outlineSymbol.symbolId,
+               clickedRow.symbolRecord.localHandle == outlineSymbol.symbolId,
+               true);
+    expectBool("symbol outline exposes stable key",
+               clickedRow.symbolRecord.stableKey.isValid(),
                true);
 }
 

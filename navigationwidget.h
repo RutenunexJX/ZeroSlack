@@ -13,7 +13,6 @@
 #include <QHash>
 #include "modulehierarchymodel.h"
 #include "symboloutlinemodel.h"
-#include "syminfo.h"
 
 class NavigationWidget : public QWidget
 {
@@ -46,7 +45,6 @@ public:
 signals:
     void fileDoubleClicked(const QString& filePath);
     void symbolRowDoubleClicked(const SymbolOutlineSymbolRow& row);
-    void symbolDoubleClicked(const sym_list::SymbolInfo& symbol);
     void moduleDoubleClicked(const QString& moduleName);
     void viewChanged(int newTabIndex);
     void searchFilterChanged(const QString& filter);

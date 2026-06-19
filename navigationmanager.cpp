@@ -94,12 +94,6 @@ void NavigationManager::navigateToFile(const QString& filePath, int lineNumber)
 void NavigationManager::navigateToSymbol(const SymbolOutlineSymbolRow& row)
 {
     emit symbolRowNavigationRequested(row);
-    emit symbolNavigationRequested(row.symbol);
-}
-
-void NavigationManager::navigateToSymbol(const sym_list::SymbolInfo& symbol)
-{
-    emit symbolNavigationRequested(symbol);
 }
 
 void NavigationManager::navigateToModule(const QString& moduleName)

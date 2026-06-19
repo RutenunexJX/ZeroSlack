@@ -120,10 +120,5 @@ void NavigationCommandCoordinator::navigateToSymbol(
         return;
     }
 
-    navigateToSymbol(row.symbol);
-}
-
-void NavigationCommandCoordinator::navigateToSymbol(const sym_list::SymbolInfo& symbol)
-{
-    navigateToFileAndLine(symbol.fileName, symbol.startLine);
+    navigateToFileAndLine(row.symbol.fileName, row.symbol.startLine);
 }

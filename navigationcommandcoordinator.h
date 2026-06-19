@@ -27,7 +27,6 @@ public:
                               int lineNumber,
                               int columnNumber = -1);
     void navigateToSymbol(const SymbolOutlineSymbolRow& row);
-    void navigateToSymbol(const sym_list::SymbolInfo& symbol);
 
 private:
     struct NavigationTargets {

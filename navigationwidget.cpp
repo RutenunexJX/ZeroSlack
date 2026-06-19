@@ -134,7 +134,6 @@ void NavigationWidget::onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int colu
     if (symbolItemPayloads.contains(payloadId)) {
         const SymbolOutlineSymbolRow row = symbolItemPayloads.value(payloadId);
         emit symbolRowDoubleClicked(row);
-        emit symbolDoubleClicked(row.symbol);
     }
 }
 void NavigationWidget::setupUI()
