@@ -134,6 +134,41 @@ QList<SemanticRelationshipResult> signalJourneyRelationshipResultsForSymbol(
         ? index->getRelationshipResults(stableKey, outgoing)
         : QList<SemanticRelationshipResult>();
 }
+
+bool isInterfaceConnectionPeer(const sym_list::SymbolInfo& symbol,
+                               const QSet<QString>& interfaceNames)
+{
+    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        metadataForRecord(record, symbol);
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface
+        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Modport
+        || (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
+            && metadata.interfaceLikeOwner)) {
+        return true;
+    }
+    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
+        && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration) {
+        const QString interfaceName =
+            interfaceBaseDisplayNameForRecord(record, symbol);
+        return !interfaceName.isEmpty() && interfaceNames.contains(interfaceName);
+    }
+    return !record.owner.name.isEmpty()
+        && interfaceNames.contains(record.owner.name)
+        && SymbolTaxonomy::isDefinitionCandidate(metadata);
+}
+
+bool isJourneyDeclaration(const sym_list::SymbolInfo& symbol,
+                          const QSet<QString>& interfaceNames)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        SymbolTaxonomy::semanticMetadata(symbol);
+    if (SymbolTaxonomy::isSignalDeclaration(metadata)
+        || SymbolTaxonomy::isPortDeclaration(metadata)) {
+        return true;
+    }
+    return isInterfaceConnectionPeer(symbol, interfaceNames);
+}
 }
 
 SignalJourneyService* SignalJourneyService::getInstance()
@@ -205,7 +240,7 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
                 *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
             return missingSignalJourneySymbol();
         }
-        if (!isJourneyDeclaration(symbol)) {
+        if (!isJourneyDeclaration(symbol, interfaceNames())) {
             if (reason)
                 *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
             return missingSignalJourneySymbol();
@@ -230,7 +265,7 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
             *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
         return missingSignalJourneySymbol();
     }
-    if (!isJourneyDeclaration(definition.symbol)) {
+    if (!isJourneyDeclaration(definition.symbol, interfaceNames())) {
         if (reason)
             *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
         return missingSignalJourneySymbol();
@@ -306,6 +341,7 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
 {
     QList<SignalJourneyItem> items;
     QSet<QString> seen;
+    const QSet<QString> interfaces = interfaceNames();
     auto appendDirection = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
             signalJourneyRelationshipResultsForSymbol(semanticIndex(),
@@ -314,7 +350,7 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
         for (const SemanticRelationshipResult& relationship : relationships) {
             const sym_list::SymbolInfo peer =
                 outgoing ? relationship.toSymbol : relationship.fromSymbol;
-            if (!isInterfaceConnectionPeer(peer))
+            if (!isInterfaceConnectionPeer(peer, interfaces))
                 continue;
             const QString key = QStringLiteral("%1:%2:%3")
                                     .arg(relationship.relationship.fromId)
@@ -380,42 +416,6 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
     return items;
 }
 
-bool SignalJourneyService::isJourneyDeclaration(
-    const sym_list::SymbolInfo& symbol) const
-{
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
-    if (SymbolTaxonomy::isSignalDeclaration(metadata)
-        || SymbolTaxonomy::isPortDeclaration(metadata)) {
-        return true;
-    }
-    return isInterfaceConnectionPeer(symbol);
-}
-
-bool SignalJourneyService::isInterfaceConnectionPeer(
-    const sym_list::SymbolInfo& symbol) const
-{
-    const QSet<QString> interfaces = interfaceNames();
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        metadataForRecord(record, symbol);
-    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface
-        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Modport
-        || (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
-            && metadata.interfaceLikeOwner)) {
-        return true;
-    }
-    if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
-        && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration) {
-        const QString interfaceName =
-            interfaceBaseDisplayNameForRecord(record, symbol);
-        return !interfaceName.isEmpty() && interfaces.contains(interfaceName);
-    }
-    return !record.owner.name.isEmpty()
-        && interfaces.contains(record.owner.name)
-        && SymbolTaxonomy::isDefinitionCandidate(metadata);
-}
-
 QSet<QString> SignalJourneyService::interfaceNames() const
 {
     QSet<QString> names;
@@ -439,11 +439,6 @@ QString SignalJourneyService::relationshipTypeDisplayName(
     SymbolRelationshipEngine::RelationType type)
 {
     return ::relationshipTypeDisplayName(type);
-}
-
-QString SignalJourneyService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolName;
 }
 
 QString SignalJourneyService::notFoundReasonDisplayName(

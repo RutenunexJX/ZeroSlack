@@ -207,6 +207,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "smartrelationshipbuilderanalysis.cpp|snapshot->[ \t\r\n]*getSymbolById"
     "smartrelationshipbuilderanalysis.cpp|symbolDatabase->[ \t\r\n]*getSymbolById"
     "signaljourneyservice.h|signalSymbolId"
+    "signaljourneyservice.h|isJourneyDeclaration[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "signaljourneyservice.h|isInterfaceConnectionPeer[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
     "signaljourneyservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
 )

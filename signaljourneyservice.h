@@ -110,12 +110,9 @@ private:
     QList<SignalJourneyItem> timingConnectionItems(
         const sym_list::SymbolInfo& signal) const;
 
-    bool isJourneyDeclaration(const sym_list::SymbolInfo& symbol) const;
-    bool isInterfaceConnectionPeer(const sym_list::SymbolInfo& symbol) const;
     QSet<QString> interfaceNames() const;
     static QString directionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
-    static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString notFoundReasonDisplayName(SignalJourneyNotFoundReason reason);
     static QString provenanceDisplayName(RelationshipProvenance provenance);
     static QString confidenceDisplayName(int confidence);
