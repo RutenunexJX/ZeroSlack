@@ -43,6 +43,29 @@ sym_list::SymbolInfo symbolByLocalHandle(const SemanticIndex& index,
     return missing;
 }
 
+SemanticSymbolRecord recordByLocalHandle(const SemanticIndex& index,
+                                         int symbolId)
+{
+    if (symbolId < 0)
+        return {};
+
+    if (const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+            index.snapshot()) {
+        const QList<SemanticSymbolRecord> records = snapshot->getSymbolRecords();
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.localHandle == symbolId)
+                return record;
+        }
+    }
+
+    for (const sym_list::SymbolInfo& symbol : index.getSymbols()) {
+        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        if (record.localHandle == symbolId)
+            return record;
+    }
+    return {};
+}
+
 sym_list::SymbolInfo relationshipEndpointSymbol(const SemanticIndex& index,
                                                 const SemanticRelationship& relationship,
                                                 bool fromEndpoint)
@@ -73,8 +96,15 @@ SymbolStableKey relationshipEndpointStableKey(
     if (stableKey.isValid())
         return stableKey;
 
-    return relationshipStableKeyForSymbol(
-        relationshipEndpointSymbol(index, relationship, fromEndpoint));
+    const SemanticSymbolRecord record =
+        recordByLocalHandle(index,
+                            fromEndpoint
+                                ? relationship.fromId
+                                : relationship.toId);
+    if (record.stableKey.isValid())
+        return record.stableKey;
+
+    return {};
 }
 
 SemanticSymbolRecord relationshipEndpointRecord(
@@ -92,8 +122,10 @@ SemanticSymbolRecord relationshipEndpointRecord(
             return record;
     }
 
-    return semanticSymbolRecordForSymbol(
-        relationshipEndpointSymbol(index, relationship, fromEndpoint));
+    return recordByLocalHandle(index,
+                               fromEndpoint
+                                   ? relationship.fromId
+                                   : relationship.toId);
 }
 }
 

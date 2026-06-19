@@ -274,6 +274,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*relationship\\.toId"
     "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*rel\\.fromId"
     "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*rel\\.toId"
+    "semanticindexrelationships.cpp|relationshipStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*relationshipEndpointSymbol"
+    "semanticindexrelationships.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*relationshipEndpointSymbol"
     "semanticdiffservice.cpp|query\\.beforeSnapshot->getSymbolById"
     "clockresetdomainservice.cpp|SymbolTaxonomy::semanticMetadata[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "fsmgraphservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
