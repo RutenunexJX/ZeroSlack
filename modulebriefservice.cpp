@@ -13,6 +13,11 @@ sym_list::SymbolInfo missingModuleBriefSymbol()
     return symbol;
 }
 
+int moduleBriefLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolId;
+}
+
 sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
 {
     return semanticSymbolInfoCarrierForRecord(record);
@@ -83,7 +88,7 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     ModuleBriefReport report;
     const sym_list::SymbolInfo moduleSymbol =
         resolveModule(query, &report.notFoundReason);
-    if (moduleSymbol.symbolId < 0) {
+    if (moduleBriefLocalHandleForSymbol(moduleSymbol) < 0) {
         report.notFoundReasonDisplayName =
             notFoundReasonDisplayName(report.notFoundReason);
         return report;
@@ -183,7 +188,7 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
     }
     const sym_list::SymbolInfo symbol =
         symbolInfoForRecord(definition.symbolRecord);
-    if (symbol.symbolId < 0)
+    if (moduleBriefLocalHandleForSymbol(symbol) < 0)
         return missingModuleBriefSymbol();
     return symbol;
 }
@@ -230,7 +235,7 @@ QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
             continue;
         const sym_list::SymbolInfo packageSymbol =
             symbolInfoForRecord(packageRecord);
-        if (packageSymbol.symbolId < 0)
+        if (moduleBriefLocalHandleForSymbol(packageSymbol) < 0)
             continue;
         seen.insert(localHandle);
         result.append(packageSymbol);
@@ -340,8 +345,10 @@ bool isInsideModule(
     const sym_list::SymbolInfo& symbol,
     const sym_list::SymbolInfo& moduleSymbol)
 {
-    if (symbol.symbolId == moduleSymbol.symbolId)
+    if (moduleBriefLocalHandleForSymbol(symbol)
+        == moduleBriefLocalHandleForSymbol(moduleSymbol)) {
         return false;
+    }
 
     const SemanticSymbolRecord symbolRecord =
         semanticSymbolRecordForSymbol(symbol);
@@ -763,7 +770,8 @@ void sortSymbols(QList<sym_list::SymbolInfo>& symbols)
                       return lhs.startColumn < rhs.startColumn;
                   if (lhs.symbolName != rhs.symbolName)
                       return lhs.symbolName < rhs.symbolName;
-                  return lhs.symbolId < rhs.symbolId;
+                  return moduleBriefLocalHandleForSymbol(lhs)
+                      < moduleBriefLocalHandleForSymbol(rhs);
               });
 }
 
