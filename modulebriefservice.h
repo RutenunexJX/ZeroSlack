@@ -152,8 +152,6 @@ private:
         const sym_list::SymbolInfo& moduleSymbol,
         const SymbolStableKey& moduleStableKey) const;
 
-    static bool isInsideModule(const sym_list::SymbolInfo& symbol,
-                               const sym_list::SymbolInfo& moduleSymbol);
     static QList<ModuleBriefSymbolRow> symbolRows(
         const QList<sym_list::SymbolInfo>& symbols,
         const QString& sectionDisplayName);
@@ -170,14 +168,12 @@ private:
     static QString symbolDetailDisplayName(const SemanticSymbolRecord& record);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
     static QString symbolDisplayName(const SemanticSymbolRecord& record);
-    static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString notFoundReasonDisplayName(ModuleBriefNotFoundReason reason);
     static QString provenanceDisplayName(RelationshipProvenance provenance);
     static QString confidenceDisplayName(int confidence);
     static QString evidenceDisplayName(const QString& evidenceText);
     static QString contextDetailDisplayName(const QString& kind,
                                             const SemanticSymbolRecord& record);
-    static QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols);
     static QString relationshipDirectionDisplayName(bool outgoing);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString relationshipDetailDisplayName(int count);
@@ -188,7 +184,6 @@ private:
         const SemanticRelationshipResult& relationship);
     static void sortRelationshipEvidenceRows(
         QList<ModuleBriefRelationshipEvidenceRow>& rows);
-    static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
 };
 
 #endif // MODULEBRIEFSERVICE_H

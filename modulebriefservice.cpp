@@ -46,6 +46,11 @@ RtlInsightCodeLink codeLinkForRecord(
     return RtlInsightLink::fromSymbol(fallback);
 }
 
+bool isInsideModule(const sym_list::SymbolInfo& symbol,
+                    const sym_list::SymbolInfo& moduleSymbol);
+QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols);
+void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
+
 }
 
 ModuleBriefService* ModuleBriefService::getInstance()
@@ -313,7 +318,9 @@ QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEviden
     return rows;
 }
 
-bool ModuleBriefService::isInsideModule(
+namespace {
+
+bool isInsideModule(
     const sym_list::SymbolInfo& symbol,
     const sym_list::SymbolInfo& moduleSymbol)
 {
@@ -335,6 +342,8 @@ bool ModuleBriefService::isInsideModule(
     if (symbol.startLine < moduleSymbol.startLine)
         return false;
     return moduleSymbol.endLine <= 0 || symbol.startLine <= moduleSymbol.endLine;
+}
+
 }
 
 QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
@@ -522,11 +531,6 @@ QString ModuleBriefService::symbolDisplayName(
         : record.name;
 }
 
-QString ModuleBriefService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
-{
-    return symbolDisplayName(semanticSymbolRecordForSymbol(symbol));
-}
-
 QString ModuleBriefService::notFoundReasonDisplayName(
     ModuleBriefNotFoundReason reason)
 {
@@ -588,8 +592,9 @@ QString ModuleBriefService::contextDetailDisplayName(
         : QStringLiteral("%1 %2").arg(kind, record.type.rawTypeText);
 }
 
-QSet<QString> ModuleBriefService::interfaceNames(
-    const QList<sym_list::SymbolInfo>& symbols)
+namespace {
+
+QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols)
 {
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
@@ -600,6 +605,8 @@ QSet<QString> ModuleBriefService::interfaceNames(
         }
     }
     return names;
+}
+
 }
 
 QString ModuleBriefService::relationshipDirectionDisplayName(bool outgoing)
@@ -732,7 +739,9 @@ void ModuleBriefService::sortRelationshipEvidenceRows(
               });
 }
 
-void ModuleBriefService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)
+namespace {
+
+void sortSymbols(QList<sym_list::SymbolInfo>& symbols)
 {
     std::sort(symbols.begin(), symbols.end(),
               [](const sym_list::SymbolInfo& lhs,
@@ -747,4 +756,6 @@ void ModuleBriefService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)
                       return lhs.symbolName < rhs.symbolName;
                   return lhs.symbolId < rhs.symbolId;
               });
+}
+
 }
