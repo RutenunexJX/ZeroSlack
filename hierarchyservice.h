@@ -45,7 +45,6 @@ struct HierarchyPanelQueryOptions {
 };
 
 struct HierarchyNode {
-    sym_list::SymbolInfo symbol;
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     int depth = 0;
@@ -115,7 +114,6 @@ private:
     QList<SymbolRelationshipEngine::RelationType> effectiveTypes(const HierarchyQuery& query) const;
     static QString directionDisplayName(HierarchyQuery::Direction direction);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
-    static QString symbolDisplayName(const sym_list::SymbolInfo& symbol);
     static QString fileDisplayName(const QString& fileName);
     static QString lineDisplayName(int line);
     static void fillDisplayMetadata(HierarchyNode& node);

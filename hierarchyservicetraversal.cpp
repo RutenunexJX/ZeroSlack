@@ -21,7 +21,7 @@ QString hierarchyNodePathKey(const HierarchyNode& node)
     const QString stableKey = symbolStableKeyText(node.symbolStableKey);
     if (!stableKey.isEmpty())
         return stableKey;
-    return QStringLiteral("local:%1").arg(node.symbol.symbolId);
+    return QStringLiteral("local:%1").arg(node.symbolRecord.localHandle);
 }
 }
 
@@ -32,8 +32,6 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     const SymbolStableKey rootStableKey = rootRecord.stableKey;
     if (!rootStableKey.isValid())
         return {};
-    const sym_list::SymbolInfo rootSymbol =
-        semanticIndex()->getSymbolByStableKey(rootStableKey);
 
     const int maxDepth = normalized.maxDepth < 0 ? 0 : normalized.maxDepth;
     QList<HierarchyNode> result;
@@ -46,7 +44,6 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
     int nextNodeId = 0;
 
     HierarchyNode root;
-    root.symbol = rootSymbol;
     root.symbolRecord = rootRecord;
     root.symbolStableKey = rootStableKey;
     root.depth = 0;
@@ -70,7 +67,7 @@ QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query)
                               HierarchyQuery::Direction edgeDirection) {
             for (HierarchyNode child : nextNodes) {
                 if (!child.symbolStableKey.isValid()
-                    && child.symbol.symbolId < 0) {
+                    && child.symbolRecord.localHandle < 0) {
                     continue;
                 }
                 const QString childPathKey = hierarchyNodePathKey(child);

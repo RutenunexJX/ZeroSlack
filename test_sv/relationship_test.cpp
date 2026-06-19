@@ -697,13 +697,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool searchFoundTopStableKey = false;
     bool searchFoundTopRecord = false;
     for (const SearchResult& result : moduleSearchResults) {
-        searchFoundTop = searchFoundTop || result.symbol.symbolId == topId;
-        searchFoundStage = searchFoundStage || result.symbol.symbolId == stageId;
+        searchFoundTop = searchFoundTop || result.symbolRecord.localHandle == topId;
+        searchFoundStage = searchFoundStage || result.symbolRecord.localHandle == stageId;
         searchFoundTopStableKey = searchFoundTopStableKey
-            || (result.symbol.symbolId == topId
-                && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
+            || (result.symbolRecord.localHandle == topId
+                && result.symbolStableKey == result.symbolRecord.stableKey);
         searchFoundTopRecord = searchFoundTopRecord
-            || (result.symbol.symbolId == topId
+            || (result.symbolRecord.localHandle == topId
                 && result.symbolRecord.localHandle == topId
                 && result.symbolRecord.stableKey == result.symbolStableKey
                 && result.symbolRecord.declarationKind
@@ -725,8 +725,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool fileSearchFoundTop = false;
     bool fileSearchFoundStage = false;
     for (const SearchResult& result : fileModuleSearchResults) {
-        fileSearchFoundTop = fileSearchFoundTop || result.symbol.symbolId == topId;
-        fileSearchFoundStage = fileSearchFoundStage || result.symbol.symbolId == stageId;
+        fileSearchFoundTop =
+            fileSearchFoundTop || result.symbolRecord.localHandle == topId;
+        fileSearchFoundStage =
+            fileSearchFoundStage || result.symbolRecord.localHandle == stageId;
     }
     expectBool("search service filters file module",
                fileSearchFoundTop, true);
@@ -742,7 +744,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         searchService.findSymbols(exactTaskSearchQuery);
     expectBool("search service exact task result",
                exactTaskResults.size() == 1
-                   && exactTaskResults.first().symbol.symbolId == captureId,
+                   && exactTaskResults.first().symbolRecord.localHandle == captureId,
                true);
 
     SearchQuery outlineSearchQuery;
@@ -752,7 +754,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         searchService.findSymbols(outlineSearchQuery);
     expectBool("search service outline intent finds task",
                outlineSearchResults.size() == 1
-                   && outlineSearchResults.first().symbol.symbolId == captureId,
+                   && outlineSearchResults.first().symbolRecord.localHandle == captureId,
                true);
 
     QVector<RelationshipToAdd> rels = builder.computeRelationships(topPath,
@@ -851,16 +853,18 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool snapshotSearchFoundStageStableKey = false;
     bool snapshotSearchFoundStageRecord = false;
     for (const SearchResult& result : snapshotSearchResults) {
-        snapshotSearchFoundTop = snapshotSearchFoundTop || result.symbol.symbolId == topId;
-        snapshotSearchFoundStage = snapshotSearchFoundStage || result.symbol.symbolId == stageId;
+        snapshotSearchFoundTop =
+            snapshotSearchFoundTop || result.symbolRecord.localHandle == topId;
+        snapshotSearchFoundStage =
+            snapshotSearchFoundStage || result.symbolRecord.localHandle == stageId;
         snapshotSearchFoundTopStableKey = snapshotSearchFoundTopStableKey
-            || (result.symbol.symbolId == topId
-                && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
+            || (result.symbolRecord.localHandle == topId
+                && result.symbolStableKey == result.symbolRecord.stableKey);
         snapshotSearchFoundStageStableKey = snapshotSearchFoundStageStableKey
-            || (result.symbol.symbolId == stageId
-                && result.symbolStableKey == symbolStableKeyForSymbol(result.symbol));
+            || (result.symbolRecord.localHandle == stageId
+                && result.symbolStableKey == result.symbolRecord.stableKey);
         snapshotSearchFoundStageRecord = snapshotSearchFoundStageRecord
-            || (result.symbol.symbolId == stageId
+            || (result.symbolRecord.localHandle == stageId
                 && result.symbolRecord.localHandle == stageId
                 && result.symbolRecord.stableKey == result.symbolStableKey
                 && result.symbolRecord.declarationKind
@@ -888,9 +892,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool snapshotFileSearchFoundStage = false;
     for (const SearchResult& result : snapshotFileModuleSearchResults) {
         snapshotFileSearchFoundTop =
-            snapshotFileSearchFoundTop || result.symbol.symbolId == topId;
+            snapshotFileSearchFoundTop || result.symbolRecord.localHandle == topId;
         snapshotFileSearchFoundStage =
-            snapshotFileSearchFoundStage || result.symbol.symbolId == stageId;
+            snapshotFileSearchFoundStage || result.symbolRecord.localHandle == stageId;
     }
     expectBool("snapshot search service filters file module",
                snapshotFileSearchFoundTop, true);
@@ -900,7 +904,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotSearchService.findSymbols(exactTaskSearchQuery);
     expectBool("snapshot search service exact task result",
                snapshotExactTaskResults.size() == 1
-                   && snapshotExactTaskResults.first().symbol.symbolId == captureId,
+                   && snapshotExactTaskResults.first()
+                          .symbolRecord.localHandle == captureId,
                true);
     expectInt("snapshot search service exact score",
               snapshotExactTaskResults.isEmpty() ? 0 : snapshotExactTaskResults.first().score,
@@ -909,7 +914,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotSearchService.findSymbols(outlineSearchQuery);
     expectBool("snapshot search service outline intent finds task",
                snapshotOutlineSearchResults.size() == 1
-                   && snapshotOutlineSearchResults.first().symbol.symbolId == captureId,
+                   && snapshotOutlineSearchResults.first()
+                          .symbolRecord.localHandle == captureId,
                true);
     SearchQuery snapshotPartialExactTaskQuery = exactTaskSearchQuery;
     snapshotPartialExactTaskQuery.text = QStringLiteral("capture");
@@ -938,9 +944,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool snapshotEmptySearchUsesDefaultScore = !snapshotEmptyModuleResults.isEmpty();
     for (const SearchResult& result : snapshotEmptyModuleResults) {
         snapshotEmptySearchFoundTop =
-            snapshotEmptySearchFoundTop || result.symbol.symbolId == topId;
+            snapshotEmptySearchFoundTop || result.symbolRecord.localHandle == topId;
         snapshotEmptySearchFoundStage =
-            snapshotEmptySearchFoundStage || result.symbol.symbolId == stageId;
+            snapshotEmptySearchFoundStage || result.symbolRecord.localHandle == stageId;
         snapshotEmptySearchUsesDefaultScore =
             snapshotEmptySearchUsesDefaultScore && result.score == 1;
     }
@@ -956,9 +962,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool snapshotEmptyFileFoundTop = false;
     for (const SearchResult& result : snapshotEmptyFileModuleResults) {
         snapshotEmptyFileFoundStage =
-            snapshotEmptyFileFoundStage || result.symbol.symbolId == stageId;
+            snapshotEmptyFileFoundStage || result.symbolRecord.localHandle == stageId;
         snapshotEmptyFileFoundTop =
-            snapshotEmptyFileFoundTop || result.symbol.symbolId == topId;
+            snapshotEmptyFileFoundTop || result.symbolRecord.localHandle == topId;
     }
     expectBool("snapshot search service empty text filters file module",
                snapshotEmptyFileFoundStage && !snapshotEmptyFileFoundTop, true);
@@ -1049,7 +1055,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         metadataOutlineSearchService.findSymbols(metadataOutlineSearchQuery);
     expectBool("metadata outline search finds module",
                metadataOutlineSearchResults.size() == 1
-                   && metadataOutlineSearchResults.first().symbol.symbolId
+                   && metadataOutlineSearchResults.first().symbolRecord.localHandle
                        == metadataOutlineModule.symbolId,
                true);
     SearchQuery metadataTypedSearchQuery;
@@ -1059,7 +1065,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         metadataOutlineSearchService.findSymbols(metadataTypedSearchQuery);
     expectBool("metadata typed search finds module",
                metadataTypedSearchResults.size() == 1
-                   && metadataTypedSearchResults.first().symbol.symbolId
+                   && metadataTypedSearchResults.first().symbolRecord.localHandle
                        == metadataOutlineModule.symbolId
                    && metadataTypedSearchResults.first().symbolRecord.isValid()
                    && metadataTypedSearchResults.first().symbolRecord.stableKey
@@ -1092,7 +1098,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         metadataOutlineSearchService.findSymbols(metadataDefinitionSearchQuery);
     expectBool("metadata definition search finds module",
                metadataDefinitionSearchResults.size() == 1
-                   && metadataDefinitionSearchResults.first().symbol.symbolId
+                   && metadataDefinitionSearchResults.first().symbolRecord.localHandle
                        == metadataOutlineModule.symbolId
                    && metadataDefinitionSearchResults.first()
                           .symbolRecord.declarationKind
@@ -1680,7 +1686,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotHierarchyFoundStage = snapshotHierarchyFoundStage
             || (node.depth == 1
                 && node.parentStableKey == topStableKey
-                && node.symbol.symbolId == stageId
+                && node.symbolRecord.localHandle == stageId
                 && node.symbolRecord.isValid()
                 && node.symbolRecord.localHandle == stageId
                 && node.symbolRecord.stableKey == stageStableKey
@@ -1710,7 +1716,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                snapshotStableHierarchy.size() == snapshotHierarchy.size()
                    && !snapshotStableHierarchy.isEmpty()
                    && snapshotStableHierarchy.first().symbolStableKey == topStableKey
-                   && snapshotStableHierarchy.first().symbol.symbolId == topId,
+                   && snapshotStableHierarchy.first().symbolRecord.localHandle == topId,
                true);
     const HierarchyReport snapshotHierarchyReport =
         snapshotHierarchyService.getHierarchyReport(snapshotHierarchyQuery);
@@ -1755,11 +1761,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .relationshipTypeDisplayName == QStringLiteral("Instantiates")
                    && snapshotHierarchyReport.rootDirectionGroups.first()
                           .nodes.first()
-                          .symbol.symbolId == stageId,
+                          .symbolRecord.localHandle == stageId,
                true);
     expectBool("snapshot hierarchy report keeps child identity",
                snapshotHierarchyReport.nodes.size() == 2
-                   && snapshotHierarchyReport.nodes.last().symbol.symbolId == stageId
+                   && snapshotHierarchyReport.nodes.last()
+                          .symbolRecord.localHandle == stageId
                    && snapshotHierarchyReport.nodes.last().symbolRecord.isValid()
                    && snapshotHierarchyReport.nodes.last().symbolRecord.localHandle
                        == stageId
@@ -1809,7 +1816,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    == snapshotHierarchyReport.totalCount
                    && snapshotStableHierarchyReport.rootStableKey == topStableKey
                    && !snapshotStableHierarchyReport.nodes.isEmpty()
-                   && snapshotStableHierarchyReport.nodes.first().symbol.symbolId == topId,
+                   && snapshotStableHierarchyReport.nodes.first()
+                          .symbolRecord.localHandle == topId,
                true);
     expectBool("snapshot hierarchy report keeps child node links",
                snapshotHierarchyReport.nodes.size() == 2
@@ -1851,11 +1859,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                           .relationshipTypeDisplayName == QStringLiteral("Instantiates")
                    && snapshotParentHierarchyReport.rootDirectionGroups.first()
                           .nodes.first()
-                          .symbol.symbolId == topId,
+                          .symbolRecord.localHandle == topId,
                true);
     expectBool("snapshot hierarchy parent report keeps parent identity",
                snapshotParentHierarchyReport.nodes.size() == 2
-                   && snapshotParentHierarchyReport.nodes.last().symbol.symbolId == topId
+                   && snapshotParentHierarchyReport.nodes.last()
+                          .symbolRecord.localHandle == topId
                    && snapshotParentHierarchyReport.nodes.last().parentStableKey
                        == stageStableKey
                    && snapshotParentHierarchyReport.nodes.last().direction == HierarchyQuery::Parents,
@@ -1869,8 +1878,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotHierarchyService.getHierarchyReport(snapshotNamedHierarchyQuery);
     expectBool("snapshot hierarchy service resolves query symbol name",
                snapshotNamedHierarchyReport.totalCount == 2
-                   && snapshotNamedHierarchyReport.nodes.first().symbol.symbolId == topId
-                   && snapshotNamedHierarchyReport.nodes.last().symbol.symbolId == stageId,
+                   && snapshotNamedHierarchyReport.nodes.first()
+                          .symbolRecord.localHandle == topId
+                   && snapshotNamedHierarchyReport.nodes.last()
+                          .symbolRecord.localHandle == stageId,
                true);
     HierarchyQuery snapshotMissingHierarchyQuery;
     snapshotMissingHierarchyQuery.symbolName = QStringLiteral("missing_hierarchy_root");
@@ -3124,11 +3135,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool hierarchyFoundStage = false;
     for (const HierarchyNode& node : hierarchy) {
         hierarchyFoundRoot = hierarchyFoundRoot
-            || (node.depth == 0 && node.symbol.symbolId == topId);
+            || (node.depth == 0 && node.symbolRecord.localHandle == topId);
         hierarchyFoundStage = hierarchyFoundStage
             || (node.depth == 1
                 && node.parentStableKey == topStableKey
-                && node.symbol.symbolId == stageId);
+                && node.symbolRecord.localHandle == stageId);
     }
     expectBool("hierarchy service includes root",
                hierarchyFoundRoot, true);
@@ -3141,7 +3152,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     for (const HierarchyNode& node : stableModuleInstantiationChildren) {
         stableModuleInstantiationChildFoundStage =
             stableModuleInstantiationChildFoundStage
-            || (node.symbol.symbolId == stageId
+            || (node.symbolRecord.localHandle == stageId
                 && node.viaType == SymbolRelationshipEngine::INSTANTIATES);
     }
     expectBool("hierarchy service stable module instantiation children",
@@ -3168,7 +3179,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         hierarchyReportHasStageChild = hierarchyReportHasStageChild
             || (node.depth == 1
                 && node.parentStableKey == topStableKey
-                && node.symbol.symbolId == stageId
+                && node.symbolRecord.localHandle == stageId
                 && node.symbolRecord.isValid()
                 && node.symbolRecord.localHandle == stageId
                 && node.symbolRecord.stableKey == stageStableKey
@@ -3205,7 +3216,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && !stableHierarchyReport.nodes.isEmpty()
                    && stableHierarchyReport.nodes.first().symbolStableKey
                        == stableHierarchyQuery.symbolStableKey
-                   && stableHierarchyReport.nodes.first().symbol.symbolName
+                   && stableHierarchyReport.nodes.first().symbolRecord.name
                        == QStringLiteral("rel_top"),
                true);
     expectBool("hierarchy service exposes all tree types",
@@ -3219,7 +3230,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool parentFoundTop = false;
     for (const HierarchyNode& node : parents) {
         parentFoundTop = parentFoundTop
-            || (node.symbol.symbolId == topId
+            || (node.symbolRecord.localHandle == topId
                 && node.parentStableKey == stageStableKey);
     }
     expectBool("hierarchy service finds parent instance",
@@ -3236,11 +3247,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool parentTreeFoundTop = false;
     for (const HierarchyNode& node : parentTree) {
         parentTreeFoundRoot = parentTreeFoundRoot
-            || (node.depth == 0 && node.symbol.symbolId == stageId);
+            || (node.depth == 0 && node.symbolRecord.localHandle == stageId);
         parentTreeFoundTop = parentTreeFoundTop
             || (node.depth == 1
                 && node.parentStableKey == stageStableKey
-                && node.symbol.symbolId == topId
+                && node.symbolRecord.localHandle == topId
                 && node.direction == HierarchyQuery::Parents);
     }
     expectBool("hierarchy service parent tree includes root",
@@ -3312,13 +3323,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool cycleSawOutgoingStage = false;
     bool cycleSawIncomingStage = false;
     for (const HierarchyNode& node : cycleTree) {
-        if (node.symbol.symbolId == topId)
+        if (node.symbolRecord.localHandle == topId)
             ++cycleTopCount;
         cycleSawOutgoingStage = cycleSawOutgoingStage
-            || (node.symbol.symbolId == stageId
+            || (node.symbolRecord.localHandle == stageId
                 && node.direction == HierarchyQuery::Children);
         cycleSawIncomingStage = cycleSawIncomingStage
-            || (node.symbol.symbolId == stageId
+            || (node.symbolRecord.localHandle == stageId
                 && node.direction == HierarchyQuery::Parents);
     }
     expectInt("hierarchy service keeps cycle root once", cycleTopCount, 1);
@@ -4374,7 +4385,7 @@ static void runScopeBandServiceFixture()
                !report.modules.isEmpty()
                    && report.modules.first().symbolRecord.isValid()
                    && report.modules.first().symbolRecord.localHandle
-                       == report.modules.first().symbol.symbolId
+                       == module.symbolId
                    && report.modules.first().symbolRecord.stableKey
                        == report.modules.first().symbolStableKey
                    && report.modules.first().symbolRecord.declarationKind
@@ -4400,7 +4411,7 @@ static void runScopeBandServiceFixture()
                !report.logics.isEmpty()
                    && report.logics.first().symbolRecord.isValid()
                    && report.logics.first().symbolRecord.localHandle
-                       == report.logics.first().symbol.symbolId
+                       == logic.symbolId
                    && report.logics.first().symbolRecord.stableKey
                        == report.logics.first().symbolStableKey
                    && report.logics.first().symbolRecord.declarationKind
@@ -6876,7 +6887,7 @@ static void runRealWorkspaceIncludeFixture()
         definitionService.resolveDefinition(packageParamQuery);
     expectBool("real workspace jumps package parameter",
                packageParam.found
-                   && packageParam.symbol.moduleScope == QStringLiteral("gl_pkg"),
+                   && packageParam.symbolRecord.owner.name == QStringLiteral("gl_pkg"),
                true);
     expectBool("real workspace package parameter definition record",
                packageParam.symbolRecord.isValid()
@@ -6894,7 +6905,8 @@ static void runRealWorkspaceIncludeFixture()
         definitionService.resolveDefinition(interfaceQuery);
     expectBool("real workspace jumps interface",
                interfaceResult.found
-                   && interfaceResult.symbol.symbolType == sym_list::sym_interface,
+                   && interfaceResult.symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Interface,
                true);
     expectBool("real workspace interface definition record",
                interfaceResult.symbolRecord.isValid()
@@ -6915,8 +6927,10 @@ static void runRealWorkspaceIncludeFixture()
         definitionService.resolveDefinition(modportTypeQuery);
     expectBool("real workspace jumps interface type modport",
                modportTypeResult.found
-                   && modportTypeResult.symbol.symbolType == sym_list::sym_interface_modport
-                   && modportTypeResult.symbol.moduleScope == QStringLiteral("lr_genr_if"),
+                   && modportTypeResult.symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Modport
+                   && modportTypeResult.symbolRecord.owner.name
+                       == QStringLiteral("lr_genr_if"),
                true);
     expectBool("real workspace modport type definition record",
                modportTypeResult.symbolRecord.isValid()
@@ -6932,8 +6946,10 @@ static void runRealWorkspaceIncludeFixture()
         definitionService.resolveDefinition(modportInstQuery);
     expectBool("real workspace jumps interface instance modport",
                modportInstResult.found
-                   && modportInstResult.symbol.symbolType == sym_list::sym_interface_modport
-                   && modportInstResult.symbol.moduleScope == QStringLiteral("lr_genr_if"),
+                   && modportInstResult.symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Modport
+                   && modportInstResult.symbolRecord.owner.name
+                       == QStringLiteral("lr_genr_if"),
                true);
     expectBool("real workspace modport instance definition record",
                modportInstResult.symbolRecord.isValid()

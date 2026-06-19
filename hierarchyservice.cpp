@@ -11,30 +11,14 @@ static bool hierarchyNodeLess(const HierarchyNode& lhs, const HierarchyNode& rhs
     if (lhs.viaType != rhs.viaType)
         return static_cast<int>(lhs.viaType) < static_cast<int>(rhs.viaType);
 
-    const QString lhsFileName = lhs.symbolRecord.location.fileName.isEmpty()
-        ? lhs.symbol.fileName
-        : lhs.symbolRecord.location.fileName;
-    const QString rhsFileName = rhs.symbolRecord.location.fileName.isEmpty()
-        ? rhs.symbol.fileName
-        : rhs.symbolRecord.location.fileName;
-    const int lhsStartLine = lhs.symbolRecord.location.startLine > 0
-        ? lhs.symbolRecord.location.startLine
-        : lhs.symbol.startLine;
-    const int rhsStartLine = rhs.symbolRecord.location.startLine > 0
-        ? rhs.symbolRecord.location.startLine
-        : rhs.symbol.startLine;
-    const int lhsStartColumn = lhs.symbolRecord.location.startColumn > 0
-        ? lhs.symbolRecord.location.startColumn
-        : lhs.symbol.startColumn;
-    const int rhsStartColumn = rhs.symbolRecord.location.startColumn > 0
-        ? rhs.symbolRecord.location.startColumn
-        : rhs.symbol.startColumn;
-    const QString lhsName = lhs.symbolRecord.name.isEmpty()
-        ? lhs.symbol.symbolName
-        : lhs.symbolRecord.name;
-    const QString rhsName = rhs.symbolRecord.name.isEmpty()
-        ? rhs.symbol.symbolName
-        : rhs.symbolRecord.name;
+    const QString lhsFileName = lhs.symbolRecord.location.fileName;
+    const QString rhsFileName = rhs.symbolRecord.location.fileName;
+    const int lhsStartLine = lhs.symbolRecord.location.startLine;
+    const int rhsStartLine = rhs.symbolRecord.location.startLine;
+    const int lhsStartColumn = lhs.symbolRecord.location.startColumn;
+    const int rhsStartColumn = rhs.symbolRecord.location.startColumn;
+    const QString lhsName = lhs.symbolRecord.name;
+    const QString rhsName = rhs.symbolRecord.name;
 
     const int fileCompare = QString::compare(lhsFileName,
                                              rhsFileName,
@@ -58,11 +42,9 @@ QString normalizedHierarchyFileName(const QString& fileName)
 }
 
 SymbolTaxonomy::SemanticMetadata hierarchyMetadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
+    SymbolTaxonomy::SemanticMetadata metadata;
     if (!record.isValid())
         return metadata;
 
@@ -76,18 +58,14 @@ SymbolTaxonomy::SemanticMetadata hierarchyMetadataForRecord(
 }
 
 RtlInsightCodeLink hierarchyCodeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
     if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        return RtlInsightLink::fromFileLine(fileName,
+        return RtlInsightLink::fromFileLine(record.location.fileName,
                                             record.location.startLine,
                                             record.location.startColumn);
     }
-    return RtlInsightLink::fromSymbol(fallback);
+    return {};
 }
 
 QString HierarchyService::directionDisplayName(HierarchyQuery::Direction direction)
@@ -142,29 +120,16 @@ void HierarchyService::fillDisplayMetadata(HierarchyNode& node)
         ? QStringLiteral("Root")
         : relationshipTypeDisplayName(node.viaType);
     node.symbolDisplayName = node.symbolRecord.name.isEmpty()
-        ? symbolDisplayName(node.symbol)
+        ? QStringLiteral("<unnamed>")
         : node.symbolRecord.name;
     const SymbolTaxonomy::SemanticMetadata metadata =
-        hierarchyMetadataForRecord(node.symbolRecord, node.symbol);
+        hierarchyMetadataForRecord(node.symbolRecord);
     node.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
     node.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
-    node.codeLink = hierarchyCodeLinkForRecord(node.symbolRecord, node.symbol);
-    const QString fileName = node.symbolRecord.location.fileName.isEmpty()
-        ? node.symbol.fileName
-        : node.symbolRecord.location.fileName;
-    const int startLine = node.symbolRecord.location.startLine > 0
-        ? node.symbolRecord.location.startLine
-        : node.symbol.startLine;
-    node.fileDisplayName = fileDisplayName(fileName);
-    node.lineDisplayName = lineDisplayName(startLine);
-}
-
-QString HierarchyService::symbolDisplayName(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolName.isEmpty()
-        ? QStringLiteral("<unnamed>")
-        : symbol.symbolName;
+    node.codeLink = hierarchyCodeLinkForRecord(node.symbolRecord);
+    node.fileDisplayName = fileDisplayName(node.symbolRecord.location.fileName);
+    node.lineDisplayName = lineDisplayName(node.symbolRecord.location.startLine);
 }
 
 QString HierarchyService::fileDisplayName(const QString& fileName)
@@ -235,14 +200,13 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
         HierarchyNode node;
-        node.symbol = rel.toSymbol;
         node.symbolRecord = rel.toSymbolRecord.isValid()
             ? rel.toSymbolRecord
-            : semanticSymbolRecordForSymbol(node.symbol);
+            : semanticSymbolRecordForSymbol(rel.toSymbol);
         node.symbolStableKey = node.symbolRecord.stableKey.isValid()
             ? node.symbolRecord.stableKey
             : rel.toStableKey;
-        if (!node.symbolStableKey.isValid() && node.symbol.symbolId < 0)
+        if (!node.symbolStableKey.isValid() && node.symbolRecord.localHandle < 0)
             continue;
         node.depth = 1;
         node.parentStableKey = rel.fromStableKey;
@@ -271,14 +235,13 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
         HierarchyNode node;
-        node.symbol = rel.fromSymbol;
         node.symbolRecord = rel.fromSymbolRecord.isValid()
             ? rel.fromSymbolRecord
-            : semanticSymbolRecordForSymbol(node.symbol);
+            : semanticSymbolRecordForSymbol(rel.fromSymbol);
         node.symbolStableKey = node.symbolRecord.stableKey.isValid()
             ? node.symbolRecord.stableKey
             : rel.fromStableKey;
-        if (!node.symbolStableKey.isValid() && node.symbol.symbolId < 0)
+        if (!node.symbolStableKey.isValid() && node.symbolRecord.localHandle < 0)
             continue;
         node.depth = 1;
         node.parentStableKey = rel.toStableKey;

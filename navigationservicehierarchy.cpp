@@ -6,6 +6,27 @@
 #include <QSet>
 #include <algorithm>
 
+namespace {
+SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString moduleHierarchyStableKeyText(const sym_list::SymbolInfo& symbol)
+{
+    return symbolStableKeyText(symbolStableKeyForSymbol(symbol));
+}
+}
+
 QList<sym_list::SymbolInfo> NavigationService::moduleSymbols() const
 {
     SearchQuery moduleQuery;
@@ -56,55 +77,61 @@ QList<ModuleHierarchyGroup> NavigationService::buildModuleInstantiationHierarchy
     const QList<sym_list::SymbolInfo>& modules) const
 {
     QList<ModuleHierarchyGroup> hierarchy;
-    QSet<int> childModuleIds;
-    QHash<int, QStringList> childrenByParentId;
+    QSet<QString> childModuleKeys;
+    QHash<QString, QStringList> childrenByParentKey;
 
     for (const sym_list::SymbolInfo& module : modules) {
-        if (module.symbolId < 0 || module.symbolName.isEmpty())
+        const QString parentKey = moduleHierarchyStableKeyText(module);
+        if (parentKey.isEmpty() || module.symbolName.isEmpty())
             continue;
 
         QStringList children;
         const QList<HierarchyNode> childNodes =
             hierarchyService.moduleInstantiationChildren(symbolStableKeyForSymbol(module));
         for (const HierarchyNode& node : childNodes) {
-            if (!SymbolTaxonomy::isModuleDeclaration(node.symbol)
-                || node.symbol.symbolName.isEmpty()) {
+            if (!SymbolTaxonomy::isModuleDeclaration(
+                    semanticMetadataForRecord(node.symbolRecord))
+                || node.symbolRecord.name.isEmpty()) {
                 continue;
             }
-            children.append(node.symbol.symbolName);
-            childModuleIds.insert(node.symbol.symbolId);
+            children.append(node.symbolRecord.name);
+            const QString childKey = symbolStableKeyText(node.symbolStableKey);
+            if (!childKey.isEmpty())
+                childModuleKeys.insert(childKey);
         }
 
         if (!children.isEmpty()) {
             children.removeDuplicates();
             children.sort(Qt::CaseInsensitive);
-            childrenByParentId.insert(module.symbolId, children);
+            childrenByParentKey.insert(parentKey, children);
         }
     }
 
     for (const sym_list::SymbolInfo& module : modules) {
-        if (!childrenByParentId.contains(module.symbolId))
+        const QString parentKey = moduleHierarchyStableKeyText(module);
+        if (!childrenByParentKey.contains(parentKey))
             continue;
-        if (!childModuleIds.contains(module.symbolId)) {
+        if (!childModuleKeys.contains(parentKey)) {
             ModuleHierarchyGroup group;
             group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
             group.rootName = module.symbolName;
             group.rootDisplayName = module.symbolName;
             group.rootToolTip = QStringLiteral("Module: %1").arg(module.symbolName);
-            group.childModules = childrenByParentId.value(module.symbolId);
+            group.childModules = childrenByParentKey.value(parentKey);
             hierarchy.append(group);
         }
     }
 
     if (hierarchy.isEmpty()) {
         for (const sym_list::SymbolInfo& module : modules) {
-            if (childrenByParentId.contains(module.symbolId)) {
+            const QString parentKey = moduleHierarchyStableKeyText(module);
+            if (childrenByParentKey.contains(parentKey)) {
                 ModuleHierarchyGroup group;
                 group.rootKind = ModuleHierarchyRootKind::ModuleRoot;
                 group.rootName = module.symbolName;
                 group.rootDisplayName = module.symbolName;
                 group.rootToolTip = QStringLiteral("Module: %1").arg(module.symbolName);
-                group.childModules = childrenByParentId.value(module.symbolId);
+                group.childModules = childrenByParentKey.value(parentKey);
                 hierarchy.append(group);
             }
         }
