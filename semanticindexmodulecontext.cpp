@@ -44,7 +44,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
     if (moduleName.isEmpty())
         return result;
 
-    const QList<sym_list::SymbolInfo> allSymbols = getSymbols();
+    const QList<sym_list::SymbolInfo> allSymbols =
+        semanticSymbolInfoCarriersForRecords(getSymbolRecords());
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
@@ -59,7 +60,9 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
     int moduleEndLineExclusive = std::numeric_limits<int>::max();
     if (foundModule) {
         QList<sym_list::SymbolInfo> fileModules;
-        const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(moduleSymbol.fileName);
+        const QList<sym_list::SymbolInfo> fileSymbols =
+            semanticSymbolInfoCarriersForRecords(
+                getSymbolRecords(moduleSymbol.fileName));
         for (const sym_list::SymbolInfo& symbol : fileSymbols) {
             if (SymbolTaxonomy::isModuleDeclaration(symbol)
                 && symbol.fileName == moduleSymbol.fileName) {
@@ -157,7 +160,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         return result;
 
     const QString normalizedTargetFile = normalizedModuleContextFileName(fileName);
-    const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(fileName);
+    const QList<sym_list::SymbolInfo> fileSymbols =
+        semanticSymbolInfoCarriersForRecords(getSymbolRecords(fileName));
     sym_list::SymbolInfo moduleSymbol;
     bool foundModule = false;
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
@@ -207,7 +211,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         result.append(symbol);
     };
 
-    const QList<sym_list::SymbolInfo> allSymbols = getSymbols();
+    const QList<sym_list::SymbolInfo> allSymbols =
+        semanticSymbolInfoCarriersForRecords(getSymbolRecords());
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         bool isCorrectModule = false;
         if (isModuleRangeSymbolType(symbolType)) {
@@ -253,7 +258,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
                 const QString absoluteIncludePath =
                     QDir(baseDir).absoluteFilePath(includePath);
                 const QList<sym_list::SymbolInfo> includeSymbols =
-                    getSymbols(absoluteIncludePath);
+                    semanticSymbolInfoCarriersForRecords(
+                        getSymbolRecords(absoluteIncludePath));
                 for (const sym_list::SymbolInfo& symbol : includeSymbols)
                     appendSymbol(symbol);
             }
