@@ -37,7 +37,7 @@ void NavigationWidget::updateModuleHierarchy(const QList<ModuleHierarchyGroup>& 
 
 void NavigationWidget::updateSymbolHierarchy(const QList<SymbolOutlineGroup>& symbolGroups)
 {
-    currentSymbolHierarchy = symbolOutlineGroupsWithRows(symbolGroups);
+    currentSymbolHierarchy = symbolGroups;
     populateSymbolTree();
 }
 void NavigationWidget::highlightFile(const QString& filePath)

@@ -993,7 +993,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             snapshotOutlineHasDisplayName
             || (group.symbolType == sym_list::sym_module
                 && group.displayName == QStringLiteral("Module")
-                && !group.symbols.isEmpty());
+                && !group.symbolRows.isEmpty());
         if (group.symbolType == sym_list::sym_module
             && group.displayName == QStringLiteral("Module")
             && group.iconKind == SymbolOutlineIconKind::Module

@@ -106,16 +106,6 @@ QList<SymbolOutlineSymbolRow> outlineRows(
     return rows;
 }
 
-QList<sym_list::SymbolInfo> symbolsForResults(const QList<SearchResult>& results)
-{
-    QList<sym_list::SymbolInfo> symbols;
-    symbols.reserve(results.size());
-    for (const SearchResult& result : results) {
-        symbols.append(symbolOutlineCompatibilitySymbolForRecord(
-            outlineSymbolRecord(result)));
-    }
-    return symbols;
-}
 }
 
 std::unique_ptr<NavigationService> NavigationService::instance = nullptr;
@@ -209,7 +199,6 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             group.symbolType = outlineGroupTypeForRecord(firstRecord);
             group.displayName = outlineDisplayName(firstRecord);
             group.iconKind = outlineIconKind(firstRecord);
-            group.symbols = symbolsForResults(outlineResults);
             group.symbolRows = outlineRows(outlineResults, group.displayName);
             result.append(group);
         }

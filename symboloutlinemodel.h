@@ -31,12 +31,9 @@ struct SymbolOutlineGroup {
     sym_list::sym_type_e symbolType = sym_list::sym_module;
     QString displayName;
     SymbolOutlineIconKind iconKind = SymbolOutlineIconKind::Symbol;
-    QList<sym_list::SymbolInfo> symbols;
     QList<SymbolOutlineSymbolRow> symbolRows;
 };
 
-QList<SymbolOutlineGroup> symbolOutlineGroupsWithRows(
-    const QList<SymbolOutlineGroup>& groups);
 sym_list::SymbolInfo symbolOutlineCompatibilitySymbolForRecord(
     const SemanticSymbolRecord& record);
 

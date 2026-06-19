@@ -1607,9 +1607,19 @@ static void runNavigationHierarchyModelRegression()
     outlineSymbol.startColumn = 7;
     outlineSymbol.symbolId = 1234;
 
+    SymbolOutlineSymbolRow outlineRow;
+    outlineRow.symbol = outlineSymbol;
+    outlineRow.symbolRecord = semanticSymbolRecordForSymbol(outlineSymbol);
+    outlineRow.displayName = outlineSymbol.symbolName;
+    outlineRow.typeDisplayName = QStringLiteral("Module");
+    outlineRow.detailDisplayName = outlineSymbol.fileName;
+    outlineRow.iconKind = SymbolOutlineIconKind::Module;
+
     SymbolOutlineGroup outlineGroup;
     outlineGroup.symbolType = sym_list::sym_module;
-    outlineGroup.symbols = {outlineSymbol};
+    outlineGroup.displayName = QStringLiteral("Module");
+    outlineGroup.iconKind = SymbolOutlineIconKind::Module;
+    outlineGroup.symbolRows = {outlineRow};
     widget.updateSymbolHierarchy({outlineGroup});
 
     QTreeWidgetItem* symbolItem = findItemByText(widget.symbolTreeWidget,
