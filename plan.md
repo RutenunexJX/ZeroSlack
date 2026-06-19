@@ -126,6 +126,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Phase F1: Semantic Symbol Record Replacement
 
+- Status: complete on this branch.
 - Introduce or expand a real semantic symbol record.
 - Let `SymbolInfo` degrade into a collector/adapter compatibility carrier.
 - Product, service, report, and query layers should prefer semantic symbol records, stable identity, and semantic metadata.
@@ -135,6 +136,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Phase F2: Stable Relationship And Index Migration
 
+- Status: complete on this branch.
 - Move relationship engine, snapshot, lookup, and query-service main paths from int `symbolId` / `sym_type_e` to stable identity plus semantic enum/model contracts.
 - Keep compatibility APIs only as transition layers.
 - Add or extend guards so product-facing code cannot continue using compatibility APIs.
@@ -143,6 +145,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Phase F3: Legacy Compatibility Removal
 
+- Status: complete on this branch for product-facing compatibility payloads and guarded service/report paths.
 - Delete or isolate legacy fields and APIs: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, `getSymbolById`, `findSymbolId`, int-id `getRelationships`, and similar compatibility surfaces.
 - If an internal adapter is still required, keep it limited to the collector/import boundary and guarded.
 - Clean tests and docs that assume legacy identity.
@@ -156,6 +159,16 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Docs, goal, and plan consistency checks must pass.
 - Real RTL workspace smoke pass must be covered.
 - Confirm qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, and long-lived scattered perflog probes have not returned.
+
+### Phase G: Complete Legacy Field Deletion
+
+- Status: complete on this branch.
+- Goal: delete remaining legacy compatibility payloads and remove or isolate old fields instead of merely guarding product-facing use.
+- G0 is complete: `SemanticRelationshipResult` no longer carries `fromSymbol` / `toSymbol`; relationship, reference, hierarchy, module brief, signal journey, clock/reset, completion, and module-context consumers use endpoint records and stable keys.
+- G1 is complete: `SemanticDefinitionResult` no longer carries `symbol`; module brief, signal journey, FSM graph, and definition consumers use `symbolRecord` / `symbolStableKey`.
+- G2 is complete: `SemanticIndex` / `SemanticIndexSnapshot` retired `SymbolInfo` public APIs such as `getSymbols`, `getSymbolsByType`, `getSymbolByStableKey`, and `findDefinitions`; callers use records, stable keys, query services, or feature services.
+- G3 is complete: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, and raw collector compatibility are deleted from product-facing contracts or isolated to collector/import, taxonomy, completion compatibility, snapshot-local, and guarded adapter boundaries.
+- The full Phase G release gate passed locally with full Ninja, full CTest, legacy guard, product-facing API audit, docs consistency review, and forbidden-file regression checks.
 
 ## Batch Policy
 

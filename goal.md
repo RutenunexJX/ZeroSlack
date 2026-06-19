@@ -105,6 +105,7 @@ UI Layer
 
 ### Phase F1: Semantic Symbol Record Replacement
 
+- Status: complete on this branch.
 - Introduce or expand a real semantic symbol record.
 - Let `SymbolInfo` degrade into a collector/adapter compatibility carrier.
 - Product, service, report, and query layers should consume semantic symbol records, stable identity, and semantic metadata first.
@@ -114,6 +115,7 @@ UI Layer
 
 ### Phase F2: Stable Relationship And Index Migration
 
+- Status: complete on this branch.
 - Move relationship engine, snapshot, lookup, and query-service main paths from int `symbolId` / `sym_type_e` to stable identity plus semantic enum/model contracts.
 - Keep compatibility APIs only as transition layers.
 - Guard product-facing code against continued compatibility API use.
@@ -122,6 +124,7 @@ UI Layer
 
 ### Phase F3: Legacy Compatibility Removal
 
+- Status: complete on this branch for product-facing compatibility payloads and guarded service/report paths.
 - Delete or isolate legacy fields and APIs: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, `getSymbolById`, `findSymbolId`, int-id `getRelationships`, and similar compatibility surfaces.
 - If an internal adapter is still required, it must stay limited to the collector/import boundary and be constrained by guards.
 - Clean tests and docs that assume legacy identity.
@@ -135,6 +138,15 @@ UI Layer
 - Docs, goal, and plan consistency checks must pass.
 - Real RTL workspace smoke pass must be covered.
 - Confirm qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, and long-lived scattered perflog probes have not returned.
+
+### Phase G: Complete Legacy Field Deletion
+
+- Status: complete on this branch.
+- G0 is complete: relationship result endpoint payloads `fromSymbol` and `toSymbol` were deleted; consumers now use endpoint `SemanticSymbolRecord` and stable keys.
+- G1 is complete: definition result payload `symbol` was deleted; consumers now use `symbolRecord` and `symbolStableKey`.
+- G2 is complete: `SemanticIndex` / `SemanticIndexSnapshot` retired `SymbolInfo` public APIs; callers use semantic records and stable identity.
+- G3 is complete: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, and raw collector compatibility are deleted from product-facing contracts or isolated to collector/import, taxonomy, completion compatibility, snapshot-local, and guarded adapter boundaries.
+- The Phase G release gate passed locally; broad RTL feature expansion is no longer blocked by Phase G, but must still preserve the architecture rules below.
 
 ## Architecture Rules
 
@@ -161,7 +173,7 @@ The foundation is healthy when:
 - feature reads use stable models, snapshots, Query Services, or feature services
 - stale workspace, open-document, and relationship analysis results cannot overwrite newer semantic snapshots
 - product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
-- product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, and the release gate after F3 pass
+- product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, Phase G, and the release gate after Phase G pass
 - `sym_type_e` remains raw collector compatibility, not the primary product policy surface
 - `symbolId` is snapshot-local unless stable identity rules say otherwise
 - `moduleScope` and `dataType` are not used as overloaded product-policy fields
@@ -171,7 +183,7 @@ The foundation is healthy when:
 - relationship and index main paths use stable identity plus semantic enum/model contracts
 - compatibility APIs are transition-only and guarded away from product-facing code
 - Query Services and RTL feature services consume stable semantic metadata and contracts
-- RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, Phase F0, F1, F2, F3, and the release gate after F3 are in place
+- RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, Phase F0, F1, F2, F3, Phase G, and the release gate after Phase G are in place
 - Phase D features are done only when service-level behavior, report shape, UI render path, and real fixture evidence are covered
 - UI panels render reports/models without owning semantic policy
 - scheduler, analyzer, project, document, and editor ownership boundaries stay clear

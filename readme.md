@@ -25,15 +25,16 @@ Thin UI consumers
 
 - Phase E semantic data model hardening is complete on this branch.
 - Phase F0 Legacy Field Retirement is complete on this branch.
-- Phase E and Phase F0 baseline gates have passed locally with full Ninja and full CTest.
-- Next work should continue through F1-F3 before broad RTL feature expansion.
-- F1 Semantic Symbol Record Replacement should introduce or expand a real semantic symbol record, demote `SymbolInfo` to collector/adapter compatibility, and make product/service/report/query layers prefer stable identity plus semantic metadata.
-- F2 Stable Relationship And Index Migration should move relationship engine, snapshot, lookup, and query-service main paths from int `symbolId` / `sym_type_e` toward stable identity plus semantic enum/model contracts.
-- F3 Legacy Compatibility Removal should delete or isolate legacy fields and APIs such as `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, `getSymbolById`, `findSymbolId`, and int-id relationship APIs outside collector/import adapters.
-- After F3, run the release gate again before broad RTL feature expansion.
+- Phase F1-F3 semantic migration is complete on this branch, including record-first relationship/reference/report paths and the post-F3 release gate.
+- Phase G Complete Legacy Field Deletion is complete on this branch, including the post-G release gate.
+- G0 is complete: `SemanticRelationshipResult` no longer carries legacy `fromSymbol` / `toSymbol` endpoint payloads; relationship consumers use endpoint records and stable keys.
+- G1 is complete: `SemanticDefinitionResult` no longer carries legacy `symbol` payloads; consumers use `symbolRecord` / `symbolStableKey`.
+- G2 is complete: `SemanticIndex` / `SemanticIndexSnapshot` no longer expose the retired `SymbolInfo` public APIs such as `getSymbols`, `getSymbolsByType`, `getSymbolByStableKey`, or `findDefinitions`.
+- G3 is complete: direct `symbolId`, `symbolType`, `moduleScope`, `dataType`, and `sym_type_e` product-facing use has been removed or isolated to collector/import, taxonomy, completion compatibility, snapshot-local, and guarded adapter boundaries.
+- The Phase G release gate passed locally with full Ninja and full CTest.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
-- Keep remaining legacy compatibility fenced to collector/import boundaries until F3 removes or isolates it safely.
+- Keep any remaining raw collector compatibility fenced to collector/import, taxonomy, completion compatibility, snapshot-local, or guarded adapter boundaries.
 
 ## Current Architecture
 
