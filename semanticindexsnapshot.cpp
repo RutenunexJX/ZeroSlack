@@ -30,12 +30,12 @@ QList<SymbolRelationshipEngine::RelationType> snapshotRelationshipTypes()
     };
 }
 
-sym_list::SymbolInfo snapshotSymbolById(
+sym_list::SymbolInfo snapshotSymbolByLocalHandle(
     const QList<sym_list::SymbolInfo>& symbols,
-    int symbolId)
+    int localHandle)
 {
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolId == symbolId)
+        if (symbol.symbolId == localHandle)
             return symbol;
     }
 
@@ -53,15 +53,17 @@ void fillRelationshipStableKeys(
 
     if (!relationship->fromStableKey.isValid()) {
         relationship->fromStableKey =
-            symbolStableKeyForSymbol(snapshotSymbolById(symbols, relationship->fromId));
+            symbolStableKeyForSymbol(
+                snapshotSymbolByLocalHandle(symbols, relationship->fromId));
     }
     if (!relationship->toStableKey.isValid()) {
         relationship->toStableKey =
-            symbolStableKeyForSymbol(snapshotSymbolById(symbols, relationship->toId));
+            symbolStableKeyForSymbol(
+                snapshotSymbolByLocalHandle(symbols, relationship->toId));
     }
 }
 
-int snapshotSymbolIdByStableKey(
+int snapshotLocalHandleByStableKey(
     const QList<sym_list::SymbolInfo>& symbols,
     const SymbolStableKey& key)
 {
@@ -82,15 +84,15 @@ SemanticRelationship rebindRelationshipToSnapshot(
     SemanticRelationship rebound = relationship;
     fillRelationshipStableKeys(&rebound, symbols);
 
-    const int reboundFromId =
-        snapshotSymbolIdByStableKey(symbols, rebound.fromStableKey);
-    if (reboundFromId >= 0)
-        rebound.fromId = reboundFromId;
+    const int reboundFromHandle =
+        snapshotLocalHandleByStableKey(symbols, rebound.fromStableKey);
+    if (reboundFromHandle >= 0)
+        rebound.fromId = reboundFromHandle;
 
-    const int reboundToId =
-        snapshotSymbolIdByStableKey(symbols, rebound.toStableKey);
-    if (reboundToId >= 0)
-        rebound.toId = reboundToId;
+    const int reboundToHandle =
+        snapshotLocalHandleByStableKey(symbols, rebound.toStableKey);
+    if (reboundToHandle >= 0)
+        rebound.toId = reboundToHandle;
 
     fillRelationshipStableKeys(&rebound, symbols);
     return rebound;
@@ -159,10 +161,10 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
                 continue;
             for (SymbolRelationshipEngine::RelationType type : snapshotRelationshipTypes()) {
                 const QList<int> related = engine->getRelatedSymbols(symbol.symbolId, type, true);
-                for (int relatedId : related) {
+                for (int relatedHandle : related) {
                     SemanticRelationship relationship;
                     relationship.fromId = symbol.symbolId;
-                    relationship.toId = relatedId;
+                    relationship.toId = relatedHandle;
                     relationship.type = type;
                     const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
                         engine->getRelationshipMetadata(

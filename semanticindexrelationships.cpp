@@ -6,22 +6,22 @@
 
 namespace {
 SemanticSymbolRecord recordByLocalHandle(const SemanticIndex& index,
-                                         int symbolId)
+                                         int localHandle)
 {
-    if (symbolId < 0)
+    if (localHandle < 0)
         return {};
 
     if (const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
             index.snapshot()) {
         const QList<SemanticSymbolRecord> records = snapshot->getSymbolRecords();
         for (const SemanticSymbolRecord& record : records) {
-            if (record.localHandle == symbolId)
+            if (record.localHandle == localHandle)
                 return record;
         }
     }
 
     for (const SemanticSymbolRecord& record : index.getSymbolRecords()) {
-        if (record.localHandle == symbolId)
+        if (record.localHandle == localHandle)
             return record;
     }
     return {};
@@ -104,10 +104,10 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(
         const QList<int> related = engine->getRelatedSymbols(subject.localHandle,
                                                              type,
                                                              outgoing);
-        for (int otherId : related) {
+        for (int otherHandle : related) {
             SemanticRelationship rel;
-            rel.fromId = outgoing ? subject.localHandle : otherId;
-            rel.toId = outgoing ? otherId : subject.localHandle;
+            rel.fromId = outgoing ? subject.localHandle : otherHandle;
+            rel.toId = outgoing ? otherHandle : subject.localHandle;
             rel.type = type;
             rel.fromStableKey = relationshipEndpointStableKey(*this, rel, true);
             rel.toStableKey = relationshipEndpointStableKey(*this, rel, false);
