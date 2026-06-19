@@ -81,7 +81,6 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
 
     report.found = true;
     report.notFoundReason = ModuleBriefNotFoundReason::None;
-    report.moduleSymbol = moduleSymbol;
     report.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
     report.moduleStableKey = report.moduleSymbolRecord.stableKey.isValid()
         ? report.moduleSymbolRecord.stableKey
@@ -89,28 +88,29 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.moduleDisplayName = symbolDisplayName(report.moduleSymbolRecord);
     const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
 
-    report.ports = symbolsInModule(
+    const QList<sym_list::SymbolInfo> ports = symbolsInModule(
         moduleSymbol,
         symbols,
         SymbolTaxonomy::DeclarationGroup::Port);
-    report.parameters = symbolsInModule(
+    const QList<sym_list::SymbolInfo> parameters = symbolsInModule(
         moduleSymbol,
         symbols,
         SymbolTaxonomy::DeclarationGroup::Parameter);
-    report.instances = symbolsInModule(
+    const QList<sym_list::SymbolInfo> instances = symbolsInModule(
         moduleSymbol,
         symbols,
         SymbolTaxonomy::DeclarationGroup::Instance);
-    report.imports = importSymbols(moduleSymbol, report.moduleStableKey);
+    const QList<sym_list::SymbolInfo> imports =
+        importSymbols(moduleSymbol, report.moduleStableKey);
     report.diagnostics = diagnosticsForModule(moduleSymbol);
-    report.portRows = symbolRows(report.ports, QStringLiteral("Port"));
-    report.parameterRows = symbolRows(report.parameters, QStringLiteral("Parameter"));
-    report.instanceRows = symbolRows(report.instances, QStringLiteral("Instance"));
-    report.importRows = symbolRows(report.imports, QStringLiteral("Import"));
+    report.portRows = symbolRows(ports, QStringLiteral("Port"));
+    report.parameterRows = symbolRows(parameters, QStringLiteral("Parameter"));
+    report.instanceRows = symbolRows(instances, QStringLiteral("Instance"));
+    report.importRows = symbolRows(imports, QStringLiteral("Import"));
     report.diagnosticRows = diagnosticRows(report.diagnostics);
-    report.contextRows = contextRows(report.imports,
-                                     report.ports,
-                                     report.instances,
+    report.contextRows = contextRows(imports,
+                                     ports,
+                                     instances,
                                      symbols);
     report.relationshipSummary = relationshipSummary(moduleSymbol,
                                                      report.moduleStableKey);

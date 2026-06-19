@@ -3819,11 +3819,11 @@ static void runModuleBriefServiceFixture()
     expectBool("module brief subject name",
                report.moduleDisplayName == QStringLiteral("brief_top"), true);
     expectBool("module brief subject stable key",
-               report.moduleStableKey == symbolStableKeyForSymbol(report.moduleSymbol),
+               report.moduleStableKey == report.moduleSymbolRecord.stableKey,
                true);
     expectBool("module brief subject semantic record",
                report.moduleSymbolRecord.isValid()
-                   && report.moduleSymbolRecord.localHandle == report.moduleSymbol.symbolId
+                   && report.moduleSymbolRecord.localHandle == module.symbolId
                    && report.moduleSymbolRecord.stableKey == report.moduleStableKey
                    && report.moduleSymbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module
@@ -3850,7 +3850,7 @@ static void runModuleBriefServiceFixture()
                        == report.relationshipEvidenceRows.first().fromStableKey,
                true);
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
-        SymbolTaxonomy::semanticMetadata(report.moduleSymbol);
+        SymbolTaxonomy::semanticMetadata(module);
     expectBool("semantic metadata keeps raw module kind",
                moduleMetadata.rawCollectorKind == sym_list::sym_module,
                true);
@@ -3863,14 +3863,13 @@ static void runModuleBriefServiceFixture()
                    && moduleMetadata.visibility == SymbolTaxonomy::SymbolVisibility::Global,
                true);
     expectBool("snapshot attaches module semantic metadata",
-               report.moduleSymbol.hasSemanticMetadata
-                   && report.moduleSymbol.semanticDeclarationKind
+               report.moduleSymbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module
-                   && report.moduleSymbol.semanticOwnerScope
+                   && report.moduleSymbolRecord.owner.kind
                        == SymbolTaxonomy::SymbolOwnerScope::Global
-                   && report.moduleSymbol.semanticVisibility
+                   && report.moduleSymbolRecord.visibility
                        == SymbolTaxonomy::SymbolVisibility::Global
-                   && report.moduleSymbol.rawCollectorKind == sym_list::sym_module,
+                   && report.moduleSymbolRecord.rawCollectorKind == sym_list::sym_module,
                true);
     expectBool("taxonomy recognizes module brief port",
                SymbolTaxonomy::isPortDeclaration(symbols.at(2).symbolType),
@@ -3954,10 +3953,10 @@ static void runModuleBriefServiceFixture()
                    && packageParameter.semanticVisibility
                        == SymbolTaxonomy::SymbolVisibility::PackageVisible,
                true);
-    expectInt("module brief port count", report.ports.size(), 4);
-    expectInt("module brief parameter count", report.parameters.size(), 1);
-    expectInt("module brief instance count", report.instances.size(), 2);
-    expectInt("module brief import count", report.imports.size(), 1);
+    expectInt("module brief port count", report.portRows.size(), 4);
+    expectInt("module brief parameter count", report.parameterRows.size(), 1);
+    expectInt("module brief instance count", report.instanceRows.size(), 2);
+    expectInt("module brief import count", report.importRows.size(), 1);
     expectInt("module brief diagnostic count", report.diagnostics.size(), 1);
     expectInt("module brief port row count", report.portRows.size(), 4);
     expectInt("module brief parameter row count", report.parameterRows.size(), 1);
@@ -4033,8 +4032,9 @@ static void runModuleBriefServiceFixture()
                        == QStringLiteral("32"),
                true);
     expectBool("module brief import package",
-               !report.imports.isEmpty()
-                   && report.imports.first().symbolName == QStringLiteral("brief_pkg"),
+               !report.importRows.isEmpty()
+                   && report.importRows.first().symbolRecord.name
+                          == QStringLiteral("brief_pkg"),
                true);
     expectBool("module brief import row semantic record",
                !report.importRows.isEmpty()

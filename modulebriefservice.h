@@ -101,15 +101,10 @@ struct ModuleBriefReport {
     bool found = false;
     ModuleBriefNotFoundReason notFoundReason =
         ModuleBriefNotFoundReason::None;
-    sym_list::SymbolInfo moduleSymbol = {};
     SemanticSymbolRecord moduleSymbolRecord;
     SymbolStableKey moduleStableKey;
     QString moduleDisplayName;
     QString notFoundReasonDisplayName;
-    QList<sym_list::SymbolInfo> ports;
-    QList<sym_list::SymbolInfo> parameters;
-    QList<sym_list::SymbolInfo> instances;
-    QList<sym_list::SymbolInfo> imports;
     QList<SemanticDiagnostic> diagnostics;
     QList<ModuleBriefSymbolRow> portRows;
     QList<ModuleBriefSymbolRow> parameterRows;
