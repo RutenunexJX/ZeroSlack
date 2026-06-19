@@ -138,10 +138,6 @@ private:
         const sym_list::SymbolInfo& nextStateSignal,
         const QList<sym_list::SymbolInfo>& states) const;
 
-    static bool isInsideModule(const sym_list::SymbolInfo& symbol,
-                               const sym_list::SymbolInfo& moduleSymbol);
-    static bool hasStateValuesForType(const QList<sym_list::SymbolInfo>& symbols,
-                                      const QString& rawTypeText);
     static bool hasPairedNextStateSignal(
         const QList<sym_list::SymbolInfo>& moduleSymbols,
         const sym_list::SymbolInfo& stateRegister);
@@ -170,7 +166,6 @@ private:
         const sym_list::SymbolInfo& moduleSymbol,
         const QList<FsmTransition>& transitions,
         const QList<sym_list::SymbolInfo>& states);
-    static QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
     static QString stateRegisterDetailDisplayName(
         bool hasNextStateSignal,
         const QString& nextStateSignalDisplayName);
@@ -185,7 +180,6 @@ private:
                                     const QList<sym_list::SymbolInfo>& states,
                                     QList<FsmTransition>& transitions);
     static void fillDisplayMetadata(FsmTransition& transition);
-    static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
     static void sortTransitions(QList<FsmTransition>& transitions);
 };
 

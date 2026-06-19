@@ -116,6 +116,13 @@ QString rawTypeTextForSymbol(const sym_list::SymbolInfo& symbol)
 {
     return rawTypeTextForRecord(semanticSymbolRecordForSymbol(symbol), symbol);
 }
+
+bool isInsideModule(const sym_list::SymbolInfo& symbol,
+                    const sym_list::SymbolInfo& moduleSymbol);
+bool hasStateValuesForType(const QList<sym_list::SymbolInfo>& symbols,
+                           const QString& rawTypeText);
+QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
+void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
 }
 
 FsmGraphService* FsmGraphService::getInstance()
@@ -461,7 +468,9 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
     return transitions;
 }
 
-bool FsmGraphService::isInsideModule(
+namespace {
+
+bool isInsideModule(
     const sym_list::SymbolInfo& symbol,
     const sym_list::SymbolInfo& moduleSymbol)
 {
@@ -484,7 +493,7 @@ bool FsmGraphService::isInsideModule(
     return moduleSymbol.endLine <= 0 || symbol.startLine <= moduleSymbol.endLine;
 }
 
-bool FsmGraphService::hasStateValuesForType(
+bool hasStateValuesForType(
     const QList<sym_list::SymbolInfo>& symbols,
     const QString& rawTypeText)
 {
@@ -498,6 +507,8 @@ bool FsmGraphService::hasStateValuesForType(
         }
     }
     return false;
+}
+
 }
 
 bool FsmGraphService::hasPairedNextStateSignal(
@@ -738,10 +749,13 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
     return rows;
 }
 
-QString FsmGraphService::stateDetailDisplayName(
-    const sym_list::SymbolInfo& state)
+namespace {
+
+QString stateDetailDisplayName(const sym_list::SymbolInfo& state)
 {
     return rawTypeTextForSymbol(state);
+}
+
 }
 
 QString FsmGraphService::stateRegisterDetailDisplayName(
@@ -873,7 +887,9 @@ void FsmGraphService::fillDisplayMetadata(FsmTransition& transition)
     transition.detailDisplayName = transitionDetailDisplayName(transition);
 }
 
-void FsmGraphService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)
+namespace {
+
+void sortSymbols(QList<sym_list::SymbolInfo>& symbols)
 {
     std::sort(symbols.begin(), symbols.end(),
               [](const sym_list::SymbolInfo& lhs,
@@ -888,6 +904,8 @@ void FsmGraphService::sortSymbols(QList<sym_list::SymbolInfo>& symbols)
                       return lhs.symbolName < rhs.symbolName;
                   return lhs.symbolId < rhs.symbolId;
               });
+}
+
 }
 
 void FsmGraphService::sortTransitions(QList<FsmTransition>& transitions)
