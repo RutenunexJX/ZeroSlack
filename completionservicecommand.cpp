@@ -37,7 +37,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     state.input = inputState.input;
     state.completionPrefix = inputState.input.trimmed();
     state.command = inputState.command;
-    state.requestedKind = inputState.command.symbolType;
+    state.requestedRawCollectorKind = inputState.command.rawCollectorKind;
 
     if (state.exitRequested)
         return state;
@@ -47,11 +47,12 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     completionQuery.fileName = query.fileName;
     completionQuery.moduleName = query.moduleName;
     completionQuery.documentText = query.documentText;
-    completionQuery.symbolType = state.command.symbolType;
+    completionQuery.rawCollectorKind = state.command.rawCollectorKind;
 
     state.symbolRecords = findCommandCompletionSymbolRecords(completionQuery);
     if (state.symbolRecords.isEmpty()
-        && SymbolTaxonomy::isDirectModuleContextCompletionRequest(state.command.symbolType)
+        && SymbolTaxonomy::isDirectModuleContextCompletionRequest(
+            state.command.rawCollectorKind)
         && completionQuery.moduleName.isEmpty()) {
         state.hidePopup = true;
         return state;

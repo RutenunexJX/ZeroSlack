@@ -135,7 +135,7 @@ void EditorCompletionUi::updateCommandModeCompletions(
     model->updateSymbolRecordCompletions(
         commandState.completion.symbolRecords,
         commandState.completion.completionPrefix,
-        commandState.completion.requestedKind);
+        commandState.completion.requestedRawCollectorKind);
 }
 
 void EditorCompletionUi::updateSymbolCompletions(

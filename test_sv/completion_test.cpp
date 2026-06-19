@@ -1223,7 +1223,7 @@ int main(int argc, char** argv) {
     const bool commandModeMatchOk = commandModeMatch.matched
         && commandModeMatch.prefixPosition == 0
         && commandModeMatch.input == QStringLiteral("ena")
-        && commandModeMatch.command.symbolType == sym_list::sym_logic;
+        && commandModeMatch.command.rawCollectorKind == sym_list::sym_logic;
     if (!commandModeMatchOk)
         ++g_fails;
     printf("[%s] %-34s input=\"%s\"\n",
@@ -1238,7 +1238,7 @@ int main(int argc, char** argv) {
         && !commandInputState.exitRequested
         && commandInputState.prefixPosition == 0
         && commandInputState.input == QStringLiteral("ena")
-        && commandInputState.command.symbolType == sym_list::sym_logic;
+        && commandInputState.command.rawCollectorKind == sym_list::sym_logic;
     if (!commandInputStateOk)
         ++g_fails;
     printf("[%s] %-34s input=\"%s\"\n",
@@ -1253,7 +1253,7 @@ int main(int argc, char** argv) {
         && commandExitState.exitRequested
         && commandExitState.prefixPosition == 0
         && commandExitState.input == QStringLiteral(" ")
-        && commandExitState.command.symbolType == sym_list::sym_logic;
+        && commandExitState.command.rawCollectorKind == sym_list::sym_logic;
     if (!commandExitStateOk)
         ++g_fails;
     printf("[%s] %-34s input=\"%s\"\n",
@@ -1300,8 +1300,8 @@ int main(int argc, char** argv) {
         && !commandCompletionState.hidePopup
         && commandCompletionState.showCompletions
         && commandCompletionState.completionPrefix == QStringLiteral("en")
-        && commandCompletionState.command.symbolType == sym_list::sym_logic
-        && commandCompletionState.requestedKind == sym_list::sym_logic;
+        && commandCompletionState.command.rawCollectorKind == sym_list::sym_logic
+        && commandCompletionState.requestedRawCollectorKind == sym_list::sym_logic;
     if (!commandCompletionStateOk)
         ++g_fails;
     printf("[%s] %-34s prefix=\"%s\"\n",
@@ -1352,7 +1352,7 @@ int main(int argc, char** argv) {
     const bool commandCompletionHideOk = commandCompletionHideState.matched
         && commandCompletionHideState.hidePopup
         && !commandCompletionHideState.showCompletions
-        && commandCompletionHideState.command.symbolType
+        && commandCompletionHideState.command.rawCollectorKind
             == sym_list::sym_packed_struct_var;
     if (!commandCompletionHideOk)
         ++g_fails;
@@ -2046,7 +2046,7 @@ int main(int argc, char** argv) {
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
     commandQuery.moduleName = "top";
-    commandQuery.symbolType = sym_list::sym_logic;
+    commandQuery.rawCollectorKind = sym_list::sym_logic;
     commandQuery.prefix = "en";
     expectList("CompletionService command logic",
                CompletionService::getInstance()->findCommandCompletions(commandQuery),
@@ -2066,7 +2066,7 @@ int main(int argc, char** argv) {
            "CompletionService command symbols",
            commandLogicSymbols.size());
 
-    commandQuery.symbolType = sym_list::sym_packed_struct_var;
+    commandQuery.rawCollectorKind = sym_list::sym_packed_struct_var;
     commandQuery.prefix = "pix";
     commandQuery.documentText = content;
     const QList<SemanticSymbolRecord> packedStructVars =
@@ -2515,7 +2515,7 @@ int main(int argc, char** argv) {
     CommandCompletionQuery snapshotLogicCommandQuery;
     snapshotLogicCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotLogicCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotLogicCommandQuery.symbolType = sym_list::sym_logic;
+    snapshotLogicCommandQuery.rawCollectorKind = sym_list::sym_logic;
     snapshotLogicCommandQuery.prefix = QStringLiteral("snap_e");
     expectList("snapshot command logic names",
                snapshotCompletionService.findCommandCompletions(snapshotLogicCommandQuery),
@@ -2544,14 +2544,14 @@ int main(int argc, char** argv) {
                snapshotCompletionService.findCompletions(snapshotGlobalQuery),
                {"semantic_scope"});
     CommandCompletionQuery snapshotMetadataModuleCommandQuery;
-    snapshotMetadataModuleCommandQuery.symbolType = sym_list::sym_module;
+    snapshotMetadataModuleCommandQuery.rawCollectorKind = sym_list::sym_module;
     snapshotMetadataModuleCommandQuery.prefix = QStringLiteral("semantic");
     expectList("snapshot metadata command module",
                snapshotCompletionService.findCommandCompletions(
                    snapshotMetadataModuleCommandQuery),
                {"semantic_scope"});
     CommandCompletionQuery snapshotTaskCommandQuery;
-    snapshotTaskCommandQuery.symbolType = sym_list::sym_task;
+    snapshotTaskCommandQuery.rawCollectorKind = sym_list::sym_task;
     snapshotTaskCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command task names",
                snapshotCompletionService.findCommandCompletions(snapshotTaskCommandQuery),
@@ -2572,7 +2572,7 @@ int main(int argc, char** argv) {
            snapshotTaskCommandSymbols.size());
     CommandCompletionQuery snapshotModuleCommandQuery;
     snapshotModuleCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotModuleCommandQuery.symbolType = sym_list::sym_module;
+    snapshotModuleCommandQuery.rawCollectorKind = sym_list::sym_module;
     snapshotModuleCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command module in scope",
                snapshotCompletionService.findCommandCompletions(snapshotModuleCommandQuery),
@@ -2593,7 +2593,7 @@ int main(int argc, char** argv) {
            snapshotModuleCommandSymbols.size());
     CommandCompletionQuery snapshotInterfaceCommandQuery;
     snapshotInterfaceCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotInterfaceCommandQuery.symbolType = sym_list::sym_interface;
+    snapshotInterfaceCommandQuery.rawCollectorKind = sym_list::sym_interface;
     snapshotInterfaceCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command interface in scope",
                snapshotCompletionService.findCommandCompletions(snapshotInterfaceCommandQuery),
@@ -2612,7 +2612,7 @@ int main(int argc, char** argv) {
            snapshotInterfaceCommandSymbols.size());
     CommandCompletionQuery snapshotPackageCommandQuery;
     snapshotPackageCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotPackageCommandQuery.symbolType = sym_list::sym_package;
+    snapshotPackageCommandQuery.rawCollectorKind = sym_list::sym_package;
     snapshotPackageCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command package in scope",
                snapshotCompletionService.findCommandCompletions(snapshotPackageCommandQuery),
@@ -2631,7 +2631,7 @@ int main(int argc, char** argv) {
            snapshotPackageCommandSymbols.size());
     CommandCompletionQuery snapshotSemanticPackageParamQuery;
     snapshotSemanticPackageParamQuery.moduleName = QStringLiteral("snap_top");
-    snapshotSemanticPackageParamQuery.symbolType = sym_list::sym_parameter;
+    snapshotSemanticPackageParamQuery.rawCollectorKind = sym_list::sym_parameter;
     snapshotSemanticPackageParamQuery.prefix = QStringLiteral("semantic");
     expectList("snapshot semantic package parameter command",
                snapshotCompletionService.findCommandCompletions(
@@ -2639,7 +2639,7 @@ int main(int argc, char** argv) {
                {"semantic_pkg_param"});
     CommandCompletionQuery snapshotDefineCommandQuery;
     snapshotDefineCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotDefineCommandQuery.symbolType = sym_list::sym_def_define;
+    snapshotDefineCommandQuery.rawCollectorKind = sym_list::sym_def_define;
     snapshotDefineCommandQuery.prefix = QStringLiteral("SNAP");
     expectList("snapshot command define in scope",
                snapshotCompletionService.findCommandCompletions(snapshotDefineCommandQuery),
@@ -2657,7 +2657,7 @@ int main(int argc, char** argv) {
            "snapshot command define symbols",
            snapshotDefineCommandSymbols.size());
     CommandCompletionQuery snapshotEnumCommandQuery;
-    snapshotEnumCommandQuery.symbolType = sym_list::sym_enum;
+    snapshotEnumCommandQuery.rawCollectorKind = sym_list::sym_enum;
     snapshotEnumCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command enum typedef",
                snapshotCompletionService.findCommandCompletions(snapshotEnumCommandQuery),
@@ -2966,7 +2966,7 @@ int main(int argc, char** argv) {
     snapshotCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotCommandQuery.moduleName = QStringLiteral("snap_top");
     snapshotCommandQuery.documentText = QStringLiteral("module snap_top;\nendmodule\n");
-    snapshotCommandQuery.symbolType = sym_list::sym_packed_struct_var;
+    snapshotCommandQuery.rawCollectorKind = sym_list::sym_packed_struct_var;
     snapshotCommandQuery.prefix = QStringLiteral("snap");
     const QList<SemanticSymbolRecord> snapshotCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(snapshotCommandQuery);

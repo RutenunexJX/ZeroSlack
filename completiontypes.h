@@ -45,7 +45,7 @@ struct CommandCompletionQuery {
     QString fileName;
     QString moduleName;
     QString documentText;
-    sym_list::sym_type_e symbolType = sym_list::sym_user;
+    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
 };
 
 struct ContextCompletionQuery {
@@ -157,7 +157,7 @@ struct CommandSymbolCompletionItem {
 
 struct CommandModeCommand {
     QString prefix;
-    sym_list::sym_type_e symbolType = sym_list::sym_user;
+    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
     QString description;
     QString defaultValue;
 };
@@ -193,7 +193,7 @@ struct CommandModeCompletionState {
     QString input;
     QString completionPrefix;
     CommandModeCommand command;
-    sym_list::sym_type_e requestedKind = sym_list::sym_user;
+    sym_list::sym_type_e requestedRawCollectorKind = sym_list::sym_user;
     QList<SemanticSymbolRecord> symbolRecords;
     QList<SymbolStableKey> symbolStableKeys;
 };

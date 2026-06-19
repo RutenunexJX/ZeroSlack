@@ -6967,7 +6967,7 @@ static void runRealWorkspaceIncludeFixture()
     CompletionService completionService(&index);
     CommandCompletionQuery parameterCompletion;
     parameterCompletion.moduleName = QStringLiteral("rtl_top");
-    parameterCompletion.symbolType = sym_list::sym_parameter;
+    parameterCompletion.rawCollectorKind = sym_list::sym_parameter;
     parameterCompletion.prefix = QStringLiteral("P_SW");
     expectBool("real workspace completes package parameter",
                CompletionSymbolQuery::namesFromRecords(
@@ -6978,7 +6978,7 @@ static void runRealWorkspaceIncludeFixture()
 
     CommandCompletionQuery typedefCompletion;
     typedefCompletion.moduleName = QStringLiteral("rtl_top");
-    typedefCompletion.symbolType = sym_list::sym_typedef;
+    typedefCompletion.rawCollectorKind = sym_list::sym_typedef;
     typedefCompletion.prefix = QStringLiteral("cpld");
     expectBool("real workspace completes package typedef",
                CompletionSymbolQuery::namesFromRecords(

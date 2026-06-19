@@ -75,7 +75,7 @@ CommandSymbolPresentation CompletionCommandMode::symbolPresentation(
     sym_list::sym_type_e symbolType)
 {
     for (const CommandModeCommand& command : commands()) {
-        if (command.symbolType == symbolType) {
+        if (command.rawCollectorKind == symbolType) {
             CommandSymbolPresentation presentation;
             presentation.defaultValue = command.defaultValue;
             presentation.typeDescription = command.description;

@@ -10,10 +10,11 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
     if (!semanticIndex)
         return {};
 
-    const bool useSymbolInfoDirectly =
-        SymbolTaxonomy::isDirectModuleContextCompletionRequest(query.symbolType);
+    const bool directModuleContext =
+        SymbolTaxonomy::isDirectModuleContextCompletionRequest(
+            query.rawCollectorKind);
 
-    if (useSymbolInfoDirectly) {
+    if (directModuleContext) {
         if (query.moduleName.isEmpty())
             return {};
 
@@ -24,13 +25,13 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
             semanticIndex->getModuleContextSymbolsByType(
                 query.moduleName,
                 query.fileName,
-                query.symbolType,
+                query.rawCollectorKind,
                 query.prefix));
     }
 
     return semanticIndex->getCommandCompletionSymbolRecords(
         query.moduleName,
-        query.symbolType,
+        query.rawCollectorKind,
         query.prefix);
 }
 
