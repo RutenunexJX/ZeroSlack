@@ -5200,9 +5200,9 @@ static void runClockResetDomainServiceFixture()
                            topReport.clockDomains.first().domainSignal)
                    && topReport.clockDomains.first().modules.first()
                           .moduleStableKey
-                       == symbolStableKeyForSymbol(
-                           topReport.clockDomains.first().modules.first()
-                              .moduleSymbol)
+                       == topReport.clockDomains.first()
+                              .modules.first()
+                              .moduleSymbolRecord.stableKey
                    && topReport.clockDomains.first().modules.first()
                           .sectionDisplayName == QStringLiteral("Module")
                    && topReport.clockDomains.first().modules.first()

@@ -22,13 +22,11 @@ enum class ClockResetDomainNotFoundReason {
 };
 
 struct ClockResetDomainMember {
-    sym_list::SymbolInfo moduleSymbol = {};
     SemanticSymbolRecord domainSignalRecord;
     SemanticSymbolRecord moduleSymbolRecord;
     SymbolStableKey domainSignalStableKey;
     SymbolStableKey moduleStableKey;
     RtlInsightCodeLink moduleCodeLink;
-    SemanticRelationshipResult relationship;
     RelationshipProvenance provenance = RelationshipProvenance::Unknown;
     int confidence = 0;
     QString evidenceText;

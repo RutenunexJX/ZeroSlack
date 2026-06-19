@@ -272,11 +272,11 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
             }
 
             ClockResetDomainMember member;
-            member.moduleSymbol = relationship.toSymbol;
+            const sym_list::SymbolInfo moduleSymbol = relationship.toSymbol;
             member.domainSignalRecord =
                 entries[entryBySignalId.value(signalId)].domainSignalRecord;
             member.moduleSymbolRecord =
-                semanticSymbolRecordForSymbol(member.moduleSymbol);
+                semanticSymbolRecordForSymbol(moduleSymbol);
             member.domainSignalStableKey =
                 member.domainSignalRecord.stableKey.isValid()
                     ? member.domainSignalRecord.stableKey
@@ -287,8 +287,7 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
                     : relationship.toStableKey;
             member.moduleCodeLink =
                 codeLinkForRecord(member.moduleSymbolRecord,
-                                  member.moduleSymbol);
-            member.relationship = relationship;
+                                  moduleSymbol);
             member.provenance = relationship.provenance;
             member.confidence = relationship.confidence;
             member.evidenceText = relationship.evidenceText;
@@ -594,7 +593,7 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::ambiguityRows(
             QHash<int, QSet<int>> domainIdsByModuleId;
             for (const ClockResetDomainEntry& entry : domains) {
                 for (const ClockResetDomainMember& member : entry.modules) {
-                    const int moduleId = member.moduleSymbol.symbolId;
+                    const int moduleId = member.moduleSymbolRecord.localHandle;
                     if (moduleId < 0)
                         continue;
                     rowsByModuleId[moduleId].append(evidenceRow(entry, member, type));
@@ -652,10 +651,11 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
         displayNameForRecord(row.domainSignalRecord,
                              entry.domainSignal,
                              QStringLiteral("<unnamed>"));
-    row.moduleDisplayName =
-        displayNameForRecord(row.moduleSymbolRecord,
-                             member.moduleSymbol,
-                             QStringLiteral("<unnamed>"));
+    row.moduleDisplayName = member.moduleDisplayName.isEmpty()
+        ? displayNameForRecord(row.moduleSymbolRecord,
+                               sym_list::SymbolInfo(),
+                               QStringLiteral("<unnamed>"))
+        : member.moduleDisplayName;
     row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
     row.provenanceDisplayName = provenanceDisplayName(row.provenance);
     row.confidenceDisplayName = confidenceDisplayName(row.confidence);
@@ -666,9 +666,10 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
         evidenceDetailDisplayName(row.signalDisplayName,
                                   row.moduleDisplayName,
                                   type);
-    row.sourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(row.moduleSymbolRecord,
-                                       member.moduleSymbol);
+    row.sourceRoleDisplayName = member.sourceRoleDisplayName.isEmpty()
+        ? sourceRoleDisplayNameForRecord(row.moduleSymbolRecord,
+                                         sym_list::SymbolInfo())
+        : member.sourceRoleDisplayName;
     return row;
 }
 
@@ -795,7 +796,7 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
             member.sectionDisplayName = QStringLiteral("Module");
         member.moduleDisplayName =
             displayNameForRecord(member.moduleSymbolRecord,
-                                 member.moduleSymbol,
+                                 sym_list::SymbolInfo(),
                                  QStringLiteral("<unnamed>"));
         member.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
         member.provenanceDisplayName = provenanceDisplayName(member.provenance);
@@ -805,7 +806,7 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
             member.detailDisplayName = memberDetailDisplayName(type);
         member.sourceRoleDisplayName =
             sourceRoleDisplayNameForRecord(member.moduleSymbolRecord,
-                                           member.moduleSymbol);
+                                           sym_list::SymbolInfo());
     }
 }
 
@@ -849,8 +850,8 @@ void ClockResetDomainService::sortMembers(QList<ClockResetDomainMember>& members
     std::sort(members.begin(), members.end(),
               [](const ClockResetDomainMember& lhs,
                  const ClockResetDomainMember& rhs) {
-                  const sym_list::SymbolInfo& left = lhs.moduleSymbol;
-                  const sym_list::SymbolInfo& right = rhs.moduleSymbol;
+                  const sym_list::SymbolInfo left = {};
+                  const sym_list::SymbolInfo right = {};
                   const QString leftFileName =
                       recordFileName(lhs.moduleSymbolRecord, left);
                   const QString rightFileName =
@@ -875,6 +876,7 @@ void ClockResetDomainService::sortMembers(QList<ClockResetDomainMember>& members
                       displayNameForRecord(rhs.moduleSymbolRecord, right, QString());
                   if (leftName != rightName)
                       return leftName < rightName;
-                  return left.symbolId < right.symbolId;
+                  return lhs.moduleSymbolRecord.localHandle
+                      < rhs.moduleSymbolRecord.localHandle;
               });
 }
