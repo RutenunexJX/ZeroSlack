@@ -228,11 +228,11 @@ NavigationModuleTarget NavigationService::resolveModuleTarget(
     query.symbolName = moduleName;
     const DefinitionNavigationTarget target =
         definitionNavigationService.resolveTarget(query);
-    if (!target.found || !SymbolTaxonomy::isModuleDeclaration(target.symbol))
+    if (!target.found
+        || !SymbolTaxonomy::isModuleDeclaration(outlineMetadata(target.symbolRecord)))
         return result;
 
     result.found = true;
-    result.symbol = target.symbol;
     result.symbolRow.symbol = target.symbol;
     result.symbolRow.symbolRecord = target.symbolRecord;
     result.symbolRow.displayName = target.symbolName;

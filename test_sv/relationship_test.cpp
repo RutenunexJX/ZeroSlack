@@ -967,8 +967,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotNavigationService.resolveModuleTarget(QStringLiteral("rel_stage"));
     expectBool("snapshot navigation service resolves module target",
                snapshotNavigationTarget.found
-                   && snapshotNavigationTarget.symbol.symbolId == stageId
-                   && snapshotNavigationTarget.symbol.fileName == stagePath,
+                   && snapshotNavigationTarget.symbolRow.symbolRecord.isValid()
+                   && snapshotNavigationTarget.symbolRow.symbolRecord.localHandle
+                       == stageId
+                   && snapshotNavigationTarget.symbolRow.symbolRecord.location.fileName
+                       == stagePath
+                   && snapshotNavigationTarget.symbolRow.symbolRecord.stableKey
+                       == symbolStableKeyForSymbol(snapshotNavigationTarget.symbolRow.symbol),
                true);
     NavigationSymbolOutlineQuery snapshotOutlineQuery;
     snapshotOutlineQuery.fileName = topPath;

@@ -203,8 +203,8 @@ int main(int argc, char** argv) {
                        == memberNavigationTarget.symbolStableKey
                    && memberNavigationTarget.symbolRecord.name
                        == QStringLiteral("red")
-                   && memberNavigationTarget.symbolType
-                       == memberNavigationTarget.symbolRecord.rawCollectorKind
+                   && memberNavigationTarget.symbolRecord.rawCollectorKind
+                       == sym_list::sym_struct_member
                    && memberNavigationTarget.ownerDisplayName
                        == QStringLiteral("pixel_t")
                    && memberNavigationTarget.sourceRoleDisplayName
@@ -411,8 +411,8 @@ int main(int argc, char** argv) {
                    && snapshotNavigationTarget.line == snapshotHelperModule.startLine
                    && snapshotNavigationTarget.symbolTypeText
                        == QStringLiteral("module")
-                   && snapshotNavigationTarget.symbolType
-                       == snapshotNavigationTarget.symbolRecord.rawCollectorKind
+                   && snapshotNavigationTarget.symbolRecord.rawCollectorKind
+                       == sym_list::sym_module
                    && snapshotNavigationTarget.ownerDisplayName
                        == QStringLiteral("global")
                    && snapshotNavigationTarget.sourceRoleDisplayName
@@ -1023,7 +1023,7 @@ int main(int argc, char** argv) {
         && counterTarget.symbolRecord.localHandle == counter.symbolId
         && counterTarget.symbolRecord.stableKey == counterTarget.symbolStableKey
         && counterTarget.symbolRecord.name == QStringLiteral("counter")
-        && counterTarget.symbolType == counterTarget.symbolRecord.rawCollectorKind
+        && counterTarget.symbolRecord.rawCollectorKind == sym_list::sym_reg
         && counterTarget.ownerDisplayName == QStringLiteral("top")
         && counterTarget.sourceRoleDisplayName == QStringLiteral("design source");
     if (!counterOk) ++g_fails;

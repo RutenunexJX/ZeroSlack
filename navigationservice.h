@@ -22,7 +22,6 @@ struct NavigationSymbolOutlineQuery {
 
 struct NavigationModuleTarget {
     bool found = false;
-    sym_list::SymbolInfo symbol;
     SymbolOutlineSymbolRow symbolRow;
 };
 

@@ -176,7 +176,6 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
     target.fileName = fileNameForRecord(target.symbolRecord, result.symbol);
     target.line = startLineForRecord(target.symbolRecord, result.symbol);
     target.column = startColumnForRecord(target.symbolRecord, result.symbol);
-    target.symbolType = target.symbolRecord.rawCollectorKind;
     target.symbolTypeText =
         SymbolTaxonomy::symbolTypeLabel(
             metadataForRecord(target.symbolRecord, result.symbol));

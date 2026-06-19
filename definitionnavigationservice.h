@@ -35,7 +35,6 @@ struct DefinitionNavigationTarget {
     QString fileName;
     int line = 0;
     int column = 0;
-    sym_list::sym_type_e symbolType = sym_list::sym_module;
     QString symbolTypeText;
     QString ownerDisplayName;
     QString sourceRoleDisplayName;
