@@ -29,8 +29,6 @@ public:
                                           const QString& context = "");
 
     QVector<QPair<QString, int>> getScoredKeywordMatches(const QString& prefix);
-    QVector<QPair<sym_list::SymbolInfo, int>> getScoredSymbolMatches(
-        sym_list::sym_type_e symbolType, const QString& prefix);
 
     QVector<QPair<QString, int>> getScoredAllSymbolMatches(const QString& prefix);
     QStringList getAllSymbolCompletions(const QString& prefix);
@@ -65,19 +63,6 @@ public:
     QStringList getGlobalSymbolsByType(sym_list::sym_type_e symbolType,
                                       const QString& prefix = "");
 
-
-    QList<sym_list::SymbolInfo> getModuleInternalSymbolsByType(const QString& moduleName,
-                                                              sym_list::sym_type_e symbolType,
-                                                              const QString& prefix = "",
-                                                              bool useRelationshipFallback = true);
-
-    QList<sym_list::SymbolInfo> getModuleContextSymbolsByType(const QString& moduleName,
-                                                              const QString& fileName,
-                                                              sym_list::sym_type_e symbolType,
-                                                              const QString& prefix = "");
-
-    QList<sym_list::SymbolInfo> getGlobalSymbolsByType_Info(sym_list::sym_type_e symbolType,
-                                                            const QString& prefix = "");
 
     QString getStructTypeForVariable(const QString &varName, const QString &currentModule);
     QStringList getStructMemberCompletions(const QString &prefix, const QString &structTypeName);

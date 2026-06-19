@@ -24,13 +24,6 @@ QVector<QPair<QString, int>> CompletionManager::getScoredAllSymbolMatches(const 
     return CompletionService::getInstance()->findScoredAllSymbolCompletions(prefix);
 }
 
-QVector<QPair<sym_list::SymbolInfo, int>> CompletionManager::getScoredSymbolMatches(
-    sym_list::sym_type_e symbolType, const QString& prefix)
-{
-    return CompletionService::getInstance()->findScoredSymbolCompletionsByType(
-        symbolType, prefix);
-}
-
 QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
 {
     return CompletionService::getInstance()->findAllSymbolCompletions(prefix);
@@ -195,33 +188,6 @@ QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbo
     return CompletionService::getInstance()->findGlobalSymbolsByType(symbolType, prefix);
 }
 
-
-QList<sym_list::SymbolInfo> CompletionManager::getModuleInternalSymbolsByType(
-    const QString& moduleName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix,
-    bool useRelationshipFallback)
-{
-    return CompletionService::getInstance()->findModuleInternalSymbolInfosByType(
-        moduleName, symbolType, prefix, useRelationshipFallback);
-}
-
-QList<sym_list::SymbolInfo> CompletionManager::getModuleContextSymbolsByType(
-    const QString& moduleName,
-    const QString& fileName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix)
-{
-    return CompletionService::getInstance()->findModuleContextSymbolInfosByType(
-        moduleName, fileName, symbolType, prefix);
-}
-
-QList<sym_list::SymbolInfo> CompletionManager::getGlobalSymbolsByType_Info(sym_list::sym_type_e symbolType,
-                                                                           const QString& prefix)
-{
-    return CompletionService::getInstance()->findGlobalSymbolInfosByType(
-        symbolType, prefix);
-}
 
 QStringList CompletionManager::getStructMemberCompletions(const QString& prefix,
                                                          const QString& structTypeName)

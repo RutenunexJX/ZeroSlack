@@ -1468,9 +1468,10 @@ int main(int argc, char** argv) {
                {"blue"});
 
     // --- module-internal logic must NOT leak function locals (x, add_one return var) ---
-    QStringList logicNames;
-    for (const auto& s : cm->getModuleInternalSymbolsByType("top", sym_list::sym_logic, ""))
-        logicNames << s.symbolName;
+    const QStringList logicNames =
+        CompletionService::getInstance()->findModuleSymbolsByType(
+            QStringLiteral("top"),
+            sym_list::sym_logic);
     expectExcludes("top logic excludes fn-locals", logicNames,
                    /*mustNot*/ {"x", "add_one"}, /*mustHave*/ {"enable", "result"});
 
@@ -2975,46 +2976,11 @@ int main(int argc, char** argv) {
     expectList("CompletionManager typed symbol delegation",
                cm->getSymbolCompletions(sym_list::sym_logic, QStringLiteral("snap_e")),
                {"snap_enable", "snap_other_enable"});
-    expectList("CompletionManager scored typed symbol delegation",
-               symbolNamesFromScored(cm->getScoredSymbolMatches(
-                   sym_list::sym_logic,
-                   QStringLiteral("snap_e"))),
-               {"snap_enable", "snap_other_enable"});
     expectList("CompletionManager smart delegation",
                scoredNames(cm->getSmartCompletions(QStringLiteral("snap_sig"),
                                                    snapshotScopeFile,
                                                    snapshotScopeCursor)),
                {"snap_signal"});
-    expectList("CompletionManager module info delegation",
-               symbolNames(cm->getModuleInternalSymbolsByType(
-                   QStringLiteral("snap_top"),
-                   sym_list::sym_logic,
-                   QStringLiteral("snap_"))),
-               {"snap_clk", "snap_enable", "snap_rst_n"});
-    expectList("CompletionManager context info delegation",
-               symbolNames(cm->getModuleContextSymbolsByType(
-                   QStringLiteral("snap_scope"),
-                   snapshotScopeFile,
-                   sym_list::sym_logic,
-                   QStringLiteral("snap"))),
-               {"snap_signal"});
-    expectList("CompletionManager metadata context type",
-               symbolNames(cm->getModuleContextSymbolsByType(
-                   QStringLiteral("snap_scope"),
-                   snapshotScopeFile,
-                   sym_list::sym_logic,
-                   QStringLiteral("meta"))),
-               {"meta_signal"});
-    expectList("CompletionManager global info delegation",
-               symbolNames(cm->getGlobalSymbolsByType_Info(
-                   sym_list::sym_packed_struct_var,
-                   QStringLiteral("snap"))),
-               {"snap_pixel"});
-    expectList("CompletionManager metadata global info",
-               symbolNames(cm->getGlobalSymbolsByType_Info(
-                   sym_list::sym_module,
-                   QStringLiteral("semantic"))),
-               {"semantic_scope"});
     SemanticIndex::getInstance()->clearSnapshot();
 
     CommandCompletionQuery snapshotCommandQuery;
