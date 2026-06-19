@@ -212,14 +212,13 @@ QString lineDisplayName(int line)
 
 SymbolStableKey relationshipEndpointStableKey(
     const SemanticSymbolRecord& record,
-    const SymbolStableKey& relationshipStableKey,
-    const sym_list::SymbolInfo& fallbackSymbol)
+    const SymbolStableKey& relationshipStableKey)
 {
     if (record.stableKey.isValid())
         return record.stableKey;
     if (relationshipStableKey.isValid())
         return relationshipStableKey;
-    return semanticSymbolRecordForSymbol(fallbackSymbol).stableKey;
+    return SymbolStableKey();
 }
 
 QString reportNotFoundReasonDisplayName(
@@ -458,11 +457,9 @@ QList<SymbolStableKey> RelationshipService::findRelatedSymbolKeys(
     for (const RelationshipResult& relationship : relationships) {
         const SymbolStableKey key = query.outgoing
             ? relationshipEndpointStableKey(relationship.toSymbolRecord,
-                                            relationship.toStableKey,
-                                            relationship.toSymbol)
+                                            relationship.toStableKey)
             : relationshipEndpointStableKey(relationship.fromSymbolRecord,
-                                            relationship.fromStableKey,
-                                            relationship.fromSymbol);
+                                            relationship.fromStableKey);
         if (key.isValid())
             result.append(key);
     }
@@ -545,12 +542,10 @@ bool RelationshipService::hasRelationship(
     for (const RelationshipResult& relationship : relationships) {
         const SymbolStableKey relatedFromKey = relationshipEndpointStableKey(
             relationship.fromSymbolRecord,
-            relationship.fromStableKey,
-            relationship.fromSymbol);
+            relationship.fromStableKey);
         const SymbolStableKey relatedToKey = relationshipEndpointStableKey(
             relationship.toSymbolRecord,
-            relationship.toStableKey,
-            relationship.toSymbol);
+            relationship.toStableKey);
         if (relatedFromKey == fromStableKey
             && relatedToKey == toStableKey
             && relationship.relationship.type == type) {
