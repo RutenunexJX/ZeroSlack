@@ -252,13 +252,12 @@ QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
         if (!types.contains(relationship.relationship.type))
             continue;
         SignalJourneyItem item;
-        item.relationship = relationship;
         item.outgoing = outgoing;
         const sym_list::SymbolInfo peer =
             outgoing ? relationship.toSymbol : relationship.fromSymbol;
         if (peer.symbolId < 0)
             continue;
-        fillDisplayMetadata(item, peer);
+        fillDisplayMetadata(item, relationship, peer);
         items.append(item);
     }
     sortItems(items);
@@ -291,9 +290,8 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
             seen.insert(key);
 
             SignalJourneyItem item;
-            item.relationship = relationship;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item, peer);
+            fillDisplayMetadata(item, relationship, peer);
             items.append(item);
         }
     };
@@ -327,9 +325,8 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
             seen.insert(key);
 
             SignalJourneyItem item;
-            item.relationship = relationship;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item, peer);
+            fillDisplayMetadata(item, relationship, peer);
             fillInterfaceDisplayMetadata(item, peer);
             item.detailDisplayName = QStringLiteral("interface %1")
                                          .arg(item.detailDisplayName);
@@ -370,9 +367,8 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
             seen.insert(key);
 
             SignalJourneyItem item;
-            item.relationship = relationship;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item, peer);
+            fillDisplayMetadata(item, relationship, peer);
             item.detailDisplayName = QStringLiteral("timing %1")
                                          .arg(item.detailDisplayName);
             items.append(item);
@@ -566,15 +562,16 @@ void SignalJourneyService::fillDeclarationDisplayMetadata(
 
 void SignalJourneyService::fillDisplayMetadata(
     SignalJourneyItem& item,
+    const SemanticRelationshipResult& relationship,
     const sym_list::SymbolInfo& peerSymbol)
 {
-    const sym_list::SymbolInfo fromSymbol = item.relationship.fromSymbol;
-    const sym_list::SymbolInfo toSymbol = item.relationship.toSymbol;
-    item.fromSymbolRecord = item.relationship.fromSymbolRecord.isValid()
-        ? item.relationship.fromSymbolRecord
+    const sym_list::SymbolInfo fromSymbol = relationship.fromSymbol;
+    const sym_list::SymbolInfo toSymbol = relationship.toSymbol;
+    item.fromSymbolRecord = relationship.fromSymbolRecord.isValid()
+        ? relationship.fromSymbolRecord
         : semanticSymbolRecordForSymbol(fromSymbol);
-    item.toSymbolRecord = item.relationship.toSymbolRecord.isValid()
-        ? item.relationship.toSymbolRecord
+    item.toSymbolRecord = relationship.toSymbolRecord.isValid()
+        ? relationship.toSymbolRecord
         : semanticSymbolRecordForSymbol(toSymbol);
     item.peerSymbolRecord =
         item.outgoing ? item.toSymbolRecord : item.fromSymbolRecord;
@@ -582,10 +579,10 @@ void SignalJourneyService::fillDisplayMetadata(
         item.peerSymbolRecord = semanticSymbolRecordForSymbol(peerSymbol);
     item.fromStableKey = item.fromSymbolRecord.stableKey.isValid()
         ? item.fromSymbolRecord.stableKey
-        : item.relationship.fromStableKey;
+        : relationship.fromStableKey;
     item.toStableKey = item.toSymbolRecord.stableKey.isValid()
         ? item.toSymbolRecord.stableKey
-        : item.relationship.toStableKey;
+        : relationship.toStableKey;
     item.peerStableKey = item.peerSymbolRecord.stableKey.isValid()
         ? item.peerSymbolRecord.stableKey
         : (item.outgoing ? item.toStableKey : item.fromStableKey);
@@ -595,12 +592,12 @@ void SignalJourneyService::fillDisplayMetadata(
                                           fromSymbol);
     item.toCodeLink = codeLinkForRecord(item.toSymbolRecord,
                                         toSymbol);
-    item.provenance = item.relationship.provenance;
-    item.confidence = item.relationship.confidence;
-    item.evidenceText = item.relationship.evidenceText;
+    item.provenance = relationship.provenance;
+    item.confidence = relationship.confidence;
+    item.evidenceText = relationship.evidenceText;
     item.directionDisplayName = directionDisplayName(item.outgoing);
     item.relationshipTypeDisplayName =
-        relationshipTypeDisplayName(item.relationship.relationship.type);
+        relationshipTypeDisplayName(relationship.relationship.type);
     item.provenanceDisplayName = provenanceDisplayName(item.provenance);
     item.confidenceDisplayName = confidenceDisplayName(item.confidence);
     item.evidenceDisplayName = evidenceDisplayName(item.evidenceText);

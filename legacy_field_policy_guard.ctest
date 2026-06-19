@@ -182,6 +182,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexsnapshotqueries.cpp|relationshipKey[ \t\r\n]*=[ \t\r\n]*outgoing[ \t\r\n]*\\?[ \t\r\n]*relationship\\.fromStableKey"
     "searchservice.h|struct[ \t\r\n]+SearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "searchservice.cpp|item\\.symbol[ \t\r\n]*="
+    "signaljourneyservice.h|struct[ \t\r\n]+SignalJourneyItem[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
     "scopebandservice.h|struct[ \t\r\n]+ScopeBandSymbolRange[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "scopebandwidget.cpp|ScopeBandSymbolRange[^;]*\\.symbol\\."
     "semanticindexrelationships.cpp|getRelationships[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbol\\.symbolId|getRelationshipResults[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId"

@@ -25,7 +25,6 @@ enum class SignalJourneyNotFoundReason {
 };
 
 struct SignalJourneyItem {
-    SemanticRelationshipResult relationship;
     SemanticSymbolRecord peerSymbolRecord;
     SemanticSymbolRecord fromSymbolRecord;
     SemanticSymbolRecord toSymbolRecord;
@@ -131,6 +130,7 @@ private:
         SignalJourneyReport& report,
         const sym_list::SymbolInfo& declaration);
     static void fillDisplayMetadata(SignalJourneyItem& item,
+                                    const SemanticRelationshipResult& relationship,
                                     const sym_list::SymbolInfo& peerSymbol);
     static void fillInterfaceDisplayMetadata(
         SignalJourneyItem& item,
