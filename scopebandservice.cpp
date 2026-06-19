@@ -99,7 +99,9 @@ ScopeBandReport ScopeBandService::scopeBands(const ScopeBandQuery& query) const
         return report;
 
     SemanticIndex* semantic = semanticIndex();
-    const QList<sym_list::SymbolInfo> symbols = semantic->getSymbols(query.fileName);
+    const QList<sym_list::SymbolInfo> symbols =
+        semanticSymbolInfoCarriersForRecords(
+            semantic->getSymbolRecords(query.fileName));
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         const SymbolTaxonomy::SemanticMetadata metadata =

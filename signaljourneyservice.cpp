@@ -450,8 +450,7 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
 QSet<QString> SignalJourneyService::interfaceNames() const
 {
     QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : semanticIndex()->getSymbols()) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : semanticIndex()->getSymbolRecords()) {
         if (record.declarationKind
                 == SymbolTaxonomy::DeclarationKind::Interface
             && !record.name.isEmpty()) {

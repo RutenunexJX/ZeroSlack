@@ -278,6 +278,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "modulebriefservice.cpp|getSymbols[ \t\r\n]*\\("
     "fsmgraphservice.cpp|getSymbols[ \t\r\n]*\\("
     "clockresetdomainservice.cpp|getSymbols[ \t\r\n]*\\("
+    "scopebandservice.cpp|getSymbols[ \t\r\n]*\\("
+    "signaljourneyservice.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/relationship_test.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/gui_smoke_test.cpp|getSymbols[ \t\r\n]*\\("
     "searchservice.h|struct[ \t\r\n]+SearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
