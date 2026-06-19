@@ -304,8 +304,6 @@ public:
         const SymbolStableKey& key) const;
     SemanticDefinitionResult resolveDefinition(
         const SemanticDefinitionQuery& query) const;
-    QList<sym_list::SymbolInfo> findDefinitionSymbols(
-        const SemanticDefinitionQuery& query) const;
     QString getCachedFileContent(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
     QString getStructTypeForVariable(const QString& variableName,

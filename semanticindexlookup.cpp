@@ -181,16 +181,6 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
     return combinedDefinitionMissEvidence(local, global);
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::findDefinitionSymbols(
-    const SemanticDefinitionQuery& query) const
-{
-    QList<sym_list::SymbolInfo> result;
-    const SemanticDefinitionResult resolved = resolveDefinition(query);
-    if (resolved.found)
-        result.append(resolved.symbol);
-    return result;
-}
-
 QList<sym_list::SymbolInfo> SemanticIndex::findDefinitions(
     const QString& name,
     const SemanticQueryContext& context) const

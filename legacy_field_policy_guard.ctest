@@ -237,6 +237,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindex.h|findSymbolId[ \t\r\n]*\\("
     "semanticindex.h|findSymbolId[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+SymbolStableKey"
     "semanticindex.h|getSymbolRecordByLocalHandle[ \t\r\n]*\\("
+    "semanticindex.h|findDefinitionSymbols[ \t\r\n]*\\("
+    "semanticindexlookup.cpp|SemanticIndex::findDefinitionSymbols[ \t\r\n]*\\("
     "semanticindexsnapshot.h|getRelationships[ \t\r\n]*\\([ \t\r\n]*int"
     "semanticindexsnapshot.h|findSymbolId[ \t\r\n]*\\("
     "semanticindexsnapshot.h|findSymbolId[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+SymbolStableKey"
