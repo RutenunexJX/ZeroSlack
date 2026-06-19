@@ -13,6 +13,11 @@ bool hasDisplaySymbol(const sym_list::SymbolInfo& symbol)
     return !symbol.symbolName.isEmpty() || !symbol.fileName.isEmpty();
 }
 
+int semanticDiffLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolId;
+}
+
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
@@ -448,7 +453,7 @@ bool SemanticDiffService::relationshipInScope(
     const QString fileName = afterSide ? query.afterFileName : query.beforeFileName;
 
     auto endpointInScope = [&](const sym_list::SymbolInfo& symbol) {
-        if (symbol.symbolId < 0)
+        if (semanticDiffLocalHandleForSymbol(symbol) < 0)
             return false;
         if (!fileName.isEmpty()
             && normalizedFileName(symbol.fileName) != normalizedFileName(fileName)) {
