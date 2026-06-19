@@ -90,17 +90,6 @@ CommandSymbolPresentation CompletionCommandMode::symbolPresentation(
 }
 
 CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType,
-    const QString& prefix)
-{
-    return symbolCompletionItem(
-        semanticSymbolRecordForSymbol(symbol),
-        requestedType,
-        prefix);
-}
-
-CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
     const SemanticSymbolRecord& record,
     sym_list::sym_type_e requestedType,
     const QString& prefix)

@@ -65,10 +65,6 @@ public:
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
     // Custom methods
-    void updateCompletions(const QStringList &keywords,
-                          const QList<sym_list::SymbolInfo> &symbols,
-                          const QString &prefix,
-                          CompletionType type = KeywordCompletion);
     void updateCompletions(const CompletionResult &completion,
                            const QString &prefix);
     void updateCommandCompletions(const QStringList &commands, const QString &prefix);
@@ -78,9 +74,6 @@ public:
     bool isSelectableIndex(const QModelIndex &index) const;
     QModelIndex firstSelectableIndex() const;
 
-    void updateSymbolCompletions(const QList<sym_list::SymbolInfo> &symbols,
-                               const QString &prefix,
-                               sym_list::sym_type_e symbolType);
     void updateSymbolRecordCompletions(
                                const QList<SemanticSymbolRecord> &records,
                                const QString &prefix,

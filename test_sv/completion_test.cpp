@@ -194,10 +194,13 @@ int main(int argc, char** argv) {
                                           QStringLiteral("top"),
                                           QString(),
                                           9002));
+    QList<SemanticSymbolRecord> modelScoringRecords;
+    for (const sym_list::SymbolInfo& symbol : modelScoringSymbols)
+        modelScoringRecords.append(semanticSymbolRecordForSymbol(symbol));
     CompletionModel modelScoring;
-    modelScoring.updateSymbolCompletions(modelScoringSymbols,
-                                         QStringLiteral("af"),
-                                         sym_list::sym_logic);
+    modelScoring.updateSymbolRecordCompletions(modelScoringRecords,
+                                               QStringLiteral("af"),
+                                               sym_list::sym_logic);
     ++g_checks;
     const QString firstScoredModelSymbol =
         modelScoring.getItem(modelScoring.index(2, 0)).text;
@@ -272,16 +275,26 @@ int main(int argc, char** argv) {
     metadataModelSymbol.semanticVisibility =
         SymbolTaxonomy::SymbolVisibility::Global;
     metadataModelSymbol.rawCollectorKind = sym_list::sym_module;
-    expectEq("CompletionService symbol metadata desc",
-             CompletionService::getInstance()->symbolTypeDescription(
-                 metadataModelSymbol),
-             QStringLiteral("module"));
+    const SemanticSymbolRecord metadataModelRecord =
+        semanticSymbolRecordForSymbol(metadataModelSymbol);
+    CompletionResult metadataCompletion;
+    metadataCompletion.names.append(metadataModelRecord.name);
+    CompletionResult::SemanticCompletionItem metadataCompletionItem;
+    metadataCompletionItem.label = metadataModelRecord.name;
+    metadataCompletionItem.typeDisplayName = QStringLiteral("module");
+    metadataCompletionItem.ownerScopeName = QStringLiteral("global");
+    metadataCompletionItem.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(metadataModelRecord.sourceRole);
+    metadataCompletionItem.symbolRecord = metadataModelRecord;
+    metadataCompletionItem.symbolStableKey = metadataModelRecord.stableKey;
+    metadataCompletionItem.declarationKind = metadataModelRecord.declarationKind;
+    metadataCompletionItem.usageRole = metadataModelRecord.usageRole;
+    metadataCompletionItem.ownerScope = metadataModelRecord.owner.kind;
+    metadataCompletionItem.sourceRole = metadataModelRecord.sourceRole;
+    metadataCompletion.items.append(metadataCompletionItem);
     CompletionModel metadataDescriptionModel;
-    metadataDescriptionModel.updateCompletions(
-        {metadataModelSymbol.symbolName},
-        {metadataModelSymbol},
-        QStringLiteral("meta"),
-        CompletionModel::SymbolCompletion);
+    metadataDescriptionModel.updateCompletions(metadataCompletion,
+                                               QStringLiteral("meta"));
     expectEq("CompletionModel metadata desc",
              metadataDescriptionModel.getItem(
                  metadataDescriptionModel.index(0, 0)).description,
@@ -913,9 +926,9 @@ int main(int argc, char** argv) {
            "CompletionModel no-match hidden");
 
     CompletionModel defaultSelectionModel;
-    defaultSelectionModel.updateSymbolCompletions({},
-                                                  QStringLiteral("missing"),
-                                                  sym_list::sym_logic);
+    defaultSelectionModel.updateSymbolRecordCompletions({},
+                                                        QStringLiteral("missing"),
+                                                        sym_list::sym_logic);
     ++g_checks;
     const QModelIndex defaultSelectableIndex =
         defaultSelectionModel.firstSelectableIndex();
@@ -946,9 +959,11 @@ int main(int argc, char** argv) {
                    QStringLiteral("pixel_t"),
                    QString(),
                    9003);
+    const SemanticSymbolRecord structPresentationRecord =
+        semanticSymbolRecordForSymbol(structPresentationSymbol);
     const CommandSymbolCompletionItem structPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
-            structPresentationSymbol,
+            structPresentationRecord,
             sym_list::sym_packed_struct_var);
     expectEq("CompletionService struct text",
              structPresentationItem.text,
@@ -979,9 +994,11 @@ int main(int argc, char** argv) {
                    QStringLiteral("top"),
                    QStringLiteral("state_t"),
                    9004);
+    const SemanticSymbolRecord enumPresentationRecord =
+        semanticSymbolRecordForSymbol(enumPresentationSymbol);
     const CommandSymbolCompletionItem enumPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
-            enumPresentationSymbol,
+            enumPresentationRecord,
             sym_list::sym_enum_value);
     expectEq("CompletionService enum desc",
              enumPresentationItem.description,

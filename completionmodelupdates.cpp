@@ -6,24 +6,6 @@
 
 namespace {
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
-{
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
-    if (!record.isValid())
-        return metadata;
-
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
-}
-
-SymbolTaxonomy::SemanticMetadata metadataForRecord(
     const SemanticSymbolRecord& record)
 {
     SymbolTaxonomy::SemanticMetadata metadata;
@@ -35,34 +17,6 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
     metadata.rawCollectorKind = record.rawCollectorKind;
     metadata.interfaceLikeOwner = record.owner.interfaceLike;
     return metadata;
-}
-
-QString ownerScopeNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
-{
-    if (!record.owner.name.isEmpty())
-        return record.owner.name;
-    const SemanticSymbolRecord fallbackRecord =
-        semanticSymbolRecordForSymbol(fallback);
-    if (!fallbackRecord.owner.name.isEmpty())
-        return fallbackRecord.owner.name;
-
-    switch (record.owner.kind) {
-    case SymbolTaxonomy::SymbolOwnerScope::Global:
-        return QStringLiteral("global");
-    case SymbolTaxonomy::SymbolOwnerScope::Module:
-        return QStringLiteral("module");
-    case SymbolTaxonomy::SymbolOwnerScope::Interface:
-        return QStringLiteral("interface");
-    case SymbolTaxonomy::SymbolOwnerScope::Package:
-        return QStringLiteral("package");
-    case SymbolTaxonomy::SymbolOwnerScope::Struct:
-        return QStringLiteral("struct");
-    case SymbolTaxonomy::SymbolOwnerScope::Unknown:
-        break;
-    }
-    return QString();
 }
 
 QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
@@ -89,28 +43,6 @@ QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
 
 void fillSymbolMetadataFromRecord(
     CompletionModel::CompletionItem& item,
-    const sym_list::SymbolInfo& symbol)
-{
-    item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
-    item.symbolStableKey = item.symbolRecord.stableKey.isValid()
-        ? item.symbolRecord.stableKey
-        : symbolStableKeyForSymbol(symbol);
-    item.symbolType = item.symbolRecord.rawCollectorKind;
-
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        metadataForRecord(item.symbolRecord, symbol);
-    item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
-    item.ownerScopeName = ownerScopeNameForRecord(item.symbolRecord, symbol);
-    item.sourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
-    item.declarationKind = metadata.declarationKind;
-    item.usageRole = metadata.usageRole;
-    item.ownerScope = metadata.ownerScope;
-    item.sourceRole = metadata.sourceRole;
-}
-
-void fillSymbolMetadataFromRecord(
-    CompletionModel::CompletionItem& item,
     const SemanticSymbolRecord& record)
 {
     item.symbolRecord = record;
@@ -130,64 +62,6 @@ void fillSymbolMetadataFromRecord(
 }
 }
 
-void CompletionModel::updateCompletions(const QStringList &keywords,
-                                       const QList<sym_list::SymbolInfo> &symbols,
-                                       const QString &prefix,
-                                       CompletionType type)
-{
-    beginResetModel();
-    completions.clear();
-
-    CompletionService* completionService = CompletionService::getInstance();
-    if (type == KeywordCompletion) {
-        for (const QString &keyword : keywords) {
-            CompletionItem item;
-            item.text = keyword;
-            item.type = KeywordCompletion;
-            item.score = completionService->completionItemScore(keyword, prefix);
-            fillDisplayMetadata(item);
-            completions.append(item);
-        }
-    } else if (type == SymbolCompletion) {
-        if (symbols.size() == keywords.size()) {
-            for (int i = 0; i < keywords.size() && i < symbols.size(); i++) {
-                CompletionItem item;
-                item.text = keywords[i];
-                item.type = SymbolCompletion;
-                fillSymbolMetadataFromRecord(item, symbols[i]);
-                item.score = completionService->completionItemScore(keywords[i], prefix);
-                item.description = item.typeDisplayName;
-
-                fillDisplayMetadata(item);
-                completions.append(item);
-            }
-        } else {
-            for (const sym_list::SymbolInfo &symbol : symbols) {
-                CompletionItem item;
-                item.text = symbol.symbolName;
-                item.type = SymbolCompletion;
-                fillSymbolMetadataFromRecord(item, symbol);
-                item.score = completionService->completionItemScore(symbol.symbolName, prefix);
-                item.description = item.typeDisplayName;
-
-                fillDisplayMetadata(item);
-                completions.append(item);
-            }
-        }
-    }
-
-    // Sort by score, cap total to avoid UI stutter, then limit visible.
-    sortCompletionsByScore();
-    if (completions.size() > MaxCompletionItems) {
-        completions = completions.mid(0, MaxCompletionItems);
-    }
-    if (completions.size() > 15) {
-        completions = completions.mid(0, 15);  // Normal mode: top 15 by score.
-    }
-
-    endResetModel();
-}
-
 void CompletionModel::updateCompletions(const CompletionResult &completion,
                                         const QString &prefix)
 {
@@ -205,6 +79,7 @@ void CompletionModel::updateCompletions(const CompletionResult &completion,
         item.symbolStableKey = item.symbolRecord.stableKey.isValid()
             ? item.symbolRecord.stableKey
             : semanticItem.symbolStableKey;
+        item.symbolType = item.symbolRecord.rawCollectorKind;
         item.score = completionService->completionItemScore(semanticItem.label, prefix);
         item.description = semanticItem.typeDisplayName;
         item.typeDisplayName = semanticItem.typeDisplayName;
@@ -273,75 +148,6 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
     if (completions.size() > MaxCompletionItems) {
         completions = completions.mid(0, MaxCompletionItems);
     }
-    endResetModel();
-}
-
-void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> &symbols,
-                                              const QString &prefix,
-                                              sym_list::sym_type_e symbolType)
-{
-    beginResetModel();
-    completions.clear();
-
-    CompletionService* completionService = CompletionService::getInstance();
-    const CommandSymbolPresentation presentation =
-        completionService->commandSymbolPresentation(symbolType);
-
-    CompletionItem descItem;
-    descItem.text = QString(":: COMMAND MODE - %1 ::").arg(presentation.typeDescription);
-    descItem.type = SymbolCompletion;
-    descItem.description = "Command Mode";
-    descItem.score = 1000;
-    descItem.defaultValue = presentation.defaultValue;
-    fillDisplayMetadata(descItem);
-    completions.append(descItem);
-
-    CompletionItem defaultItem;
-    defaultItem.text = QString("[DEFAULT] %1").arg(presentation.defaultValue);
-    defaultItem.type = SymbolCompletion;
-    defaultItem.symbolType = symbolType;
-    defaultItem.description =
-        QString("Default %1 declaration").arg(presentation.typeDescription.split(' ').value(0));
-    defaultItem.defaultValue = presentation.defaultValue;
-    defaultItem.score = 999;  // High score but less than header.
-    fillDisplayMetadata(defaultItem);
-    completions.append(defaultItem);
-
-    QSet<QString> addedItems;
-
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbol.symbolName == presentation.defaultValue) {
-            continue;
-        }
-
-        const CommandSymbolCompletionItem serviceItem =
-            completionService->commandSymbolCompletionItem(symbol, symbolType, prefix);
-        if (addedItems.contains(serviceItem.uniqueKey))
-            continue;
-        addedItems.insert(serviceItem.uniqueKey);
-
-        CompletionItem item;
-        item.type = SymbolCompletion;
-        fillSymbolMetadataFromRecord(item, symbol);
-        item.text = serviceItem.text;
-        item.description = item.typeDisplayName.isEmpty()
-            ? serviceItem.description
-            : item.typeDisplayName;
-        item.defaultValue = serviceItem.defaultValue;
-        item.score = serviceItem.score;
-
-        fillDisplayMetadata(item);
-        completions.append(item);
-    }
-
-    sortCompletionsByScore();
-    if (completions.size() > MaxCompletionItems) {
-        completions = completions.mid(0, MaxCompletionItems);
-    }
-    if (completions.size() > 32) {
-        completions = completions.mid(0, 32);
-    }
-
     endResetModel();
 }
 

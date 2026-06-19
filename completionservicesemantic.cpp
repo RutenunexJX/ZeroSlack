@@ -11,12 +11,6 @@ QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType
     return SymbolTaxonomy::symbolTypeLabel(symbolType);
 }
 
-QString CompletionService::symbolTypeDescription(
-    const sym_list::SymbolInfo& symbol) const
-{
-    return SymbolTaxonomy::symbolTypeLabel(SymbolTaxonomy::semanticMetadata(symbol));
-}
-
 QStringList CompletionService::findModuleInternalVariableCompletions(
     const QString& moduleName,
     const QString& prefix) const

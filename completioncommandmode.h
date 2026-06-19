@@ -12,10 +12,6 @@ public:
     static CommandSymbolPresentation symbolPresentation(
         sym_list::sym_type_e symbolType);
     static CommandSymbolCompletionItem symbolCompletionItem(
-        const sym_list::SymbolInfo& symbol,
-        sym_list::sym_type_e requestedType,
-        const QString& prefix = QString());
-    static CommandSymbolCompletionItem symbolCompletionItem(
         const SemanticSymbolRecord& record,
         sym_list::sym_type_e requestedType,
         const QString& prefix = QString());
