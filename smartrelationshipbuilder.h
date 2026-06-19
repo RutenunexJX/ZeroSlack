@@ -88,10 +88,10 @@ private:
     struct AnalysisContext {
         QString currentFileName;
         QString currentModuleName;
-        int currentModuleId = -1;
-        QHash<QString, int> localSymbolIds;
+        int currentModuleLocalHandle = -1;
+        QHash<QString, int> localSymbolHandles;
         QList<sym_list::SymbolInfo> fileSymbols;
-        QHash<int, sym_list::sym_type_e> symbolIdToType;
+        QHash<int, sym_list::sym_type_e> localHandleToType;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;
         const SemanticIndexSnapshot* snapshot = nullptr;
@@ -117,13 +117,17 @@ private:
 
     sym_list::SymbolInfo findSymbolByName(const QString& symbolName,
                                           const AnalysisContext& context);
-    int findSymbolIdByName(const QString& symbolName, const AnalysisContext& context);
+    int findSymbolLocalHandleByName(const QString& symbolName,
+                                    const AnalysisContext& context);
     QString findContainingModule(int lineNumber, const AnalysisContext& context);
-    int getContainingModuleId(int lineNumber, const AnalysisContext& context);
-    QSet<int> getAffectedSymbolIds(const QString& content, const QList<int>& changedLines, AnalysisContext& context);
+    int getContainingModuleLocalHandle(int lineNumber,
+                                       const AnalysisContext& context);
+    QSet<int> getAffectedSymbolLocalHandles(const QString& content,
+                                            const QList<int>& changedLines,
+                                            AnalysisContext& context);
 
     QVector<RelationshipToAdd>* collectResults = nullptr;
-    void addRelationshipWithContext(int fromId, int toId,
+    void addRelationshipWithContext(int fromHandle, int toHandle,
                                   SymbolRelationshipEngine::RelationType type,
                                   const QString& context, int confidence = 100);
 

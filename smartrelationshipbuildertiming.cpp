@@ -31,14 +31,15 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
         if (lineMin >= 0 && (signal.lineNumber - 1 < lineMin || signal.lineNumber - 1 > lineMax))
             continue;
 
-        int signalId = findSymbolIdByName(signal.signalName, context);
-        int ownerModuleId = getContainingModuleId(signal.lineNumber, context);
-        if (ownerModuleId == -1)
-            ownerModuleId = context.currentModuleId;
-        if (signalId != -1 && ownerModuleId != -1) {
+        int signalHandle = findSymbolLocalHandleByName(signal.signalName, context);
+        int ownerModuleHandle =
+            getContainingModuleLocalHandle(signal.lineNumber, context);
+        if (ownerModuleHandle == -1)
+            ownerModuleHandle = context.currentModuleLocalHandle;
+        if (signalHandle != -1 && ownerModuleHandle != -1) {
             addRelationshipWithContext(
-                ownerModuleId,
-                signalId,
+                ownerModuleHandle,
+                signalHandle,
                 SymbolRelationshipEngine::READS_FROM,
                 QString("Timing sensitivity at line %1").arg(signal.lineNumber),
                 80
@@ -57,18 +58,19 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
         if (lineMin >= 0 && (signal.lineNumber - 1 < lineMin || signal.lineNumber - 1 > lineMax))
             continue;
 
-        int ownerModuleId = getContainingModuleId(signal.lineNumber, context);
-        if (ownerModuleId == -1)
-            ownerModuleId = context.currentModuleId;
-        if (ownerModuleId == -1)
+        int ownerModuleHandle =
+            getContainingModuleLocalHandle(signal.lineNumber, context);
+        if (ownerModuleHandle == -1)
+            ownerModuleHandle = context.currentModuleLocalHandle;
+        if (ownerModuleHandle == -1)
             continue;
 
         if (signal.edgeSensitive && isClockSignalName(signal.signalName)) {
-            int clockId = findSymbolIdByName(signal.signalName, context);
-            if (clockId != -1) {
+            int clockHandle = findSymbolLocalHandleByName(signal.signalName, context);
+            if (clockHandle != -1) {
                 addRelationshipWithContext(
-                    clockId,
-                    ownerModuleId,
+                    clockHandle,
+                    ownerModuleHandle,
                     SymbolRelationshipEngine::CLOCKS,
                     QString("Clock domain at line %1").arg(signal.lineNumber),
                     95
@@ -77,11 +79,11 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
         }
 
         if (isResetSignalName(signal.signalName)) {
-            int resetId = findSymbolIdByName(signal.signalName, context);
-            if (resetId != -1) {
+            int resetHandle = findSymbolLocalHandleByName(signal.signalName, context);
+            if (resetHandle != -1) {
                 addRelationshipWithContext(
-                    resetId,
-                    ownerModuleId,
+                    resetHandle,
+                    ownerModuleHandle,
                     SymbolRelationshipEngine::RESETS,
                     QString("Reset signal at line %1").arg(signal.lineNumber),
                     90

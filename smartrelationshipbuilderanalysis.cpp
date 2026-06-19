@@ -16,19 +16,20 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
         if (lineMin >= 0 && (info.lineNumber - 1 < lineMin || info.lineNumber - 1 > lineMax))
             continue;
 
-        int moduleTypeId = findSymbolIdByName(info.moduleName, context);
-        int ownerModuleId = getContainingModuleId(info.lineNumber, context);
-        if (ownerModuleId == -1)
-            ownerModuleId = context.currentModuleId;
-        if (moduleTypeId != -1 && ownerModuleId != -1) {
+        int moduleTypeHandle = findSymbolLocalHandleByName(info.moduleName, context);
+        int ownerModuleHandle =
+            getContainingModuleLocalHandle(info.lineNumber, context);
+        if (ownerModuleHandle == -1)
+            ownerModuleHandle = context.currentModuleLocalHandle;
+        if (moduleTypeHandle != -1 && ownerModuleHandle != -1) {
             addRelationshipWithContext(
-                ownerModuleId,
-                moduleTypeId,
+                ownerModuleHandle,
+                moduleTypeHandle,
                 SymbolRelationshipEngine::INSTANTIATES,
                 QString("Instance: %1 at line %2").arg(info.instanceName).arg(info.lineNumber),
                 90
             );
-            emitted.insert(QStringLiteral("%1:%2").arg(ownerModuleId).arg(moduleTypeId));
+            emitted.insert(QStringLiteral("%1:%2").arg(ownerModuleHandle).arg(moduleTypeHandle));
         }
     }
 
@@ -42,18 +43,20 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
         if (lineMin >= 0 && (symbol.startLine - 1 < lineMin || symbol.startLine - 1 > lineMax))
             continue;
 
-        int moduleTypeId = findSymbolIdByName(symbol.dataType, context);
-        int ownerModuleId = getContainingModuleId(symbol.startLine, context);
-        if (ownerModuleId == -1)
-            ownerModuleId = context.currentModuleId;
-        if (moduleTypeId != -1 && ownerModuleId != -1) {
-            const QString key = QStringLiteral("%1:%2").arg(ownerModuleId).arg(moduleTypeId);
+        int moduleTypeHandle = findSymbolLocalHandleByName(symbol.dataType, context);
+        int ownerModuleHandle =
+            getContainingModuleLocalHandle(symbol.startLine, context);
+        if (ownerModuleHandle == -1)
+            ownerModuleHandle = context.currentModuleLocalHandle;
+        if (moduleTypeHandle != -1 && ownerModuleHandle != -1) {
+            const QString key =
+                QStringLiteral("%1:%2").arg(ownerModuleHandle).arg(moduleTypeHandle);
             if (emitted.contains(key))
                 continue;
 
             addRelationshipWithContext(
-                ownerModuleId,
-                moduleTypeId,
+                ownerModuleHandle,
+                moduleTypeHandle,
                 SymbolRelationshipEngine::INSTANTIATES,
                 QString("Instance: %1 at line %2").arg(symbol.symbolName).arg(symbol.startLine),
                 90
@@ -73,24 +76,25 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
         if (lineMin >= 0 && (assignment.lineNumber - 1 < lineMin || assignment.lineNumber - 1 > lineMax))
             continue;
 
-        int leftVarId = findSymbolIdByName(assignment.leftName, context);
-        if (leftVarId == -1)
+        int leftVarHandle =
+            findSymbolLocalHandleByName(assignment.leftName, context);
+        if (leftVarHandle == -1)
             continue;
 
         for (const QString& rightVar : assignment.rightNames) {
-            int rightVarId = findSymbolIdByName(rightVar, context);
-            if (rightVarId != -1 && rightVarId != leftVarId) {
+            int rightVarHandle = findSymbolLocalHandleByName(rightVar, context);
+            if (rightVarHandle != -1 && rightVarHandle != leftVarHandle) {
                 addRelationshipWithContext(
-                    leftVarId,
-                    rightVarId,
+                    leftVarHandle,
+                    rightVarHandle,
                     SymbolRelationshipEngine::REFERENCES,
                     QString("Assignment at line %1").arg(assignment.lineNumber),
                     85
                 );
 
                 addRelationshipWithContext(
-                    rightVarId,
-                    leftVarId,
+                    rightVarHandle,
+                    leftVarHandle,
                     SymbolRelationshipEngine::ASSIGNS_TO,
                     QString("Assigned to %1 at line %2").arg(assignment.leftName).arg(assignment.lineNumber),
                     85
@@ -111,14 +115,15 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
             continue;
 
         for (const QString& varName : ref.symbolNames) {
-            int varId = findSymbolIdByName(varName, context);
-            int ownerModuleId = getContainingModuleId(ref.lineNumber, context);
-            if (ownerModuleId == -1)
-                ownerModuleId = context.currentModuleId;
-            if (varId != -1 && ownerModuleId != -1) {
+            int varHandle = findSymbolLocalHandleByName(varName, context);
+            int ownerModuleHandle =
+                getContainingModuleLocalHandle(ref.lineNumber, context);
+            if (ownerModuleHandle == -1)
+                ownerModuleHandle = context.currentModuleLocalHandle;
+            if (varHandle != -1 && ownerModuleHandle != -1) {
                 addRelationshipWithContext(
-                    ownerModuleId,
-                    varId,
+                    ownerModuleHandle,
+                    varHandle,
                     SymbolRelationshipEngine::READS_FROM,
                     QString("Condition check at line %1").arg(ref.lineNumber),
                     70
@@ -140,24 +145,25 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
 
         const sym_list::SymbolInfo taskSymbol =
             findSymbolByName(call.subroutineName, context);
-        const int taskId = taskSymbol.symbolId;
-        if (taskId == -1)
+        const int taskHandle = taskSymbol.symbolId;
+        if (taskHandle == -1)
             continue;
 
-        const sym_list::sym_type_e taskType = context.symbolIdToType.value(
-            taskId,
+        const sym_list::sym_type_e taskType = context.localHandleToType.value(
+            taskHandle,
             taskSymbol.symbolType);
 
         if (!SymbolTaxonomy::isSubroutineDeclaration(taskType))
             continue;
 
-        int ownerModuleId = getContainingModuleId(call.lineNumber, context);
-        if (ownerModuleId == -1)
-            ownerModuleId = context.currentModuleId;
-        if (ownerModuleId != -1) {
+        int ownerModuleHandle =
+            getContainingModuleLocalHandle(call.lineNumber, context);
+        if (ownerModuleHandle == -1)
+            ownerModuleHandle = context.currentModuleLocalHandle;
+        if (ownerModuleHandle != -1) {
             addRelationshipWithContext(
-                ownerModuleId,
-                taskId,
+                ownerModuleHandle,
+                taskHandle,
                 SymbolRelationshipEngine::CALLS,
                 QString("Called at line %1").arg(call.lineNumber),
                 95
@@ -170,17 +176,18 @@ sym_list::SymbolInfo SmartRelationshipBuilder::findSymbolByName(
     const QString& symbolName,
     const AnalysisContext& context)
 {
-    if (context.localSymbolIds.contains(symbolName)) {
-        const int localId = context.localSymbolIds.value(symbolName);
+    if (context.localSymbolHandles.contains(symbolName)) {
+        const int localHandle = context.localSymbolHandles.value(symbolName);
         for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
-            if (symbol.symbolId == localId)
+            if (symbol.symbolId == localHandle)
                 return symbol;
         }
 
         sym_list::SymbolInfo symbol;
-        symbol.symbolId = localId;
+        symbol.symbolId = localHandle;
         symbol.symbolName = symbolName;
-        symbol.symbolType = context.symbolIdToType.value(localId, sym_list::sym_user);
+        symbol.symbolType =
+            context.localHandleToType.value(localHandle, sym_list::sym_user);
         return symbol;
     }
 
@@ -216,60 +223,65 @@ sym_list::SymbolInfo SmartRelationshipBuilder::findSymbolByName(
     return missing;
 }
 
-int SmartRelationshipBuilder::findSymbolIdByName(
+int SmartRelationshipBuilder::findSymbolLocalHandleByName(
     const QString& symbolName,
     const AnalysisContext& context)
 {
     return findSymbolByName(symbolName, context).symbolId;
 }
 
-void SmartRelationshipBuilder::addRelationshipWithContext(int fromId, int toId,
+void SmartRelationshipBuilder::addRelationshipWithContext(int fromHandle, int toHandle,
                                                         SymbolRelationshipEngine::RelationType type,
                                                         const QString& context, int confidence)
 {
     if (confidence < confidenceThreshold)
         return;
     if (collectResults) {
-        collectResults->append({fromId, toId, type, context, confidence});
+        collectResults->append({fromHandle, toHandle, type, context, confidence});
         return;
     }
     if (relationshipEngine)
-        relationshipEngine->addRelationship(fromId, toId, type, context, confidence);
+        relationshipEngine->addRelationship(fromHandle, toHandle, type, context, confidence);
 }
 
-int SmartRelationshipBuilder::getContainingModuleId(int lineNumber, const AnalysisContext& context)
+int SmartRelationshipBuilder::getContainingModuleLocalHandle(
+    int lineNumber,
+    const AnalysisContext& context)
 {
-    int foundId = -1;
+    int foundHandle = -1;
     int foundStart = -1;
     for (const sym_list::SymbolInfo& s : context.fileSymbols) {
         if (SymbolTaxonomy::isModuleDeclaration(s)
             && s.startLine <= lineNumber
             && s.endLine >= lineNumber
-            && (foundId < 0 || s.startLine > foundStart)) {
-            foundId = s.symbolId;
+            && (foundHandle < 0 || s.startLine > foundStart)) {
+            foundHandle = s.symbolId;
             foundStart = s.startLine;
         }
     }
-    return foundId;
+    return foundHandle;
 }
 
 QString SmartRelationshipBuilder::findContainingModule(int lineNumber, const AnalysisContext& context)
 {
-    int id = getContainingModuleId(lineNumber, context);
-    if (id < 0)
+    int localHandle = getContainingModuleLocalHandle(lineNumber, context);
+    if (localHandle < 0)
         return QString();
     for (const sym_list::SymbolInfo& s : context.fileSymbols) {
-        if (s.symbolId == id)
+        if (s.symbolId == localHandle)
             return s.symbolName;
     }
     return QString();
 }
 
-QSet<int> SmartRelationshipBuilder::getAffectedSymbolIds(const QString& content, const QList<int>& changedLines, AnalysisContext& context)
+QSet<int> SmartRelationshipBuilder::getAffectedSymbolLocalHandles(
+    const QString& content,
+    const QList<int>& changedLines,
+    AnalysisContext& context)
 {
-    QSet<int> affectedIds;
+    QSet<int> affectedHandles;
     if (changedLines.isEmpty())
-        return affectedIds;
+        return affectedHandles;
 
     QStringList lines = content.split('\n');
     int numLines = lines.size();
@@ -280,14 +292,14 @@ QSet<int> SmartRelationshipBuilder::getAffectedSymbolIds(const QString& content,
 
     for (const sym_list::SymbolInfo& s : context.fileSymbols) {
         if (s.startLine >= minLine && s.startLine <= maxLine)
-            affectedIds.insert(s.symbolId);
+            affectedHandles.insert(s.symbolId);
     }
     for (int lineNum : changedLines) {
-        int mid = getContainingModuleId(lineNum, context);
-        if (mid >= 0)
-            affectedIds.insert(mid);
+        int moduleHandle = getContainingModuleLocalHandle(lineNum, context);
+        if (moduleHandle >= 0)
+            affectedHandles.insert(moduleHandle);
     }
-    return affectedIds;
+    return affectedHandles;
 }
 
 void SmartRelationshipBuilder::analyzeParameterRelationships(const QString& content, AnalysisContext& context)

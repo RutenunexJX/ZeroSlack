@@ -158,9 +158,10 @@ void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, c
     int minLine = qMax(0, minChanged - 2);
     int maxLine = qMin(numLines - 1, maxChanged + 2);
 
-    QSet<int> affectedIds = getAffectedSymbolIds(content, changedLines, context);
-    for (int symbolId : affectedIds) {
-        relationshipEngine->removeAllRelationships(symbolId);
+    QSet<int> affectedHandles =
+        getAffectedSymbolLocalHandles(content, changedLines, context);
+    for (int localHandle : affectedHandles) {
+        relationshipEngine->removeAllRelationships(localHandle);
     }
 
     try {
