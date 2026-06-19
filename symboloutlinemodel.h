@@ -19,8 +19,8 @@ enum class SymbolOutlineIconKind {
 };
 
 struct SymbolOutlineSymbolRow {
-    sym_list::SymbolInfo symbol = {};
     SemanticSymbolRecord symbolRecord;
+    SymbolStableKey symbolStableKey;
     QString displayName;
     QString typeDisplayName;
     QString detailDisplayName;
@@ -33,8 +33,5 @@ struct SymbolOutlineGroup {
     SymbolOutlineIconKind iconKind = SymbolOutlineIconKind::Symbol;
     QList<SymbolOutlineSymbolRow> symbolRows;
 };
-
-sym_list::SymbolInfo symbolOutlineCompatibilitySymbolForRecord(
-    const SemanticSymbolRecord& record);
 
 #endif // SYMBOLOUTLINEMODEL_H

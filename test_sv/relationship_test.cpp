@@ -979,8 +979,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == stageId
                    && snapshotNavigationTarget.symbolRow.symbolRecord.location.fileName
                        == stagePath
-                   && snapshotNavigationTarget.symbolRow.symbolRecord.stableKey
-                       == symbolStableKeyForSymbol(snapshotNavigationTarget.symbolRow.symbol),
+                   && snapshotNavigationTarget.symbolRow.symbolStableKey
+                       == snapshotNavigationTarget.symbolRow.symbolRecord.stableKey,
                true);
     NavigationSymbolOutlineQuery snapshotOutlineQuery;
     snapshotOutlineQuery.fileName = topPath;
@@ -1000,10 +1000,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             && !group.symbolRows.isEmpty()) {
             const SymbolOutlineSymbolRow& row = group.symbolRows.first();
             snapshotOutlineHasRowMetadata =
-                row.symbol.symbolId == topId
-                && row.symbolRecord.isValid()
+                row.symbolRecord.isValid()
                 && row.symbolRecord.localHandle == topId
-                && row.symbolRecord.stableKey == symbolStableKeyForSymbol(row.symbol)
+                && row.symbolStableKey == row.symbolRecord.stableKey
                 && row.symbolRecord.name == QStringLiteral("rel_top")
                 && row.displayName == QStringLiteral("rel_top")
                 && row.typeDisplayName == QStringLiteral("Module")
@@ -1121,10 +1120,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         for (const SymbolOutlineSymbolRow& row : group.symbolRows) {
             metadataOutlineGroupedAsModule =
                 metadataOutlineGroupedAsModule
-                || (row.symbol.symbolId == metadataOutlineModule.symbolId
-                    && row.symbolRecord.isValid()
+                || (row.symbolRecord.isValid()
                     && row.symbolRecord.localHandle
                         == metadataOutlineModule.symbolId
+                    && row.symbolStableKey == row.symbolRecord.stableKey
                     && row.symbolRecord.declarationKind
                         == SymbolTaxonomy::DeclarationKind::Module
                     && row.symbolRecord.rawCollectorKind == sym_list::sym_user

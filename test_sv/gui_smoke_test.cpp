@@ -1608,8 +1608,8 @@ static void runNavigationHierarchyModelRegression()
     outlineSymbol.symbolId = 1234;
 
     SymbolOutlineSymbolRow outlineRow;
-    outlineRow.symbol = outlineSymbol;
     outlineRow.symbolRecord = semanticSymbolRecordForSymbol(outlineSymbol);
+    outlineRow.symbolStableKey = outlineRow.symbolRecord.stableKey;
     outlineRow.displayName = outlineSymbol.symbolName;
     outlineRow.typeDisplayName = QStringLiteral("Module");
     outlineRow.detailDisplayName = outlineSymbol.fileName;

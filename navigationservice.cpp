@@ -95,8 +95,8 @@ QList<SymbolOutlineSymbolRow> outlineRows(
     for (const SearchResult& result : results) {
         const SemanticSymbolRecord record = outlineSymbolRecord(result);
         SymbolOutlineSymbolRow row;
-        row.symbol = symbolOutlineCompatibilitySymbolForRecord(record);
         row.symbolRecord = record;
+        row.symbolStableKey = record.stableKey;
         row.displayName = record.name;
         row.typeDisplayName = groupDisplayName;
         row.detailDisplayName = outlineDetailDisplayName(record);
@@ -222,9 +222,8 @@ NavigationModuleTarget NavigationService::resolveModuleTarget(
         return result;
 
     result.found = true;
-    result.symbolRow.symbol =
-        symbolOutlineCompatibilitySymbolForRecord(target.symbolRecord);
     result.symbolRow.symbolRecord = target.symbolRecord;
+    result.symbolRow.symbolStableKey = target.symbolRecord.stableKey;
     result.symbolRow.displayName = target.symbolName;
     result.symbolRow.typeDisplayName = target.symbolTypeText;
     result.symbolRow.detailDisplayName = target.fileName;

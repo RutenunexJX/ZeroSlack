@@ -112,13 +112,12 @@ void NavigationCommandCoordinator::navigateEditorToLine(
 void NavigationCommandCoordinator::navigateToSymbol(
     const SymbolOutlineSymbolRow& row)
 {
-    if (row.symbolRecord.isValid()
-        && !row.symbolRecord.location.fileName.isEmpty()) {
-        navigateToFileAndLine(row.symbolRecord.location.fileName,
-                              row.symbolRecord.location.startLine,
-                              row.symbolRecord.location.startColumn);
+    if (!row.symbolRecord.isValid()
+        || row.symbolRecord.location.fileName.isEmpty()) {
         return;
     }
 
-    navigateToFileAndLine(row.symbol.fileName, row.symbol.startLine);
+    navigateToFileAndLine(row.symbolRecord.location.fileName,
+                          row.symbolRecord.location.startLine,
+                          row.symbolRecord.location.startColumn);
 }
