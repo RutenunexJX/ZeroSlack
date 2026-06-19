@@ -5661,7 +5661,7 @@ static void runFsmGraphServiceFixture()
     expectBool("fsm graph stable keys",
                !report.graphs.isEmpty()
                    && report.graphs.first().moduleStableKey
-                       == symbolStableKeyForSymbol(report.graphs.first().moduleSymbol)
+                       == report.graphs.first().moduleSymbolRecord.stableKey
                    && report.graphs.first().stateRegisterStableKey
                        == symbolStableKeyForSymbol(
                            report.graphs.first().stateRegister)

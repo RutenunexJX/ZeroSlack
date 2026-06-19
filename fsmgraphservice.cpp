@@ -154,7 +154,6 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
     for (const sym_list::SymbolInfo& stateRegister
          : stateRegisters(moduleSymbols, allSymbols)) {
         FsmGraph graph;
-        graph.moduleSymbol = moduleSymbol;
         graph.stateRegister = stateRegister;
         graph.nextStateSignal = nextStateSignal(moduleSymbols, stateRegister);
         graph.states = stateValues(moduleSymbols, allSymbols, stateRegister);
@@ -164,7 +163,7 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
                                              graph.states);
         if (graph.states.isEmpty() && graph.transitions.isEmpty())
             continue;
-        fillDisplayMetadata(graph);
+        fillDisplayMetadata(graph, moduleSymbol);
         report.graphs.append(graph);
     }
 
@@ -794,16 +793,18 @@ QString FsmGraphService::notFoundReasonDisplayName(
     return QStringLiteral("FSM graph unavailable");
 }
 
-void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
+void FsmGraphService::fillDisplayMetadata(
+    FsmGraph& graph,
+    const sym_list::SymbolInfo& moduleSymbol)
 {
-    graph.moduleSymbolRecord = semanticSymbolRecordForSymbol(graph.moduleSymbol);
+    graph.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
     graph.stateRegisterRecord =
         semanticSymbolRecordForSymbol(graph.stateRegister);
     graph.nextStateSignalRecord =
         semanticSymbolRecordForSymbol(graph.nextStateSignal);
     graph.moduleStableKey = graph.moduleSymbolRecord.isValid()
         ? graph.moduleSymbolRecord.stableKey
-        : symbolStableKeyForSymbol(graph.moduleSymbol);
+        : symbolStableKeyForSymbol(moduleSymbol);
     graph.stateRegisterStableKey = graph.stateRegisterRecord.isValid()
         ? graph.stateRegisterRecord.stableKey
         : symbolStableKeyForSymbol(graph.stateRegister);
@@ -816,7 +817,7 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
         codeLinkForRecord(graph.nextStateSignalRecord, graph.nextStateSignal);
     graph.moduleDisplayName =
         displayNameForRecord(graph.moduleSymbolRecord,
-                             graph.moduleSymbol,
+                             moduleSymbol,
                              QStringLiteral("<unknown>"));
     graph.stateCount = graph.states.size();
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
@@ -851,7 +852,7 @@ void FsmGraphService::fillDisplayMetadata(FsmGraph& graph)
     for (FsmTransition& transition : graph.transitions)
         fillDisplayMetadata(transition);
     graph.transitionRows = transitionRows(
-        graph.moduleSymbol,
+        moduleSymbol,
         graph.transitions,
         graph.states);
 }

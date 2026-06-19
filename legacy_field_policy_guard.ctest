@@ -121,6 +121,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "definitionnavigationservice.h|sym_list::sym_type_e[ \t\r\n]+symbolType"
     "definitionnavigationservice.cpp|target\\.symbolType[ \t\r\n]*="
     "fsmgraphservice.h|moduleSymbolId"
+    "fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
     "fsmgraphservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
     "hierarchyservice.h|struct[ \t\r\n]+HierarchyQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
     "hierarchyservice.h|struct[ \t\r\n]+HierarchyNode[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"

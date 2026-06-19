@@ -67,7 +67,6 @@ struct FsmTransitionRow {
 };
 
 struct FsmGraph {
-    sym_list::SymbolInfo moduleSymbol = {};
     sym_list::SymbolInfo stateRegister = {};
     sym_list::SymbolInfo nextStateSignal = {};
     SemanticSymbolRecord moduleSymbolRecord;
@@ -183,7 +182,8 @@ private:
     static QString transitionConditionDisplayName(const FsmTransition& transition);
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);
     static QString notFoundReasonDisplayName(FsmGraphNotFoundReason reason);
-    static void fillDisplayMetadata(FsmGraph& graph);
+    static void fillDisplayMetadata(FsmGraph& graph,
+                                    const sym_list::SymbolInfo& moduleSymbol);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
     static void sortTransitions(QList<FsmTransition>& transitions);
