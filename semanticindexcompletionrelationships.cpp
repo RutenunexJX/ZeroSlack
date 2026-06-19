@@ -25,19 +25,17 @@ bool relationshipCompletionNameMatches(const QString& name, const QString& prefi
     return prefixPos == lowerPrefix.length();
 }
 
-QStringList uniqueSortedRelationshipSymbolNames(const QList<sym_list::SymbolInfo>& symbols)
+QStringList uniqueSortedRelationshipRecordNames(
+    const QList<SemanticSymbolRecord>& records)
 {
     QStringList result;
     QSet<QString> seenNames;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-        const QString displayName =
-            record.name.isEmpty() ? symbol.symbolName : record.name;
-        const QString key = displayName.toCaseFolded();
+    for (const SemanticSymbolRecord& record : records) {
+        const QString key = record.name.toCaseFolded();
         if (seenNames.contains(key))
             continue;
         seenNames.insert(key);
-        result.append(displayName);
+        result.append(record.name);
     }
     result.sort(Qt::CaseInsensitive);
     return result;
@@ -46,22 +44,6 @@ QStringList uniqueSortedRelationshipSymbolNames(const QList<sym_list::SymbolInfo
 QString relationshipRecordDisplayName(const SemanticSymbolRecord& record)
 {
     return record.name;
-}
-
-QString relationshipRecordDisplayName(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
-{
-    return record.name.isEmpty() ? fallback.symbolName : record.name;
-}
-
-QString relationshipRecordOwnerName(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
-{
-    if (!record.owner.name.isEmpty())
-        return record.owner.name;
-    return semanticSymbolRecordForSymbol(fallback).owner.name;
 }
 
 }
@@ -125,30 +107,26 @@ QStringList SemanticIndex::getSymbolsWithOutgoingRelationshipCompletionNames(
     SymbolRelationshipEngine::RelationType type,
     const QString& prefix) const
 {
-    QList<sym_list::SymbolInfo> result;
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    QList<SemanticSymbolRecord> result;
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
         if (!relationshipCompletionNameMatches(
-                relationshipRecordDisplayName(record, symbol), prefix))
+                relationshipRecordDisplayName(record), prefix))
             continue;
 
-        const SymbolStableKey symbolStableKey = record.stableKey.isValid()
-            ? record.stableKey
-            : symbolStableKeyForSymbol(symbol);
-        if (!symbolStableKey.isValid())
+        if (!record.stableKey.isValid())
             continue;
         const QList<SemanticRelationship> relationships =
-            getRelationships(symbolStableKey, true);
+            getRelationships(record.stableKey, true);
         for (const SemanticRelationship& relationship : relationships) {
             if (relationship.type == type) {
-                result.append(symbol);
+                result.append(record);
                 break;
             }
         }
     }
 
-    return uniqueSortedRelationshipSymbolNames(result);
+    return uniqueSortedRelationshipRecordNames(result);
 }
 
 bool SemanticIndex::hasRelationshipFacts() const
@@ -164,12 +142,10 @@ int SemanticIndex::scopeScoreForSymbol(const QString& symbolName,
     if (symbolName.isEmpty() || moduleName.isEmpty())
         return 0;
 
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    for (const sym_list::SymbolInfo& candidate : symbols) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(candidate);
-        if (relationshipRecordDisplayName(record, candidate) == symbolName
-            && relationshipRecordOwnerName(record, candidate) == moduleName) {
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
+        if (relationshipRecordDisplayName(record) == symbolName
+            && record.owner.name == moduleName) {
             return 20;
         }
     }

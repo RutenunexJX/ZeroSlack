@@ -9,9 +9,9 @@
 
 namespace {
 int endModulePositionInContent(const QString& fileContent,
-                               const sym_list::SymbolInfo& moduleSymbol)
+                               const SemanticSymbolRecord& moduleRecord)
 {
-    int searchStart = moduleSymbol.position;
+    int searchStart = moduleRecord.location.position;
     int moduleDepth = 0;
     bool foundModule = false;
 
@@ -27,7 +27,7 @@ int endModulePositionInContent(const QString& fileContent,
 
         if (nextModuleStart != -1
             && (nextModuleEnd == -1 || nextModuleStart < nextModuleEnd)) {
-            if (foundModule || nextModuleStart == moduleSymbol.position) {
+            if (foundModule || nextModuleStart == moduleRecord.location.position) {
                 ++moduleDepth;
                 foundModule = true;
             }
@@ -47,7 +47,7 @@ int endModulePositionInContent(const QString& fileContent,
     return -1;
 }
 
-QString moduleNameAtPositionInContent(const QList<sym_list::SymbolInfo>& modules,
+QString moduleNameAtPositionInContent(const QList<SemanticSymbolRecord>& modules,
                                       int cursorPosition,
                                       const QString& fileContent)
 {
@@ -62,21 +62,22 @@ QString moduleNameAtPositionInContent(const QList<sym_list::SymbolInfo>& modules
         ++pos;
     }
 
-    for (const sym_list::SymbolInfo& module : modules) {
-        if (cursorPosition < module.position)
+    for (const SemanticSymbolRecord& module : modules) {
+        if (cursorPosition < module.location.position)
             continue;
-        if (!sym_list::isValidModuleName(module.symbolName))
+        if (!sym_list::isValidModuleName(module.name))
             continue;
 
-        if (module.endLine > 0) {
-            if (cursorLine >= module.startLine && cursorLine <= module.endLine)
-                return module.symbolName;
+        if (module.location.endLine > 0) {
+            if (cursorLine >= module.location.startLine
+                && cursorLine <= module.location.endLine)
+                return module.name;
             continue;
         }
 
         const int moduleEndPosition = endModulePositionInContent(fileContent, module);
         if (moduleEndPosition >= 0 && cursorPosition < moduleEndPosition)
-            return module.symbolName;
+            return module.name;
     }
 
     return QString();
@@ -104,20 +105,20 @@ QString SemanticIndex::currentModuleAt(const QString& fileName, int cursorPositi
     if (fileName.isEmpty() || cursorPosition < 0)
         return QString();
 
-    QList<sym_list::SymbolInfo> modules;
-    const QList<sym_list::SymbolInfo> fileSymbols = getSymbols(fileName);
-    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (SymbolTaxonomy::isModuleDeclaration(symbol))
-            modules.append(symbol);
+    QList<SemanticSymbolRecord> modules;
+    const QList<SemanticSymbolRecord> fileRecords = getSymbolRecords(fileName);
+    for (const SemanticSymbolRecord& record : fileRecords) {
+        if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module)
+            modules.append(record);
     }
 
     if (modules.isEmpty())
         return QString();
 
     std::sort(modules.begin(), modules.end(),
-              [](const sym_list::SymbolInfo& left,
-                 const sym_list::SymbolInfo& right) {
-                  return left.position < right.position;
+              [](const SemanticSymbolRecord& left,
+                 const SemanticSymbolRecord& right) {
+                  return left.location.position < right.location.position;
               });
 
     QString content = getCachedFileContent(fileName);
