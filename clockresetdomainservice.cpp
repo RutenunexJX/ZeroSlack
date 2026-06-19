@@ -14,6 +14,14 @@ bool stableKeyMatchesSymbol(const SymbolStableKey& key,
     return key.isValid() && symbolStableKeyForSymbol(symbol) == key;
 }
 
+QString normalizedClockResetFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
 RtlInsightCodeLink codeLinkForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
@@ -108,6 +116,21 @@ QList<SemanticRelationshipResult> clockResetRelationshipResultsForSymbol(
         ? index->getRelationshipResults(stableKey, outgoing)
         : QList<SemanticRelationshipResult>();
 }
+
+bool acceptsRelationship(const SemanticRelationshipResult& relationship,
+                         const ClockResetDomainQuery& query);
+bool acceptsCandidate(const sym_list::SymbolInfo& symbol,
+                      const ClockResetDomainQuery& query,
+                      const sym_list::SymbolInfo& moduleSymbol);
+bool isTimingCandidate(const sym_list::SymbolInfo& symbol,
+                       SymbolRelationshipEngine::RelationType* type);
+bool hasMappedTimingRelationship(SemanticIndex* index,
+                                 const sym_list::SymbolInfo& symbol,
+                                 SymbolRelationshipEngine::RelationType type,
+                                 const ClockResetDomainQuery& query);
+sym_list::SymbolInfo moduleForCandidate(
+    const sym_list::SymbolInfo& symbol,
+    const QList<sym_list::SymbolInfo>& symbols);
 }
 
 std::unique_ptr<ClockResetDomainService> ClockResetDomainService::instance = nullptr;
@@ -391,7 +414,9 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
     return rows;
 }
 
-bool ClockResetDomainService::acceptsRelationship(
+namespace {
+
+bool acceptsRelationship(
     const SemanticRelationshipResult& relationship,
     const ClockResetDomainQuery& query)
 {
@@ -413,14 +438,14 @@ bool ClockResetDomainService::acceptsRelationship(
         return false;
     }
     if (!query.fileName.isEmpty()
-        && normalizedFileName(relationship.toSymbol.fileName)
-            != normalizedFileName(query.fileName)) {
+        && normalizedClockResetFileName(relationship.toSymbol.fileName)
+            != normalizedClockResetFileName(query.fileName)) {
         return false;
     }
     return true;
 }
 
-bool ClockResetDomainService::acceptsCandidate(
+bool acceptsCandidate(
     const sym_list::SymbolInfo& symbol,
     const ClockResetDomainQuery& query,
     const sym_list::SymbolInfo& moduleSymbol)
@@ -438,16 +463,16 @@ bool ClockResetDomainService::acceptsCandidate(
         return false;
     }
     if (!query.fileName.isEmpty()
-        && normalizedFileName(symbol.fileName)
-            != normalizedFileName(query.fileName)
-        && normalizedFileName(moduleSymbol.fileName)
-            != normalizedFileName(query.fileName)) {
+        && normalizedClockResetFileName(symbol.fileName)
+            != normalizedClockResetFileName(query.fileName)
+        && normalizedClockResetFileName(moduleSymbol.fileName)
+            != normalizedClockResetFileName(query.fileName)) {
         return false;
     }
     return true;
 }
 
-bool ClockResetDomainService::isTimingCandidate(
+bool isTimingCandidate(
     const sym_list::SymbolInfo& symbol,
     SymbolRelationshipEngine::RelationType* type)
 {
@@ -477,7 +502,11 @@ bool ClockResetDomainService::isTimingCandidate(
     return false;
 }
 
-bool ClockResetDomainService::hasMappedTimingRelationship(
+}
+
+namespace {
+
+bool hasMappedTimingRelationship(
     SemanticIndex* index,
     const sym_list::SymbolInfo& symbol,
     SymbolRelationshipEngine::RelationType type,
@@ -494,7 +523,7 @@ bool ClockResetDomainService::hasMappedTimingRelationship(
     return false;
 }
 
-sym_list::SymbolInfo ClockResetDomainService::moduleForCandidate(
+sym_list::SymbolInfo moduleForCandidate(
     const sym_list::SymbolInfo& symbol,
     const QList<sym_list::SymbolInfo>& symbols)
 {
@@ -517,12 +546,11 @@ sym_list::SymbolInfo ClockResetDomainService::moduleForCandidate(
     return missing;
 }
 
+}
+
 QString ClockResetDomainService::normalizedFileName(const QString& fileName)
 {
-    if (fileName.isEmpty())
-        return QString();
-    return QDir::cleanPath(
-        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    return normalizedClockResetFileName(fileName);
 }
 
 QString ClockResetDomainService::groupDisplayName(

@@ -122,21 +122,6 @@ private:
     QList<ClockResetDomainEvidenceRow> unmappedTimingRows(
         const ClockResetDomainQuery& query) const;
 
-    static bool acceptsRelationship(const SemanticRelationshipResult& relationship,
-                                    const ClockResetDomainQuery& query);
-    static bool acceptsCandidate(const sym_list::SymbolInfo& symbol,
-                                 const ClockResetDomainQuery& query,
-                                 const sym_list::SymbolInfo& moduleSymbol);
-    static bool isTimingCandidate(const sym_list::SymbolInfo& symbol,
-                                  SymbolRelationshipEngine::RelationType* type);
-    static bool hasMappedTimingRelationship(
-        SemanticIndex* index,
-        const sym_list::SymbolInfo& symbol,
-        SymbolRelationshipEngine::RelationType type,
-        const ClockResetDomainQuery& query);
-    static sym_list::SymbolInfo moduleForCandidate(
-        const sym_list::SymbolInfo& symbol,
-        const QList<sym_list::SymbolInfo>& symbols);
     static QString normalizedFileName(const QString& fileName);
     static QString groupDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString domainSectionDisplayName(SymbolRelationshipEngine::RelationType type);
