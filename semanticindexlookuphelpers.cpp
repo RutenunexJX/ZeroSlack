@@ -16,19 +16,19 @@ QString normalizedLookupFileName(const QString& fileName)
 
 bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
                              const QList<SymbolTaxonomy::DeclarationKind>& declarationKinds,
-                             const QList<sym_list::sym_type_e>& legacyTypes,
+                             const QList<sym_list::sym_type_e>& rawCollectorKinds,
                              SymbolTaxonomy::SymbolSearchIntent intent)
 {
     return symbolSearchTypeMatches(
         semanticSymbolRecordForSymbol(symbol),
         declarationKinds,
-        legacyTypes,
+        rawCollectorKinds,
         intent);
 }
 
 bool symbolSearchTypeMatches(const SemanticSymbolRecord& record,
                              const QList<SymbolTaxonomy::DeclarationKind>& declarationKinds,
-                             const QList<sym_list::sym_type_e>& legacyTypes,
+                             const QList<sym_list::sym_type_e>& rawCollectorKinds,
                              SymbolTaxonomy::SymbolSearchIntent intent)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
@@ -43,8 +43,8 @@ bool symbolSearchTypeMatches(const SemanticSymbolRecord& record,
     if (!declarationKinds.isEmpty()) {
         return declarationKinds.contains(record.declarationKind);
     }
-    if (!legacyTypes.isEmpty()) {
-        for (sym_list::sym_type_e type : legacyTypes) {
+    if (!rawCollectorKinds.isEmpty()) {
+        for (sym_list::sym_type_e type : rawCollectorKinds) {
             if (SymbolTaxonomy::matchesRequestedSymbolType(
                     metadata,
                     type,

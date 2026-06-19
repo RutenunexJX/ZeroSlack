@@ -86,7 +86,7 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     for (const SemanticSymbolRecord& record : records) {
         if (!symbolSearchTypeMatches(record,
                                      query.declarationKinds,
-                                     query.legacyTypes,
+                                     query.rawCollectorKinds,
                                      query.intent))
             continue;
 
