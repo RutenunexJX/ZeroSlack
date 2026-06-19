@@ -5663,11 +5663,9 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().moduleStableKey
                        == report.graphs.first().moduleSymbolRecord.stableKey
                    && report.graphs.first().stateRegisterStableKey
-                       == symbolStableKeyForSymbol(
-                           report.graphs.first().stateRegister)
+                       == report.graphs.first().stateRegisterRecord.stableKey
                    && report.graphs.first().nextStateSignalStableKey
-                       == symbolStableKeyForSymbol(
-                           report.graphs.first().nextStateSignal),
+                       == report.graphs.first().nextStateSignalRecord.stableKey,
                true);
     expectBool("fsm graph semantic records",
                !report.graphs.isEmpty()

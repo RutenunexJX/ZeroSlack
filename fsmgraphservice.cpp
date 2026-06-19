@@ -154,16 +154,16 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
     for (const sym_list::SymbolInfo& stateRegister
          : stateRegisters(moduleSymbols, allSymbols)) {
         FsmGraph graph;
-        graph.stateRegister = stateRegister;
-        graph.nextStateSignal = nextStateSignal(moduleSymbols, stateRegister);
+        const sym_list::SymbolInfo nextState =
+            nextStateSignal(moduleSymbols, stateRegister);
         graph.states = stateValues(moduleSymbols, allSymbols, stateRegister);
         graph.transitions = parseTransitions(moduleSymbol,
                                              stateRegister,
-                                             graph.nextStateSignal,
+                                             nextState,
                                              graph.states);
         if (graph.states.isEmpty() && graph.transitions.isEmpty())
             continue;
-        fillDisplayMetadata(graph, moduleSymbol);
+        fillDisplayMetadata(graph, moduleSymbol, stateRegister, nextState);
         report.graphs.append(graph);
     }
 
@@ -739,10 +739,10 @@ QString FsmGraphService::stateDetailDisplayName(
 }
 
 QString FsmGraphService::stateRegisterDetailDisplayName(
-    const FsmGraph& graph,
+    bool hasNextStateSignal,
     const QString& nextStateSignalDisplayName)
 {
-    if (graph.nextStateSignal.symbolId >= 0) {
+    if (hasNextStateSignal) {
         return QStringLiteral("next %1")
             .arg(nextStateSignalDisplayName);
     }
@@ -794,26 +794,28 @@ QString FsmGraphService::notFoundReasonDisplayName(
 
 void FsmGraphService::fillDisplayMetadata(
     FsmGraph& graph,
-    const sym_list::SymbolInfo& moduleSymbol)
+    const sym_list::SymbolInfo& moduleSymbol,
+    const sym_list::SymbolInfo& stateRegister,
+    const sym_list::SymbolInfo& nextStateSignal)
 {
     graph.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
     graph.stateRegisterRecord =
-        semanticSymbolRecordForSymbol(graph.stateRegister);
+        semanticSymbolRecordForSymbol(stateRegister);
     graph.nextStateSignalRecord =
-        semanticSymbolRecordForSymbol(graph.nextStateSignal);
+        semanticSymbolRecordForSymbol(nextStateSignal);
     graph.moduleStableKey = graph.moduleSymbolRecord.isValid()
         ? graph.moduleSymbolRecord.stableKey
         : symbolStableKeyForSymbol(moduleSymbol);
     graph.stateRegisterStableKey = graph.stateRegisterRecord.isValid()
         ? graph.stateRegisterRecord.stableKey
-        : symbolStableKeyForSymbol(graph.stateRegister);
+        : symbolStableKeyForSymbol(stateRegister);
     graph.nextStateSignalStableKey = graph.nextStateSignalRecord.isValid()
         ? graph.nextStateSignalRecord.stableKey
-        : symbolStableKeyForSymbol(graph.nextStateSignal);
+        : symbolStableKeyForSymbol(nextStateSignal);
     graph.stateRegisterCodeLink =
-        codeLinkForRecord(graph.stateRegisterRecord, graph.stateRegister);
+        codeLinkForRecord(graph.stateRegisterRecord, stateRegister);
     graph.nextStateSignalCodeLink =
-        codeLinkForRecord(graph.nextStateSignalRecord, graph.nextStateSignal);
+        codeLinkForRecord(graph.nextStateSignalRecord, nextStateSignal);
     graph.moduleDisplayName =
         displayNameForRecord(graph.moduleSymbolRecord,
                              moduleSymbol,
@@ -822,28 +824,28 @@ void FsmGraphService::fillDisplayMetadata(
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDisplayName =
         displayNameForRecord(graph.stateRegisterRecord,
-                             graph.stateRegister,
+                             stateRegister,
                              QStringLiteral("<unknown>"));
     graph.stateRegisterTypeDisplayName =
         typeDisplayNameForRecord(graph.stateRegisterRecord,
-                                 graph.stateRegister);
+                                 stateRegister);
     graph.stateRegisterSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(graph.stateRegisterRecord,
-                                       graph.stateRegister);
-    graph.nextStateSignalDisplayName = graph.nextStateSignal.symbolId >= 0
+                                       stateRegister);
+    graph.nextStateSignalDisplayName = nextStateSignal.symbolId >= 0
         ? displayNameForRecord(graph.nextStateSignalRecord,
-                               graph.nextStateSignal)
+                               nextStateSignal)
         : QString();
     graph.stateRegisterDetailDisplayName =
-        stateRegisterDetailDisplayName(graph,
+        stateRegisterDetailDisplayName(nextStateSignal.symbolId >= 0,
                                        graph.nextStateSignalDisplayName);
-    graph.nextStateSignalTypeDisplayName = graph.nextStateSignal.symbolId >= 0
+    graph.nextStateSignalTypeDisplayName = nextStateSignal.symbolId >= 0
         ? typeDisplayNameForRecord(graph.nextStateSignalRecord,
-                                   graph.nextStateSignal)
+                                   nextStateSignal)
         : QString();
-    graph.nextStateSignalSourceRoleDisplayName = graph.nextStateSignal.symbolId >= 0
+    graph.nextStateSignalSourceRoleDisplayName = nextStateSignal.symbolId >= 0
         ? sourceRoleDisplayNameForRecord(graph.nextStateSignalRecord,
-                                         graph.nextStateSignal)
+                                         nextStateSignal)
         : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
