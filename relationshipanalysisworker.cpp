@@ -18,6 +18,16 @@ QList<SemanticRelationship> toSemanticRelationships(
     }
     return result;
 }
+
+QList<sym_list::SymbolInfo> fileSymbolCarriers(
+    const SemanticSnapshotToken& snapshotToken,
+    const QString& fileName)
+{
+    if (!snapshotToken.isValid())
+        return {};
+    return semanticSymbolInfoCarriersForRecords(
+        snapshotToken.snapshot->getSymbolRecords(fileName));
+}
 }
 
 SingleFileRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeSingleFile(
@@ -34,7 +44,7 @@ SingleFileRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeSingleFi
         return result;
 
     const QList<sym_list::SymbolInfo> fileSymbols =
-        baseSnapshot.snapshot->getSymbols(fileName);
+        fileSymbolCarriers(baseSnapshot, fileName);
     result.relationships =
         relationshipBuilder->computeRelationships(
             fileName, content, fileSymbols, baseSnapshot.snapshot.get());
@@ -70,9 +80,7 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
             continue;
         const QString content = QTextStream(&file).readAll();
         const QList<sym_list::SymbolInfo> fileSymbols =
-            baseSnapshot.isValid()
-                ? baseSnapshot.snapshot->getSymbols(filePath)
-                : QList<sym_list::SymbolInfo>();
+            fileSymbolCarriers(baseSnapshot, filePath);
         const QVector<RelationshipToAdd> relationships =
             relationshipBuilder->computeRelationships(
                 filePath,
