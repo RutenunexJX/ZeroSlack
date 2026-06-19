@@ -233,7 +233,8 @@ NavigationModuleTarget NavigationService::resolveModuleTarget(
         return result;
 
     result.found = true;
-    result.symbolRow.symbol = target.symbol;
+    result.symbolRow.symbol =
+        symbolOutlineCompatibilitySymbolForRecord(target.symbolRecord);
     result.symbolRow.symbolRecord = target.symbolRecord;
     result.symbolRow.displayName = target.symbolName;
     result.symbolRow.typeDisplayName = target.symbolTypeText;

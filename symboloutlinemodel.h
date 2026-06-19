@@ -37,5 +37,7 @@ struct SymbolOutlineGroup {
 
 QList<SymbolOutlineGroup> symbolOutlineGroupsWithRows(
     const QList<SymbolOutlineGroup>& groups);
+sym_list::SymbolInfo symbolOutlineCompatibilitySymbolForRecord(
+    const SemanticSymbolRecord& record);
 
 #endif // SYMBOLOUTLINEMODEL_H

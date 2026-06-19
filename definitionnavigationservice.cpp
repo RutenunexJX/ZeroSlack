@@ -165,7 +165,6 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
 
     target.found = true;
     target.localFile = result.localFile;
-    target.symbol = result.symbol;
     target.symbolRecord = result.symbolRecord.isValid()
         ? result.symbolRecord
         : semanticSymbolRecordForSymbol(result.symbol);

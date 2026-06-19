@@ -28,7 +28,6 @@ struct DefinitionNavigationContext {
 struct DefinitionNavigationTarget {
     bool found = false;
     bool localFile = false;
-    sym_list::SymbolInfo symbol;
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     QString symbolName;
