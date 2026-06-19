@@ -168,7 +168,8 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
             *reason = ModuleBriefNotFoundReason::NoMatchingModule;
         return missingModuleBriefSymbol();
     }
-    if (!SymbolTaxonomy::isModuleDeclaration(definition.symbol)) {
+    if (!SymbolTaxonomy::isModuleDeclaration(
+            semanticMetadataForRecord(definition.symbolRecord))) {
         if (reason)
             *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
         return missingModuleBriefSymbol();

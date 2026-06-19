@@ -60,6 +60,20 @@ QString sourceRoleDisplayNameForRecord(
     return SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
 }
 
+SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
 QString ownerNameForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
@@ -238,7 +252,7 @@ bool ClockResetDomainService::validateQuery(
         return false;
     }
     if (!SymbolTaxonomy::isModuleDeclaration(
-            SymbolTaxonomy::semanticMetadata(definition.symbol))) {
+            semanticMetadataForRecord(definition.symbolRecord))) {
         if (reason)
             *reason = ClockResetDomainNotFoundReason::UnsupportedSymbolKind;
         return false;

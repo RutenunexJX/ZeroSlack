@@ -235,7 +235,8 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
             *reason = FsmGraphNotFoundReason::NoMatchingModule;
         return missingFsmSymbol();
     }
-    if (!SymbolTaxonomy::isModuleDeclaration(definition.symbol)) {
+    if (!SymbolTaxonomy::isModuleDeclaration(
+            metadataForRecord(definition.symbolRecord, definition.symbol))) {
         if (reason)
             *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
         return missingFsmSymbol();

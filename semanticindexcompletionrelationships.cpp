@@ -77,16 +77,13 @@ QStringList SemanticIndex::getRelationshipCompletionNames(
     const SemanticDefinitionResult definition = resolveDefinition(definitionQuery);
     if (!definition.found)
         return {};
-    const SymbolStableKey symbolStableKey = definition.symbolStableKey.isValid()
-        ? definition.symbolStableKey
-        : symbolStableKeyForSymbol(definition.symbol);
-    if (!symbolStableKey.isValid())
+    if (!definition.symbolStableKey.isValid())
         return {};
 
     QStringList names;
     QSet<QString> seenNames;
     const QList<SemanticRelationshipResult> relationships =
-        getRelationshipResults(symbolStableKey, outgoing);
+        getRelationshipResults(definition.symbolStableKey, outgoing);
     for (const SemanticRelationshipResult& relationship : relationships) {
         if (!types.isEmpty() && !types.contains(relationship.relationship.type))
             continue;
