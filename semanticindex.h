@@ -253,7 +253,6 @@ public:
         const SemanticSnapshotToken& expectedCurrentSnapshot,
         std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
 
-    QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
     QList<SemanticSymbolSearchResult> searchSymbols(

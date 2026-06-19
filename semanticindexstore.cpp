@@ -76,46 +76,6 @@ void SemanticIndex::updateSymbolsForFile(const QString& fileName,
     symbolDatabase()->setSymbolsForFile(fileName, symbols, content);
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getSymbols(const QString& fileName) const
-{
-    sym_list* db = symbolDatabase();
-    if (m_snapshot) {
-        QList<sym_list::SymbolInfo> symbols = m_snapshot->getSymbols(fileName);
-        if (!fileName.isEmpty()) {
-            if (!symbols.isEmpty())
-                return symbols;
-        } else {
-            QSet<QString> snapshotFiles;
-            for (const sym_list::SymbolInfo& symbol : std::as_const(symbols)) {
-                const QString normalized = normalizedStoreFileName(symbol.fileName);
-                if (!normalized.isEmpty())
-                    snapshotFiles.insert(normalized);
-            }
-            for (const sym_list::SymbolInfo& symbol : db->getAllSymbols()) {
-                const QString normalized = normalizedStoreFileName(symbol.fileName);
-                if (!normalized.isEmpty() && !snapshotFiles.contains(normalized))
-                    symbols.append(symbol);
-            }
-            return symbols;
-        }
-    }
-
-    if (fileName.isEmpty())
-        return db->getAllSymbols();
-
-    QList<sym_list::SymbolInfo> symbols = db->findSymbolsByFileName(fileName);
-    if (!symbols.isEmpty())
-        return symbols;
-
-    const QString normalizedTarget = normalizedStoreFileName(fileName);
-    const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (normalizedStoreFileName(symbol.fileName) == normalizedTarget)
-            symbols.append(symbol);
-    }
-    return symbols;
-}
-
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
     const QString& fileName) const
 {

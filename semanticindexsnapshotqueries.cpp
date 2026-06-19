@@ -49,22 +49,6 @@ SymbolStableKey relationshipEndpointStableKey(
 }
 }
 
-QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbols(const QString& fileName) const
-{
-    if (fileName.isEmpty())
-        return m_symbols;
-
-    QList<sym_list::SymbolInfo> result;
-    const QString normalizedTarget = normalizedSnapshotQueryFileName(fileName);
-    for (const sym_list::SymbolInfo& symbol : m_symbols) {
-        if (symbol.fileName == fileName
-            || normalizedSnapshotQueryFileName(symbol.fileName) == normalizedTarget) {
-            result.append(symbol);
-        }
-    }
-    return result;
-}
-
 QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
     const QString& fileName) const
 {

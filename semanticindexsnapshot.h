@@ -20,7 +20,6 @@ public:
         sym_list* symbolDatabase,
         QList<SemanticDiagnostic> diagnostics = {});
 
-    QList<sym_list::SymbolInfo> getSymbols(const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
