@@ -321,8 +321,8 @@ RelationshipReport RelationshipService::findRelationshipReport(
                                    DirectedRelationshipResult::Direction direction) {
         for (const RelationshipResult& relationship : relationships) {
             DirectedRelationshipResult directed;
-            directed.relationship = relationship;
             directed.direction = direction;
+            directed.relationshipType = relationship.relationship.type;
             const sym_list::SymbolInfo peerSymbol =
                 direction == DirectedRelationshipResult::Outgoing
                 ? relationship.toSymbol
@@ -345,7 +345,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
             }
             directed.directionDisplayName = relationshipDirectionDisplayName(direction);
             directed.typeDisplayName =
-                relationshipTypeDisplayName(relationship.relationship.type);
+                relationshipTypeDisplayName(directed.relationshipType);
             directed.peerSymbolDisplayName =
                 symbolRecordDisplayName(directed.peerSymbolRecord,
                                         peerSymbol);
@@ -367,9 +367,9 @@ RelationshipReport RelationshipService::findRelationshipReport(
             const bool subjectIsSource =
                 direction == DirectedRelationshipResult::Outgoing;
             directed.subjectRole =
-                roleFor(relationship.relationship.type, subjectIsSource);
+                roleFor(directed.relationshipType, subjectIsSource);
             directed.peerRole =
-                roleFor(relationship.relationship.type, !subjectIsSource);
+                roleFor(directed.relationshipType, !subjectIsSource);
             const QString sourceName = subjectIsSource
                 ? report.subjectDisplayName
                 : symbolRecordDisplayName(directed.peerSymbolRecord,
@@ -380,12 +380,12 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 : report.subjectDisplayName;
             directed.explanation = QStringLiteral("%1 %2 %3")
                                        .arg(sourceName,
-                                            relationVerb(relationship.relationship.type),
+                                            relationVerb(directed.relationshipType),
                                             targetName);
             report.relationships.append(directed);
-            report.typeCounts[relationship.relationship.type]++;
+            report.typeCounts[directed.relationshipType]++;
             report.directionCounts[direction]++;
-            report.directionTypeCounts[direction][relationship.relationship.type]++;
+            report.directionTypeCounts[direction][directed.relationshipType]++;
             if (!directionGroupIndexes.contains(direction)) {
                 RelationshipDirectionGroup directionGroup;
                 directionGroup.direction = direction;
@@ -399,7 +399,7 @@ RelationshipReport RelationshipService::findRelationshipReport(
             directionGroup.count++;
 
             const SymbolRelationshipEngine::RelationType type =
-                relationship.relationship.type;
+                directed.relationshipType;
             if (!typeGroupIndexes[direction].contains(type)) {
                 RelationshipTypeGroup typeGroup;
                 typeGroup.type = type;

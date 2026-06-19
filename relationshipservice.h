@@ -60,11 +60,12 @@ struct DirectedRelationshipResult {
         Incoming
     };
 
-    RelationshipResult relationship;
     Direction direction = Outgoing;
     SemanticSymbolRecord peerSymbolRecord;
     SymbolStableKey subjectStableKey;
     SymbolStableKey peerStableKey;
+    SymbolRelationshipEngine::RelationType relationshipType =
+        SymbolRelationshipEngine::REFERENCES;
     QString directionDisplayName;
     QString typeDisplayName;
     QString subjectRole;

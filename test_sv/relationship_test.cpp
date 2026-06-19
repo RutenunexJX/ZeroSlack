@@ -3030,10 +3030,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool timingReportHasResetPeer = false;
     for (const DirectedRelationshipResult& relationship : timingReport.relationships) {
         timingReportHasClockPeer = timingReportHasClockPeer
-            || (relationship.relationship.relationship.type == SymbolRelationshipEngine::CLOCKS
+            || (relationship.relationshipType == SymbolRelationshipEngine::CLOCKS
                 && relationship.peerSymbolRecord.localHandle == topClkId);
         timingReportHasResetPeer = timingReportHasResetPeer
-            || (relationship.relationship.relationship.type == SymbolRelationshipEngine::RESETS
+            || (relationship.relationshipType == SymbolRelationshipEngine::RESETS
                 && relationship.peerSymbolRecord.localHandle == topRstId);
     }
     expectBool("relationship report timing clock peer",
