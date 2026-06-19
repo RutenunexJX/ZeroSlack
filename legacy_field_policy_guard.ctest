@@ -273,6 +273,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexcompletionqueries.cpp|getSymbols[ \t\r\n]*\\("
     "semanticindexcompletionrelationships.cpp|getSymbols[ \t\r\n]*\\("
     "semanticindexcompletiontypequeries.cpp|getSymbols[ \t\r\n]*\\("
+    "semanticindexlookup.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/relationship_test.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/gui_smoke_test.cpp|getSymbols[ \t\r\n]*\\("
     "searchservice.h|struct[ \t\r\n]+SearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"

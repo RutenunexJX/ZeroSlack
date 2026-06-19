@@ -81,9 +81,9 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     const SemanticSymbolSearchQuery& query) const
 {
     QList<SemanticSymbolSearchResult> result;
-    const QList<sym_list::SymbolInfo> symbols = getSymbols(query.fileName);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    const QList<SemanticSymbolRecord> records =
+        getSymbolRecords(query.fileName);
+    for (const SemanticSymbolRecord& record : records) {
         if (!symbolSearchTypeMatches(record,
                                      query.declarationKinds,
                                      query.legacyTypes,
@@ -96,9 +96,7 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
 
         SemanticSymbolSearchResult item;
         item.symbolRecord = record;
-        item.symbolStableKey = item.symbolRecord.stableKey.isValid()
-            ? item.symbolRecord.stableKey
-            : symbolStableKeyForSymbol(symbol);
+        item.symbolStableKey = item.symbolRecord.stableKey;
         item.score = score;
         result.append(item);
     }
