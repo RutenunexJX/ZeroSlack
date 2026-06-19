@@ -257,16 +257,16 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
             const int signalId = relationship.fromSymbol.symbolId;
             if (!entryBySignalId.contains(signalId)) {
                 ClockResetDomainEntry entry;
-                entry.domainSignal = relationship.fromSymbol;
+                const sym_list::SymbolInfo domainSignal = relationship.fromSymbol;
                 entry.domainSignalRecord =
-                    semanticSymbolRecordForSymbol(entry.domainSignal);
+                    semanticSymbolRecordForSymbol(domainSignal);
                 entry.domainSignalStableKey =
                     entry.domainSignalRecord.stableKey.isValid()
                         ? entry.domainSignalRecord.stableKey
                         : relationship.fromStableKey;
                 entry.domainSignalCodeLink =
                     codeLinkForRecord(entry.domainSignalRecord,
-                                      entry.domainSignal);
+                                      domainSignal);
                 entryBySignalId.insert(signalId, entries.size());
                 entries.append(entry);
             }
@@ -597,7 +597,8 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::ambiguityRows(
                     if (moduleId < 0)
                         continue;
                     rowsByModuleId[moduleId].append(evidenceRow(entry, member, type));
-                    domainIdsByModuleId[moduleId].insert(entry.domainSignal.symbolId);
+                    domainIdsByModuleId[moduleId].insert(
+                        entry.domainSignalRecord.localHandle);
                 }
             }
 
@@ -648,9 +649,11 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
     row.evidenceText = member.evidenceText;
     row.sectionDisplayName = domainSectionDisplayName(type);
     row.signalDisplayName =
-        displayNameForRecord(row.domainSignalRecord,
-                             entry.domainSignal,
-                             QStringLiteral("<unnamed>"));
+        entry.domainSignalDisplayName.isEmpty()
+            ? displayNameForRecord(row.domainSignalRecord,
+                                   sym_list::SymbolInfo(),
+                                   QStringLiteral("<unnamed>"))
+            : entry.domainSignalDisplayName;
     row.moduleDisplayName = member.moduleDisplayName.isEmpty()
         ? displayNameForRecord(row.moduleSymbolRecord,
                                sym_list::SymbolInfo(),
@@ -788,7 +791,7 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
     entry.sectionDisplayName = domainSectionDisplayName(type);
     entry.domainSignalDisplayName =
         displayNameForRecord(entry.domainSignalRecord,
-                             entry.domainSignal,
+                             sym_list::SymbolInfo(),
                              QStringLiteral("<unnamed>"));
     entry.detailDisplayName = domainDetailDisplayName(type, entry.modules.size());
     for (ClockResetDomainMember& member : entry.modules) {
@@ -815,8 +818,8 @@ void ClockResetDomainService::sortEntries(QList<ClockResetDomainEntry>& entries)
     std::sort(entries.begin(), entries.end(),
               [](const ClockResetDomainEntry& lhs,
                  const ClockResetDomainEntry& rhs) {
-                  const sym_list::SymbolInfo& left = lhs.domainSignal;
-                  const sym_list::SymbolInfo& right = rhs.domainSignal;
+                  const sym_list::SymbolInfo left = {};
+                  const sym_list::SymbolInfo right = {};
                   const QString leftFileName =
                       recordFileName(lhs.domainSignalRecord, left);
                   const QString rightFileName =
@@ -841,7 +844,8 @@ void ClockResetDomainService::sortEntries(QList<ClockResetDomainEntry>& entries)
                       displayNameForRecord(rhs.domainSignalRecord, right, QString());
                   if (leftName != rightName)
                       return leftName < rightName;
-                  return left.symbolId < right.symbolId;
+                  return lhs.domainSignalRecord.localHandle
+                      < rhs.domainSignalRecord.localHandle;
               });
 }
 

@@ -5135,8 +5135,8 @@ static void runClockResetDomainServiceFixture()
                    && topReport.clockDomains.first().domainSignalRecord.owner.name
                        == QStringLiteral("domain_top")
                    && topReport.clockDomains.first().domainSignalStableKey
-                       == symbolStableKeyForSymbol(
-                           topReport.clockDomains.first().domainSignal)
+                       == topReport.clockDomains.first()
+                              .domainSignalRecord.stableKey
                    && topReport.clockDomains.first().sectionDisplayName
                        == QStringLiteral("Clock")
                    && !topReport.clockDomains.first()
@@ -5196,8 +5196,8 @@ static void runClockResetDomainServiceFixture()
                           .moduleStableKey
                    && topReport.clockDomains.first().modules.first()
                           .domainSignalStableKey
-                       == symbolStableKeyForSymbol(
-                           topReport.clockDomains.first().domainSignal)
+                       == topReport.clockDomains.first()
+                              .domainSignalRecord.stableKey
                    && topReport.clockDomains.first().modules.first()
                           .moduleStableKey
                        == topReport.clockDomains.first()
