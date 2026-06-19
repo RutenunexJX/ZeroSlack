@@ -91,7 +91,7 @@ SemanticSymbolRecord semanticSymbolRecordForSymbol(
     record.stableKey = symbolStableKeyForSymbol(symbol);
     record.localHandle = symbol.symbolId;
     record.name = symbol.symbolName;
-    record.location.fileName = normalizedStableKeyFileName(symbol.fileName);
+    record.location.fileName = symbol.fileName;
     record.location.startLine = symbol.startLine;
     record.location.startColumn = symbol.startColumn;
     record.location.endLine = symbol.endLine;

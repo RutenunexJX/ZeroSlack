@@ -13,36 +13,6 @@ SymbolStableKey relationshipStableKeyForSymbol(const sym_list::SymbolInfo& symbo
         : symbolStableKeyForSymbol(symbol);
 }
 
-sym_list::SymbolInfo symbolByLocalHandle(const SemanticIndex& index,
-                                         int symbolId)
-{
-    if (const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
-            index.snapshot()) {
-        if (symbolId >= 0) {
-            for (const sym_list::SymbolInfo& symbol : snapshot->getSymbols()) {
-                if (symbol.symbolId == symbolId)
-                    return symbol;
-            }
-        }
-    }
-
-    if (index.symbolDatabase()) {
-        const sym_list::SymbolInfo symbol =
-            index.symbolDatabase()->getSymbolById(symbolId);
-        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
-            return symbol;
-    }
-
-    for (const sym_list::SymbolInfo& symbol : index.getSymbols()) {
-        if (symbol.symbolId == symbolId)
-            return symbol;
-    }
-
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    return missing;
-}
-
 SemanticSymbolRecord recordByLocalHandle(const SemanticIndex& index,
                                          int symbolId)
 {
@@ -64,25 +34,6 @@ SemanticSymbolRecord recordByLocalHandle(const SemanticIndex& index,
             return record;
     }
     return {};
-}
-
-sym_list::SymbolInfo relationshipEndpointSymbol(const SemanticIndex& index,
-                                                const SemanticRelationship& relationship,
-                                                bool fromEndpoint)
-{
-    const SymbolStableKey stableKey = fromEndpoint
-        ? relationship.fromStableKey
-        : relationship.toStableKey;
-    if (stableKey.isValid()) {
-        const sym_list::SymbolInfo symbol = index.getSymbolByStableKey(stableKey);
-        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
-            return symbol;
-    }
-
-    return symbolByLocalHandle(index,
-                               fromEndpoint
-                                   ? relationship.fromId
-                                   : relationship.toId);
 }
 
 SymbolStableKey relationshipEndpointStableKey(
@@ -217,8 +168,6 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
                 item.toSymbolRecord.stableKey.isValid()
                     ? item.toSymbolRecord.stableKey
                     : relationshipEndpointStableKey(*this, item.relationship, false);
-        item.fromSymbol = relationshipEndpointSymbol(*this, item.relationship, true);
-        item.toSymbol = relationshipEndpointSymbol(*this, item.relationship, false);
         item.fromStableKey = item.relationship.fromStableKey;
         item.toStableKey = item.relationship.toStableKey;
         item.provenance = item.relationship.provenance;

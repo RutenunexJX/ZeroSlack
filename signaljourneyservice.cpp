@@ -310,11 +310,11 @@ QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
             continue;
         SignalJourneyItem item;
         item.outgoing = outgoing;
-        const sym_list::SymbolInfo peer =
-            outgoing ? relationship.toSymbol : relationship.fromSymbol;
-        if (peer.symbolId < 0)
+        const SemanticSymbolRecord peerRecord =
+            outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
+        if (!peerRecord.isValid())
             continue;
-        fillDisplayMetadata(item, relationship, peer);
+        fillDisplayMetadata(item, relationship, peerRecord);
         items.append(item);
     }
     sortItems(items);
@@ -332,10 +332,10 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
                                                       signal,
                                                       outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
-            const sym_list::SymbolInfo peer =
-                outgoing ? relationship.toSymbol : relationship.fromSymbol;
+            const SemanticSymbolRecord peerRecord =
+                outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
             if (!SymbolTaxonomy::isPortConnectionPeer(
-                    SymbolTaxonomy::semanticMetadata(peer))) {
+                    metadataForRecord(peerRecord, {}))) {
                 continue;
             }
             const QString key = QStringLiteral("%1:%2:%3")
@@ -348,7 +348,7 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
 
             SignalJourneyItem item;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item, relationship, peer);
+            fillDisplayMetadata(item, relationship, peerRecord);
             items.append(item);
         }
     };
@@ -370,9 +370,9 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
                                                       signal,
                                                       outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
-            const sym_list::SymbolInfo peer =
-                outgoing ? relationship.toSymbol : relationship.fromSymbol;
-            if (!isInterfaceConnectionPeer(peer, interfaces))
+            const SemanticSymbolRecord peerRecord =
+                outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
+            if (!isInterfaceConnectionPeer(peerRecord, {}, interfaces))
                 continue;
             const QString key = QStringLiteral("%1:%2:%3")
                                     .arg(relationship.relationship.fromId)
@@ -384,8 +384,8 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
 
             SignalJourneyItem item;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item, relationship, peer);
-            fillInterfaceDisplayMetadata(item, peer);
+            fillDisplayMetadata(item, relationship, peerRecord);
+            fillInterfaceDisplayMetadata(item, peerRecord);
             item.detailDisplayName = QStringLiteral("interface %1")
                                          .arg(item.detailDisplayName);
             items.append(item);
@@ -412,9 +412,9 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
                 && relationship.relationship.type != SymbolRelationshipEngine::RESETS) {
                 continue;
             }
-            const sym_list::SymbolInfo peer =
-                outgoing ? relationship.toSymbol : relationship.fromSymbol;
-            if (peer.symbolId < 0)
+            const SemanticSymbolRecord peerRecord =
+                outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
+            if (!peerRecord.isValid())
                 continue;
             const QString key = QStringLiteral("%1:%2:%3")
                                     .arg(relationship.relationship.fromId)
@@ -426,7 +426,7 @@ QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
 
             SignalJourneyItem item;
             item.outgoing = outgoing;
-            fillDisplayMetadata(item, relationship, peer);
+            fillDisplayMetadata(item, relationship, peerRecord);
             item.detailDisplayName = QStringLiteral("timing %1")
                                          .arg(item.detailDisplayName);
             items.append(item);
@@ -580,20 +580,14 @@ void SignalJourneyService::fillDeclarationDisplayMetadata(
 void SignalJourneyService::fillDisplayMetadata(
     SignalJourneyItem& item,
     const SemanticRelationshipResult& relationship,
-    const sym_list::SymbolInfo& peerSymbol)
+    const SemanticSymbolRecord& peerRecord)
 {
-    const sym_list::SymbolInfo fromSymbol = relationship.fromSymbol;
-    const sym_list::SymbolInfo toSymbol = relationship.toSymbol;
-    item.fromSymbolRecord = relationship.fromSymbolRecord.isValid()
-        ? relationship.fromSymbolRecord
-        : semanticSymbolRecordForSymbol(fromSymbol);
-    item.toSymbolRecord = relationship.toSymbolRecord.isValid()
-        ? relationship.toSymbolRecord
-        : semanticSymbolRecordForSymbol(toSymbol);
+    item.fromSymbolRecord = relationship.fromSymbolRecord;
+    item.toSymbolRecord = relationship.toSymbolRecord;
     item.peerSymbolRecord =
         item.outgoing ? item.toSymbolRecord : item.fromSymbolRecord;
     if (!item.peerSymbolRecord.isValid())
-        item.peerSymbolRecord = semanticSymbolRecordForSymbol(peerSymbol);
+        item.peerSymbolRecord = peerRecord;
     item.fromStableKey = item.fromSymbolRecord.stableKey.isValid()
         ? item.fromSymbolRecord.stableKey
         : relationship.fromStableKey;
@@ -604,11 +598,11 @@ void SignalJourneyService::fillDisplayMetadata(
         ? item.peerSymbolRecord.stableKey
         : (item.outgoing ? item.toStableKey : item.fromStableKey);
     item.peerCodeLink = codeLinkForRecord(item.peerSymbolRecord,
-                                          peerSymbol);
+                                          {});
     item.fromCodeLink = codeLinkForRecord(item.fromSymbolRecord,
-                                          fromSymbol);
+                                          {});
     item.toCodeLink = codeLinkForRecord(item.toSymbolRecord,
-                                        toSymbol);
+                                        {});
     item.provenance = relationship.provenance;
     item.confidence = relationship.confidence;
     item.evidenceText = relationship.evidenceText;
@@ -619,30 +613,30 @@ void SignalJourneyService::fillDisplayMetadata(
     item.confidenceDisplayName = confidenceDisplayName(item.confidence);
     item.evidenceDisplayName = evidenceDisplayName(item.evidenceText);
     item.peerSymbolDisplayName =
-        symbolDisplayNameForRecord(item.peerSymbolRecord, peerSymbol);
+        symbolDisplayNameForRecord(item.peerSymbolRecord, {});
     item.fromSymbolDisplayName =
-        symbolDisplayNameForRecord(item.fromSymbolRecord, fromSymbol);
+        symbolDisplayNameForRecord(item.fromSymbolRecord, {});
     item.toSymbolDisplayName =
-        symbolDisplayNameForRecord(item.toSymbolRecord, toSymbol);
+        symbolDisplayNameForRecord(item.toSymbolRecord, {});
     item.fromTypeDisplayName =
-        typeDisplayNameForRecord(item.fromSymbolRecord, fromSymbol);
+        typeDisplayNameForRecord(item.fromSymbolRecord, {});
     item.toTypeDisplayName =
-        typeDisplayNameForRecord(item.toSymbolRecord, toSymbol);
+        typeDisplayNameForRecord(item.toSymbolRecord, {});
     item.fromSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(item.fromSymbolRecord,
-                                       fromSymbol);
+                                       {});
     item.toSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(item.toSymbolRecord,
-                                       toSymbol);
+                                       {});
     item.connectionKindDisplayName = QStringLiteral("relationship");
     item.peerTypeDisplayName =
-        typeDisplayNameForRecord(item.peerSymbolRecord, peerSymbol);
+        typeDisplayNameForRecord(item.peerSymbolRecord, {});
     item.peerSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(item.peerSymbolRecord,
-                                       peerSymbol);
+                                       {});
     item.interfaceBaseDisplayName =
         interfaceBaseDisplayNameForRecord(item.peerSymbolRecord,
-                                          peerSymbol);
+                                          {});
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
     item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;
     item.detailDisplayName = QStringLiteral("%1 %2")
@@ -652,13 +646,13 @@ void SignalJourneyService::fillDisplayMetadata(
 
 void SignalJourneyService::fillInterfaceDisplayMetadata(
     SignalJourneyItem& item,
-    const sym_list::SymbolInfo& peerSymbol)
+    const SemanticSymbolRecord& peerRecord)
 {
     item.connectionKindDisplayName =
         interfaceConnectionKindDisplayName(item.peerSymbolRecord,
-                                           peerSymbol);
+                                           {});
     item.interfaceBaseDisplayName =
-        interfaceBaseDisplayName(item.peerSymbolRecord, peerSymbol);
+        interfaceBaseDisplayName(peerRecord, {});
 }
 
 void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)

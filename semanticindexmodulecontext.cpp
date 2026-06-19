@@ -123,8 +123,14 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
         for (const SemanticRelationshipResult& relationship : relationships) {
             if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
                 continue;
-            if (relationship.toSymbol.symbolId >= 0)
-                appendIfMatches(relationship.toSymbol, false);
+            const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
+            const SymbolStableKey targetKey = targetRecord.stableKey.isValid()
+                ? targetRecord.stableKey
+                : relationship.toStableKey;
+            const sym_list::SymbolInfo targetSymbol =
+                getSymbolByStableKey(targetKey);
+            if (targetSymbol.symbolId >= 0)
+                appendIfMatches(targetSymbol, false);
         }
     }
 
@@ -282,7 +288,14 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         for (const SemanticRelationshipResult& relationship : relationships) {
             if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
                 continue;
-            appendSymbol(relationship.toSymbol);
+            const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
+            const SymbolStableKey targetKey = targetRecord.stableKey.isValid()
+                ? targetRecord.stableKey
+                : relationship.toStableKey;
+            const sym_list::SymbolInfo targetSymbol =
+                getSymbolByStableKey(targetKey);
+            if (targetSymbol.symbolId >= 0)
+                appendSymbol(targetSymbol);
         }
     }
 

@@ -43,13 +43,16 @@ QStringList uniqueSortedRelationshipSymbolNames(const QList<sym_list::SymbolInfo
     return result;
 }
 
+QString relationshipRecordDisplayName(const SemanticSymbolRecord& record)
+{
+    return record.name;
+}
+
 QString relationshipRecordDisplayName(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
 {
-    if (!record.name.isEmpty())
-        return record.name;
-    return fallback.symbolName;
+    return record.name.isEmpty() ? fallback.symbolName : record.name;
 }
 
 QString relationshipRecordOwnerName(
@@ -88,14 +91,11 @@ QStringList SemanticIndex::getRelationshipCompletionNames(
         if (!types.isEmpty() && !types.contains(relationship.relationship.type))
             continue;
 
-        const sym_list::SymbolInfo symbol =
-            outgoing ? relationship.toSymbol : relationship.fromSymbol;
-        if (symbol.symbolId < 0)
-            continue;
         const SemanticSymbolRecord record =
             outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
-        const QString displayName =
-            relationshipRecordDisplayName(record, symbol);
+        const QString displayName = relationshipRecordDisplayName(record);
+        if (displayName.isEmpty())
+            continue;
         if (!relationshipCompletionNameMatches(displayName, prefix))
             continue;
         const QString key = displayName.toCaseFolded();

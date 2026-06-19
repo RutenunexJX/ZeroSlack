@@ -200,9 +200,7 @@ QList<HierarchyNode> HierarchyService::getChildren(const HierarchyQuery& query) 
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
         HierarchyNode node;
-        node.symbolRecord = rel.toSymbolRecord.isValid()
-            ? rel.toSymbolRecord
-            : semanticSymbolRecordForSymbol(rel.toSymbol);
+        node.symbolRecord = rel.toSymbolRecord;
         node.symbolStableKey = node.symbolRecord.stableKey.isValid()
             ? node.symbolRecord.stableKey
             : rel.toStableKey;
@@ -235,9 +233,7 @@ QList<HierarchyNode> HierarchyService::getParents(const HierarchyQuery& query) c
         relationshipService.findRelationships(relationshipQuery);
     for (const RelationshipResult& rel : relationships) {
         HierarchyNode node;
-        node.symbolRecord = rel.fromSymbolRecord.isValid()
-            ? rel.fromSymbolRecord
-            : semanticSymbolRecordForSymbol(rel.fromSymbol);
+        node.symbolRecord = rel.fromSymbolRecord;
         node.symbolStableKey = node.symbolRecord.stableKey.isValid()
             ? node.symbolRecord.stableKey
             : rel.fromStableKey;

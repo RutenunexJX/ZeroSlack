@@ -266,7 +266,7 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
     int* relationshipCount) const
 {
     QList<ClockResetDomainEntry> entries;
-    QMap<int, int> entryBySignalId;
+    QMap<QString, int> entryBySignalKey;
     QSet<QString> seenRelationships;
     int count = 0;
 
@@ -291,29 +291,36 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
                 continue;
             seenRelationships.insert(relationshipKey);
 
-            const int signalId = relationship.fromSymbol.symbolId;
-            if (!entryBySignalId.contains(signalId)) {
+            const SemanticSymbolRecord domainSignalRecord =
+                relationship.fromSymbolRecord;
+            const SemanticSymbolRecord moduleRecord =
+                relationship.toSymbolRecord;
+            QString signalKey = relationship.fromStableKey.toString();
+            if (signalKey.isEmpty())
+                signalKey = domainSignalRecord.stableKey.toString();
+            if (signalKey.isEmpty() && domainSignalRecord.localHandle >= 0)
+                signalKey = QStringLiteral("local:%1").arg(domainSignalRecord.localHandle);
+            if (signalKey.isEmpty())
+                continue;
+
+            if (!entryBySignalKey.contains(signalKey)) {
                 ClockResetDomainEntry entry;
-                const sym_list::SymbolInfo domainSignal = relationship.fromSymbol;
-                entry.domainSignalRecord =
-                    semanticSymbolRecordForSymbol(domainSignal);
+                entry.domainSignalRecord = domainSignalRecord;
                 entry.domainSignalStableKey =
                     entry.domainSignalRecord.stableKey.isValid()
                         ? entry.domainSignalRecord.stableKey
                         : relationship.fromStableKey;
                 entry.domainSignalCodeLink =
                     codeLinkForRecord(entry.domainSignalRecord,
-                                      domainSignal);
-                entryBySignalId.insert(signalId, entries.size());
+                                      {});
+                entryBySignalKey.insert(signalKey, entries.size());
                 entries.append(entry);
             }
 
             ClockResetDomainMember member;
-            const sym_list::SymbolInfo moduleSymbol = relationship.toSymbol;
             member.domainSignalRecord =
-                entries[entryBySignalId.value(signalId)].domainSignalRecord;
-            member.moduleSymbolRecord =
-                semanticSymbolRecordForSymbol(moduleSymbol);
+                entries[entryBySignalKey.value(signalKey)].domainSignalRecord;
+            member.moduleSymbolRecord = moduleRecord;
             member.domainSignalStableKey =
                 member.domainSignalRecord.stableKey.isValid()
                     ? member.domainSignalRecord.stableKey
@@ -324,13 +331,13 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
                     : relationship.toStableKey;
             member.moduleCodeLink =
                 codeLinkForRecord(member.moduleSymbolRecord,
-                                  moduleSymbol);
+                                  {});
             member.provenance = relationship.provenance;
             member.confidence = relationship.confidence;
             member.evidenceText = relationship.evidenceText;
             member.sectionDisplayName = QStringLiteral("Module");
             member.detailDisplayName = memberDetailDisplayName(type);
-            entries[entryBySignalId.value(signalId)].modules.append(member);
+            entries[entryBySignalKey.value(signalKey)].modules.append(member);
             ++count;
         }
     }
@@ -434,25 +441,27 @@ bool acceptsRelationship(
     const SemanticRelationshipResult& relationship,
     const ClockResetDomainQuery& query)
 {
-    if (relationship.fromSymbol.symbolId < 0 || relationship.toSymbol.symbolId < 0)
+    if (!relationship.fromSymbolRecord.isValid()
+        || !relationship.toSymbolRecord.isValid()) {
         return false;
+    }
     if (!SymbolTaxonomy::isModuleDeclaration(
-            SymbolTaxonomy::semanticMetadata(relationship.toSymbol))) {
+            semanticMetadataForRecord(relationship.toSymbolRecord))) {
         return false;
     }
     if (query.moduleStableKey.isValid()) {
         const SymbolStableKey relationshipModuleKey =
             relationship.toStableKey.isValid()
                 ? relationship.toStableKey
-                : symbolStableKeyForSymbol(relationship.toSymbol);
+                : relationship.toSymbolRecord.stableKey;
         return relationshipModuleKey == query.moduleStableKey;
     }
     if (!query.moduleName.isEmpty()
-        && relationship.toSymbol.symbolName != query.moduleName) {
+        && relationship.toSymbolRecord.name != query.moduleName) {
         return false;
     }
     if (!query.fileName.isEmpty()
-        && normalizedClockResetFileName(relationship.toSymbol.fileName)
+        && normalizedClockResetFileName(relationship.toSymbolRecord.location.fileName)
             != normalizedClockResetFileName(query.fileName)) {
         return false;
     }

@@ -128,10 +128,10 @@ private:
         const sym_list::SymbolInfo& declaration);
     static void fillDisplayMetadata(SignalJourneyItem& item,
                                     const SemanticRelationshipResult& relationship,
-                                    const sym_list::SymbolInfo& peerSymbol);
+                                    const SemanticSymbolRecord& peerRecord);
     static void fillInterfaceDisplayMetadata(
         SignalJourneyItem& item,
-        const sym_list::SymbolInfo& peerSymbol);
+        const SemanticSymbolRecord& peerRecord);
     static void sortItems(QList<SignalJourneyItem>& items);
 };
 

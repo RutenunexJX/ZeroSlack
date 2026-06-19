@@ -1178,8 +1178,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             || (relationship.relationship.fromId == topId
                 && relationship.relationship.toId == stageId
                 && relationship.relationship.type == SymbolRelationshipEngine::INSTANTIATES
-                && relationship.fromSymbol.symbolId == topId
-                && relationship.toSymbol.symbolId == stageId);
+                && relationship.fromSymbolRecord.localHandle == topId
+                && relationship.toSymbolRecord.localHandle == stageId);
         snapshotFoundStageResultStableKey = snapshotFoundStageResultStableKey
             || (relationship.relationship.fromId == topId
                 && relationship.relationship.toId == stageId
@@ -1234,8 +1234,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotRelationshipFoundStage = snapshotRelationshipFoundStage
             || (relationship.relationship.fromId == topId
                 && relationship.relationship.toId == stageId
-                && relationship.fromSymbol.symbolId == topId
-                && relationship.toSymbol.symbolId == stageId);
+                && relationship.fromSymbolRecord.localHandle == topId
+                && relationship.toSymbolRecord.localHandle == stageId);
     }
     expectBool("snapshot relationship service finds stage instantiation",
                snapshotRelationshipFoundStage, true);
@@ -2727,15 +2727,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         serviceFoundStage = serviceFoundStage
             || (rel.relationship.toId == stageId
                 && rel.relationship.type == SymbolRelationshipEngine::INSTANTIATES
-                && rel.toSymbol.symbolName == QStringLiteral("rel_stage"));
+                && rel.toSymbolRecord.name == QStringLiteral("rel_stage"));
         serviceFoundTask = serviceFoundTask
             || (rel.relationship.toId == captureId
                 && rel.relationship.type == SymbolRelationshipEngine::CALLS
-                && rel.toSymbol.symbolName == QStringLiteral("capture_sample"));
+                && rel.toSymbolRecord.name == QStringLiteral("capture_sample"));
         serviceFoundRead = serviceFoundRead
             || (rel.relationship.toId == reqValidId
                 && rel.relationship.type == SymbolRelationshipEngine::READS_FROM
-                && rel.toSymbol.symbolName == QStringLiteral("req_valid"));
+                && rel.toSymbolRecord.name == QStringLiteral("req_valid"));
         serviceFoundStageMetadata = serviceFoundStageMetadata
             || (rel.relationship.toId == stageId
                 && rel.relationship.type == SymbolRelationshipEngine::INSTANTIATES

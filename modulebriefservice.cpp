@@ -207,14 +207,25 @@ QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
             ? semanticIndex()->getRelationshipResults(moduleStableKey, true)
             : QList<SemanticRelationshipResult>();
     for (const SemanticRelationshipResult& relationship : relationships) {
+        const SemanticSymbolRecord packageRecord = relationship.toSymbolRecord;
         if (!SymbolTaxonomy::isPackageDeclaration(
-                SymbolTaxonomy::semanticMetadata(relationship.toSymbol))) {
+                semanticMetadataForRecord(packageRecord))) {
             continue;
         }
-        if (seen.contains(relationship.toSymbol.symbolId))
+        const int localHandle = packageRecord.localHandle;
+        if (localHandle < 0)
             continue;
-        seen.insert(relationship.toSymbol.symbolId);
-        result.append(relationship.toSymbol);
+        if (seen.contains(localHandle))
+            continue;
+        const SymbolStableKey packageKey = packageRecord.stableKey.isValid()
+            ? packageRecord.stableKey
+            : relationship.toStableKey;
+        const sym_list::SymbolInfo packageSymbol =
+            semanticIndex()->getSymbolByStableKey(packageKey);
+        if (packageSymbol.symbolId < 0)
+            continue;
+        seen.insert(localHandle);
+        result.append(packageSymbol);
     }
     sortSymbols(result);
     return result;
@@ -286,12 +297,8 @@ QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEviden
                 : QList<SemanticRelationshipResult>();
         for (const SemanticRelationshipResult& relationship : relationships) {
             const SemanticSymbolRecord peerRecord = outgoing
-                ? (relationship.toSymbolRecord.isValid()
-                       ? relationship.toSymbolRecord
-                       : semanticSymbolRecordForSymbol(relationship.toSymbol))
-                : (relationship.fromSymbolRecord.isValid()
-                       ? relationship.fromSymbolRecord
-                       : semanticSymbolRecordForSymbol(relationship.fromSymbol));
+                ? relationship.toSymbolRecord
+                : relationship.fromSymbolRecord;
             if (!peerRecord.isValid())
                 continue;
             QString key = semanticRelationshipStableKeyText(relationship.relationship);
@@ -664,12 +671,8 @@ void ModuleBriefService::fillRelationshipEvidenceMetadata(
     const SemanticRelationshipResult& relationship)
 {
     row.type = relationship.relationship.type;
-    row.fromSymbolRecord = relationship.fromSymbolRecord.isValid()
-        ? relationship.fromSymbolRecord
-        : semanticSymbolRecordForSymbol(relationship.fromSymbol);
-    row.toSymbolRecord = relationship.toSymbolRecord.isValid()
-        ? relationship.toSymbolRecord
-        : semanticSymbolRecordForSymbol(relationship.toSymbol);
+    row.fromSymbolRecord = relationship.fromSymbolRecord;
+    row.toSymbolRecord = relationship.toSymbolRecord;
     row.fromStableKey = row.fromSymbolRecord.stableKey.isValid()
         ? row.fromSymbolRecord.stableKey
         : relationship.fromStableKey;
@@ -684,14 +687,11 @@ void ModuleBriefService::fillRelationshipEvidenceMetadata(
             ? row.toSymbolRecord
             : row.fromSymbolRecord;
     }
-    const sym_list::SymbolInfo peerSymbol = row.outgoing
-        ? relationship.toSymbol
-        : relationship.fromSymbol;
-    row.peerCodeLink = codeLinkForRecord(row.peerSymbolRecord, peerSymbol);
+    row.peerCodeLink = codeLinkForRecord(row.peerSymbolRecord, {});
     row.fromCodeLink = codeLinkForRecord(row.fromSymbolRecord,
-                                         relationship.fromSymbol);
+                                         {});
     row.toCodeLink = codeLinkForRecord(row.toSymbolRecord,
-                                       relationship.toSymbol);
+                                       {});
     row.provenance = relationship.provenance;
     row.confidence = relationship.confidence;
     row.evidenceText = relationship.evidenceText;
