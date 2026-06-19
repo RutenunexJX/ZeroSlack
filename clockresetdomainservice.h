@@ -54,8 +54,6 @@ struct ClockResetDomainEntry {
 };
 
 struct ClockResetDomainEvidenceRow {
-    sym_list::SymbolInfo domainSignal = {};
-    sym_list::SymbolInfo moduleSymbol = {};
     SemanticSymbolRecord domainSignalRecord;
     SemanticSymbolRecord moduleSymbolRecord;
     SymbolStableKey domainSignalStableKey;

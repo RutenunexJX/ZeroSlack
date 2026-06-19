@@ -103,6 +103,8 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "clockresetdomainservice.h|moduleSymbolId"
+    "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
+    "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
     "clockresetdomainservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
     "clockresetdomainservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
     "definitionnavigationservice.h|struct[ \t\r\n]+DefinitionNavigationTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"

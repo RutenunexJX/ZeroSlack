@@ -328,8 +328,6 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
             continue;
 
         ClockResetDomainEvidenceRow row;
-        row.domainSignal = symbol;
-        row.moduleSymbol = moduleSymbol;
         row.domainSignalRecord = semanticSymbolRecordForSymbol(symbol);
         row.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
         row.domainSignalStableKey = row.domainSignalRecord.stableKey.isValid()
@@ -388,7 +386,8 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
                       return lhs.signalCodeLink.line < rhs.signalCodeLink.line;
                   if (lhs.signalDisplayName != rhs.signalDisplayName)
                       return lhs.signalDisplayName < rhs.signalDisplayName;
-                  return lhs.domainSignal.symbolId < rhs.domainSignal.symbolId;
+                  return lhs.domainSignalRecord.localHandle
+                      < rhs.domainSignalRecord.localHandle;
               });
     return rows;
 }
@@ -638,8 +637,6 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
     SymbolRelationshipEngine::RelationType type)
 {
     ClockResetDomainEvidenceRow row;
-    row.domainSignal = entry.domainSignal;
-    row.moduleSymbol = member.moduleSymbol;
     row.domainSignalRecord = entry.domainSignalRecord;
     row.moduleSymbolRecord = member.moduleSymbolRecord;
     row.domainSignalStableKey = entry.domainSignalStableKey;

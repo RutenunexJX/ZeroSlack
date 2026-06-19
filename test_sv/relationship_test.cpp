@@ -5272,11 +5272,11 @@ static void runClockResetDomainServiceFixture()
                    && topReport.evidenceRows.first().moduleSymbolRecord.stableKey
                        == topReport.evidenceRows.first().moduleStableKey
                    && topReport.evidenceRows.first().domainSignalStableKey
-                       == symbolStableKeyForSymbol(
-                           topReport.evidenceRows.first().domainSignal)
+                       == topReport.evidenceRows.first()
+                              .domainSignalRecord.stableKey
                    && topReport.evidenceRows.first().moduleStableKey
-                       == symbolStableKeyForSymbol(
-                           topReport.evidenceRows.first().moduleSymbol)
+                       == topReport.evidenceRows.first()
+                              .moduleSymbolRecord.stableKey
                    && topReport.evidenceRows.first().relationshipTypeDisplayName
                        == QStringLiteral("Clock")
                    && topReport.evidenceRows.first().provenance
@@ -5351,9 +5351,9 @@ static void runClockResetDomainServiceFixture()
                 && row.moduleSymbolRecord.stableKey
                     == row.moduleStableKey
                 && row.domainSignalStableKey
-                    == symbolStableKeyForSymbol(row.domainSignal)
+                    == row.domainSignalRecord.stableKey
                 && row.moduleStableKey
-                    == symbolStableKeyForSymbol(row.moduleSymbol)
+                    == row.moduleSymbolRecord.stableKey
                 && row.relationshipTypeDisplayName == QStringLiteral("Clock")
                 && row.provenance
                     == RelationshipProvenance::FeatureGenerated
