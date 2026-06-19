@@ -16,6 +16,11 @@ sym_list::SymbolInfo missingFsmSymbol()
     return symbol;
 }
 
+int fsmLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolId;
+}
+
 sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
 {
     return semanticSymbolInfoCarrierForRecord(record);
@@ -155,7 +160,7 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
     report.groupDisplayName = QStringLiteral("FSM Graphs");
     const sym_list::SymbolInfo moduleSymbol =
         resolveModule(query, &report.notFoundReason);
-    if (moduleSymbol.symbolId < 0) {
+    if (fsmLocalHandleForSymbol(moduleSymbol) < 0) {
         report.notFoundReasonDisplayName =
             notFoundReasonDisplayName(report.notFoundReason);
         return report;
@@ -249,7 +254,7 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
     }
     const sym_list::SymbolInfo symbol =
         symbolInfoForRecord(definition.symbolRecord);
-    if (symbol.symbolId < 0)
+    if (fsmLocalHandleForSymbol(symbol) < 0)
         return missingFsmSymbol();
     return symbol;
 }
@@ -296,9 +301,10 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateRegisters(
                                            Qt::CaseInsensitive)) {
             continue;
         }
-        if (seen.contains(symbol.symbolId))
+        const int symbolHandle = fsmLocalHandleForSymbol(symbol);
+        if (seen.contains(symbolHandle))
             continue;
-        seen.insert(symbol.symbolId);
+        seen.insert(symbolHandle);
         result.append(symbol);
     }
     sortSymbols(result);
@@ -324,9 +330,10 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
             if (rawTypeTextForSymbol(symbol) != stateRegisterType)
                 continue;
         }
-        if (seen.contains(symbol.symbolId))
+        const int symbolHandle = fsmLocalHandleForSymbol(symbol);
+        if (seen.contains(symbolHandle))
             continue;
-        seen.insert(symbol.symbolId);
+        seen.insert(symbolHandle);
         result.append(symbol);
     }
     if (!stateRegisterType.isEmpty() && result.isEmpty()) {
@@ -340,9 +347,10 @@ QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
                 && symbolType != stateRegisterType) {
                 continue;
             }
-            if (seen.contains(symbol.symbolId))
+            const int symbolHandle = fsmLocalHandleForSymbol(symbol);
+            if (seen.contains(symbolHandle))
                 continue;
-            seen.insert(symbol.symbolId);
+            seen.insert(symbolHandle);
             result.append(symbol);
         }
     }
@@ -361,8 +369,10 @@ sym_list::SymbolInfo FsmGraphService::nextStateSignal(
                 SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
         }
-        if (symbol.symbolId == stateRegister.symbolId)
+        if (fsmLocalHandleForSymbol(symbol)
+            == fsmLocalHandleForSymbol(stateRegister)) {
             continue;
+        }
         const bool looksNext =
             looksLikeNextStateName(symbol.symbolName)
             || isPairedNextStateName(stateRegister.symbolName, symbol.symbolName);
@@ -454,7 +464,7 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         if (target.isEmpty())
             continue;
         if (!target.contains(QStringLiteral("state"), Qt::CaseInsensitive)
-            && (nextStateSignal.symbolId < 0
+            && (fsmLocalHandleForSymbol(nextStateSignal) < 0
                 || target != nextStateSignal.symbolName)) {
             continue;
         }
@@ -486,8 +496,10 @@ bool isInsideModule(
     const sym_list::SymbolInfo& symbol,
     const sym_list::SymbolInfo& moduleSymbol)
 {
-    if (symbol.symbolId == moduleSymbol.symbolId)
+    if (fsmLocalHandleForSymbol(symbol)
+        == fsmLocalHandleForSymbol(moduleSymbol)) {
         return false;
+    }
     const SemanticSymbolRecord symbolRecord =
         semanticSymbolRecordForSymbol(symbol);
     const SemanticSymbolRecord moduleRecord =
@@ -529,8 +541,10 @@ bool FsmGraphService::hasPairedNextStateSignal(
 {
     const QString stateRegisterType = rawTypeTextForSymbol(stateRegister);
     for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
-        if (symbol.symbolId == stateRegister.symbolId)
+        if (fsmLocalHandleForSymbol(symbol)
+            == fsmLocalHandleForSymbol(stateRegister)) {
             continue;
+        }
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
                 SymbolTaxonomy::semanticMetadata(symbol))) {
             continue;
@@ -867,18 +881,20 @@ void FsmGraphService::fillDisplayMetadata(
     graph.stateRegisterSourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(graph.stateRegisterRecord,
                                        stateRegister);
-    graph.nextStateSignalDisplayName = nextStateSignal.symbolId >= 0
+    const bool hasNextStateSignal =
+        fsmLocalHandleForSymbol(nextStateSignal) >= 0;
+    graph.nextStateSignalDisplayName = hasNextStateSignal
         ? displayNameForRecord(graph.nextStateSignalRecord,
                                nextStateSignal)
         : QString();
     graph.stateRegisterDetailDisplayName =
-        stateRegisterDetailDisplayName(nextStateSignal.symbolId >= 0,
+        stateRegisterDetailDisplayName(hasNextStateSignal,
                                        graph.nextStateSignalDisplayName);
-    graph.nextStateSignalTypeDisplayName = nextStateSignal.symbolId >= 0
+    graph.nextStateSignalTypeDisplayName = hasNextStateSignal
         ? typeDisplayNameForRecord(graph.nextStateSignalRecord,
                                    nextStateSignal)
         : QString();
-    graph.nextStateSignalSourceRoleDisplayName = nextStateSignal.symbolId >= 0
+    graph.nextStateSignalSourceRoleDisplayName = hasNextStateSignal
         ? sourceRoleDisplayNameForRecord(graph.nextStateSignalRecord,
                                          nextStateSignal)
         : QString();
@@ -914,7 +930,8 @@ void sortSymbols(QList<sym_list::SymbolInfo>& symbols)
                       return lhs.startColumn < rhs.startColumn;
                   if (lhs.symbolName != rhs.symbolName)
                       return lhs.symbolName < rhs.symbolName;
-                  return lhs.symbolId < rhs.symbolId;
+                  return fsmLocalHandleForSymbol(lhs)
+                      < fsmLocalHandleForSymbol(rhs);
               });
 }
 
