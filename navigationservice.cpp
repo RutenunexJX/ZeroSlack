@@ -7,9 +7,7 @@
 namespace {
 SemanticSymbolRecord outlineSymbolRecord(const SearchResult& result)
 {
-    if (result.symbolRecord.isValid())
-        return result.symbolRecord;
-    return semanticSymbolRecordForSymbol(result.symbol);
+    return result.symbolRecord;
 }
 
 SymbolTaxonomy::SemanticMetadata outlineMetadata(
@@ -97,7 +95,7 @@ QList<SymbolOutlineSymbolRow> outlineRows(
     for (const SearchResult& result : results) {
         const SemanticSymbolRecord record = outlineSymbolRecord(result);
         SymbolOutlineSymbolRow row;
-        row.symbol = result.symbol;
+        row.symbol = symbolOutlineCompatibilitySymbolForRecord(record);
         row.symbolRecord = record;
         row.displayName = record.name;
         row.typeDisplayName = groupDisplayName;
@@ -112,8 +110,10 @@ QList<sym_list::SymbolInfo> symbolsForResults(const QList<SearchResult>& results
 {
     QList<sym_list::SymbolInfo> symbols;
     symbols.reserve(results.size());
-    for (const SearchResult& result : results)
-        symbols.append(result.symbol);
+    for (const SearchResult& result : results) {
+        symbols.append(symbolOutlineCompatibilitySymbolForRecord(
+            outlineSymbolRecord(result)));
+    }
     return symbols;
 }
 }

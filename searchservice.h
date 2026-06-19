@@ -19,7 +19,6 @@ struct SearchQuery {
 };
 
 struct SearchResult {
-    sym_list::SymbolInfo symbol;
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     QString symbolDisplayName;

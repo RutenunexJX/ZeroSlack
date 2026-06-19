@@ -15,7 +15,7 @@ QList<sym_list::SymbolInfo> NavigationService::moduleSymbols() const
     const QList<SearchResult> moduleResults = searchService.findSymbols(moduleQuery);
     modules.reserve(moduleResults.size());
     for (const SearchResult& result : moduleResults)
-        modules.append(result.symbol);
+        modules.append(symbolOutlineCompatibilitySymbolForRecord(result.symbolRecord));
     return modules;
 }
 

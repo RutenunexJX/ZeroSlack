@@ -4,16 +4,12 @@ std::unique_ptr<SearchService> SearchService::instance = nullptr;
 
 namespace {
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
-    if (!record.isValid())
-        return metadata;
-
+    SymbolTaxonomy::SemanticMetadata metadata;
     metadata.declarationKind = record.declarationKind;
     metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
     metadata.visibility = record.visibility;
     metadata.sourceRole = record.sourceRole;
     metadata.rawCollectorKind = record.rawCollectorKind;
@@ -21,30 +17,18 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
     return metadata;
 }
 
-QString symbolDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString symbolDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.name.isEmpty())
         return record.name;
-    if (!fallback.symbolName.isEmpty())
-        return fallback.symbolName;
     return QStringLiteral("<unknown>");
 }
 
-RtlInsightCodeLink codeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
 {
-    if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        return RtlInsightLink::fromFileLine(fileName,
-                                            record.location.startLine,
-                                            record.location.startColumn);
-    }
-    return RtlInsightLink::fromSymbol(fallback);
+    return RtlInsightLink::fromFileLine(record.location.fileName,
+                                        record.location.startLine,
+                                        record.location.startColumn);
 }
 }
 
@@ -84,21 +68,18 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
     result.reserve(indexResults.size());
     for (const SemanticSymbolSearchResult& indexResult : indexResults) {
         SearchResult item;
-        item.symbol = indexResult.symbol;
         item.symbolRecord = indexResult.symbolRecord;
         item.symbolStableKey = item.symbolRecord.stableKey.isValid()
             ? item.symbolRecord.stableKey
             : indexResult.symbolStableKey;
-        if (!item.symbolStableKey.isValid())
-            item.symbolStableKey = symbolStableKeyForSymbol(item.symbol);
         item.symbolDisplayName =
-            symbolDisplayNameForRecord(item.symbolRecord, item.symbol);
+            symbolDisplayNameForRecord(item.symbolRecord);
         const SymbolTaxonomy::SemanticMetadata metadata =
-            metadataForRecord(item.symbolRecord, item.symbol);
+            metadataForRecord(item.symbolRecord);
         item.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
         item.sourceRoleDisplayName =
             SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
-        item.codeLink = codeLinkForRecord(item.symbolRecord, item.symbol);
+        item.codeLink = codeLinkForRecord(item.symbolRecord);
         item.score = indexResult.score;
         result.append(item);
     }
