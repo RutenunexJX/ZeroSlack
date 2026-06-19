@@ -340,8 +340,8 @@ QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         ModuleBriefSymbolRow row;
-        row.symbol = symbol;
         row.symbolRecord = record;
+        row.symbolStableKey = record.stableKey;
         row.codeLink = codeLinkForRecord(record, symbol);
         row.sectionDisplayName = sectionDisplayName;
         row.symbolDisplayName = symbolDisplayName(record);
@@ -417,8 +417,8 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         seen.insert(key);
 
         ModuleBriefContextRow row;
-        row.symbol = symbol;
         row.symbolRecord = record;
+        row.symbolStableKey = record.stableKey;
         row.codeLink = codeLinkForRecord(record, symbol);
         row.sectionDisplayName = section;
         row.symbolDisplayName = symbolDisplayName(record);

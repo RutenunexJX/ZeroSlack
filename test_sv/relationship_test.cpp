@@ -3972,7 +3972,7 @@ static void runModuleBriefServiceFixture()
                !report.portRows.isEmpty()
                    && report.portRows.first().symbolRecord.isValid()
                    && report.portRows.first().symbolRecord.stableKey
-                       == symbolStableKeyForSymbol(report.portRows.first().symbol)
+                       == report.portRows.first().symbolStableKey
                    && report.portRows.first().symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Port
                    && report.portRows.first().symbolRecord.name == QStringLiteral("clk")

@@ -70,8 +70,8 @@ struct ModuleBriefRelationshipSummary {
 };
 
 struct ModuleBriefSymbolRow {
-    sym_list::SymbolInfo symbol = {};
     SemanticSymbolRecord symbolRecord;
+    SymbolStableKey symbolStableKey;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString symbolDisplayName;
@@ -88,8 +88,8 @@ struct ModuleBriefDiagnosticRow {
 };
 
 struct ModuleBriefContextRow {
-    sym_list::SymbolInfo symbol = {};
     SemanticSymbolRecord symbolRecord;
+    SymbolStableKey symbolStableKey;
     RtlInsightCodeLink codeLink;
     QString sectionDisplayName;
     QString symbolDisplayName;

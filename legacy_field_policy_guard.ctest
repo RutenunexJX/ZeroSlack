@@ -123,6 +123,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "hierarchyservice.cpp|node\\.symbol[ \t\r\n]*="
     "hierarchyservice.cpp|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int|moduleSymbolId"
     "modulebriefservice.h|moduleSymbolId"
+    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefSymbolRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefContextRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
     "modulebriefservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
     "navigationservice.h|struct[ \t\r\n]+NavigationModuleTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
