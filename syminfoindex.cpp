@@ -23,27 +23,6 @@ QList<sym_list::SymbolInfo> sym_list::findSymbolsByName(const QString& symbolNam
     return result;
 }
 
-int sym_list::findSymbolIdByName(const QString& symbolName) const
-{
-    if (s_holdingWriteLock) {
-        if (symbolNameIndex.contains(symbolName)) {
-            const QList<int>& indices = symbolNameIndex[symbolName];
-            if (!indices.isEmpty() && indices.first() < symbolDatabase.size()) {
-                return symbolDatabase[indices.first()].symbolId;
-            }
-        }
-        return -1;
-    }
-    QReadLocker lock(&symbolDbLock);
-    if (symbolNameIndex.contains(symbolName)) {
-        const QList<int>& indices = symbolNameIndex[symbolName];
-        if (!indices.isEmpty() && indices.first() < symbolDatabase.size()) {
-            return symbolDatabase[indices.first()].symbolId;
-        }
-    }
-    return -1;
-}
-
 QList<sym_list::SymbolInfo> sym_list::findSymbolsByFileName(const QString& fileName)
 {
     QList<SymbolInfo> result;

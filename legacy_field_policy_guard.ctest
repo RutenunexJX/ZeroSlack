@@ -268,6 +268,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexsnapshotqueries.cpp|SemanticIndexSnapshot::getSymbols[ \t\r\n]*\\("
     "syminfo.h|getSymbolById[ \t\r\n]*\\("
     "syminfoindex.cpp|getSymbolById[ \t\r\n]*\\("
+    "syminfo.h|findSymbolIdByName[ \t\r\n]*\\("
+    "syminfoindex.cpp|findSymbolIdByName[ \t\r\n]*\\("
     "syminfo.h|findSymbolsByType[ \t\r\n]*\\("
     "syminfoindex.cpp|findSymbolsByType[ \t\r\n]*\\("
     "syminfo.h|getSymbolNamesByType[ \t\r\n]*\\("

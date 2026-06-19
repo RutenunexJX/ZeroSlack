@@ -147,7 +147,6 @@ public:
     void addSymbol(const SymbolInfo& symbol);
     QList<SymbolInfo> findSymbolsByFileName(const QString& fileName);
     QList<SymbolInfo> findSymbolsByName(const QString& symbolName);
-    int findSymbolIdByName(const QString& symbolName) const;
     QList<SymbolInfo> getAllSymbols();
     void clearSymbolsForFile(const QString& fileName);
 
