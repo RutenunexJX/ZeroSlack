@@ -152,18 +152,10 @@ QString roleFor(SymbolRelationshipEngine::RelationType type, bool sourceSide)
     return QStringLiteral("related");
 }
 
-QString symbolDisplayName(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolName.isEmpty()
-        ? QStringLiteral("<unnamed>")
-        : symbol.symbolName;
-}
-
-QString symbolRecordDisplayName(const SemanticSymbolRecord& record,
-                                const sym_list::SymbolInfo& fallbackSymbol)
+QString symbolRecordDisplayName(const SemanticSymbolRecord& record)
 {
     return record.name.isEmpty()
-        ? symbolDisplayName(fallbackSymbol)
+        ? QStringLiteral("<unnamed>")
         : record.name;
 }
 
@@ -173,28 +165,14 @@ QString reportSubjectDisplayName(const SemanticSymbolRecord& record,
     return record.name.isEmpty() ? fallbackName : record.name;
 }
 
-QString symbolRecordFileName(const SemanticSymbolRecord& record,
-                             const sym_list::SymbolInfo& fallbackSymbol)
+QString symbolRecordFileName(const SemanticSymbolRecord& record)
 {
-    return record.location.fileName.isEmpty()
-        ? fallbackSymbol.fileName
-        : record.location.fileName;
+    return record.location.fileName;
 }
 
-int symbolRecordLine(const SemanticSymbolRecord& record,
-                     const sym_list::SymbolInfo& fallbackSymbol)
+int symbolRecordLine(const SemanticSymbolRecord& record)
 {
-    return record.location.startLine > 0
-        ? record.location.startLine
-        : fallbackSymbol.startLine;
-}
-
-int symbolRecordColumn(const SemanticSymbolRecord& record,
-                       const sym_list::SymbolInfo& fallbackSymbol)
-{
-    return record.location.startColumn > 0
-        ? record.location.startColumn
-        : fallbackSymbol.startColumn;
+    return record.location.startLine;
 }
 
 QString fileDisplayName(const QString& fileName)
@@ -322,16 +300,9 @@ RelationshipReport RelationshipService::findRelationshipReport(
             DirectedRelationshipResult directed;
             directed.direction = direction;
             directed.relationshipType = relationship.relationship.type;
-            const sym_list::SymbolInfo peerSymbol =
-                direction == DirectedRelationshipResult::Outgoing
-                ? relationship.toSymbol
-                : relationship.fromSymbol;
             directed.peerSymbolRecord = direction == DirectedRelationshipResult::Outgoing
                 ? relationship.toSymbolRecord
                 : relationship.fromSymbolRecord;
-            if (!directed.peerSymbolRecord.isValid())
-                directed.peerSymbolRecord =
-                    semanticSymbolRecordForSymbol(peerSymbol);
             directed.subjectStableKey = report.subjectStableKey;
             directed.peerStableKey = directed.peerSymbolRecord.stableKey.isValid()
                 ? directed.peerSymbolRecord.stableKey
@@ -339,21 +310,18 @@ RelationshipReport RelationshipService::findRelationshipReport(
                        ? relationship.toStableKey
                        : relationship.fromStableKey);
             if (!directed.peerStableKey.isValid()
-                && peerSymbol.symbolId < 0) {
+                && !directed.peerSymbolRecord.isValid()) {
                 continue;
             }
             directed.directionDisplayName = relationshipDirectionDisplayName(direction);
             directed.typeDisplayName =
                 relationshipTypeDisplayName(directed.relationshipType);
             directed.peerSymbolDisplayName =
-                symbolRecordDisplayName(directed.peerSymbolRecord,
-                                        peerSymbol);
+                symbolRecordDisplayName(directed.peerSymbolRecord);
             directed.peerFileDisplayName = fileDisplayName(
-                symbolRecordFileName(directed.peerSymbolRecord,
-                                     peerSymbol));
+                symbolRecordFileName(directed.peerSymbolRecord));
             directed.peerLineDisplayName = lineDisplayName(
-                symbolRecordLine(directed.peerSymbolRecord,
-                                 peerSymbol));
+                symbolRecordLine(directed.peerSymbolRecord));
             directed.provenance = relationship.provenance;
             directed.confidence = relationship.confidence;
             directed.evidenceText = relationship.evidenceText;
@@ -371,11 +339,9 @@ RelationshipReport RelationshipService::findRelationshipReport(
                 roleFor(directed.relationshipType, !subjectIsSource);
             const QString sourceName = subjectIsSource
                 ? report.subjectDisplayName
-                : symbolRecordDisplayName(directed.peerSymbolRecord,
-                                          peerSymbol);
+                : symbolRecordDisplayName(directed.peerSymbolRecord);
             const QString targetName = subjectIsSource
-                ? symbolRecordDisplayName(directed.peerSymbolRecord,
-                                          peerSymbol)
+                ? symbolRecordDisplayName(directed.peerSymbolRecord)
                 : report.subjectDisplayName;
             directed.explanation = QStringLiteral("%1 %2 %3")
                                        .arg(sourceName,
@@ -570,8 +536,7 @@ bool RelationshipService::hasNamedRelationship(
     const QList<RelationshipResult> relationships = findRelationships(query);
     for (const RelationshipResult& relationship : relationships) {
         const QString candidateName =
-            symbolRecordDisplayName(relationship.toSymbolRecord,
-                                    relationship.toSymbol);
+            symbolRecordDisplayName(relationship.toSymbolRecord);
         if (candidateName == toSymbolName)
             return true;
     }

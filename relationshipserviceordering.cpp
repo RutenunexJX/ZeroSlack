@@ -15,73 +15,55 @@ QString normalizedRelationshipFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-QString recordFileName(const SemanticSymbolRecord& record,
-                       const sym_list::SymbolInfo& fallback)
+QString recordFileName(const SemanticSymbolRecord& record)
 {
-    return record.location.fileName.isEmpty()
-        ? fallback.fileName
-        : record.location.fileName;
+    return record.location.fileName;
 }
 
-int recordLine(const SemanticSymbolRecord& record,
-               const sym_list::SymbolInfo& fallback)
+int recordLine(const SemanticSymbolRecord& record)
 {
-    return record.location.startLine > 0
-        ? record.location.startLine
-        : fallback.startLine;
+    return record.location.startLine;
 }
 
-int recordColumn(const SemanticSymbolRecord& record,
-                 const sym_list::SymbolInfo& fallback)
+int recordColumn(const SemanticSymbolRecord& record)
 {
-    return record.location.startColumn > 0
-        ? record.location.startColumn
-        : fallback.startColumn;
+    return record.location.startColumn;
 }
 
-QString recordName(const SemanticSymbolRecord& record,
-                   const sym_list::SymbolInfo& fallback)
+QString recordName(const SemanticSymbolRecord& record)
 {
-    return record.name.isEmpty()
-        ? fallback.symbolName
-        : record.name;
+    return record.name;
 }
 
-int recordLocalHandle(const SemanticSymbolRecord& record,
-                      const sym_list::SymbolInfo& fallback)
+int recordLocalHandle(const SemanticSymbolRecord& record)
 {
-    return record.localHandle >= 0
-        ? record.localHandle
-        : fallback.symbolId;
+    return record.localHandle;
 }
 
 bool relationshipRecordLess(const SemanticSymbolRecord& lhsRecord,
-                            const sym_list::SymbolInfo& lhsFallback,
-                            const SemanticSymbolRecord& rhsRecord,
-                            const sym_list::SymbolInfo& rhsFallback)
+                            const SemanticSymbolRecord& rhsRecord)
 {
     const int fileCompare = QString::compare(normalizedRelationshipFileName(
-                                                 recordFileName(lhsRecord, lhsFallback)),
+                                                 recordFileName(lhsRecord)),
                                              normalizedRelationshipFileName(
-                                                 recordFileName(rhsRecord, rhsFallback)),
+                                                 recordFileName(rhsRecord)),
                                              Qt::CaseInsensitive);
     if (fileCompare != 0)
         return fileCompare < 0;
-    const int lhsLine = recordLine(lhsRecord, lhsFallback);
-    const int rhsLine = recordLine(rhsRecord, rhsFallback);
+    const int lhsLine = recordLine(lhsRecord);
+    const int rhsLine = recordLine(rhsRecord);
     if (lhsLine != rhsLine)
         return lhsLine < rhsLine;
-    const int lhsColumn = recordColumn(lhsRecord, lhsFallback);
-    const int rhsColumn = recordColumn(rhsRecord, rhsFallback);
+    const int lhsColumn = recordColumn(lhsRecord);
+    const int rhsColumn = recordColumn(rhsRecord);
     if (lhsColumn != rhsColumn)
         return lhsColumn < rhsColumn;
-    const int nameCompare = QString::compare(recordName(lhsRecord, lhsFallback),
-                                             recordName(rhsRecord, rhsFallback),
+    const int nameCompare = QString::compare(recordName(lhsRecord),
+                                             recordName(rhsRecord),
                                              Qt::CaseInsensitive);
     if (nameCompare != 0)
         return nameCompare < 0;
-    return recordLocalHandle(lhsRecord, lhsFallback)
-        < recordLocalHandle(rhsRecord, rhsFallback);
+    return recordLocalHandle(lhsRecord) < recordLocalHandle(rhsRecord);
 }
 
 } // namespace
@@ -99,14 +81,7 @@ void sortRelationshipResults(QList<RelationshipResult>& relationships, bool outg
                       outgoing ? lhs.toSymbolRecord : lhs.fromSymbolRecord;
                   const SemanticSymbolRecord& rhsRecord =
                       outgoing ? rhs.toSymbolRecord : rhs.fromSymbolRecord;
-                  const sym_list::SymbolInfo& lhsFallback =
-                      outgoing ? lhs.toSymbol : lhs.fromSymbol;
-                  const sym_list::SymbolInfo& rhsFallback =
-                      outgoing ? rhs.toSymbol : rhs.fromSymbol;
-                  return relationshipRecordLess(lhsRecord,
-                                                lhsFallback,
-                                                rhsRecord,
-                                                rhsFallback);
+                  return relationshipRecordLess(lhsRecord, rhsRecord);
               });
 }
 
