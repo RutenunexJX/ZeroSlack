@@ -6964,8 +6964,9 @@ static void runRealWorkspaceIncludeFixture()
     parameterCompletion.symbolType = sym_list::sym_parameter;
     parameterCompletion.prefix = QStringLiteral("P_SW");
     expectBool("real workspace completes package parameter",
-               CompletionSymbolQuery::namesFromSymbols(
-                   completionService.findCommandCompletionSymbols(parameterCompletion))
+               CompletionSymbolQuery::namesFromRecords(
+                   completionService.findCommandCompletionSymbolRecords(
+                       parameterCompletion))
                    .contains(QStringLiteral("P_SW_NUM")),
                true);
 
@@ -6974,8 +6975,9 @@ static void runRealWorkspaceIncludeFixture()
     typedefCompletion.symbolType = sym_list::sym_typedef;
     typedefCompletion.prefix = QStringLiteral("cpld");
     expectBool("real workspace completes package typedef",
-               CompletionSymbolQuery::namesFromSymbols(
-                   completionService.findCommandCompletionSymbols(typedefCompletion))
+               CompletionSymbolQuery::namesFromRecords(
+                   completionService.findCommandCompletionSymbolRecords(
+                       typedefCompletion))
                    .contains(QStringLiteral("cpld_sw_sp")),
                true);
 

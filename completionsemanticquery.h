@@ -12,9 +12,6 @@ struct CommandCompletionQuery;
 class CompletionSemanticQuery
 {
 public:
-    static QList<sym_list::SymbolInfo> commandSymbols(
-        SemanticIndex* semanticIndex,
-        const CommandCompletionQuery& query);
     static QList<SemanticSymbolRecord> commandSymbolRecords(
         SemanticIndex* semanticIndex,
         const CommandCompletionQuery& query);

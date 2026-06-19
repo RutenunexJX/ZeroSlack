@@ -2042,13 +2042,13 @@ int main(int argc, char** argv) {
                CompletionService::getInstance()->findCommandCompletions(commandQuery),
                {"enable"});
 
-    const QList<sym_list::SymbolInfo> commandLogicSymbols =
-        CompletionService::getInstance()->findCommandCompletionSymbols(commandQuery);
+    const QList<SemanticSymbolRecord> commandLogicSymbols =
+        CompletionService::getInstance()->findCommandCompletionSymbolRecords(commandQuery);
     ++g_checks;
     const bool commandLogicOk = commandLogicSymbols.size() == 1
-        && commandLogicSymbols.first().symbolName == QStringLiteral("enable")
-        && commandLogicSymbols.first().symbolType == sym_list::sym_logic
-        && commandLogicSymbols.first().moduleScope == QStringLiteral("top");
+        && commandLogicSymbols.first().name == QStringLiteral("enable")
+        && commandLogicSymbols.first().rawCollectorKind == sym_list::sym_logic
+        && commandLogicSymbols.first().owner.name == QStringLiteral("top");
     if (!commandLogicOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -2059,13 +2059,13 @@ int main(int argc, char** argv) {
     commandQuery.symbolType = sym_list::sym_packed_struct_var;
     commandQuery.prefix = "pix";
     commandQuery.documentText = content;
-    const QList<sym_list::SymbolInfo> packedStructVars =
-        CompletionService::getInstance()->findCommandCompletionSymbols(commandQuery);
+    const QList<SemanticSymbolRecord> packedStructVars =
+        CompletionService::getInstance()->findCommandCompletionSymbolRecords(commandQuery);
     ++g_checks;
     const bool packedStructOk = packedStructVars.size() == 1
-        && packedStructVars.first().symbolName == QStringLiteral("pixel")
-        && packedStructVars.first().symbolType == sym_list::sym_packed_struct_var
-        && packedStructVars.first().moduleScope == QStringLiteral("top");
+        && packedStructVars.first().name == QStringLiteral("pixel")
+        && packedStructVars.first().rawCollectorKind == sym_list::sym_packed_struct_var
+        && packedStructVars.first().owner.name == QStringLiteral("top");
     if (!packedStructOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -2076,7 +2076,9 @@ int main(int argc, char** argv) {
     commandQuery.moduleName.clear();
     ++g_checks;
     const bool structGlobalHidden =
-        CompletionService::getInstance()->findCommandCompletionSymbols(commandQuery).isEmpty();
+        CompletionService::getInstance()
+            ->findCommandCompletionSymbolRecords(commandQuery)
+            .isEmpty();
     if (!structGlobalHidden)
         ++g_fails;
     printf("[%s] %-34s\n",
@@ -2505,13 +2507,14 @@ int main(int argc, char** argv) {
     expectList("snapshot command logic names",
                snapshotCompletionService.findCommandCompletions(snapshotLogicCommandQuery),
                {"snap_enable"});
-    const QList<sym_list::SymbolInfo> snapshotLogicCommandSymbols =
-        snapshotCompletionService.findCommandCompletionSymbols(snapshotLogicCommandQuery);
+    const QList<SemanticSymbolRecord> snapshotLogicCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbolRecords(
+            snapshotLogicCommandQuery);
     ++g_checks;
     const bool snapshotLogicCommandOk = snapshotLogicCommandSymbols.size() == 1
-        && snapshotLogicCommandSymbols.first().symbolName == QStringLiteral("snap_enable")
-        && snapshotLogicCommandSymbols.first().symbolType == sym_list::sym_logic
-        && snapshotLogicCommandSymbols.first().moduleScope == QStringLiteral("snap_top");
+        && snapshotLogicCommandSymbols.first().name == QStringLiteral("snap_enable")
+        && snapshotLogicCommandSymbols.first().rawCollectorKind == sym_list::sym_logic
+        && snapshotLogicCommandSymbols.first().owner.name == QStringLiteral("snap_top");
     if (!snapshotLogicCommandOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -2540,13 +2543,14 @@ int main(int argc, char** argv) {
     expectList("snapshot command task names",
                snapshotCompletionService.findCommandCompletions(snapshotTaskCommandQuery),
                {"snap_task"});
-    const QList<sym_list::SymbolInfo> snapshotTaskCommandSymbols =
-        snapshotCompletionService.findCommandCompletionSymbols(snapshotTaskCommandQuery);
+    const QList<SemanticSymbolRecord> snapshotTaskCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbolRecords(
+            snapshotTaskCommandQuery);
     ++g_checks;
     const bool snapshotTaskCommandOk = snapshotTaskCommandSymbols.size() == 1
-        && snapshotTaskCommandSymbols.first().symbolName == QStringLiteral("snap_task")
-        && snapshotTaskCommandSymbols.first().symbolType == sym_list::sym_task
-        && snapshotTaskCommandSymbols.first().moduleScope.isEmpty();
+        && snapshotTaskCommandSymbols.first().name == QStringLiteral("snap_task")
+        && snapshotTaskCommandSymbols.first().rawCollectorKind == sym_list::sym_task
+        && snapshotTaskCommandSymbols.first().owner.name.isEmpty();
     if (!snapshotTaskCommandOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -2560,13 +2564,14 @@ int main(int argc, char** argv) {
     expectList("snapshot command module in scope",
                snapshotCompletionService.findCommandCompletions(snapshotModuleCommandQuery),
                {"snap_child", "snap_scope", "snap_top"});
-    const QList<sym_list::SymbolInfo> snapshotModuleCommandSymbols =
-        snapshotCompletionService.findCommandCompletionSymbols(snapshotModuleCommandQuery);
+    const QList<SemanticSymbolRecord> snapshotModuleCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbolRecords(
+            snapshotModuleCommandQuery);
     ++g_checks;
     const bool snapshotModuleCommandOk = snapshotModuleCommandSymbols.size() == 3
-        && snapshotModuleCommandSymbols.first().symbolId == 7000
-        && snapshotModuleCommandSymbols.at(1).symbolId == 6000
-        && snapshotModuleCommandSymbols.last().symbolId == 4000;
+        && snapshotModuleCommandSymbols.first().localHandle == 7000
+        && snapshotModuleCommandSymbols.at(1).localHandle == 6000
+        && snapshotModuleCommandSymbols.last().localHandle == 4000;
     if (!snapshotModuleCommandOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -2580,11 +2585,12 @@ int main(int argc, char** argv) {
     expectList("snapshot command interface in scope",
                snapshotCompletionService.findCommandCompletions(snapshotInterfaceCommandQuery),
                {"snap_if"});
-    const QList<sym_list::SymbolInfo> snapshotInterfaceCommandSymbols =
-        snapshotCompletionService.findCommandCompletionSymbols(snapshotInterfaceCommandQuery);
+    const QList<SemanticSymbolRecord> snapshotInterfaceCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbolRecords(
+            snapshotInterfaceCommandQuery);
     ++g_checks;
     const bool snapshotInterfaceCommandOk = snapshotInterfaceCommandSymbols.size() == 1
-        && snapshotInterfaceCommandSymbols.first().symbolId == 4002;
+        && snapshotInterfaceCommandSymbols.first().localHandle == 4002;
     if (!snapshotInterfaceCommandOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -2598,11 +2604,12 @@ int main(int argc, char** argv) {
     expectList("snapshot command package in scope",
                snapshotCompletionService.findCommandCompletions(snapshotPackageCommandQuery),
                {"snap_pkg"});
-    const QList<sym_list::SymbolInfo> snapshotPackageCommandSymbols =
-        snapshotCompletionService.findCommandCompletionSymbols(snapshotPackageCommandQuery);
+    const QList<SemanticSymbolRecord> snapshotPackageCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbolRecords(
+            snapshotPackageCommandQuery);
     ++g_checks;
     const bool snapshotPackageCommandOk = snapshotPackageCommandSymbols.size() == 1
-        && snapshotPackageCommandSymbols.first().symbolId == 4004;
+        && snapshotPackageCommandSymbols.first().localHandle == 4004;
     if (!snapshotPackageCommandOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -2624,11 +2631,12 @@ int main(int argc, char** argv) {
     expectList("snapshot command define in scope",
                snapshotCompletionService.findCommandCompletions(snapshotDefineCommandQuery),
                {"SNAP_FEATURE"});
-    const QList<sym_list::SymbolInfo> snapshotDefineCommandSymbols =
-        snapshotCompletionService.findCommandCompletionSymbols(snapshotDefineCommandQuery);
+    const QList<SemanticSymbolRecord> snapshotDefineCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbolRecords(
+            snapshotDefineCommandQuery);
     ++g_checks;
     const bool snapshotDefineCommandOk = snapshotDefineCommandSymbols.size() == 1
-        && snapshotDefineCommandSymbols.first().symbolId == 4003;
+        && snapshotDefineCommandSymbols.first().localHandle == 4003;
     if (!snapshotDefineCommandOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -3012,14 +3020,16 @@ int main(int argc, char** argv) {
     snapshotCommandQuery.documentText = QStringLiteral("module snap_top;\nendmodule\n");
     snapshotCommandQuery.symbolType = sym_list::sym_packed_struct_var;
     snapshotCommandQuery.prefix = QStringLiteral("snap");
-    const QList<sym_list::SymbolInfo> snapshotCommandSymbols =
-        snapshotCompletionService.findCommandCompletionSymbols(snapshotCommandQuery);
+    const QList<SemanticSymbolRecord> snapshotCommandSymbols =
+        snapshotCompletionService.findCommandCompletionSymbolRecords(snapshotCommandQuery);
     ++g_checks;
     const bool snapshotCommandOk = snapshotCommandSymbols.size() == 1
-        && snapshotCommandSymbols.first().symbolName == QStringLiteral("snap_pixel")
-        && snapshotCommandSymbols.first().symbolType == sym_list::sym_packed_struct_var
-        && snapshotCommandSymbols.first().moduleScope == QStringLiteral("snap_top")
-        && snapshotCommandSymbols.first().dataType == QStringLiteral("snap_pixel_t");
+        && snapshotCommandSymbols.first().name == QStringLiteral("snap_pixel")
+        && snapshotCommandSymbols.first().rawCollectorKind
+            == sym_list::sym_packed_struct_var
+        && snapshotCommandSymbols.first().owner.name == QStringLiteral("snap_top")
+        && snapshotCommandSymbols.first().type.rawTypeText
+            == QStringLiteral("snap_pixel_t");
     if (!snapshotCommandOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",

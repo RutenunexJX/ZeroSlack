@@ -85,7 +85,6 @@ public:
         bool relationshipCompletionsEnabled = true) const;
     QStringList findScopeCompletions(const CompletionQuery& query) const;
     QStringList findCommandCompletions(const CommandCompletionQuery& query) const;
-    QList<sym_list::SymbolInfo> findCommandCompletionSymbols(const CommandCompletionQuery& query) const;
     QList<SemanticSymbolRecord> findCommandCompletionSymbolRecords(
         const CommandCompletionQuery& query) const;
     QStringList findModuleChildCompletions(const QString& moduleName,

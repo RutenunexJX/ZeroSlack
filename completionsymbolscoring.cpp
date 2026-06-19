@@ -117,6 +117,22 @@ QStringList CompletionSymbolQuery::namesFromSymbols(
     return result;
 }
 
+QStringList CompletionSymbolQuery::namesFromRecords(
+    const QList<SemanticSymbolRecord>& records)
+{
+    QStringList result;
+    QSet<QString> seenNames;
+    for (const SemanticSymbolRecord& record : records) {
+        const QString key = record.name.toCaseFolded();
+        if (key.isEmpty() || seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(record.name);
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
 bool CompletionSymbolQuery::nameMatches(const QString& name, const QString& prefix)
 {
     if (prefix.isEmpty())

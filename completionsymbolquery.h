@@ -29,6 +29,8 @@ public:
         int maxResults);
     static QStringList namesFromSymbols(
         const QList<sym_list::SymbolInfo>& symbols);
+    static QStringList namesFromRecords(
+        const QList<SemanticSymbolRecord>& records);
     static bool nameMatches(const QString& name, const QString& prefix);
     static QList<sym_list::SymbolInfo> structMemberSymbols(
         SemanticIndex* semanticIndex,

@@ -101,14 +101,8 @@ CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
 
 QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const
 {
-    return CompletionSymbolQuery::namesFromSymbols(
-        CompletionSemanticQuery::commandSymbols(semanticIndex(), query));
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
-    const CommandCompletionQuery& query) const
-{
-    return CompletionSemanticQuery::commandSymbols(semanticIndex(), query);
+    return CompletionSymbolQuery::namesFromRecords(
+        findCommandCompletionSymbolRecords(query));
 }
 
 QList<SemanticSymbolRecord> CompletionService::findCommandCompletionSymbolRecords(
