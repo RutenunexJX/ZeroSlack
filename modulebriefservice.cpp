@@ -45,6 +45,7 @@ RtlInsightCodeLink codeLinkForRecord(
     }
     return RtlInsightLink::fromSymbol(fallback);
 }
+
 }
 
 ModuleBriefService* ModuleBriefService::getInstance()
@@ -278,9 +279,14 @@ QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEviden
                 ? semanticIndex()->getRelationshipResults(moduleStableKey, outgoing)
                 : QList<SemanticRelationshipResult>();
         for (const SemanticRelationshipResult& relationship : relationships) {
-            const sym_list::SymbolInfo peer =
-                outgoing ? relationship.toSymbol : relationship.fromSymbol;
-            if (peer.symbolId < 0)
+            const SemanticSymbolRecord peerRecord = outgoing
+                ? (relationship.toSymbolRecord.isValid()
+                       ? relationship.toSymbolRecord
+                       : semanticSymbolRecordForSymbol(relationship.toSymbol))
+                : (relationship.fromSymbolRecord.isValid()
+                       ? relationship.fromSymbolRecord
+                       : semanticSymbolRecordForSymbol(relationship.fromSymbol));
+            if (!peerRecord.isValid())
                 continue;
             QString key = semanticRelationshipStableKeyText(relationship.relationship);
             if (key.isEmpty()) {
@@ -294,10 +300,9 @@ QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEviden
             seen.insert(key);
 
             ModuleBriefRelationshipEvidenceRow row;
-            row.relationship = relationship;
-            row.peerSymbol = peer;
             row.outgoing = outgoing;
-            fillRelationshipEvidenceMetadata(row);
+            row.peerSymbolRecord = peerRecord;
+            fillRelationshipEvidenceMetadata(row, relationship);
             rows.append(row);
         }
     };
@@ -647,26 +652,43 @@ QString ModuleBriefService::relationshipEvidenceDetailDisplayName(
 }
 
 void ModuleBriefService::fillRelationshipEvidenceMetadata(
-    ModuleBriefRelationshipEvidenceRow& row)
+    ModuleBriefRelationshipEvidenceRow& row,
+    const SemanticRelationshipResult& relationship)
 {
-    row.fromSymbol = row.relationship.fromSymbol;
-    row.toSymbol = row.relationship.toSymbol;
-    row.peerSymbolRecord = semanticSymbolRecordForSymbol(row.peerSymbol);
-    row.fromSymbolRecord = semanticSymbolRecordForSymbol(row.fromSymbol);
-    row.toSymbolRecord = semanticSymbolRecordForSymbol(row.toSymbol);
-    row.fromStableKey = row.relationship.fromStableKey;
-    row.toStableKey = row.relationship.toStableKey;
+    row.type = relationship.relationship.type;
+    row.fromSymbolRecord = relationship.fromSymbolRecord.isValid()
+        ? relationship.fromSymbolRecord
+        : semanticSymbolRecordForSymbol(relationship.fromSymbol);
+    row.toSymbolRecord = relationship.toSymbolRecord.isValid()
+        ? relationship.toSymbolRecord
+        : semanticSymbolRecordForSymbol(relationship.toSymbol);
+    row.fromStableKey = row.fromSymbolRecord.stableKey.isValid()
+        ? row.fromSymbolRecord.stableKey
+        : relationship.fromStableKey;
+    row.toStableKey = row.toSymbolRecord.stableKey.isValid()
+        ? row.toSymbolRecord.stableKey
+        : relationship.toStableKey;
     row.peerStableKey = row.outgoing
-        ? row.relationship.toStableKey
-        : row.relationship.fromStableKey;
-    row.peerCodeLink = codeLinkForRecord(row.peerSymbolRecord, row.peerSymbol);
-    row.fromCodeLink = codeLinkForRecord(row.fromSymbolRecord, row.fromSymbol);
-    row.toCodeLink = codeLinkForRecord(row.toSymbolRecord, row.toSymbol);
-    row.provenance = row.relationship.provenance;
-    row.confidence = row.relationship.confidence;
-    row.evidenceText = row.relationship.evidenceText;
+        ? row.toStableKey
+        : row.fromStableKey;
+    if (!row.peerSymbolRecord.stableKey.isValid()) {
+        row.peerSymbolRecord = row.outgoing
+            ? row.toSymbolRecord
+            : row.fromSymbolRecord;
+    }
+    const sym_list::SymbolInfo peerSymbol = row.outgoing
+        ? relationship.toSymbol
+        : relationship.fromSymbol;
+    row.peerCodeLink = codeLinkForRecord(row.peerSymbolRecord, peerSymbol);
+    row.fromCodeLink = codeLinkForRecord(row.fromSymbolRecord,
+                                         relationship.fromSymbol);
+    row.toCodeLink = codeLinkForRecord(row.toSymbolRecord,
+                                       relationship.toSymbol);
+    row.provenance = relationship.provenance;
+    row.confidence = relationship.confidence;
+    row.evidenceText = relationship.evidenceText;
     row.directionDisplayName = relationshipDirectionDisplayName(row.outgoing);
-    row.typeDisplayName = relationshipTypeDisplayName(row.relationship.relationship.type);
+    row.typeDisplayName = relationshipTypeDisplayName(row.type);
     row.provenanceDisplayName = provenanceDisplayName(row.provenance);
     row.confidenceDisplayName = confidenceDisplayName(row.confidence);
     row.evidenceDisplayName = evidenceDisplayName(row.evidenceText);
@@ -683,24 +705,30 @@ void ModuleBriefService::sortRelationshipEvidenceRows(
               rows.end(),
               [](const ModuleBriefRelationshipEvidenceRow& lhs,
                  const ModuleBriefRelationshipEvidenceRow& rhs) {
-                  const sym_list::SymbolInfo& left = lhs.peerSymbol;
-                  const sym_list::SymbolInfo& right = rhs.peerSymbol;
                   if (lhs.outgoing != rhs.outgoing)
                       return lhs.outgoing && !rhs.outgoing;
-                  if (lhs.relationship.relationship.type
-                      != rhs.relationship.relationship.type) {
-                      return lhs.relationship.relationship.type
-                          < rhs.relationship.relationship.type;
+                  if (lhs.type != rhs.type) {
+                      return lhs.type < rhs.type;
                   }
-                  if (left.fileName != right.fileName)
-                      return left.fileName < right.fileName;
-                  if (left.startLine != right.startLine)
-                      return left.startLine < right.startLine;
-                  if (left.startColumn != right.startColumn)
-                      return left.startColumn < right.startColumn;
-                  if (left.symbolName != right.symbolName)
-                      return left.symbolName < right.symbolName;
-                  return left.symbolId < right.symbolId;
+                  if (lhs.peerSymbolRecord.location.fileName
+                      != rhs.peerSymbolRecord.location.fileName) {
+                      return lhs.peerSymbolRecord.location.fileName
+                          < rhs.peerSymbolRecord.location.fileName;
+                  }
+                  if (lhs.peerSymbolRecord.location.startLine
+                      != rhs.peerSymbolRecord.location.startLine) {
+                      return lhs.peerSymbolRecord.location.startLine
+                          < rhs.peerSymbolRecord.location.startLine;
+                  }
+                  if (lhs.peerSymbolRecord.location.startColumn
+                      != rhs.peerSymbolRecord.location.startColumn) {
+                      return lhs.peerSymbolRecord.location.startColumn
+                          < rhs.peerSymbolRecord.location.startColumn;
+                  }
+                  if (lhs.peerSymbolRecord.name != rhs.peerSymbolRecord.name)
+                      return lhs.peerSymbolRecord.name < rhs.peerSymbolRecord.name;
+                  return lhs.peerSymbolRecord.localHandle
+                      < rhs.peerSymbolRecord.localHandle;
               });
 }
 

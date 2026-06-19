@@ -4223,8 +4223,9 @@ static void runModuleBriefServiceFixture()
         hasInstanceRelationshipMetadata = hasInstanceRelationshipMetadata
             || (row.outgoing
                 && row.peerDisplayName == QStringLiteral("u_stage")
-                && row.fromStableKey == symbolStableKeyForSymbol(row.fromSymbol)
-                && row.toStableKey == symbolStableKeyForSymbol(row.toSymbol)
+                && row.type == SymbolRelationshipEngine::INSTANTIATES
+                && row.fromStableKey == row.fromSymbolRecord.stableKey
+                && row.toStableKey == row.toSymbolRecord.stableKey
                 && row.peerStableKey == row.toStableKey
                 && row.peerSymbolRecord.isValid()
                 && row.peerSymbolRecord.stableKey == row.peerStableKey

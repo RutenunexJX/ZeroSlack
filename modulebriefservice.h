@@ -32,10 +32,8 @@ struct ModuleBriefRelationshipRow {
 };
 
 struct ModuleBriefRelationshipEvidenceRow {
-    SemanticRelationshipResult relationship;
-    sym_list::SymbolInfo peerSymbol = {};
-    sym_list::SymbolInfo fromSymbol = {};
-    sym_list::SymbolInfo toSymbol = {};
+    SymbolRelationshipEngine::RelationType type =
+        SymbolRelationshipEngine::REFERENCES;
     SemanticSymbolRecord peerSymbolRecord;
     SemanticSymbolRecord fromSymbolRecord;
     SemanticSymbolRecord toSymbolRecord;
@@ -191,7 +189,8 @@ private:
     static QString relationshipEvidenceDetailDisplayName(
         const ModuleBriefRelationshipEvidenceRow& row);
     static void fillRelationshipEvidenceMetadata(
-        ModuleBriefRelationshipEvidenceRow& row);
+        ModuleBriefRelationshipEvidenceRow& row,
+        const SemanticRelationshipResult& relationship);
     static void sortRelationshipEvidenceRows(
         QList<ModuleBriefRelationshipEvidenceRow>& rows);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
