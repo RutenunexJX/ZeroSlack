@@ -48,6 +48,10 @@ public:
         const sym_list::SymbolInfo& symbol,
         sym_list::sym_type_e requestedType,
         const QString& prefix = QString()) const;
+    CommandSymbolCompletionItem commandSymbolCompletionItem(
+        const SemanticSymbolRecord& record,
+        sym_list::sym_type_e requestedType,
+        const QString& prefix = QString()) const;
     QList<CommandModeCommand> commandModeCommands() const;
     CommandModeMatch matchCommandMode(const QString& lineUpToCursor) const;
     CommandModeInputState commandModeInputState(
@@ -82,6 +86,8 @@ public:
     QStringList findScopeCompletions(const CompletionQuery& query) const;
     QStringList findCommandCompletions(const CommandCompletionQuery& query) const;
     QList<sym_list::SymbolInfo> findCommandCompletionSymbols(const CommandCompletionQuery& query) const;
+    QList<SemanticSymbolRecord> findCommandCompletionSymbolRecords(
+        const CommandCompletionQuery& query) const;
     QStringList findModuleChildCompletions(const QString& moduleName,
                                            const QString& prefix = QString()) const;
     QStringList findRelatedSymbolCompletions(const QString& symbolName,

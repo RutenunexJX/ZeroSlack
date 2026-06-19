@@ -94,16 +94,28 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
     sym_list::sym_type_e requestedType,
     const QString& prefix)
 {
+    return symbolCompletionItem(
+        semanticSymbolRecordForSymbol(symbol),
+        requestedType,
+        prefix);
+}
+
+CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
+    const SemanticSymbolRecord& record,
+    sym_list::sym_type_e requestedType,
+    const QString& prefix)
+{
+    const QString symbolName = record.name;
     CommandSymbolCompletionItem item;
-    item.symbolRecord = semanticSymbolRecordForSymbol(symbol);
+    item.symbolRecord = record;
     item.symbolStableKey = item.symbolRecord.stableKey.isValid()
         ? item.symbolRecord.stableKey
-        : symbolStableKeyForSymbol(symbol);
+        : SymbolStableKey();
     item.declarationKind = item.symbolRecord.declarationKind;
     item.usageRole = item.symbolRecord.usageRole;
     item.ownerScope = item.symbolRecord.owner.kind;
     item.sourceRole = item.symbolRecord.sourceRole;
-    item.defaultValue = symbol.symbolName;
+    item.defaultValue = symbolName;
     item.description = symbolPresentation(requestedType)
         .typeDescription
         .split(' ')
@@ -113,21 +125,21 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
         || requestedType == sym_list::sym_unpacked_struct_var) {
         const QString structTypeName = item.symbolRecord.owner.name;
         item.text = structTypeName.isEmpty()
-            ? symbol.symbolName
-            : QStringLiteral("%1(%2)").arg(symbol.symbolName, structTypeName);
-        item.uniqueKey = QStringLiteral("%1:%2").arg(symbol.symbolName, structTypeName);
+            ? symbolName
+            : QStringLiteral("%1(%2)").arg(symbolName, structTypeName);
+        item.uniqueKey = QStringLiteral("%1:%2").arg(symbolName, structTypeName);
     } else if (requestedType == sym_list::sym_enum_value) {
-        item.text = symbol.symbolName;
+        item.text = symbolName;
         item.description = item.symbolRecord.type.rawTypeText.isEmpty()
             ? QStringLiteral("enum")
             : item.symbolRecord.type.rawTypeText;
-        item.uniqueKey = symbol.symbolName;
+        item.uniqueKey = symbolName;
     } else {
-        item.text = symbol.symbolName;
-        item.uniqueKey = symbol.symbolName;
+        item.text = symbolName;
+        item.uniqueKey = symbolName;
     }
 
-    item.score = CompletionMatcher::completionItemScore(symbol.symbolName, prefix);
+    item.score = CompletionMatcher::completionItemScore(symbolName, prefix);
     return item;
 }
 

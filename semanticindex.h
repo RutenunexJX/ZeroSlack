@@ -267,6 +267,10 @@ public:
         const QString& moduleName,
         sym_list::sym_type_e symbolType,
         const QString& prefix = QString()) const;
+    QList<SemanticSymbolRecord> getCommandCompletionSymbolRecords(
+        const QString& moduleName,
+        sym_list::sym_type_e symbolType,
+        const QString& prefix = QString()) const;
     QStringList getCompletionSymbolNames() const;
     QList<sym_list::SymbolInfo> getTypedCompletionSymbols(
         sym_list::sym_type_e symbolType,

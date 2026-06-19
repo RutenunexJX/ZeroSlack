@@ -15,6 +15,10 @@ public:
         const sym_list::SymbolInfo& symbol,
         sym_list::sym_type_e requestedType,
         const QString& prefix = QString());
+    static CommandSymbolCompletionItem symbolCompletionItem(
+        const SemanticSymbolRecord& record,
+        sym_list::sym_type_e requestedType,
+        const QString& prefix = QString());
     static CompletionActivationState activationState(
         const CompletionActivationQuery& query);
     static CompletionPopupKeyState popupKeyState(

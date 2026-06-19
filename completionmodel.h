@@ -81,6 +81,10 @@ public:
     void updateSymbolCompletions(const QList<sym_list::SymbolInfo> &symbols,
                                const QString &prefix,
                                sym_list::sym_type_e symbolType);
+    void updateSymbolRecordCompletions(
+                               const QList<SemanticSymbolRecord> &records,
+                               const QString &prefix,
+                               sym_list::sym_type_e symbolType);
 
 
 private:

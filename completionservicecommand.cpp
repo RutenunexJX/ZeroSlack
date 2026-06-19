@@ -49,8 +49,9 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     completionQuery.documentText = query.documentText;
     completionQuery.symbolType = state.command.symbolType;
 
+    state.symbolRecords = findCommandCompletionSymbolRecords(completionQuery);
     state.symbols = findCommandCompletionSymbols(completionQuery);
-    if (state.symbols.isEmpty()
+    if (state.symbolRecords.isEmpty()
         && SymbolTaxonomy::isDirectModuleContextCompletionRequest(state.command.symbolType)
         && completionQuery.moduleName.isEmpty()) {
         state.hidePopup = true;
@@ -58,17 +59,9 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     }
 
     state.showCompletions = true;
-    state.symbolStableKeys.reserve(state.symbols.size());
-    state.symbolRecords.reserve(state.symbols.size());
-    for (const sym_list::SymbolInfo& symbol : state.symbols) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(symbol);
-        state.symbolRecords.append(record);
-        if (record.stableKey.isValid()) {
-            state.symbolStableKeys.append(record.stableKey);
-        } else {
-            state.symbolStableKeys.append(symbolStableKeyForSymbol(symbol));
-        }
+    state.symbolStableKeys.reserve(state.symbolRecords.size());
+    for (const SemanticSymbolRecord& record : state.symbolRecords) {
+        state.symbolStableKeys.append(record.stableKey);
     }
     return state;
 }
@@ -99,6 +92,14 @@ CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
     return CompletionCommandMode::symbolCompletionItem(symbol, requestedType, prefix);
 }
 
+CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
+    const SemanticSymbolRecord& record,
+    sym_list::sym_type_e requestedType,
+    const QString& prefix) const
+{
+    return CompletionCommandMode::symbolCompletionItem(record, requestedType, prefix);
+}
+
 QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const
 {
     return CompletionSymbolQuery::namesFromSymbols(
@@ -109,4 +110,10 @@ QList<sym_list::SymbolInfo> CompletionService::findCommandCompletionSymbols(
     const CommandCompletionQuery& query) const
 {
     return CompletionSemanticQuery::commandSymbols(semanticIndex(), query);
+}
+
+QList<SemanticSymbolRecord> CompletionService::findCommandCompletionSymbolRecords(
+    const CommandCompletionQuery& query) const
+{
+    return CompletionSemanticQuery::commandSymbolRecords(semanticIndex(), query);
 }

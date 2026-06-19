@@ -3,6 +3,7 @@
 #include "symboltaxonomy.h"
 
 #include <QSet>
+#include <algorithm>
 
 using namespace semantic_index_completion;
 
@@ -96,6 +97,56 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
     }
 
     sortSymbolsByName(result);
+    return result;
+}
+
+QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
+    const QString& moduleName,
+    sym_list::sym_type_e symbolType,
+    const QString& prefix) const
+{
+    QList<SemanticSymbolRecord> result;
+    QSet<QString> seenNames;
+    if (moduleName.isEmpty() && !commandGlobalCompletionSymbolType(symbolType))
+        return result;
+
+    const QList<sym_list::SymbolInfo> symbols = getSymbols();
+    const QSet<QString> packages = SymbolTaxonomy::packageScopeNames(symbols);
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        const SemanticSymbolRecord record =
+            semanticSymbolRecordForSymbol(symbol, packages);
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            completionMetadataForRecord(record);
+        if (!commandCompletionScopeVisibleForRecord(
+                record,
+                symbolType,
+                moduleName)
+            || !commandSymbolTypeMatches(
+                metadata,
+                symbolType,
+                record.type.rawTypeText)
+            || !semanticCompletionNameMatches(record.name, prefix)) {
+            continue;
+        }
+
+        const QString key = record.name.toCaseFolded();
+        if (seenNames.contains(key))
+            continue;
+        seenNames.insert(key);
+        result.append(record);
+    }
+
+    std::sort(
+        result.begin(),
+        result.end(),
+        [](const SemanticSymbolRecord& left,
+           const SemanticSymbolRecord& right) {
+            return QString::compare(
+                       left.name,
+                       right.name,
+                       Qt::CaseInsensitive)
+                < 0;
+        });
     return result;
 }
 

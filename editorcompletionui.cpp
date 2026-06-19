@@ -132,8 +132,8 @@ EditorCompletionPopupKeyContext EditorCompletionUi::popupKeyContextForEvent(
 void EditorCompletionUi::updateCommandModeCompletions(
     const EditorCommandModeCompletionRefreshState& commandState) const
 {
-    model->updateSymbolCompletions(
-        commandState.completion.symbols,
+    model->updateSymbolRecordCompletions(
+        commandState.completion.symbolRecords,
         commandState.completion.completionPrefix,
         commandState.completion.requestedKind);
 }

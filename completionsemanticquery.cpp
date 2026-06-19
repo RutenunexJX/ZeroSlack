@@ -33,6 +33,37 @@ QList<sym_list::SymbolInfo> CompletionSemanticQuery::commandSymbols(
         query.prefix);
 }
 
+QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
+    SemanticIndex* semanticIndex,
+    const CommandCompletionQuery& query)
+{
+    if (!semanticIndex)
+        return {};
+
+    const bool useSymbolInfoDirectly =
+        SymbolTaxonomy::isDirectModuleContextCompletionRequest(query.symbolType);
+
+    if (useSymbolInfoDirectly) {
+        if (query.moduleName.isEmpty())
+            return {};
+
+        semanticIndex->refreshStructTypedefEnumForFile(
+            query.fileName, query.documentText);
+
+        return semanticSymbolRecordsForSymbols(
+            semanticIndex->getModuleContextSymbolsByType(
+                query.moduleName,
+                query.fileName,
+                query.symbolType,
+                query.prefix));
+    }
+
+    return semanticIndex->getCommandCompletionSymbolRecords(
+        query.moduleName,
+        query.symbolType,
+        query.prefix);
+}
+
 QStringList CompletionSemanticQuery::enumValueCompletions(
     SemanticIndex* semanticIndex,
     const QString& prefix,

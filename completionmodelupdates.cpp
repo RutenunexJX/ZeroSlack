@@ -23,6 +23,20 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
     return metadata;
 }
 
+SymbolTaxonomy::SemanticMetadata metadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
 QString ownerScopeNameForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
@@ -33,6 +47,28 @@ QString ownerScopeNameForRecord(
         semanticSymbolRecordForSymbol(fallback);
     if (!fallbackRecord.owner.name.isEmpty())
         return fallbackRecord.owner.name;
+
+    switch (record.owner.kind) {
+    case SymbolTaxonomy::SymbolOwnerScope::Global:
+        return QStringLiteral("global");
+    case SymbolTaxonomy::SymbolOwnerScope::Module:
+        return QStringLiteral("module");
+    case SymbolTaxonomy::SymbolOwnerScope::Interface:
+        return QStringLiteral("interface");
+    case SymbolTaxonomy::SymbolOwnerScope::Package:
+        return QStringLiteral("package");
+    case SymbolTaxonomy::SymbolOwnerScope::Struct:
+        return QStringLiteral("struct");
+    case SymbolTaxonomy::SymbolOwnerScope::Unknown:
+        break;
+    }
+    return QString();
+}
+
+QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
+{
+    if (!record.owner.name.isEmpty())
+        return record.owner.name;
 
     switch (record.owner.kind) {
     case SymbolTaxonomy::SymbolOwnerScope::Global:
@@ -65,6 +101,26 @@ void fillSymbolMetadataFromRecord(
         metadataForRecord(item.symbolRecord, symbol);
     item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
     item.ownerScopeName = ownerScopeNameForRecord(item.symbolRecord, symbol);
+    item.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    item.declarationKind = metadata.declarationKind;
+    item.usageRole = metadata.usageRole;
+    item.ownerScope = metadata.ownerScope;
+    item.sourceRole = metadata.sourceRole;
+}
+
+void fillSymbolMetadataFromRecord(
+    CompletionModel::CompletionItem& item,
+    const SemanticSymbolRecord& record)
+{
+    item.symbolRecord = record;
+    item.symbolStableKey = record.stableKey;
+    item.symbolType = record.rawCollectorKind;
+
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        metadataForRecord(record);
+    item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
+    item.ownerScopeName = ownerScopeNameForRecord(record);
     item.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
     item.declarationKind = metadata.declarationKind;
@@ -267,6 +323,76 @@ void CompletionModel::updateSymbolCompletions(const QList<sym_list::SymbolInfo> 
         CompletionItem item;
         item.type = SymbolCompletion;
         fillSymbolMetadataFromRecord(item, symbol);
+        item.text = serviceItem.text;
+        item.description = item.typeDisplayName.isEmpty()
+            ? serviceItem.description
+            : item.typeDisplayName;
+        item.defaultValue = serviceItem.defaultValue;
+        item.score = serviceItem.score;
+
+        fillDisplayMetadata(item);
+        completions.append(item);
+    }
+
+    sortCompletionsByScore();
+    if (completions.size() > MaxCompletionItems) {
+        completions = completions.mid(0, MaxCompletionItems);
+    }
+    if (completions.size() > 32) {
+        completions = completions.mid(0, 32);
+    }
+
+    endResetModel();
+}
+
+void CompletionModel::updateSymbolRecordCompletions(
+    const QList<SemanticSymbolRecord> &records,
+    const QString &prefix,
+    sym_list::sym_type_e symbolType)
+{
+    beginResetModel();
+    completions.clear();
+
+    CompletionService* completionService = CompletionService::getInstance();
+    const CommandSymbolPresentation presentation =
+        completionService->commandSymbolPresentation(symbolType);
+
+    CompletionItem descItem;
+    descItem.text = QString(":: COMMAND MODE - %1 ::").arg(presentation.typeDescription);
+    descItem.type = SymbolCompletion;
+    descItem.description = "Command Mode";
+    descItem.score = 1000;
+    descItem.defaultValue = presentation.defaultValue;
+    fillDisplayMetadata(descItem);
+    completions.append(descItem);
+
+    CompletionItem defaultItem;
+    defaultItem.text = QString("[DEFAULT] %1").arg(presentation.defaultValue);
+    defaultItem.type = SymbolCompletion;
+    defaultItem.symbolType = symbolType;
+    defaultItem.description =
+        QString("Default %1 declaration").arg(presentation.typeDescription.split(' ').value(0));
+    defaultItem.defaultValue = presentation.defaultValue;
+    defaultItem.score = 999;
+    fillDisplayMetadata(defaultItem);
+    completions.append(defaultItem);
+
+    QSet<QString> addedItems;
+
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.name == presentation.defaultValue) {
+            continue;
+        }
+
+        const CommandSymbolCompletionItem serviceItem =
+            completionService->commandSymbolCompletionItem(record, symbolType, prefix);
+        if (addedItems.contains(serviceItem.uniqueKey))
+            continue;
+        addedItems.insert(serviceItem.uniqueKey);
+
+        CompletionItem item;
+        item.type = SymbolCompletion;
+        fillSymbolMetadataFromRecord(item, record);
         item.text = serviceItem.text;
         item.description = item.typeDisplayName.isEmpty()
             ? serviceItem.description
