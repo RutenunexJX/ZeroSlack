@@ -528,7 +528,7 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
                 : graph.transitionsGroupDisplayName;
         transitions->setText(0, SemanticPanelUtils::countLabel(
                                     transitionsGroup,
-                                    graph.transitions.size()));
+                                    graph.transitionCount));
         for (const FsmTransitionRow& row : graph.transitionRows) {
             QTreeWidgetItem* transition =
                 createChildItem(transitions,

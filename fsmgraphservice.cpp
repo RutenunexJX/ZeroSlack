@@ -158,13 +158,18 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
             nextStateSignal(moduleSymbols, stateRegister);
         const QList<sym_list::SymbolInfo> states =
             stateValues(moduleSymbols, allSymbols, stateRegister);
-        graph.transitions = parseTransitions(moduleSymbol,
-                                             stateRegister,
-                                             nextState,
-                                             states);
-        if (states.isEmpty() && graph.transitions.isEmpty())
+        QList<FsmTransition> transitions = parseTransitions(moduleSymbol,
+                                                            stateRegister,
+                                                            nextState,
+                                                            states);
+        if (states.isEmpty() && transitions.isEmpty())
             continue;
-        fillDisplayMetadata(graph, moduleSymbol, stateRegister, nextState, states);
+        fillDisplayMetadata(graph,
+                            moduleSymbol,
+                            stateRegister,
+                            nextState,
+                            states,
+                            transitions);
         report.graphs.append(graph);
     }
 
@@ -695,7 +700,6 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
     rows.reserve(transitions.size());
     for (const FsmTransition& transition : transitions) {
         FsmTransitionRow row;
-        row.transition = transition;
         const sym_list::SymbolInfo fromStateSymbol =
             stateSymbolByName(states, transition.fromState);
         const sym_list::SymbolInfo toStateSymbol =
@@ -714,6 +718,7 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
             codeLinkForRecord(row.fromStateRecord, fromStateSymbol);
         row.toStateCodeLink =
             codeLinkForRecord(row.toStateRecord, toStateSymbol);
+        row.assignmentTargetDisplayName = transition.assignmentTarget;
         row.sectionDisplayName = transition.sectionDisplayName;
         row.fromStateDisplayName =
             displayNameForRecord(row.fromStateRecord,
@@ -798,7 +803,8 @@ void FsmGraphService::fillDisplayMetadata(
     const sym_list::SymbolInfo& moduleSymbol,
     const sym_list::SymbolInfo& stateRegister,
     const sym_list::SymbolInfo& nextStateSignal,
-    const QList<sym_list::SymbolInfo>& states)
+    const QList<sym_list::SymbolInfo>& states,
+    QList<FsmTransition>& transitions)
 {
     graph.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
     graph.stateRegisterRecord =
@@ -823,6 +829,7 @@ void FsmGraphService::fillDisplayMetadata(
                              moduleSymbol,
                              QStringLiteral("<unknown>"));
     graph.stateCount = states.size();
+    graph.transitionCount = transitions.size();
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDisplayName =
         displayNameForRecord(graph.stateRegisterRecord,
@@ -852,11 +859,11 @@ void FsmGraphService::fillDisplayMetadata(
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
     graph.stateRows = stateRows(states);
-    for (FsmTransition& transition : graph.transitions)
+    for (FsmTransition& transition : transitions)
         fillDisplayMetadata(transition);
     graph.transitionRows = transitionRows(
         moduleSymbol,
-        graph.transitions,
+        transitions,
         states);
 }
 

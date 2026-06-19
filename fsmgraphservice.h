@@ -47,7 +47,6 @@ struct FsmStateRow {
 };
 
 struct FsmTransitionRow {
-    FsmTransition transition;
     SemanticSymbolRecord moduleSymbolRecord;
     SemanticSymbolRecord fromStateRecord;
     SemanticSymbolRecord toStateRecord;
@@ -56,6 +55,7 @@ struct FsmTransitionRow {
     RtlInsightCodeLink codeLink;
     RtlInsightCodeLink fromStateCodeLink;
     RtlInsightCodeLink toStateCodeLink;
+    QString assignmentTargetDisplayName;
     QString sectionDisplayName;
     QString fromStateDisplayName;
     QString toStateDisplayName;
@@ -74,11 +74,11 @@ struct FsmGraph {
     SymbolStableKey nextStateSignalStableKey;
     RtlInsightCodeLink stateRegisterCodeLink;
     RtlInsightCodeLink nextStateSignalCodeLink;
-    QList<FsmTransition> transitions;
     QList<FsmStateRow> stateRows;
     QList<FsmTransitionRow> transitionRows;
     QString moduleDisplayName;
     int stateCount = 0;
+    int transitionCount = 0;
     QString stateRegisterSectionDisplayName;
     QString stateRegisterDisplayName;
     QString stateRegisterDetailDisplayName;
@@ -182,7 +182,8 @@ private:
                                     const sym_list::SymbolInfo& moduleSymbol,
                                     const sym_list::SymbolInfo& stateRegister,
                                     const sym_list::SymbolInfo& nextStateSignal,
-                                    const QList<sym_list::SymbolInfo>& states);
+                                    const QList<sym_list::SymbolInfo>& states,
+                                    QList<FsmTransition>& transitions);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
     static void sortTransitions(QList<FsmTransition>& transitions);

@@ -5797,19 +5797,19 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("2"),
                true);
     expectInt("fsm graph transition count",
-              report.graphs.isEmpty() ? 0 : report.graphs.first().transitions.size(),
+              report.graphs.isEmpty() ? 0 : report.graphs.first().transitionCount,
               4);
     expectInt("fsm graph transition row count",
               report.graphs.isEmpty() ? 0 : report.graphs.first().transitionRows.size(),
               4);
     expectBool("fsm graph first transition",
                !report.graphs.isEmpty()
-                   && !report.graphs.first().transitions.isEmpty()
-                   && report.graphs.first().transitions.first().fromState
+                   && !report.graphs.first().transitionRows.isEmpty()
+                   && report.graphs.first().transitionRows.first().fromStateDisplayName
                        == QStringLiteral("IDLE")
-                   && report.graphs.first().transitions.first().toState
+                   && report.graphs.first().transitionRows.first().toStateDisplayName
                        == QStringLiteral("RUN")
-                   && report.graphs.first().transitions.first().condition
+                   && report.graphs.first().transitionRows.first().conditionDisplayName
                        == QStringLiteral("start"),
                true);
     expectBool("fsm graph transition row evidence",
@@ -5901,18 +5901,18 @@ static void runFsmGraphServiceFixture()
                !report.graphs.isEmpty()
                    && report.graphs.first().transitionsGroupDisplayName
                        == QStringLiteral("Transitions")
-                   && !report.graphs.first().transitions.isEmpty()
-                   && report.graphs.first().transitions.first().sectionDisplayName
+                   && !report.graphs.first().transitionRows.isEmpty()
+                   && report.graphs.first().transitionRows.first().sectionDisplayName
                        == QStringLiteral("IDLE")
-                   && report.graphs.first().transitions.first().detailDisplayName
+                   && report.graphs.first().transitionRows.first().detailDisplayName
                        == QStringLiteral("state_d when start"),
                true);
     expectBool("fsm graph default transition",
                !report.graphs.isEmpty()
-                   && !report.graphs.first().transitions.isEmpty()
-                   && report.graphs.first().transitions.last().fromState
+                   && !report.graphs.first().transitionRows.isEmpty()
+                   && report.graphs.first().transitionRows.last().fromStateDisplayName
                        == QStringLiteral("default")
-                   && report.graphs.first().transitions.last().toState
+                   && report.graphs.first().transitionRows.last().toStateDisplayName
                        == QStringLiteral("IDLE"),
                true);
 
@@ -5939,7 +5939,7 @@ static void runFsmGraphServiceFixture()
     expectInt("fsm graph package enum transition count",
               packageReport.graphs.isEmpty()
                   ? 0
-                  : packageReport.graphs.first().transitions.size(),
+                  : packageReport.graphs.first().transitionCount,
               3);
     bool sawPackageTernaryTransition = false;
     bool sawPackageTernaryTransitionStateEndpoints = false;
