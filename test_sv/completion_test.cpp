@@ -69,6 +69,13 @@ static QStringList symbolNames(const QList<sym_list::SymbolInfo>& symbols) {
     return names;
 }
 
+static QStringList recordNames(const QList<SemanticSymbolRecord>& records) {
+    QStringList names;
+    for (const auto& record : records)
+        names << record.name;
+    return names;
+}
+
 static QStringList scoredNames(const QVector<QPair<QString, int>>& scored) {
     QStringList names;
     for (const auto& item : scored)
@@ -1276,7 +1283,7 @@ int main(int argc, char** argv) {
         CompletionService::getInstance()->commandModeCompletionState(
             commandCompletionQuery);
     expectList("CompletionService command state",
-               symbolNames(commandCompletionState.symbols),
+               recordNames(commandCompletionState.symbolRecords),
                {"enable"});
     ++g_checks;
     const bool commandCompletionStateOk = commandCompletionState.matched
@@ -1293,12 +1300,11 @@ int main(int argc, char** argv) {
            "CompletionService command state flags",
            commandCompletionState.completionPrefix.toLocal8Bit().constData());
     expectBool("CompletionService command state records",
-               commandCompletionState.symbols.size() == 1
-                   && commandCompletionState.symbolRecords.size() == 1
+               commandCompletionState.symbolRecords.size() == 1
                    && commandCompletionState.symbolStableKeys.size() == 1
                    && commandCompletionState.symbolRecords.first().isValid()
                    && commandCompletionState.symbolRecords.first().localHandle
-                       == commandCompletionState.symbols.first().symbolId
+                       >= 0
                    && commandCompletionState.symbolRecords.first().stableKey
                        == commandCompletionState.symbolStableKeys.first()
                    && commandCompletionState.symbolRecords.first().name
@@ -1306,8 +1312,7 @@ int main(int argc, char** argv) {
                    && commandCompletionState.symbolRecords.first().owner.name
                        == QStringLiteral("top")
                    && commandCompletionState.symbolStableKeys.first()
-                       == symbolStableKeyForSymbol(
-                           commandCompletionState.symbols.first()),
+                       == commandCompletionState.symbolRecords.first().stableKey,
                true);
 
     CommandModeCompletionQuery commandCompletionExitQuery;
@@ -1319,7 +1324,6 @@ int main(int argc, char** argv) {
     const bool commandCompletionExitOk = commandCompletionExitState.matched
         && commandCompletionExitState.exitRequested
         && !commandCompletionExitState.showCompletions
-        && commandCompletionExitState.symbols.isEmpty()
         && commandCompletionExitState.symbolRecords.isEmpty()
         && commandCompletionExitState.symbolStableKeys.isEmpty();
     if (!commandCompletionExitOk)
@@ -1482,14 +1486,14 @@ int main(int argc, char** argv) {
                moduleCompletion.names,
                {"enable"});
     ++g_checks;
-    const bool moduleResultSymbolsOk = moduleCompletion.symbols.size() == 1
-        && moduleCompletion.symbols.first().symbolName == QStringLiteral("enable");
-    if (!moduleResultSymbolsOk)
+    const bool moduleResultItemsAvailableOk = moduleCompletion.items.size() == 1
+        && moduleCompletion.items.first().label == QStringLiteral("enable");
+    if (!moduleResultItemsAvailableOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
-           moduleResultSymbolsOk ? "PASS" : "FAIL",
-           "CompletionService result symbols",
-           moduleCompletion.symbols.size());
+           moduleResultItemsAvailableOk ? "PASS" : "FAIL",
+           "CompletionService result items available",
+           moduleCompletion.items.size());
     ++g_checks;
     const bool moduleResultItemsOk = moduleCompletion.items.size() == 1
         && moduleCompletion.items.first().label == QStringLiteral("enable")
@@ -1500,7 +1504,7 @@ int main(int argc, char** argv) {
         && moduleCompletion.items.first().symbolRecord.owner.name
             == QStringLiteral("top")
         && moduleCompletion.items.first().symbolStableKey
-            == symbolStableKeyForSymbol(moduleCompletion.symbols.first())
+            == moduleCompletion.items.first().symbolRecord.stableKey
         && moduleCompletion.items.first().declarationKind
             == SymbolTaxonomy::DeclarationKind::Signal
         && moduleCompletion.items.first().ownerScope
@@ -1560,21 +1564,21 @@ int main(int argc, char** argv) {
     memberQuery.prefix = "bl";
     const CompletionResult memberCompletion =
         CompletionService::getInstance()->findCompletionResult(memberQuery);
-    const QList<sym_list::SymbolInfo> memberSymbols = memberCompletion.symbols;
     expectList("CompletionService struct prefix",
                memberCompletion.names,
                {"blue"});
     ++g_checks;
-    const bool serviceSymbolOk = memberSymbols.size() == 1
-        && memberSymbols.first().symbolName == QStringLiteral("blue")
-        && memberSymbols.first().symbolType == sym_list::sym_struct_member
-        && memberSymbols.first().moduleScope == QStringLiteral("pixel_t");
+    const bool serviceSymbolOk = memberCompletion.items.size() == 1
+        && memberCompletion.items.first().label == QStringLiteral("blue")
+        && memberCompletion.items.first().declarationKind
+            == SymbolTaxonomy::DeclarationKind::StructMember
+        && memberCompletion.items.first().ownerScopeName == QStringLiteral("pixel_t");
     if (!serviceSymbolOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
            serviceSymbolOk ? "PASS" : "FAIL",
            "CompletionService struct symbols",
-           memberSymbols.size());
+           memberCompletion.items.size());
     ++g_checks;
     const bool memberItemsOk = memberCompletion.items.size() == 1
         && memberCompletion.items.first().label == QStringLiteral("blue")
@@ -1591,7 +1595,7 @@ int main(int argc, char** argv) {
         && memberCompletion.items.first().symbolRecord.declarationKind
             == SymbolTaxonomy::DeclarationKind::StructMember
         && memberCompletion.items.first().symbolStableKey
-            == symbolStableKeyForSymbol(memberCompletion.symbols.first());
+            == memberCompletion.items.first().symbolRecord.stableKey;
     if (!memberItemsOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
@@ -1645,9 +1649,9 @@ int main(int argc, char** argv) {
         && editorMemberState.prefix == QStringLiteral("bl")
         && editorMemberState.replacementStartColumn
             == editorMemberQuery.lineUpToCursor.lastIndexOf(QLatin1Char('.')) + 1
-        && editorMemberState.completion.symbols.size() == 1
-        && editorMemberState.completion.symbols.first().symbolType
-            == sym_list::sym_struct_member;
+        && editorMemberState.completion.items.size() == 1
+        && editorMemberState.completion.items.first().declarationKind
+            == SymbolTaxonomy::DeclarationKind::StructMember;
     if (!editorMemberStateOk)
         ++g_fails;
     printf("[%s] %-34s start=%d\n",
@@ -1672,8 +1676,8 @@ int main(int argc, char** argv) {
         && editorWordState.prefix == QStringLiteral("en")
         && editorWordState.replacementStartColumn
             == editorWordQuery.lineUpToCursor.size() - editorWordQuery.wordPrefix.size()
-        && editorWordState.completion.symbols.size() == 1
-        && editorWordState.completion.symbols.first().symbolName
+        && editorWordState.completion.items.size() == 1
+        && editorWordState.completion.items.first().label
             == QStringLiteral("enable");
     if (!editorWordStateOk)
         ++g_fails;
@@ -1734,22 +1738,21 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->commandModeCompletionState(commandContext);
     expectList("EditorSemanticContext command state",
-               symbolNames(contextCommandState.symbols),
+               recordNames(contextCommandState.symbolRecords),
                {"enable"});
     expectBool("EditorSemanticContext command state range",
                contextCommandState.matched
                    && contextCommandState.prefixPosition == 0,
                true);
     expectBool("EditorSemanticContext command state records",
-               contextCommandState.symbols.size() == 1
-                   && contextCommandState.symbolRecords.size() == 1
+               contextCommandState.symbolRecords.size() == 1
                    && contextCommandState.symbolStableKeys.size() == 1
                    && contextCommandState.symbolRecords.first().stableKey
                        == contextCommandState.symbolStableKeys.first()
                    && contextCommandState.symbolRecords.first().name
                        == QStringLiteral("enable")
                    && contextCommandState.symbolStableKeys.first()
-                       == symbolStableKeyForSymbol(contextCommandState.symbols.first()),
+                       == contextCommandState.symbolRecords.first().stableKey,
                true);
     const EditorCommandModeCompletionRefreshState contextRefreshState =
         EditorSemanticContextService::getInstance()

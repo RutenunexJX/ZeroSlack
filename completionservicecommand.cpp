@@ -50,7 +50,6 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     completionQuery.symbolType = state.command.symbolType;
 
     state.symbolRecords = findCommandCompletionSymbolRecords(completionQuery);
-    state.symbols = findCommandCompletionSymbols(completionQuery);
     if (state.symbolRecords.isEmpty()
         && SymbolTaxonomy::isDirectModuleContextCompletionRequest(state.command.symbolType)
         && completionQuery.moduleName.isEmpty()) {

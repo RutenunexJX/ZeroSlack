@@ -20,7 +20,6 @@ struct CompletionQuery {
 
 struct CompletionResult {
     QStringList names;
-    QList<sym_list::SymbolInfo> symbols;
     struct SemanticCompletionItem {
         QString label;
         QString insertText;
@@ -195,7 +194,6 @@ struct CommandModeCompletionState {
     QString completionPrefix;
     CommandModeCommand command;
     sym_list::sym_type_e requestedKind = sym_list::sym_user;
-    QList<sym_list::SymbolInfo> symbols;
     QList<SemanticSymbolRecord> symbolRecords;
     QList<SymbolStableKey> symbolStableKeys;
 };

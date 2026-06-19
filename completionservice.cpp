@@ -131,9 +131,9 @@ CompletionResult CompletionService::findCompletionResult(
     const CompletionQuery& query) const
 {
     CompletionResult result;
-    result.symbols = findCompletionSymbols(query);
-    result.names = CompletionSymbolQuery::namesFromSymbols(result.symbols);
-    result.items = semanticCompletionItemsForSymbols(result.symbols);
+    const QList<sym_list::SymbolInfo> symbols = findCompletionSymbols(query);
+    result.names = CompletionSymbolQuery::namesFromSymbols(symbols);
+    result.items = semanticCompletionItemsForSymbols(symbols);
     return result;
 }
 
