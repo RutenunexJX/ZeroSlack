@@ -173,7 +173,9 @@ QList<SemanticDiffSymbolChange> SemanticDiffService::symbolChanges(
     auto collect = [&](const SemanticIndexSnapshot& snapshot,
                        const QString& fileName,
                        QHash<QString, sym_list::SymbolInfo>* target) {
-        const QList<sym_list::SymbolInfo> symbols = snapshot.getSymbols(fileName);
+        const QList<sym_list::SymbolInfo> symbols =
+            semanticSymbolInfoCarriersForRecords(
+                snapshot.getSymbolRecords(fileName));
         for (const sym_list::SymbolInfo& symbol : symbols) {
             SemanticDiffSymbolCategory category;
             if (!symbolCategory(SymbolTaxonomy::semanticMetadata(symbol),
@@ -513,9 +515,9 @@ sym_list::SymbolInfo SemanticDiffService::relationshipEndpointSymbol(
         ? relationship.fromId
         : relationship.toId;
     if (localHandle >= 0) {
-        for (const sym_list::SymbolInfo& symbol : snapshot.getSymbols()) {
-            if (symbol.symbolId == localHandle)
-                return symbol;
+        for (const SemanticSymbolRecord& record : snapshot.getSymbolRecords()) {
+            if (record.localHandle == localHandle)
+                return semanticDiffSymbolInfoForRecord(record);
         }
     }
 

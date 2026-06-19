@@ -275,6 +275,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexcompletiontypequeries.cpp|getSymbols[ \t\r\n]*\\("
     "semanticindexlookup.cpp|getSymbols[ \t\r\n]*\\("
     "relationshipanalysisworker.cpp|getSymbols[ \t\r\n]*\\("
+    "semanticindexrelationships.cpp|getSymbols[ \t\r\n]*\\("
+    "semanticdiffservice.cpp|getSymbols[ \t\r\n]*\\("
     "modulebriefservice.cpp|getSymbols[ \t\r\n]*\\("
     "fsmgraphservice.cpp|getSymbols[ \t\r\n]*\\("
     "clockresetdomainservice.cpp|getSymbols[ \t\r\n]*\\("

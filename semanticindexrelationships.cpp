@@ -20,8 +20,7 @@ SemanticSymbolRecord recordByLocalHandle(const SemanticIndex& index,
         }
     }
 
-    for (const sym_list::SymbolInfo& symbol : index.getSymbols()) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : index.getSymbolRecords()) {
         if (record.localHandle == symbolId)
             return record;
     }
