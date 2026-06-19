@@ -56,7 +56,7 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
     SemanticSymbolSearchQuery indexQuery;
     indexQuery.text = query.text;
     indexQuery.fileName = query.fileName;
-    indexQuery.types = query.types;
+    indexQuery.declarationKinds = query.declarationKinds;
     indexQuery.intent = query.intent;
     indexQuery.caseSensitive = query.caseSensitive;
     indexQuery.exactMatch = query.exactMatch;

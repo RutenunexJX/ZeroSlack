@@ -155,7 +155,8 @@ struct SemanticDiagnostic {
 struct SemanticSymbolSearchQuery {
     QString text;
     QString fileName;
-    QList<sym_list::sym_type_e> types;
+    QList<SymbolTaxonomy::DeclarationKind> declarationKinds;
+    QList<sym_list::sym_type_e> legacyTypes;
     SymbolTaxonomy::SymbolSearchIntent intent = SymbolTaxonomy::SymbolSearchIntent::Any;
     bool caseSensitive = false;
     bool exactMatch = false;

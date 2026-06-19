@@ -89,7 +89,10 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     const QList<sym_list::SymbolInfo> symbols = getSymbols(query.fileName);
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-        if (!symbolSearchTypeMatches(record, query.types, query.intent))
+        if (!symbolSearchTypeMatches(record,
+                                     query.declarationKinds,
+                                     query.legacyTypes,
+                                     query.intent))
             continue;
 
         const int score = symbolSearchMatchScore(record.name, query);

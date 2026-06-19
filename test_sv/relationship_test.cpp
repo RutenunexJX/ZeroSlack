@@ -737,7 +737,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     SearchQuery exactTaskSearchQuery;
     exactTaskSearchQuery.text = QStringLiteral("capture_sample");
-    exactTaskSearchQuery.types = {sym_list::sym_task};
+    exactTaskSearchQuery.declarationKinds = {
+        SymbolTaxonomy::DeclarationKind::Task};
     exactTaskSearchQuery.exactMatch = true;
     exactTaskSearchQuery.maxResults = 1;
     const QList<SearchResult> exactTaskResults =
@@ -1060,7 +1061,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     SearchQuery metadataTypedSearchQuery;
     metadataTypedSearchQuery.text = QStringLiteral("metadata_rel_top");
-    metadataTypedSearchQuery.types = {sym_list::sym_module};
+    metadataTypedSearchQuery.declarationKinds = {
+        SymbolTaxonomy::DeclarationKind::Module};
     const QList<SearchResult> metadataTypedSearchResults =
         metadataOutlineSearchService.findSymbols(metadataTypedSearchQuery);
     expectBool("metadata typed search finds module",
