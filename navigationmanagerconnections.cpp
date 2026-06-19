@@ -91,9 +91,10 @@ void NavigationManager::onFileTreeDoubleClicked(const QString& filePath)
     navigateToFile(filePath);
 }
 
-void NavigationManager::onSymbolTreeDoubleClicked(const sym_list::SymbolInfo& symbol)
+void NavigationManager::onSymbolRowTreeDoubleClicked(
+    const SymbolOutlineSymbolRow& row)
 {
-    navigateToSymbol(symbol);
+    navigateToSymbol(row);
 }
 
 void NavigationManager::onModuleTreeDoubleClicked(const QString& moduleName)
@@ -109,8 +110,10 @@ void NavigationManager::setupConnections()
     connect(navigationWidget, SIGNAL(fileDoubleClicked(QString)),
             this, SLOT(onFileTreeDoubleClicked(QString)));
 
-    connect(navigationWidget, SIGNAL(symbolDoubleClicked(sym_list::SymbolInfo)),
-            this, SLOT(onSymbolTreeDoubleClicked(sym_list::SymbolInfo)));
+    connect(navigationWidget,
+            &NavigationWidget::symbolRowDoubleClicked,
+            this,
+            &NavigationManager::onSymbolRowTreeDoubleClicked);
 
     connect(navigationWidget, SIGNAL(moduleDoubleClicked(QString)),
             this, SLOT(onModuleTreeDoubleClicked(QString)));

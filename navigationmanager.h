@@ -47,6 +47,7 @@ public:
 
     // Navigation operations
     void navigateToFile(const QString& filePath, int lineNumber = -1);
+    void navigateToSymbol(const SymbolOutlineSymbolRow& row);
     void navigateToSymbol(const sym_list::SymbolInfo& symbol);
     void navigateToModule(const QString& moduleName);
 
@@ -59,6 +60,7 @@ public:
 
 signals:
     void navigationRequested(const QString& filePath, int lineNumber);
+    void symbolRowNavigationRequested(const SymbolOutlineSymbolRow& row);
     void symbolNavigationRequested(const sym_list::SymbolInfo& symbol);
     void viewChanged(NavigationView newView);
     void dataRefreshed(NavigationView view);
@@ -71,7 +73,7 @@ public slots:
 
 private slots:
     void onFileTreeDoubleClicked(const QString& filePath);
-    void onSymbolTreeDoubleClicked(const sym_list::SymbolInfo& symbol);
+    void onSymbolRowTreeDoubleClicked(const SymbolOutlineSymbolRow& row);
     void onModuleTreeDoubleClicked(const QString& moduleName);
 
     void onViewChanged(int index);

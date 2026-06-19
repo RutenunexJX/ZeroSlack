@@ -91,6 +91,12 @@ void NavigationManager::navigateToFile(const QString& filePath, int lineNumber)
     emit navigationRequested(filePath, lineNumber);
 }
 
+void NavigationManager::navigateToSymbol(const SymbolOutlineSymbolRow& row)
+{
+    emit symbolRowNavigationRequested(row);
+    emit symbolNavigationRequested(row.symbol);
+}
+
 void NavigationManager::navigateToSymbol(const sym_list::SymbolInfo& symbol)
 {
     emit symbolNavigationRequested(symbol);
@@ -104,7 +110,7 @@ void NavigationManager::navigateToModule(const QString& moduleName)
     const NavigationModuleTarget target =
         navigationService->resolveModuleTarget(moduleName);
     if (target.found)
-        navigateToSymbol(target.symbol);
+        navigateToSymbol(target.symbolRow);
 }
 
 void NavigationManager::setSearchFilter(const QString& filter)

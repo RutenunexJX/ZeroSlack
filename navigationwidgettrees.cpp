@@ -216,7 +216,7 @@ QTreeWidgetItem* NavigationWidget::createSymbolItem(
 {
     QTreeWidgetItem* item = new QTreeWidgetItem();
     const int payloadId = nextSymbolItemPayloadId++;
-    symbolItemPayloads.insert(payloadId, row.symbol);
+    symbolItemPayloads.insert(payloadId, row);
     const QString displayName = symbolRowDisplayName(row);
 
     item->setText(0, displayName);

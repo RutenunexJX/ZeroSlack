@@ -233,5 +233,11 @@ NavigationModuleTarget NavigationService::resolveModuleTarget(
 
     result.found = true;
     result.symbol = target.symbol;
+    result.symbolRow.symbol = target.symbol;
+    result.symbolRow.symbolRecord = target.symbolRecord;
+    result.symbolRow.displayName = target.symbolName;
+    result.symbolRow.typeDisplayName = target.symbolTypeText;
+    result.symbolRow.detailDisplayName = target.fileName;
+    result.symbolRow.iconKind = SymbolOutlineIconKind::Module;
     return result;
 }

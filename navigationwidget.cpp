@@ -131,8 +131,11 @@ void NavigationWidget::onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int colu
     if (!item || item->childCount() > 0) return;
 
     const int payloadId = item->data(0, Qt::UserRole + 1).toInt();
-    if (symbolItemPayloads.contains(payloadId))
-        emit symbolDoubleClicked(symbolItemPayloads.value(payloadId));
+    if (symbolItemPayloads.contains(payloadId)) {
+        const SymbolOutlineSymbolRow row = symbolItemPayloads.value(payloadId);
+        emit symbolRowDoubleClicked(row);
+        emit symbolDoubleClicked(row.symbol);
+    }
 }
 void NavigationWidget::setupUI()
 {

@@ -79,9 +79,10 @@ void NavigationCommandCoordinator::connectSignals()
                 navigateToFileAndLine(filePath, lineNumber);
             });
     connect(targets.navigationManagerObject(),
-            &NavigationManager::symbolNavigationRequested,
+            &NavigationManager::symbolRowNavigationRequested,
             this,
-            &NavigationCommandCoordinator::navigateToSymbol);
+            qOverload<const SymbolOutlineSymbolRow&>(
+                &NavigationCommandCoordinator::navigateToSymbol));
 
     signalsConnected = true;
 }
@@ -106,6 +107,20 @@ void NavigationCommandCoordinator::navigateEditorToLine(
     int columnNumber)
 {
     lineResolver.applyToEditor(editor, lineNumber, columnNumber);
+}
+
+void NavigationCommandCoordinator::navigateToSymbol(
+    const SymbolOutlineSymbolRow& row)
+{
+    if (row.symbolRecord.isValid()
+        && !row.symbolRecord.location.fileName.isEmpty()) {
+        navigateToFileAndLine(row.symbolRecord.location.fileName,
+                              row.symbolRecord.location.startLine,
+                              row.symbolRecord.location.startColumn);
+        return;
+    }
+
+    navigateToSymbol(row.symbol);
 }
 
 void NavigationCommandCoordinator::navigateToSymbol(const sym_list::SymbolInfo& symbol)

@@ -1,7 +1,7 @@
 #ifndef NAVIGATIONCOMMANDCOORDINATOR_H
 #define NAVIGATIONCOMMANDCOORDINATOR_H
 
-#include "syminfo.h"
+#include "symboloutlinemodel.h"
 
 #include <QObject>
 #include <QString>
@@ -26,6 +26,7 @@ public:
     void navigateEditorToLine(MyCodeEditor* editor,
                               int lineNumber,
                               int columnNumber = -1);
+    void navigateToSymbol(const SymbolOutlineSymbolRow& row);
     void navigateToSymbol(const sym_list::SymbolInfo& symbol);
 
 private:

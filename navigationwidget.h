@@ -45,6 +45,7 @@ public:
 
 signals:
     void fileDoubleClicked(const QString& filePath);
+    void symbolRowDoubleClicked(const SymbolOutlineSymbolRow& row);
     void symbolDoubleClicked(const sym_list::SymbolInfo& symbol);
     void moduleDoubleClicked(const QString& moduleName);
     void viewChanged(int newTabIndex);
@@ -77,7 +78,7 @@ private:
     QStringList currentFileList;
     QList<ModuleHierarchyGroup> currentModuleHierarchy;
     QList<SymbolOutlineGroup> currentSymbolHierarchy;
-    QHash<int, sym_list::SymbolInfo> symbolItemPayloads;
+    QHash<int, SymbolOutlineSymbolRow> symbolItemPayloads;
     int nextSymbolItemPayloadId = 1;
 
     QString currentSearchFilter;
