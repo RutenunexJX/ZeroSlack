@@ -2486,19 +2486,22 @@ int main(int argc, char** argv) {
            snapshotSemanticModuleItemOk ? "PASS" : "FAIL",
            "snapshot semantic module items",
            snapshotSemanticModuleResult.items.size());
-    const QList<sym_list::SymbolInfo> snapshotModuleSymbols =
-        snapshotCompletionService.findCompletionSymbols(snapshotModuleQuery);
+    const CompletionResult snapshotModuleCompletion =
+        snapshotCompletionService.findCompletionResult(snapshotModuleQuery);
     ++g_checks;
-    const bool snapshotModuleSymbolOk = snapshotModuleSymbols.size() == 1
-        && snapshotModuleSymbols.first().symbolName == QStringLiteral("snap_enable")
-        && snapshotModuleSymbols.first().symbolType == sym_list::sym_logic
-        && snapshotModuleSymbols.first().moduleScope == QStringLiteral("snap_top");
+    const bool snapshotModuleSymbolOk = snapshotModuleCompletion.items.size() == 1
+        && snapshotModuleCompletion.items.first().label
+            == QStringLiteral("snap_enable")
+        && snapshotModuleCompletion.items.first().symbolRecord.rawCollectorKind
+            == sym_list::sym_logic
+        && snapshotModuleCompletion.items.first().symbolRecord.owner.name
+            == QStringLiteral("snap_top");
     if (!snapshotModuleSymbolOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
            snapshotModuleSymbolOk ? "PASS" : "FAIL",
            "snapshot module symbols",
-           snapshotModuleSymbols.size());
+           snapshotModuleCompletion.items.size());
     CommandCompletionQuery snapshotLogicCommandQuery;
     snapshotLogicCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotLogicCommandQuery.moduleName = QStringLiteral("snap_top");
@@ -2659,24 +2662,24 @@ int main(int argc, char** argv) {
                snapshotCompletionService.findCompletions(snapshotMemberQuery),
                {"red", "green", "blue"});
     snapshotMemberQuery.prefix = QStringLiteral("bl");
-    const QList<sym_list::SymbolInfo> snapshotMemberSymbols =
-        snapshotCompletionService.findCompletionSymbols(snapshotMemberQuery);
+    const CompletionResult snapshotMemberCompletion =
+        snapshotCompletionService.findCompletionResult(snapshotMemberQuery);
     expectList("snapshot struct member prefix",
                snapshotCompletionService.findCompletions(snapshotMemberQuery),
                {"blue"});
     ++g_checks;
-    const bool snapshotMemberSymbolOk = snapshotMemberSymbols.size() == 1
-        && snapshotMemberSymbols.first().symbolName == QStringLiteral("blue")
-        && snapshotMemberSymbols.first().symbolType == sym_list::sym_struct_member
-        && snapshotMemberSymbols.first().moduleScope == QStringLiteral("snap_pixel_t")
-        && semanticSymbolRecordForSymbol(snapshotMemberSymbols.first()).owner.name
+    const bool snapshotMemberSymbolOk = snapshotMemberCompletion.items.size() == 1
+        && snapshotMemberCompletion.items.first().label == QStringLiteral("blue")
+        && snapshotMemberCompletion.items.first().symbolRecord.rawCollectorKind
+            == sym_list::sym_struct_member
+        && snapshotMemberCompletion.items.first().symbolRecord.owner.name
             == QStringLiteral("snap_pixel_t");
     if (!snapshotMemberSymbolOk)
         ++g_fails;
     printf("[%s] %-34s got_count=%d\n",
            snapshotMemberSymbolOk ? "PASS" : "FAIL",
            "snapshot struct member symbols",
-           snapshotMemberSymbols.size());
+           snapshotMemberCompletion.items.size());
     const int snapshotScopeCursor =
         snapshotScopeContent.indexOf(QStringLiteral("snap_signal")) + 2;
     expectEq("snapshot current module",

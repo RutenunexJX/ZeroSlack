@@ -99,6 +99,28 @@ QList<CompletionResult::SemanticCompletionItem> semanticCompletionItemsForSymbol
     return items;
 }
 
+QList<sym_list::SymbolInfo> completionSymbols(
+    SemanticIndex* semanticIndex,
+    const CompletionQuery& query)
+{
+    if (!semanticIndex)
+        return {};
+
+    if (!query.structTypeNameForMember.isEmpty()) {
+        return CompletionSymbolQuery::structMemberSymbols(
+            semanticIndex, query.structTypeNameForMember, query.prefix);
+    }
+
+    if (query.prefix.isEmpty())
+        return {};
+
+    if (!query.moduleName.isEmpty())
+        return semanticIndex->getModuleCompletionSymbols(
+            query.moduleName, query.prefix);
+
+    return semanticIndex->getGlobalCompletionSymbols(query.prefix);
+}
+
 } // namespace
 
 std::unique_ptr<CompletionService> CompletionService::instance = nullptr;
@@ -131,28 +153,11 @@ CompletionResult CompletionService::findCompletionResult(
     const CompletionQuery& query) const
 {
     CompletionResult result;
-    const QList<sym_list::SymbolInfo> symbols = findCompletionSymbols(query);
+    const QList<sym_list::SymbolInfo> symbols =
+        completionSymbols(semanticIndex(), query);
     result.names = CompletionSymbolQuery::namesFromSymbols(symbols);
     result.items = semanticCompletionItemsForSymbols(symbols);
     return result;
-}
-
-QList<sym_list::SymbolInfo> CompletionService::findCompletionSymbols(
-    const CompletionQuery& query) const
-{
-    if (!query.structTypeNameForMember.isEmpty()) {
-        return CompletionSymbolQuery::structMemberSymbols(
-            semanticIndex(), query.structTypeNameForMember, query.prefix);
-    }
-
-    if (query.prefix.isEmpty())
-        return {};
-
-    if (!query.moduleName.isEmpty())
-        return semanticIndex()->getModuleCompletionSymbols(
-            query.moduleName, query.prefix);
-
-    return semanticIndex()->getGlobalCompletionSymbols(query.prefix);
 }
 
 QVector<QPair<QString, int>> CompletionService::findScoredAllSymbolCompletions(

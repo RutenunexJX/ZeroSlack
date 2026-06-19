@@ -21,7 +21,6 @@ public:
 
     QStringList findCompletions(const CompletionQuery& query) const;
     CompletionResult findCompletionResult(const CompletionQuery& query) const;
-    QList<sym_list::SymbolInfo> findCompletionSymbols(const CompletionQuery& query) const;
     QVector<QPair<QString, int>> findScoredAllSymbolCompletions(
         const QString& prefix,
         int maxResults = 20) const;

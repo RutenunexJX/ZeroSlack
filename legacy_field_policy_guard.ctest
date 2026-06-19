@@ -123,6 +123,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "completiontypes.h|struct[ \t\r\n]+CompletionResult[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+symbols"
     "completiontypes.h|struct[ \t\r\n]+CommandModeCompletionState[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+symbols"
     "completionservice.cpp|result\\.symbols[ \t\r\n]*="
+    "completionservice.h|findCompletionSymbols[ \t\r\n]*\\("
+    "completionservice.cpp|CompletionService::findCompletionSymbols[ \t\r\n]*\\("
     "completionservicecommand.cpp|state\\.symbols[ \t\r\n]*="
     "completionservice.h|findCommandCompletionSymbols[ \t\r\n]*\\("
     "completionsemanticquery.h|commandSymbols[ \t\r\n]*\\("
