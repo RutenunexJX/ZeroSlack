@@ -65,39 +65,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
-    QList<sym_list::SymbolInfo> result;
-    QSet<QString> seenNames;
-    if (moduleName.isEmpty() && !commandGlobalCompletionSymbolType(symbolType))
-        return result;
-
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    const QSet<QString> packages = SymbolTaxonomy::packageScopeNames(symbols);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(symbol, packages);
-        const SymbolTaxonomy::SemanticMetadata metadata =
-            completionMetadataForRecord(record);
-        if (!commandCompletionScopeVisibleForRecord(
-                record,
-                symbolType,
-                moduleName)
-            || !commandSymbolTypeMatches(
-                metadata,
-                symbolType,
-                record.type.rawTypeText)
-            || !semanticCompletionNameMatches(record.name, prefix)) {
-            continue;
-        }
-
-        const QString key = record.name.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol);
-    }
-
-    sortSymbolsByName(result);
-    return result;
+    return semanticSymbolInfoCarriersForRecords(
+        getCommandCompletionSymbolRecords(moduleName, symbolType, prefix));
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
@@ -110,11 +79,8 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
     if (moduleName.isEmpty() && !commandGlobalCompletionSymbolType(symbolType))
         return result;
 
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    const QSet<QString> packages = SymbolTaxonomy::packageScopeNames(symbols);
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(symbol, packages);
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
         const SymbolTaxonomy::SemanticMetadata metadata =
             completionMetadataForRecord(record);
         if (!commandCompletionScopeVisibleForRecord(
@@ -157,9 +123,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
     QList<sym_list::SymbolInfo> result;
     QSet<QString> seenStableKeys;
 
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    auto appendIfMatches = [&](const sym_list::SymbolInfo& symbol,
-                               const SemanticSymbolRecord& record) {
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    auto appendIfMatches = [&](const SemanticSymbolRecord& record) {
         const QString dedupeKey =
             stableDedupeKeyForTypedCompletionRecord(record);
         if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
@@ -167,18 +132,17 @@ QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
         if (!semanticCompletionNameMatches(record.name, prefix))
             return;
         seenStableKeys.insert(dedupeKey);
-        result.append(symbol);
+        result.append(semanticSymbolInfoCarrierForRecord(record));
     };
 
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : records) {
         const SymbolTaxonomy::SemanticMetadata metadata =
             completionMetadataForRecord(record);
         if (SymbolTaxonomy::typedCompletionSymbolTypeMatches(
                 metadata,
                 symbolType,
                 record.type.rawTypeText)) {
-            appendIfMatches(symbol, record);
+            appendIfMatches(record);
         }
     }
 
@@ -193,9 +157,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getGlobalSymbolInfosByType(
     if (!globalSymbolInfoType(symbolType))
         return result;
 
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
         const SymbolTaxonomy::SemanticMetadata metadata =
             completionMetadataForRecord(record);
         if (!globalSymbolInfoMetadata(metadata)
@@ -208,7 +171,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getGlobalSymbolInfosByType(
         }
 
         if (globalSymbolInfoVisibleForRecord(record, symbolType))
-            result.append(symbol);
+            result.append(semanticSymbolInfoCarrierForRecord(record));
     }
 
     return result;

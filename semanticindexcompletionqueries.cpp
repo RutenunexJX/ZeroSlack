@@ -1,5 +1,6 @@
 #include "semanticindex.h"
 #include "semanticindexcompletionfilters.h"
+#include "symboltaxonomy.h"
 
 #include <QSet>
 #include <algorithm>
@@ -7,29 +8,28 @@
 using namespace semantic_index_completion;
 
 namespace {
-QString displayNameForCompletionQuerySymbol(
-    const sym_list::SymbolInfo& symbol)
+SymbolTaxonomy::SemanticMetadata metadataForCompletionQueryRecord(
+    const SemanticSymbolRecord& record)
 {
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    if (!record.name.isEmpty())
-        return record.name;
-    return symbol.symbolName;
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
 }
 
-QString ownerNameForCompletionQuerySymbol(
-    const sym_list::SymbolInfo& symbol)
+void sortCompletionQueryRecordsByName(
+    QList<SemanticSymbolRecord>& records)
 {
-    return semanticSymbolRecordForSymbol(symbol).owner.name;
-}
-
-void sortCompletionQuerySymbolsByRecordName(
-    QList<sym_list::SymbolInfo>& symbols)
-{
-    std::sort(symbols.begin(), symbols.end(),
-              [](const sym_list::SymbolInfo& left,
-                 const sym_list::SymbolInfo& right) {
-        return QString::compare(displayNameForCompletionQuerySymbol(left),
-                                displayNameForCompletionQuerySymbol(right),
+    std::sort(records.begin(), records.end(),
+              [](const SemanticSymbolRecord& left,
+                 const SemanticSymbolRecord& right) {
+        return QString::compare(left.name,
+                                right.name,
                                 Qt::CaseInsensitive) < 0;
     });
 }
@@ -39,63 +39,62 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleCompletionSymbols(
     const QString& moduleName,
     const QString& prefix) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     QSet<QString> seenNames;
     if (moduleName.isEmpty())
-        return result;
+        return {};
 
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString displayName = displayNameForCompletionQuerySymbol(symbol);
-        if (ownerNameForCompletionQuerySymbol(symbol) != moduleName
-            || !internalCompletionSymbol(symbol)
-            || !semanticCompletionNameMatches(displayName, prefix)) {
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.owner.name != moduleName
+            || !SymbolTaxonomy::isInternalCompletionCandidate(
+                metadataForCompletionQueryRecord(record))
+            || !semanticCompletionNameMatches(record.name, prefix)) {
             continue;
         }
 
-        const QString key = displayName.toCaseFolded();
+        const QString key = record.name.toCaseFolded();
         if (seenNames.contains(key))
             continue;
         seenNames.insert(key);
-        result.append(symbol);
+        result.append(record);
     }
 
-    sortCompletionQuerySymbolsByRecordName(result);
-    return result;
+    sortCompletionQueryRecordsByName(result);
+    return semanticSymbolInfoCarriersForRecords(result);
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::getGlobalCompletionSymbols(
     const QString& prefix) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     QSet<QString> seenNames;
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString displayName = displayNameForCompletionQuerySymbol(symbol);
-        if (!globalCompletionSymbol(symbol)
-            || !semanticCompletionNameMatches(displayName, prefix)) {
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
+        if (!SymbolTaxonomy::isGlobalCompletionCandidate(
+                metadataForCompletionQueryRecord(record))
+            || !semanticCompletionNameMatches(record.name, prefix)) {
             continue;
         }
 
-        const QString key = displayName.toCaseFolded();
+        const QString key = record.name.toCaseFolded();
         if (seenNames.contains(key))
             continue;
         seenNames.insert(key);
-        result.append(symbol);
+        result.append(record);
     }
 
-    sortCompletionQuerySymbolsByRecordName(result);
-    return result;
+    sortCompletionQueryRecordsByName(result);
+    return semanticSymbolInfoCarriersForRecords(result);
 }
 
 QStringList SemanticIndex::getCompletionSymbolNames() const
 {
     QSet<QString> uniqueNames;
-    const QList<sym_list::SymbolInfo> symbols = getSymbols();
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString displayName = displayNameForCompletionQuerySymbol(symbol);
-        if (!displayName.isEmpty())
-            uniqueNames.insert(displayName);
+    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
+        if (!record.name.isEmpty())
+            uniqueNames.insert(record.name);
     }
 
     QStringList names(uniqueNames.begin(), uniqueNames.end());

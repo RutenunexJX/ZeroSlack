@@ -143,19 +143,28 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
         }
     }
 
-    if (fileName.isEmpty())
-        return semanticSymbolRecordsForSymbols(db->getAllSymbols());
+    if (fileName.isEmpty()) {
+        const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
+        return semanticSymbolRecordsForSymbols(
+            allSymbols,
+            SymbolTaxonomy::packageScopeNames(allSymbols));
+    }
 
     QList<sym_list::SymbolInfo> symbols = db->findSymbolsByFileName(fileName);
-    if (!symbols.isEmpty())
-        return semanticSymbolRecordsForSymbols(symbols);
+    if (!symbols.isEmpty()) {
+        return semanticSymbolRecordsForSymbols(
+            symbols,
+            SymbolTaxonomy::packageScopeNames(db->getAllSymbols()));
+    }
 
     QList<SemanticSymbolRecord> records;
     const QString normalizedTarget = normalizedStoreFileName(fileName);
     const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
+    const QSet<QString> packageScopes =
+        SymbolTaxonomy::packageScopeNames(allSymbols);
     for (const sym_list::SymbolInfo& symbol : allSymbols) {
         if (normalizedStoreFileName(symbol.fileName) == normalizedTarget)
-            records.append(semanticSymbolRecordForSymbol(symbol));
+            records.append(semanticSymbolRecordForSymbol(symbol, packageScopes));
     }
     return records;
 }
