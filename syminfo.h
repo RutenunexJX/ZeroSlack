@@ -157,7 +157,6 @@ public:
     /** Same as above; if content is non-empty, updates fileStates (contentHash, symbolRelevantHash, lastAnalyzedLineCount) for needsAnalysis. */
     void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols, const QString& content);
 
-    SymbolInfo getSymbolById(int symbolId) const;
     bool hasSymbol(int symbolId) const;
 
     QStringList getSymbolNamesByType(sym_type_e symbolType);

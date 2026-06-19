@@ -266,6 +266,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexsnapshot.h|findDefinitions[ \t\r\n]*\\("
     "semanticindexstore.cpp|SemanticIndex::getSymbols[ \t\r\n]*\\("
     "semanticindexsnapshotqueries.cpp|SemanticIndexSnapshot::getSymbols[ \t\r\n]*\\("
+    "syminfo.h|getSymbolById[ \t\r\n]*\\("
+    "syminfoindex.cpp|getSymbolById[ \t\r\n]*\\("
     "semanticindexsnapshotqueries.cpp|symbolStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolById"
     "semanticindexsnapshotqueries.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolByStableKey"
     "semanticindexsnapshotqueries.cpp|const[ \t\r\n]+sym_list::SymbolInfo[ \t\r\n]+fromSymbol[ \t\r\n]*=[ \t\r\n]*getSymbolByStableKey"

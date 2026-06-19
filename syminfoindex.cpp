@@ -4,32 +4,6 @@
 
 extern thread_local bool s_holdingWriteLock;
 
-sym_list::SymbolInfo sym_list::getSymbolById(int symbolId) const
-{
-    if (s_holdingWriteLock) {
-        if (symbolIdToIndex.contains(symbolId)) {
-            int index = symbolIdToIndex[symbolId];
-            if (index < symbolDatabase.size()) {
-                return symbolDatabase[index];
-            }
-        }
-        SymbolInfo emptySymbol;
-        emptySymbol.symbolId = -1;
-        return emptySymbol;
-    }
-    QReadLocker lock(&symbolDbLock);
-    if (symbolIdToIndex.contains(symbolId)) {
-        int index = symbolIdToIndex[symbolId];
-        if (index < symbolDatabase.size()) {
-            return symbolDatabase[index];
-        }
-    }
-
-    SymbolInfo emptySymbol;
-    emptySymbol.symbolId = -1;
-    return emptySymbol;
-}
-
 bool sym_list::hasSymbol(int symbolId) const
 {
     return symbolIdToIndex.contains(symbolId);
