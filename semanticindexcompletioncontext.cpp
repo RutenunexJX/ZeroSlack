@@ -64,6 +64,11 @@ QString rawTypeTextForCompletionContextRecord(
     return record.type.rawTypeText;
 }
 
+int completionContextLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolId;
+}
+
 QList<SemanticSymbolRecord> completionContextRecordsByRawKind(
     const QList<SemanticSymbolRecord>& records,
     sym_list::sym_type_e rawKind)
@@ -220,7 +225,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getStructMembers(
             return a.fileName < b.fileName;
         if (a.startLine != b.startLine)
             return a.startLine < b.startLine;
-        return a.symbolId < b.symbolId;
+        return completionContextLocalHandleForSymbol(a)
+            < completionContextLocalHandleForSymbol(b);
     });
     return result;
 }

@@ -22,6 +22,11 @@ SymbolTaxonomy::SemanticMetadata moduleContextMetadataForRecord(
     metadata.interfaceLikeOwner = record.owner.interfaceLike;
     return metadata;
 }
+
+int moduleContextLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolId;
+}
 }
 
 QString normalizedModuleContextFileName(const QString& fileName)
@@ -99,7 +104,8 @@ void sortModuleContextSymbols(QList<sym_list::SymbolInfo>& symbols)
             return a.startLine < b.startLine;
         if (a.fileName != b.fileName)
             return a.fileName < b.fileName;
-        return a.symbolId < b.symbolId;
+        return moduleContextLocalHandleForSymbol(a)
+            < moduleContextLocalHandleForSymbol(b);
     });
 }
 

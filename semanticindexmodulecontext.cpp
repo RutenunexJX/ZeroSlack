@@ -32,6 +32,11 @@ sym_list::SymbolInfo moduleContextSymbolInfoForRecord(
 {
     return semanticSymbolInfoCarrierForRecord(record);
 }
+
+int moduleContextLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return symbol.symbolId;
+}
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
@@ -75,7 +80,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
                       return left.startLine < right.startLine;
                   });
         for (int i = 0; i < fileModules.size(); ++i) {
-            if (fileModules.at(i).symbolId == moduleSymbol.symbolId
+            if (moduleContextLocalHandleForSymbol(fileModules.at(i))
+                    == moduleContextLocalHandleForSymbol(moduleSymbol)
                 && i + 1 < fileModules.size()) {
                 moduleEndLineExclusive = fileModules.at(i + 1).startLine;
                 break;
@@ -141,7 +147,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
                 : getSymbolRecordByStableKey(targetKey);
             const sym_list::SymbolInfo targetSymbol =
                 moduleContextSymbolInfoForRecord(resolvedTargetRecord);
-            if (targetSymbol.symbolId >= 0)
+            if (moduleContextLocalHandleForSymbol(targetSymbol) >= 0)
                 appendIfMatches(targetSymbol, false);
         }
     }
@@ -180,8 +186,10 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
     for (const sym_list::SymbolInfo& symbol : fileSymbols) {
         if (!SymbolTaxonomy::isModuleDeclaration(symbol))
             continue;
-        if (symbol.symbolId == moduleSymbol.symbolId)
+        if (moduleContextLocalHandleForSymbol(symbol)
+            == moduleContextLocalHandleForSymbol(moduleSymbol)) {
             continue;
+        }
         if (symbol.startLine > moduleSymbol.startLine
             && symbol.startLine < moduleEndLineExclusive) {
             moduleEndLineExclusive = symbol.startLine;
@@ -312,7 +320,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
                 : getSymbolRecordByStableKey(targetKey);
             const sym_list::SymbolInfo targetSymbol =
                 moduleContextSymbolInfoForRecord(resolvedTargetRecord);
-            if (targetSymbol.symbolId >= 0)
+            if (moduleContextLocalHandleForSymbol(targetSymbol) >= 0)
                 appendSymbol(targetSymbol);
         }
     }
