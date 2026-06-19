@@ -122,6 +122,38 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
     return semanticSymbolRecordsForSymbols(getSymbols(fileName));
 }
 
+sym_list::SymbolInfo semanticSymbolInfoCarrierForRecord(
+    const SemanticSymbolRecord& record)
+{
+    sym_list::SymbolInfo symbol;
+    if (!record.isValid()) {
+        symbol.symbolId = -1;
+        return symbol;
+    }
+
+    symbol.fileName = record.location.fileName;
+    symbol.symbolName = record.name;
+    symbol.symbolType = record.rawCollectorKind;
+    symbol.startLine = record.location.startLine;
+    symbol.startColumn = record.location.startColumn;
+    symbol.endLine = record.location.endLine;
+    symbol.endColumn = record.location.endColumn;
+    symbol.position = record.location.position;
+    symbol.length = record.location.length;
+    symbol.symbolId = record.localHandle;
+    symbol.moduleScope = record.owner.name;
+    symbol.dataType = record.type.rawTypeText;
+    symbol.hasSemanticMetadata = true;
+    symbol.semanticDeclarationKind = record.declarationKind;
+    symbol.semanticUsageRole = record.usageRole;
+    symbol.semanticOwnerScope = record.owner.kind;
+    symbol.semanticVisibility = record.visibility;
+    symbol.semanticSourceRole = record.sourceRole;
+    symbol.rawCollectorKind = record.rawCollectorKind;
+    symbol.interfaceLikeOwner = record.owner.interfaceLike;
+    return symbol;
+}
+
 QList<sym_list::SymbolInfo> SemanticIndex::getSymbolsByType(sym_list::sym_type_e type) const
 {
     if (m_snapshot)

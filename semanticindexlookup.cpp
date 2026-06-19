@@ -122,29 +122,6 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
     return result;
 }
 
-sym_list::SymbolInfo SemanticIndex::getSymbolByStableKey(
-    const SymbolStableKey& key) const
-{
-    if (m_snapshot)
-        return m_snapshot->getSymbolByStableKey(key);
-
-    if (!key.isValid()) {
-        sym_list::SymbolInfo missing;
-        missing.symbolId = -1;
-        return missing;
-    }
-
-    const QList<sym_list::SymbolInfo> allSymbols = getSymbols();
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (symbolStableKeyForSymbol(symbol) == key)
-            return symbol;
-    }
-
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    return missing;
-}
-
 SemanticDefinitionResult SemanticIndex::resolveDefinition(
     const SemanticDefinitionQuery& query) const
 {

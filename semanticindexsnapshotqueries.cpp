@@ -112,19 +112,6 @@ QList<sym_list::SymbolInfo> SemanticIndexSnapshot::getSymbolsByType(
     return result;
 }
 
-sym_list::SymbolInfo SemanticIndexSnapshot::getSymbolByStableKey(
-    const SymbolStableKey& key) const
-{
-    if (!key.isValid())
-        return missingSnapshotSymbol();
-
-    for (const sym_list::SymbolInfo& symbol : m_symbols) {
-        if (symbolStableKeyForSymbol(symbol) == key)
-            return symbol;
-    }
-    return missingSnapshotSymbol();
-}
-
 SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {

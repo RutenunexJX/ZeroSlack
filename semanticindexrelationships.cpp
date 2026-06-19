@@ -91,8 +91,8 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(
     if (!key.isValid())
         return {};
 
-    const sym_list::SymbolInfo subject = getSymbolByStableKey(key);
-    if (subject.symbolId < 0)
+    const SemanticSymbolRecord subject = getSymbolRecordByStableKey(key);
+    if (subject.localHandle < 0)
         return {};
 
     QList<SemanticRelationship> result;
@@ -102,13 +102,13 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(
 
     QSet<QString> seen;
     for (SymbolRelationshipEngine::RelationType type : relationshipTypes()) {
-        const QList<int> related = engine->getRelatedSymbols(subject.symbolId,
+        const QList<int> related = engine->getRelatedSymbols(subject.localHandle,
                                                              type,
                                                              outgoing);
         for (int otherId : related) {
             SemanticRelationship rel;
-            rel.fromId = outgoing ? subject.symbolId : otherId;
-            rel.toId = outgoing ? otherId : subject.symbolId;
+            rel.fromId = outgoing ? subject.localHandle : otherId;
+            rel.toId = outgoing ? otherId : subject.localHandle;
             rel.type = type;
             rel.fromStableKey = relationshipEndpointStableKey(*this, rel, true);
             rel.toStableKey = relationshipEndpointStableKey(*this, rel, false);

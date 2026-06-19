@@ -13,6 +13,11 @@ sym_list::SymbolInfo missingModuleBriefSymbol()
     return symbol;
 }
 
+sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
+{
+    return semanticSymbolInfoCarrierForRecord(record);
+}
+
 SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
     const SemanticSymbolRecord& record)
 {
@@ -137,19 +142,20 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
         *reason = ModuleBriefNotFoundReason::None;
 
     if (query.moduleStableKey.isValid()) {
-        const sym_list::SymbolInfo symbol =
-            semanticIndex()->getSymbolByStableKey(query.moduleStableKey);
-        if (symbol.symbolId < 0) {
+        const SemanticSymbolRecord record =
+            semanticIndex()->getSymbolRecordByStableKey(query.moduleStableKey);
+        if (!record.isValid()) {
             if (reason)
                 *reason = ModuleBriefNotFoundReason::NoMatchingModule;
             return missingModuleBriefSymbol();
         }
-        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
+        if (!SymbolTaxonomy::isModuleDeclaration(
+                semanticMetadataForRecord(record))) {
             if (reason)
                 *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
             return missingModuleBriefSymbol();
         }
-        return symbol;
+        return symbolInfoForRecord(record);
     }
 
     if (query.moduleName.isEmpty()) {
@@ -175,7 +181,7 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
         return missingModuleBriefSymbol();
     }
     const sym_list::SymbolInfo symbol =
-        semanticIndex()->getSymbolByStableKey(definition.symbolStableKey);
+        symbolInfoForRecord(definition.symbolRecord);
     if (symbol.symbolId < 0)
         return missingModuleBriefSymbol();
     return symbol;
@@ -221,11 +227,8 @@ QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
             continue;
         if (seen.contains(localHandle))
             continue;
-        const SymbolStableKey packageKey = packageRecord.stableKey.isValid()
-            ? packageRecord.stableKey
-            : relationship.toStableKey;
         const sym_list::SymbolInfo packageSymbol =
-            semanticIndex()->getSymbolByStableKey(packageKey);
+            symbolInfoForRecord(packageRecord);
         if (packageSymbol.symbolId < 0)
             continue;
         seen.insert(localHandle);

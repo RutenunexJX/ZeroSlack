@@ -1962,9 +1962,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     SemanticIndex reboundIndex;
     reboundIndex.setSnapshot(reboundSnapshot);
     expectBool("semantic index resolves rebound stable key",
-               reboundIndex.getSymbolByStableKey(topStableKey).symbolId
+               reboundIndex.getSymbolRecordByStableKey(topStableKey).localHandle
                        == reboundTopSymbol.symbolId
-                   && reboundIndex.getSymbolByStableKey(stageStableKey).symbolId
+                   && reboundIndex.getSymbolRecordByStableKey(stageStableKey).localHandle
                        == reboundStageSymbol.symbolId,
                true);
     const QList<SemanticRelationshipResult> reboundStableResults =

@@ -207,6 +207,8 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
 QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     const QList<sym_list::SymbolInfo>& symbols,
     const QSet<QString>& packageScopes);
+sym_list::SymbolInfo semanticSymbolInfoCarrierForRecord(
+    const SemanticSymbolRecord& record);
 QString symbolStableKeyText(const SymbolStableKey& key);
 QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);
@@ -296,7 +298,6 @@ public:
     QStringList getSymbolsWithOutgoingRelationshipCompletionNames(
         SymbolRelationshipEngine::RelationType type,
         const QString& prefix = QString()) const;
-    sym_list::SymbolInfo getSymbolByStableKey(const SymbolStableKey& key) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     QList<SemanticSymbolRecord> findDefinitionRecords(

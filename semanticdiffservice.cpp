@@ -488,6 +488,12 @@ QString SemanticDiffService::symbolSignature(const sym_list::SymbolInfo& symbol)
         .arg(record.type.rawTypeText);
 }
 
+sym_list::SymbolInfo semanticDiffSymbolInfoForRecord(
+    const SemanticSymbolRecord& record)
+{
+    return semanticSymbolInfoCarrierForRecord(record);
+}
+
 sym_list::SymbolInfo SemanticDiffService::relationshipEndpointSymbol(
     const SemanticRelationship& relationship,
     const SemanticIndexSnapshot& snapshot,
@@ -497,9 +503,10 @@ sym_list::SymbolInfo SemanticDiffService::relationshipEndpointSymbol(
         ? relationship.fromStableKey
         : relationship.toStableKey;
     if (key.isValid()) {
-        const sym_list::SymbolInfo symbol = snapshot.getSymbolByStableKey(key);
-        if (symbol.symbolId >= 0 || !symbol.symbolName.isEmpty())
-            return symbol;
+        const SemanticSymbolRecord record =
+            snapshot.getSymbolRecordByStableKey(key);
+        if (record.isValid())
+            return semanticDiffSymbolInfoForRecord(record);
     }
 
     const int localHandle = fromEndpoint

@@ -16,6 +16,11 @@ sym_list::SymbolInfo missingFsmSymbol()
     return symbol;
 }
 
+sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
+{
+    return semanticSymbolInfoCarrierForRecord(record);
+}
+
 sym_list::SymbolInfo stateSymbolByName(
     const QList<sym_list::SymbolInfo>& states,
     const QString& stateName)
@@ -204,19 +209,19 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
         *reason = FsmGraphNotFoundReason::None;
 
     if (query.moduleStableKey.isValid()) {
-        const sym_list::SymbolInfo symbol =
-            semanticIndex()->getSymbolByStableKey(query.moduleStableKey);
-        if (symbol.symbolId < 0) {
+        const SemanticSymbolRecord record =
+            semanticIndex()->getSymbolRecordByStableKey(query.moduleStableKey);
+        if (!record.isValid()) {
             if (reason)
                 *reason = FsmGraphNotFoundReason::NoMatchingModule;
             return missingFsmSymbol();
         }
-        if (!SymbolTaxonomy::isModuleDeclaration(symbol)) {
+        if (!SymbolTaxonomy::isModuleDeclaration(metadataForRecord(record, {}))) {
             if (reason)
                 *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
             return missingFsmSymbol();
         }
-        return symbol;
+        return symbolInfoForRecord(record);
     }
 
     if (query.moduleName.isEmpty()) {
@@ -242,7 +247,7 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
         return missingFsmSymbol();
     }
     const sym_list::SymbolInfo symbol =
-        semanticIndex()->getSymbolByStableKey(definition.symbolStableKey);
+        symbolInfoForRecord(definition.symbolRecord);
     if (symbol.symbolId < 0)
         return missingFsmSymbol();
     return symbol;

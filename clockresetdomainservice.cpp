@@ -222,15 +222,15 @@ bool ClockResetDomainService::validateQuery(
         *reason = ClockResetDomainNotFoundReason::None;
 
     if (query.moduleStableKey.isValid()) {
-        const sym_list::SymbolInfo symbol =
-            semanticIndex()->getSymbolByStableKey(query.moduleStableKey);
-        if (symbol.symbolId < 0) {
+        const SemanticSymbolRecord record =
+            semanticIndex()->getSymbolRecordByStableKey(query.moduleStableKey);
+        if (!record.isValid()) {
             if (reason)
                 *reason = ClockResetDomainNotFoundReason::NoMatchingModule;
             return false;
         }
         if (!SymbolTaxonomy::isModuleDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))) {
+                semanticMetadataForRecord(record))) {
             if (reason)
                 *reason = ClockResetDomainNotFoundReason::UnsupportedSymbolKind;
             return false;

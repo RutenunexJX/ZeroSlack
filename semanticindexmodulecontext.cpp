@@ -26,6 +26,12 @@ QString stableDedupeKeyForModuleContextRecord(
              QString::number(static_cast<int>(record.declarationKind)),
              record.name);
 }
+
+sym_list::SymbolInfo moduleContextSymbolInfoForRecord(
+    const SemanticSymbolRecord& record)
+{
+    return semanticSymbolInfoCarrierForRecord(record);
+}
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
@@ -127,8 +133,11 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
             const SymbolStableKey targetKey = targetRecord.stableKey.isValid()
                 ? targetRecord.stableKey
                 : relationship.toStableKey;
+            const SemanticSymbolRecord resolvedTargetRecord = targetRecord.isValid()
+                ? targetRecord
+                : getSymbolRecordByStableKey(targetKey);
             const sym_list::SymbolInfo targetSymbol =
-                getSymbolByStableKey(targetKey);
+                moduleContextSymbolInfoForRecord(resolvedTargetRecord);
             if (targetSymbol.symbolId >= 0)
                 appendIfMatches(targetSymbol, false);
         }
@@ -292,8 +301,11 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
             const SymbolStableKey targetKey = targetRecord.stableKey.isValid()
                 ? targetRecord.stableKey
                 : relationship.toStableKey;
+            const SemanticSymbolRecord resolvedTargetRecord = targetRecord.isValid()
+                ? targetRecord
+                : getSymbolRecordByStableKey(targetKey);
             const sym_list::SymbolInfo targetSymbol =
-                getSymbolByStableKey(targetKey);
+                moduleContextSymbolInfoForRecord(resolvedTargetRecord);
             if (targetSymbol.symbolId >= 0)
                 appendSymbol(targetSymbol);
         }

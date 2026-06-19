@@ -13,6 +13,11 @@ sym_list::SymbolInfo missingSignalJourneySymbol()
     return symbol;
 }
 
+sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
+{
+    return semanticSymbolInfoCarrierForRecord(record);
+}
+
 QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type)
 {
     switch (type) {
@@ -252,19 +257,19 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
         *reason = SignalJourneyNotFoundReason::None;
 
     if (query.signalStableKey.isValid()) {
-        const sym_list::SymbolInfo symbol =
-            semanticIndex()->getSymbolByStableKey(query.signalStableKey);
-        if (symbol.symbolId < 0) {
+        const SemanticSymbolRecord record =
+            semanticIndex()->getSymbolRecordByStableKey(query.signalStableKey);
+        if (!record.isValid()) {
             if (reason)
                 *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
             return missingSignalJourneySymbol();
         }
-        if (!isJourneyDeclaration(symbol, interfaceNames())) {
+        if (!isJourneyDeclaration(record, {}, interfaceNames())) {
             if (reason)
                 *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
             return missingSignalJourneySymbol();
         }
-        return symbol;
+        return symbolInfoForRecord(record);
     }
 
     if (query.signalName.isEmpty()) {
@@ -293,7 +298,7 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
         return missingSignalJourneySymbol();
     }
     const sym_list::SymbolInfo symbol =
-        semanticIndex()->getSymbolByStableKey(definition.symbolStableKey);
+        symbolInfoForRecord(definition.symbolRecord);
     if (symbol.symbolId < 0)
         return missingSignalJourneySymbol();
     return symbol;
