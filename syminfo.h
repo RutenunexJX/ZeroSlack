@@ -148,7 +148,6 @@ public:
     QList<SymbolInfo> findSymbolsByFileName(const QString& fileName);
     QList<SymbolInfo> findSymbolsByName(const QString& symbolName);
     int findSymbolIdByName(const QString& symbolName) const;
-    QList<SymbolInfo> findSymbolsByType(sym_type_e symbolType);
     QList<SymbolInfo> getAllSymbols();
     void clearSymbolsForFile(const QString& fileName);
 
@@ -156,12 +155,6 @@ public:
     void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols);
     /** Same as above; if content is non-empty, updates fileStates (contentHash, symbolRelevantHash, lastAnalyzedLineCount) for needsAnalysis. */
     void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols, const QString& content);
-
-    bool hasSymbol(int symbolId) const;
-
-    QStringList getSymbolNamesByType(sym_type_e symbolType);
-    QSet<QString> getUniqueSymbolNames();
-    int getSymbolCountByType(sym_type_e symbolType);
 
     SymbolRelationshipEngine* getRelationshipEngine() const;
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
@@ -191,14 +184,9 @@ private:
     mutable QReadWriteLock symbolDbLock;
     QList<SymbolInfo> symbolDatabase;
 
-    QHash<sym_type_e, QList<int>> symbolTypeIndex;
     QHash<QString, QList<int>> symbolNameIndex;
     QHash<QString, QList<int>> fileNameIndex;
     QHash<int, int> symbolIdToIndex;
-
-    mutable QHash<sym_type_e, QStringList> cachedSymbolNamesByType;
-    mutable QSet<QString> cachedUniqueNames;
-    mutable bool indexesDirty = false;
 
     int nextSymbolId = 1;
     int allocateSymbolId();
@@ -235,8 +223,6 @@ private:
     void rebuildAllIndexes();
     void addToIndexes(int symbolIndex);
     void removeFromIndexes(int symbolIndex);
-    void invalidateCache();
-    void updateCachedData() const;
 
     void rebuildAllRelationships();
     void buildSymbolRelationships(const QString& fileName);

@@ -14,8 +14,10 @@ bool sym_list::isValidModuleName(const QString& name)
 
 QString sym_list::getCurrentModuleScope(const QString& fileName, int lineNumber)
 {
-    QList<SymbolInfo> modules = findSymbolsByType(sym_module);
-    for (const SymbolInfo& moduleSymbol : modules) {
+    const QList<SymbolInfo> symbols = getAllSymbols();
+    for (const SymbolInfo& moduleSymbol : symbols) {
+        if (moduleSymbol.symbolType != sym_module)
+            continue;
         if (moduleSymbol.fileName != fileName)
             continue;
         if (!isValidModuleName(moduleSymbol.symbolName))

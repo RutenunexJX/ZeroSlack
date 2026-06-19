@@ -17,7 +17,6 @@ sym_list::sym_list()
     symbolDatabase.reserve(1000);
     commentRegions.reserve(100);
 
-    symbolTypeIndex.reserve(50);
     symbolNameIndex.reserve(500);
     fileNameIndex.reserve(50);
     symbolIdToIndex.reserve(1000);
@@ -58,13 +57,10 @@ void sym_list::addSymbol(const SymbolInfo& symbol)
     symbolIdToIndex[newSymbol.symbolId] = newIndex;
     addToIndexes(newIndex);
     updateLineBasedSymbols(newSymbol);
-    indexesDirty = true;
 }
 
 void sym_list::clearSymbolsForFile(const QString& fileName)
 {
-    int beforeCount = symbolDatabase.size();
-
     getScopeManager()->clearFile(fileName);
 
     if (relationshipEngine) {
@@ -87,10 +83,6 @@ void sym_list::clearSymbolsForFile(const QString& fileName)
         }
 
         rebuildAllIndexes();
-    }
-    int afterCount = symbolDatabase.size();
-    if (beforeCount != afterCount) {
-        invalidateCache();
     }
 }
 
@@ -125,7 +117,6 @@ void sym_list::setSymbolsForFile(const QString& fileName, const QList<SymbolInfo
         previousFileContents[fileName] = content;
     }
 
-    invalidateCache();
     s_holdingWriteLock = false;
 }
 
