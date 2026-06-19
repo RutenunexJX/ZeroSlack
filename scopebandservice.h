@@ -3,7 +3,6 @@
 
 #include "rtlinsightlink.h"
 #include "semanticindex.h"
-#include "syminfo.h"
 
 #include <QList>
 #include <QString>
@@ -14,13 +13,13 @@ struct ScopeBandQuery {
 };
 
 struct ScopeBandSymbolRange {
-    sym_list::SymbolInfo symbol;
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     RtlInsightCodeLink codeLink;
     QString symbolDisplayName;
     QString symbolTypeDisplayName;
     QString sourceRoleDisplayName;
+    int startLine = -1;
     int endLine = -1;
 };
 

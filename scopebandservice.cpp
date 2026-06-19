@@ -56,7 +56,6 @@ ScopeBandSymbolRange symbolRangeForRecord(
     int endLine)
 {
     ScopeBandSymbolRange row;
-    row.symbol = symbol;
     row.symbolRecord = record;
     row.symbolStableKey = record.stableKey.isValid()
         ? record.stableKey
@@ -66,6 +65,9 @@ ScopeBandSymbolRange symbolRangeForRecord(
     row.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
     row.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    row.startLine = row.codeLink.line > 0
+        ? row.codeLink.line
+        : symbol.startLine;
     row.endLine = endLine;
     return row;
 }

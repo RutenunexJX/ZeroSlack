@@ -121,7 +121,7 @@ void ScopeBandWidget::refresh()
     for (const ScopeBandSymbolRange& module : report.modules) {
         const int startLine = module.symbolRecord.location.startLine > 0
             ? module.symbolRecord.location.startLine
-            : module.symbol.startLine;
+            : module.startLine;
         const int endLine = module.endLine;
 
         const EditorBlockGeometry startGeometry =
@@ -142,7 +142,7 @@ void ScopeBandWidget::refresh()
     for (const ScopeBandSymbolRange& logicRange : report.logics) {
         int startLine = logicRange.symbolRecord.location.startLine > 0
             ? logicRange.symbolRecord.location.startLine
-            : logicRange.symbol.startLine;
+            : logicRange.startLine;
         int endLine = logicRange.endLine;
 
         ModuleScopeItem* parentModule = nullptr;
