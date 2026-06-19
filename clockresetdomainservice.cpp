@@ -270,7 +270,8 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
     QSet<QString> seenRelationships;
     int count = 0;
 
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const QList<SemanticRelationshipResult> relationships =
             clockResetRelationshipResultsForSymbol(semanticIndex(),
@@ -357,7 +358,8 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
     const ClockResetDomainQuery& query) const
 {
     QList<ClockResetDomainEvidenceRow> rows;
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
     for (const sym_list::SymbolInfo& symbol : symbols) {
         SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::CLOCKS;
         if (!isTimingCandidate(symbol, &type))

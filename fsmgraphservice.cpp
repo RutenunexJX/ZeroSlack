@@ -162,7 +162,8 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
     }
 
     const QList<sym_list::SymbolInfo> moduleSymbols = symbolsInModule(moduleSymbol);
-    const QList<sym_list::SymbolInfo> allSymbols = semanticIndex()->getSymbols();
+    const QList<sym_list::SymbolInfo> allSymbols =
+        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
     for (const sym_list::SymbolInfo& stateRegister
          : stateRegisters(moduleSymbols, allSymbols)) {
         FsmGraph graph;
@@ -258,7 +259,8 @@ QList<sym_list::SymbolInfo> FsmGraphService::symbolsInModule(
 {
     QList<sym_list::SymbolInfo> result;
     const QList<sym_list::SymbolInfo> symbols =
-        semanticIndex()->getSymbols(moduleSymbol.fileName);
+        semanticSymbolInfoCarriersForRecords(
+            semanticIndex()->getSymbolRecords(moduleSymbol.fileName));
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (isInsideModule(symbol, moduleSymbol))
             result.append(symbol);

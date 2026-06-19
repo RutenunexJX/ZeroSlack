@@ -96,7 +96,8 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
         ? report.moduleSymbolRecord.stableKey
         : symbolStableKeyForSymbol(moduleSymbol);
     report.moduleDisplayName = symbolDisplayName(report.moduleSymbolRecord);
-    const QList<sym_list::SymbolInfo> symbols = semanticIndex()->getSymbols();
+    const QList<sym_list::SymbolInfo> symbols =
+        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
 
     const QList<sym_list::SymbolInfo> ports = symbolsInModule(
         moduleSymbol,
