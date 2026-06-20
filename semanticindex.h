@@ -257,10 +257,10 @@ public:
         const QString& fileName = QString()) const;
     QList<SemanticSymbolSearchResult> searchSymbols(
         const SemanticSymbolSearchQuery& query) const;
-    QList<sym_list::SymbolInfo> getModuleCompletionSymbols(
+    QList<SemanticSymbolRecord> getModuleCompletionSymbolRecords(
         const QString& moduleName,
         const QString& prefix = QString()) const;
-    QList<sym_list::SymbolInfo> getGlobalCompletionSymbols(
+    QList<SemanticSymbolRecord> getGlobalCompletionSymbolRecords(
         const QString& prefix = QString()) const;
     QList<sym_list::SymbolInfo> getCommandCompletionSymbols(
         const QString& moduleName,

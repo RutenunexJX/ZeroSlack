@@ -11,8 +11,8 @@ QStringList CompletionService::findModuleInternalVariableCompletions(
     const QString& moduleName,
     const QString& prefix) const
 {
-    return CompletionSymbolQuery::namesFromSymbols(
-        semanticIndex()->getModuleCompletionSymbols(moduleName, prefix));
+    return CompletionSymbolQuery::namesFromRecords(
+        semanticIndex()->getModuleCompletionSymbolRecords(moduleName, prefix));
 }
 
 QStringList CompletionService::findModuleSymbolsByKind(
@@ -30,8 +30,8 @@ QStringList CompletionService::findModuleSymbolsByKind(
 
 QStringList CompletionService::findGlobalSymbolCompletions(const QString& prefix) const
 {
-    return CompletionSymbolQuery::namesFromSymbols(
-        semanticIndex()->getGlobalCompletionSymbols(prefix));
+    return CompletionSymbolQuery::namesFromRecords(
+        semanticIndex()->getGlobalCompletionSymbolRecords(prefix));
 }
 
 QStringList CompletionService::findGlobalSymbolsByKind(

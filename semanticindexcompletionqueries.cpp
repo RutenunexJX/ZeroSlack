@@ -35,7 +35,7 @@ void sortCompletionQueryRecordsByName(
 }
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getModuleCompletionSymbols(
+QList<SemanticSymbolRecord> SemanticIndex::getModuleCompletionSymbolRecords(
     const QString& moduleName,
     const QString& prefix) const
 {
@@ -61,10 +61,10 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleCompletionSymbols(
     }
 
     sortCompletionQueryRecordsByName(result);
-    return semanticSymbolInfoCarriersForRecords(result);
+    return result;
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getGlobalCompletionSymbols(
+QList<SemanticSymbolRecord> SemanticIndex::getGlobalCompletionSymbolRecords(
     const QString& prefix) const
 {
     QList<SemanticSymbolRecord> result;
@@ -85,7 +85,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getGlobalCompletionSymbols(
     }
 
     sortCompletionQueryRecordsByName(result);
-    return semanticSymbolInfoCarriersForRecords(result);
+    return result;
 }
 
 QStringList SemanticIndex::getCompletionSymbolNames() const

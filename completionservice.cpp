@@ -9,14 +9,9 @@
 namespace {
 
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
-    if (!record.isValid())
-        return metadata;
-
+    SymbolTaxonomy::SemanticMetadata metadata;
     metadata.declarationKind = record.declarationKind;
     metadata.usageRole = record.usageRole;
     metadata.ownerScope = record.owner.kind;
@@ -27,25 +22,10 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
     return metadata;
 }
 
-QString displayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
-{
-    if (!record.name.isEmpty())
-        return record.name;
-    return fallback.symbolName;
-}
-
-QString ownerScopeNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.owner.name.isEmpty())
         return record.owner.name;
-    const SemanticSymbolRecord fallbackRecord =
-        semanticSymbolRecordForSymbol(fallback);
-    if (!fallbackRecord.owner.name.isEmpty())
-        return fallbackRecord.owner.name;
 
     switch (record.owner.kind) {
     case SymbolTaxonomy::SymbolOwnerScope::Global:
@@ -64,25 +44,22 @@ QString ownerScopeNameForRecord(
     return QString();
 }
 
-CompletionResult::SemanticCompletionItem semanticCompletionItemForSymbol(
-    const sym_list::SymbolInfo& symbol)
+CompletionResult::SemanticCompletionItem semanticCompletionItemForRecord(
+    const SemanticSymbolRecord& record)
 {
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
     const SymbolTaxonomy::SemanticMetadata metadata =
-        metadataForRecord(record, symbol);
-    const QString displayName = displayNameForRecord(record, symbol);
+        metadataForRecord(record);
+    const QString displayName = record.name;
 
     CompletionResult::SemanticCompletionItem item;
     item.label = displayName;
     item.insertText = displayName;
     item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
-    item.ownerScopeName = ownerScopeNameForRecord(record, symbol);
+    item.ownerScopeName = ownerScopeNameForRecord(record);
     item.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
     item.symbolRecord = record;
-    item.symbolStableKey = record.stableKey.isValid()
-        ? record.stableKey
-        : symbolStableKeyForSymbol(symbol);
+    item.symbolStableKey = record.stableKey;
     item.declarationKind = metadata.declarationKind;
     item.usageRole = metadata.usageRole;
     item.ownerScope = metadata.ownerScope;
@@ -90,17 +67,17 @@ CompletionResult::SemanticCompletionItem semanticCompletionItemForSymbol(
     return item;
 }
 
-QList<CompletionResult::SemanticCompletionItem> semanticCompletionItemsForSymbols(
-    const QList<sym_list::SymbolInfo>& symbols)
+QList<CompletionResult::SemanticCompletionItem> semanticCompletionItemsForRecords(
+    const QList<SemanticSymbolRecord>& records)
 {
     QList<CompletionResult::SemanticCompletionItem> items;
-    items.reserve(symbols.size());
-    for (const sym_list::SymbolInfo& symbol : symbols)
-        items.append(semanticCompletionItemForSymbol(symbol));
+    items.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records)
+        items.append(semanticCompletionItemForRecord(record));
     return items;
 }
 
-QList<sym_list::SymbolInfo> completionSymbols(
+QList<SemanticSymbolRecord> completionRecords(
     SemanticIndex* semanticIndex,
     const CompletionQuery& query)
 {
@@ -108,18 +85,19 @@ QList<sym_list::SymbolInfo> completionSymbols(
         return {};
 
     if (!query.structTypeNameForMember.isEmpty()) {
-        return CompletionSymbolQuery::structMemberSymbols(
-            semanticIndex, query.structTypeNameForMember, query.prefix);
+        return semanticSymbolRecordsForSymbols(
+            CompletionSymbolQuery::structMemberSymbols(
+                semanticIndex, query.structTypeNameForMember, query.prefix));
     }
 
     if (query.prefix.isEmpty())
         return {};
 
     if (!query.moduleName.isEmpty())
-        return semanticIndex->getModuleCompletionSymbols(
+        return semanticIndex->getModuleCompletionSymbolRecords(
             query.moduleName, query.prefix);
 
-    return semanticIndex->getGlobalCompletionSymbols(query.prefix);
+    return semanticIndex->getGlobalCompletionSymbolRecords(query.prefix);
 }
 
 } // namespace
@@ -154,10 +132,10 @@ CompletionResult CompletionService::findCompletionResult(
     const CompletionQuery& query) const
 {
     CompletionResult result;
-    const QList<sym_list::SymbolInfo> symbols =
-        completionSymbols(semanticIndex(), query);
-    result.names = CompletionSymbolQuery::namesFromSymbols(symbols);
-    result.items = semanticCompletionItemsForSymbols(symbols);
+    const QList<SemanticSymbolRecord> records =
+        completionRecords(semanticIndex(), query);
+    result.names = CompletionSymbolQuery::namesFromRecords(records);
+    result.items = semanticCompletionItemsForRecords(records);
     return result;
 }
 
