@@ -46,18 +46,6 @@ bool globalSymbolInfoVisibleForRecord(
         || record.owner.name.isEmpty();
 }
 
-QString stableDedupeKeyForTypedCompletionRecord(
-    const SemanticSymbolRecord& record)
-{
-    const QString stableKey = symbolStableKeyText(record.stableKey);
-    if (!stableKey.isEmpty())
-        return stableKey;
-    return QStringLiteral("%1|%2|%3")
-        .arg(record.owner.name,
-             QString::number(static_cast<int>(record.declarationKind)),
-             record.name);
-}
-
 }
 
 QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
@@ -113,39 +101,6 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
                        Qt::CaseInsensitive)
                 < 0;
         });
-    return result;
-}
-
-QList<sym_list::SymbolInfo> SemanticIndex::getTypedCompletionSymbols(
-    sym_list::sym_type_e symbolType,
-    const QString& prefix) const
-{
-    QList<sym_list::SymbolInfo> result;
-    QSet<QString> seenStableKeys;
-
-    const QList<SemanticSymbolRecord> records = getSymbolRecords();
-    auto appendIfMatches = [&](const SemanticSymbolRecord& record) {
-        const QString dedupeKey =
-            stableDedupeKeyForTypedCompletionRecord(record);
-        if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
-            return;
-        if (!semanticCompletionNameMatches(record.name, prefix))
-            return;
-        seenStableKeys.insert(dedupeKey);
-        result.append(semanticSymbolInfoCarrierForRecord(record));
-    };
-
-    for (const SemanticSymbolRecord& record : records) {
-        const SymbolTaxonomy::SemanticMetadata metadata =
-            completionMetadataForRecord(record);
-        if (SymbolTaxonomy::typedCompletionSymbolTypeMatches(
-                metadata,
-                symbolType,
-                record.type.rawTypeText)) {
-            appendIfMatches(record);
-        }
-    }
-
     return result;
 }
 

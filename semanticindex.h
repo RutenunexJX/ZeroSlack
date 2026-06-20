@@ -271,9 +271,6 @@ public:
         sym_list::sym_type_e symbolType,
         const QString& prefix = QString()) const;
     QStringList getCompletionSymbolNames() const;
-    QList<sym_list::SymbolInfo> getTypedCompletionSymbols(
-        sym_list::sym_type_e symbolType,
-        const QString& prefix = QString()) const;
     QList<sym_list::SymbolInfo> getGlobalSymbolInfosByType(
         sym_list::sym_type_e symbolType,
         const QString& prefix = QString()) const;

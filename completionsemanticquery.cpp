@@ -1,9 +1,14 @@
 #include "completionsemanticquery.h"
 
 #include "completionservice.h"
+#include "semanticindexcompletionfilters.h"
 #include "symboltaxonomy.h"
 
+#include <QSet>
+
 namespace {
+using namespace semantic_index_completion;
+
 sym_list::sym_type_e rawCollectorKindForCommandKind(CompletionCommandKind kind)
 {
     switch (kind) {
@@ -56,6 +61,31 @@ sym_list::sym_type_e rawCollectorKindForCommandKind(CompletionCommandKind kind)
     }
     return sym_list::sym_user;
 }
+
+SymbolTaxonomy::SemanticMetadata completionMetadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+QString stableDedupeKeyForCompletionRecord(const SemanticSymbolRecord& record)
+{
+    const QString stableKey = symbolStableKeyText(record.stableKey);
+    if (!stableKey.isEmpty())
+        return stableKey;
+    return QStringLiteral("%1|%2|%3")
+        .arg(record.owner.name,
+             QString::number(static_cast<int>(record.declarationKind)),
+             record.name);
+}
 }
 
 QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
@@ -100,10 +130,31 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::typedSymbolRecords(
     if (!semanticIndex)
         return {};
 
-    return semanticSymbolRecordsForSymbols(
-        semanticIndex->getTypedCompletionSymbols(
-            rawCollectorKindForCommandKind(commandKind),
-            prefix));
+    const sym_list::sym_type_e adapterRawCollectorKind =
+        rawCollectorKindForCommandKind(commandKind);
+
+    QList<SemanticSymbolRecord> result;
+    QSet<QString> seenStableKeys;
+    for (const SemanticSymbolRecord& record : semanticIndex->getSymbolRecords()) {
+        const QString dedupeKey = stableDedupeKeyForCompletionRecord(record);
+        if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
+            continue;
+        if (!semanticCompletionNameMatches(record.name, prefix))
+            continue;
+
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            completionMetadataForRecord(record);
+        if (!SymbolTaxonomy::typedCompletionSymbolTypeMatches(
+                metadata,
+                adapterRawCollectorKind,
+                record.type.rawTypeText)) {
+            continue;
+        }
+
+        seenStableKeys.insert(dedupeKey);
+        result.append(record);
+    }
+    return result;
 }
 
 QStringList CompletionSemanticQuery::enumValueCompletions(

@@ -4,6 +4,7 @@
 #include "alternatecommandservice.h"
 #include "completionmanager.h"
 #include "completionmodel.h"
+#include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "editorsemanticcontextservice.h"
 #include "relationshipservice.h"
@@ -2859,19 +2860,18 @@ int main(int argc, char** argv) {
                    CompletionCommandKind::Logic,
                    QStringLiteral("snap_e")),
                {"snap_enable", "snap_other_enable"});
-    const QList<sym_list::SymbolInfo> snapshotTypedSymbols =
-        snapshotIndex.getTypedCompletionSymbols(
-            sym_list::sym_logic,
+    const QList<SemanticSymbolRecord> snapshotTypedSymbols =
+        CompletionSemanticQuery::typedSymbolRecords(
+            &snapshotIndex,
+            CompletionCommandKind::Logic,
             QStringLiteral("snap_e"));
     int snapshotEnableTypedCount = 0;
     bool snapshotTypedStableKeyOk = false;
-    for (const sym_list::SymbolInfo& symbol : snapshotTypedSymbols) {
-        const SemanticSymbolRecord record =
-            semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : snapshotTypedSymbols) {
         if (record.name == QStringLiteral("snap_enable")) {
             ++snapshotEnableTypedCount;
             snapshotTypedStableKeyOk = record.stableKey.isValid()
-                && record.stableKey == symbolStableKeyForSymbol(symbol);
+                && record.stableKey.symbolName == QStringLiteral("snap_enable");
         }
     }
     expectBool("snapshot typed stable dedupe",
