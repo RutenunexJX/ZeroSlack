@@ -11,12 +11,6 @@ sym_list::sym_type_e legacySymbolType(RawCollectorKind kind);
 DeclarationKind declarationKind(sym_list::sym_type_e type);
 SymbolUsageRole usageRole(sym_list::sym_type_e type);
 DeclarationGroup declarationGroup(sym_list::sym_type_e type);
-SymbolOwnerScope ownerScope(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes = {});
-SymbolVisibility visibility(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes = {});
 SemanticMetadata semanticMetadata(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {});

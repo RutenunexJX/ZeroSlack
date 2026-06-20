@@ -6969,24 +6969,34 @@ static void runRealWorkspaceIncludeFixture()
                phyPassNsId >= 0, true);
     QSet<QString> packageScopes;
     packageScopes.insert(QStringLiteral("gl_pkg"));
+    const SymbolTaxonomy::SemanticMetadata packageMetadata =
+        SymbolTaxonomy::semanticMetadata(packageSymbol, packageScopes);
+    const SymbolTaxonomy::SemanticMetadata packageParamMetadata =
+        SymbolTaxonomy::semanticMetadata(packageParamSymbol, packageScopes);
+    const SymbolTaxonomy::SemanticMetadata packageTypedefMetadata =
+        SymbolTaxonomy::semanticMetadata(packageTypedefSymbol, packageScopes);
+    const SymbolTaxonomy::SemanticMetadata interfaceModportMetadata =
+        SymbolTaxonomy::semanticMetadata(interfaceModportSymbol, packageScopes);
+    const SymbolTaxonomy::SemanticMetadata interfaceInstMetadata =
+        SymbolTaxonomy::semanticMetadata(interfaceInstSymbol, packageScopes);
     expectBool("real workspace taxonomy marks global package",
-               SymbolTaxonomy::ownerScope(packageSymbol, packageScopes)
+               packageMetadata.ownerScope
                    == SymbolTaxonomy::SymbolOwnerScope::Global,
                true);
     expectBool("real workspace taxonomy marks package parameter visibility",
-               SymbolTaxonomy::visibility(packageParamSymbol, packageScopes)
+               packageParamMetadata.visibility
                    == SymbolTaxonomy::SymbolVisibility::PackageVisible,
                true);
     expectBool("real workspace taxonomy marks package typedef visibility",
-               SymbolTaxonomy::visibility(packageTypedefSymbol, packageScopes)
+               packageTypedefMetadata.visibility
                    == SymbolTaxonomy::SymbolVisibility::PackageVisible,
                true);
     expectBool("real workspace taxonomy marks interface modport member",
-               SymbolTaxonomy::ownerScope(interfaceModportSymbol, packageScopes)
+               interfaceModportMetadata.ownerScope
                    == SymbolTaxonomy::SymbolOwnerScope::Interface,
                true);
     expectBool("real workspace taxonomy marks module instance local",
-               SymbolTaxonomy::visibility(interfaceInstSymbol, packageScopes)
+               interfaceInstMetadata.visibility
                    == SymbolTaxonomy::SymbolVisibility::ScopeLocal,
                true);
 

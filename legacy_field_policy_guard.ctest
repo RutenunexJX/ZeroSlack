@@ -263,6 +263,8 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "symboltaxonomy.cpp|legacyRawCollectorKind[ \t\r\n]*\\("
     "symboltaxonomy.cpp|hasLegacyRawCollectorKind[ \t\r\n]*\\("
     "(attachSemanticMetadata|withSemanticMetadata)[ \t\r\n]*\\("
+    "symboltaxonomylegacy\\.h|SymbolOwnerScope[ \t\r\n]+ownerScope[ \t\r\n]*\\("
+    "symboltaxonomylegacy\\.h|SymbolVisibility[ \t\r\n]+visibility[ \t\r\n]*\\("
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS

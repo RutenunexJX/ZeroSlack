@@ -63,6 +63,7 @@ Thin UI consumers
 - I4 third block is complete: dead `sym_list` symbol database mutator/accessor/index/scope-tree storage has been deleted, including `syminfoindex.cpp`, `syminfoscope.cpp`, and `scope_tree.h`.
 - I4 fourth block is complete: native taxonomy metadata checks no longer route through the retired private raw-kind bridge.
 - I4 fifth block is complete: unused legacy metadata write-back helpers have been deleted from the taxonomy compatibility surface.
+- I4 sixth block is complete: legacy `SymbolInfo` owner/visibility taxonomy overloads have been removed from the public compatibility header; callers verify the semantic metadata contract instead.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.
