@@ -3,26 +3,11 @@
 #include "completioncommandkindadapter.h"
 #include "completionservice.h"
 #include "semanticindexcompletionfilters.h"
-#include "symboltaxonomy.h"
 
 #include <QSet>
 
 namespace {
 using namespace semantic_index_completion;
-
-SymbolTaxonomy::SemanticMetadata completionMetadataForRecord(
-    const SemanticSymbolRecord& record)
-{
-    SymbolTaxonomy::SemanticMetadata metadata;
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.ownerScope = record.owner.kind;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
-}
 
 QString stableDedupeKeyForCompletionRecord(const SemanticSymbolRecord& record)
 {
@@ -74,9 +59,6 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::typedSymbolRecords(
     if (!semanticIndex)
         return {};
 
-    const sym_list::sym_type_e adapterRawCollectorKind =
-        rawCollectorKindForCompletionCommandKind(commandKind);
-
     QList<SemanticSymbolRecord> result;
     QSet<QString> seenStableKeys;
     for (const SemanticSymbolRecord& record : semanticIndex->getSymbolRecords()) {
@@ -86,12 +68,7 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::typedSymbolRecords(
         if (!semanticCompletionNameMatches(record.name, prefix))
             continue;
 
-        const SymbolTaxonomy::SemanticMetadata metadata =
-            completionMetadataForRecord(record);
-        if (!SymbolTaxonomy::typedCompletionSymbolTypeMatches(
-                metadata,
-                adapterRawCollectorKind,
-                record.type.rawTypeText)) {
+        if (!completionCommandKindMatchesTypedRecord(record, commandKind)) {
             continue;
         }
 

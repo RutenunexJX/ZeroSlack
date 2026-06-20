@@ -40,8 +40,6 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
     if (moduleName.isEmpty())
         return result;
 
-    const sym_list::sym_type_e symbolType =
-        rawCollectorKindForCompletionCommandKind(commandKind);
     const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
     SemanticSymbolRecord moduleRecord;
     bool foundModule = false;
@@ -81,7 +79,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
 
     QSet<QString> seenStableKeys;
     auto appendIfMatches = [&](const SemanticSymbolRecord& record, bool fuzzyPrefix) {
-        if (!moduleContextSymbolTypeMatches(record, symbolType)) {
+        if (!completionCommandKindMatchesModuleContextRecord(record, commandKind)) {
             return;
         }
         const bool nameMatches = fuzzyPrefix
@@ -100,7 +98,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
 
     for (const SemanticSymbolRecord& record : allRecords) {
         bool correctModule = false;
-        if (isModuleRangeSymbolType(symbolType)) {
+        if (completionCommandKindIsModuleRange(commandKind)) {
             correctModule = foundModule
                 && record.location.fileName == moduleRecord.location.fileName
                 && record.location.startLine > moduleRecord.location.startLine
@@ -147,8 +145,6 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
     if (moduleName.isEmpty() || fileName.isEmpty())
         return result;
 
-    const sym_list::sym_type_e symbolType =
-        rawCollectorKindForCompletionCommandKind(commandKind);
     const QString normalizedTargetFile = normalizedModuleContextFileName(fileName);
     const QList<SemanticSymbolRecord> fileRecords = getSymbolRecords(fileName);
     SemanticSymbolRecord moduleRecord;
@@ -188,7 +184,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
 
     QSet<QString> seenStableKeys;
     auto appendRecord = [&](const SemanticSymbolRecord& record) {
-        if (!moduleContextSymbolTypeMatches(record, symbolType)) {
+        if (!completionCommandKindMatchesModuleContextRecord(record, commandKind)) {
             return;
         }
         if (!moduleContextNameMatches(record.name, prefix))
@@ -204,7 +200,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
     const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
     for (const SemanticSymbolRecord& record : allRecords) {
         bool isCorrectModule = false;
-        if (isModuleRangeSymbolType(symbolType)) {
+        if (completionCommandKindIsModuleRange(commandKind)) {
             isCorrectModule = inModuleRange(record);
         } else {
             isCorrectModule = record.owner.name == moduleName;

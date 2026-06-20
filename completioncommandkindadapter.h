@@ -65,4 +65,69 @@ inline bool completionCommandKindRequiresModuleContext(
         rawCollectorKindForCompletionCommandKind(kind));
 }
 
+inline SymbolTaxonomy::SemanticMetadata completionCommandMetadataForRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+inline bool completionCommandKindMatchesTypedRecord(
+    const SemanticSymbolRecord& record,
+    CompletionCommandKind kind)
+{
+    return SymbolTaxonomy::typedCompletionSymbolTypeMatches(
+        completionCommandMetadataForRecord(record),
+        rawCollectorKindForCompletionCommandKind(kind),
+        record.type.rawTypeText);
+}
+
+inline bool completionCommandKindMatchesCommandRecord(
+    const SemanticSymbolRecord& record,
+    CompletionCommandKind kind)
+{
+    return SymbolTaxonomy::commandSymbolTypeMatches(
+        completionCommandMetadataForRecord(record),
+        rawCollectorKindForCompletionCommandKind(kind),
+        record.type.rawTypeText);
+}
+
+inline bool completionCommandKindMatchesModuleContextRecord(
+    const SemanticSymbolRecord& record,
+    CompletionCommandKind kind)
+{
+    return completionCommandKindMatchesCommandRecord(record, kind);
+}
+
+inline bool completionCommandKindIsGlobalCommand(CompletionCommandKind kind)
+{
+    return SymbolTaxonomy::isCommandGlobalCompletionType(
+        rawCollectorKindForCompletionCommandKind(kind));
+}
+
+inline bool completionCommandKindIsAlwaysGlobalCommand(CompletionCommandKind kind)
+{
+    return SymbolTaxonomy::isAlwaysGlobalCommandSymbolType(
+        rawCollectorKindForCompletionCommandKind(kind));
+}
+
+inline bool completionCommandKindIsPackageVisibleCommand(CompletionCommandKind kind)
+{
+    return SymbolTaxonomy::isPackageVisibleCommandRequest(
+        rawCollectorKindForCompletionCommandKind(kind));
+}
+
+inline bool completionCommandKindIsModuleRange(CompletionCommandKind kind)
+{
+    return SymbolTaxonomy::isModuleRangeType(
+        rawCollectorKindForCompletionCommandKind(kind));
+}
+
 #endif // COMPLETIONCOMMANDKINDADAPTER_H

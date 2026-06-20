@@ -10,17 +10,7 @@ namespace semantic_index_module_context {
 
 QString normalizedModuleContextFileName(const QString& fileName);
 
-bool moduleContextSymbolTypeMatches(sym_list::sym_type_e symbolType,
-                                    sym_list::sym_type_e commandType,
-                                    const QString& dataType = QString());
-bool moduleContextSymbolTypeMatches(const sym_list::SymbolInfo& symbol,
-                                    sym_list::sym_type_e commandType);
-bool moduleContextSymbolTypeMatches(const SemanticSymbolRecord& record,
-                                    sym_list::sym_type_e commandType);
-
 bool moduleContextNameMatches(const QString& name, const QString& prefix);
-
-bool isModuleRangeSymbolType(sym_list::sym_type_e type);
 
 void sortModuleContextSymbolRecords(QList<SemanticSymbolRecord>& records);
 
