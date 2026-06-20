@@ -194,14 +194,14 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Phase I: Semantic Store Native / Collector Native
 
-- Status: planned next.
+- Status: active; I0 complete, I1 current.
 - Goal: delete the remaining legacy collector/store body by moving Slang collection, semantic storage, scope rebuild, and relationship containment to semantic-native records or store entries.
-- I0: define the native store/collector migration contract, final zero-legacy target scans, and Phase I guard extensions. No behavior changes beyond docs, guard policy, and narrow scaffolding.
+- I0 is complete: the native store/collector migration contract is documented, `legacy_field_policy_guard.ctest` defines the Phase I zero-legacy target terms, and `ZEROSLACK_PHASE_I_ZERO_TARGET` provides the opt-in final scan for I5 without changing runtime behavior.
 - I1: make Slang collection emit `SemanticSymbolRecord` or a dedicated `SemanticStoreEntry` as its primary output; keep `SymbolInfo` emission only as a temporary private adapter if required.
 - I2: replace `sym_list` as the backing store with semantic-native storage for records, cached content, file replacement, local handles, and stable-key lookups.
 - I3: migrate scope rebuild, module containment, relationship containment, and module lookup away from `symbolId`, `symbolType`, `moduleScope`, and `dataType` to semantic metadata, owner/type records, stable keys, and explicit local handles.
 - I4: delete the legacy carrier and compatibility taxonomy surface: `sym_list::SymbolInfo`, `sym_list::sym_type_e`, legacy fields, `symboltaxonomylegacy.h`, and remaining adapter reverse conversions.
-- I5: run the Phase I release gate and update docs. The target is zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes.
+- I5: run the Phase I release gate and update docs. The target is zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes; the opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` guard must pass.
 
 ### Phase I Goal Mode
 

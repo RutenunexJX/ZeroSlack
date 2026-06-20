@@ -160,13 +160,14 @@ UI Layer
 
 ### Phase I: Semantic Store Native / Collector Native
 
-- Status: planned next.
+- Status: active; I0 complete, I1 current.
 - Purpose: delete the remaining legacy collector/store body instead of only guarding its boundary.
+- I0 is complete: the Phase I migration contract is documented and the opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` guard defines the final zero-legacy source scan for I5.
 - Slang collection should emit semantic-native records or store entries as the primary output.
 - The backing semantic store should own semantic-native records, cached content, local handles, stable-key indexes, and file replacement without depending on `sym_list::SymbolInfo`.
 - Scope rebuild, module containment, module lookup, and relationship containment should use semantic metadata, owner/type records, stable keys, and explicit local handles instead of `symbolId`, `symbolType`, `moduleScope`, or `dataType`.
 - `symboltaxonomylegacy.h`, `sym_list::SymbolInfo`, `sym_list::sym_type_e`, legacy fields, and reverse adapter conversions should be deleted when collector/store migration is complete.
-- Phase I is complete only when the final release gate proves zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes.
+- Phase I is complete only when the final release gate proves zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes, including a passing `ZEROSLACK_PHASE_I_ZERO_TARGET` scan.
 
 ### Phase I Goal Mode
 

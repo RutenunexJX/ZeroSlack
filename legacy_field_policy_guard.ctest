@@ -164,6 +164,22 @@ set(H0_LEGACY_CORE_PATTERNS
     "(^|[^A-Za-z0-9_])legacyTypes([^A-Za-z0-9_]|$)"
 )
 
+set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
+    "sym_list::SymbolInfo"
+    "sym_list::sym_type_e"
+    "(^|[^A-Za-z0-9_])sym_list([^A-Za-z0-9_:]|::)"
+    "\\.(symbolId|symbolType|moduleScope|dataType)([^A-Za-z0-9_]|$)"
+    "(^|[^A-Za-z0-9_])(getSymbolById|findSymbolId|getRelationships)[ \t\r\n]*\\("
+    "(getCommandCompletionSymbols|getTypedCompletionSymbols|getGlobalSymbolInfosByType|getModuleInternalSymbolsByType|getModuleContextSymbolsByType)[ \t\r\n]*\\("
+    "(findSymbolsByName|findSymbolsByFileName|getAllSymbols)[ \t\r\n]*\\("
+    "(findGlobalSymbolInfosByType|findModuleInternalSymbolInfosByType|findModuleContextSymbolInfosByType)[ \t\r\n]*\\("
+    "(findSymbolsByType|getSymbolNamesByType|getSymbolCountByType|getUniqueSymbolNames|hasSymbol)[ \t\r\n]*\\("
+    "(semanticSymbolRecordForSymbol|symbolInfoForSemanticRecord|semanticSymbolRecordsForSymbols|semanticSymbolRecordsForDatabase)[ \t\r\n]*\\("
+    "(semanticSymbolRecordsForCollectedSymbols|semanticSymbolRecordsForDatabaseExcludingFiles|updateSymbolDatabaseRecordsForFile)[ \t\r\n]*\\("
+    "(^|[^A-Za-z0-9_])(legacyTypes|rawCollectorKind|requestedRawCollectorKind)([^A-Za-z0-9_]|$)"
+    "symboltaxonomylegacy\\.h"
+)
+
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "clockresetdomainservice.h|moduleSymbolId"
     "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEntry[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
@@ -779,6 +795,27 @@ if(h0_legacy_core_violations)
     list(JOIN h0_legacy_core_violations "\n  " h0_legacy_core_text)
     message(FATAL_ERROR
         "Phase H0 legacy core terms are forbidden outside the explicit transition allowlist:\n  ${h0_legacy_core_text}")
+endif()
+
+if(ZEROSLACK_PHASE_I_ZERO_TARGET)
+    set(phase_i_zero_legacy_violations)
+    foreach(relative_path IN LISTS h0_first_party_sources)
+        set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+        file(READ "${path}" content)
+        foreach(pattern IN LISTS PHASE_I_ZERO_LEGACY_TARGET_PATTERNS)
+            string(REGEX MATCH "${pattern}" match "${content}")
+            if(match)
+                list(APPEND phase_i_zero_legacy_violations
+                     "${relative_path}: ${pattern}")
+            endif()
+        endforeach()
+    endforeach()
+
+    if(phase_i_zero_legacy_violations)
+        list(JOIN phase_i_zero_legacy_violations "\n  " phase_i_zero_legacy_text)
+        message(FATAL_ERROR
+            "Phase I zero legacy target is enabled; collector/store legacy carrier terms must be gone from core source:\n  ${phase_i_zero_legacy_text}")
+    endif()
 endif()
 
 set(f3_removed_compatibility_violations)
