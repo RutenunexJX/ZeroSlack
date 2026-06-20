@@ -329,7 +329,6 @@ void SemanticIndex::updateSymbolRecordsForFile(
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
     const QString& fileName) const
 {
-    sym_list* db = symbolDatabase();
     const QList<SemanticSymbolRecord> nativeRecords = nativeSymbolRecords(fileName);
     if (!fileName.isEmpty() && hasNativeFileCoverage(fileName))
         return nativeRecords;
@@ -341,41 +340,26 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
             if (!records.isEmpty())
                 return records;
         } else {
-            QSet<QString> snapshotFiles;
             const QSet<QString> nativeFiles = m_nativeCoveredFiles;
 
             QList<SemanticSymbolRecord> mergedSnapshotRecords;
             for (const SemanticSymbolRecord& record : std::as_const(records)) {
                 const QString normalized =
                     normalizedStoreFileName(record.location.fileName);
-                if (!normalized.isEmpty())
-                    snapshotFiles.insert(normalized);
                 if (!normalized.isEmpty() && nativeFiles.contains(normalized))
                     continue;
                 mergedSnapshotRecords.append(record);
             }
             mergedSnapshotRecords.append(m_nativeSymbolRecords);
-
-            QSet<QString> coveredFiles = snapshotFiles;
-            coveredFiles.unite(nativeFiles);
-            mergedSnapshotRecords.append(
-                semanticSymbolRecordsForDatabaseExcludingFiles(
-                    db,
-                    coveredFiles));
             return mergedSnapshotRecords;
         }
-    }
 
-    if (fileName.isEmpty() && !m_nativeCoveredFiles.isEmpty()) {
-        QList<SemanticSymbolRecord> records = m_nativeSymbolRecords;
-        records.append(
-            semanticSymbolRecordsForDatabaseExcludingFiles(
-                db,
-                m_nativeCoveredFiles));
         return records;
     }
 
-    return semanticSymbolRecordsForDatabase(db, fileName);
+    if (fileName.isEmpty())
+        return m_nativeSymbolRecords;
+    return {};
 }
 
 SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
