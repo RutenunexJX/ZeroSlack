@@ -51,6 +51,11 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
     return std::make_shared<SemanticIndexSnapshot>(snapshot);
 }
 
+static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return semanticSymbolRecordForSymbol(symbol).stableKey;
+}
+
 static void expectBool(const char* what, bool got, bool want) {
     ++g_checks; bool ok = (got == want); if (!ok) ++g_fails;
     printf("[%s] %-46s got=%s want=%s\n", ok ? "PASS" : "FAIL", what,
@@ -416,7 +421,7 @@ int main(int argc, char** argv) {
         && QFileInfo(snapshotModuleResult.symbolRecord.location.fileName).fileName()
             == QStringLiteral("snapshot_helper.sv")
         && snapshotModuleResult.symbolStableKey
-            == symbolStableKeyForSymbol(snapshotHelperModule)
+            == stableKeyForSymbol(snapshotHelperModule)
         && snapshotModuleResult.missReason == SemanticDefinitionMissReason::None
         && snapshotModuleResult.visibleCandidateCount > 0;
     if (!snapshotModuleOk)

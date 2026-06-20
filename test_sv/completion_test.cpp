@@ -48,6 +48,11 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
     return std::make_shared<SemanticIndexSnapshot>(snapshot);
 }
 
+static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return semanticSymbolRecordForSymbol(symbol).stableKey;
+}
+
 static QStringList sorted(QStringList l) { l.sort(); return l; }
 
 static void expectEq(const char* what, const QString& got, const QString& want) {
@@ -251,7 +256,7 @@ int main(int argc, char** argv) {
              QStringLiteral("always_ff (logic)"));
     expectBool("CompletionModel symbol stable key",
                modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
-                   == symbolStableKeyForSymbol(modelScoringSymbols.at(1)),
+                   == stableKeyForSymbol(modelScoringSymbols.at(1)),
                true);
     expectBool("CompletionModel symbol record",
                modelScoring.getItem(modelScoring.index(2, 0)).symbolRecord.stableKey
@@ -333,7 +338,7 @@ int main(int argc, char** argv) {
     expectBool("CompletionModel metadata stable key",
                metadataDescriptionModel.getItem(
                    metadataDescriptionModel.index(0, 0)).symbolStableKey
-                   == symbolStableKeyForSymbol(metadataModelSymbol),
+                   == stableKeyForSymbol(metadataModelSymbol),
                true);
     expectBool("CompletionModel metadata record",
                metadataDescriptionModel.getItem(
@@ -549,7 +554,7 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::DeclarationKind::Module;
     metadataKeySymbol.rawCollectorKind = sym_list::sym_user;
     const SymbolStableKey metadataKey =
-        symbolStableKeyForSymbol(metadataKeySymbol);
+        stableKeyForSymbol(metadataKeySymbol);
     expectBool("stable key uses semantic declaration kind",
                metadataKey.declarationKind
                    == SymbolTaxonomy::DeclarationKind::Module,
@@ -1003,7 +1008,7 @@ int main(int argc, char** argv) {
                    && structPresentationItem.symbolRecord.stableKey
                        == structPresentationItem.symbolStableKey
                    && structPresentationItem.symbolStableKey
-                       == symbolStableKeyForSymbol(structPresentationSymbol)
+                       == stableKeyForSymbol(structPresentationSymbol)
                    && structPresentationItem.symbolRecord.owner.name
                        == QStringLiteral("pixel_t")
                    && structPresentationItem.declarationKind
@@ -2433,15 +2438,15 @@ int main(int argc, char** argv) {
     clockDrivesTop.fromId = 6003;
     clockDrivesTop.toId = 4000;
     clockDrivesTop.type = SymbolRelationshipEngine::CLOCKS;
-    clockDrivesTop.fromStableKey = symbolStableKeyForSymbol(snapshotClock);
-    clockDrivesTop.toStableKey = symbolStableKeyForSymbol(snapshotTop);
+    clockDrivesTop.fromStableKey = stableKeyForSymbol(snapshotClock);
+    clockDrivesTop.toStableKey = stableKeyForSymbol(snapshotTop);
     snapshotRelationships.append(clockDrivesTop);
     SemanticRelationship resetDrivesTop;
     resetDrivesTop.fromId = 6004;
     resetDrivesTop.toId = 4000;
     resetDrivesTop.type = SymbolRelationshipEngine::RESETS;
-    resetDrivesTop.fromStableKey = symbolStableKeyForSymbol(snapshotReset);
-    resetDrivesTop.toStableKey = symbolStableKeyForSymbol(snapshotTop);
+    resetDrivesTop.fromStableKey = stableKeyForSymbol(snapshotReset);
+    resetDrivesTop.toStableKey = stableKeyForSymbol(snapshotTop);
     snapshotRelationships.append(resetDrivesTop);
     QHash<QString, QString> snapshotFileContents;
     snapshotFileContents.insert(snapshotScopeFile, snapshotScopeContent);

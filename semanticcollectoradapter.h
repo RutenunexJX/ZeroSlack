@@ -3,7 +3,6 @@
 
 #include "semanticindex.h"
 
-SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol);
 SemanticSymbolRecord semanticSymbolRecordForSymbol(
     const sym_list::SymbolInfo& symbol);
 SemanticSymbolRecord semanticSymbolRecordForSymbol(

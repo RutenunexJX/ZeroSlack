@@ -11,7 +11,6 @@ QString normalizedStableKeyFileName(const QString& fileName)
         return QString();
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
-}
 
 SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
 {
@@ -24,6 +23,7 @@ SymbolStableKey symbolStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
     key.declarationKind = SymbolTaxonomy::semanticMetadata(symbol).declarationKind;
     key.ownerScope = symbol.moduleScope;
     return key;
+}
 }
 
 SemanticSymbolRecord semanticSymbolRecordForSymbol(

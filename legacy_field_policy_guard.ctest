@@ -452,6 +452,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticcollectoradapter.cpp|findSymbolsByFileName[ \t\r\n]*\\("
     "semanticcollectoradapter.h|symbolInfosForSemanticRecords[ \t\r\n]*\\("
     "semanticcollectoradapter.h|semanticSymbolRecordsForDatabaseByName[ \t\r\n]*\\("
+    "semanticcollectoradapter.h|symbolStableKeyForSymbol[ \t\r\n]*\\("
     "smartrelationshipbuilderanalysis.cpp|semanticSymbolRecordsForDatabaseByName[ \t\r\n]*\\("
     "smartrelationshipbuilder.h|findSymbolIdByName[ \t\r\n]*\\("
     "smartrelationshipbuildertiming.cpp|findSymbolIdByName[ \t\r\n]*\\("

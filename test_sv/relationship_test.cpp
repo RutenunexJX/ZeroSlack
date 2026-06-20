@@ -76,6 +76,11 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
                                                  fileContents));
 }
 
+static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
+{
+    return semanticSymbolRecordForSymbol(symbol).stableKey;
+}
+
 static SemanticIndexSnapshot snapshotFromSemanticIndex(
     sym_list* db,
     const QList<SemanticDiagnostic>& diagnostics = {})
@@ -424,12 +429,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("semantic facade uses fixture symbol record",
                topSymbol.symbolName == QStringLiteral("rel_top"), true);
     const SymbolStableKey topFacadeStableKey =
-        symbolStableKeyForSymbol(topSymbol);
+        stableKeyForSymbol(topSymbol);
     const SemanticSymbolRecord topRecord =
         index.getSymbolRecordByStableKey(topFacadeStableKey);
     const SemanticSymbolRecord stageDataRecord =
         index.getSymbolRecordByStableKey(
-            symbolStableKeyForSymbol(stageDataSymbol));
+            stableKeyForSymbol(stageDataSymbol));
     expectBool("semantic facade exposes symbol record",
                topRecord.isValid()
                    && topRecord.name == QStringLiteral("rel_top")
@@ -905,7 +910,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QList<SemanticSymbolRecord> snapshotTopRecords =
         snapshotIndex.getSymbolRecords(topPath);
     const SemanticSymbolRecord snapshotTopRecord =
-        snapshotIndex.getSymbolRecordByStableKey(symbolStableKeyForSymbol(topSymbol));
+        snapshotIndex.getSymbolRecordByStableKey(stableKeyForSymbol(topSymbol));
     expectBool("semantic snapshot exposes symbol records",
                snapshotTopRecords.size() == topSymbols.size()
                    && snapshotTopRecord.isValid()
@@ -1225,8 +1230,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic snapshot finds module end line from cached content",
               snapshotIndex.findEndModuleLine(topPath, snapshotTopRecordWithoutEnd),
               topEndModuleLine);
-    const SymbolStableKey topStableKey = symbolStableKeyForSymbol(topSymbol);
-    const SymbolStableKey stageStableKey = symbolStableKeyForSymbol(stageSymbol);
+    const SymbolStableKey topStableKey = stableKeyForSymbol(topSymbol);
+    const SymbolStableKey stageStableKey = stableKeyForSymbol(stageSymbol);
     const QList<SemanticRelationship> snapshotTopRelationships =
         snapshotIndex.relationshipsForStableKey(topStableKey, true);
     bool snapshotFoundStage = false;
@@ -2072,7 +2077,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshot->relationships().size() + 1);
     bool enrichedFoundTask = false;
     bool enrichedTaskHasStableKeys = false;
-    const SymbolStableKey captureStableKey = symbolStableKeyForSymbol(captureSymbol);
+    const SymbolStableKey captureStableKey = stableKeyForSymbol(captureSymbol);
     for (const SemanticRelationship& relationship :
          enrichedSnapshot.relationshipsForStableKey(stageStableKey, true)) {
         enrichedFoundTask = enrichedFoundTask
@@ -3598,7 +3603,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     ReferenceQuery reqValidReferenceQuery;
     reqValidReferenceQuery.symbolStableKey =
-        symbolStableKeyForSymbol(symbolById(topSymbols, reqValidId));
+        stableKeyForSymbol(symbolById(topSymbols, reqValidId));
     reqValidReferenceQuery.types = {SymbolRelationshipEngine::READS_FROM};
     const QList<ReferenceResult> reqValidReferences =
         referenceService.findReferences(reqValidReferenceQuery);
@@ -3709,7 +3714,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     ReferenceQuery rspDataReferenceQuery;
     rspDataReferenceQuery.symbolStableKey =
-        symbolStableKeyForSymbol(symbolById(topSymbols, rspDataId));
+        stableKeyForSymbol(symbolById(topSymbols, rspDataId));
     rspDataReferenceQuery.types = {SymbolRelationshipEngine::ASSIGNS_TO};
     const QList<ReferenceResult> rspDataReferences =
         referenceService.findReferences(rspDataReferenceQuery);
@@ -3914,7 +3919,7 @@ static void runModuleBriefServiceFixture()
                    && report.moduleSymbolRecord.name == QStringLiteral("brief_top"),
                true);
     ModuleBriefQuery stableModuleBriefQuery;
-    stableModuleBriefQuery.moduleStableKey = symbolStableKeyForSymbol(module);
+    stableModuleBriefQuery.moduleStableKey = stableKeyForSymbol(module);
     const ModuleBriefReport stableModuleBriefReport =
         service.buildModuleBrief(stableModuleBriefQuery);
     expectBool("module brief resolves stable module key",
@@ -5179,7 +5184,7 @@ static void runClockResetDomainServiceFixture()
 
     expectBool("clock reset top found", topReport.found, true);
     ClockResetDomainQuery stableTopQuery;
-    stableTopQuery.moduleStableKey = symbolStableKeyForSymbol(top);
+    stableTopQuery.moduleStableKey = stableKeyForSymbol(top);
     stableTopQuery.moduleName = QStringLiteral("other_domain");
     const ClockResetDomainReport stableTopReport =
         service.buildClockResetDomainMap(stableTopQuery);
@@ -5488,7 +5493,7 @@ static void runClockResetDomainServiceFixture()
     expectBool("clock reset top unmapped reset row", sawUnmappedReset, true);
 
     ClockResetDomainQuery otherStableQuery;
-    otherStableQuery.moduleStableKey = symbolStableKeyForSymbol(symbols.at(1));
+    otherStableQuery.moduleStableKey = stableKeyForSymbol(symbols.at(1));
     const ClockResetDomainReport otherReport =
         service.buildClockResetDomainMap(otherStableQuery);
     expectInt("clock reset stable key clock domains",
@@ -5518,7 +5523,7 @@ static void runClockResetDomainServiceFixture()
 
     ClockResetDomainQuery unsupportedModuleQuery;
     unsupportedModuleQuery.moduleStableKey =
-        symbolStableKeyForSymbol(symbols.at(2));
+        stableKeyForSymbol(symbols.at(2));
     const ClockResetDomainReport unsupportedModuleReport =
         service.buildClockResetDomainMap(unsupportedModuleQuery);
     expectBool("clock reset unsupported symbol reason",
@@ -5717,7 +5722,7 @@ static void runFsmGraphServiceFixture()
 
     expectBool("fsm graph found", report.found, true);
     FsmGraphQuery stableFsmQuery;
-    stableFsmQuery.moduleStableKey = symbolStableKeyForSymbol(module);
+    stableFsmQuery.moduleStableKey = stableKeyForSymbol(module);
     const FsmGraphReport stableFsmReport = service.buildFsmGraph(stableFsmQuery);
     expectBool("fsm graph resolves stable module key",
                stableFsmReport.found
@@ -6126,7 +6131,7 @@ static void runFsmGraphServiceFixture()
                true);
 
     FsmGraphQuery unsupportedModuleQuery;
-    unsupportedModuleQuery.moduleStableKey = symbolStableKeyForSymbol(stateQ);
+    unsupportedModuleQuery.moduleStableKey = stableKeyForSymbol(stateQ);
     const FsmGraphReport unsupportedModuleReport =
         service.buildFsmGraph(unsupportedModuleQuery);
     expectBool("fsm graph unsupported symbol reason",
@@ -6138,7 +6143,7 @@ static void runFsmGraphServiceFixture()
                true);
 
     FsmGraphQuery noFsmGraphQuery;
-    noFsmGraphQuery.moduleStableKey = symbolStableKeyForSymbol(noFsmModule);
+    noFsmGraphQuery.moduleStableKey = stableKeyForSymbol(noFsmModule);
     const FsmGraphReport noFsmGraphReport =
         service.buildFsmGraph(noFsmGraphQuery);
     expectBool("fsm graph no graph reason",
@@ -7461,7 +7466,7 @@ static void runRealWorkspaceIncludeFixture()
     SignalJourneyService signalJourneyService(&index);
     SignalJourneyQuery interfaceJourneyQuery;
     interfaceJourneyQuery.signalStableKey =
-        symbolStableKeyForSymbol(symbolByName(QStringLiteral("LR_GENR_IF"),
+        stableKeyForSymbol(symbolByName(QStringLiteral("LR_GENR_IF"),
                                               sym_list::sym_inst,
                                               QStringLiteral("rtl_top")));
     interfaceJourneyQuery.fileName = topPath;
