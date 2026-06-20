@@ -16,6 +16,7 @@ class SemanticIndexSnapshot;
 class SlangManager;
 class SmartRelationshipBuilder;
 class QObject;
+enum class CompletionCommandKind;
 
 struct SemanticSnapshotToken {
     std::shared_ptr<const SemanticIndexSnapshot> snapshot;
@@ -264,7 +265,7 @@ public:
         const QString& prefix = QString()) const;
     QList<SemanticSymbolRecord> getCommandCompletionSymbolRecords(
         const QString& moduleName,
-        sym_list::sym_type_e symbolType,
+        CompletionCommandKind commandKind,
         const QString& prefix = QString()) const;
     QStringList getCompletionSymbolNames() const;
     QStringList getEnumValueCompletionNames(
@@ -303,13 +304,13 @@ public:
         const QString& structTypeName = QString()) const;
     QList<SemanticSymbolRecord> getModuleInternalSymbolRecordsByType(
         const QString& moduleName,
-        sym_list::sym_type_e symbolType,
+        CompletionCommandKind commandKind,
         const QString& prefix = QString(),
         bool useRelationshipFallback = true) const;
     QList<SemanticSymbolRecord> getModuleContextSymbolRecordsByType(
         const QString& moduleName,
         const QString& fileName,
-        sym_list::sym_type_e symbolType,
+        CompletionCommandKind commandKind,
         const QString& prefix = QString()) const;
     QString currentModuleAt(const QString& fileName, int cursorPosition) const;
     bool hasRelationshipFacts() const;

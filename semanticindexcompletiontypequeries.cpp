@@ -1,4 +1,5 @@
 #include "semanticindex.h"
+#include "completioncommandkindadapter.h"
 #include "semanticindexcompletionfilters.h"
 #include "symboltaxonomy.h"
 
@@ -24,9 +25,11 @@ SymbolTaxonomy::SemanticMetadata completionMetadataForRecord(
 
 bool commandCompletionScopeVisibleForRecord(
     const SemanticSymbolRecord& record,
-    sym_list::sym_type_e requestedType,
+    CompletionCommandKind requestedKind,
     const QString& moduleName)
 {
+    const sym_list::sym_type_e requestedType =
+        rawCollectorKindForCompletionCommandKind(requestedKind);
     const bool useGlobalScope = moduleName.isEmpty()
         || alwaysGlobalCommandSymbolType(requestedType);
     if (useGlobalScope)
@@ -42,12 +45,15 @@ bool commandCompletionScopeVisibleForRecord(
 
 QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
     const QString& moduleName,
-    sym_list::sym_type_e symbolType,
+    CompletionCommandKind commandKind,
     const QString& prefix) const
 {
     QList<SemanticSymbolRecord> result;
     QSet<QString> seenNames;
-    if (moduleName.isEmpty() && !commandGlobalCompletionSymbolType(symbolType))
+    const sym_list::sym_type_e rawCollectorKind =
+        rawCollectorKindForCompletionCommandKind(commandKind);
+    if (moduleName.isEmpty()
+        && !commandGlobalCompletionSymbolType(rawCollectorKind))
         return result;
 
     const QList<SemanticSymbolRecord> records = getSymbolRecords();
@@ -56,11 +62,11 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
             completionMetadataForRecord(record);
         if (!commandCompletionScopeVisibleForRecord(
                 record,
-                symbolType,
+                commandKind,
                 moduleName)
             || !commandSymbolTypeMatches(
                 metadata,
-                symbolType,
+                rawCollectorKind,
                 record.type.rawTypeText)
             || !semanticCompletionNameMatches(record.name, prefix)) {
             continue;

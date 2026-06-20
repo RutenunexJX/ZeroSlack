@@ -1,5 +1,7 @@
 #include "semanticindex.h"
 
+#include "completiontypes.h"
+
 #include <QSet>
 #include <algorithm>
 
@@ -109,7 +111,9 @@ QString SemanticIndex::enumTypeForVariable(
 {
     if (!moduleName.isEmpty()) {
         const QList<SemanticSymbolRecord> moduleRecords =
-            getModuleInternalSymbolRecordsByType(moduleName, sym_list::sym_enum_var);
+            getModuleInternalSymbolRecordsByType(
+                moduleName,
+                CompletionCommandKind::EnumVariable);
         for (const SemanticSymbolRecord& record : moduleRecords) {
             if (record.name == variableName)
                 return ownerNameForCompletionContextRecord(record);
@@ -149,13 +153,13 @@ QStringList SemanticIndex::getModulePortCompletionNames(
 
     QList<SemanticSymbolRecord> portRecords;
     portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
-                                                         sym_list::sym_wire,
+                                                         CompletionCommandKind::Wire,
                                                          prefix));
     portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
-                                                         sym_list::sym_reg,
+                                                         CompletionCommandKind::Reg,
                                                          prefix));
     portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
-                                                         sym_list::sym_logic,
+                                                         CompletionCommandKind::Logic,
                                                          prefix));
     return uniqueSortedCompletionContextSymbolNames(
         portRecords);

@@ -1,5 +1,6 @@
 #include "semanticindex.h"
 
+#include "completioncommandkindadapter.h"
 #include "semanticindexmodulecontexthelpers.h"
 #include "symboltaxonomy.h"
 
@@ -31,7 +32,7 @@ QString stableDedupeKeyForModuleContextRecord(
 
 QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
     const QString& moduleName,
-    sym_list::sym_type_e symbolType,
+    CompletionCommandKind commandKind,
     const QString& prefix,
     bool useRelationshipFallback) const
 {
@@ -39,6 +40,8 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
     if (moduleName.isEmpty())
         return result;
 
+    const sym_list::sym_type_e symbolType =
+        rawCollectorKindForCompletionCommandKind(commandKind);
     const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
     SemanticSymbolRecord moduleRecord;
     bool foundModule = false;
@@ -137,13 +140,15 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
 QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
     const QString& moduleName,
     const QString& fileName,
-    sym_list::sym_type_e symbolType,
+    CompletionCommandKind commandKind,
     const QString& prefix) const
 {
     QList<SemanticSymbolRecord> result;
     if (moduleName.isEmpty() || fileName.isEmpty())
         return result;
 
+    const sym_list::sym_type_e symbolType =
+        rawCollectorKindForCompletionCommandKind(commandKind);
     const QString normalizedTargetFile = normalizedModuleContextFileName(fileName);
     const QList<SemanticSymbolRecord> fileRecords = getSymbolRecords(fileName);
     SemanticSymbolRecord moduleRecord;

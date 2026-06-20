@@ -1,5 +1,6 @@
 #include "completionsemanticquery.h"
 
+#include "completioncommandkindadapter.h"
 #include "completionservice.h"
 #include "semanticindexcompletionfilters.h"
 #include "symboltaxonomy.h"
@@ -8,59 +9,6 @@
 
 namespace {
 using namespace semantic_index_completion;
-
-sym_list::sym_type_e rawCollectorKindForCommandKind(CompletionCommandKind kind)
-{
-    switch (kind) {
-    case CompletionCommandKind::Reg:
-        return sym_list::sym_reg;
-    case CompletionCommandKind::Wire:
-        return sym_list::sym_wire;
-    case CompletionCommandKind::Logic:
-        return sym_list::sym_logic;
-    case CompletionCommandKind::Module:
-        return sym_list::sym_module;
-    case CompletionCommandKind::Task:
-        return sym_list::sym_task;
-    case CompletionCommandKind::Function:
-        return sym_list::sym_function;
-    case CompletionCommandKind::Interface:
-        return sym_list::sym_interface;
-    case CompletionCommandKind::Package:
-        return sym_list::sym_package;
-    case CompletionCommandKind::Macro:
-        return sym_list::sym_def_define;
-    case CompletionCommandKind::Localparam:
-        return sym_list::sym_localparam;
-    case CompletionCommandKind::Parameter:
-        return sym_list::sym_parameter;
-    case CompletionCommandKind::AlwaysProcess:
-        return sym_list::sym_always;
-    case CompletionCommandKind::ContinuousAssign:
-        return sym_list::sym_assign;
-    case CompletionCommandKind::Typedef:
-        return sym_list::sym_typedef;
-    case CompletionCommandKind::EnumValue:
-        return sym_list::sym_enum_value;
-    case CompletionCommandKind::EnumType:
-        return sym_list::sym_enum;
-    case CompletionCommandKind::EnumVariable:
-        return sym_list::sym_enum_var;
-    case CompletionCommandKind::StructMember:
-        return sym_list::sym_struct_member;
-    case CompletionCommandKind::PackedStructType:
-        return sym_list::sym_packed_struct;
-    case CompletionCommandKind::UnpackedStructType:
-        return sym_list::sym_unpacked_struct;
-    case CompletionCommandKind::PackedStructVariable:
-        return sym_list::sym_packed_struct_var;
-    case CompletionCommandKind::UnpackedStructVariable:
-        return sym_list::sym_unpacked_struct_var;
-    case CompletionCommandKind::User:
-        return sym_list::sym_user;
-    }
-    return sym_list::sym_user;
-}
 
 SymbolTaxonomy::SemanticMetadata completionMetadataForRecord(
     const SemanticSymbolRecord& record)
@@ -95,11 +43,8 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
     if (!semanticIndex)
         return {};
 
-    const sym_list::sym_type_e adapterRawCollectorKind =
-        rawCollectorKindForCommandKind(query.commandKind);
     const bool directModuleContext =
-        SymbolTaxonomy::isDirectModuleContextCompletionRequest(
-            adapterRawCollectorKind);
+        completionCommandKindRequiresModuleContext(query.commandKind);
 
     if (directModuleContext) {
         if (query.moduleName.isEmpty())
@@ -111,13 +56,13 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
         return semanticIndex->getModuleContextSymbolRecordsByType(
             query.moduleName,
             query.fileName,
-            adapterRawCollectorKind,
+            query.commandKind,
             query.prefix);
     }
 
     return semanticIndex->getCommandCompletionSymbolRecords(
         query.moduleName,
-        adapterRawCollectorKind,
+        query.commandKind,
         query.prefix);
 }
 
@@ -130,7 +75,7 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::typedSymbolRecords(
         return {};
 
     const sym_list::sym_type_e adapterRawCollectorKind =
-        rawCollectorKindForCommandKind(commandKind);
+        rawCollectorKindForCompletionCommandKind(commandKind);
 
     QList<SemanticSymbolRecord> result;
     QSet<QString> seenStableKeys;

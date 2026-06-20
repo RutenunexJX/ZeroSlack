@@ -220,6 +220,7 @@ set(ZEROSLACK_CORE_SOURCES
     modulebriefservice.h
     alternatecommandservice.h
     completioncommandmode.h
+    completioncommandkindadapter.h
     completionmanager.h
     scope_tree.h
     version.h
