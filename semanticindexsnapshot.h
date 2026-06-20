@@ -46,7 +46,15 @@ public:
     QHash<QString, QString> fileContents() const;
 
 private:
-    QList<sym_list::SymbolInfo> m_symbols;
+    struct FromRecordsTag {};
+
+    SemanticIndexSnapshot(FromRecordsTag,
+                          QList<SemanticSymbolRecord> symbolRecords,
+                          QList<SemanticRelationship> relationships,
+                          QList<SemanticDiagnostic> diagnostics,
+                          QHash<QString, QString> fileContents);
+
+    QList<SemanticSymbolRecord> m_symbolRecords;
     QList<SemanticRelationship> m_relationships;
     QList<SemanticDiagnostic> m_diagnostics;
     QHash<QString, QString> m_fileContents;

@@ -30,85 +30,82 @@ QList<SymbolRelationshipEngine::RelationType> snapshotRelationshipTypes()
     };
 }
 
-int snapshotLocalHandleForSymbol(const sym_list::SymbolInfo& entry)
+int snapshotLocalHandleForRecord(const SemanticSymbolRecord& record)
 {
-    return entry.symbolId;
+    return record.localHandle;
 }
 
-sym_list::SymbolInfo snapshotSymbolByLocalHandle(
-    const QList<sym_list::SymbolInfo>& symbols,
+SemanticSymbolRecord snapshotRecordByLocalHandle(
+    const QList<SemanticSymbolRecord>& records,
     int localHandle)
 {
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (snapshotLocalHandleForSymbol(symbol) == localHandle)
-            return symbol;
+    for (const SemanticSymbolRecord& record : records) {
+        if (snapshotLocalHandleForRecord(record) == localHandle)
+            return record;
     }
-
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    return missing;
+    return {};
 }
 
 void fillRelationshipStableKeys(
     SemanticRelationship* relationship,
-    const QList<sym_list::SymbolInfo>& symbols)
+    const QList<SemanticSymbolRecord>& records)
 {
     if (!relationship)
         return;
 
     if (!relationship->fromStableKey.isValid()) {
         relationship->fromStableKey =
-            symbolStableKeyForSymbol(
-                snapshotSymbolByLocalHandle(symbols, relationship->fromId));
+            snapshotRecordByLocalHandle(
+                records, relationship->fromId).stableKey;
     }
     if (!relationship->toStableKey.isValid()) {
         relationship->toStableKey =
-            symbolStableKeyForSymbol(
-                snapshotSymbolByLocalHandle(symbols, relationship->toId));
+            snapshotRecordByLocalHandle(
+                records, relationship->toId).stableKey;
     }
 }
 
 int snapshotLocalHandleByStableKey(
-    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SemanticSymbolRecord>& records,
     const SymbolStableKey& key)
 {
     if (!key.isValid())
         return -1;
 
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (symbolStableKeyForSymbol(symbol) == key)
-            return snapshotLocalHandleForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.stableKey == key)
+            return snapshotLocalHandleForRecord(record);
     }
     return -1;
 }
 
 SemanticRelationship rebindRelationshipToSnapshot(
     const SemanticRelationship& relationship,
-    const QList<sym_list::SymbolInfo>& symbols)
+    const QList<SemanticSymbolRecord>& records)
 {
     SemanticRelationship rebound = relationship;
-    fillRelationshipStableKeys(&rebound, symbols);
+    fillRelationshipStableKeys(&rebound, records);
 
     const int reboundFromHandle =
-        snapshotLocalHandleByStableKey(symbols, rebound.fromStableKey);
+        snapshotLocalHandleByStableKey(records, rebound.fromStableKey);
     if (reboundFromHandle >= 0)
         rebound.fromId = reboundFromHandle;
 
     const int reboundToHandle =
-        snapshotLocalHandleByStableKey(symbols, rebound.toStableKey);
+        snapshotLocalHandleByStableKey(records, rebound.toStableKey);
     if (reboundToHandle >= 0)
         rebound.toId = reboundToHandle;
 
-    fillRelationshipStableKeys(&rebound, symbols);
+    fillRelationshipStableKeys(&rebound, records);
     return rebound;
 }
 
 QString snapshotRelationshipDedupeKey(
     const SemanticRelationship& relationship,
-    const QList<sym_list::SymbolInfo>& symbols)
+    const QList<SemanticSymbolRecord>& records)
 {
     SemanticRelationship keyedRelationship =
-        rebindRelationshipToSnapshot(relationship, symbols);
+        rebindRelationshipToSnapshot(relationship, records);
 
     const QString stableKey =
         semanticRelationshipStableKeyText(keyedRelationship);
@@ -121,16 +118,12 @@ QString snapshotRelationshipDedupeKey(
         .arg(static_cast<int>(keyedRelationship.type));
 }
 
-QList<sym_list::SymbolInfo> symbolsWithSemanticMetadata(
-    QList<sym_list::SymbolInfo> symbols)
+QList<SemanticSymbolRecord> snapshotRecordsFromSymbols(
+    const QList<sym_list::SymbolInfo>& symbols)
 {
     const QSet<QString> packageScopes =
         SymbolTaxonomy::packageScopeNames(symbols);
-    for (sym_list::SymbolInfo& symbol : symbols) {
-        if (!symbol.hasSemanticMetadata)
-            SymbolTaxonomy::attachSemanticMetadata(&symbol, packageScopes);
-    }
-    return symbols;
+    return semanticSymbolRecordsForSymbols(symbols, packageScopes);
 }
 
 }
@@ -140,13 +133,27 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
     QList<SemanticRelationship> relationships,
     QList<SemanticDiagnostic> diagnostics,
     QHash<QString, QString> fileContents)
-    : m_symbols(symbolsWithSemanticMetadata(std::move(symbols))),
+    : SemanticIndexSnapshot(FromRecordsTag{},
+                            snapshotRecordsFromSymbols(symbols),
+                            std::move(relationships),
+                            std::move(diagnostics),
+                            std::move(fileContents))
+{
+}
+
+SemanticIndexSnapshot::SemanticIndexSnapshot(
+    FromRecordsTag,
+    QList<SemanticSymbolRecord> symbolRecords,
+    QList<SemanticRelationship> relationships,
+    QList<SemanticDiagnostic> diagnostics,
+    QHash<QString, QString> fileContents)
+    : m_symbolRecords(std::move(symbolRecords)),
       m_relationships(std::move(relationships)),
       m_diagnostics(std::move(diagnostics)),
       m_fileContents(std::move(fileContents))
 {
     for (SemanticRelationship& relationship : m_relationships)
-        relationship = rebindRelationshipToSnapshot(relationship, m_symbols);
+        relationship = rebindRelationshipToSnapshot(relationship, m_symbolRecords);
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
@@ -162,7 +169,7 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
     if (engine) {
         QSet<QString> seen;
         for (const sym_list::SymbolInfo& symbol : symbols) {
-            const int symbolHandle = snapshotLocalHandleForSymbol(symbol);
+            const int symbolHandle = symbol.symbolId;
             if (symbolHandle < 0)
                 continue;
             for (SymbolRelationshipEngine::RelationType type : snapshotRelationshipTypes()) {
@@ -216,7 +223,8 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
     QList<SemanticRelationship> merged = m_relationships;
     QSet<QString> seen;
     for (const SemanticRelationship& relationship : std::as_const(merged)) {
-        const QString key = snapshotRelationshipDedupeKey(relationship, m_symbols);
+        const QString key =
+            snapshotRelationshipDedupeKey(relationship, m_symbolRecords);
         if (!key.isEmpty())
             seen.insert(key);
     }
@@ -225,14 +233,19 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
         const SemanticRelationship rebound = rebindRelationship(relationship);
         if (rebound.fromId < 0 || rebound.toId < 0)
             continue;
-        const QString key = snapshotRelationshipDedupeKey(rebound, m_symbols);
+        const QString key =
+            snapshotRelationshipDedupeKey(rebound, m_symbolRecords);
         if (seen.contains(key))
             continue;
         seen.insert(key);
         merged.append(rebound);
     }
 
-    return SemanticIndexSnapshot(m_symbols, merged, m_diagnostics, m_fileContents);
+    return SemanticIndexSnapshot(FromRecordsTag{},
+                                 m_symbolRecords,
+                                 merged,
+                                 m_diagnostics,
+                                 m_fileContents);
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
@@ -240,7 +253,11 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
     const QList<SemanticDiagnostic>& diagnostics) const
 {
     if (fileNames.isEmpty())
-        return SemanticIndexSnapshot(m_symbols, m_relationships, diagnostics, m_fileContents);
+        return SemanticIndexSnapshot(FromRecordsTag{},
+                                     m_symbolRecords,
+                                     m_relationships,
+                                     diagnostics,
+                                     m_fileContents);
 
     QSet<QString> targetFiles;
     for (const QString& fileName : fileNames) {
@@ -258,5 +275,9 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
     }
     merged.append(diagnostics);
 
-    return SemanticIndexSnapshot(m_symbols, m_relationships, merged, m_fileContents);
+    return SemanticIndexSnapshot(FromRecordsTag{},
+                                 m_symbolRecords,
+                                 m_relationships,
+                                 merged,
+                                 m_fileContents);
 }

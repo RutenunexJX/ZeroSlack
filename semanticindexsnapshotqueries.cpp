@@ -53,14 +53,15 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
     const QString& fileName) const
 {
     if (fileName.isEmpty())
-        return semanticSymbolRecordsForSymbols(m_symbols);
+        return m_symbolRecords;
 
     QList<SemanticSymbolRecord> result;
     const QString normalizedTarget = normalizedSnapshotQueryFileName(fileName);
-    for (const sym_list::SymbolInfo& symbol : m_symbols) {
-        if (symbol.fileName == fileName
-            || normalizedSnapshotQueryFileName(symbol.fileName) == normalizedTarget) {
-            result.append(semanticSymbolRecordForSymbol(symbol));
+    for (const SemanticSymbolRecord& record : m_symbolRecords) {
+        if (record.location.fileName == fileName
+            || normalizedSnapshotQueryFileName(record.location.fileName)
+                   == normalizedTarget) {
+            result.append(record);
         }
     }
     return result;
@@ -72,8 +73,7 @@ SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     if (!key.isValid())
         return {};
 
-    for (const sym_list::SymbolInfo& symbol : m_symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : m_symbolRecords) {
         if (record.stableKey == key)
             return record;
     }
@@ -88,9 +88,9 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::findDefinitionRecords(
         return {};
 
     QList<SemanticSymbolRecord> result;
-    for (const sym_list::SymbolInfo& symbol : m_symbols) {
-        if (symbol.symbolName == name)
-            result.append(semanticSymbolRecordForSymbol(symbol));
+    for (const SemanticSymbolRecord& record : m_symbolRecords) {
+        if (record.name == name)
+            result.append(record);
     }
     return sortedDefinitionRecords(result, context);
 }
