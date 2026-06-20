@@ -267,6 +267,8 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "symboltaxonomylegacy\\.h|SymbolVisibility[ \t\r\n]+visibility[ \t\r\n]*\\("
     "symboltaxonomylegacy\\.h|interface(TypeName|ModportName|ScopeFromOwner)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "symboltaxonomylegacy\\.h|is(Module|Package|Instance)Declaration[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "symboltaxonomylegacy\\.h|is(PackageScopeVisibleCompletion|PackageScopeVisibleDefinition|CommandCompletionScopeVisible|GlobalSymbolInfoVisible)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "symboltaxonomylegacy\\.h|(definitionContextPriorityAdjustment|isSymbolInModuleScope|isSymbolInModuleContext|isDefinitionVisibleInContext)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS

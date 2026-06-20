@@ -617,16 +617,6 @@ bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType)
     return isModuleRangeType(requestedType);
 }
 
-bool isPackageScopeVisibleCompletion(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType,
-    const QSet<QString>& packageScopes)
-{
-    return isPackageVisibleCommandRequest(requestedType)
-        && legacyVisibility(symbol, packageScopes)
-            == SymbolVisibility::PackageVisible;
-}
-
 bool isOutlineSymbol(sym_list::sym_type_e type)
 {
     return outlineSymbolTypes().contains(type);
@@ -1160,23 +1150,6 @@ QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
     return names;
 }
 
-bool isPackageScopeVisibleDefinition(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes)
-{
-    return legacyVisibility(symbol, packageScopes)
-        == SymbolVisibility::PackageVisible;
-}
-
-bool isDefinitionVisibleInContext(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName,
-    const QSet<QString>& packageScopes)
-{
-    const SemanticMetadata metadata = semanticMetadata(symbol, packageScopes);
-    return isDefinitionVisibleInContext(metadata, symbol.moduleScope, moduleName);
-}
-
 bool isDefinitionVisibleInContext(
     const SemanticMetadata& metadata,
     const QString& ownerName,
@@ -1188,59 +1161,6 @@ bool isDefinitionVisibleInContext(
         || moduleName.isEmpty()
         || ownerName == moduleName
         || metadata.visibility == SymbolVisibility::PackageVisible;
-}
-
-int definitionContextPriorityAdjustment(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName,
-    const QSet<QString>& packageScopes)
-{
-    if (!moduleName.isEmpty() && symbol.moduleScope == moduleName)
-        return -100;
-    if (isPackageScopeVisibleDefinition(symbol, packageScopes))
-        return -20;
-    return 0;
-}
-
-bool isSymbolInModuleScope(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName)
-{
-    return moduleName.isEmpty() || symbol.moduleScope == moduleName;
-}
-
-bool isSymbolInModuleContext(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName)
-{
-    return isSymbolInModuleScope(symbol, moduleName)
-        || (isModuleDeclaration(semanticMetadata(symbol))
-            && symbol.symbolName == moduleName);
-}
-
-bool isCommandCompletionScopeVisible(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType,
-    const QString& moduleName,
-    const QSet<QString>& packageScopes)
-{
-    const bool useGlobalScope = moduleName.isEmpty()
-        || isAlwaysGlobalCommandSymbolType(requestedType);
-    if (useGlobalScope)
-        return symbol.moduleScope.isEmpty();
-    return symbol.moduleScope == moduleName
-        || isPackageScopeVisibleCompletion(
-            symbol,
-            requestedType,
-            packageScopes);
-}
-
-bool isGlobalSymbolInfoVisible(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType)
-{
-    return isAlwaysGlobalSymbolInfoType(requestedType)
-        || symbol.moduleScope.isEmpty();
 }
 
 bool typedCompletionSymbolTypeMatches(

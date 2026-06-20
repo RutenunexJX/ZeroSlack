@@ -33,10 +33,6 @@ bool isSubroutineDeclaration(sym_list::sym_type_e type);
 bool isModuleRangeType(sym_list::sym_type_e type);
 bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type);
 bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType);
-bool isPackageScopeVisibleCompletion(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType,
-    const QSet<QString>& packageScopes);
 bool isOutlineSymbol(sym_list::sym_type_e type);
 sym_list::sym_type_e outlineGroupType(const SemanticMetadata& metadata);
 bool matchesRequestedSymbolType(
@@ -64,31 +60,6 @@ bool isAlwaysGlobalSymbolInfoType(sym_list::sym_type_e type);
 bool isAlwaysGlobalCommandSymbolType(sym_list::sym_type_e type);
 bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType);
 QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols);
-bool isPackageScopeVisibleDefinition(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes);
-bool isDefinitionVisibleInContext(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName,
-    const QSet<QString>& packageScopes);
-int definitionContextPriorityAdjustment(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName,
-    const QSet<QString>& packageScopes);
-bool isSymbolInModuleScope(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName);
-bool isSymbolInModuleContext(
-    const sym_list::SymbolInfo& symbol,
-    const QString& moduleName);
-bool isCommandCompletionScopeVisible(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType,
-    const QString& moduleName,
-    const QSet<QString>& packageScopes);
-bool isGlobalSymbolInfoVisible(
-    const sym_list::SymbolInfo& symbol,
-    sym_list::sym_type_e requestedType);
 bool typedCompletionSymbolTypeMatches(
     sym_list::sym_type_e symbolType,
     sym_list::sym_type_e requestedType,

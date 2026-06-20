@@ -65,6 +65,7 @@ Thin UI consumers
 - I4 fifth block is complete: unused legacy metadata write-back helpers have been deleted from the taxonomy compatibility surface.
 - I4 sixth block is complete: legacy `SymbolInfo` owner/visibility taxonomy overloads have been removed from the public compatibility header; callers verify the semantic metadata contract instead.
 - I4 seventh block is complete: legacy `SymbolInfo` interface helper and declaration-helper overloads have been removed from the public taxonomy compatibility header.
+- I4 eighth block is complete: legacy `SymbolInfo` scope/visibility helper APIs have been deleted; definition visibility callers use the native semantic metadata overload.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

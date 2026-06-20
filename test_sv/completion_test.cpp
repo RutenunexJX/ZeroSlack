@@ -619,19 +619,9 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo scopedStruct;
     scopedStruct.symbolType = sym_list::sym_packed_struct;
     scopedStruct.moduleScope = QStringLiteral("pkg_scope");
-    expectBool("SymbolTaxonomy global struct visibility",
-               SymbolTaxonomy::isGlobalSymbolInfoVisible(
-                   scopedStruct,
-                   sym_list::sym_packed_struct),
-               true);
     sym_list::SymbolInfo scopedLogic;
     scopedLogic.symbolType = sym_list::sym_logic;
     scopedLogic.moduleScope = QStringLiteral("top");
-    expectBool("SymbolTaxonomy scoped logic not global visible",
-               SymbolTaxonomy::isGlobalSymbolInfoVisible(
-                   scopedLogic,
-                   sym_list::sym_logic),
-               false);
     QSet<QString> packageScopes;
     packageScopes.insert(QStringLiteral("pkg_scope"));
     sym_list::SymbolInfo packageParameter;
@@ -649,25 +639,13 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::packageScopeNames({packageSymbol})
                    .contains(QStringLiteral("pkg_scope")),
                true);
-    expectBool("SymbolTaxonomy package command scope visible",
-               SymbolTaxonomy::isCommandCompletionScopeVisible(
-                   packageParameter,
-                   sym_list::sym_parameter,
-                   QStringLiteral("top"),
-                   packageScopes),
-               true);
-    expectBool("SymbolTaxonomy scoped logic command scope hidden",
-               SymbolTaxonomy::isCommandCompletionScopeVisible(
-                   scopedLogic,
-                   sym_list::sym_logic,
-                   QString(),
-                   packageScopes),
-               false);
+    const SymbolTaxonomy::SemanticMetadata packageParameterMetadata =
+        SymbolTaxonomy::semanticMetadata(packageParameter, packageScopes);
     expectBool("SymbolTaxonomy package definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
-                   packageParameter,
-                   QStringLiteral("top"),
-                   packageScopes),
+                   packageParameterMetadata,
+                   packageParameter.moduleScope,
+                   QStringLiteral("top")),
                true);
     sym_list::SymbolInfo metadataPackageParameter;
     metadataPackageParameter.symbolType = sym_list::sym_user;
@@ -682,11 +660,15 @@ int main(int argc, char** argv) {
     metadataPackageParameter.semanticVisibility =
         SymbolTaxonomy::SymbolVisibility::PackageVisible;
     metadataPackageParameter.rawCollectorKind = sym_list::sym_user;
+    const SymbolTaxonomy::SemanticMetadata metadataPackageParameterMetadata =
+        SymbolTaxonomy::semanticMetadata(
+            metadataPackageParameter,
+            packageScopes);
     expectBool("SymbolTaxonomy metadata package definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
-                   metadataPackageParameter,
-                   QStringLiteral("top"),
-                   packageScopes),
+                   metadataPackageParameterMetadata,
+                   metadataPackageParameter.moduleScope,
+                   QStringLiteral("top")),
                true);
     sym_list::SymbolInfo metadataStructMember;
     metadataStructMember.symbolType = sym_list::sym_user;
@@ -701,11 +683,13 @@ int main(int argc, char** argv) {
     metadataStructMember.semanticVisibility =
         SymbolTaxonomy::SymbolVisibility::Member;
     metadataStructMember.rawCollectorKind = sym_list::sym_user;
+    const SymbolTaxonomy::SemanticMetadata metadataStructMemberMetadata =
+        SymbolTaxonomy::semanticMetadata(metadataStructMember, packageScopes);
     expectBool("SymbolTaxonomy metadata member definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
-                   metadataStructMember,
-                   QStringLiteral("top"),
-                   packageScopes),
+                   metadataStructMemberMetadata,
+                   metadataStructMember.moduleScope,
+                   QStringLiteral("top")),
                true);
     sym_list::SymbolInfo metadataEnumValue;
     metadataEnumValue.symbolType = sym_list::sym_user;
@@ -716,28 +700,22 @@ int main(int argc, char** argv) {
     metadataEnumValue.semanticUsageRole =
         SymbolTaxonomy::SymbolUsageRole::Declaration;
     metadataEnumValue.rawCollectorKind = sym_list::sym_enum_value;
+    const SymbolTaxonomy::SemanticMetadata metadataEnumValueMetadata =
+        SymbolTaxonomy::semanticMetadata(metadataEnumValue, packageScopes);
     expectBool("SymbolTaxonomy metadata enum value definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
-                   metadataEnumValue,
-                   QStringLiteral("top"),
-                   packageScopes),
+                   metadataEnumValueMetadata,
+                   metadataEnumValue.moduleScope,
+                   QStringLiteral("top")),
                true);
+    const SymbolTaxonomy::SemanticMetadata scopedLogicMetadata =
+        SymbolTaxonomy::semanticMetadata(scopedLogic, packageScopes);
     expectBool("SymbolTaxonomy scoped logic definition hidden",
                SymbolTaxonomy::isDefinitionVisibleInContext(
-                   scopedLogic,
-                   QStringLiteral("other_top"),
-                   packageScopes),
+                   scopedLogicMetadata,
+                   scopedLogic.moduleScope,
+                   QStringLiteral("other_top")),
                false);
-    expectBool("SymbolTaxonomy local definition priority wins",
-               SymbolTaxonomy::definitionContextPriorityAdjustment(
-                   scopedLogic,
-                   QStringLiteral("top"),
-                   packageScopes)
-                   < SymbolTaxonomy::definitionContextPriorityAdjustment(
-                       packageParameter,
-                       QStringLiteral("top"),
-                       packageScopes),
-               true);
     sym_list::SymbolInfo moduleSymbol;
     moduleSymbol.symbolType = sym_list::sym_module;
     moduleSymbol.symbolName = QStringLiteral("top");
@@ -746,21 +724,6 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy module metadata declaration",
                SymbolTaxonomy::isModuleDeclaration(moduleMetadata),
                true);
-    expectBool("SymbolTaxonomy symbol in module scope",
-               SymbolTaxonomy::isSymbolInModuleScope(
-                   scopedLogic,
-                   QStringLiteral("top")),
-               true);
-    expectBool("SymbolTaxonomy module context endpoint",
-               SymbolTaxonomy::isSymbolInModuleContext(
-                   moduleSymbol,
-                   QStringLiteral("top")),
-               true);
-    expectBool("SymbolTaxonomy scoped signal not other context",
-               SymbolTaxonomy::isSymbolInModuleContext(
-                   scopedLogic,
-                   QStringLiteral("other_top")),
-               false);
 
     AlternateCommandService* alternateCommandService =
         AlternateCommandService::getInstance();
