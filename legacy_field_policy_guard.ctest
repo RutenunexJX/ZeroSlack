@@ -143,7 +143,6 @@ set(H0_LEGACY_CORE_ALLOWLIST
     semanticindex.h
     semanticindexcompletionrelationships.cpp
     semanticindexlookup.cpp
-    semanticindexrelationships.cpp
     semanticindexstore.cpp
     slangmanager.h
     slangmanagersymbols.cpp

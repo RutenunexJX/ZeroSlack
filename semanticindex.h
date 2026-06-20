@@ -329,11 +329,12 @@ public:
 
     QStringList findCompletions(const SemanticQueryContext& context) const;
 
-    QList<SemanticRelationship> getRelationships(
+    QList<SemanticRelationship> relationshipsForStableKey(
         const SymbolStableKey& key,
         bool outgoing = true) const;
-    QList<SemanticRelationship> getRelationships(const QString& scopeName,
-                                                 bool outgoing = true) const;
+    QList<SemanticRelationship> relationshipsForScopeName(
+        const QString& scopeName,
+        bool outgoing = true) const;
     QList<SemanticRelationshipResult> getRelationshipResults(
         const SymbolStableKey& key,
         bool outgoing = true) const;

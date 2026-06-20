@@ -117,7 +117,7 @@ QStringList SemanticIndex::getSymbolsWithOutgoingRelationshipCompletionNames(
         if (!record.stableKey.isValid())
             continue;
         const QList<SemanticRelationship> relationships =
-            getRelationships(record.stableKey, true);
+            relationshipsForStableKey(record.stableKey, true);
         for (const SemanticRelationship& relationship : relationships) {
             if (relationship.type == type) {
                 result.append(record);

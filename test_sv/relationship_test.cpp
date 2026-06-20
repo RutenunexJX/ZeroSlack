@@ -1210,7 +1210,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const SymbolStableKey topStableKey = symbolStableKeyForSymbol(topSymbol);
     const SymbolStableKey stageStableKey = symbolStableKeyForSymbol(stageSymbol);
     const QList<SemanticRelationship> snapshotTopRelationships =
-        snapshotIndex.getRelationships(topStableKey, true);
+        snapshotIndex.relationshipsForStableKey(topStableKey, true);
     bool snapshotFoundStage = false;
     bool snapshotFoundStageStableKey = false;
     for (const SemanticRelationship& relationship : snapshotTopRelationships) {
