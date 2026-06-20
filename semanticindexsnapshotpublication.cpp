@@ -26,10 +26,9 @@ QList<SymbolRelationshipEngine::RelationType> snapshotPublicationRelationshipTyp
 
 SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
     const SemanticIndex* index,
-    sym_list* symbolDatabase,
     QList<SemanticDiagnostic> diagnostics)
 {
-    if (!index || !symbolDatabase) {
+    if (!index) {
         return SemanticIndexSnapshot::fromSymbolRecords(
             {},
             {},
@@ -41,8 +40,7 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
         index->getSymbolRecords();
 
     QList<SemanticRelationship> relationships;
-    if (SymbolRelationshipEngine* engine =
-            symbolDatabase->getRelationshipEngine()) {
+    if (SymbolRelationshipEngine* engine = index->relationshipEngine()) {
         QSet<QString> seen;
         for (const SemanticSymbolRecord& record : symbolRecords) {
             const int symbolHandle = record.localHandle;
@@ -132,7 +130,7 @@ SemanticSnapshotToken SemanticIndex::snapshotToken() const
 void SemanticIndex::publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics)
 {
     setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        publicationSnapshotFromSemanticRecords(symbolDatabase(), std::move(diagnostics))));
+        publicationSnapshotFromSemanticRecords(this, std::move(diagnostics))));
 }
 
 void SemanticIndex::publishSnapshotReplacingDiagnostics(
@@ -148,7 +146,7 @@ SemanticIndex::captureSnapshotPreservingDiagnostics() const
     const QList<SemanticDiagnostic> diagnostics =
         m_snapshot ? m_snapshot->diagnostics() : QList<SemanticDiagnostic>();
     return std::make_shared<const SemanticIndexSnapshot>(
-        publicationSnapshotFromSemanticRecords(this, symbolDatabase(), diagnostics));
+        publicationSnapshotFromSemanticRecords(this, diagnostics));
 }
 
 std::shared_ptr<const SemanticIndexSnapshot>
@@ -162,7 +160,7 @@ SemanticIndex::captureSnapshotReplacingDiagnostics(
             m_snapshot->withReplacedDiagnostics(fileNames, diagnostics).diagnostics();
     }
     return std::make_shared<const SemanticIndexSnapshot>(
-        publicationSnapshotFromSemanticRecords(this, symbolDatabase(), mergedDiagnostics));
+        publicationSnapshotFromSemanticRecords(this, mergedDiagnostics));
 }
 
 SemanticSnapshotToken

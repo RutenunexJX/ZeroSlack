@@ -310,7 +310,8 @@ public:
                           const SemanticSymbolRecord& moduleRecord) const;
     bool contentAffectsSymbols(const QString& fileName, const QString& content) const;
     void refreshStructTypedefEnumForFile(const QString& fileName, const QString& content);
-    void attachRelationshipEngine(SymbolRelationshipEngine* engine) const;
+    void attachRelationshipEngine(SymbolRelationshipEngine* engine);
+    SymbolRelationshipEngine* relationshipEngine() const;
     std::unique_ptr<SmartRelationshipBuilder> createRelationshipBuilder(
         SymbolRelationshipEngine* engine,
         SlangManager* slangManager,
@@ -335,6 +336,7 @@ public:
 
 private:
     sym_list* m_symbolDatabase = nullptr;
+    SymbolRelationshipEngine* m_relationshipEngine = nullptr;
     std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
     std::uint64_t m_snapshotRevision = 0;
     struct NativeFileState {

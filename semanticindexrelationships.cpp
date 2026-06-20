@@ -96,7 +96,7 @@ QList<SemanticRelationship> SemanticIndex::relationshipsForStableKey(
         return {};
 
     QList<SemanticRelationship> result;
-    SymbolRelationshipEngine* engine = symbolDatabase()->getRelationshipEngine();
+    SymbolRelationshipEngine* engine = relationshipEngine();
     if (!engine)
         return result;
 

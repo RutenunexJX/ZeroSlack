@@ -461,14 +461,20 @@ void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,
         m_nativeFileContents.insert(normalizedTarget, content);
 }
 
-void SemanticIndex::attachRelationshipEngine(SymbolRelationshipEngine* engine) const
+void SemanticIndex::attachRelationshipEngine(SymbolRelationshipEngine* engine)
 {
+    m_relationshipEngine = engine;
     if (engine) {
         engine->setSymbolRecordProvider([this](const QString& fileName) {
             return getSymbolRecords(fileName);
         });
     }
     symbolDatabase()->setRelationshipEngine(engine);
+}
+
+SymbolRelationshipEngine* SemanticIndex::relationshipEngine() const
+{
+    return m_relationshipEngine;
 }
 
 std::unique_ptr<SmartRelationshipBuilder> SemanticIndex::createRelationshipBuilder(

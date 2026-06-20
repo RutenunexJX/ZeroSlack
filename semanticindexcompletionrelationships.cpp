@@ -133,7 +133,7 @@ bool SemanticIndex::hasRelationshipFacts() const
 {
     if (m_snapshot)
         return true;
-    return symbolDatabase()->getRelationshipEngine() != nullptr;
+    return relationshipEngine() != nullptr;
 }
 
 int SemanticIndex::scopeScoreForSymbol(const QString& symbolName,
