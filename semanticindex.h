@@ -209,9 +209,6 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     const QSet<QString>& packageScopes);
 SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
     const SemanticSymbolRecord& record);
-SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback);
 QString symbolStableKeyText(const SymbolStableKey& key);
 QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);

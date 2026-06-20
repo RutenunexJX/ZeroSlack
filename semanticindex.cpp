@@ -150,15 +150,6 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
     return metadata;
 }
 
-SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
-{
-    if (!record.isValid())
-        return SymbolTaxonomy::semanticMetadata(fallback);
-    return semanticMetadataForSymbolRecord(record);
-}
-
 QString symbolStableKeyText(const SymbolStableKey& key)
 {
     if (!key.isValid())
