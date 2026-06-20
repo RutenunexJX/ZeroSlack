@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <utility>
 
 #define private public
 #include "mainwindow.h"
@@ -49,6 +50,22 @@
 
 static int g_checks = 0;
 static int g_fails = 0;
+
+static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromSymbols(
+    const QList<sym_list::SymbolInfo>& symbols,
+    QList<SemanticRelationship> relationships = {},
+    QList<SemanticDiagnostic> diagnostics = {},
+    QHash<QString, QString> fileContents = {})
+{
+    return std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(
+            semanticSymbolRecordsForSymbols(
+                symbols,
+                SymbolTaxonomy::packageScopeNames(symbols)),
+            std::move(relationships),
+            std::move(diagnostics),
+            std::move(fileContents)));
+}
 
 static void expectBool(const char* what, bool got, bool want)
 {
@@ -376,7 +393,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     outgoingRelationship.type = SymbolRelationshipEngine::CALLS;
 
     SemanticIndex::getInstance()->setSnapshot(
-        std::make_shared<const SemanticIndexSnapshot>(
+        snapshotFromSymbols(
             QList<sym_list::SymbolInfo>{referenced, referencing, externalReferencing, target},
             QList<SemanticRelationship>{incomingRelationship,
                                         externalIncomingRelationship,
@@ -880,7 +897,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     insightDiagnostic.message = QStringLiteral("insight warning");
     insightDiagnostic.severity = SemanticDiagnostic::Warning;
     SemanticIndex::getInstance()->setSnapshot(
-        std::make_shared<const SemanticIndexSnapshot>(
+        snapshotFromSymbols(
             symbols,
             relationships,
             QList<SemanticDiagnostic>{insightDiagnostic},
@@ -1399,11 +1416,11 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     afterDiagnostic.message = QStringLiteral("new error");
     afterDiagnostic.severity = SemanticDiagnostic::Error;
 
-    auto beforeSnapshot = std::make_shared<const SemanticIndexSnapshot>(
+    auto beforeSnapshot = snapshotFromSymbols(
         beforeSymbols,
         QList<SemanticRelationship>{beforeRelationship},
         QList<SemanticDiagnostic>{beforeDiagnostic});
-    auto afterSnapshot = std::make_shared<const SemanticIndexSnapshot>(
+    auto afterSnapshot = snapshotFromSymbols(
         afterSymbols,
         QList<SemanticRelationship>{afterRelationship},
         QList<SemanticDiagnostic>{afterDiagnostic});
@@ -2269,7 +2286,7 @@ int main(int argc, char** argv)
         closeDiagnostic.message = QStringLiteral("workspace close probe");
         closeDiagnostic.severity = SemanticDiagnostic::Error;
         SemanticIndex::getInstance()->setSnapshot(
-            std::make_shared<const SemanticIndexSnapshot>(
+            snapshotFromSymbols(
                 QList<sym_list::SymbolInfo>{},
                 QList<SemanticRelationship>{},
                 QList<SemanticDiagnostic>{closeDiagnostic}));
@@ -2286,7 +2303,7 @@ int main(int argc, char** argv)
                    }, 2000),
                    true);
         SemanticIndex::getInstance()->setSnapshot(
-            std::make_shared<const SemanticIndexSnapshot>(
+            snapshotFromSymbols(
                 QList<sym_list::SymbolInfo>{},
                 QList<SemanticRelationship>{},
                 QList<SemanticDiagnostic>{closeDiagnostic}));

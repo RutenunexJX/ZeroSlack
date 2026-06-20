@@ -44,17 +44,9 @@ QString normalizedHierarchyFileName(const QString& fileName)
 SymbolTaxonomy::SemanticMetadata hierarchyMetadataForRecord(
     const SemanticSymbolRecord& record)
 {
-    SymbolTaxonomy::SemanticMetadata metadata;
-    if (!record.isValid())
-        return metadata;
-
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
+    return record.isValid()
+        ? semanticMetadataForSymbolRecord(record)
+        : SymbolTaxonomy::SemanticMetadata();
 }
 
 RtlInsightCodeLink hierarchyCodeLinkForRecord(

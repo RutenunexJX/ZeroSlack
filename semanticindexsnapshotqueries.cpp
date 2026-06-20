@@ -243,14 +243,8 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::sortedDefinitionRecords(
             if (!context.moduleName.isEmpty()
                 && s.owner.name == context.moduleName)
                 value += 50;
-            SymbolTaxonomy::SemanticMetadata metadata;
-            metadata.declarationKind = s.declarationKind;
-            metadata.usageRole = s.usageRole;
-            metadata.ownerScope = s.owner.kind;
-            metadata.visibility = s.visibility;
-            metadata.sourceRole = s.sourceRole;
-            metadata.rawCollectorKind = s.rawCollectorKind;
-            metadata.interfaceLikeOwner = s.owner.interfaceLike;
+            const SymbolTaxonomy::SemanticMetadata metadata =
+                semanticMetadataForSymbolRecord(s);
             if (SymbolTaxonomy::isGlobalDefinition(metadata)) {
                 value += 10;
             }

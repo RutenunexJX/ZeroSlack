@@ -207,6 +207,11 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
 QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     const QList<sym_list::SymbolInfo>& symbols,
     const QSet<QString>& packageScopes);
+SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
+    const SemanticSymbolRecord& record);
+SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback);
 sym_list::SymbolInfo semanticSymbolInfoCarrierForRecord(
     const SemanticSymbolRecord& record);
 QList<sym_list::SymbolInfo> semanticSymbolInfoCarriersForRecords(

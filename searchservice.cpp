@@ -3,20 +3,6 @@
 std::unique_ptr<SearchService> SearchService::instance = nullptr;
 
 namespace {
-SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record)
-{
-    SymbolTaxonomy::SemanticMetadata metadata;
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.ownerScope = record.owner.kind;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
-}
-
 QString symbolDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.name.isEmpty())
@@ -75,7 +61,7 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
         item.symbolDisplayName =
             symbolDisplayNameForRecord(item.symbolRecord);
         const SymbolTaxonomy::SemanticMetadata metadata =
-            metadataForRecord(item.symbolRecord);
+            semanticMetadataForSymbolRecord(item.symbolRecord);
         item.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
         item.sourceRoleDisplayName =
             SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);

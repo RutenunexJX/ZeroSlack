@@ -84,18 +84,7 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
 {
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
-    if (!record.isValid())
-        return metadata;
-
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
+    return semanticMetadataForSymbolRecord(record, fallback);
 }
 
 QString typeDisplayNameForRecord(

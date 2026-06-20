@@ -9,20 +9,6 @@
 std::unique_ptr<DefinitionNavigationService> DefinitionNavigationService::instance = nullptr;
 
 namespace {
-SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record)
-{
-    SymbolTaxonomy::SemanticMetadata metadata;
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.ownerScope = record.owner.kind;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
-}
-
 QString symbolNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.name.isEmpty())
@@ -151,11 +137,11 @@ DefinitionNavigationTarget DefinitionNavigationService::toNavigationTarget(
     target.column = startColumnForRecord(target.symbolRecord);
     target.symbolTypeText =
         SymbolTaxonomy::symbolTypeLabel(
-            metadataForRecord(target.symbolRecord));
+            semanticMetadataForSymbolRecord(target.symbolRecord));
     target.ownerDisplayName =
         ownerDisplayNameForRecord(target.symbolRecord);
     target.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(
-            metadataForRecord(target.symbolRecord).sourceRole);
+            semanticMetadataForSymbolRecord(target.symbolRecord).sourceRole);
     return target;
 }

@@ -65,26 +65,12 @@ inline bool completionCommandKindRequiresModuleContext(
         rawCollectorKindForCompletionCommandKind(kind));
 }
 
-inline SymbolTaxonomy::SemanticMetadata completionCommandMetadataForRecord(
-    const SemanticSymbolRecord& record)
-{
-    SymbolTaxonomy::SemanticMetadata metadata;
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.ownerScope = record.owner.kind;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
-}
-
 inline bool completionCommandKindMatchesTypedRecord(
     const SemanticSymbolRecord& record,
     CompletionCommandKind kind)
 {
     return SymbolTaxonomy::typedCompletionSymbolTypeMatches(
-        completionCommandMetadataForRecord(record),
+        semanticMetadataForSymbolRecord(record),
         rawCollectorKindForCompletionCommandKind(kind),
         record.type.rawTypeText);
 }
@@ -94,7 +80,7 @@ inline bool completionCommandKindMatchesCommandRecord(
     CompletionCommandKind kind)
 {
     return SymbolTaxonomy::commandSymbolTypeMatches(
-        completionCommandMetadataForRecord(record),
+        semanticMetadataForSymbolRecord(record),
         rawCollectorKindForCompletionCommandKind(kind),
         record.type.rawTypeText);
 }

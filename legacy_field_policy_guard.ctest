@@ -101,6 +101,25 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
     signaljourneyservice.cpp
 )
 
+set(RECORD_METADATA_HELPER_FILES
+    clockresetdomainservice.cpp
+    completionmodelupdates.cpp
+    completionservice.cpp
+    definitionnavigationservice.cpp
+    fsmgraphservice.cpp
+    hierarchyservice.cpp
+    modulebriefservice.cpp
+    navigationservice.cpp
+    navigationservicehierarchy.cpp
+    scopebandservice.cpp
+    searchservice.cpp
+    semanticdiffservice.cpp
+    semanticindexcompletionqueries.cpp
+    semanticindexlookuphelpers.cpp
+    semanticindexsnapshotqueries.cpp
+    signaljourneyservice.cpp
+)
+
 set(H0_LEGACY_CORE_ALLOWLIST
     clockresetdomainservice.cpp
     clockresetdomainservice.h
@@ -704,6 +723,38 @@ if(stable_key_violations)
     list(JOIN stable_key_violations "\n  " stable_key_violation_text)
     message(FATAL_ERROR
         "Stable-key migrated services must not resolve through int-id APIs or raw relationship queries:\n  ${stable_key_violation_text}")
+endif()
+
+set(record_metadata_missing_files)
+set(record_metadata_violations)
+foreach(relative_path IN LISTS RECORD_METADATA_HELPER_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND record_metadata_missing_files "${relative_path}")
+        continue()
+    endif()
+
+    file(READ "${path}" content)
+    string(REGEX MATCHALL
+        "\\.(rawCollectorKind)([^A-Za-z0-9_]|$)"
+        record_metadata_raw_matches
+        "${content}")
+
+    if(record_metadata_raw_matches)
+        list(APPEND record_metadata_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(record_metadata_missing_files)
+    list(JOIN record_metadata_missing_files "\n  " record_metadata_missing_text)
+    message(FATAL_ERROR
+        "Semantic record metadata helper guard references missing files:\n  ${record_metadata_missing_text}")
+endif()
+
+if(record_metadata_violations)
+    list(JOIN record_metadata_violations "\n  " record_metadata_violation_text)
+    message(FATAL_ERROR
+        "Migrated semantic service/query files must use semanticMetadataForSymbolRecord instead of reading rawCollectorKind directly:\n  ${record_metadata_violation_text}")
 endif()
 
 set(h0_allowlist_missing_files)

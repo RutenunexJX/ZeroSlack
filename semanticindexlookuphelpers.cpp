@@ -19,14 +19,7 @@ bool symbolSearchTypeMatches(const SemanticSymbolRecord& record,
                              SymbolTaxonomy::SymbolSearchIntent intent)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::SemanticMetadata{
-            record.declarationKind,
-            record.usageRole,
-            record.owner.kind,
-            record.visibility,
-            record.sourceRole,
-            record.rawCollectorKind,
-            record.owner.interfaceLike};
+        semanticMetadataForSymbolRecord(record);
     if (!declarationKinds.isEmpty()) {
         return declarationKinds.contains(record.declarationKind);
     }
@@ -40,27 +33,13 @@ bool semanticDefinitionRecordMatches(const SemanticSymbolRecord& record,
         return false;
 
     return SymbolTaxonomy::isDefinitionCandidate(
-        SymbolTaxonomy::SemanticMetadata{
-            record.declarationKind,
-            record.usageRole,
-            record.owner.kind,
-            record.visibility,
-            record.sourceRole,
-            record.rawCollectorKind,
-            record.owner.interfaceLike});
+        semanticMetadataForSymbolRecord(record));
 }
 
 int semanticDefinitionTypePriority(const SemanticSymbolRecord& record)
 {
     return SymbolTaxonomy::definitionPriority(
-        SymbolTaxonomy::SemanticMetadata{
-            record.declarationKind,
-            record.usageRole,
-            record.owner.kind,
-            record.visibility,
-            record.sourceRole,
-            record.rawCollectorKind,
-            record.owner.interfaceLike});
+        semanticMetadataForSymbolRecord(record));
 }
 
 bool semanticDefinitionSkipForStructMemberType(

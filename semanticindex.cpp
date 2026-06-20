@@ -136,6 +136,29 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     return records;
 }
 
+SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
+    const SemanticSymbolRecord& record)
+{
+    SymbolTaxonomy::SemanticMetadata metadata;
+    metadata.declarationKind = record.declarationKind;
+    metadata.usageRole = record.usageRole;
+    metadata.ownerScope = record.owner.kind;
+    metadata.visibility = record.visibility;
+    metadata.sourceRole = record.sourceRole;
+    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.interfaceLikeOwner = record.owner.interfaceLike;
+    return metadata;
+}
+
+SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
+    const SemanticSymbolRecord& record,
+    const sym_list::SymbolInfo& fallback)
+{
+    if (!record.isValid())
+        return SymbolTaxonomy::semanticMetadata(fallback);
+    return semanticMetadataForSymbolRecord(record);
+}
+
 QString symbolStableKeyText(const SymbolStableKey& key)
 {
     if (!key.isValid())

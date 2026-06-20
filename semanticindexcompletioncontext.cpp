@@ -77,7 +77,7 @@ QList<SemanticSymbolRecord> completionContextRecordsByRawKind(
 {
     QList<SemanticSymbolRecord> result;
     for (const SemanticSymbolRecord& record : records) {
-        if (record.rawCollectorKind == rawKind)
+        if (semanticMetadataForSymbolRecord(record).rawCollectorKind == rawKind)
             result.append(record);
     }
     return result;

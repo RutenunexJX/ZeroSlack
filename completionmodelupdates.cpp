@@ -5,20 +5,6 @@
 #include <QSet>
 
 namespace {
-SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record)
-{
-    SymbolTaxonomy::SemanticMetadata metadata;
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.ownerScope = record.owner.kind;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
-}
-
 QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.owner.name.isEmpty())
@@ -49,7 +35,7 @@ void fillSymbolMetadataFromRecord(
     item.symbolStableKey = record.stableKey;
 
     const SymbolTaxonomy::SemanticMetadata metadata =
-        metadataForRecord(record);
+        semanticMetadataForSymbolRecord(record);
     item.typeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
     item.ownerScopeName = ownerScopeNameForRecord(record);
     item.sourceRoleDisplayName =

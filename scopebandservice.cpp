@@ -5,20 +5,6 @@
 std::unique_ptr<ScopeBandService> ScopeBandService::instance = nullptr;
 
 namespace {
-SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
-    const SemanticSymbolRecord& record)
-{
-    SymbolTaxonomy::SemanticMetadata metadata;
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.ownerScope = record.owner.kind;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
-}
-
 RtlInsightCodeLink codeLinkForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
@@ -105,7 +91,7 @@ ScopeBandReport ScopeBandService::scopeBands(const ScopeBandQuery& query) const
     for (const sym_list::SymbolInfo& symbol : symbols) {
         const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
         const SymbolTaxonomy::SemanticMetadata metadata =
-            semanticMetadataForRecord(record);
+            semanticMetadataForSymbolRecord(record);
         if (SymbolTaxonomy::isModuleDeclaration(metadata)) {
             if (!semantic->isValidModuleName(record.name))
                 continue;

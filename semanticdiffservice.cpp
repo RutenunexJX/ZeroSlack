@@ -22,18 +22,7 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
     const SemanticSymbolRecord& record,
     const sym_list::SymbolInfo& fallback)
 {
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
-    if (!record.isValid())
-        return metadata;
-
-    metadata.declarationKind = record.declarationKind;
-    metadata.usageRole = record.usageRole;
-    metadata.visibility = record.visibility;
-    metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
-    metadata.interfaceLikeOwner = record.owner.interfaceLike;
-    return metadata;
+    return semanticMetadataForSymbolRecord(record, fallback);
 }
 
 QString symbolTypeDisplayNameForRecord(
@@ -490,8 +479,10 @@ QString SemanticDiffService::symbolKey(
 QString SemanticDiffService::symbolSignature(const sym_list::SymbolInfo& symbol)
 {
     const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(record);
     return QStringLiteral("%1:%2")
-        .arg(static_cast<int>(record.rawCollectorKind))
+        .arg(SymbolTaxonomy::symbolTypeLabel(metadata))
         .arg(record.type.rawTypeText);
 }
 
