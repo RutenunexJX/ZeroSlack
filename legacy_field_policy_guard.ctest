@@ -120,6 +120,10 @@ set(RECORD_METADATA_HELPER_FILES
     signaljourneyservice.cpp
 )
 
+set(RECORD_NATIVE_SERVICE_FILES
+    scopebandservice.cpp
+)
+
 set(H0_LEGACY_CORE_ALLOWLIST
     clockresetdomainservice.cpp
     clockresetdomainservice.h
@@ -755,6 +759,38 @@ if(record_metadata_violations)
     list(JOIN record_metadata_violations "\n  " record_metadata_violation_text)
     message(FATAL_ERROR
         "Migrated semantic service/query files must use semanticMetadataForSymbolRecord instead of reading rawCollectorKind directly:\n  ${record_metadata_violation_text}")
+endif()
+
+set(record_native_missing_files)
+set(record_native_violations)
+foreach(relative_path IN LISTS RECORD_NATIVE_SERVICE_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND record_native_missing_files "${relative_path}")
+        continue()
+    endif()
+
+    file(READ "${path}" content)
+    string(REGEX MATCHALL
+        "semanticSymbolInfoCarrier(sForRecords|ForRecord)?[ \t\r\n]*\\("
+        record_native_carrier_matches
+        "${content}")
+
+    if(record_native_carrier_matches)
+        list(APPEND record_native_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(record_native_missing_files)
+    list(JOIN record_native_missing_files "\n  " record_native_missing_text)
+    message(FATAL_ERROR
+        "Record-native service guard references missing files:\n  ${record_native_missing_text}")
+endif()
+
+if(record_native_violations)
+    list(JOIN record_native_violations "\n  " record_native_violation_text)
+    message(FATAL_ERROR
+        "Record-native services must not convert records back through SymbolInfo carrier helpers:\n  ${record_native_violation_text}")
 endif()
 
 set(h0_allowlist_missing_files)

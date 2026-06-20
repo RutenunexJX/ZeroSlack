@@ -2,41 +2,84 @@
 
 #include "symboltaxonomy.h"
 
+#include <QRegularExpression>
+
 std::unique_ptr<ScopeBandService> ScopeBandService::instance = nullptr;
 
 namespace {
-RtlInsightCodeLink codeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
 {
-    if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        const int line = record.location.startLine > 0
-            ? record.location.startLine
-            : fallback.startLine;
-        const int column = record.location.startColumn > 0
-            ? record.location.startColumn
-            : fallback.startColumn;
-        return RtlInsightLink::fromFileLine(fileName, line, column);
-    }
-    return RtlInsightLink::fromSymbol(fallback);
+    return RtlInsightLink::fromFileLine(record.location.fileName,
+                                        record.location.startLine,
+                                        record.location.startColumn);
 }
 
-QString symbolDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString symbolDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.name.isEmpty())
         return record.name;
-    if (!fallback.symbolName.isEmpty())
-        return fallback.symbolName;
     return QStringLiteral("<unnamed>");
 }
 
+QString stripScopeBandCommentsFromLine(const QString& line, bool& inBlockComment)
+{
+    QString result;
+    result.reserve(line.size());
+    for (int i = 0; i < line.size(); ++i) {
+        if (inBlockComment) {
+            if (line.mid(i, 2) == QStringLiteral("*/")) {
+                inBlockComment = false;
+                ++i;
+            }
+            continue;
+        }
+
+        if (line.mid(i, 2) == QStringLiteral("//"))
+            break;
+        if (line.mid(i, 2) == QStringLiteral("/*")) {
+            inBlockComment = true;
+            ++i;
+            continue;
+        }
+        result.append(line.at(i));
+    }
+    return result;
+}
+
+int endModuleLineForRecord(
+    const SemanticSymbolRecord& record,
+    const QString& content)
+{
+    if (record.location.startLine <= 0)
+        return record.location.endLine;
+
+    const QStringList lines = content.split('\n');
+    if (lines.isEmpty())
+        return record.location.endLine;
+
+    int moduleDepth = 0;
+    int scanStart = record.location.startLine - 1;
+    if (scanStart < 0)
+        scanStart = 0;
+
+    bool inBlockComment = false;
+    static const QRegularExpression moduleWord(QStringLiteral("\\bmodule\\b"));
+    static const QRegularExpression endmoduleWord(QStringLiteral("\\bendmodule\\b"));
+    for (int i = scanStart; i < lines.size(); ++i) {
+        const QString code = stripScopeBandCommentsFromLine(lines.at(i),
+                                                            inBlockComment);
+        if (code.contains(moduleWord))
+            ++moduleDepth;
+        if (code.contains(endmoduleWord)) {
+            --moduleDepth;
+            if (moduleDepth == 0)
+                return i + 1;
+        }
+    }
+    return record.location.endLine;
+}
+
 ScopeBandSymbolRange symbolRangeForRecord(
-    const sym_list::SymbolInfo& symbol,
     const SemanticSymbolRecord& record,
     const SymbolTaxonomy::SemanticMetadata& metadata,
     int endLine)
@@ -45,15 +88,15 @@ ScopeBandSymbolRange symbolRangeForRecord(
     row.symbolRecord = record;
     row.symbolStableKey = record.stableKey.isValid()
         ? record.stableKey
-        : symbolStableKeyForSymbol(symbol);
-    row.codeLink = codeLinkForRecord(record, symbol);
-    row.symbolDisplayName = symbolDisplayNameForRecord(record, symbol);
+        : SymbolStableKey();
+    row.codeLink = codeLinkForRecord(record);
+    row.symbolDisplayName = symbolDisplayNameForRecord(record);
     row.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
     row.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
     row.startLine = row.codeLink.line > 0
         ? row.codeLink.line
-        : symbol.startLine;
+        : record.location.startLine;
     row.endLine = endLine;
     return row;
 }
@@ -85,26 +128,26 @@ ScopeBandReport ScopeBandService::scopeBands(const ScopeBandQuery& query) const
         return report;
 
     SemanticIndex* semantic = semanticIndex();
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticSymbolInfoCarriersForRecords(
-            semantic->getSymbolRecords(query.fileName));
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    const QList<SemanticSymbolRecord> records =
+        semantic->getSymbolRecords(query.fileName);
+    const QString content = semantic->getCachedFileContent(query.fileName);
+    for (const SemanticSymbolRecord& record : records) {
         const SymbolTaxonomy::SemanticMetadata metadata =
             semanticMetadataForSymbolRecord(record);
         if (SymbolTaxonomy::isModuleDeclaration(metadata)) {
             if (!semantic->isValidModuleName(record.name))
                 continue;
-            const int endLine = semantic->findEndModuleLine(query.fileName, symbol);
+            const int endLine = endModuleLineForRecord(record, content);
             if (endLine >= 0)
                 report.modules.append(
-                    symbolRangeForRecord(symbol, record, metadata, endLine));
+                    symbolRangeForRecord(record, metadata, endLine));
         } else if (SymbolTaxonomy::isLogicDeclaration(metadata)) {
-            const int endLine = symbol.endLine < symbol.startLine
-                ? symbol.startLine
-                : symbol.endLine;
+            const int endLine =
+                record.location.endLine < record.location.startLine
+                    ? record.location.startLine
+                    : record.location.endLine;
             report.logics.append(
-                symbolRangeForRecord(symbol, record, metadata, endLine));
+                symbolRangeForRecord(record, metadata, endLine));
         }
     }
     return report;
