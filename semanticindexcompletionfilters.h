@@ -1,20 +1,9 @@
 #ifndef SEMANTICINDEXCOMPLETIONFILTERS_H
 #define SEMANTICINDEXCOMPLETIONFILTERS_H
 
-#include "symboltaxonomy.h"
-
-#include <QList>
 #include <QString>
-#include <algorithm>
 
 namespace semantic_index_completion {
-
-inline bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
-                                     sym_list::sym_type_e commandType,
-                                     const QString& dataType = QString())
-{
-    return SymbolTaxonomy::commandSymbolTypeMatches(symbolType, commandType, dataType);
-}
 
 inline bool semanticCompletionNameMatches(const QString& name, const QString& prefix)
 {
@@ -36,51 +25,6 @@ inline bool semanticCompletionNameMatches(const QString& name, const QString& pr
         ++namePos;
     }
     return prefixPos == lowerPrefix.length();
-}
-
-inline bool internalCompletionSymbolType(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::isInternalCompletionCandidate(type);
-}
-
-inline bool internalCompletionSymbol(
-    const sym_list::SymbolInfo& symbol)
-{
-    return SymbolTaxonomy::isInternalCompletionCandidate(
-        SymbolTaxonomy::semanticMetadata(symbol));
-}
-
-inline bool globalCompletionSymbolType(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::isGlobalCompletionCandidate(type);
-}
-
-inline bool globalCompletionSymbol(
-    const sym_list::SymbolInfo& symbol)
-{
-    return SymbolTaxonomy::isGlobalCompletionCandidate(
-        SymbolTaxonomy::semanticMetadata(symbol));
-}
-
-inline bool commandGlobalCompletionSymbolType(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::isCommandGlobalCompletionType(type);
-}
-
-inline bool alwaysGlobalCommandSymbolType(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::isAlwaysGlobalCommandSymbolType(type);
-}
-
-inline void sortSymbolsByName(QList<sym_list::SymbolInfo>& symbols)
-{
-    std::sort(symbols.begin(), symbols.end(),
-              [](const sym_list::SymbolInfo& left,
-                 const sym_list::SymbolInfo& right) {
-                  return QString::compare(left.symbolName,
-                                          right.symbolName,
-                                          Qt::CaseInsensitive) < 0;
-              });
 }
 
 } // namespace semantic_index_completion

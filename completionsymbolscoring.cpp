@@ -47,22 +47,6 @@ QStringList CompletionSymbolQuery::namesFromScored(
     return result;
 }
 
-QStringList CompletionSymbolQuery::namesFromSymbols(
-    const QList<sym_list::SymbolInfo>& symbols)
-{
-    QStringList result;
-    QSet<QString> seenNames;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
-}
-
 QStringList CompletionSymbolQuery::namesFromRecords(
     const QList<SemanticSymbolRecord>& records)
 {

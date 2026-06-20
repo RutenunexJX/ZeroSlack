@@ -19,8 +19,6 @@ public:
     static QStringList namesFromScored(
         const QVector<QPair<QString, int>>& scored,
         int maxResults);
-    static QStringList namesFromSymbols(
-        const QList<sym_list::SymbolInfo>& symbols);
     static QStringList namesFromRecords(
         const QList<SemanticSymbolRecord>& records);
     static bool nameMatches(const QString& name, const QString& prefix);
