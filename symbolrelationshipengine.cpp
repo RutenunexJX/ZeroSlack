@@ -1,4 +1,5 @@
 #include "symbolrelationshipengine.h"
+#include "semanticcollectoradapter.h"
 #include "semanticindex.h"
 #include "symboltaxonomy.h"
 #include "syminfo.h"

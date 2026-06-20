@@ -1,5 +1,6 @@
 #include "symbolanalyzer.h"
 
+#include "semanticcollectoradapter.h"
 #include "slangmanager.h"
 #include "symbolanalyzerworkspace.h"
 #include "workspacemanager.h"

@@ -155,6 +155,7 @@ set(ZEROSLACK_CORE_SOURCES
     rtlinsightspanelcoordinator.cpp
     searchservice.cpp
     scopebandservice.cpp
+    semanticcollectoradapter.cpp
     semanticdiffservice.cpp
     semanticpanelutils.cpp
     semanticpanelrefreshpanels.cpp
@@ -289,6 +290,7 @@ set(ZEROSLACK_CORE_SOURCES
     rtlinsightspanelcoordinator.h
     searchservice.h
     scopebandservice.h
+    semanticcollectoradapter.h
     semanticdiffservice.h
     semanticpanelutils.h
     semanticpanelrefreshcoordinator.h

@@ -1,4 +1,5 @@
 #include "smartrelationshipbuilder.h"
+#include "semanticcollectoradapter.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 

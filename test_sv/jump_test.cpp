@@ -21,6 +21,7 @@
 #include "editorsemanticcontextservice.h"
 #include "projectmodel.h"
 #include "sourcenavigationservice.h"
+#include "semanticcollectoradapter.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 #include "mycodeeditor.h"

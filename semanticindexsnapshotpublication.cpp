@@ -1,5 +1,6 @@
 #include "semanticindex.h"
 
+#include "semanticcollectoradapter.h"
 #include "semanticindexsnapshot.h"
 
 #include <QSet>
