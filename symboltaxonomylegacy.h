@@ -33,10 +33,7 @@ bool isSubroutineDeclaration(sym_list::sym_type_e type);
 bool isModuleRangeType(sym_list::sym_type_e type);
 bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type);
 bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType);
-bool isOutlineSymbol(sym_list::sym_type_e type);
-sym_list::sym_type_e outlineGroupType(const SemanticMetadata& metadata);
 int definitionPriority(sym_list::sym_type_e type);
-QList<sym_list::sym_type_e> outlineSymbolTypes();
 QString symbolTypeLabel(sym_list::sym_type_e type);
 bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent);
 

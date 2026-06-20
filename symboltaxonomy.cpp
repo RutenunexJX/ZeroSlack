@@ -27,6 +27,70 @@ bool hasRawCollectorKind(const SemanticMetadata& metadata)
     return !rawCollectorKindIs(metadata, RawCollectorKind::User);
 }
 
+bool isOutlineRawCollectorKind(RawCollectorKind kind)
+{
+    switch (kind) {
+    case RawCollectorKind::Module:
+    case RawCollectorKind::Parameter:
+    case RawCollectorKind::Localparam:
+    case RawCollectorKind::PortInput:
+    case RawCollectorKind::PortOutput:
+    case RawCollectorKind::PortInout:
+    case RawCollectorKind::PortRef:
+    case RawCollectorKind::Reg:
+    case RawCollectorKind::Wire:
+    case RawCollectorKind::Logic:
+    case RawCollectorKind::Typedef:
+    case RawCollectorKind::Enum:
+    case RawCollectorKind::EnumVariable:
+    case RawCollectorKind::EnumValue:
+    case RawCollectorKind::PackedStruct:
+    case RawCollectorKind::UnpackedStruct:
+    case RawCollectorKind::PackedStructVariable:
+    case RawCollectorKind::UnpackedStructVariable:
+    case RawCollectorKind::StructMember:
+    case RawCollectorKind::Task:
+    case RawCollectorKind::Function:
+    case RawCollectorKind::Inst:
+        return true;
+    case RawCollectorKind::User:
+    case RawCollectorKind::Interface:
+    case RawCollectorKind::InterfaceAssocStruct:
+    case RawCollectorKind::InterfaceParameter:
+    case RawCollectorKind::Package:
+    case RawCollectorKind::DefDefine:
+    case RawCollectorKind::DefIfdef:
+    case RawCollectorKind::DefIfndef:
+    case RawCollectorKind::DefElse:
+    case RawCollectorKind::DefElsif:
+    case RawCollectorKind::DefEndif:
+    case RawCollectorKind::DefParameter:
+    case RawCollectorKind::InstPin:
+    case RawCollectorKind::InterfaceModport:
+    case RawCollectorKind::PortInterface:
+    case RawCollectorKind::PortInterfaceModport:
+    case RawCollectorKind::GenerateIf:
+    case RawCollectorKind::GenerateFor:
+    case RawCollectorKind::GenerateCase:
+    case RawCollectorKind::Always:
+    case RawCollectorKind::AlwaysFf:
+    case RawCollectorKind::AlwaysComb:
+    case RawCollectorKind::AlwaysLatch:
+    case RawCollectorKind::Assign:
+    case RawCollectorKind::Case:
+    case RawCollectorKind::Casex:
+    case RawCollectorKind::Casez:
+    case RawCollectorKind::Endcase:
+    case RawCollectorKind::CaseDefault:
+    case RawCollectorKind::FsmState:
+    case RawCollectorKind::Initial:
+    case RawCollectorKind::XilinxConstraint:
+    case RawCollectorKind::ModuleParameter:
+        return false;
+    }
+    return false;
+}
+
 }
 
 DeclarationKind declarationKind(sym_list::sym_type_e type)
@@ -566,66 +630,38 @@ bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType)
     return isModuleRangeType(requestedType);
 }
 
-bool isOutlineSymbol(sym_list::sym_type_e type)
-{
-    return outlineSymbolTypes().contains(type);
-}
-
 bool isOutlineSymbol(const SemanticMetadata& metadata)
 {
-    return isOutlineSymbol(outlineGroupType(metadata));
-}
-
-sym_list::sym_type_e outlineGroupType(const SemanticMetadata& metadata)
-{
-    const sym_list::sym_type_e rawKind =
-        legacySymbolType(metadata.rawCollectorKind);
-    if (isOutlineSymbol(rawKind))
-        return rawKind;
     if (hasRawCollectorKind(metadata))
-        return sym_list::sym_user;
+        return isOutlineRawCollectorKind(metadata.rawCollectorKind);
 
     switch (metadata.declarationKind) {
     case DeclarationKind::Module:
-        return sym_list::sym_module;
-    case DeclarationKind::Interface:
-        return sym_list::sym_interface;
-    case DeclarationKind::Package:
-        return sym_list::sym_package;
     case DeclarationKind::Typedef:
-        return sym_list::sym_typedef;
     case DeclarationKind::Enum:
-        return sym_list::sym_enum;
     case DeclarationKind::Parameter:
-        return sym_list::sym_parameter;
     case DeclarationKind::Localparam:
-        return sym_list::sym_localparam;
     case DeclarationKind::Port:
-        return sym_list::sym_port_input;
     case DeclarationKind::Signal:
-        return sym_list::sym_logic;
     case DeclarationKind::Struct:
-        return sym_list::sym_packed_struct;
     case DeclarationKind::StructVariable:
-        return sym_list::sym_packed_struct_var;
     case DeclarationKind::StructMember:
-        return sym_list::sym_struct_member;
     case DeclarationKind::Instance:
-        return sym_list::sym_inst;
     case DeclarationKind::Task:
-        return sym_list::sym_task;
     case DeclarationKind::Function:
-        return sym_list::sym_function;
+        return true;
     case DeclarationKind::Unknown:
+    case DeclarationKind::Interface:
+    case DeclarationKind::Package:
     case DeclarationKind::Modport:
     case DeclarationKind::Macro:
     case DeclarationKind::Process:
     case DeclarationKind::Generate:
     case DeclarationKind::Constraint:
     case DeclarationKind::User:
-        break;
+        return false;
     }
-    return sym_list::sym_user;
+    return false;
 }
 
 int definitionPriority(sym_list::sym_type_e type)
@@ -700,34 +736,6 @@ int definitionPriority(const SemanticMetadata& metadata)
         break;
     }
     return 10;
-}
-
-QList<sym_list::sym_type_e> outlineSymbolTypes()
-{
-    return {
-        sym_list::sym_module,
-        sym_list::sym_parameter,
-        sym_list::sym_localparam,
-        sym_list::sym_port_input,
-        sym_list::sym_port_output,
-        sym_list::sym_port_inout,
-        sym_list::sym_port_ref,
-        sym_list::sym_reg,
-        sym_list::sym_wire,
-        sym_list::sym_logic,
-        sym_list::sym_typedef,
-        sym_list::sym_enum,
-        sym_list::sym_enum_var,
-        sym_list::sym_enum_value,
-        sym_list::sym_packed_struct,
-        sym_list::sym_unpacked_struct,
-        sym_list::sym_packed_struct_var,
-        sym_list::sym_unpacked_struct_var,
-        sym_list::sym_struct_member,
-        sym_list::sym_task,
-        sym_list::sym_function,
-        sym_list::sym_inst
-    };
 }
 
 QString symbolTypeLabel(sym_list::sym_type_e type)

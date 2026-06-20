@@ -526,10 +526,6 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy outline uses semantic metadata",
                SymbolTaxonomy::isOutlineSymbol(syntheticModuleMetadata),
                true);
-    expectBool("SymbolTaxonomy outline group uses metadata",
-               SymbolTaxonomy::outlineGroupType(syntheticModuleMetadata)
-                   == sym_list::sym_module,
-               true);
     expectBool("SymbolTaxonomy requested type uses metadata",
                SymbolTaxonomy::isModuleDeclaration(syntheticModuleMetadata),
                true);
