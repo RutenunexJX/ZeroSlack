@@ -9,119 +9,75 @@
 std::unique_ptr<FsmGraphService> FsmGraphService::instance = nullptr;
 
 namespace {
-sym_list::SymbolInfo missingFsmSymbol()
+SemanticSymbolRecord missingFsmRecord()
 {
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = -1;
-    return symbol;
+    return {};
 }
 
-int fsmLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolId;
-}
-
-sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
-{
-    return semanticSymbolInfoCarrierForRecord(record);
-}
-
-sym_list::SymbolInfo stateSymbolByName(
-    const QList<sym_list::SymbolInfo>& states,
+SemanticSymbolRecord stateRecordByName(
+    const QList<SemanticSymbolRecord>& states,
     const QString& stateName)
 {
-    for (const sym_list::SymbolInfo& state : states) {
-        if (state.symbolName == stateName)
+    for (const SemanticSymbolRecord& state : states) {
+        if (state.name == stateName)
             return state;
     }
-    return missingFsmSymbol();
+    return missingFsmRecord();
 }
 
-RtlInsightCodeLink codeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
 {
-    if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        return RtlInsightLink::fromFileLine(fileName,
-                                            record.location.startLine,
-                                            record.location.startColumn);
-    }
-    return RtlInsightLink::fromSymbol(fallback);
+    return RtlInsightLink::fromFileLine(record.location.fileName,
+                                        record.location.startLine,
+                                        record.location.startColumn);
 }
 
 QString displayNameForRecord(
     const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback,
     const QString& defaultName = QString())
 {
     if (!record.name.isEmpty())
         return record.name;
-    if (!fallback.symbolName.isEmpty())
-        return fallback.symbolName;
     return defaultName;
 }
 
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    return semanticMetadataForSymbolRecord(record, fallback);
+    return semanticMetadataForSymbolRecord(record);
 }
 
-QString typeDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString typeDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
-    return SymbolTaxonomy::symbolTypeLabel(
-        metadataForRecord(record, fallback));
+    return SymbolTaxonomy::symbolTypeLabel(metadataForRecord(record));
 }
 
-QString sourceRoleDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString sourceRoleDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     return SymbolTaxonomy::sourceRoleDisplayName(
-        metadataForRecord(record, fallback).sourceRole);
+        metadataForRecord(record).sourceRole);
 }
 
-QString moduleDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString moduleDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.owner.name.isEmpty())
         return record.owner.name;
-    const SemanticSymbolRecord fallbackRecord =
-        semanticSymbolRecordForSymbol(fallback);
-    if (!fallbackRecord.owner.name.isEmpty())
-        return fallbackRecord.owner.name;
     if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
         return QStringLiteral("global");
     return QStringLiteral("global");
 }
 
-QString rawTypeTextForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString rawTypeTextForRecord(const SemanticSymbolRecord& record)
 {
-    if (!record.type.rawTypeText.isEmpty())
-        return record.type.rawTypeText;
-    return semanticSymbolRecordForSymbol(fallback).type.rawTypeText;
+    return record.type.rawTypeText;
 }
 
-QString rawTypeTextForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return rawTypeTextForRecord(semanticSymbolRecordForSymbol(symbol), symbol);
-}
-
-bool isInsideModule(const sym_list::SymbolInfo& symbol,
-                    const sym_list::SymbolInfo& moduleSymbol);
-bool hasStateValuesForType(const QList<sym_list::SymbolInfo>& symbols,
+bool isInsideModule(const SemanticSymbolRecord& record,
+                    const SemanticSymbolRecord& moduleRecord);
+bool hasStateValuesForType(const QList<SemanticSymbolRecord>& records,
                            const QString& rawTypeText);
-QString stateDetailDisplayName(const sym_list::SymbolInfo& state);
-void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
+QString stateDetailDisplayName(const SemanticSymbolRecord& state);
+void sortRecords(QList<SemanticSymbolRecord>& records);
 }
 
 FsmGraphService* FsmGraphService::getInstance()
@@ -147,32 +103,33 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
 {
     FsmGraphReport report;
     report.groupDisplayName = QStringLiteral("FSM Graphs");
-    const sym_list::SymbolInfo moduleSymbol =
+    const SemanticSymbolRecord moduleRecord =
         resolveModule(query, &report.notFoundReason);
-    if (fsmLocalHandleForSymbol(moduleSymbol) < 0) {
+    if (moduleRecord.localHandle < 0) {
         report.notFoundReasonDisplayName =
             notFoundReasonDisplayName(report.notFoundReason);
         return report;
     }
 
-    const QList<sym_list::SymbolInfo> moduleSymbols = symbolsInModule(moduleSymbol);
-    const QList<sym_list::SymbolInfo> allSymbols =
-        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
-    for (const sym_list::SymbolInfo& stateRegister
-         : stateRegisters(moduleSymbols, allSymbols)) {
+    const QList<SemanticSymbolRecord> moduleRecords =
+        symbolsInModule(moduleRecord);
+    const QList<SemanticSymbolRecord> allRecords =
+        semanticIndex()->getSymbolRecords();
+    for (const SemanticSymbolRecord& stateRegister
+         : stateRegisters(moduleRecords, allRecords)) {
         FsmGraph graph;
-        const sym_list::SymbolInfo nextState =
-            nextStateSignal(moduleSymbols, stateRegister);
-        const QList<sym_list::SymbolInfo> states =
-            stateValues(moduleSymbols, allSymbols, stateRegister);
-        QList<FsmTransition> transitions = parseTransitions(moduleSymbol,
+        const SemanticSymbolRecord nextState =
+            nextStateSignal(moduleRecords, stateRegister);
+        const QList<SemanticSymbolRecord> states =
+            stateValues(moduleRecords, allRecords, stateRegister);
+        QList<FsmTransition> transitions = parseTransitions(moduleRecord,
                                                             stateRegister,
                                                             nextState,
                                                             states);
         if (states.isEmpty() && transitions.isEmpty())
             continue;
         fillDisplayMetadata(graph,
-                            moduleSymbol,
+                            moduleRecord,
                             stateRegister,
                             nextState,
                             states,
@@ -196,7 +153,7 @@ SemanticIndex* FsmGraphService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-sym_list::SymbolInfo FsmGraphService::resolveModule(
+SemanticSymbolRecord FsmGraphService::resolveModule(
     const FsmGraphQuery& query,
     FsmGraphNotFoundReason* reason) const
 {
@@ -209,20 +166,20 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
         if (!record.isValid()) {
             if (reason)
                 *reason = FsmGraphNotFoundReason::NoMatchingModule;
-            return missingFsmSymbol();
+            return missingFsmRecord();
         }
-        if (!SymbolTaxonomy::isModuleDeclaration(metadataForRecord(record, {}))) {
+        if (!SymbolTaxonomy::isModuleDeclaration(metadataForRecord(record))) {
             if (reason)
                 *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
-            return missingFsmSymbol();
+            return missingFsmRecord();
         }
-        return symbolInfoForRecord(record);
+        return record;
     }
 
     if (query.moduleName.isEmpty()) {
         if (reason)
             *reason = FsmGraphNotFoundReason::EmptyModuleName;
-        return missingFsmSymbol();
+        return missingFsmRecord();
     }
 
     SemanticDefinitionQuery definitionQuery;
@@ -233,174 +190,173 @@ sym_list::SymbolInfo FsmGraphService::resolveModule(
     if (!definition.found) {
         if (reason)
             *reason = FsmGraphNotFoundReason::NoMatchingModule;
-        return missingFsmSymbol();
+        return missingFsmRecord();
     }
     if (!SymbolTaxonomy::isModuleDeclaration(
-            metadataForRecord(definition.symbolRecord, {}))) {
+            metadataForRecord(definition.symbolRecord))) {
         if (reason)
             *reason = FsmGraphNotFoundReason::UnsupportedSymbolKind;
-        return missingFsmSymbol();
+        return missingFsmRecord();
     }
-    const sym_list::SymbolInfo symbol =
-        symbolInfoForRecord(definition.symbolRecord);
-    if (fsmLocalHandleForSymbol(symbol) < 0)
-        return missingFsmSymbol();
-    return symbol;
+    const SemanticSymbolRecord record = definition.symbolRecord;
+    if (record.localHandle < 0)
+        return missingFsmRecord();
+    return record;
 }
 
-QList<sym_list::SymbolInfo> FsmGraphService::symbolsInModule(
-    const sym_list::SymbolInfo& moduleSymbol) const
+QList<SemanticSymbolRecord> FsmGraphService::symbolsInModule(
+    const SemanticSymbolRecord& moduleRecord) const
 {
-    QList<sym_list::SymbolInfo> result;
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticSymbolInfoCarriersForRecords(
-            semanticIndex()->getSymbolRecords(moduleSymbol.fileName));
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (isInsideModule(symbol, moduleSymbol))
-            result.append(symbol);
+    QList<SemanticSymbolRecord> result;
+    const QList<SemanticSymbolRecord> records =
+        semanticIndex()->getSymbolRecords(moduleRecord.location.fileName);
+    for (const SemanticSymbolRecord& record : records) {
+        if (isInsideModule(record, moduleRecord))
+            result.append(record);
     }
-    sortSymbols(result);
+    sortRecords(result);
     return result;
 }
 
-QList<sym_list::SymbolInfo> FsmGraphService::stateRegisters(
-    const QList<sym_list::SymbolInfo>& moduleSymbols,
-    const QList<sym_list::SymbolInfo>& allSymbols) const
+QList<SemanticSymbolRecord> FsmGraphService::stateRegisters(
+    const QList<SemanticSymbolRecord>& moduleRecords,
+    const QList<SemanticSymbolRecord>& allRecords) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     QSet<int> seen;
-    for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
+    for (const SemanticSymbolRecord& record : moduleRecords) {
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))) {
+                metadataForRecord(record))) {
             continue;
         }
-        if (looksLikeNextStateName(symbol.symbolName))
+        if (looksLikeNextStateName(record.name))
             continue;
         const bool hasNextStatePair =
-            hasPairedNextStateSignal(moduleSymbols, symbol);
-        if (!looksLikeCurrentStateName(symbol.symbolName)
+            hasPairedNextStateSignal(moduleRecords, record);
+        if (!looksLikeCurrentStateName(record.name)
             && !hasNextStatePair) {
             continue;
         }
-        const QString symbolType = rawTypeTextForSymbol(symbol);
+        const QString symbolType = rawTypeTextForRecord(record);
         if (!symbolType.isEmpty()
-            && !hasStateValuesForType(allSymbols, symbolType)
+            && !hasStateValuesForType(allRecords, symbolType)
             && !hasNextStatePair
-            && !symbol.symbolName.contains(QStringLiteral("state"),
-                                           Qt::CaseInsensitive)) {
+            && !record.name.contains(QStringLiteral("state"),
+                                     Qt::CaseInsensitive)) {
             continue;
         }
-        const int symbolHandle = fsmLocalHandleForSymbol(symbol);
-        if (seen.contains(symbolHandle))
+        if (seen.contains(record.localHandle))
             continue;
-        seen.insert(symbolHandle);
-        result.append(symbol);
+        seen.insert(record.localHandle);
+        result.append(record);
     }
-    sortSymbols(result);
+    sortRecords(result);
     return result;
 }
 
-QList<sym_list::SymbolInfo> FsmGraphService::stateValues(
-    const QList<sym_list::SymbolInfo>& moduleSymbols,
-    const QList<sym_list::SymbolInfo>& allSymbols,
-    const sym_list::SymbolInfo& stateRegister) const
+QList<SemanticSymbolRecord> FsmGraphService::stateValues(
+    const QList<SemanticSymbolRecord>& moduleRecords,
+    const QList<SemanticSymbolRecord>& allRecords,
+    const SemanticSymbolRecord& stateRegister) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     QSet<int> seen;
-    const QString stateRegisterType = rawTypeTextForSymbol(stateRegister);
-    const QList<sym_list::SymbolInfo>& source =
-        stateRegisterType.isEmpty() ? moduleSymbols : allSymbols;
-    for (const sym_list::SymbolInfo& symbol : source) {
+    const QString stateRegisterType = rawTypeTextForRecord(stateRegister);
+    const QList<SemanticSymbolRecord>& source =
+        stateRegisterType.isEmpty() ? moduleRecords : allRecords;
+    for (const SemanticSymbolRecord& record : source) {
         if (!SymbolTaxonomy::isFsmStateValueDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))) {
+                metadataForRecord(record))) {
             continue;
         }
         if (!stateRegisterType.isEmpty()) {
-            if (rawTypeTextForSymbol(symbol) != stateRegisterType)
+            if (rawTypeTextForRecord(record) != stateRegisterType)
                 continue;
         }
-        const int symbolHandle = fsmLocalHandleForSymbol(symbol);
-        if (seen.contains(symbolHandle))
+        if (seen.contains(record.localHandle))
             continue;
-        seen.insert(symbolHandle);
-        result.append(symbol);
+        seen.insert(record.localHandle);
+        result.append(record);
     }
     if (!stateRegisterType.isEmpty() && result.isEmpty()) {
-        for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
+        for (const SemanticSymbolRecord& record : moduleRecords) {
             if (!SymbolTaxonomy::isFsmStateValueDeclaration(
-                    SymbolTaxonomy::semanticMetadata(symbol))) {
+                    metadataForRecord(record))) {
                 continue;
             }
-            const QString symbolType = rawTypeTextForSymbol(symbol);
+            const QString symbolType = rawTypeTextForRecord(record);
             if (!symbolType.isEmpty()
                 && symbolType != stateRegisterType) {
                 continue;
             }
-            const int symbolHandle = fsmLocalHandleForSymbol(symbol);
-            if (seen.contains(symbolHandle))
+            if (seen.contains(record.localHandle))
                 continue;
-            seen.insert(symbolHandle);
-            result.append(symbol);
+            seen.insert(record.localHandle);
+            result.append(record);
         }
     }
-    sortSymbols(result);
+    sortRecords(result);
     return result;
 }
 
-sym_list::SymbolInfo FsmGraphService::nextStateSignal(
-    const QList<sym_list::SymbolInfo>& moduleSymbols,
-    const sym_list::SymbolInfo& stateRegister) const
+SemanticSymbolRecord FsmGraphService::nextStateSignal(
+    const QList<SemanticSymbolRecord>& moduleRecords,
+    const SemanticSymbolRecord& stateRegister) const
 {
-    QList<sym_list::SymbolInfo> candidates;
-    const QString stateRegisterType = rawTypeTextForSymbol(stateRegister);
-    for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
+    QList<SemanticSymbolRecord> candidates;
+    const QString stateRegisterType = rawTypeTextForRecord(stateRegister);
+    for (const SemanticSymbolRecord& record : moduleRecords) {
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))) {
+                metadataForRecord(record))) {
             continue;
         }
-        if (fsmLocalHandleForSymbol(symbol)
-            == fsmLocalHandleForSymbol(stateRegister)) {
+        if (record.localHandle == stateRegister.localHandle) {
             continue;
         }
         const bool looksNext =
-            looksLikeNextStateName(symbol.symbolName)
-            || isPairedNextStateName(stateRegister.symbolName, symbol.symbolName);
+            looksLikeNextStateName(record.name)
+            || isPairedNextStateName(stateRegister.name, record.name);
         if (!looksNext)
             continue;
-        const QString symbolType = rawTypeTextForSymbol(symbol);
+        const QString symbolType = rawTypeTextForRecord(record);
         if (!stateRegisterType.isEmpty()
             && !symbolType.isEmpty()
             && symbolType != stateRegisterType) {
             continue;
         }
-        candidates.append(symbol);
+        candidates.append(record);
     }
-    sortSymbols(candidates);
-    return candidates.isEmpty() ? missingFsmSymbol() : candidates.first();
+    sortRecords(candidates);
+    return candidates.isEmpty() ? missingFsmRecord() : candidates.first();
 }
 
 QList<FsmTransition> FsmGraphService::parseTransitions(
-    const sym_list::SymbolInfo& moduleSymbol,
-    const sym_list::SymbolInfo& stateRegister,
-    const sym_list::SymbolInfo& nextStateSignal,
-    const QList<sym_list::SymbolInfo>& states) const
+    const SemanticSymbolRecord& moduleRecord,
+    const SemanticSymbolRecord& stateRegister,
+    const SemanticSymbolRecord& nextStateSignal,
+    const QList<SemanticSymbolRecord>& states) const
 {
     QList<FsmTransition> transitions;
     if (states.isEmpty())
         return transitions;
 
     QSet<QString> stateNames;
-    for (const sym_list::SymbolInfo& state : states)
-        stateNames.insert(state.symbolName);
+    for (const SemanticSymbolRecord& state : states)
+        stateNames.insert(state.name);
 
-    const QString content = semanticIndex()->getCachedFileContent(moduleSymbol.fileName);
+    const QString content =
+        semanticIndex()->getCachedFileContent(moduleRecord.location.fileName);
     if (content.isEmpty())
         return transitions;
 
     const QStringList lines = content.split('\n');
     const int lineCount = static_cast<int>(lines.size());
-    int startIndex = moduleSymbol.startLine > 0 ? moduleSymbol.startLine - 1 : 0;
-    int endIndex = moduleSymbol.endLine > 0 ? moduleSymbol.endLine - 1 : lineCount - 1;
+    int startIndex = moduleRecord.location.startLine > 0
+        ? moduleRecord.location.startLine - 1
+        : 0;
+    int endIndex = moduleRecord.location.endLine > 0
+        ? moduleRecord.location.endLine - 1
+        : lineCount - 1;
     startIndex = std::max(0, startIndex);
     endIndex = std::min(endIndex, lineCount - 1);
     if (startIndex > endIndex)
@@ -408,7 +364,7 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
 
     const QRegularExpression caseExpression(
         QStringLiteral("\\bcase[zx]?\\s*\\(\\s*%1\\s*\\)")
-            .arg(QRegularExpression::escape(stateRegister.symbolName)));
+            .arg(QRegularExpression::escape(stateRegister.name)));
     const QRegularExpression labelExpression(
         QStringLiteral("^\\s*([A-Za-z_][A-Za-z0-9_$]*|default)\\s*:"));
     const QRegularExpression conditionExpression(
@@ -453,8 +409,8 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         if (target.isEmpty())
             continue;
         if (!target.contains(QStringLiteral("state"), Qt::CaseInsensitive)
-            && (fsmLocalHandleForSymbol(nextStateSignal) < 0
-                || target != nextStateSignal.symbolName)) {
+            && (nextStateSignal.localHandle < 0
+                || target != nextStateSignal.name)) {
             continue;
         }
 
@@ -468,7 +424,7 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
                              transitionConditionForState(code,
                                                          pendingCondition,
                                                          toState),
-                             moduleSymbol.fileName,
+                             moduleRecord.location.fileName,
                              i + 1);
         }
         if (!toStates.isEmpty())
@@ -482,40 +438,37 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
 namespace {
 
 bool isInsideModule(
-    const sym_list::SymbolInfo& symbol,
-    const sym_list::SymbolInfo& moduleSymbol)
+    const SemanticSymbolRecord& record,
+    const SemanticSymbolRecord& moduleRecord)
 {
-    if (fsmLocalHandleForSymbol(symbol)
-        == fsmLocalHandleForSymbol(moduleSymbol)) {
+    if (record.localHandle == moduleRecord.localHandle) {
         return false;
     }
-    const SemanticSymbolRecord symbolRecord =
-        semanticSymbolRecordForSymbol(symbol);
-    const SemanticSymbolRecord moduleRecord =
-        semanticSymbolRecordForSymbol(moduleSymbol);
     if (!moduleRecord.name.isEmpty()
-        && symbolRecord.owner.name == moduleRecord.name) {
+        && record.owner.name == moduleRecord.name) {
         return true;
     }
-    if (symbol.fileName != moduleSymbol.fileName)
+    if (record.location.fileName != moduleRecord.location.fileName)
         return false;
-    if (moduleSymbol.startLine <= 0 || symbol.startLine <= 0)
+    if (moduleRecord.location.startLine <= 0
+        || record.location.startLine <= 0)
         return false;
-    if (symbol.startLine < moduleSymbol.startLine)
+    if (record.location.startLine < moduleRecord.location.startLine)
         return false;
-    return moduleSymbol.endLine <= 0 || symbol.startLine <= moduleSymbol.endLine;
+    return moduleRecord.location.endLine <= 0
+        || record.location.startLine <= moduleRecord.location.endLine;
 }
 
 bool hasStateValuesForType(
-    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SemanticSymbolRecord>& records,
     const QString& rawTypeText)
 {
     if (rawTypeText.isEmpty())
         return false;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
+    for (const SemanticSymbolRecord& record : records) {
         if (SymbolTaxonomy::isFsmStateValueDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))
-            && rawTypeTextForSymbol(symbol) == rawTypeText) {
+                metadataForRecord(record))
+            && rawTypeTextForRecord(record) == rawTypeText) {
             return true;
         }
     }
@@ -525,28 +478,27 @@ bool hasStateValuesForType(
 }
 
 bool FsmGraphService::hasPairedNextStateSignal(
-    const QList<sym_list::SymbolInfo>& moduleSymbols,
-    const sym_list::SymbolInfo& stateRegister)
+    const QList<SemanticSymbolRecord>& moduleRecords,
+    const SemanticSymbolRecord& stateRegister)
 {
-    const QString stateRegisterType = rawTypeTextForSymbol(stateRegister);
-    for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
-        if (fsmLocalHandleForSymbol(symbol)
-            == fsmLocalHandleForSymbol(stateRegister)) {
+    const QString stateRegisterType = rawTypeTextForRecord(stateRegister);
+    for (const SemanticSymbolRecord& record : moduleRecords) {
+        if (record.localHandle == stateRegister.localHandle) {
             continue;
         }
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))) {
+                metadataForRecord(record))) {
             continue;
         }
-        const QString symbolType = rawTypeTextForSymbol(symbol);
+        const QString symbolType = rawTypeTextForRecord(record);
         if (!stateRegisterType.isEmpty()
             && !symbolType.isEmpty()
             && symbolType != stateRegisterType) {
             continue;
         }
-        if (looksLikeNextStateName(symbol.symbolName)
-            || isPairedNextStateName(stateRegister.symbolName,
-                                     symbol.symbolName)) {
+        if (looksLikeNextStateName(record.name)
+            || isPairedNextStateName(stateRegister.name,
+                                     record.name)) {
             return true;
         }
     }
@@ -693,72 +645,62 @@ QString FsmGraphService::stripLineComment(const QString& line)
 }
 
 QList<FsmStateRow> FsmGraphService::stateRows(
-    const QList<sym_list::SymbolInfo>& states)
+    const QList<SemanticSymbolRecord>& states)
 {
     QList<FsmStateRow> rows;
     rows.reserve(states.size());
-    for (const sym_list::SymbolInfo& state : states) {
+    for (const SemanticSymbolRecord& state : states) {
         FsmStateRow row;
-        row.stateRecord = semanticSymbolRecordForSymbol(state);
-        row.stateStableKey = row.stateRecord.isValid()
-            ? row.stateRecord.stableKey
-            : symbolStableKeyForSymbol(state);
-        row.codeLink = codeLinkForRecord(row.stateRecord, state);
+        row.stateRecord = state;
+        row.stateStableKey = row.stateRecord.stableKey;
+        row.codeLink = codeLinkForRecord(row.stateRecord);
         row.sectionDisplayName = QStringLiteral("State");
         row.stateDisplayName =
-            displayNameForRecord(row.stateRecord, state, state.symbolName);
+            displayNameForRecord(row.stateRecord, state.name);
         row.detailDisplayName = stateDetailDisplayName(state);
-        row.typeDisplayName = typeDisplayNameForRecord(row.stateRecord, state);
+        row.typeDisplayName = typeDisplayNameForRecord(row.stateRecord);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayNameForRecord(row.stateRecord, state);
-        row.moduleDisplayName = moduleDisplayNameForRecord(row.stateRecord, state);
+            sourceRoleDisplayNameForRecord(row.stateRecord);
+        row.moduleDisplayName = moduleDisplayNameForRecord(row.stateRecord);
         rows.append(row);
     }
     return rows;
 }
 
 QList<FsmTransitionRow> FsmGraphService::transitionRows(
-    const sym_list::SymbolInfo& moduleSymbol,
+    const SemanticSymbolRecord& moduleRecord,
     const QList<FsmTransition>& transitions,
-    const QList<sym_list::SymbolInfo>& states)
+    const QList<SemanticSymbolRecord>& states)
 {
     QList<FsmTransitionRow> rows;
     rows.reserve(transitions.size());
     for (const FsmTransition& transition : transitions) {
         FsmTransitionRow row;
-        const sym_list::SymbolInfo fromStateSymbol =
-            stateSymbolByName(states, transition.fromState);
-        const sym_list::SymbolInfo toStateSymbol =
-            stateSymbolByName(states, transition.toState);
-        row.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
-        row.fromStateRecord = semanticSymbolRecordForSymbol(fromStateSymbol);
-        row.toStateRecord = semanticSymbolRecordForSymbol(toStateSymbol);
-        row.fromStateStableKey = row.fromStateRecord.isValid()
-            ? row.fromStateRecord.stableKey
-            : symbolStableKeyForSymbol(fromStateSymbol);
-        row.toStateStableKey = row.toStateRecord.isValid()
-            ? row.toStateRecord.stableKey
-            : symbolStableKeyForSymbol(toStateSymbol);
+        const SemanticSymbolRecord fromStateRecord =
+            stateRecordByName(states, transition.fromState);
+        const SemanticSymbolRecord toStateRecord =
+            stateRecordByName(states, transition.toState);
+        row.moduleSymbolRecord = moduleRecord;
+        row.fromStateRecord = fromStateRecord;
+        row.toStateRecord = toStateRecord;
+        row.fromStateStableKey = row.fromStateRecord.stableKey;
+        row.toStateStableKey = row.toStateRecord.stableKey;
         row.codeLink = transition.codeLink;
-        row.fromStateCodeLink =
-            codeLinkForRecord(row.fromStateRecord, fromStateSymbol);
-        row.toStateCodeLink =
-            codeLinkForRecord(row.toStateRecord, toStateSymbol);
+        row.fromStateCodeLink = codeLinkForRecord(row.fromStateRecord);
+        row.toStateCodeLink = codeLinkForRecord(row.toStateRecord);
         row.assignmentTargetDisplayName = transition.assignmentTarget;
         row.sectionDisplayName = transition.sectionDisplayName;
         row.fromStateDisplayName =
             displayNameForRecord(row.fromStateRecord,
-                                 fromStateSymbol,
                                  transition.fromState);
         row.toStateDisplayName =
             displayNameForRecord(row.toStateRecord,
-                                 toStateSymbol,
                                  transition.toState);
         row.conditionDisplayName = transitionConditionDisplayName(transition);
         row.detailDisplayName = transition.detailDisplayName;
         row.sourceLineDisplayName = transitionSourceLineDisplayName(transition);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayNameForRecord(row.moduleSymbolRecord, moduleSymbol);
+            sourceRoleDisplayNameForRecord(row.moduleSymbolRecord);
         rows.append(row);
     }
     return rows;
@@ -766,9 +708,9 @@ QList<FsmTransitionRow> FsmGraphService::transitionRows(
 
 namespace {
 
-QString stateDetailDisplayName(const sym_list::SymbolInfo& state)
+QString stateDetailDisplayName(const SemanticSymbolRecord& state)
 {
-    return rawTypeTextForSymbol(state);
+    return rawTypeTextForRecord(state);
 }
 
 }
@@ -829,63 +771,48 @@ QString FsmGraphService::notFoundReasonDisplayName(
 
 void FsmGraphService::fillDisplayMetadata(
     FsmGraph& graph,
-    const sym_list::SymbolInfo& moduleSymbol,
-    const sym_list::SymbolInfo& stateRegister,
-    const sym_list::SymbolInfo& nextStateSignal,
-    const QList<sym_list::SymbolInfo>& states,
+    const SemanticSymbolRecord& moduleRecord,
+    const SemanticSymbolRecord& stateRegister,
+    const SemanticSymbolRecord& nextStateSignal,
+    const QList<SemanticSymbolRecord>& states,
     QList<FsmTransition>& transitions)
 {
-    graph.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
-    graph.stateRegisterRecord =
-        semanticSymbolRecordForSymbol(stateRegister);
-    graph.nextStateSignalRecord =
-        semanticSymbolRecordForSymbol(nextStateSignal);
-    graph.moduleStableKey = graph.moduleSymbolRecord.isValid()
-        ? graph.moduleSymbolRecord.stableKey
-        : symbolStableKeyForSymbol(moduleSymbol);
-    graph.stateRegisterStableKey = graph.stateRegisterRecord.isValid()
-        ? graph.stateRegisterRecord.stableKey
-        : symbolStableKeyForSymbol(stateRegister);
-    graph.nextStateSignalStableKey = graph.nextStateSignalRecord.isValid()
-        ? graph.nextStateSignalRecord.stableKey
-        : symbolStableKeyForSymbol(nextStateSignal);
+    graph.moduleSymbolRecord = moduleRecord;
+    graph.stateRegisterRecord = stateRegister;
+    graph.nextStateSignalRecord = nextStateSignal;
+    graph.moduleStableKey = graph.moduleSymbolRecord.stableKey;
+    graph.stateRegisterStableKey = graph.stateRegisterRecord.stableKey;
+    graph.nextStateSignalStableKey = graph.nextStateSignalRecord.stableKey;
     graph.stateRegisterCodeLink =
-        codeLinkForRecord(graph.stateRegisterRecord, stateRegister);
+        codeLinkForRecord(graph.stateRegisterRecord);
     graph.nextStateSignalCodeLink =
-        codeLinkForRecord(graph.nextStateSignalRecord, nextStateSignal);
+        codeLinkForRecord(graph.nextStateSignalRecord);
     graph.moduleDisplayName =
         displayNameForRecord(graph.moduleSymbolRecord,
-                             moduleSymbol,
                              QStringLiteral("<unknown>"));
     graph.stateCount = states.size();
     graph.transitionCount = transitions.size();
     graph.stateRegisterSectionDisplayName = QStringLiteral("State Register");
     graph.stateRegisterDisplayName =
         displayNameForRecord(graph.stateRegisterRecord,
-                             stateRegister,
                              QStringLiteral("<unknown>"));
     graph.stateRegisterTypeDisplayName =
-        typeDisplayNameForRecord(graph.stateRegisterRecord,
-                                 stateRegister);
+        typeDisplayNameForRecord(graph.stateRegisterRecord);
     graph.stateRegisterSourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(graph.stateRegisterRecord,
-                                       stateRegister);
+        sourceRoleDisplayNameForRecord(graph.stateRegisterRecord);
     const bool hasNextStateSignal =
-        fsmLocalHandleForSymbol(nextStateSignal) >= 0;
+        nextStateSignal.localHandle >= 0;
     graph.nextStateSignalDisplayName = hasNextStateSignal
-        ? displayNameForRecord(graph.nextStateSignalRecord,
-                               nextStateSignal)
+        ? displayNameForRecord(graph.nextStateSignalRecord)
         : QString();
     graph.stateRegisterDetailDisplayName =
         stateRegisterDetailDisplayName(hasNextStateSignal,
                                        graph.nextStateSignalDisplayName);
     graph.nextStateSignalTypeDisplayName = hasNextStateSignal
-        ? typeDisplayNameForRecord(graph.nextStateSignalRecord,
-                                   nextStateSignal)
+        ? typeDisplayNameForRecord(graph.nextStateSignalRecord)
         : QString();
     graph.nextStateSignalSourceRoleDisplayName = hasNextStateSignal
-        ? sourceRoleDisplayNameForRecord(graph.nextStateSignalRecord,
-                                         nextStateSignal)
+        ? sourceRoleDisplayNameForRecord(graph.nextStateSignalRecord)
         : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
@@ -893,7 +820,7 @@ void FsmGraphService::fillDisplayMetadata(
     for (FsmTransition& transition : transitions)
         fillDisplayMetadata(transition);
     graph.transitionRows = transitionRows(
-        moduleSymbol,
+        moduleRecord,
         transitions,
         states);
 }
@@ -906,21 +833,20 @@ void FsmGraphService::fillDisplayMetadata(FsmTransition& transition)
 
 namespace {
 
-void sortSymbols(QList<sym_list::SymbolInfo>& symbols)
+void sortRecords(QList<SemanticSymbolRecord>& records)
 {
-    std::sort(symbols.begin(), symbols.end(),
-              [](const sym_list::SymbolInfo& lhs,
-                 const sym_list::SymbolInfo& rhs) {
-                  if (lhs.fileName != rhs.fileName)
-                      return lhs.fileName < rhs.fileName;
-                  if (lhs.startLine != rhs.startLine)
-                      return lhs.startLine < rhs.startLine;
-                  if (lhs.startColumn != rhs.startColumn)
-                      return lhs.startColumn < rhs.startColumn;
-                  if (lhs.symbolName != rhs.symbolName)
-                      return lhs.symbolName < rhs.symbolName;
-                  return fsmLocalHandleForSymbol(lhs)
-                      < fsmLocalHandleForSymbol(rhs);
+    std::sort(records.begin(), records.end(),
+              [](const SemanticSymbolRecord& lhs,
+                 const SemanticSymbolRecord& rhs) {
+                  if (lhs.location.fileName != rhs.location.fileName)
+                      return lhs.location.fileName < rhs.location.fileName;
+                  if (lhs.location.startLine != rhs.location.startLine)
+                      return lhs.location.startLine < rhs.location.startLine;
+                  if (lhs.location.startColumn != rhs.location.startColumn)
+                      return lhs.location.startColumn < rhs.location.startColumn;
+                  if (lhs.name != rhs.name)
+                      return lhs.name < rhs.name;
+                  return lhs.localHandle < rhs.localHandle;
               });
 }
 

@@ -117,30 +117,30 @@ private:
     static std::unique_ptr<FsmGraphService> instance;
 
     SemanticIndex* semanticIndex() const;
-    sym_list::SymbolInfo resolveModule(
+    SemanticSymbolRecord resolveModule(
         const FsmGraphQuery& query,
         FsmGraphNotFoundReason* reason) const;
-    QList<sym_list::SymbolInfo> symbolsInModule(
-        const sym_list::SymbolInfo& moduleSymbol) const;
-    QList<sym_list::SymbolInfo> stateRegisters(
-        const QList<sym_list::SymbolInfo>& moduleSymbols,
-        const QList<sym_list::SymbolInfo>& allSymbols) const;
-    QList<sym_list::SymbolInfo> stateValues(
-        const QList<sym_list::SymbolInfo>& moduleSymbols,
-        const QList<sym_list::SymbolInfo>& allSymbols,
-        const sym_list::SymbolInfo& stateRegister) const;
-    sym_list::SymbolInfo nextStateSignal(
-        const QList<sym_list::SymbolInfo>& moduleSymbols,
-        const sym_list::SymbolInfo& stateRegister) const;
+    QList<SemanticSymbolRecord> symbolsInModule(
+        const SemanticSymbolRecord& moduleRecord) const;
+    QList<SemanticSymbolRecord> stateRegisters(
+        const QList<SemanticSymbolRecord>& moduleRecords,
+        const QList<SemanticSymbolRecord>& allRecords) const;
+    QList<SemanticSymbolRecord> stateValues(
+        const QList<SemanticSymbolRecord>& moduleRecords,
+        const QList<SemanticSymbolRecord>& allRecords,
+        const SemanticSymbolRecord& stateRegister) const;
+    SemanticSymbolRecord nextStateSignal(
+        const QList<SemanticSymbolRecord>& moduleRecords,
+        const SemanticSymbolRecord& stateRegister) const;
     QList<FsmTransition> parseTransitions(
-        const sym_list::SymbolInfo& moduleSymbol,
-        const sym_list::SymbolInfo& stateRegister,
-        const sym_list::SymbolInfo& nextStateSignal,
-        const QList<sym_list::SymbolInfo>& states) const;
+        const SemanticSymbolRecord& moduleRecord,
+        const SemanticSymbolRecord& stateRegister,
+        const SemanticSymbolRecord& nextStateSignal,
+        const QList<SemanticSymbolRecord>& states) const;
 
     static bool hasPairedNextStateSignal(
-        const QList<sym_list::SymbolInfo>& moduleSymbols,
-        const sym_list::SymbolInfo& stateRegister);
+        const QList<SemanticSymbolRecord>& moduleRecords,
+        const SemanticSymbolRecord& stateRegister);
     static bool isPairedNextStateName(const QString& currentName,
                                       const QString& candidateName);
     static bool looksLikeCurrentStateName(const QString& name);
@@ -161,11 +161,11 @@ private:
                                  int line);
     static QString stripLineComment(const QString& line);
     static QList<FsmStateRow> stateRows(
-        const QList<sym_list::SymbolInfo>& states);
+        const QList<SemanticSymbolRecord>& states);
     static QList<FsmTransitionRow> transitionRows(
-        const sym_list::SymbolInfo& moduleSymbol,
+        const SemanticSymbolRecord& moduleRecord,
         const QList<FsmTransition>& transitions,
-        const QList<sym_list::SymbolInfo>& states);
+        const QList<SemanticSymbolRecord>& states);
     static QString stateRegisterDetailDisplayName(
         bool hasNextStateSignal,
         const QString& nextStateSignalDisplayName);
@@ -174,10 +174,10 @@ private:
     static QString transitionSourceLineDisplayName(const FsmTransition& transition);
     static QString notFoundReasonDisplayName(FsmGraphNotFoundReason reason);
     static void fillDisplayMetadata(FsmGraph& graph,
-                                    const sym_list::SymbolInfo& moduleSymbol,
-                                    const sym_list::SymbolInfo& stateRegister,
-                                    const sym_list::SymbolInfo& nextStateSignal,
-                                    const QList<sym_list::SymbolInfo>& states,
+                                    const SemanticSymbolRecord& moduleRecord,
+                                    const SemanticSymbolRecord& stateRegister,
+                                    const SemanticSymbolRecord& nextStateSignal,
+                                    const QList<SemanticSymbolRecord>& states,
                                     QList<FsmTransition>& transitions);
     static void fillDisplayMetadata(FsmTransition& transition);
     static void sortTransitions(QList<FsmTransition>& transitions);
