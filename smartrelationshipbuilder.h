@@ -104,6 +104,7 @@ private:
         int currentModuleLocalHandle = -1;
         QHash<QString, int> localSymbolHandles;
         QList<sym_list::SymbolInfo> fileSymbols;
+        QList<SemanticSymbolRecord> fileSymbolRecords;
         QHash<int, sym_list::sym_type_e> localHandleToType;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;
@@ -120,6 +121,11 @@ private:
                                          const QList<sym_list::SymbolInfo>& fileSymbols,
                                          const SemanticIndexSnapshot* snapshot,
                                          AnalysisContext& context);
+    void setupAnalysisContextFromRecords(
+        const QString& fileName,
+        const QList<SemanticSymbolRecord>& fileSymbolRecords,
+        const SemanticIndexSnapshot* snapshot,
+        AnalysisContext& context);
     void ensureRelationshipInfo(const QString& content, AnalysisContext& context);
 
     void analyzeModuleInstantiations(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
@@ -130,6 +136,9 @@ private:
 
     sym_list::SymbolInfo findSymbolByName(const QString& symbolName,
                                           const AnalysisContext& context);
+    SemanticSymbolRecord findSymbolRecordByName(
+        const QString& symbolName,
+        const AnalysisContext& context);
     int findSymbolLocalHandleByName(const QString& symbolName,
                                     const AnalysisContext& context);
     QString findContainingModule(int lineNumber, const AnalysisContext& context);

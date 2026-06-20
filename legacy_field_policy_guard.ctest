@@ -128,6 +128,10 @@ set(RECORD_NATIVE_SERVICE_FILES
     semanticdiffservice.cpp
     signaljourneyservice.cpp
     scopebandservice.cpp
+    smartrelationshipbuilder.cpp
+    smartrelationshipbuilderanalysis.cpp
+    smartrelationshipbuildercontext.cpp
+    smartrelationshipbuildertiming.cpp
 )
 
 set(H0_LEGACY_CORE_ALLOWLIST

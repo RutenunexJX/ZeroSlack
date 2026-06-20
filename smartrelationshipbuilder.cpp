@@ -105,7 +105,7 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     QVector<RelationshipToAdd> result;
     if (checkCancellation(fileName))
         return result;
-    if (!symbolDatabase && !snapshot)
+    if (fileSymbols.isEmpty())
         return result;
 
     try {
@@ -151,12 +151,48 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     const QStringList& includeDirs,
     const QHash<QString, QString>& defines)
 {
-    return computeRelationships(fileName,
-                                content,
-                                semanticSymbolInfoCarriersForRecords(fileSymbolRecords),
-                                snapshot,
-                                includeDirs,
-                                defines);
+    QVector<RelationshipToAdd> result;
+    if (checkCancellation(fileName))
+        return result;
+    if (fileSymbolRecords.isEmpty())
+        return result;
+
+    try {
+        AnalysisContext context;
+        setupAnalysisContextFromRecords(fileName,
+                                        fileSymbolRecords,
+                                        snapshot,
+                                        context);
+        context.includeDirs = includeDirs;
+        context.defines = defines;
+
+        collectResults = &result;
+
+        analyzeModuleInstantiations(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        analyzeVariableAssignments(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        analyzeVariableReferences(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        analyzeTaskFunctionCalls(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+        if (enableAdvancedAnalysis) {
+            analyzeAlwaysBlocks(content, context);
+            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
+            analyzeClockResetRelationships(content, context);
+            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+        }
+
+        collectResults = nullptr;
+    } catch (...) {
+        collectResults = nullptr;
+    }
+    return result;
 }
 
 void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, const QString& content,

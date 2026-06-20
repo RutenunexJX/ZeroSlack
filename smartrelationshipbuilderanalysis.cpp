@@ -35,17 +35,21 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
 
     // Workspace-wide Slang symbol extraction can resolve cross-file instances even when
     // the single-file relationship parse treats the module type as unknown.
-    for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
-        if (!SymbolTaxonomy::isInstanceDeclaration(symbol)
-            || symbol.dataType.isEmpty()) {
+    for (const SemanticSymbolRecord& record : std::as_const(context.fileSymbolRecords)) {
+        if (!SymbolTaxonomy::isInstanceDeclaration(
+                semanticMetadataForSymbolRecord(record))
+            || record.type.rawTypeText.isEmpty()) {
             continue;
         }
-        if (lineMin >= 0 && (symbol.startLine - 1 < lineMin || symbol.startLine - 1 > lineMax))
+        if (lineMin >= 0
+            && (record.location.startLine - 1 < lineMin
+                || record.location.startLine - 1 > lineMax))
             continue;
 
-        int moduleTypeHandle = findSymbolLocalHandleByName(symbol.dataType, context);
+        int moduleTypeHandle =
+            findSymbolLocalHandleByName(record.type.rawTypeText, context);
         int ownerModuleHandle =
-            getContainingModuleLocalHandle(symbol.startLine, context);
+            getContainingModuleLocalHandle(record.location.startLine, context);
         if (ownerModuleHandle == -1)
             ownerModuleHandle = context.currentModuleLocalHandle;
         if (moduleTypeHandle != -1 && ownerModuleHandle != -1) {
@@ -58,7 +62,9 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
                 ownerModuleHandle,
                 moduleTypeHandle,
                 SymbolRelationshipEngine::INSTANTIATES,
-                QString("Instance: %1 at line %2").arg(symbol.symbolName).arg(symbol.startLine),
+                QString("Instance: %1 at line %2")
+                    .arg(record.name)
+                    .arg(record.location.startLine),
                 90
             );
             emitted.insert(key);
@@ -143,15 +149,15 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
         if (lineMin >= 0 && (call.lineNumber - 1 < lineMin || call.lineNumber - 1 > lineMax))
             continue;
 
-        const sym_list::SymbolInfo taskSymbol =
-            findSymbolByName(call.subroutineName, context);
-        const int taskHandle = taskSymbol.symbolId;
+        const SemanticSymbolRecord taskRecord =
+            findSymbolRecordByName(call.subroutineName, context);
+        const int taskHandle = taskRecord.localHandle;
         if (taskHandle == -1)
             continue;
 
         const sym_list::sym_type_e taskType = context.localHandleToType.value(
             taskHandle,
-            taskSymbol.symbolType);
+            taskRecord.rawCollectorKind);
 
         if (!SymbolTaxonomy::isSubroutineDeclaration(taskType))
             continue;
@@ -176,46 +182,20 @@ sym_list::SymbolInfo SmartRelationshipBuilder::findSymbolByName(
     const QString& symbolName,
     const AnalysisContext& context)
 {
-    if (context.localSymbolHandles.contains(symbolName)) {
-        const int localHandle = context.localSymbolHandles.value(symbolName);
-        for (const sym_list::SymbolInfo& symbol : std::as_const(context.fileSymbols)) {
-            if (symbol.symbolId == localHandle)
-                return symbol;
-        }
-
+    const SemanticSymbolRecord record = findSymbolRecordByName(symbolName, context);
+    if (record.localHandle >= 0) {
         sym_list::SymbolInfo symbol;
-        symbol.symbolId = localHandle;
-        symbol.symbolName = symbolName;
-        symbol.symbolType =
-            context.localHandleToType.value(localHandle, sym_list::sym_user);
+        symbol.symbolId = record.localHandle;
+        symbol.symbolName = record.name;
+        symbol.symbolType = record.rawCollectorKind;
+        symbol.fileName = record.location.fileName;
+        symbol.startLine = record.location.startLine;
+        symbol.startColumn = record.location.startColumn;
+        symbol.endLine = record.location.endLine;
+        symbol.endColumn = record.location.endColumn;
+        symbol.moduleScope = record.owner.name;
+        symbol.dataType = record.type.rawTypeText;
         return symbol;
-    }
-
-    if (context.snapshot) {
-        const QList<SemanticSymbolRecord> definitions =
-            context.snapshot->findDefinitionRecords(symbolName);
-        if (!definitions.isEmpty()) {
-            const SemanticSymbolRecord record = definitions.first();
-            sym_list::SymbolInfo symbol;
-            symbol.symbolId = record.localHandle;
-            symbol.symbolName = record.name;
-            symbol.symbolType = record.rawCollectorKind;
-            symbol.fileName = record.location.fileName;
-            symbol.startLine = record.location.startLine;
-            symbol.startColumn = record.location.startColumn;
-            symbol.endLine = record.location.endLine;
-            symbol.endColumn = record.location.endColumn;
-            symbol.moduleScope = record.owner.name;
-            symbol.dataType = record.type.rawTypeText;
-            return symbol;
-        }
-    }
-
-    if (symbolDatabase) {
-        const QList<sym_list::SymbolInfo> symbols =
-            symbolDatabase->findSymbolsByName(symbolName);
-        if (!symbols.isEmpty())
-            return symbols.first();
     }
 
     sym_list::SymbolInfo missing;
@@ -223,11 +203,51 @@ sym_list::SymbolInfo SmartRelationshipBuilder::findSymbolByName(
     return missing;
 }
 
+SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
+    const QString& symbolName,
+    const AnalysisContext& context)
+{
+    if (context.localSymbolHandles.contains(symbolName)) {
+        const int localHandle = context.localSymbolHandles.value(symbolName);
+        for (const SemanticSymbolRecord& record
+             : std::as_const(context.fileSymbolRecords)) {
+            if (record.localHandle == localHandle)
+                return record;
+        }
+
+        SemanticSymbolRecord record;
+        record.localHandle = localHandle;
+        record.name = symbolName;
+        record.rawCollectorKind =
+            context.localHandleToType.value(localHandle, sym_list::sym_user);
+        return record;
+    }
+
+    if (context.snapshot) {
+        const QList<SemanticSymbolRecord> definitions =
+            context.snapshot->findDefinitionRecords(symbolName);
+        if (!definitions.isEmpty()) {
+            return definitions.first();
+        }
+    }
+
+    if (symbolDatabase) {
+        const QList<sym_list::SymbolInfo> symbols =
+            symbolDatabase->findSymbolsByName(symbolName);
+        if (!symbols.isEmpty())
+            return semanticSymbolRecordForSymbol(symbols.first());
+    }
+
+    SemanticSymbolRecord missing;
+    missing.localHandle = -1;
+    return missing;
+}
+
 int SmartRelationshipBuilder::findSymbolLocalHandleByName(
     const QString& symbolName,
     const AnalysisContext& context)
 {
-    return findSymbolByName(symbolName, context).symbolId;
+    return findSymbolRecordByName(symbolName, context).localHandle;
 }
 
 void SmartRelationshipBuilder::addRelationshipWithContext(int fromHandle, int toHandle,
@@ -250,13 +270,15 @@ int SmartRelationshipBuilder::getContainingModuleLocalHandle(
 {
     int foundHandle = -1;
     int foundStart = -1;
-    for (const sym_list::SymbolInfo& s : context.fileSymbols) {
-        if (SymbolTaxonomy::isModuleDeclaration(s)
-            && s.startLine <= lineNumber
-            && s.endLine >= lineNumber
-            && (foundHandle < 0 || s.startLine > foundStart)) {
-            foundHandle = s.symbolId;
-            foundStart = s.startLine;
+    for (const SemanticSymbolRecord& record
+         : std::as_const(context.fileSymbolRecords)) {
+        if (SymbolTaxonomy::isModuleDeclaration(
+                semanticMetadataForSymbolRecord(record))
+            && record.location.startLine <= lineNumber
+            && record.location.endLine >= lineNumber
+            && (foundHandle < 0 || record.location.startLine > foundStart)) {
+            foundHandle = record.localHandle;
+            foundStart = record.location.startLine;
         }
     }
     return foundHandle;
@@ -267,9 +289,10 @@ QString SmartRelationshipBuilder::findContainingModule(int lineNumber, const Ana
     int localHandle = getContainingModuleLocalHandle(lineNumber, context);
     if (localHandle < 0)
         return QString();
-    for (const sym_list::SymbolInfo& s : context.fileSymbols) {
-        if (s.symbolId == localHandle)
-            return s.symbolName;
+    for (const SemanticSymbolRecord& record
+         : std::as_const(context.fileSymbolRecords)) {
+        if (record.localHandle == localHandle)
+            return record.name;
     }
     return QString();
 }
@@ -290,9 +313,12 @@ QSet<int> SmartRelationshipBuilder::getAffectedSymbolLocalHandles(
     int minLine = qMax(0, minChanged - 2);
     int maxLine = qMin(numLines - 1, maxChanged + 2);
 
-    for (const sym_list::SymbolInfo& s : context.fileSymbols) {
-        if (s.startLine >= minLine && s.startLine <= maxLine)
-            affectedHandles.insert(s.symbolId);
+    for (const SemanticSymbolRecord& record
+         : std::as_const(context.fileSymbolRecords)) {
+        if (record.location.startLine >= minLine
+            && record.location.startLine <= maxLine) {
+            affectedHandles.insert(record.localHandle);
+        }
     }
     for (int lineNum : changedLines) {
         int moduleHandle = getContainingModuleLocalHandle(lineNum, context);
