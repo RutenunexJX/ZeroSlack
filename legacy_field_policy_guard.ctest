@@ -137,21 +137,7 @@ set(RECORD_NATIVE_SERVICE_FILES
 set(H0_LEGACY_CORE_ALLOWLIST
     clockresetdomainservice.cpp
     clockresetdomainservice.h
-    completioncommandmode.cpp
-    completioncommandmode.h
     completioncommandkindadapter.h
-    completioncontextquery.cpp
-    completionmanager.cpp
-    completionmanager.h
-    completionmodel.h
-    completionmodelupdates.cpp
-    completionsemanticquery.cpp
-    completionsemanticquery.h
-    completionservice.cpp
-    completionservice.h
-    completionservicecommand.cpp
-    completionservicesemantic.cpp
-    completiontypes.h
     definitionnavigationservice.cpp
     fsmgraphservice.cpp
     fsmgraphservice.h
@@ -169,13 +155,10 @@ set(H0_LEGACY_CORE_ALLOWLIST
     semanticdiffservice.h
     semanticindex.cpp
     semanticindex.h
-    semanticindexcompletionqueries.cpp
     semanticindexcompletionrelationships.cpp
-    semanticindexcompletiontypequeries.cpp
     semanticindexlookup.cpp
     semanticindexlookuphelpers.cpp
     semanticindexlookuphelpers.h
-    semanticindexmodulecontext.cpp
     semanticindexmodulecontexthelpers.cpp
     semanticindexmodulecontexthelpers.h
     semanticindexrelationships.cpp
