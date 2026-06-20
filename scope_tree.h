@@ -1,11 +1,10 @@
 #ifndef SCOPE_TREE_H
 #define SCOPE_TREE_H
 
-#include "syminfo.h"
 #include <QString>
 #include <QList>
 #include <QHash>
-#include <QStack>
+#include <QSet>
 
 /**
  */
@@ -25,7 +24,7 @@ struct ScopeNode {
     int endLine = 0;
     ScopeNode* parent = nullptr;
     QList<ScopeNode*> children;
-    QHash<QString, sym_list::SymbolInfo> symbols;
+    QSet<QString> symbolNames;
 
     ScopeNode(ScopeType t, int start = 0) : type(t), startLine(start), endLine(start) {}
     ~ScopeNode() { qDeleteAll(children); }
@@ -63,19 +62,6 @@ public:
         if (!fileRoots.contains(fileName)) return nullptr;
         ScopeNode* root = fileRoots[fileName];
         return findDeepestScopeContainingLine(root, line);
-    }
-
-    /**
-     */
-    sym_list::SymbolInfo resolveSymbol(const QString& name, ScopeNode* startScope) const {
-        for (ScopeNode* scope = startScope; scope; scope = scope->parent) {
-            auto it = scope->symbols.constFind(name);
-            if (it != scope->symbols.constEnd())
-                return it.value();
-        }
-        sym_list::SymbolInfo empty;
-        empty.symbolId = -1;
-        return empty;
     }
 
     bool hasScopeTree(const QString& fileName) const {

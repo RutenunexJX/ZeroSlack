@@ -2,6 +2,7 @@
 #include "scope_tree.h"
 #include "symbolrelationshipengine.h"
 
+#include <QStack>
 #include <algorithm>
 
 sym_list::~sym_list()
@@ -142,7 +143,7 @@ void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
             modNode->endLine = sym.endLine > 0 ? sym.endLine : sym.startLine;
             modNode->parent = scopeStack.top();
             scopeStack.top()->children.append(modNode);
-            modNode->symbols[sym.symbolName] = sym;
+            modNode->symbolNames.insert(sym.symbolName);
             scopeStack.push(modNode);
             continue;
         }
@@ -155,7 +156,7 @@ void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
             subNode->endLine = sym.endLine > 0 ? sym.endLine : sym.startLine;
             subNode->parent = scopeStack.top();
             scopeStack.top()->children.append(subNode);
-            subNode->symbols[sym.symbolName] = sym;
+            subNode->symbolNames.insert(sym.symbolName);
             scopeStack.push(subNode);
             continue;
         }
@@ -173,7 +174,7 @@ void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
             if (relationshipEngine && !moduleStack.isEmpty())
                 relationshipEngine->addRelationship(moduleStack.last(), sym.symbolId, SymbolRelationshipEngine::CONTAINS);
             if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[sym.symbolName] = sym;
+                scopeStack.top()->symbolNames.insert(sym.symbolName);
             continue;
         }
 
@@ -181,7 +182,7 @@ void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
             if (relationshipEngine && !moduleStack.isEmpty())
                 relationshipEngine->addRelationship(moduleStack.last(), sym.symbolId, SymbolRelationshipEngine::CONTAINS);
             if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[sym.symbolName] = sym;
+                scopeStack.top()->symbolNames.insert(sym.symbolName);
             continue;
         }
 
@@ -189,7 +190,7 @@ void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
             if (relationshipEngine && !moduleStack.isEmpty())
                 relationshipEngine->addRelationship(moduleStack.last(), sym.symbolId, SymbolRelationshipEngine::CONTAINS);
             if (!scopeStack.isEmpty())
-                scopeStack.top()->symbols[sym.symbolName] = sym;
+                scopeStack.top()->symbolNames.insert(sym.symbolName);
         }
     }
 

@@ -1,6 +1,5 @@
 #include "semanticindex.h"
 
-#include "scope_tree.h"
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
 
@@ -74,6 +73,48 @@ int findEndModuleLineInContent(const QString& content,
         }
     }
     return -1;
+}
+
+QStringList scopeSymbolNamesForRecords(
+    const QList<SemanticSymbolRecord>& records,
+    int cursorLine)
+{
+    QStringList result;
+    if (cursorLine < 0)
+        return result;
+
+    QString containingModule;
+    int containingModuleStart = -1;
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
+            continue;
+        if (record.location.startLine <= cursorLine
+            && (record.location.endLine <= 0
+                || record.location.endLine >= cursorLine)
+            && record.location.startLine > containingModuleStart) {
+            containingModule = record.name;
+            containingModuleStart = record.location.startLine;
+        }
+    }
+
+    QSet<QString> seen;
+    for (const SemanticSymbolRecord& record : records) {
+        const QString displayName = record.name;
+        const QString ownerName = record.owner.name;
+        bool inScope = ownerName.isEmpty();
+        if (!containingModule.isEmpty()) {
+            inScope = inScope
+                || ownerName == containingModule
+                || (record.location.startLine <= cursorLine
+                    && (record.location.endLine <= 0
+                        || record.location.endLine >= cursorLine));
+        }
+        if (!inScope || displayName.isEmpty() || seen.contains(displayName))
+            continue;
+        seen.insert(displayName);
+        result.append(displayName);
+    }
+    return result;
 }
 
 }
@@ -182,23 +223,7 @@ QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int curs
     if (fileName.isEmpty() || cursorLine < 0)
         return result;
 
-    ScopeManager* scopeManager = symbolDatabase()->getScopeManager();
-    if (!scopeManager)
-        return result;
-
-    ScopeNode* scope = scopeManager->findScopeAt(fileName, cursorLine);
-    QSet<QString> seen;
-    while (scope) {
-        for (auto it = scope->symbols.constBegin(); it != scope->symbols.constEnd(); ++it) {
-            const QString& name = it.key();
-            if (seen.contains(name))
-                continue;
-            seen.insert(name);
-            result.append(name);
-        }
-        scope = scope->parent;
-    }
-    return result;
+    return scopeSymbolNamesForRecords(getSymbolRecords(fileName), cursorLine);
 }
 
 bool SemanticIndex::isValidModuleName(const QString& name) const
