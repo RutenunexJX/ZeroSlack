@@ -135,39 +135,19 @@ set(RECORD_NATIVE_SERVICE_FILES
 )
 
 set(H0_LEGACY_CORE_ALLOWLIST
-    clockresetdomainservice.cpp
-    clockresetdomainservice.h
     completioncommandkindadapter.h
-    definitionnavigationservice.cpp
-    fsmgraphservice.cpp
-    fsmgraphservice.h
-    hierarchyservice.cpp
-    modulebriefservice.cpp
-    modulebriefservice.h
     navigationservice.cpp
-    navigationservicehierarchy.cpp
-    relationshipanalysisworker.cpp
     scope_tree.h
-    scopebandservice.cpp
-    searchservice.cpp
-    searchservice.h
     semanticdiffservice.cpp
-    semanticdiffservice.h
     semanticindex.cpp
     semanticindex.h
     semanticindexcompletionrelationships.cpp
     semanticindexlookup.cpp
-    semanticindexlookuphelpers.cpp
-    semanticindexlookuphelpers.h
-    semanticindexmodulecontexthelpers.cpp
-    semanticindexmodulecontexthelpers.h
     semanticindexrelationships.cpp
     semanticindexsnapshot.cpp
     semanticindexsnapshot.h
     semanticindexsnapshotqueries.cpp
     semanticindexstore.cpp
-    signaljourneyservice.cpp
-    signaljourneyservice.h
     slangmanager.h
     slangmanagersymbols.cpp
     slangsymbolcollector.cpp
@@ -184,7 +164,6 @@ set(H0_LEGACY_CORE_ALLOWLIST
     symbolanalyzerworkspace.h
     symboloutlinemodel.h
     symbolrelationshipengine.cpp
-    symbolrelationshipengine.h
     symboltaxonomy.cpp
     symboltaxonomy.h
     syminfo.cpp
