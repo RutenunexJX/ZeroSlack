@@ -31,19 +31,8 @@ SymbolRelationshipEngine::SymbolRelationshipEngine(
     setSymbolRecordProvider(std::move(symbolRecordProvider));
 }
 
-SymbolRelationshipEngine::SymbolRelationshipEngine(sym_list* symbols, QObject *parent)
-    : SymbolRelationshipEngine(parent)
-{
-    setSymbolDatabase(symbols);
-}
-
 SymbolRelationshipEngine::~SymbolRelationshipEngine()
 {
-}
-
-void SymbolRelationshipEngine::setSymbolDatabase(sym_list* symbols)
-{
-    symbolDatabase = symbols;
 }
 
 void SymbolRelationshipEngine::setSymbolRecordProvider(

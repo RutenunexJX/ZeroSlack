@@ -53,6 +53,7 @@ Thin UI consumers
 - I3 second block is complete: `SymbolRelationshipEngine` file rebuild paths consume semantic records through a provider and no longer expose the legacy `symbols()` DB-to-record accessor.
 - I3 third block is complete: `sym_list` relationship rebuild and scope refresh now forward containment work to the semantic-record relationship engine instead of adding CONTAINS edges from legacy fields.
 - I3 fourth block is complete: legacy `sym_list` current-module lookup and module-scope auto-inference are deleted; module lookup stays on semantic-record `SemanticIndex` paths.
+- I3 fifth block is complete: `SymbolRelationshipEngine` no longer accepts, stores, or exposes a `sym_list` database pointer; relationship engine files are guarded against reintroducing `sym_list`.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

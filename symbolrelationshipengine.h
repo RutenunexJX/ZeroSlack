@@ -11,7 +11,6 @@
 #include <functional>
 #include <memory>
 
-class sym_list;
 struct SemanticSymbolRecord;
 
 class SymbolRelationshipEngine : public QObject
@@ -48,10 +47,8 @@ public:
     explicit SymbolRelationshipEngine(
         SymbolRecordProvider symbolRecordProvider,
         QObject *parent = nullptr);
-    explicit SymbolRelationshipEngine(sym_list* symbols, QObject *parent = nullptr);
     ~SymbolRelationshipEngine();
 
-    void setSymbolDatabase(sym_list* symbols);
     void setSymbolRecordProvider(SymbolRecordProvider symbolRecordProvider);
 
     void addRelationship(int fromSymbolId, int toSymbolId, RelationType type,
@@ -122,7 +119,6 @@ private:
     QHash<int, RelationshipNode> relationshipGraph;
     QHash<RelationType, QList<QPair<int, int>>> relationshipsByType;
     QHash<QString, QSet<int>> symbolsByFile;
-    sym_list* symbolDatabase = nullptr;
     SymbolRecordProvider m_symbolRecordProvider;
 
     mutable QHash<QString, QList<int>> queryCache;

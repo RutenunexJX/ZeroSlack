@@ -1113,7 +1113,7 @@ foreach(relative_path IN LISTS PHASE_I3_RECORD_NATIVE_RELATIONSHIP_ENGINE_FILES)
     endif()
     file(READ "${path}" content)
     string(REGEX MATCH
-        "(semanticcollectoradapter\\.h|semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles|symbols[ \t\r\n]*\\([ \t\r\n]*\\)[ \t\r\n]*(const)?[ \t\r\n]*(;|\\{))"
+        "(semanticcollectoradapter\\.h|semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles|symbols[ \t\r\n]*\\([ \t\r\n]*\\)[ \t\r\n]*(const)?[ \t\r\n]*(;|\\{)|sym_list)"
         legacy_relationship_engine_match
         "${content}")
 
