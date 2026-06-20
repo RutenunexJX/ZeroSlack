@@ -268,6 +268,29 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "symboltaxonomy\\.cpp|(outlineGroupType|outlineSymbolTypes)[ \t\r\n]*\\("
 )
 
+set(PHASE_J_FIXTURE_CLEANUP_ALLOWLIST
+    CMakeLists.txt
+    test_sv/completion_test.cpp
+    test_sv/dump_symbols.cpp
+    test_sv/gui_smoke_test.cpp
+    test_sv/jump_test.cpp
+    test_sv/relationship_test.cpp
+    test_sv/semantic_fixture_records.h
+    test_sv/syminfo.cpp
+    test_sv/syminfo.h
+    test_sv/syminfocontent.cpp
+    test_sv/syminfomodulelookup.cpp
+    test_sv/test_symbols.sv
+)
+
+set(PHASE_J_FIXTURE_CLEANUP_PATTERNS
+    "sym_list::SymbolInfo"
+    "sym_list::sym_type_e"
+    "\\.(symbolId|symbolType|moduleScope|dataType)([^A-Za-z0-9_]|$)"
+    "(^|[^A-Za-z0-9_])syminfo[A-Za-z0-9_]*([^A-Za-z0-9_]|$)"
+    "(^|[^A-Za-z0-9_])(getSymbolById|findSymbolId)[ \t\r\n]*\\("
+)
+
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "clockresetdomainservice.h|moduleSymbolId"
     "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEntry[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
@@ -1372,6 +1395,54 @@ if(phase_i4_global_legacy_taxonomy_include_violations)
     list(JOIN phase_i4_global_legacy_taxonomy_include_violations "\n  " phase_i4_global_legacy_taxonomy_include_violation_text)
     message(FATAL_ERROR
         "Phase I5 removed legacy taxonomy header must not be included by tracked source:\n  ${phase_i4_global_legacy_taxonomy_include_violation_text}")
+endif()
+
+set(phase_j_allowlist_missing_files)
+foreach(relative_path IN LISTS PHASE_J_FIXTURE_CLEANUP_ALLOWLIST)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND phase_j_allowlist_missing_files "${relative_path}")
+    endif()
+endforeach()
+
+if(phase_j_allowlist_missing_files)
+    list(JOIN phase_j_allowlist_missing_files "\n  " phase_j_allowlist_missing_text)
+    message(FATAL_ERROR
+        "Phase J fixture cleanup allowlist references missing files:\n  ${phase_j_allowlist_missing_text}")
+endif()
+
+file(GLOB phase_j_repo_sources
+    RELATIVE "${ZEROSLACK_SOURCE_DIR}"
+    "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
+    "${ZEROSLACK_SOURCE_DIR}/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/*.h"
+    "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/test_sv/*.h"
+    "${ZEROSLACK_SOURCE_DIR}/test_sv/*.sv"
+)
+
+set(phase_j_fixture_cleanup_violations)
+foreach(relative_path IN LISTS phase_j_repo_sources)
+    list(FIND PHASE_J_FIXTURE_CLEANUP_ALLOWLIST "${relative_path}" phase_j_allowlist_index)
+    if(NOT phase_j_allowlist_index EQUAL -1)
+        continue()
+    endif()
+
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    file(READ "${path}" content)
+    foreach(pattern IN LISTS PHASE_J_FIXTURE_CLEANUP_PATTERNS)
+        string(REGEX MATCH "${pattern}" match "${content}")
+        if(match)
+            list(APPEND phase_j_fixture_cleanup_violations
+                 "${relative_path}: ${pattern}")
+        endif()
+    endforeach()
+endforeach()
+
+if(phase_j_fixture_cleanup_violations)
+    list(JOIN phase_j_fixture_cleanup_violations "\n  " phase_j_fixture_cleanup_text)
+    message(FATAL_ERROR
+        "Phase J fixture cleanup legacy terms are forbidden outside the explicit fixture cleanup allowlist:\n  ${phase_j_fixture_cleanup_text}")
 endif()
 
 set(phase_i4_semantic_index_missing_files)
