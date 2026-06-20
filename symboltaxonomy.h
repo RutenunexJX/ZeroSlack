@@ -140,6 +140,10 @@ bool isDefinitionVisibleInContext(
     const sym_list::SymbolInfo& symbol,
     const QString& moduleName,
     const QSet<QString>& packageScopes);
+bool isDefinitionVisibleInContext(
+    const SemanticMetadata& metadata,
+    const QString& ownerName,
+    const QString& moduleName);
 int definitionContextPriorityAdjustment(
     const sym_list::SymbolInfo& symbol,
     const QString& moduleName,

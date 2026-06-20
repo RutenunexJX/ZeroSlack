@@ -1202,11 +1202,19 @@ bool isDefinitionVisibleInContext(
     const QSet<QString>& packageScopes)
 {
     const SemanticMetadata metadata = semanticMetadata(symbol, packageScopes);
+    return isDefinitionVisibleInContext(metadata, symbol.moduleScope, moduleName);
+}
+
+bool isDefinitionVisibleInContext(
+    const SemanticMetadata& metadata,
+    const QString& ownerName,
+    const QString& moduleName)
+{
     return isMemberScopeDefinitionCandidate(metadata)
         || metadata.rawCollectorKind == sym_list::sym_enum_value
         || isGlobalDefinition(metadata)
         || moduleName.isEmpty()
-        || symbol.moduleScope == moduleName
+        || ownerName == moduleName
         || metadata.visibility == SymbolVisibility::PackageVisible;
 }
 

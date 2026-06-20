@@ -48,12 +48,10 @@ bool definitionRecordVisibleInContext(
     const QString& moduleName)
 {
     const SymbolTaxonomy::SemanticMetadata metadata = metadataForRecord(record);
-    return SymbolTaxonomy::isMemberScopeDefinitionCandidate(metadata)
-        || metadata.rawCollectorKind == sym_list::sym_enum_value
-        || SymbolTaxonomy::isGlobalDefinition(metadata)
-        || moduleName.isEmpty()
-        || record.owner.name == moduleName
-        || metadata.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible;
+    return SymbolTaxonomy::isDefinitionVisibleInContext(
+        metadata,
+        record.owner.name,
+        moduleName);
 }
 
 int definitionRecordContextPriorityAdjustment(
@@ -154,12 +152,13 @@ QList<SemanticSymbolRecord> SemanticIndex::findDefinitionRecords(
     if (m_snapshot)
         return m_snapshot->findDefinitionRecords(name, context);
 
-    QList<sym_list::SymbolInfo> symbols = symbolDatabase()->findSymbolsByName(name);
-    if (symbols.isEmpty())
+    QList<SemanticSymbolRecord> sorted;
+    for (const SemanticSymbolRecord& record : getSymbolRecords()) {
+        if (record.name == name)
+            sorted.append(record);
+    }
+    if (sorted.isEmpty())
         return {};
-
-    QList<SemanticSymbolRecord> sorted =
-        semanticSymbolRecordsForSymbols(symbols);
     const QString normalizedContextFile = normalizedLookupFileName(context.fileName);
     std::stable_sort(sorted.begin(), sorted.end(),
                      [&context, &normalizedContextFile](const SemanticSymbolRecord& a,
