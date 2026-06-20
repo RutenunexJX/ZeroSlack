@@ -27,6 +27,32 @@ enum class SymbolSearchIntent {
     SubroutineDeclarations
 };
 
+enum class SemanticCompletionKind {
+    User,
+    Reg,
+    Wire,
+    Logic,
+    Module,
+    Task,
+    Function,
+    Interface,
+    Package,
+    Macro,
+    Localparam,
+    Parameter,
+    AlwaysProcess,
+    ContinuousAssign,
+    Typedef,
+    EnumValue,
+    EnumType,
+    EnumVariable,
+    StructMember,
+    PackedStructType,
+    UnpackedStructType,
+    PackedStructVariable,
+    UnpackedStructVariable
+};
+
 struct SemanticMetadata {
     DeclarationKind declarationKind = DeclarationKind::Unknown;
     SymbolUsageRole usageRole = SymbolUsageRole::Unknown;
@@ -170,6 +196,10 @@ bool typedCompletionSymbolTypeMatches(
     const SemanticMetadata& metadata,
     sym_list::sym_type_e requestedType,
     const QString& dataType = QString());
+bool semanticCompletionKindMatches(const SemanticMetadata& metadata,
+                                   SemanticCompletionKind kind,
+                                   const QString& rawTypeText = QString(),
+                                   bool parameterAlias = false);
 
 SourceRole sourceRoleForFileName(const QString& fileName);
 QString sourceRoleDisplayName(SourceRole role);

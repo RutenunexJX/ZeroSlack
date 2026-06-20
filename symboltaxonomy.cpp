@@ -1303,6 +1303,102 @@ bool typedCompletionSymbolTypeMatches(
         false);
 }
 
+bool semanticCompletionKindMatches(const SemanticMetadata& metadata,
+                                   SemanticCompletionKind kind,
+                                   const QString& rawTypeText,
+                                   bool parameterAlias)
+{
+    const bool semanticOnly = metadata.rawCollectorKind == sym_list::sym_user;
+    switch (kind) {
+    case SemanticCompletionKind::Reg:
+        return metadata.rawCollectorKind == sym_list::sym_reg
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Signal);
+    case SemanticCompletionKind::Wire:
+        return metadata.rawCollectorKind == sym_list::sym_wire
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Signal);
+    case SemanticCompletionKind::Logic:
+        return metadata.rawCollectorKind == sym_list::sym_logic
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Signal);
+    case SemanticCompletionKind::Module:
+        return metadata.declarationKind == DeclarationKind::Module;
+    case SemanticCompletionKind::Task:
+        return metadata.declarationKind == DeclarationKind::Task;
+    case SemanticCompletionKind::Function:
+        return metadata.declarationKind == DeclarationKind::Function;
+    case SemanticCompletionKind::Interface:
+        return metadata.declarationKind == DeclarationKind::Interface;
+    case SemanticCompletionKind::Package:
+        return metadata.declarationKind == DeclarationKind::Package;
+    case SemanticCompletionKind::Macro:
+        return metadata.declarationKind == DeclarationKind::Macro;
+    case SemanticCompletionKind::Localparam:
+        return metadata.rawCollectorKind == sym_list::sym_localparam
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Localparam);
+    case SemanticCompletionKind::Parameter:
+        return metadata.rawCollectorKind == sym_list::sym_parameter
+            || (parameterAlias
+                && metadata.rawCollectorKind == sym_list::sym_localparam)
+            || (semanticOnly
+                && (metadata.declarationKind == DeclarationKind::Parameter
+                    || (parameterAlias
+                        && metadata.declarationKind
+                            == DeclarationKind::Localparam)));
+    case SemanticCompletionKind::AlwaysProcess:
+        return metadata.rawCollectorKind == sym_list::sym_always
+            || metadata.rawCollectorKind == sym_list::sym_always_ff
+            || metadata.rawCollectorKind == sym_list::sym_always_comb
+            || metadata.rawCollectorKind == sym_list::sym_always_latch
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Process);
+    case SemanticCompletionKind::ContinuousAssign:
+        return metadata.rawCollectorKind == sym_list::sym_assign
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Process);
+    case SemanticCompletionKind::Typedef:
+        return metadata.rawCollectorKind == sym_list::sym_typedef
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Typedef);
+    case SemanticCompletionKind::EnumValue:
+        return metadata.rawCollectorKind == sym_list::sym_enum_value;
+    case SemanticCompletionKind::EnumType:
+        return metadata.rawCollectorKind == sym_list::sym_enum
+            || (metadata.rawCollectorKind == sym_list::sym_typedef
+                && rawTypeText == QLatin1String("enum"))
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Typedef
+                && rawTypeText == QLatin1String("enum"));
+    case SemanticCompletionKind::EnumVariable:
+        return metadata.rawCollectorKind == sym_list::sym_enum_var;
+    case SemanticCompletionKind::StructMember:
+        return metadata.rawCollectorKind == sym_list::sym_struct_member
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::StructMember);
+    case SemanticCompletionKind::PackedStructType:
+        return metadata.rawCollectorKind == sym_list::sym_packed_struct
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Struct);
+    case SemanticCompletionKind::UnpackedStructType:
+        return metadata.rawCollectorKind == sym_list::sym_unpacked_struct
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::Struct);
+    case SemanticCompletionKind::PackedStructVariable:
+        return metadata.rawCollectorKind == sym_list::sym_packed_struct_var
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::StructVariable);
+    case SemanticCompletionKind::UnpackedStructVariable:
+        return metadata.rawCollectorKind == sym_list::sym_unpacked_struct_var
+            || (semanticOnly
+                && metadata.declarationKind == DeclarationKind::StructVariable);
+    case SemanticCompletionKind::User:
+        return metadata.declarationKind == DeclarationKind::User;
+    }
+    return false;
+}
+
 SourceRole sourceRoleForFileName(const QString& fileName)
 {
     const QString suffix = QFileInfo(fileName).suffix().toLower();

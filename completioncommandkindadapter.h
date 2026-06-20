@@ -6,103 +6,71 @@
 
 namespace completion_command_kind_adapter {
 
+inline SymbolTaxonomy::SemanticCompletionKind semanticCompletionKindForCommand(
+    CompletionCommandKind kind)
+{
+    switch (kind) {
+    case CompletionCommandKind::Reg:
+        return SymbolTaxonomy::SemanticCompletionKind::Reg;
+    case CompletionCommandKind::Wire:
+        return SymbolTaxonomy::SemanticCompletionKind::Wire;
+    case CompletionCommandKind::Logic:
+        return SymbolTaxonomy::SemanticCompletionKind::Logic;
+    case CompletionCommandKind::Module:
+        return SymbolTaxonomy::SemanticCompletionKind::Module;
+    case CompletionCommandKind::Task:
+        return SymbolTaxonomy::SemanticCompletionKind::Task;
+    case CompletionCommandKind::Function:
+        return SymbolTaxonomy::SemanticCompletionKind::Function;
+    case CompletionCommandKind::Interface:
+        return SymbolTaxonomy::SemanticCompletionKind::Interface;
+    case CompletionCommandKind::Package:
+        return SymbolTaxonomy::SemanticCompletionKind::Package;
+    case CompletionCommandKind::Macro:
+        return SymbolTaxonomy::SemanticCompletionKind::Macro;
+    case CompletionCommandKind::Localparam:
+        return SymbolTaxonomy::SemanticCompletionKind::Localparam;
+    case CompletionCommandKind::Parameter:
+        return SymbolTaxonomy::SemanticCompletionKind::Parameter;
+    case CompletionCommandKind::AlwaysProcess:
+        return SymbolTaxonomy::SemanticCompletionKind::AlwaysProcess;
+    case CompletionCommandKind::ContinuousAssign:
+        return SymbolTaxonomy::SemanticCompletionKind::ContinuousAssign;
+    case CompletionCommandKind::Typedef:
+        return SymbolTaxonomy::SemanticCompletionKind::Typedef;
+    case CompletionCommandKind::EnumValue:
+        return SymbolTaxonomy::SemanticCompletionKind::EnumValue;
+    case CompletionCommandKind::EnumType:
+        return SymbolTaxonomy::SemanticCompletionKind::EnumType;
+    case CompletionCommandKind::EnumVariable:
+        return SymbolTaxonomy::SemanticCompletionKind::EnumVariable;
+    case CompletionCommandKind::StructMember:
+        return SymbolTaxonomy::SemanticCompletionKind::StructMember;
+    case CompletionCommandKind::PackedStructType:
+        return SymbolTaxonomy::SemanticCompletionKind::PackedStructType;
+    case CompletionCommandKind::UnpackedStructType:
+        return SymbolTaxonomy::SemanticCompletionKind::UnpackedStructType;
+    case CompletionCommandKind::PackedStructVariable:
+        return SymbolTaxonomy::SemanticCompletionKind::PackedStructVariable;
+    case CompletionCommandKind::UnpackedStructVariable:
+        return SymbolTaxonomy::SemanticCompletionKind::UnpackedStructVariable;
+    case CompletionCommandKind::User:
+        return SymbolTaxonomy::SemanticCompletionKind::User;
+    }
+    return SymbolTaxonomy::SemanticCompletionKind::User;
+}
+
 inline bool metadataMatchesCompletionCommandKind(
     const SymbolTaxonomy::SemanticMetadata& metadata,
     CompletionCommandKind kind,
     const QString& rawTypeText,
     bool parameterAlias)
 {
-    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
-    const bool semanticOnly =
-        metadata.rawCollectorKind == sym_list::sym_user;
-    switch (kind) {
-    case CompletionCommandKind::Reg:
-        return metadata.rawCollectorKind == sym_list::sym_reg
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Signal);
-    case CompletionCommandKind::Wire:
-        return metadata.rawCollectorKind == sym_list::sym_wire
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Signal);
-    case CompletionCommandKind::Logic:
-        return metadata.rawCollectorKind == sym_list::sym_logic
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Signal);
-    case CompletionCommandKind::Module:
-        return metadata.declarationKind == DeclarationKind::Module;
-    case CompletionCommandKind::Task:
-        return metadata.declarationKind == DeclarationKind::Task;
-    case CompletionCommandKind::Function:
-        return metadata.declarationKind == DeclarationKind::Function;
-    case CompletionCommandKind::Interface:
-        return metadata.declarationKind == DeclarationKind::Interface;
-    case CompletionCommandKind::Package:
-        return metadata.declarationKind == DeclarationKind::Package;
-    case CompletionCommandKind::Macro:
-        return metadata.declarationKind == DeclarationKind::Macro;
-    case CompletionCommandKind::Localparam:
-        return metadata.rawCollectorKind == sym_list::sym_localparam
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Localparam);
-    case CompletionCommandKind::Parameter:
-        return metadata.rawCollectorKind == sym_list::sym_parameter
-            || (parameterAlias
-                && metadata.rawCollectorKind == sym_list::sym_localparam)
-            || (semanticOnly
-                && (metadata.declarationKind == DeclarationKind::Parameter
-                    || (parameterAlias
-                        && metadata.declarationKind
-                            == DeclarationKind::Localparam)));
-    case CompletionCommandKind::AlwaysProcess:
-        return metadata.rawCollectorKind == sym_list::sym_always
-            || metadata.rawCollectorKind == sym_list::sym_always_ff
-            || metadata.rawCollectorKind == sym_list::sym_always_comb
-            || metadata.rawCollectorKind == sym_list::sym_always_latch
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Process);
-    case CompletionCommandKind::ContinuousAssign:
-        return metadata.rawCollectorKind == sym_list::sym_assign
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Process);
-    case CompletionCommandKind::Typedef:
-        return metadata.rawCollectorKind == sym_list::sym_typedef
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Typedef);
-    case CompletionCommandKind::EnumValue:
-        return metadata.rawCollectorKind == sym_list::sym_enum_value;
-    case CompletionCommandKind::EnumType:
-        return metadata.rawCollectorKind == sym_list::sym_enum
-            || (metadata.rawCollectorKind == sym_list::sym_typedef
-                && rawTypeText == QLatin1String("enum"))
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Typedef
-                && rawTypeText == QLatin1String("enum"));
-    case CompletionCommandKind::EnumVariable:
-        return metadata.rawCollectorKind == sym_list::sym_enum_var;
-    case CompletionCommandKind::StructMember:
-        return metadata.rawCollectorKind == sym_list::sym_struct_member
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::StructMember);
-    case CompletionCommandKind::PackedStructType:
-        return metadata.rawCollectorKind == sym_list::sym_packed_struct
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Struct);
-    case CompletionCommandKind::UnpackedStructType:
-        return metadata.rawCollectorKind == sym_list::sym_unpacked_struct
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::Struct);
-    case CompletionCommandKind::PackedStructVariable:
-        return metadata.rawCollectorKind == sym_list::sym_packed_struct_var
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::StructVariable);
-    case CompletionCommandKind::UnpackedStructVariable:
-        return metadata.rawCollectorKind == sym_list::sym_unpacked_struct_var
-            || (semanticOnly
-                && metadata.declarationKind == DeclarationKind::StructVariable);
-    case CompletionCommandKind::User:
-        return metadata.declarationKind == DeclarationKind::User;
-    }
-    return false;
+    return SymbolTaxonomy::semanticCompletionKindMatches(
+        metadata,
+        semanticCompletionKindForCommand(kind),
+        rawTypeText,
+        parameterAlias);
 }
 
 } // namespace completion_command_kind_adapter

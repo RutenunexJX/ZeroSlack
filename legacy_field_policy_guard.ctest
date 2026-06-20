@@ -134,7 +134,6 @@ set(RECORD_NATIVE_SERVICE_FILES
 )
 
 set(H0_LEGACY_CORE_ALLOWLIST
-    completioncommandkindadapter.h
     semanticindex.cpp
     semanticindex.h
     semanticindexstore.cpp
