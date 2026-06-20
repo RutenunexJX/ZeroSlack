@@ -68,7 +68,7 @@ static void expectEq(const char* what, const QString& got, const QString& want) 
            got.toLocal8Bit().constData(), want.toLocal8Bit().constData());
 }
 
-// Put the caret on a given 0-based block (line) so getCurrentModuleScope resolves the module.
+// Put the caret on a given 0-based block (line) for semantic module context.
 static void placeCursor(MyCodeEditor& ed, int block) {
     QTextCursor c = ed.textCursor();
     c.movePosition(QTextCursor::Start);
@@ -102,8 +102,8 @@ int main(int argc, char** argv) {
         mgr.extractSymbolRecords(path, content),
         content);
 
-    // After the full GUI path (setSymbolsForFile -> rebuildScopeAndRelationships -> analyzeModuleContainment),
-    // function-local symbols must KEEP their subroutine moduleScope (not get clobbered to the module).
+    // After the semantic record mirror, function-local symbols keep their
+    // subroutine owner scope rather than being inferred from module bounds.
     auto scopeOf = [](const QString& name, sym_list::sym_type_e t) -> QString {
         for (const auto& s : symbolsNamed(name))
             if (s.symbolType == t) return s.moduleScope;

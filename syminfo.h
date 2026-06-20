@@ -158,8 +158,6 @@ public:
 
     ScopeManager* getScopeManager() const;
 
-    QString getCurrentModuleScope(const QString& fileName, int lineNumber);
-
     QString getCachedFileContent(const QString& fileName) const;
 
     static bool isValidModuleName(const QString& name);
@@ -173,8 +171,6 @@ public:
     bool needsAnalysis(const QString& fileName, const QString& content);
 
     bool contentAffectsSymbols(const QString& fileName, const QString& content);
-
-    int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
 
 private:
     mutable QReadWriteLock symbolDbLock;

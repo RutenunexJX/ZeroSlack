@@ -44,13 +44,6 @@ void sym_list::addSymbol(const SymbolInfo& symbol)
         newSymbol.symbolId = allocateSymbolId();
     }
 
-    if (newSymbol.moduleScope.isEmpty() &&
-        (newSymbol.symbolType == sym_reg ||
-         newSymbol.symbolType == sym_wire ||
-         newSymbol.symbolType == sym_logic)) {
-        newSymbol.moduleScope = getCurrentModuleScope(newSymbol.fileName, newSymbol.startLine);
-    }
-
     symbolDatabase.append(newSymbol);
     int newIndex = symbolDatabase.size() - 1;
     symbolIdToIndex[newSymbol.symbolId] = newIndex;
