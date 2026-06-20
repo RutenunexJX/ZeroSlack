@@ -11,7 +11,6 @@
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
-#include "symboltaxonomylegacy.h"
 #include "syminfo.h"
 #include <QApplication>
 #include <QFile>
