@@ -150,14 +150,13 @@ UI Layer
 
 ### Phase H: Semantic Core Slimdown
 
-- Status: planned next.
-- Purpose: turn Phase G's isolated compatibility boundaries into real deletion, so legacy collector fields and APIs stop shaping semantic core contracts.
-- Remove remaining `sym_list::SymbolInfo` and `sym_list::sym_type_e` exposure from product, service, report, completion, snapshot, and query contracts.
-- Replace raw collector-kind query inputs with semantic-native completion, declaration, usage, owner, type, and source-role models.
-- Move snapshot/store internals to semantic-native records or store entries instead of keeping `SymbolInfo` as the default carrier.
-- Keep collector/import conversion in the smallest possible adapter boundary, then delete adapter code when Slang collection can emit semantic-native records directly.
-- Delete redundant conversion, compatibility, filtering, sorting, and display helper logic after each old API disappears.
-- Phase H is complete only when guards enforce the final allowlist and full Ninja plus full CTest pass.
+- Status: complete on this branch.
+- Purpose achieved: Phase G's isolated compatibility boundaries were tightened into real deletion where possible, so legacy collector fields and APIs no longer shape product, service, report, completion, snapshot, or query contracts.
+- Remaining `sym_list::SymbolInfo` and `sym_list::sym_type_e` exposure is confined to collector/import, taxonomy, legacy store, and guarded adapter transition code.
+- Raw collector-kind query inputs have been replaced in completion and query contracts by semantic-native models such as `CompletionCommandKind`, semantic metadata, stable keys, owner/type metadata, and source-role records.
+- Snapshot/store public contracts consume semantic records; any required `SymbolInfo` conversion remains inside the guarded legacy store/collector adapter boundary.
+- Redundant conversion, compatibility, filtering, sorting, display helper, and raw query APIs were deleted or made private.
+- Phase H release gate passed with guards enforcing the final allowlist and full Ninja plus full CTest passing locally.
 
 ## Architecture Rules
 
@@ -185,7 +184,7 @@ The foundation is healthy when:
 - stale workspace, open-document, and relationship analysis results cannot overwrite newer semantic snapshots
 - product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
 - product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, Phase G, and the release gate after Phase G pass
-- Phase H is complete only when remaining legacy collector compatibility is deleted from semantic core contracts or confined to the final minimal collector adapter allowlist
+- Phase H is complete on this branch: remaining legacy collector compatibility is deleted from semantic core contracts or confined to the final guarded transition allowlist
 - `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
 - `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
 - `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts
@@ -196,7 +195,7 @@ The foundation is healthy when:
 - compatibility APIs are transition-only and guarded away from product-facing code
 - Query Services and RTL feature services consume stable semantic metadata and contracts
 - RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, Phase F0, F1, F2, F3, Phase G, and the release gate after Phase G are in place
-- After Phase H starts, broad RTL feature expansion should avoid new semantic model work until H has removed the old compatibility surfaces it touches.
+- Broad RTL feature expansion may resume, but any new semantic model work must keep the Phase H compatibility boundaries intact.
 - Phase D features are done only when service-level behavior, report shape, UI render path, and real fixture evidence are covered
 - UI panels render reports/models without owning semantic policy
 - scheduler, analyzer, project, document, and editor ownership boundaries stay clear

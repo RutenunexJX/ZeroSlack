@@ -172,17 +172,16 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Phase H: Semantic Core Slimdown
 
-- Status: planned next.
-- Goal: remove remaining legacy fields, APIs, redundant interfaces, and redundant compatibility logic from the semantic core rather than continuing to preserve them as broad adapter surfaces.
-- H0: define the final allowlist and strengthen `legacy_field_policy_guard.ctest` so `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `.symbolId`, `.symbolType`, `.moduleScope`, `.dataType`, int-id lookup APIs, and raw collector query APIs are forbidden outside a small explicit adapter boundary.
-- H1: introduce or finalize semantic-native enum/query types for completion, declaration filtering, owner/type metadata, and source roles so callers no longer pass raw collector kinds.
-- H2: migrate `SemanticIndexSnapshot` and semantic store internals from `sym_list::SymbolInfo` carriers to semantic-native records or store entries; keep any required collector conversion in one adapter.
-- H3: migrate completion contracts away from `SymbolInfo` / `sym_type_e`, then delete compatibility entry points such as `getCommandCompletionSymbols`, `getTypedCompletionSymbols`, `getGlobalSymbolInfosByType`, `getModuleInternalSymbolsByType`, and `getModuleContextSymbolsByType`.
-- H4: migrate feature-service private helpers in FSM graph, module brief, signal journey, semantic diff, and similar services to `SemanticSymbolRecord`, stable keys, local handles, and semantic metadata.
-- H5: delete or shrink `syminfo` legacy query APIs and indexes after snapshot/store and completion no longer depend on them.
-- H6: remove redundant conversion, filtering, sorting, and display helper logic left behind by H0-H5; keep only one owner for each semantic policy rule.
-- Phase H must be mostly serial because snapshot/store, completion, feature services, and collector adapters share core contracts.
-- Each H block should stay medium-sized, compile independently, and extend guards before or with the deletion it enables.
+- Status: complete on this branch.
+- Goal achieved: remaining legacy fields, APIs, redundant interfaces, and compatibility logic were removed from semantic core contracts or confined to the final guarded transition boundary.
+- H0 is complete: `legacy_field_policy_guard.ctest` defines and enforces the Phase H allowlist for `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `.symbolId`, `.symbolType`, `.moduleScope`, `.dataType`, int-id lookup APIs, raw collector query APIs, and retired completion compatibility APIs.
+- H1 is complete: completion command, selected module, global, and scope query contracts use semantic-native `CompletionCommandKind`; raw collector mapping is isolated inside the semantic-query adapter and taxonomy boundary.
+- H2 is complete for Phase H scope: snapshot/store public contracts and publication paths consume semantic records; remaining `SymbolInfo` conversion is confined to the guarded legacy store/collector adapter boundary.
+- H3 is complete: retired completion compatibility entry points such as `getCommandCompletionSymbols`, `getTypedCompletionSymbols`, `getGlobalSymbolInfosByType`, `getModuleInternalSymbolsByType`, and `getModuleContextSymbolsByType` are removed and guarded.
+- H4 is complete: feature-service helpers use `SemanticSymbolRecord`, stable keys, local handles, and semantic metadata instead of exposed `SymbolInfo` contracts.
+- H5 is complete: `syminfo` legacy query APIs and indexes were deleted or shrunk, including raw name/file/type query helpers.
+- H6 is complete: redundant adapter helpers, conversion helpers, compatibility query paths, and duplicated display/filtering surfaces were removed or made private.
+- The full Phase H release gate passed locally with full Ninja, full CTest, `legacy_field_policy_guard`, static legacy API scans, docs consistency review, and forbidden-file regression checks.
 
 ### Release Gate After Phase H
 
