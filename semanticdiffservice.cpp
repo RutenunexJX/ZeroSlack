@@ -14,82 +14,53 @@ bool hasDisplayRecord(const SemanticSymbolRecord& record)
 }
 
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    return semanticMetadataForSymbolRecord(record, fallback);
+    return semanticMetadataForSymbolRecord(record);
 }
 
-QString symbolTypeDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString symbolTypeDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
-    return SymbolTaxonomy::symbolTypeLabel(
-        metadataForRecord(record, fallback));
+    return SymbolTaxonomy::symbolTypeLabel(metadataForRecord(record));
 }
 
-QString symbolDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString symbolDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.name.isEmpty())
         return record.name;
-    if (!fallback.symbolName.isEmpty())
-        return fallback.symbolName;
     return QStringLiteral("<unknown>");
 }
 
-QString sourceRoleDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString sourceRoleDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     return SymbolTaxonomy::sourceRoleDisplayName(
-        metadataForRecord(record, fallback).sourceRole);
+        metadataForRecord(record).sourceRole);
 }
 
-QString dataTypeDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString dataTypeDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
-    if (!record.type.rawTypeText.isEmpty())
-        return record.type.rawTypeText;
-    const SemanticSymbolRecord fallbackRecord =
-        semanticSymbolRecordForSymbol(fallback);
-    return fallbackRecord.type.rawTypeText;
+    return record.type.rawTypeText;
 }
 
-QString symbolScopeDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString symbolScopeDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
         return QStringLiteral("global");
     if (!record.owner.name.isEmpty())
         return QStringLiteral("scope %1").arg(record.owner.name);
-    const SemanticSymbolRecord fallbackRecord =
-        semanticSymbolRecordForSymbol(fallback);
-    if (!fallbackRecord.owner.name.isEmpty())
-        return QStringLiteral("scope %1").arg(fallbackRecord.owner.name);
-    if (SymbolTaxonomy::isGlobalDefinition(
-            SymbolTaxonomy::semanticMetadata(fallback))) {
+    if (SymbolTaxonomy::isGlobalDefinition(metadataForRecord(record)))
         return QStringLiteral("global");
-    }
     return QStringLiteral("scope unknown");
 }
 
-RtlInsightCodeLink codeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
 {
     if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        return RtlInsightLink::fromFileLine(fileName,
+        return RtlInsightLink::fromFileLine(record.location.fileName,
                                             record.location.startLine,
                                             record.location.startColumn);
     }
-    return RtlInsightLink::fromSymbol(fallback);
+    return {};
 }
 }
 
@@ -518,9 +489,8 @@ QString SemanticDiffService::relationshipKey(
     SemanticDiffSymbolCategory toCategory = SemanticDiffSymbolCategory::Signal;
     symbolCategory(semanticMetadataForSymbolRecord(fromRecord), &fromCategory);
     symbolCategory(semanticMetadataForSymbolRecord(toRecord), &toCategory);
-    const sym_list::SymbolInfo fallback = {};
-    const QString fromName = symbolDisplayNameForRecord(fromRecord, fallback);
-    const QString toName = symbolDisplayNameForRecord(toRecord, fallback);
+    const QString fromName = symbolDisplayNameForRecord(fromRecord);
+    const QString toName = symbolDisplayNameForRecord(toRecord);
     const QString fromKey =
         fromRecord.declarationKind == SymbolTaxonomy::DeclarationKind::Module
             ? QStringLiteral("module:%1").arg(fromName)
@@ -727,8 +697,6 @@ void SemanticDiffService::fillDisplayMetadata(
     const SemanticSymbolRecord& beforeRecord,
     const SemanticSymbolRecord& afterRecord)
 {
-    const sym_list::SymbolInfo fallback = {};
-
     change.beforeSymbolRecord = beforeRecord;
     change.afterSymbolRecord = afterRecord;
     change.displaySymbolRecord = change.kind == SemanticDiffChangeKind::Removed
@@ -741,54 +709,39 @@ void SemanticDiffService::fillDisplayMetadata(
     change.categoryDisplayName = symbolCategoryDisplayName(change.category);
     change.categoryGroupDisplayName = symbolCategoryGroupDisplayName(change.category);
     change.symbolDisplayName =
-        symbolDisplayNameForRecord(change.displaySymbolRecord, fallback);
+        symbolDisplayNameForRecord(change.displaySymbolRecord);
     change.sourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(change.displaySymbolRecord,
-                                       fallback);
+        sourceRoleDisplayNameForRecord(change.displaySymbolRecord);
     change.symbolTypeDisplayName =
-        symbolTypeDisplayNameForRecord(change.displaySymbolRecord,
-                                       fallback);
+        symbolTypeDisplayNameForRecord(change.displaySymbolRecord);
     change.scopeDisplayName =
-        symbolScopeDisplayNameForRecord(change.displaySymbolRecord,
-                                        fallback);
-    change.codeLink = codeLinkForRecord(change.displaySymbolRecord,
-                                        fallback);
+        symbolScopeDisplayNameForRecord(change.displaySymbolRecord);
+    change.codeLink = codeLinkForRecord(change.displaySymbolRecord);
     if (hasDisplayRecord(beforeRecord)) {
         change.beforeSymbolTypeDisplayName =
-            symbolTypeDisplayNameForRecord(change.beforeSymbolRecord,
-                                           fallback);
+            symbolTypeDisplayNameForRecord(change.beforeSymbolRecord);
         change.beforeScopeDisplayName =
-            symbolScopeDisplayNameForRecord(change.beforeSymbolRecord,
-                                            fallback);
+            symbolScopeDisplayNameForRecord(change.beforeSymbolRecord);
         change.beforeSourceRoleDisplayName =
-            sourceRoleDisplayNameForRecord(change.beforeSymbolRecord,
-                                           fallback);
+            sourceRoleDisplayNameForRecord(change.beforeSymbolRecord);
         change.beforeDataTypeDisplayName =
-            dataTypeDisplayNameForRecord(change.beforeSymbolRecord,
-                                         fallback);
-        change.beforeCodeLink = codeLinkForRecord(change.beforeSymbolRecord,
-                                                  fallback);
+            dataTypeDisplayNameForRecord(change.beforeSymbolRecord);
+        change.beforeCodeLink = codeLinkForRecord(change.beforeSymbolRecord);
     }
     if (hasDisplayRecord(afterRecord)) {
         change.afterSymbolTypeDisplayName =
-            symbolTypeDisplayNameForRecord(change.afterSymbolRecord,
-                                           fallback);
+            symbolTypeDisplayNameForRecord(change.afterSymbolRecord);
         change.afterScopeDisplayName =
-            symbolScopeDisplayNameForRecord(change.afterSymbolRecord,
-                                            fallback);
+            symbolScopeDisplayNameForRecord(change.afterSymbolRecord);
         change.afterSourceRoleDisplayName =
-            sourceRoleDisplayNameForRecord(change.afterSymbolRecord,
-                                           fallback);
+            sourceRoleDisplayNameForRecord(change.afterSymbolRecord);
         change.afterDataTypeDisplayName =
-            dataTypeDisplayNameForRecord(change.afterSymbolRecord,
-                                         fallback);
-        change.afterCodeLink = codeLinkForRecord(change.afterSymbolRecord,
-                                                 fallback);
+            dataTypeDisplayNameForRecord(change.afterSymbolRecord);
+        change.afterCodeLink = codeLinkForRecord(change.afterSymbolRecord);
     }
 
     const QString displayDataType =
-        dataTypeDisplayNameForRecord(change.displaySymbolRecord,
-                                     fallback);
+        dataTypeDisplayNameForRecord(change.displaySymbolRecord);
     const QString dataType = displayDataType.isEmpty()
         ? QString()
         : QStringLiteral(" %1").arg(displayDataType);
@@ -804,16 +757,14 @@ void SemanticDiffService::fillDisplayMetadata(
 
     const QString beforeText =
         QStringLiteral("%1%2")
-            .arg(symbolTypeDisplayNameForRecord(change.beforeSymbolRecord,
-                                                fallback),
+            .arg(symbolTypeDisplayNameForRecord(change.beforeSymbolRecord),
                  change.beforeDataTypeDisplayName.isEmpty()
                      ? QString()
                      : QStringLiteral(" %1").arg(
                            change.beforeDataTypeDisplayName));
     const QString afterText =
         QStringLiteral("%1%2")
-            .arg(symbolTypeDisplayNameForRecord(change.afterSymbolRecord,
-                                                fallback),
+            .arg(symbolTypeDisplayNameForRecord(change.afterSymbolRecord),
                  change.afterDataTypeDisplayName.isEmpty()
                      ? QString()
                      : QStringLiteral(" %1").arg(
@@ -837,7 +788,6 @@ void SemanticDiffService::fillDisplayMetadata(
         change.kind == SemanticDiffChangeKind::Removed
             ? change.beforeRelationship
             : change.afterRelationship;
-    const sym_list::SymbolInfo fallback = {};
     change.beforeFromSymbolRecord = beforeFromRecord;
     change.beforeToSymbolRecord = beforeToRecord;
     change.afterFromSymbolRecord = afterFromRecord;
@@ -868,24 +818,19 @@ void SemanticDiffService::fillDisplayMetadata(
     change.kindDisplayName = changeKindDisplayName(change.kind);
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
-    change.fromCodeLink = codeLinkForRecord(change.displayFromSymbolRecord,
-                                            fallback);
-    change.toCodeLink = codeLinkForRecord(change.displayToSymbolRecord,
-                                          fallback);
+    change.fromCodeLink = codeLinkForRecord(change.displayFromSymbolRecord);
+    change.toCodeLink = codeLinkForRecord(change.displayToSymbolRecord);
     change.fromSymbolDisplayName =
-        symbolDisplayNameForRecord(change.displayFromSymbolRecord,
-                                   fallback);
+        symbolDisplayNameForRecord(change.displayFromSymbolRecord);
     change.toSymbolDisplayName =
-        symbolDisplayNameForRecord(change.displayToSymbolRecord,
-                                   fallback);
+        symbolDisplayNameForRecord(change.displayToSymbolRecord);
     change.provenanceDisplayName = provenanceDisplayName(change.provenance);
     change.confidenceDisplayName = confidenceDisplayName(change.confidence);
     change.evidenceDisplayName = evidenceDisplayName(change.evidenceText);
     change.categoryGroupDisplayName = QStringLiteral("Relationships");
     change.codeLink = change.fromCodeLink;
     change.sourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(change.displayFromSymbolRecord,
-                                       fallback);
+        sourceRoleDisplayNameForRecord(change.displayFromSymbolRecord);
     change.detailDisplayName =
         change.fromSymbolDisplayName == QStringLiteral("<unknown>")
             || change.toSymbolDisplayName == QStringLiteral("<unknown>")
