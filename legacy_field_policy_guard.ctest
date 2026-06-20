@@ -170,7 +170,6 @@ set(H0_LEGACY_CORE_ALLOWLIST
     semanticindex.cpp
     semanticindex.h
     semanticindexcompletion.cpp
-    semanticindexcompletioncontext.cpp
     semanticindexcompletionqueries.cpp
     semanticindexcompletionrelationships.cpp
     semanticindexcompletiontypequeries.cpp

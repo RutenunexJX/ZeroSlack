@@ -1,5 +1,6 @@
 #include "semanticindex.h"
 
+#include "completioncommandkindadapter.h"
 #include "completiontypes.h"
 
 #include <QSet>
@@ -66,18 +67,13 @@ QString rawTypeTextForCompletionContextRecord(
     return record.type.rawTypeText;
 }
 
-int completionContextLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolId;
-}
-
-QList<SemanticSymbolRecord> completionContextRecordsByRawKind(
+QList<SemanticSymbolRecord> completionContextRecordsByKind(
     const QList<SemanticSymbolRecord>& records,
-    sym_list::sym_type_e rawKind)
+    CompletionCommandKind kind)
 {
     QList<SemanticSymbolRecord> result;
     for (const SemanticSymbolRecord& record : records) {
-        if (semanticMetadataForSymbolRecord(record).rawCollectorKind == rawKind)
+        if (completionCommandKindMatchesCommandRecord(record, kind))
             result.append(record);
     }
     return result;
@@ -91,8 +87,8 @@ QStringList SemanticIndex::getEnumValueCompletionNames(
 {
     QList<SemanticSymbolRecord> result;
     const QList<SemanticSymbolRecord> records =
-        completionContextRecordsByRawKind(getSymbolRecords(),
-                                          sym_list::sym_enum_value);
+        completionContextRecordsByKind(getSymbolRecords(),
+                                       CompletionCommandKind::EnumValue);
     for (const SemanticSymbolRecord& record : records) {
         if (!enumTypeName.isEmpty()
             && ownerNameForCompletionContextRecord(record) != enumTypeName)
@@ -121,8 +117,8 @@ QString SemanticIndex::enumTypeForVariable(
     }
 
     const QList<SemanticSymbolRecord> records =
-        completionContextRecordsByRawKind(getSymbolRecords(),
-                                          sym_list::sym_enum_var);
+        completionContextRecordsByKind(getSymbolRecords(),
+                                       CompletionCommandKind::EnumVariable);
     for (const SemanticSymbolRecord& record : records) {
         if (record.name == variableName)
             return ownerNameForCompletionContextRecord(record);
@@ -139,10 +135,9 @@ QStringList SemanticIndex::getModulePortCompletionNames(
         return {};
 
     bool moduleExists = false;
-    const QList<SemanticSymbolRecord> modules =
-        completionContextRecordsByRawKind(getSymbolRecords(),
-                                          sym_list::sym_module);
-    for (const SemanticSymbolRecord& record : modules) {
+    for (const SemanticSymbolRecord& record : getSymbolRecords()) {
+        if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
+            continue;
         if (record.name == moduleTypeName) {
             moduleExists = true;
             break;
@@ -172,11 +167,13 @@ QString SemanticIndex::getStructTypeForVariable(const QString& variableName,
         return QString();
 
     QList<SemanticSymbolRecord> structVariables =
-        completionContextRecordsByRawKind(getSymbolRecords(),
-                                          sym_list::sym_packed_struct_var);
+        completionContextRecordsByKind(
+            getSymbolRecords(),
+            CompletionCommandKind::PackedStructVariable);
     structVariables.append(
-        completionContextRecordsByRawKind(getSymbolRecords(),
-                                          sym_list::sym_unpacked_struct_var));
+        completionContextRecordsByKind(
+            getSymbolRecords(),
+            CompletionCommandKind::UnpackedStructVariable));
 
     if (!moduleName.isEmpty()) {
         for (const SemanticSymbolRecord& record : std::as_const(structVariables)) {
@@ -207,8 +204,8 @@ QList<SemanticSymbolRecord> SemanticIndex::getStructMemberRecords(
 {
     QList<SemanticSymbolRecord> result;
     const QList<SemanticSymbolRecord> members =
-        completionContextRecordsByRawKind(getSymbolRecords(),
-                                          sym_list::sym_struct_member);
+        completionContextRecordsByKind(getSymbolRecords(),
+                                       CompletionCommandKind::StructMember);
     for (const SemanticSymbolRecord& record : members) {
         if (!structTypeName.isEmpty()
             && ownerNameForCompletionContextRecord(record) != structTypeName)
