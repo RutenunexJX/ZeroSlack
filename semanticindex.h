@@ -318,7 +318,7 @@ public:
                             const QString& moduleName) const;
     bool isValidModuleName(const QString& name) const;
     int findEndModuleLine(const QString& fileName,
-                          const sym_list::SymbolInfo& moduleSymbol) const;
+                          const SemanticSymbolRecord& moduleRecord) const;
     bool contentAffectsSymbols(const QString& fileName, const QString& content) const;
     void refreshStructTypedefEnumForFile(const QString& fileName, const QString& content);
     void attachRelationshipEngine(SymbolRelationshipEngine* engine) const;

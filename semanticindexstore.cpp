@@ -52,11 +52,11 @@ QString stripCommentsFromLine(const QString& line, bool& inBlockComment)
 }
 
 int findEndModuleLineInContent(const QString& content,
-                               const sym_list::SymbolInfo& moduleSymbol)
+                               const SemanticSymbolRecord& moduleRecord)
 {
     const QStringList lines = content.split('\n');
     int moduleDepth = 0;
-    int scanStart = moduleSymbol.startLine - 1;
+    int scanStart = moduleRecord.location.startLine - 1;
     if (scanStart < 0)
         scanStart = 0;
 
@@ -207,22 +207,21 @@ bool SemanticIndex::isValidModuleName(const QString& name) const
 }
 
 int SemanticIndex::findEndModuleLine(const QString& fileName,
-                                     const sym_list::SymbolInfo& moduleSymbol) const
+                                     const SemanticSymbolRecord& moduleRecord) const
 {
-    if (moduleSymbol.symbolType != sym_list::sym_module)
+    if (moduleRecord.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
         return -1;
 
-    if (moduleSymbol.endLine >= moduleSymbol.startLine && moduleSymbol.endLine > 0)
-        return moduleSymbol.endLine - 1;
+    if (moduleRecord.location.endLine >= moduleRecord.location.startLine
+        && moduleRecord.location.endLine > 0) {
+        return moduleRecord.location.endLine - 1;
+    }
 
     const QString content = getCachedFileContent(fileName);
     if (!content.isEmpty())
-        return findEndModuleLineInContent(content, moduleSymbol);
+        return findEndModuleLineInContent(content, moduleRecord);
 
-    if (m_snapshot)
-        return -1;
-
-    return symbolDatabase()->findEndModuleLine(fileName, moduleSymbol);
+    return -1;
 }
 
 bool SemanticIndex::contentAffectsSymbols(const QString& fileName,
