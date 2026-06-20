@@ -456,6 +456,8 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexsnapshot.h|getSymbolByStableKey[ \t\r\n]*\\("
     "semanticindexsnapshot.h|getSymbols[ \t\r\n]*\\("
     "semanticindexsnapshot.h|getSymbolsByType[ \t\r\n]*\\("
+    "semanticindexsnapshot.h|SemanticIndexSnapshot[ \t\r\n]*\\([ \t\r\n]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
+    "semanticindexsnapshot.cpp|SemanticIndexSnapshot::SemanticIndexSnapshot[ \t\r\n]*\\([ \t\r\n]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
     "semanticindexsnapshot.h|findDefinitions[ \t\r\n]*\\("
     "semanticindexsnapshot.h|QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+m_symbols"
     "semanticindexsnapshotqueries.cpp|semanticSymbolRecordForSymbol[ \t\r\n]*\\("

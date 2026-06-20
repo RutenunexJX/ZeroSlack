@@ -19,9 +19,32 @@
 #include <QStringList>
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 
 static int g_checks = 0;
 static int g_fails = 0;
+
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SemanticRelationship>& relationships = {},
+    const QList<SemanticDiagnostic>& diagnostics = {},
+    const QHash<QString, QString>& fileContents = {})
+{
+    return std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(
+            semanticSymbolRecordsForSymbols(
+                symbols,
+                SymbolTaxonomy::packageScopeNames(symbols)),
+            relationships,
+            diagnostics,
+            fileContents));
+}
+
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
+    const SemanticIndexSnapshot& snapshot)
+{
+    return std::make_shared<SemanticIndexSnapshot>(snapshot);
+}
 
 static QStringList sorted(QStringList l) { l.sort(); return l; }
 
@@ -1882,7 +1905,7 @@ int main(int argc, char** argv) {
                    2100);
     navSymbol.fileName = path;
     SemanticIndex::getInstance()->setSnapshot(
-        std::make_shared<SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             QList<sym_list::SymbolInfo>{navSymbol},
             QList<SemanticRelationship>{},
             QList<SemanticDiagnostic>{},
@@ -2423,7 +2446,7 @@ int main(int argc, char** argv) {
     snapshotFileContents.insert(semanticModuleScopeFile, semanticModuleScopeContent);
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
-        std::make_shared<SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             snapshotSymbols,
             snapshotRelationships,
             QList<SemanticDiagnostic>{},
@@ -2892,7 +2915,7 @@ int main(int argc, char** argv) {
                    true)),
                {"snap_signal"});
     SemanticIndex::getInstance()->setSnapshot(
-        std::make_shared<SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             snapshotSymbols,
             snapshotRelationships,
             QList<SemanticDiagnostic>{},

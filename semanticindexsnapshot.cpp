@@ -128,16 +128,12 @@ QList<SemanticSymbolRecord> snapshotRecordsFromSymbols(
 
 }
 
-SemanticIndexSnapshot::SemanticIndexSnapshot(
-    QList<sym_list::SymbolInfo> symbols,
-    QList<SemanticRelationship> relationships,
-    QList<SemanticDiagnostic> diagnostics,
-    QHash<QString, QString> fileContents)
+SemanticIndexSnapshot::SemanticIndexSnapshot()
     : SemanticIndexSnapshot(FromRecordsTag{},
-                            snapshotRecordsFromSymbols(symbols),
-                            std::move(relationships),
-                            std::move(diagnostics),
-                            std::move(fileContents))
+                            {},
+                            {},
+                            {},
+                            {})
 {
 }
 
@@ -161,9 +157,15 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
     QList<SemanticDiagnostic> diagnostics)
 {
     if (!symbolDatabase)
-        return SemanticIndexSnapshot({}, {}, std::move(diagnostics));
+        return SemanticIndexSnapshot(FromRecordsTag{},
+                                     {},
+                                     {},
+                                     std::move(diagnostics),
+                                     {});
 
     const QList<sym_list::SymbolInfo> symbols = symbolDatabase->getAllSymbols();
+    const QList<SemanticSymbolRecord> symbolRecords =
+        snapshotRecordsFromSymbols(symbols);
     QList<SemanticRelationship> relationships;
     SymbolRelationshipEngine* engine = symbolDatabase->getRelationshipEngine();
     if (engine) {
@@ -214,7 +216,24 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolDatabase(
         fileContents.insert(symbol.fileName, symbolDatabase->getCachedFileContent(symbol.fileName));
     }
 
-    return SemanticIndexSnapshot(symbols, relationships, std::move(diagnostics), fileContents);
+    return SemanticIndexSnapshot(FromRecordsTag{},
+                                 symbolRecords,
+                                 relationships,
+                                 std::move(diagnostics),
+                                 fileContents);
+}
+
+SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolRecords(
+    QList<SemanticSymbolRecord> symbolRecords,
+    QList<SemanticRelationship> relationships,
+    QList<SemanticDiagnostic> diagnostics,
+    QHash<QString, QString> fileContents)
+{
+    return SemanticIndexSnapshot(FromRecordsTag{},
+                                 std::move(symbolRecords),
+                                 std::move(relationships),
+                                 std::move(diagnostics),
+                                 std::move(fileContents));
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(

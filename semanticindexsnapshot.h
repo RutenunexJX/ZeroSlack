@@ -11,14 +11,16 @@
 class SemanticIndexSnapshot
 {
 public:
-    SemanticIndexSnapshot(QList<sym_list::SymbolInfo> symbols = {},
-                          QList<SemanticRelationship> relationships = {},
-                          QList<SemanticDiagnostic> diagnostics = {},
-                          QHash<QString, QString> fileContents = {});
+    SemanticIndexSnapshot();
 
     static SemanticIndexSnapshot fromSymbolDatabase(
         sym_list* symbolDatabase,
         QList<SemanticDiagnostic> diagnostics = {});
+    static SemanticIndexSnapshot fromSymbolRecords(
+        QList<SemanticSymbolRecord> symbolRecords,
+        QList<SemanticRelationship> relationships = {},
+        QList<SemanticDiagnostic> diagnostics = {},
+        QHash<QString, QString> fileContents = {});
 
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;

@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <QMouseEvent>
 #include <cstdio>
+#include <memory>
 #include "slangmanager.h"
 #include "syminfo.h"
 #include "completionmodel.h"
@@ -25,6 +26,28 @@
 #include "mycodeeditor.h"
 
 static int g_checks = 0, g_fails = 0;
+
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SemanticRelationship>& relationships = {},
+    const QList<SemanticDiagnostic>& diagnostics = {},
+    const QHash<QString, QString>& fileContents = {})
+{
+    return std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(
+            semanticSymbolRecordsForSymbols(
+                symbols,
+                SymbolTaxonomy::packageScopeNames(symbols)),
+            relationships,
+            diagnostics,
+            fileContents));
+}
+
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
+    const SemanticIndexSnapshot& snapshot)
+{
+    return std::make_shared<SemanticIndexSnapshot>(snapshot);
+}
 
 static void expectBool(const char* what, bool got, bool want) {
     ++g_checks; bool ok = (got == want); if (!ok) ++g_fails;
@@ -350,7 +373,7 @@ int main(int argc, char** argv) {
 
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
-        std::make_shared<SemanticIndexSnapshot>(snapshotDefinitionSymbols));
+        sharedSnapshotFromSymbols(snapshotDefinitionSymbols));
     DefinitionService snapshotDefinitionService(&snapshotIndex);
     DefinitionQuery snapshotMemberQuery;
     snapshotMemberQuery.symbolName = QStringLiteral("red");

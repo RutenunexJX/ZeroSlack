@@ -45,6 +45,28 @@
 static int g_checks = 0;
 static int g_fails = 0;
 
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SemanticRelationship>& relationships = {},
+    const QList<SemanticDiagnostic>& diagnostics = {},
+    const QHash<QString, QString>& fileContents = {})
+{
+    return std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(
+            semanticSymbolRecordsForSymbols(
+                symbols,
+                SymbolTaxonomy::packageScopeNames(symbols)),
+            relationships,
+            diagnostics,
+            fileContents));
+}
+
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
+    const SemanticIndexSnapshot& snapshot)
+{
+    return std::make_shared<SemanticIndexSnapshot>(snapshot);
+}
+
 static void expectBool(const char* what, bool got, bool want)
 {
     ++g_checks;
@@ -430,7 +452,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("slang diagnostics flow from temp path",
                !temporaryBrokenDiagnostics.isEmpty(), true);
     SemanticIndex diagnosticIndex(db);
-    diagnosticIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    diagnosticIndex.setSnapshot(sharedSnapshotFromSymbols(
         SemanticIndexSnapshot::fromSymbolDatabase(db, brokenDiagnostics)));
     DiagnosticService brokenDiagnosticService(&diagnosticIndex);
     DiagnosticQuery brokenDiagnosticQuery;
@@ -493,7 +515,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     errorDiagnostic.owner = SemanticDiagnostic::SlangCompiler;
 
     SemanticIndex diagnosticReportIndex(db);
-    diagnosticReportIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    diagnosticReportIndex.setSnapshot(sharedSnapshotFromSymbols(
         SemanticIndexSnapshot::fromSymbolDatabase(db, {
             infoDiagnostic,
             warningDiagnostic,
@@ -793,7 +815,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                       SymbolRelationshipEngine::INSTANTIATES),
                true);
 
-    const auto symbolOnlySnapshot = std::make_shared<SemanticIndexSnapshot>(
+    const auto symbolOnlySnapshot = sharedSnapshotFromSymbols(
         SemanticIndexSnapshot::fromSymbolDatabase(db));
     SmartRelationshipBuilder snapshotBuilder(&engine, nullptr, &slang);
     const QVector<RelationshipToAdd> snapshotBackedRels =
@@ -826,7 +848,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                incomingReferenceIds.contains(stageId), false);
 
     SemanticIndex snapshotIndex(db);
-    const auto snapshot = std::make_shared<SemanticIndexSnapshot>(
+    const auto snapshot = sharedSnapshotFromSymbols(
         SemanticIndexSnapshot::fromSymbolDatabase(db));
     snapshotIndex.setSnapshot(snapshot);
     expectBool("semantic snapshot returns top symbols",
@@ -1046,7 +1068,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     metadataOutlineSymbols.append(metadataOutlineModule);
     SemanticIndex metadataOutlineIndex;
     metadataOutlineIndex.setSnapshot(
-        std::make_shared<SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             metadataOutlineSymbols,
             snapshot->relationships(),
             snapshot->diagnostics(),
@@ -1934,7 +1956,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     driftingStableRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
     driftingStableRelationship.fromStableKey = topStableKey;
     driftingStableRelationship.toStableKey = stageStableKey;
-    const auto reboundSnapshot = std::make_shared<SemanticIndexSnapshot>(
+    const auto reboundSnapshot = sharedSnapshotFromSymbols(
         QList<sym_list::SymbolInfo>{reboundTopSymbol, reboundStageSymbol},
         QList<SemanticRelationship>{driftingStableRelationship});
     const SemanticRelationship reboundRelationship =
@@ -2034,7 +2056,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     SemanticIndex captureIndex(db);
     const auto capturedSnapshot =
         captureIndex.captureSnapshotPreservingDiagnostics();
-    captureIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    captureIndex.setSnapshot(sharedSnapshotFromSymbols(
         semanticSymbolInfoCarriersForRecords(capturedSnapshot->getSymbolRecords()),
         capturedSnapshot->relationships(),
         QList<SemanticDiagnostic>{errorDiagnostic},
@@ -2043,7 +2065,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         captureIndex.captureSnapshotPreservingDiagnostics();
     expectInt("semantic index capture preserves diagnostics",
               recapturedSnapshot->diagnostics().size(), 1);
-    captureIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    captureIndex.setSnapshot(sharedSnapshotFromSymbols(
         semanticSymbolInfoCarriersForRecords(recapturedSnapshot->getSymbolRecords()),
         recapturedSnapshot->relationships(),
         QList<SemanticDiagnostic>{warningDiagnostic, errorDiagnostic},
@@ -2059,16 +2081,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     SemanticIndex guardedIndex(db);
     const auto guardedBaseSnapshot =
-        std::make_shared<SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             SemanticIndexSnapshot::fromSymbolDatabase(db));
     guardedIndex.setSnapshot(guardedBaseSnapshot);
     const SemanticSnapshotToken staleToken = guardedIndex.snapshotToken();
     const auto newerSnapshot =
-        std::make_shared<SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             guardedBaseSnapshot->withAdditionalRelationships({newTaskRelationship}));
     guardedIndex.setSnapshot(newerSnapshot);
     const auto staleRelationshipSnapshot =
-        std::make_shared<SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             guardedBaseSnapshot->withAdditionalRelationships({duplicateStageRelationship}));
     expectBool("semantic index rejects stale snapshot token",
                guardedIndex.publishSnapshotIfCurrent(staleToken,
@@ -2182,7 +2204,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     workspaceMergeExternalDiagnostic.message = QStringLiteral("external diagnostic");
     workspaceMergeExternalDiagnostic.severity = SemanticDiagnostic::Error;
     SemanticIndex::getInstance()->setSnapshot(
-        std::make_shared<const SemanticIndexSnapshot>(
+        sharedSnapshotFromSymbols(
             QList<sym_list::SymbolInfo>(),
             QList<SemanticRelationship>(),
             QList<SemanticDiagnostic>{workspaceMergeExternalDiagnostic},
@@ -3810,7 +3832,7 @@ static void runModuleBriefServiceFixture()
     diagnostics.append(outsideDiagnostic);
 
     SemanticIndex index;
-    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    index.setSnapshot(sharedSnapshotFromSymbols(
         symbols,
         relationships,
         diagnostics));
@@ -3942,7 +3964,11 @@ static void runModuleBriefServiceFixture()
                                                 sym_list::sym_parameter,
                                                 2,
                                                 QStringLiteral("brief_pkg")));
-    const SemanticIndexSnapshot packageSnapshot(packageSymbols);
+    const SemanticIndexSnapshot packageSnapshot =
+        SemanticIndexSnapshot::fromSymbolRecords(
+            semanticSymbolRecordsForSymbols(
+                packageSymbols,
+                SymbolTaxonomy::packageScopeNames(packageSymbols)));
     const QList<SemanticSymbolRecord> annotatedPackageRecords =
         packageSnapshot.getSymbolRecords(fileName);
     SemanticSymbolRecord packageParameter;
@@ -4376,7 +4402,7 @@ static void runScopeBandServiceFixture()
         fileName,
         QStringLiteral("module scope_top;\nlogic enable;\nwire raw_wire;\nendmodule\n"));
     SemanticIndex index;
-    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    index.setSnapshot(sharedSnapshotFromSymbols(
         symbols,
         QList<SemanticRelationship>(),
         QList<SemanticDiagnostic>(),
@@ -4570,7 +4596,7 @@ static void runSignalJourneyServiceFixture()
     relationships.append(resetConnection);
 
     SemanticIndex index;
-    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    index.setSnapshot(sharedSnapshotFromSymbols(
         symbols,
         relationships,
         QList<SemanticDiagnostic>()));
@@ -5054,7 +5080,7 @@ static void runClockResetDomainServiceFixture()
     relationships.append(otherClock);
 
     SemanticIndex index;
-    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    index.setSnapshot(sharedSnapshotFromSymbols(
         symbols,
         relationships,
         QList<SemanticDiagnostic>()));
@@ -5621,7 +5647,7 @@ static void runFsmGraphServiceFixture()
     fileContents.insert(fileName, content);
     fileContents.insert(packageModuleFileName, packageModuleContent);
     SemanticIndex index;
-    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    index.setSnapshot(sharedSnapshotFromSymbols(
         symbols,
         QList<SemanticRelationship>(),
         QList<SemanticDiagnostic>(),
@@ -6228,11 +6254,11 @@ static void runSemanticDiffServiceFixture()
     afterDiagnostic.message = QStringLiteral("new error");
     afterDiagnostics.append(afterDiagnostic);
 
-    auto beforeSnapshot = std::make_shared<SemanticIndexSnapshot>(
+    auto beforeSnapshot = sharedSnapshotFromSymbols(
         beforeSymbols,
         beforeRelationships,
         beforeDiagnostics);
-    auto afterSnapshot = std::make_shared<SemanticIndexSnapshot>(
+    auto afterSnapshot = sharedSnapshotFromSymbols(
         afterSymbols,
         afterRelationships,
         afterDiagnostics);
@@ -6877,7 +6903,7 @@ static void runRealWorkspaceIncludeFixture()
     }
 
     SemanticIndex index;
-    index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+    index.setSnapshot(sharedSnapshotFromSymbols(
         symbols,
         realRelationships,
         QList<SemanticDiagnostic>(),
@@ -7644,11 +7670,11 @@ static void runRealWorkspaceIncludeFixture()
     realAfterDiffDiagnostic.column = 13;
     realAfterDiffDiagnostic.message = QStringLiteral("real diff diagnostic");
     realAfterDiffDiagnostic.severity = SemanticDiagnostic::Warning;
-    auto realBeforeDiffSnapshot = std::make_shared<SemanticIndexSnapshot>(
+    auto realBeforeDiffSnapshot = sharedSnapshotFromSymbols(
         realBeforeDiffSymbols,
         QList<SemanticRelationship>(),
         QList<SemanticDiagnostic>());
-    auto realAfterDiffSnapshot = std::make_shared<SemanticIndexSnapshot>(
+    auto realAfterDiffSnapshot = sharedSnapshotFromSymbols(
         realAfterDiffSymbols,
         realAfterDiffRelationships,
         QList<SemanticDiagnostic>{realAfterDiffDiagnostic});
