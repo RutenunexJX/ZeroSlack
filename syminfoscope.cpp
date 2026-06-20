@@ -5,6 +5,15 @@
 #include <QStack>
 #include <algorithm>
 
+namespace {
+bool symbolIsInModule(const sym_list::SymbolInfo& symbol,
+                      const sym_list::SymbolInfo& module)
+{
+    return symbol.fileName == module.fileName
+        && symbol.startLine > module.startLine;
+}
+}
+
 sym_list::~sym_list()
 {
     delete m_scopeManager;
@@ -78,7 +87,7 @@ void sym_list::analyzeModuleContainment(const QString& fileName)
     for (const SymbolInfo& module : modules) {
         for (const SymbolInfo& symbol : fileSymbols) {
             if (symbol.symbolId != module.symbolId &&
-                isSymbolInModule(symbol, module)) {
+                symbolIsInModule(symbol, module)) {
 
                 relationshipEngine->addRelationship(
                     module.symbolId,
@@ -195,22 +204,4 @@ void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
     }
 
     buildSymbolRelationships(fileName);
-}
-
-bool isSymbolInModule(const sym_list::SymbolInfo& symbol, const sym_list::SymbolInfo& module)
-{
-    return symbol.fileName == module.fileName &&
-           symbol.startLine > module.startLine;
-}
-
-QString getModuleNameContainingSymbol(const sym_list::SymbolInfo& symbol,
-                                     const QList<sym_list::SymbolInfo>& allSymbols)
-{
-    for (const sym_list::SymbolInfo& moduleSymbol : allSymbols) {
-        if (moduleSymbol.symbolType == sym_list::sym_module &&
-            isSymbolInModule(symbol, moduleSymbol)) {
-            return moduleSymbol.symbolName;
-        }
-    }
-    return QString();
 }

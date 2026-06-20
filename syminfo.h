@@ -230,11 +230,6 @@ private:
     void rebuildScopeAndRelationshipsForFile(const QString& fileName);
     void analyzeVariableReferences(const QString& fileName, const QString& content);
 
-    void clearStructTypedefEnumSymbolsForFile(const QString &fileName);
-
 };
-
-bool isSymbolInModule(const sym_list::SymbolInfo& symbol, const sym_list::SymbolInfo& module);
-QString getModuleNameContainingSymbol(const sym_list::SymbolInfo& symbol, const QList<sym_list::SymbolInfo>& allSymbols);
 
 #endif // SYMINFO_H
