@@ -177,10 +177,6 @@ private:
     static QString symbolKey(const SemanticSymbolRecord& record,
                              SemanticDiffSymbolCategory category);
     static QString symbolSignature(const SemanticSymbolRecord& record);
-    static sym_list::SymbolInfo relationshipEndpointSymbol(
-        const SemanticRelationship& relationship,
-        const SemanticIndexSnapshot& snapshot,
-        bool fromEndpoint);
     static SemanticSymbolRecord relationshipEndpointRecord(
         const SemanticRelationship& relationship,
         const SemanticIndexSnapshot& snapshot,
@@ -193,7 +189,6 @@ private:
     static QString changeKindDisplayName(SemanticDiffChangeKind kind);
     static QString symbolCategoryDisplayName(SemanticDiffSymbolCategory category);
     static QString symbolCategoryGroupDisplayName(SemanticDiffSymbolCategory category);
-    static QString symbolScopeDisplayName(const sym_list::SymbolInfo& symbol);
     static QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type);
     static QString diagnosticSeverityDisplayName(SemanticDiagnostic::Severity severity);
     static QString notFoundReasonDisplayName(SemanticDiffNotFoundReason reason);
@@ -204,10 +199,10 @@ private:
                                     const SemanticSymbolRecord& beforeRecord,
                                     const SemanticSymbolRecord& afterRecord);
     static void fillDisplayMetadata(SemanticDiffRelationshipChange& change,
-                                    const sym_list::SymbolInfo& beforeFromSymbol,
-                                    const sym_list::SymbolInfo& beforeToSymbol,
-                                    const sym_list::SymbolInfo& afterFromSymbol,
-                                    const sym_list::SymbolInfo& afterToSymbol);
+                                    const SemanticSymbolRecord& beforeFromRecord,
+                                    const SemanticSymbolRecord& beforeToRecord,
+                                    const SemanticSymbolRecord& afterFromRecord,
+                                    const SemanticSymbolRecord& afterToRecord);
     static void fillDisplayMetadata(SemanticDiffDiagnosticChange& change);
 
     static void sortSymbolChanges(QList<SemanticDiffSymbolChange>& changes);

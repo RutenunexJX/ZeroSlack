@@ -8,19 +8,9 @@
 std::unique_ptr<SemanticDiffService> SemanticDiffService::instance = nullptr;
 
 namespace {
-bool hasDisplaySymbol(const sym_list::SymbolInfo& symbol)
-{
-    return !symbol.symbolName.isEmpty() || !symbol.fileName.isEmpty();
-}
-
 bool hasDisplayRecord(const SemanticSymbolRecord& record)
 {
     return !record.name.isEmpty() || !record.location.fileName.isEmpty();
-}
-
-int semanticDiffLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolId;
 }
 
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
@@ -273,38 +263,38 @@ QList<SemanticDiffRelationshipChange> SemanticDiffService::relationshipChanges(
 
         SemanticDiffRelationshipChange change;
         change.key = key;
-        sym_list::SymbolInfo beforeFromSymbol;
-        sym_list::SymbolInfo beforeToSymbol;
-        sym_list::SymbolInfo afterFromSymbol;
-        sym_list::SymbolInfo afterToSymbol;
+        SemanticSymbolRecord beforeFromRecord;
+        SemanticSymbolRecord beforeToRecord;
+        SemanticSymbolRecord afterFromRecord;
+        SemanticSymbolRecord afterToRecord;
         if (hasBefore) {
             change.kind = SemanticDiffChangeKind::Removed;
             change.beforeRelationship = beforeRelationships.value(key);
-            beforeFromSymbol =
-                relationshipEndpointSymbol(change.beforeRelationship,
+            beforeFromRecord =
+                relationshipEndpointRecord(change.beforeRelationship,
                                            *query.beforeSnapshot,
                                            true);
-            beforeToSymbol =
-                relationshipEndpointSymbol(change.beforeRelationship,
+            beforeToRecord =
+                relationshipEndpointRecord(change.beforeRelationship,
                                            *query.beforeSnapshot,
                                            false);
         } else {
             change.kind = SemanticDiffChangeKind::Added;
             change.afterRelationship = afterRelationships.value(key);
-            afterFromSymbol =
-                relationshipEndpointSymbol(change.afterRelationship,
+            afterFromRecord =
+                relationshipEndpointRecord(change.afterRelationship,
                                            *query.afterSnapshot,
                                            true);
-            afterToSymbol =
-                relationshipEndpointSymbol(change.afterRelationship,
+            afterToRecord =
+                relationshipEndpointRecord(change.afterRelationship,
                                            *query.afterSnapshot,
                                            false);
         }
         fillDisplayMetadata(change,
-                            beforeFromSymbol,
-                            beforeToSymbol,
-                            afterFromSymbol,
-                            afterToSymbol);
+                            beforeFromRecord,
+                            beforeToRecord,
+                            afterFromRecord,
+                            afterToRecord);
         changes.append(change);
     }
 
@@ -439,25 +429,26 @@ bool SemanticDiffService::relationshipInScope(
     const SemanticDiffQuery& query,
     bool afterSide)
 {
-    const sym_list::SymbolInfo fromSymbol =
-        relationshipEndpointSymbol(relationship, snapshot, true);
-    const sym_list::SymbolInfo toSymbol =
-        relationshipEndpointSymbol(relationship, snapshot, false);
+    const SemanticSymbolRecord fromRecord =
+        relationshipEndpointRecord(relationship, snapshot, true);
+    const SemanticSymbolRecord toRecord =
+        relationshipEndpointRecord(relationship, snapshot, false);
     const QString fileName = afterSide ? query.afterFileName : query.beforeFileName;
 
-    auto endpointInScope = [&](const sym_list::SymbolInfo& symbol) {
-        if (semanticDiffLocalHandleForSymbol(symbol) < 0)
+    auto endpointInScope = [&](const SemanticSymbolRecord& record) {
+        if (!record.isValid())
             return false;
         if (!fileName.isEmpty()
-            && normalizedFileName(symbol.fileName) != normalizedFileName(fileName)) {
+            && normalizedFileName(record.location.fileName) != normalizedFileName(fileName)) {
             return false;
         }
-        return SymbolTaxonomy::isSymbolInModuleContext(
-            symbol,
-            query.moduleName);
+        return query.moduleName.isEmpty()
+            || record.owner.name == query.moduleName
+            || (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+                && record.name == query.moduleName);
     };
 
-    return endpointInScope(fromSymbol) || endpointInScope(toSymbol);
+    return endpointInScope(fromRecord) || endpointInScope(toRecord);
 }
 
 bool SemanticDiffService::diagnosticInScope(
@@ -488,42 +479,6 @@ QString SemanticDiffService::symbolSignature(const SemanticSymbolRecord& record)
         .arg(record.type.rawTypeText);
 }
 
-sym_list::SymbolInfo semanticDiffSymbolInfoForRecord(
-    const SemanticSymbolRecord& record)
-{
-    return semanticSymbolInfoCarrierForRecord(record);
-}
-
-sym_list::SymbolInfo SemanticDiffService::relationshipEndpointSymbol(
-    const SemanticRelationship& relationship,
-    const SemanticIndexSnapshot& snapshot,
-    bool fromEndpoint)
-{
-    const SymbolStableKey key = fromEndpoint
-        ? relationship.fromStableKey
-        : relationship.toStableKey;
-    if (key.isValid()) {
-        const SemanticSymbolRecord record =
-            snapshot.getSymbolRecordByStableKey(key);
-        if (record.isValid())
-            return semanticDiffSymbolInfoForRecord(record);
-    }
-
-    const int localHandle = fromEndpoint
-        ? relationship.fromId
-        : relationship.toId;
-    if (localHandle >= 0) {
-        for (const SemanticSymbolRecord& record : snapshot.getSymbolRecords()) {
-            if (record.localHandle == localHandle)
-                return semanticDiffSymbolInfoForRecord(record);
-        }
-    }
-
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    return missing;
-}
-
 SemanticSymbolRecord SemanticDiffService::relationshipEndpointRecord(
     const SemanticRelationship& relationship,
     const SemanticIndexSnapshot& snapshot,
@@ -538,28 +493,34 @@ SemanticSymbolRecord SemanticDiffService::relationshipEndpointRecord(
         if (record.isValid())
             return record;
     }
-    return semanticSymbolRecordForSymbol(
-        relationshipEndpointSymbol(relationship, snapshot, fromEndpoint));
+
+    const int localHandle = fromEndpoint
+        ? relationship.fromId
+        : relationship.toId;
+    if (localHandle >= 0) {
+        for (const SemanticSymbolRecord& record : snapshot.getSymbolRecords()) {
+            if (record.localHandle == localHandle)
+                return record;
+        }
+    }
+    return {};
 }
 
 QString SemanticDiffService::relationshipKey(
     const SemanticRelationship& relationship,
     const SemanticIndexSnapshot& snapshot)
 {
-    const sym_list::SymbolInfo fromSymbol =
-        relationshipEndpointSymbol(relationship, snapshot, true);
-    const sym_list::SymbolInfo toSymbol =
-        relationshipEndpointSymbol(relationship, snapshot, false);
     const SemanticSymbolRecord fromRecord =
         relationshipEndpointRecord(relationship, snapshot, true);
     const SemanticSymbolRecord toRecord =
         relationshipEndpointRecord(relationship, snapshot, false);
     SemanticDiffSymbolCategory fromCategory = SemanticDiffSymbolCategory::Signal;
     SemanticDiffSymbolCategory toCategory = SemanticDiffSymbolCategory::Signal;
-    symbolCategory(metadataForRecord(fromRecord, fromSymbol), &fromCategory);
-    symbolCategory(metadataForRecord(toRecord, toSymbol), &toCategory);
-    const QString fromName = symbolDisplayNameForRecord(fromRecord, fromSymbol);
-    const QString toName = symbolDisplayNameForRecord(toRecord, toSymbol);
+    symbolCategory(semanticMetadataForSymbolRecord(fromRecord), &fromCategory);
+    symbolCategory(semanticMetadataForSymbolRecord(toRecord), &toCategory);
+    const sym_list::SymbolInfo fallback = {};
+    const QString fromName = symbolDisplayNameForRecord(fromRecord, fallback);
+    const QString toName = symbolDisplayNameForRecord(toRecord, fallback);
     const QString fromKey =
         fromRecord.declarationKind == SymbolTaxonomy::DeclarationKind::Module
             ? QStringLiteral("module:%1").arg(fromName)
@@ -663,19 +624,6 @@ QString SemanticDiffService::symbolCategoryGroupDisplayName(
         return QStringLiteral("Types");
     }
     return QStringLiteral("Symbols");
-}
-
-QString SemanticDiffService::symbolScopeDisplayName(
-    const sym_list::SymbolInfo& symbol)
-{
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    if (!record.owner.name.isEmpty())
-        return QStringLiteral("scope %1").arg(record.owner.name);
-    if (SymbolTaxonomy::isGlobalDefinition(
-            SymbolTaxonomy::semanticMetadata(symbol))) {
-        return QStringLiteral("global");
-    }
-    return QStringLiteral("scope unknown");
 }
 
 QString SemanticDiffService::relationshipTypeDisplayName(
@@ -880,31 +828,20 @@ void SemanticDiffService::fillDisplayMetadata(
 
 void SemanticDiffService::fillDisplayMetadata(
     SemanticDiffRelationshipChange& change,
-    const sym_list::SymbolInfo& beforeFromSymbol,
-    const sym_list::SymbolInfo& beforeToSymbol,
-    const sym_list::SymbolInfo& afterFromSymbol,
-    const sym_list::SymbolInfo& afterToSymbol)
+    const SemanticSymbolRecord& beforeFromRecord,
+    const SemanticSymbolRecord& beforeToRecord,
+    const SemanticSymbolRecord& afterFromRecord,
+    const SemanticSymbolRecord& afterToRecord)
 {
     const SemanticRelationship& relationship =
         change.kind == SemanticDiffChangeKind::Removed
             ? change.beforeRelationship
             : change.afterRelationship;
-    const sym_list::SymbolInfo displayFromSymbol =
-        change.kind == SemanticDiffChangeKind::Removed
-            ? beforeFromSymbol
-            : afterFromSymbol;
-    const sym_list::SymbolInfo displayToSymbol =
-        change.kind == SemanticDiffChangeKind::Removed
-            ? beforeToSymbol
-            : afterToSymbol;
-    change.beforeFromSymbolRecord =
-        semanticSymbolRecordForSymbol(beforeFromSymbol);
-    change.beforeToSymbolRecord =
-        semanticSymbolRecordForSymbol(beforeToSymbol);
-    change.afterFromSymbolRecord =
-        semanticSymbolRecordForSymbol(afterFromSymbol);
-    change.afterToSymbolRecord =
-        semanticSymbolRecordForSymbol(afterToSymbol);
+    const sym_list::SymbolInfo fallback = {};
+    change.beforeFromSymbolRecord = beforeFromRecord;
+    change.beforeToSymbolRecord = beforeToRecord;
+    change.afterFromSymbolRecord = afterFromRecord;
+    change.afterToSymbolRecord = afterToRecord;
     change.displayFromSymbolRecord =
         change.kind == SemanticDiffChangeKind::Removed
             ? change.beforeFromSymbolRecord
@@ -914,29 +851,17 @@ void SemanticDiffService::fillDisplayMetadata(
             ? change.beforeToSymbolRecord
             : change.afterToSymbolRecord;
     change.beforeFromStableKey =
-        change.beforeFromSymbolRecord.stableKey.isValid()
-            ? change.beforeFromSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(beforeFromSymbol);
+        change.beforeFromSymbolRecord.stableKey;
     change.beforeToStableKey =
-        change.beforeToSymbolRecord.stableKey.isValid()
-            ? change.beforeToSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(beforeToSymbol);
+        change.beforeToSymbolRecord.stableKey;
     change.afterFromStableKey =
-        change.afterFromSymbolRecord.stableKey.isValid()
-            ? change.afterFromSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(afterFromSymbol);
+        change.afterFromSymbolRecord.stableKey;
     change.afterToStableKey =
-        change.afterToSymbolRecord.stableKey.isValid()
-            ? change.afterToSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(afterToSymbol);
+        change.afterToSymbolRecord.stableKey;
     change.displayFromStableKey =
-        change.displayFromSymbolRecord.stableKey.isValid()
-            ? change.displayFromSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(displayFromSymbol);
+        change.displayFromSymbolRecord.stableKey;
     change.displayToStableKey =
-        change.displayToSymbolRecord.stableKey.isValid()
-            ? change.displayToSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(displayToSymbol);
+        change.displayToSymbolRecord.stableKey;
     change.provenance = relationship.provenance;
     change.confidence = relationship.confidence;
     change.evidenceText = relationship.evidenceText;
@@ -944,15 +869,15 @@ void SemanticDiffService::fillDisplayMetadata(
     change.relationshipTypeDisplayName =
         relationshipTypeDisplayName(relationship.type);
     change.fromCodeLink = codeLinkForRecord(change.displayFromSymbolRecord,
-                                            displayFromSymbol);
+                                            fallback);
     change.toCodeLink = codeLinkForRecord(change.displayToSymbolRecord,
-                                          displayToSymbol);
+                                          fallback);
     change.fromSymbolDisplayName =
         symbolDisplayNameForRecord(change.displayFromSymbolRecord,
-                                   displayFromSymbol);
+                                   fallback);
     change.toSymbolDisplayName =
         symbolDisplayNameForRecord(change.displayToSymbolRecord,
-                                   displayToSymbol);
+                                   fallback);
     change.provenanceDisplayName = provenanceDisplayName(change.provenance);
     change.confidenceDisplayName = confidenceDisplayName(change.confidence);
     change.evidenceDisplayName = evidenceDisplayName(change.evidenceText);
@@ -960,7 +885,7 @@ void SemanticDiffService::fillDisplayMetadata(
     change.codeLink = change.fromCodeLink;
     change.sourceRoleDisplayName =
         sourceRoleDisplayNameForRecord(change.displayFromSymbolRecord,
-                                       displayFromSymbol);
+                                       fallback);
     change.detailDisplayName =
         change.fromSymbolDisplayName == QStringLiteral("<unknown>")
             || change.toSymbolDisplayName == QStringLiteral("<unknown>")
