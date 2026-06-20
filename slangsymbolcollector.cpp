@@ -1,6 +1,5 @@
 #include "slangsymbolcollector.h"
 #include "slangsymbolcollectorhelpers.h"
-#include "symboltaxonomylegacy.h"
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
@@ -25,34 +24,6 @@ using namespace slang_symbols::detail;
 using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
 
 namespace {
-
-sym_list::SymbolInfo legacySymbolInfoForRecord(
-    const SemanticSymbolRecord& record)
-{
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = record.localHandle;
-    symbol.symbolName = record.name;
-    symbol.symbolType = SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
-    symbol.fileName = record.location.fileName;
-    symbol.startLine = record.location.startLine;
-    symbol.startColumn = record.location.startColumn;
-    symbol.endLine = record.location.endLine;
-    symbol.endColumn = record.location.endColumn;
-    symbol.position = record.location.position;
-    symbol.length = record.location.length;
-    symbol.moduleScope = record.owner.name;
-    symbol.dataType = record.type.rawTypeText;
-    symbol.hasSemanticMetadata = true;
-    symbol.semanticDeclarationKind = record.declarationKind;
-    symbol.semanticUsageRole = record.usageRole;
-    symbol.semanticOwnerScope = record.owner.kind;
-    symbol.semanticVisibility = record.visibility;
-    symbol.semanticSourceRole = record.sourceRole;
-    symbol.rawCollectorKind =
-        SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
-    symbol.interfaceLikeOwner = record.owner.interfaceLike;
-    return symbol;
-}
 
 void collectNativeRecords(slang::ast::Compilation& compilation,
                           QList<SemanticSymbolRecord>& outList)
@@ -315,16 +286,4 @@ void slang_symbols::collectSymbolRecords(slang::ast::Compilation& compilation,
                                          QList<SemanticSymbolRecord>& outList)
 {
     collectNativeRecords(compilation, outList);
-}
-
-void slang_symbols::collectSymbols(slang::ast::Compilation& compilation,
-                                   QList<sym_list::SymbolInfo>& outList)
-{
-    QList<SemanticSymbolRecord> records;
-    collectNativeRecords(compilation, records);
-    outList.reserve(outList.size() + records.size());
-    for (const SemanticSymbolRecord& record : records) {
-        if (record.isValid())
-            outList.append(legacySymbolInfoForRecord(record));
-    }
 }

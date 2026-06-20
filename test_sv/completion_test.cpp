@@ -150,8 +150,10 @@ int main(int argc, char** argv) {
     f.close();
 
     SlangManager mgr;
-    QList<sym_list::SymbolInfo> syms = mgr.extractSymbols(path, content);
-    sym_list::getInstance()->setSymbolsForFile(path, syms, content);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        path,
+        mgr.extractSymbolRecords(path, content),
+        content);
 
     CompletionManager* cm = CompletionManager::getInstance();
 

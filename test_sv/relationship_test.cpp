@@ -76,6 +76,52 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
                                                  fileContents));
 }
 
+static sym_list::SymbolInfo symbolInfoForRecord(
+    const SemanticSymbolRecord& record)
+{
+    sym_list::SymbolInfo symbol;
+    symbol.symbolId = record.localHandle;
+    symbol.symbolName = record.name;
+    symbol.symbolType = SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
+    symbol.fileName = record.location.fileName;
+    symbol.startLine = record.location.startLine;
+    symbol.startColumn = record.location.startColumn;
+    symbol.endLine = record.location.endLine;
+    symbol.endColumn = record.location.endColumn;
+    symbol.position = record.location.position;
+    symbol.length = record.location.length;
+    symbol.moduleScope = record.owner.name;
+    symbol.dataType = record.type.rawTypeText;
+    symbol.hasSemanticMetadata = true;
+    symbol.semanticDeclarationKind = record.declarationKind;
+    symbol.semanticUsageRole = record.usageRole;
+    symbol.semanticOwnerScope = record.owner.kind;
+    symbol.semanticVisibility = record.visibility;
+    symbol.semanticSourceRole = record.sourceRole;
+    symbol.rawCollectorKind =
+        SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
+    symbol.interfaceLikeOwner = record.owner.interfaceLike;
+    return symbol;
+}
+
+static QList<sym_list::SymbolInfo> symbolInfosForRecords(
+    const QList<SemanticSymbolRecord>& records,
+    bool assignIds = false)
+{
+    QList<sym_list::SymbolInfo> symbols;
+    symbols.reserve(records.size());
+    int nextId = 1;
+    for (const SemanticSymbolRecord& record : records) {
+        if (!record.isValid())
+            continue;
+        sym_list::SymbolInfo symbol = symbolInfoForRecord(record);
+        if (assignIds)
+            symbol.symbolId = nextId++;
+        symbols.append(symbol);
+    }
+    return symbols;
+}
+
 static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
 {
     return semanticSymbolRecordForSymbol(symbol).stableKey;
@@ -277,7 +323,11 @@ static void runInlineRelationshipRegression(SlangManager& slang,
         "  end\n"
         "endmodule\n");
 
-    db->setSymbolsForFile(path, slang.extractSymbols(path, content), content);
+    SemanticIndex semanticIndex(db);
+    semanticIndex.updateSymbolRecordsForFile(
+        path,
+        slang.extractSymbolRecords(path, content),
+        content);
     QList<sym_list::SymbolInfo> symbols = symbolsInFile(db->getAllSymbols(), path);
 
     const int alphaId = symbolId(symbols, QStringLiteral("alpha"), sym_list::sym_module);
@@ -358,17 +408,22 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("fixture top loaded", !contents.value(topPath).isEmpty(), true);
 
     const QStringList paths = {pkgPath, stagePath, topPath};
-    const QList<sym_list::SymbolInfo> workspaceSymbols = slang.extractWorkspaceSymbols(paths);
-    expectBool("workspace symbols extracted", !workspaceSymbols.isEmpty(), true);
+    const QList<SemanticSymbolRecord> workspaceRecords =
+        slang.extractWorkspaceSymbolRecords(paths);
+    expectBool("workspace symbol records extracted", !workspaceRecords.isEmpty(), true);
 
-    QHash<QString, QList<sym_list::SymbolInfo>> symbolsByFile;
-    for (auto s : workspaceSymbols) {
-        s.fileName = normalizedPath(s.fileName);
-        symbolsByFile[s.fileName].append(s);
+    QHash<QString, QList<SemanticSymbolRecord>> recordsByFile;
+    for (SemanticSymbolRecord record : workspaceRecords) {
+        record.location.fileName = normalizedPath(record.location.fileName);
+        recordsByFile[record.location.fileName].append(record);
     }
 
+    SemanticIndex semanticIndex(db);
     for (const QString& path : paths)
-        db->setSymbolsForFile(path, symbolsByFile.value(path), contents.value(path));
+        semanticIndex.updateSymbolRecordsForFile(
+            path,
+            recordsByFile.value(path),
+            contents.value(path));
 
     const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
     const QList<sym_list::SymbolInfo> topSymbols = symbolsInFile(allSymbols, topPath);
@@ -6771,12 +6826,12 @@ static void runRealWorkspaceIncludeFixture()
                missingRootHeader,
                false);
 
+    const QList<SemanticSymbolRecord> records =
+        slang.extractWorkspaceSymbolRecords(snapshot.systemVerilogFiles,
+                                            snapshot.includeDirs,
+                                            snapshot.defines);
     QList<sym_list::SymbolInfo> symbols =
-        slang.extractWorkspaceSymbols(snapshot.systemVerilogFiles,
-                                      snapshot.includeDirs,
-                                      snapshot.defines);
-    for (int i = 0; i < symbols.size(); ++i)
-        symbols[i].symbolId = i + 1;
+        symbolInfosForRecords(records, true);
     QHash<QString, QString> fileContents;
     for (const QString& fileName : files)
         fileContents.insert(fileName, loadTextFile(fileName));

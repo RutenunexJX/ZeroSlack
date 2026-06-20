@@ -97,7 +97,10 @@ int main(int argc, char** argv) {
     f.close();
 
     SlangManager mgr;
-    sym_list::getInstance()->setSymbolsForFile(path, mgr.extractSymbols(path, content), content);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        path,
+        mgr.extractSymbolRecords(path, content),
+        content);
 
     // After the full GUI path (setSymbolsForFile -> rebuildScopeAndRelationships -> analyzeModuleContainment),
     // function-local symbols must KEEP their subroutine moduleScope (not get clobbered to the module).
@@ -1087,7 +1090,10 @@ int main(int argc, char** argv) {
     if (hf.open(QIODevice::ReadOnly | QFile::Text)) {
         QString hc = QTextStream(&hf).readAll();
         hf.close();
-        sym_list::getInstance()->setSymbolsForFile(helperPath, mgr.extractSymbols(helperPath, hc), hc);
+        SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+            helperPath,
+            mgr.extractSymbolRecords(helperPath, hc),
+            hc);
 
         int helperStartLine = -1;
         for (const auto& s : symbolsNamed(QStringLiteral("helper_mod")))

@@ -14,9 +14,6 @@ namespace slang_symbols {
 void collectSymbolRecords(slang::ast::Compilation& compilation,
                           QList<SemanticSymbolRecord>& outList);
 
-void collectSymbols(slang::ast::Compilation& compilation,
-                    QList<sym_list::SymbolInfo>& outList);
-
 } // namespace slang_symbols
 
 #endif // SLANGSYMBOLCOLLECTOR_H
