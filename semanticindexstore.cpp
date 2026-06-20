@@ -475,8 +475,6 @@ void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,
     const QString normalizedTarget = normalizedStoreFileName(fileName);
     if (!normalizedTarget.isEmpty() && normalizedTarget != fileName)
         m_nativeFileContents.insert(normalizedTarget, content);
-
-    symbolDatabase()->refreshStructTypedefEnumForFile(fileName, content);
 }
 
 void SemanticIndex::attachRelationshipEngine(SymbolRelationshipEngine* engine) const

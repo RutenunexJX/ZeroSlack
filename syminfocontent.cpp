@@ -203,8 +203,3 @@ void sym_list::clearSymbolsForLines(const QString& fileName, const QList<int>& l
         rebuildAllIndexes();
     }
 }
-
-void sym_list::refreshStructTypedefEnumForFile(const QString &fileName, const QString &content)
-{
-    previousFileContents[fileName] = content;
-}

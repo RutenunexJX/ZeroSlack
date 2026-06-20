@@ -175,7 +175,6 @@ public:
     bool contentAffectsSymbols(const QString& fileName, const QString& content);
 
     int findEndModuleLine(const QString &fileName, const SymbolInfo &moduleSymbol);
-    void refreshStructTypedefEnumForFile(const QString &fileName, const QString &content);
 
 private:
     mutable QReadWriteLock symbolDbLock;
