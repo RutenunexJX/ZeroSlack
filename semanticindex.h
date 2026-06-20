@@ -301,7 +301,7 @@ public:
                                      const QString& moduleName = QString()) const;
     QList<SemanticSymbolRecord> getStructMemberRecords(
         const QString& structTypeName = QString()) const;
-    QList<sym_list::SymbolInfo> getModuleInternalSymbolsByType(
+    QList<SemanticSymbolRecord> getModuleInternalSymbolRecordsByType(
         const QString& moduleName,
         sym_list::sym_type_e symbolType,
         const QString& prefix = QString(),

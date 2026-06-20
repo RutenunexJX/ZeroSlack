@@ -108,12 +108,11 @@ QString SemanticIndex::enumTypeForVariable(
     const QString& moduleName) const
 {
     if (!moduleName.isEmpty()) {
-        const QList<sym_list::SymbolInfo> moduleSymbols =
-            getModuleInternalSymbolsByType(moduleName, sym_list::sym_enum_var);
-        for (const sym_list::SymbolInfo& symbol : moduleSymbols) {
-            if (symbol.symbolName == variableName)
-                return ownerNameForCompletionContextRecord(
-                    semanticSymbolRecordForSymbol(symbol));
+        const QList<SemanticSymbolRecord> moduleRecords =
+            getModuleInternalSymbolRecordsByType(moduleName, sym_list::sym_enum_var);
+        for (const SemanticSymbolRecord& record : moduleRecords) {
+            if (record.name == variableName)
+                return ownerNameForCompletionContextRecord(record);
         }
     }
 

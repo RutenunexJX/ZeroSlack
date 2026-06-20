@@ -39,24 +39,23 @@ int moduleContextLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
 }
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
+QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,
     const QString& prefix,
     bool useRelationshipFallback) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     if (moduleName.isEmpty())
         return result;
 
-    const QList<sym_list::SymbolInfo> allSymbols =
-        semanticSymbolInfoCarriersForRecords(getSymbolRecords());
-    sym_list::SymbolInfo moduleSymbol;
+    const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
+    SemanticSymbolRecord moduleRecord;
     bool foundModule = false;
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (SymbolTaxonomy::isModuleDeclaration(symbol)
-            && symbol.symbolName == moduleName) {
-            moduleSymbol = symbol;
+    for (const SemanticSymbolRecord& record : allRecords) {
+        if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+            && record.name == moduleName) {
+            moduleRecord = record;
             foundModule = true;
             break;
         }
@@ -64,34 +63,31 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
 
     int moduleEndLineExclusive = std::numeric_limits<int>::max();
     if (foundModule) {
-        QList<sym_list::SymbolInfo> fileModules;
-        const QList<sym_list::SymbolInfo> fileSymbols =
-            semanticSymbolInfoCarriersForRecords(
-                getSymbolRecords(moduleSymbol.fileName));
-        for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-            if (SymbolTaxonomy::isModuleDeclaration(symbol)
-                && symbol.fileName == moduleSymbol.fileName) {
-                fileModules.append(symbol);
+        QList<SemanticSymbolRecord> fileModules;
+        const QList<SemanticSymbolRecord> fileRecords =
+            getSymbolRecords(moduleRecord.location.fileName);
+        for (const SemanticSymbolRecord& record : fileRecords) {
+            if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+                && record.location.fileName == moduleRecord.location.fileName) {
+                fileModules.append(record);
             }
         }
         std::sort(fileModules.begin(), fileModules.end(),
-                  [](const sym_list::SymbolInfo& left,
-                     const sym_list::SymbolInfo& right) {
-                      return left.startLine < right.startLine;
+                  [](const SemanticSymbolRecord& left,
+                     const SemanticSymbolRecord& right) {
+                      return left.location.startLine < right.location.startLine;
                   });
         for (int i = 0; i < fileModules.size(); ++i) {
-            if (moduleContextLocalHandleForSymbol(fileModules.at(i))
-                    == moduleContextLocalHandleForSymbol(moduleSymbol)
+            if (fileModules.at(i).localHandle == moduleRecord.localHandle
                 && i + 1 < fileModules.size()) {
-                moduleEndLineExclusive = fileModules.at(i + 1).startLine;
+                moduleEndLineExclusive = fileModules.at(i + 1).location.startLine;
                 break;
             }
         }
     }
 
     QSet<QString> seenStableKeys;
-    auto appendIfMatches = [&](const sym_list::SymbolInfo& symbol, bool fuzzyPrefix) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    auto appendIfMatches = [&](const SemanticSymbolRecord& record, bool fuzzyPrefix) {
         if (!moduleContextSymbolTypeMatches(record, symbolType)) {
             return;
         }
@@ -106,31 +102,26 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
         if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
             return;
         seenStableKeys.insert(dedupeKey);
-        result.append(symbol);
+        result.append(record);
     };
 
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+    for (const SemanticSymbolRecord& record : allRecords) {
         bool correctModule = false;
         if (isModuleRangeSymbolType(symbolType)) {
             correctModule = foundModule
-                && symbol.fileName == moduleSymbol.fileName
-                && symbol.startLine > moduleSymbol.startLine
-                && symbol.startLine < moduleEndLineExclusive;
+                && record.location.fileName == moduleRecord.location.fileName
+                && record.location.startLine > moduleRecord.location.startLine
+                && record.location.startLine < moduleEndLineExclusive;
         } else {
-            const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
             correctModule = record.owner.name == moduleName;
         }
 
         if (correctModule)
-            appendIfMatches(symbol, true);
+            appendIfMatches(record, true);
     }
 
     if (useRelationshipFallback && result.isEmpty()) {
-        const SemanticSymbolRecord moduleRecord =
-            semanticSymbolRecordForSymbol(moduleSymbol);
-        const SymbolStableKey moduleStableKey = moduleRecord.stableKey.isValid()
-            ? moduleRecord.stableKey
-            : symbolStableKeyForSymbol(moduleSymbol);
+        const SymbolStableKey moduleStableKey = moduleRecord.stableKey;
         const QList<SemanticRelationshipResult> relationships =
             moduleStableKey.isValid()
                 ? getRelationshipResults(moduleStableKey, true)
@@ -145,10 +136,8 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleInternalSymbolsByType(
             const SemanticSymbolRecord resolvedTargetRecord = targetRecord.isValid()
                 ? targetRecord
                 : getSymbolRecordByStableKey(targetKey);
-            const sym_list::SymbolInfo targetSymbol =
-                moduleContextSymbolInfoForRecord(resolvedTargetRecord);
-            if (moduleContextLocalHandleForSymbol(targetSymbol) >= 0)
-                appendIfMatches(targetSymbol, false);
+            if (resolvedTargetRecord.localHandle >= 0)
+                appendIfMatches(resolvedTargetRecord, false);
         }
     }
 
