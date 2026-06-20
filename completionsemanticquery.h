@@ -1,7 +1,7 @@
 #ifndef COMPLETIONSEMANTICQUERY_H
 #define COMPLETIONSEMANTICQUERY_H
 
-#include "semanticindex.h"
+#include "completiontypes.h"
 
 #include <QList>
 #include <QString>
@@ -15,6 +15,10 @@ public:
     static QList<SemanticSymbolRecord> commandSymbolRecords(
         SemanticIndex* semanticIndex,
         const CommandCompletionQuery& query);
+    static QList<SemanticSymbolRecord> typedSymbolRecords(
+        SemanticIndex* semanticIndex,
+        CompletionCommandKind commandKind,
+        const QString& prefix);
     static QStringList enumValueCompletions(
         SemanticIndex* semanticIndex,
         const QString& prefix,

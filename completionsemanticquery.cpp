@@ -92,6 +92,20 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
         query.prefix);
 }
 
+QList<SemanticSymbolRecord> CompletionSemanticQuery::typedSymbolRecords(
+    SemanticIndex* semanticIndex,
+    CompletionCommandKind commandKind,
+    const QString& prefix)
+{
+    if (!semanticIndex)
+        return {};
+
+    return semanticSymbolRecordsForSymbols(
+        semanticIndex->getTypedCompletionSymbols(
+            rawCollectorKindForCommandKind(commandKind),
+            prefix));
+}
+
 QStringList CompletionSemanticQuery::enumValueCompletions(
     SemanticIndex* semanticIndex,
     const QString& prefix,

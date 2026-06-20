@@ -7,6 +7,7 @@
 #include <QPair>
 #include <QList>
 #include <memory>
+#include "completiontypes.h"
 #include "syminfo.h"
 
 class CompletionManager
@@ -34,6 +35,8 @@ public:
     QStringList getAllSymbolCompletions(const QString& prefix);
 
     QStringList getKeywordCompletions(const QString& prefix);
+    QStringList getSymbolCompletions(CompletionCommandKind commandKind,
+                                     const QString& prefix);
     QStringList getSymbolCompletions(sym_list::sym_type_e symbolType, const QString& prefix);
 
     QStringList getModuleChildrenCompletions(const QString& moduleName, const QString& prefix = "");
@@ -42,6 +45,9 @@ public:
     QStringList getClockDomainCompletions(const QString& prefix = "");
     QStringList getResetSignalCompletions(const QString& prefix = "");
 
+    QStringList getVariableCompletionsInScope(const QString& moduleName,
+                                             CompletionCommandKind commandKind,
+                                             const QString& prefix = "");
     QStringList getVariableCompletionsInScope(const QString& moduleName,
                                              sym_list::sym_type_e variableType,
                                              const QString& prefix = "");
@@ -56,9 +62,16 @@ public:
     QStringList getGlobalSymbolCompletions(const QString& prefix);
 
 
+    QStringList getModuleInternalVariablesByKind(const QString& moduleName,
+                                                CompletionCommandKind commandKind,
+                                                const QString& prefix = "");
+
     QStringList getModuleInternalVariablesByType(const QString& moduleName,
                                                 sym_list::sym_type_e symbolType,
                                                 const QString& prefix = "");
+
+    QStringList getGlobalSymbolsByKind(CompletionCommandKind commandKind,
+                                      const QString& prefix = "");
 
     QStringList getGlobalSymbolsByType(sym_list::sym_type_e symbolType,
                                       const QString& prefix = "");

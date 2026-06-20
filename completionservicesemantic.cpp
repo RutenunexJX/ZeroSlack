@@ -19,6 +19,19 @@ QStringList CompletionService::findModuleInternalVariableCompletions(
         semanticIndex()->getModuleCompletionSymbols(moduleName, prefix));
 }
 
+QStringList CompletionService::findModuleSymbolsByKind(
+    const QString& moduleName,
+    CompletionCommandKind commandKind,
+    const QString& prefix) const
+{
+    CommandCompletionQuery query;
+    query.prefix = prefix;
+    query.moduleName = moduleName;
+    query.commandKind = commandKind;
+    return CompletionSymbolQuery::namesFromRecords(
+        CompletionSemanticQuery::commandSymbolRecords(semanticIndex(), query));
+}
+
 QStringList CompletionService::findModuleSymbolsByType(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,
@@ -34,12 +47,37 @@ QStringList CompletionService::findGlobalSymbolCompletions(const QString& prefix
         semanticIndex()->getGlobalCompletionSymbols(prefix));
 }
 
+QStringList CompletionService::findGlobalSymbolsByKind(
+    CompletionCommandKind commandKind,
+    const QString& prefix) const
+{
+    CommandCompletionQuery query;
+    query.prefix = prefix;
+    query.commandKind = commandKind;
+    return CompletionSymbolQuery::namesFromRecords(
+        CompletionSemanticQuery::commandSymbolRecords(semanticIndex(), query));
+}
+
 QStringList CompletionService::findGlobalSymbolsByType(
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
     return CompletionSymbolQuery::globalSymbolsByType(
         semanticIndex(), symbolType, prefix);
+}
+
+QStringList CompletionService::findVariableCompletionsInScope(
+    const QString& moduleName,
+    CompletionCommandKind commandKind,
+    const QString& prefix) const
+{
+    return moduleName.isEmpty()
+        ? CompletionSymbolQuery::namesFromRecords(
+              CompletionSemanticQuery::typedSymbolRecords(
+                  semanticIndex(),
+                  commandKind,
+                  prefix))
+        : findModuleSymbolsByKind(moduleName, commandKind, prefix);
 }
 
 QStringList CompletionService::findVariableCompletionsInScope(
@@ -61,7 +99,7 @@ QStringList CompletionService::findTaskFunctionCompletions(const QString& prefix
 
 QStringList CompletionService::findInstantiableModuleCompletions(const QString& prefix) const
 {
-    return findGlobalSymbolsByType(sym_list::sym_module, prefix);
+    return findGlobalSymbolsByKind(CompletionCommandKind::Module, prefix);
 }
 
 QStringList CompletionService::findStructMemberCompletions(

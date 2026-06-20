@@ -26,6 +26,10 @@ public:
         int maxResults = 20) const;
     QStringList findAllSymbolCompletions(const QString& prefix,
                                          int maxResults = 15) const;
+    QStringList findSymbolCompletionsByKind(
+        CompletionCommandKind commandKind,
+        const QString& prefix,
+        int maxResults = 15) const;
     QStringList findSymbolCompletionsByType(
         sym_list::sym_type_e symbolType,
         const QString& prefix,
@@ -87,12 +91,20 @@ public:
     QStringList findResetSignalCompletions(const QString& prefix = QString()) const;
     QStringList findModuleInternalVariableCompletions(const QString& moduleName,
                                                       const QString& prefix = QString()) const;
+    QStringList findModuleSymbolsByKind(const QString& moduleName,
+                                        CompletionCommandKind commandKind,
+                                        const QString& prefix = QString()) const;
     QStringList findModuleSymbolsByType(const QString& moduleName,
                                         sym_list::sym_type_e symbolType,
                                         const QString& prefix = QString()) const;
     QStringList findGlobalSymbolCompletions(const QString& prefix = QString()) const;
+    QStringList findGlobalSymbolsByKind(CompletionCommandKind commandKind,
+                                        const QString& prefix = QString()) const;
     QStringList findGlobalSymbolsByType(sym_list::sym_type_e symbolType,
                                         const QString& prefix = QString()) const;
+    QStringList findVariableCompletionsInScope(const QString& moduleName,
+                                               CompletionCommandKind commandKind,
+                                               const QString& prefix = QString()) const;
     QStringList findVariableCompletionsInScope(const QString& moduleName,
                                                sym_list::sym_type_e variableType,
                                                const QString& prefix = QString()) const;

@@ -35,6 +35,14 @@ QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolT
         symbolType, prefix);
 }
 
+QStringList CompletionManager::getSymbolCompletions(
+    CompletionCommandKind commandKind,
+    const QString& prefix)
+{
+    return CompletionService::getInstance()->findSymbolCompletionsByKind(
+        commandKind, prefix);
+}
+
 bool CompletionManager::matchesAbbreviation(const QString &text, const QString &abbreviation)
 {
     return CompletionService::getInstance()->matchesCompletionAbbreviation(
@@ -140,6 +148,15 @@ QStringList CompletionManager::getVariableCompletionsInScope(const QString& modu
         moduleName, variableType, prefix);
 }
 
+QStringList CompletionManager::getVariableCompletionsInScope(
+    const QString& moduleName,
+    CompletionCommandKind commandKind,
+    const QString& prefix)
+{
+    return CompletionService::getInstance()->findVariableCompletionsInScope(
+        moduleName, commandKind, prefix);
+}
+
 QStringList CompletionManager::getTaskFunctionCompletions(const QString& prefix)
 {
     return CompletionService::getInstance()->findTaskFunctionCompletions(prefix);
@@ -180,6 +197,23 @@ QStringList CompletionManager::getModuleInternalVariablesByType(const QString& m
                                                                const QString& prefix) {
     return CompletionService::getInstance()->findModuleSymbolsByType(
         moduleName, symbolType, prefix);
+}
+
+QStringList CompletionManager::getModuleInternalVariablesByKind(
+    const QString& moduleName,
+    CompletionCommandKind commandKind,
+    const QString& prefix)
+{
+    return CompletionService::getInstance()->findModuleSymbolsByKind(
+        moduleName, commandKind, prefix);
+}
+
+QStringList CompletionManager::getGlobalSymbolsByKind(
+    CompletionCommandKind commandKind,
+    const QString& prefix)
+{
+    return CompletionService::getInstance()->findGlobalSymbolsByKind(
+        commandKind, prefix);
 }
 
 QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbolType,

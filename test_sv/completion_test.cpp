@@ -1480,9 +1480,9 @@ int main(int argc, char** argv) {
 
     // --- module-internal logic must NOT leak function locals (x, add_one return var) ---
     const QStringList logicNames =
-        CompletionService::getInstance()->findModuleSymbolsByType(
+        CompletionService::getInstance()->findModuleSymbolsByKind(
             QStringLiteral("top"),
-            sym_list::sym_logic);
+            CompletionCommandKind::Logic);
     expectExcludes("top logic excludes fn-locals", logicNames,
                    /*mustNot*/ {"x", "add_one"}, /*mustHave*/ {"enable", "result"});
 
@@ -2758,39 +2758,39 @@ int main(int argc, char** argv) {
                    QStringLiteral("snap_")),
                {"snap_clk", "snap_enable", "snap_rst_n"});
     expectList("snapshot module symbols by type",
-               snapshotCompletionService.findModuleSymbolsByType(
+               snapshotCompletionService.findModuleSymbolsByKind(
                    QStringLiteral("snap_top"),
-                   sym_list::sym_logic,
+                   CompletionCommandKind::Logic,
                    QStringLiteral("snap_e")),
                {"snap_enable"});
     expectList("snapshot metadata module symbols by type",
-               snapshotCompletionService.findModuleSymbolsByType(
+               snapshotCompletionService.findModuleSymbolsByKind(
                    QStringLiteral("snap_top"),
-                   sym_list::sym_logic,
+                   CompletionCommandKind::Logic,
                    QStringLiteral("semantic")),
                {"semantic_top_signal"});
     expectList("snapshot global symbol names",
                snapshotCompletionService.findGlobalSymbolCompletions(QStringLiteral("snap")),
                {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
     expectList("snapshot global symbols by type",
-               snapshotCompletionService.findGlobalSymbolsByType(
-                   sym_list::sym_task,
+               snapshotCompletionService.findGlobalSymbolsByKind(
+                   CompletionCommandKind::Task,
                    QStringLiteral("snap")),
                {"snap_task"});
     expectList("snapshot metadata global symbols by type",
-               snapshotCompletionService.findGlobalSymbolsByType(
-                   sym_list::sym_module,
+               snapshotCompletionService.findGlobalSymbolsByKind(
+                   CompletionCommandKind::Module,
                    QStringLiteral("semantic")),
                {"semantic_scope"});
     expectList("snapshot global struct variables are not type completions",
-               snapshotCompletionService.findGlobalSymbolsByType(
-                   sym_list::sym_packed_struct_var,
+               snapshotCompletionService.findGlobalSymbolsByKind(
+                   CompletionCommandKind::PackedStructVariable,
                    QStringLiteral("snap")),
                {});
     expectList("snapshot scoped variables by type",
                snapshotCompletionService.findVariableCompletionsInScope(
                    QStringLiteral("snap_top"),
-                   sym_list::sym_logic,
+                   CompletionCommandKind::Logic,
                    QStringLiteral("snap_r")),
                {"snap_rst_n"});
     expectList("snapshot task/function completions",
@@ -2858,8 +2858,8 @@ int main(int argc, char** argv) {
                    QStringLiteral("snap_clk"))),
                {"snap_clk"});
     expectList("snapshot typed symbol completions",
-               snapshotCompletionService.findSymbolCompletionsByType(
-                   sym_list::sym_logic,
+               snapshotCompletionService.findSymbolCompletionsByKind(
+                   CompletionCommandKind::Logic,
                    QStringLiteral("snap_e")),
                {"snap_enable", "snap_other_enable"});
     const QList<sym_list::SymbolInfo> snapshotTypedSymbols =
@@ -2929,7 +2929,9 @@ int main(int argc, char** argv) {
                cm->getGlobalSymbolCompletions(QStringLiteral("semantic")),
                {"semantic_scope"});
     expectList("CompletionManager type delegation",
-               cm->getGlobalSymbolsByType(sym_list::sym_task, QStringLiteral("snap")),
+               cm->getGlobalSymbolsByKind(
+                   CompletionCommandKind::Task,
+                   QStringLiteral("snap")),
                {"snap_task"});
     expectList("CompletionManager task/function delegation",
                cm->getTaskFunctionCompletions(QStringLiteral("snap")),
@@ -2958,7 +2960,9 @@ int main(int argc, char** argv) {
                scoredNames(cm->getScoredAllSymbolMatches(QStringLiteral("snap_clk"))),
                {"snap_clk"});
     expectList("CompletionManager typed symbol delegation",
-               cm->getSymbolCompletions(sym_list::sym_logic, QStringLiteral("snap_e")),
+               cm->getSymbolCompletions(
+                   CompletionCommandKind::Logic,
+                   QStringLiteral("snap_e")),
                {"snap_enable", "snap_other_enable"});
     expectList("CompletionManager smart delegation",
                scoredNames(cm->getSmartCompletions(QStringLiteral("snap_sig"),

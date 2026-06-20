@@ -1,5 +1,6 @@
 #include "completionservice.h"
 
+#include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
 #include "semanticindex.h"
 
@@ -175,6 +176,21 @@ QStringList CompletionService::findAllSymbolCompletions(
     const QVector<QPair<QString, int>> scored =
         findScoredAllSymbolCompletions(prefix, maxResults);
     return CompletionSymbolQuery::namesFromScored(scored, maxResults);
+}
+
+QStringList CompletionService::findSymbolCompletionsByKind(
+    CompletionCommandKind commandKind,
+    const QString& prefix,
+    int maxResults) const
+{
+    const QStringList names = CompletionSymbolQuery::namesFromRecords(
+        CompletionSemanticQuery::typedSymbolRecords(
+            semanticIndex(),
+            commandKind,
+            prefix));
+    return CompletionSymbolQuery::namesFromScored(
+        CompletionSymbolQuery::scoredNames(names, prefix, maxResults),
+        maxResults);
 }
 
 QStringList CompletionService::findSymbolCompletionsByType(
