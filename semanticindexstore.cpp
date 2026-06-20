@@ -150,19 +150,15 @@ QList<sym_list::SymbolInfo> symbolInfosForRecords(
 
 }
 
-void SemanticIndex::updateSymbolsForFile(const QString& fileName,
-                                         const QList<sym_list::SymbolInfo>& symbols,
-                                         const QString& content)
-{
-    symbolDatabase()->setSymbolsForFile(fileName, symbols, content);
-}
-
 void SemanticIndex::updateSymbolRecordsForFile(
     const QString& fileName,
     const QList<SemanticSymbolRecord>& records,
     const QString& content)
 {
-    updateSymbolsForFile(fileName, symbolInfosForRecords(records), content);
+    symbolDatabase()->setSymbolsForFile(
+        fileName,
+        symbolInfosForRecords(records),
+        content);
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(

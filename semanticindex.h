@@ -221,9 +221,6 @@ public:
     std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
     std::uint64_t snapshotRevision() const;
     SemanticSnapshotToken snapshotToken() const;
-    void updateSymbolsForFile(const QString& fileName,
-                              const QList<sym_list::SymbolInfo>& symbols,
-                              const QString& content);
     void updateSymbolRecordsForFile(
         const QString& fileName,
         const QList<SemanticSymbolRecord>& records,
