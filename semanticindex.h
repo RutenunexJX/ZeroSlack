@@ -337,9 +337,15 @@ private:
     sym_list* m_symbolDatabase = nullptr;
     std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
     std::uint64_t m_snapshotRevision = 0;
+    struct NativeFileState {
+        QString contentHash;
+        QString symbolRelevantHash;
+        int lastAnalyzedLineCount = 0;
+    };
     QList<SemanticSymbolRecord> m_nativeSymbolRecords;
     QHash<QString, QList<int>> m_nativeRecordIndexesByFile;
     QHash<QString, QString> m_nativeFileContents;
+    QHash<QString, NativeFileState> m_nativeFileStates;
     QHash<QString, int> m_nativeStableKeyIndexes;
     int m_nextNativeLocalHandle = 1;
     static std::unique_ptr<SemanticIndex> instance;
@@ -351,12 +357,13 @@ private:
     void rebuildNativeStoreIndexes();
     QList<SemanticSymbolRecord> nativeSymbolRecords(
         const QString& fileName = QString()) const;
-    QList<SemanticSymbolRecord> nativeSymbolRecordsExcludingFiles(
-        const QSet<QString>& normalizedFileNames) const;
     SemanticSymbolRecord nativeSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     bool hasNativeCachedFileContent(const QString& fileName) const;
     QString nativeCachedFileContent(const QString& fileName) const;
+    void updateNativeFileState(const QString& fileName, const QString& content);
+    bool hasNativeFileState(const QString& fileName) const;
+    bool nativeContentAffectsSymbols(const QString& fileName, const QString& content) const;
 
     SemanticDefinitionResult bestDefinitionFromCandidates(
         const QList<SemanticSymbolRecord>& candidates,

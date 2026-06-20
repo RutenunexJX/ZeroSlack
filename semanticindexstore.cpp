@@ -17,6 +17,39 @@ QString normalizedStoreFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
+QString nativeContentHash(const QString& content)
+{
+    return QString::number(qHash(content));
+}
+
+QString nativeSymbolRelevantHash(const QString& content)
+{
+    QString work = content;
+    int i = 0;
+    while (i < work.length()) {
+        int start = work.indexOf(QStringLiteral("/*"), i);
+        if (start < 0)
+            break;
+        int end = work.indexOf(QStringLiteral("*/"), start + 2);
+        if (end < 0)
+            end = work.length();
+        work.replace(start, end - start + 2, QStringLiteral(" "));
+        i = start + 1;
+    }
+
+    QStringList kept;
+    const QStringList lines = work.split(QLatin1Char('\n'));
+    for (const QString& line : lines) {
+        QString trimmed = line.trimmed();
+        if (trimmed.isEmpty() || trimmed.startsWith(QStringLiteral("//")))
+            continue;
+        kept.append(trimmed.replace(QRegularExpression(QStringLiteral("\\s+")),
+                                    QStringLiteral(" ")));
+    }
+    const QString joined = kept.join(QLatin1Char(' ')).trimmed();
+    return QString::number(qHash(joined));
+}
+
 bool isSemanticModuleName(const QString& name)
 {
     if (name.isEmpty())
@@ -154,6 +187,7 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
     }
 
     rebuildNativeStoreIndexes();
+    updateNativeFileState(fileName, content);
 }
 
 void SemanticIndex::rebuildNativeStoreIndexes()
@@ -190,21 +224,6 @@ QList<SemanticSymbolRecord> SemanticIndex::nativeSymbolRecords(
     return records;
 }
 
-QList<SemanticSymbolRecord> SemanticIndex::nativeSymbolRecordsExcludingFiles(
-    const QSet<QString>& normalizedFileNames) const
-{
-    QList<SemanticSymbolRecord> records;
-    records.reserve(m_nativeSymbolRecords.size());
-    for (const SemanticSymbolRecord& record : m_nativeSymbolRecords) {
-        const QString normalized =
-            normalizedStoreFileName(record.location.fileName);
-        if (!normalized.isEmpty() && normalizedFileNames.contains(normalized))
-            continue;
-        records.append(record);
-    }
-    return records;
-}
-
 SemanticSymbolRecord SemanticIndex::nativeSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {
@@ -237,6 +256,52 @@ QString SemanticIndex::nativeCachedFileContent(const QString& fileName) const
     return m_nativeFileContents.value(normalizedTarget);
 }
 
+void SemanticIndex::updateNativeFileState(
+    const QString& fileName,
+    const QString& content)
+{
+    const QString normalizedTarget = normalizedStoreFileName(fileName);
+    if (normalizedTarget.isEmpty())
+        return;
+
+    NativeFileState state;
+    state.contentHash = nativeContentHash(content);
+    state.symbolRelevantHash = nativeSymbolRelevantHash(content);
+    state.lastAnalyzedLineCount = content.count(QLatin1Char('\n')) + 1;
+    m_nativeFileStates.insert(fileName, state);
+    if (fileName != normalizedTarget)
+        m_nativeFileStates.insert(normalizedTarget, state);
+}
+
+bool SemanticIndex::hasNativeFileState(const QString& fileName) const
+{
+    if (m_nativeFileStates.contains(fileName))
+        return true;
+    const QString normalizedTarget = normalizedStoreFileName(fileName);
+    if (normalizedTarget.isEmpty())
+        return false;
+    return m_nativeFileStates.contains(normalizedTarget);
+}
+
+bool SemanticIndex::nativeContentAffectsSymbols(
+    const QString& fileName,
+    const QString& content) const
+{
+    NativeFileState state;
+    if (m_nativeFileStates.contains(fileName)) {
+        state = m_nativeFileStates.value(fileName);
+    } else {
+        const QString normalizedTarget = normalizedStoreFileName(fileName);
+        state = m_nativeFileStates.value(normalizedTarget);
+    }
+
+    if (state.lastAnalyzedLineCount != content.count(QLatin1Char('\n')) + 1)
+        return true;
+    if (state.symbolRelevantHash.isEmpty())
+        return true;
+    return state.symbolRelevantHash != nativeSymbolRelevantHash(content);
+}
+
 void SemanticIndex::updateSymbolRecordsForFile(
     const QString& fileName,
     const QList<SemanticSymbolRecord>& records,
@@ -255,40 +320,47 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
     const QString& fileName) const
 {
     sym_list* db = symbolDatabase();
+    const QList<SemanticSymbolRecord> nativeRecords = nativeSymbolRecords(fileName);
+    if (!nativeRecords.isEmpty())
+        return nativeRecords;
+
     if (m_snapshot) {
         QList<SemanticSymbolRecord> records =
             m_snapshot->getSymbolRecords(fileName);
         if (!fileName.isEmpty()) {
             if (!records.isEmpty())
                 return records;
-            records = nativeSymbolRecords(fileName);
-            if (!records.isEmpty())
-                return records;
         } else {
             QSet<QString> snapshotFiles;
+            QSet<QString> nativeFiles;
+            for (const SemanticSymbolRecord& record : m_nativeSymbolRecords) {
+                const QString normalized =
+                    normalizedStoreFileName(record.location.fileName);
+                if (!normalized.isEmpty())
+                    nativeFiles.insert(normalized);
+            }
+
+            QList<SemanticSymbolRecord> mergedSnapshotRecords;
             for (const SemanticSymbolRecord& record : std::as_const(records)) {
                 const QString normalized =
                     normalizedStoreFileName(record.location.fileName);
                 if (!normalized.isEmpty())
                     snapshotFiles.insert(normalized);
+                if (!normalized.isEmpty() && nativeFiles.contains(normalized))
+                    continue;
+                mergedSnapshotRecords.append(record);
             }
-            const QList<SemanticSymbolRecord> nativeRecords =
-                nativeSymbolRecordsExcludingFiles(snapshotFiles);
-            if (!nativeRecords.isEmpty()) {
-                records.append(nativeRecords);
-                return records;
-            }
-            records.append(
+            mergedSnapshotRecords.append(m_nativeSymbolRecords);
+
+            QSet<QString> coveredFiles = snapshotFiles;
+            coveredFiles.unite(nativeFiles);
+            mergedSnapshotRecords.append(
                 semanticSymbolRecordsForDatabaseExcludingFiles(
                     db,
-                    snapshotFiles));
-            return records;
+                    coveredFiles));
+            return mergedSnapshotRecords;
         }
     }
-
-    const QList<SemanticSymbolRecord> records = nativeSymbolRecords(fileName);
-    if (!records.isEmpty())
-        return records;
 
     return semanticSymbolRecordsForDatabase(db, fileName);
 }
@@ -299,17 +371,17 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
     if (!key.isValid())
         return {};
 
+    const SemanticSymbolRecord nativeRecord =
+        nativeSymbolRecordByStableKey(key);
+    if (nativeRecord.isValid())
+        return nativeRecord;
+
     if (m_snapshot) {
         const SemanticSymbolRecord record =
             m_snapshot->getSymbolRecordByStableKey(key);
         if (record.isValid())
             return record;
     }
-
-    const SemanticSymbolRecord nativeRecord =
-        nativeSymbolRecordByStableKey(key);
-    if (nativeRecord.isValid())
-        return nativeRecord;
 
     for (const SemanticSymbolRecord& record : getSymbolRecords()) {
         if (record.stableKey == key)
@@ -320,14 +392,14 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
 
 QString SemanticIndex::getCachedFileContent(const QString& fileName) const
 {
+    if (hasNativeCachedFileContent(fileName))
+        return nativeCachedFileContent(fileName);
+
     if (m_snapshot) {
         const QString content = m_snapshot->getCachedFileContent(fileName);
         if (!content.isEmpty())
             return content;
     }
-
-    if (hasNativeCachedFileContent(fileName))
-        return nativeCachedFileContent(fileName);
 
     return symbolDatabase()->getCachedFileContent(fileName);
 }
@@ -374,12 +446,21 @@ int SemanticIndex::findEndModuleLine(const QString& fileName,
 bool SemanticIndex::contentAffectsSymbols(const QString& fileName,
                                           const QString& content) const
 {
+    if (hasNativeFileState(fileName))
+        return nativeContentAffectsSymbols(fileName, content);
+
     return symbolDatabase()->contentAffectsSymbols(fileName, content);
 }
 
 void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,
                                                     const QString& content)
 {
+    updateNativeFileState(fileName, content);
+    m_nativeFileContents.insert(fileName, content);
+    const QString normalizedTarget = normalizedStoreFileName(fileName);
+    if (!normalizedTarget.isEmpty() && normalizedTarget != fileName)
+        m_nativeFileContents.insert(normalizedTarget, content);
+
     symbolDatabase()->refreshStructTypedefEnumForFile(fileName, content);
 }
 
