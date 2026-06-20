@@ -20,12 +20,6 @@ SymbolVisibility visibility(
 SemanticMetadata semanticMetadata(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {});
-void attachSemanticMetadata(
-    sym_list::SymbolInfo* symbol,
-    const QSet<QString>& packageScopes = {});
-sym_list::SymbolInfo withSemanticMetadata(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes = {});
 
 bool isDefinitionCandidate(sym_list::sym_type_e type);
 bool isGlobalDefinition(sym_list::sym_type_e type);

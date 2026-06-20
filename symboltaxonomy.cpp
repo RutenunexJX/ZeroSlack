@@ -288,34 +288,6 @@ SemanticMetadata semanticMetadata(
     return computedSemanticMetadata(symbol, packageScopes);
 }
 
-void attachSemanticMetadata(
-    sym_list::SymbolInfo* symbol,
-    const QSet<QString>& packageScopes)
-{
-    if (!symbol)
-        return;
-
-    const SemanticMetadata metadata =
-        computedSemanticMetadata(*symbol, packageScopes);
-    symbol->hasSemanticMetadata = true;
-    symbol->semanticDeclarationKind = metadata.declarationKind;
-    symbol->semanticUsageRole = metadata.usageRole;
-    symbol->semanticOwnerScope = metadata.ownerScope;
-    symbol->semanticVisibility = metadata.visibility;
-    symbol->semanticSourceRole = metadata.sourceRole;
-    symbol->rawCollectorKind = legacySymbolType(metadata.rawCollectorKind);
-    symbol->interfaceLikeOwner = metadata.interfaceLikeOwner;
-}
-
-sym_list::SymbolInfo withSemanticMetadata(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes)
-{
-    sym_list::SymbolInfo annotated = symbol;
-    attachSemanticMetadata(&annotated, packageScopes);
-    return annotated;
-}
-
 SymbolOwnerScope ownerScope(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes)

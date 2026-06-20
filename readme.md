@@ -62,6 +62,7 @@ Thin UI consumers
 - I4 second block is complete: `SemanticIndex` no longer exposes or stores a legacy `sym_list` database injection/access API.
 - I4 third block is complete: dead `sym_list` symbol database mutator/accessor/index/scope-tree storage has been deleted, including `syminfoindex.cpp`, `syminfoscope.cpp`, and `scope_tree.h`.
 - I4 fourth block is complete: native taxonomy metadata checks no longer route through the retired private raw-kind bridge.
+- I4 fifth block is complete: unused legacy metadata write-back helpers have been deleted from the taxonomy compatibility surface.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.
