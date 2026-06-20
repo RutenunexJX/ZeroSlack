@@ -21,7 +21,7 @@
 
 using namespace slang::ast;
 using namespace slang_symbols::detail;
-using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
+using CollectorKind = SymbolTaxonomy::CollectorKind;
 
 namespace {
 
@@ -44,11 +44,11 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
         if (!fillSymbolRecord(sm, *def, record, nullptr))
             continue;
         if (def->definitionKind == DefinitionKind::Module)
-            applyCollectorKind(&record, RawCollectorKind::Module);
+            applyCollectorKind(&record, CollectorKind::Module);
         else if (def->definitionKind == DefinitionKind::Interface)
-            applyCollectorKind(&record, RawCollectorKind::Interface);
+            applyCollectorKind(&record, CollectorKind::Interface);
         else if (def->definitionKind == DefinitionKind::Program)
-            applyCollectorKind(&record, RawCollectorKind::Module);
+            applyCollectorKind(&record, CollectorKind::Module);
         else
             continue;
         record.owner.name.clear();
@@ -82,7 +82,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 SemanticSymbolRecord record;
                 QString moduleScope;
                 if (fillSymbolRecord(sm, inst, record, &moduleScope)) {
-                    applyCollectorKind(&record, RawCollectorKind::Inst);
+                    applyCollectorKind(&record, CollectorKind::Inst);
                     record.type.rawTypeText =
                         QString::fromStdString(std::string(inst.getDefinition().name));
                     record.owner.name = moduleScope;
@@ -107,16 +107,16 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             QString moduleScope;
             if (!fillSymbolRecord(sm, var, record, &moduleScope))
                 return;
-            applyCollectorKind(&record, variableOrNetRawCollectorKind(var.getType()));
+            applyCollectorKind(&record, variableOrNetCollectorKind(var.getType()));
             record.owner.name = moduleScope;
             // For enum/struct variables, record the type key in dataType so var.member /
             // enum-value completion can resolve the type (consumed by get{Struct,Enum}TypeForVariable).
             // Typedef'd types use the alias name (members/values already emitted at the typedef site).
             // Inline anonymous types (no alias) have no typedef site, so key members/values by the
             // variable name here and emit them now.
-            if (record.rawCollectorKind == RawCollectorKind::EnumVariable
-                || record.rawCollectorKind == RawCollectorKind::PackedStructVariable
-                || record.rawCollectorKind == RawCollectorKind::UnpackedStructVariable) {
+            if (record.collectorKind == CollectorKind::EnumVariable
+                || record.collectorKind == CollectorKind::PackedStructVariable
+                || record.collectorKind == CollectorKind::UnpackedStructVariable) {
                 QString typeName = QString::fromStdString(std::string(var.getType().name));
                 if (!typeName.isEmpty()) {
                     record.type.rawTypeText = typeName;  // typedef'd: emitted at typedef site
@@ -144,7 +144,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             QString moduleScope;
             if (!fillSymbolRecord(sm, net, record, &moduleScope))
                 return;
-            applyCollectorKind(&record, RawCollectorKind::Wire);
+            applyCollectorKind(&record, CollectorKind::Wire);
             record.owner.name = moduleScope;
             outList.append(record);
             v.visitDefault(net);
@@ -156,8 +156,8 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 return;
             applyCollectorKind(&record,
                 (sub.subroutineKind == SubroutineKind::Task)
-                    ? RawCollectorKind::Task
-                    : RawCollectorKind::Function);
+                    ? CollectorKind::Task
+                    : CollectorKind::Function);
             record.owner.name = moduleScope;
             outList.append(record);
             v.visitDefault(sub);
@@ -167,7 +167,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             QString moduleScope;
             if (!fillSymbolRecord(sm, port, record, &moduleScope))
                 return;
-            applyCollectorKind(&record, portDirectionRawCollectorKind(port.direction));
+            applyCollectorKind(&record, portDirectionCollectorKind(port.direction));
             record.owner.name = moduleScope;
             outList.append(record);
             v.visitDefault(port);
@@ -179,8 +179,8 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 return;
             applyCollectorKind(&record,
                 port.modport.empty()
-                    ? RawCollectorKind::PortInterface
-                    : RawCollectorKind::PortInterfaceModport);
+                    ? CollectorKind::PortInterface
+                    : CollectorKind::PortInterfaceModport);
             record.owner.name = moduleScope;
             if (port.interfaceDef) {
                 record.type.rawTypeText = QString::fromStdString(
@@ -198,7 +198,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             QString moduleScope;
             if (!fillSymbolRecord(sm, modport, record, &moduleScope))
                 return;
-            applyCollectorKind(&record, RawCollectorKind::InterfaceModport);
+            applyCollectorKind(&record, CollectorKind::InterfaceModport);
             record.owner.name = moduleScope;
             outList.append(record);
             v.visitDefault(modport);
@@ -210,8 +210,8 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 return;
             applyCollectorKind(&record,
                 param.isLocalParam()
-                    ? RawCollectorKind::Localparam
-                    : RawCollectorKind::Parameter);
+                    ? CollectorKind::Localparam
+                    : CollectorKind::Parameter);
             record.owner.name = moduleScope;
             outList.append(record);
             v.visitDefault(param);
@@ -221,7 +221,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             QString moduleScope;
             if (!fillSymbolRecord(sm, typeAlias, record, &moduleScope))
                 return;
-            applyCollectorKind(&record, RawCollectorKind::Typedef);
+            applyCollectorKind(&record, CollectorKind::Typedef);
             record.owner.name = moduleScope;
             const QString aliasName = record.name;
             const slang::ast::Type& target = typeAlias.getCanonicalType();
@@ -240,8 +240,8 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 SemanticSymbolRecord typeRecord = record;
                 applyCollectorKind(&typeRecord,
                     packed
-                        ? RawCollectorKind::PackedStruct
-                        : RawCollectorKind::UnpackedStruct);
+                        ? CollectorKind::PackedStruct
+                        : CollectorKind::UnpackedStruct);
                 typeRecord.type.rawTypeText.clear();
                 outList.append(typeRecord);
                 const slang::ast::Scope& structScope = packed
@@ -259,7 +259,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             QString moduleScope;
             if (!fillSymbolRecord(sm, enumType, record, &moduleScope))
                 return;
-            applyCollectorKind(&record, RawCollectorKind::Enum);
+            applyCollectorKind(&record, CollectorKind::Enum);
             record.owner.name = moduleScope;
             outList.append(record);
             v.visitDefault(enumType);
@@ -269,7 +269,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             QString moduleScope;
             if (!fillSymbolRecord(sm, pkg, record, &moduleScope))
                 return;
-            applyCollectorKind(&record, RawCollectorKind::Package);
+            applyCollectorKind(&record, CollectorKind::Package);
             record.owner.name = QString::fromStdString(std::string(pkg.name));
             outList.append(record);
             v.visitDefault(pkg);

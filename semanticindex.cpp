@@ -55,7 +55,7 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
     metadata.ownerScope = record.owner.kind;
     metadata.visibility = record.visibility;
     metadata.sourceRole = record.sourceRole;
-    metadata.rawCollectorKind = record.rawCollectorKind;
+    metadata.collectorKind = record.collectorKind;
     metadata.interfaceLikeOwner = record.owner.interfaceLike;
     return metadata;
 }

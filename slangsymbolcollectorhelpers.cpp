@@ -26,96 +26,96 @@ QString normalizedStableKeyFileName(const QString& fileName)
 }
 
 SymbolTaxonomy::DeclarationKind declarationKindForRawKind(
-    SymbolTaxonomy::RawCollectorKind rawKind)
+    SymbolTaxonomy::CollectorKind rawKind)
 {
     using DeclarationKind = SymbolTaxonomy::DeclarationKind;
-    using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
     switch (rawKind) {
-    case RawCollectorKind::Module:
+    case CollectorKind::Module:
         return DeclarationKind::Module;
-    case RawCollectorKind::Interface:
-    case RawCollectorKind::InterfaceAssocStruct:
+    case CollectorKind::Interface:
+    case CollectorKind::InterfaceAssocStruct:
         return DeclarationKind::Interface;
-    case RawCollectorKind::Package:
+    case CollectorKind::Package:
         return DeclarationKind::Package;
-    case RawCollectorKind::Typedef:
+    case CollectorKind::Typedef:
         return DeclarationKind::Typedef;
-    case RawCollectorKind::Enum:
-    case RawCollectorKind::EnumVariable:
-    case RawCollectorKind::EnumValue:
+    case CollectorKind::Enum:
+    case CollectorKind::EnumVariable:
+    case CollectorKind::EnumValue:
         return DeclarationKind::Enum;
-    case RawCollectorKind::Parameter:
-    case RawCollectorKind::ModuleParameter:
-    case RawCollectorKind::InterfaceParameter:
-    case RawCollectorKind::DefParameter:
+    case CollectorKind::Parameter:
+    case CollectorKind::ModuleParameter:
+    case CollectorKind::InterfaceParameter:
+    case CollectorKind::DefParameter:
         return DeclarationKind::Parameter;
-    case RawCollectorKind::Localparam:
+    case CollectorKind::Localparam:
         return DeclarationKind::Localparam;
-    case RawCollectorKind::PortInput:
-    case RawCollectorKind::PortOutput:
-    case RawCollectorKind::PortInout:
-    case RawCollectorKind::PortRef:
-    case RawCollectorKind::PortInterface:
-    case RawCollectorKind::PortInterfaceModport:
+    case CollectorKind::PortInput:
+    case CollectorKind::PortOutput:
+    case CollectorKind::PortInout:
+    case CollectorKind::PortRef:
+    case CollectorKind::PortInterface:
+    case CollectorKind::PortInterfaceModport:
         return DeclarationKind::Port;
-    case RawCollectorKind::Reg:
-    case RawCollectorKind::Wire:
-    case RawCollectorKind::Logic:
+    case CollectorKind::Reg:
+    case CollectorKind::Wire:
+    case CollectorKind::Logic:
         return DeclarationKind::Signal;
-    case RawCollectorKind::PackedStruct:
-    case RawCollectorKind::UnpackedStruct:
+    case CollectorKind::PackedStruct:
+    case CollectorKind::UnpackedStruct:
         return DeclarationKind::Struct;
-    case RawCollectorKind::PackedStructVariable:
-    case RawCollectorKind::UnpackedStructVariable:
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
         return DeclarationKind::StructVariable;
-    case RawCollectorKind::StructMember:
+    case CollectorKind::StructMember:
         return DeclarationKind::StructMember;
-    case RawCollectorKind::Inst:
-    case RawCollectorKind::InstPin:
+    case CollectorKind::Inst:
+    case CollectorKind::InstPin:
         return DeclarationKind::Instance;
-    case RawCollectorKind::InterfaceModport:
+    case CollectorKind::InterfaceModport:
         return DeclarationKind::Modport;
-    case RawCollectorKind::Task:
+    case CollectorKind::Task:
         return DeclarationKind::Task;
-    case RawCollectorKind::Function:
+    case CollectorKind::Function:
         return DeclarationKind::Function;
-    case RawCollectorKind::DefDefine:
-    case RawCollectorKind::DefIfdef:
-    case RawCollectorKind::DefIfndef:
-    case RawCollectorKind::DefElse:
-    case RawCollectorKind::DefElsif:
-    case RawCollectorKind::DefEndif:
+    case CollectorKind::DefDefine:
+    case CollectorKind::DefIfdef:
+    case CollectorKind::DefIfndef:
+    case CollectorKind::DefElse:
+    case CollectorKind::DefElsif:
+    case CollectorKind::DefEndif:
         return DeclarationKind::Macro;
-    case RawCollectorKind::Always:
-    case RawCollectorKind::AlwaysFf:
-    case RawCollectorKind::AlwaysComb:
-    case RawCollectorKind::AlwaysLatch:
-    case RawCollectorKind::Assign:
-    case RawCollectorKind::Initial:
-    case RawCollectorKind::Case:
-    case RawCollectorKind::Casex:
-    case RawCollectorKind::Casez:
-    case RawCollectorKind::Endcase:
-    case RawCollectorKind::CaseDefault:
-    case RawCollectorKind::FsmState:
+    case CollectorKind::Always:
+    case CollectorKind::AlwaysFf:
+    case CollectorKind::AlwaysComb:
+    case CollectorKind::AlwaysLatch:
+    case CollectorKind::Assign:
+    case CollectorKind::Initial:
+    case CollectorKind::Case:
+    case CollectorKind::Casex:
+    case CollectorKind::Casez:
+    case CollectorKind::Endcase:
+    case CollectorKind::CaseDefault:
+    case CollectorKind::FsmState:
         return DeclarationKind::Process;
-    case RawCollectorKind::GenerateIf:
-    case RawCollectorKind::GenerateFor:
-    case RawCollectorKind::GenerateCase:
+    case CollectorKind::GenerateIf:
+    case CollectorKind::GenerateFor:
+    case CollectorKind::GenerateCase:
         return DeclarationKind::Generate;
-    case RawCollectorKind::XilinxConstraint:
+    case CollectorKind::XilinxConstraint:
         return DeclarationKind::Constraint;
-    case RawCollectorKind::User:
+    case CollectorKind::User:
         return DeclarationKind::User;
     }
     return DeclarationKind::Unknown;
 }
 
 SymbolTaxonomy::SymbolUsageRole usageRoleForRawKind(
-    SymbolTaxonomy::RawCollectorKind rawKind)
+    SymbolTaxonomy::CollectorKind rawKind)
 {
     using DeclarationKind = SymbolTaxonomy::DeclarationKind;
-    using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
     using SymbolUsageRole = SymbolTaxonomy::SymbolUsageRole;
 
     const DeclarationKind declarationKind = declarationKindForRawKind(rawKind);
@@ -124,7 +124,7 @@ SymbolTaxonomy::SymbolUsageRole usageRoleForRawKind(
         return SymbolUsageRole::Process;
     }
     if (declarationKind == DeclarationKind::Instance
-        && rawKind == RawCollectorKind::InstPin) {
+        && rawKind == CollectorKind::InstPin) {
         return SymbolUsageRole::Reference;
     }
     if (declarationKind == DeclarationKind::Unknown)
@@ -148,13 +148,13 @@ bool isPackageVisibleDefinition(const SemanticSymbolRecord& record)
         || record.declarationKind == SymbolTaxonomy::DeclarationKind::Struct;
 }
 
-bool hasInterfaceLikeOwner(SymbolTaxonomy::RawCollectorKind rawKind)
+bool hasInterfaceLikeOwner(SymbolTaxonomy::CollectorKind rawKind)
 {
-    using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
-    return rawKind == RawCollectorKind::Interface
-        || rawKind == RawCollectorKind::Inst
-        || rawKind == RawCollectorKind::PortInterface
-        || rawKind == RawCollectorKind::PortInterfaceModport;
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    return rawKind == CollectorKind::Interface
+        || rawKind == CollectorKind::Inst
+        || rawKind == CollectorKind::PortInterface
+        || rawKind == CollectorKind::PortInterfaceModport;
 }
 
 SymbolTaxonomy::SymbolOwnerScope ownerScopeForRecord(
@@ -275,11 +275,11 @@ bool fillSymbolRecord(const slang::SourceManager* sm,
 
 void applyCollectorKind(
     SemanticSymbolRecord* record,
-    SymbolTaxonomy::RawCollectorKind rawKind)
+    SymbolTaxonomy::CollectorKind rawKind)
 {
     if (!record)
         return;
-    record->rawCollectorKind = rawKind;
+    record->collectorKind = rawKind;
     record->declarationKind = declarationKindForRawKind(rawKind);
     record->usageRole = usageRoleForRawKind(rawKind);
     record->sourceRole =
@@ -329,7 +329,7 @@ void emitEnumValueRecords(const slang::SourceManager* sm,
         SemanticSymbolRecord record;
         if (!fillSymbolRecord(sm, ev, record, nullptr))
             continue;
-        applyCollectorKind(&record, SymbolTaxonomy::RawCollectorKind::EnumValue);
+        applyCollectorKind(&record, SymbolTaxonomy::CollectorKind::EnumValue);
         record.owner.name = scopeKey;
         outList.append(record);
     }
@@ -346,51 +346,51 @@ void emitStructMemberRecords(const slang::SourceManager* sm,
         SemanticSymbolRecord record;
         if (!fillSymbolRecord(sm, member, record, nullptr))
             continue;
-        applyCollectorKind(&record, SymbolTaxonomy::RawCollectorKind::StructMember);
+        applyCollectorKind(&record, SymbolTaxonomy::CollectorKind::StructMember);
         record.owner.name = scopeKey;
         outList.append(record);
     }
 }
 
-SymbolTaxonomy::RawCollectorKind variableOrNetRawCollectorKind(
+SymbolTaxonomy::CollectorKind variableOrNetCollectorKind(
     const slang::ast::Type& type)
 {
     const slang::ast::Type& canon = type.getCanonicalType();
     using slang::ast::SymbolKind;
-    using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
     SymbolKind k = canon.kind;
 
     if (k == SymbolKind::ScalarType) {
         const auto& st = canon.as<slang::ast::ScalarType>();
         if (st.scalarKind == slang::ast::ScalarType::Reg)
-            return RawCollectorKind::Reg;
-        return RawCollectorKind::Logic;
+            return CollectorKind::Reg;
+        return CollectorKind::Logic;
     }
     if (k == SymbolKind::EnumType)
-        return RawCollectorKind::EnumVariable;
+        return CollectorKind::EnumVariable;
     if (k == SymbolKind::PackedStructType)
-        return RawCollectorKind::PackedStructVariable;
+        return CollectorKind::PackedStructVariable;
     if (k == SymbolKind::UnpackedStructType)
-        return RawCollectorKind::UnpackedStructVariable;
+        return CollectorKind::UnpackedStructVariable;
     if (const slang::ast::IntegralType* it = canon.as_if<slang::ast::IntegralType>()) {
         if (it->isDeclaredReg())
-            return RawCollectorKind::Reg;
-        return RawCollectorKind::Logic;
+            return CollectorKind::Reg;
+        return CollectorKind::Logic;
     }
-    return RawCollectorKind::Logic;
+    return CollectorKind::Logic;
 }
 
-SymbolTaxonomy::RawCollectorKind portDirectionRawCollectorKind(
+SymbolTaxonomy::CollectorKind portDirectionCollectorKind(
     slang::ast::ArgumentDirection dir)
 {
     using slang::ast::ArgumentDirection;
-    using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
     switch (dir) {
-    case ArgumentDirection::In:    return RawCollectorKind::PortInput;
-    case ArgumentDirection::Out:    return RawCollectorKind::PortOutput;
-    case ArgumentDirection::InOut:  return RawCollectorKind::PortInout;
-    case ArgumentDirection::Ref:    return RawCollectorKind::PortRef;
-    default:                        return RawCollectorKind::PortInout;
+    case ArgumentDirection::In:    return CollectorKind::PortInput;
+    case ArgumentDirection::Out:    return CollectorKind::PortOutput;
+    case ArgumentDirection::InOut:  return CollectorKind::PortInout;
+    case ArgumentDirection::Ref:    return CollectorKind::PortRef;
+    default:                        return CollectorKind::PortInout;
     }
 }
 

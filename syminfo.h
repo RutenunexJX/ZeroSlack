@@ -116,7 +116,7 @@ public:
             SymbolSemanticMetadata::SymbolVisibility::Unknown;
         SymbolSemanticMetadata::SourceRole semanticSourceRole =
             SymbolSemanticMetadata::SourceRole::Unknown;
-        sym_type_e rawCollectorKind = sym_user;
+        sym_type_e collectorKind = sym_user;
         bool interfaceLikeOwner = false;
     };
 

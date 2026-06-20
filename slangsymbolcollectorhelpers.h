@@ -28,7 +28,7 @@ bool fillSymbolRecord(const slang::SourceManager* sm,
 
 void applyCollectorKind(
     SemanticSymbolRecord* record,
-    SymbolTaxonomy::RawCollectorKind rawKind);
+    SymbolTaxonomy::CollectorKind rawKind);
 
 void finalizeCollectedSymbolRecords(QList<SemanticSymbolRecord>* records);
 
@@ -42,10 +42,10 @@ void emitStructMemberRecords(const slang::SourceManager* sm,
                              const QString& scopeKey,
                              QList<SemanticSymbolRecord>& outList);
 
-SymbolTaxonomy::RawCollectorKind variableOrNetRawCollectorKind(
+SymbolTaxonomy::CollectorKind variableOrNetCollectorKind(
     const slang::ast::Type& type);
 
-SymbolTaxonomy::RawCollectorKind portDirectionRawCollectorKind(
+SymbolTaxonomy::CollectorKind portDirectionCollectorKind(
     slang::ast::ArgumentDirection dir);
 
 } // namespace slang_symbols::detail

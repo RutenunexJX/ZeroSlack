@@ -6,86 +6,86 @@ namespace SymbolTaxonomy {
 
 namespace {
 
-RawCollectorKind rawCollectorKind(sym_list::sym_type_e type)
+CollectorKind collectorKindFromLegacyType(sym_list::sym_type_e type)
 {
-    return static_cast<RawCollectorKind>(type);
+    return static_cast<CollectorKind>(type);
 }
 
-sym_list::sym_type_e legacySymbolType(RawCollectorKind kind)
+sym_list::sym_type_e legacySymbolType(CollectorKind kind)
 {
     return static_cast<sym_list::sym_type_e>(kind);
 }
 
-bool rawCollectorKindIs(const SemanticMetadata& metadata,
-                        RawCollectorKind kind)
+bool collectorKindIs(const SemanticMetadata& metadata,
+                        CollectorKind kind)
 {
-    return metadata.rawCollectorKind == kind;
+    return metadata.collectorKind == kind;
 }
 
-bool hasRawCollectorKind(const SemanticMetadata& metadata)
+bool hasCollectorKind(const SemanticMetadata& metadata)
 {
-    return !rawCollectorKindIs(metadata, RawCollectorKind::User);
+    return !collectorKindIs(metadata, CollectorKind::User);
 }
 
-bool isOutlineRawCollectorKind(RawCollectorKind kind)
+bool isOutlineCollectorKind(CollectorKind kind)
 {
     switch (kind) {
-    case RawCollectorKind::Module:
-    case RawCollectorKind::Parameter:
-    case RawCollectorKind::Localparam:
-    case RawCollectorKind::PortInput:
-    case RawCollectorKind::PortOutput:
-    case RawCollectorKind::PortInout:
-    case RawCollectorKind::PortRef:
-    case RawCollectorKind::Reg:
-    case RawCollectorKind::Wire:
-    case RawCollectorKind::Logic:
-    case RawCollectorKind::Typedef:
-    case RawCollectorKind::Enum:
-    case RawCollectorKind::EnumVariable:
-    case RawCollectorKind::EnumValue:
-    case RawCollectorKind::PackedStruct:
-    case RawCollectorKind::UnpackedStruct:
-    case RawCollectorKind::PackedStructVariable:
-    case RawCollectorKind::UnpackedStructVariable:
-    case RawCollectorKind::StructMember:
-    case RawCollectorKind::Task:
-    case RawCollectorKind::Function:
-    case RawCollectorKind::Inst:
+    case CollectorKind::Module:
+    case CollectorKind::Parameter:
+    case CollectorKind::Localparam:
+    case CollectorKind::PortInput:
+    case CollectorKind::PortOutput:
+    case CollectorKind::PortInout:
+    case CollectorKind::PortRef:
+    case CollectorKind::Reg:
+    case CollectorKind::Wire:
+    case CollectorKind::Logic:
+    case CollectorKind::Typedef:
+    case CollectorKind::Enum:
+    case CollectorKind::EnumVariable:
+    case CollectorKind::EnumValue:
+    case CollectorKind::PackedStruct:
+    case CollectorKind::UnpackedStruct:
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
+    case CollectorKind::StructMember:
+    case CollectorKind::Task:
+    case CollectorKind::Function:
+    case CollectorKind::Inst:
         return true;
-    case RawCollectorKind::User:
-    case RawCollectorKind::Interface:
-    case RawCollectorKind::InterfaceAssocStruct:
-    case RawCollectorKind::InterfaceParameter:
-    case RawCollectorKind::Package:
-    case RawCollectorKind::DefDefine:
-    case RawCollectorKind::DefIfdef:
-    case RawCollectorKind::DefIfndef:
-    case RawCollectorKind::DefElse:
-    case RawCollectorKind::DefElsif:
-    case RawCollectorKind::DefEndif:
-    case RawCollectorKind::DefParameter:
-    case RawCollectorKind::InstPin:
-    case RawCollectorKind::InterfaceModport:
-    case RawCollectorKind::PortInterface:
-    case RawCollectorKind::PortInterfaceModport:
-    case RawCollectorKind::GenerateIf:
-    case RawCollectorKind::GenerateFor:
-    case RawCollectorKind::GenerateCase:
-    case RawCollectorKind::Always:
-    case RawCollectorKind::AlwaysFf:
-    case RawCollectorKind::AlwaysComb:
-    case RawCollectorKind::AlwaysLatch:
-    case RawCollectorKind::Assign:
-    case RawCollectorKind::Case:
-    case RawCollectorKind::Casex:
-    case RawCollectorKind::Casez:
-    case RawCollectorKind::Endcase:
-    case RawCollectorKind::CaseDefault:
-    case RawCollectorKind::FsmState:
-    case RawCollectorKind::Initial:
-    case RawCollectorKind::XilinxConstraint:
-    case RawCollectorKind::ModuleParameter:
+    case CollectorKind::User:
+    case CollectorKind::Interface:
+    case CollectorKind::InterfaceAssocStruct:
+    case CollectorKind::InterfaceParameter:
+    case CollectorKind::Package:
+    case CollectorKind::DefDefine:
+    case CollectorKind::DefIfdef:
+    case CollectorKind::DefIfndef:
+    case CollectorKind::DefElse:
+    case CollectorKind::DefElsif:
+    case CollectorKind::DefEndif:
+    case CollectorKind::DefParameter:
+    case CollectorKind::InstPin:
+    case CollectorKind::InterfaceModport:
+    case CollectorKind::PortInterface:
+    case CollectorKind::PortInterfaceModport:
+    case CollectorKind::GenerateIf:
+    case CollectorKind::GenerateFor:
+    case CollectorKind::GenerateCase:
+    case CollectorKind::Always:
+    case CollectorKind::AlwaysFf:
+    case CollectorKind::AlwaysComb:
+    case CollectorKind::AlwaysLatch:
+    case CollectorKind::Assign:
+    case CollectorKind::Case:
+    case CollectorKind::Casex:
+    case CollectorKind::Casez:
+    case CollectorKind::Endcase:
+    case CollectorKind::CaseDefault:
+    case CollectorKind::FsmState:
+    case CollectorKind::Initial:
+    case CollectorKind::XilinxConstraint:
+    case CollectorKind::ModuleParameter:
         return false;
     }
     return false;
@@ -237,7 +237,7 @@ DeclarationGroup declarationGroup(const SemanticMetadata& metadata)
             ? DeclarationGroup::Instance
             : DeclarationGroup::Unknown;
     case DeclarationKind::Enum:
-        return rawCollectorKindIs(metadata, RawCollectorKind::EnumVariable)
+        return collectorKindIs(metadata, CollectorKind::EnumVariable)
             ? DeclarationGroup::Signal
             : DeclarationGroup::Unknown;
     case DeclarationKind::Signal:
@@ -316,7 +316,7 @@ SemanticMetadata computedSemanticMetadata(
     metadata.ownerScope = legacyOwnerScope(symbol, packageScopes);
     metadata.visibility = legacyVisibility(symbol, packageScopes);
     metadata.sourceRole = sourceRoleForFileName(symbol.fileName);
-    metadata.rawCollectorKind = rawCollectorKind(symbol.symbolType);
+    metadata.collectorKind = collectorKindFromLegacyType(symbol.symbolType);
     metadata.interfaceLikeOwner = isInterfaceLikeOwner(symbol.symbolType);
     return metadata;
 }
@@ -334,7 +334,7 @@ SemanticMetadata semanticMetadata(
         metadata.ownerScope = symbol.semanticOwnerScope;
         metadata.visibility = symbol.semanticVisibility;
         metadata.sourceRole = symbol.semanticSourceRole;
-        metadata.rawCollectorKind = rawCollectorKind(symbol.rawCollectorKind);
+        metadata.collectorKind = collectorKindFromLegacyType(symbol.collectorKind);
         metadata.interfaceLikeOwner = symbol.interfaceLikeOwner;
         return metadata;
     }
@@ -382,9 +382,9 @@ bool isDefinitionCandidate(const SemanticMetadata& metadata)
 {
     if (metadata.usageRole != SymbolUsageRole::Declaration)
         return false;
-    if (isDefinitionCandidate(legacySymbolType(metadata.rawCollectorKind)))
+    if (isDefinitionCandidate(legacySymbolType(metadata.collectorKind)))
         return true;
-    if (hasRawCollectorKind(metadata))
+    if (hasCollectorKind(metadata))
         return false;
 
     switch (metadata.declarationKind) {
@@ -527,7 +527,7 @@ bool isSignalDeclaration(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::Signal
         || metadata.declarationKind == DeclarationKind::StructVariable
-        || rawCollectorKindIs(metadata, RawCollectorKind::EnumVariable);
+        || collectorKindIs(metadata, CollectorKind::EnumVariable);
 }
 
 bool isLogicDeclaration(sym_list::sym_type_e type)
@@ -537,7 +537,7 @@ bool isLogicDeclaration(sym_list::sym_type_e type)
 
 bool isLogicDeclaration(const SemanticMetadata& metadata)
 {
-    return rawCollectorKindIs(metadata, RawCollectorKind::Logic);
+    return collectorKindIs(metadata, CollectorKind::Logic);
 }
 
 bool isInstanceDeclaration(sym_list::sym_type_e type)
@@ -559,7 +559,7 @@ bool isPortConnectionPeer(sym_list::sym_type_e type)
 
 bool isPortConnectionPeer(const SemanticMetadata& metadata)
 {
-    return rawCollectorKindIs(metadata, RawCollectorKind::InstPin)
+    return collectorKindIs(metadata, CollectorKind::InstPin)
         || isPortDeclaration(metadata);
 }
 
@@ -572,9 +572,9 @@ bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type)
 
 bool isFsmStateRegisterDeclaration(const SemanticMetadata& metadata)
 {
-    if (hasRawCollectorKind(metadata))
+    if (hasCollectorKind(metadata))
         return isFsmStateRegisterDeclaration(
-            legacySymbolType(metadata.rawCollectorKind));
+            legacySymbolType(metadata.collectorKind));
     return false;
 }
 
@@ -586,9 +586,9 @@ bool isFsmStateValueDeclaration(sym_list::sym_type_e type)
 
 bool isFsmStateValueDeclaration(const SemanticMetadata& metadata)
 {
-    if (hasRawCollectorKind(metadata))
+    if (hasCollectorKind(metadata))
         return isFsmStateValueDeclaration(
-            legacySymbolType(metadata.rawCollectorKind));
+            legacySymbolType(metadata.collectorKind));
     return false;
 }
 
@@ -632,8 +632,8 @@ bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType)
 
 bool isOutlineSymbol(const SemanticMetadata& metadata)
 {
-    if (hasRawCollectorKind(metadata))
-        return isOutlineRawCollectorKind(metadata.rawCollectorKind);
+    if (hasCollectorKind(metadata))
+        return isOutlineCollectorKind(metadata.collectorKind);
 
     switch (metadata.declarationKind) {
     case DeclarationKind::Module:
@@ -699,8 +699,8 @@ int definitionPriority(sym_list::sym_type_e type)
 
 int definitionPriority(const SemanticMetadata& metadata)
 {
-    if (hasRawCollectorKind(metadata))
-        return definitionPriority(legacySymbolType(metadata.rawCollectorKind));
+    if (hasCollectorKind(metadata))
+        return definitionPriority(legacySymbolType(metadata.collectorKind));
 
     switch (metadata.declarationKind) {
     case DeclarationKind::Module:
@@ -809,9 +809,9 @@ QString symbolTypeLabel(sym_list::sym_type_e type)
 
 QString symbolTypeLabel(const SemanticMetadata& metadata)
 {
-    if (hasRawCollectorKind(metadata)
+    if (hasCollectorKind(metadata)
         || metadata.declarationKind == DeclarationKind::User) {
-        return symbolTypeLabel(legacySymbolType(metadata.rawCollectorKind));
+        return symbolTypeLabel(legacySymbolType(metadata.collectorKind));
     }
 
     switch (metadata.declarationKind) {
@@ -906,10 +906,10 @@ bool isInternalCompletionCandidate(sym_list::sym_type_e type)
 bool isInternalCompletionCandidate(const SemanticMetadata& metadata)
 {
     if (isInternalCompletionCandidate(
-            legacySymbolType(metadata.rawCollectorKind))) {
+            legacySymbolType(metadata.collectorKind))) {
         return true;
     }
-    if (hasRawCollectorKind(metadata))
+    if (hasCollectorKind(metadata))
         return false;
     return metadata.declarationKind == DeclarationKind::Signal
         || metadata.declarationKind == DeclarationKind::Parameter
@@ -928,10 +928,10 @@ bool isGlobalCompletionCandidate(sym_list::sym_type_e type)
 bool isGlobalCompletionCandidate(const SemanticMetadata& metadata)
 {
     if (isGlobalCompletionCandidate(
-            legacySymbolType(metadata.rawCollectorKind))) {
+            legacySymbolType(metadata.collectorKind))) {
         return true;
     }
-    if (hasRawCollectorKind(metadata))
+    if (hasCollectorKind(metadata))
         return false;
     return metadata.declarationKind == DeclarationKind::Module
         || metadata.declarationKind == DeclarationKind::Task
@@ -957,10 +957,10 @@ bool isCommandGlobalCompletionType(sym_list::sym_type_e type)
 bool isCommandGlobalCompletionType(const SemanticMetadata& metadata)
 {
     if (isCommandGlobalCompletionType(
-            legacySymbolType(metadata.rawCollectorKind))) {
+            legacySymbolType(metadata.collectorKind))) {
         return true;
     }
-    if (hasRawCollectorKind(metadata))
+    if (hasCollectorKind(metadata))
         return false;
     return metadata.declarationKind == DeclarationKind::Module
         || metadata.declarationKind == DeclarationKind::Task
@@ -992,10 +992,10 @@ bool isGlobalSymbolInfoType(sym_list::sym_type_e type)
 bool isGlobalSymbolInfoType(const SemanticMetadata& metadata)
 {
     if (isGlobalSymbolInfoType(
-            legacySymbolType(metadata.rawCollectorKind))) {
+            legacySymbolType(metadata.collectorKind))) {
         return true;
     }
-    if (hasRawCollectorKind(metadata))
+    if (hasCollectorKind(metadata))
         return false;
     return metadata.declarationKind == DeclarationKind::Module
         || metadata.declarationKind == DeclarationKind::Task
@@ -1048,7 +1048,7 @@ bool isDefinitionVisibleInContext(
     const QString& moduleName)
 {
     return isMemberScopeDefinitionCandidate(metadata)
-        || rawCollectorKindIs(metadata, RawCollectorKind::EnumValue)
+        || collectorKindIs(metadata, CollectorKind::EnumValue)
         || isGlobalDefinition(metadata)
         || moduleName.isEmpty()
         || ownerName == moduleName
@@ -1060,18 +1060,18 @@ bool semanticCompletionKindMatches(const SemanticMetadata& metadata,
                                    const QString& rawTypeText,
                                    bool parameterAlias)
 {
-    const bool semanticOnly = !hasRawCollectorKind(metadata);
+    const bool semanticOnly = !hasCollectorKind(metadata);
     switch (kind) {
     case SemanticCompletionKind::Reg:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Reg)
+        return collectorKindIs(metadata, CollectorKind::Reg)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Signal);
     case SemanticCompletionKind::Wire:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Wire)
+        return collectorKindIs(metadata, CollectorKind::Wire)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Signal);
     case SemanticCompletionKind::Logic:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Logic)
+        return collectorKindIs(metadata, CollectorKind::Logic)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Signal);
     case SemanticCompletionKind::Module:
@@ -1087,66 +1087,66 @@ bool semanticCompletionKindMatches(const SemanticMetadata& metadata,
     case SemanticCompletionKind::Macro:
         return metadata.declarationKind == DeclarationKind::Macro;
     case SemanticCompletionKind::Localparam:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Localparam)
+        return collectorKindIs(metadata, CollectorKind::Localparam)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Localparam);
     case SemanticCompletionKind::Parameter:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Parameter)
+        return collectorKindIs(metadata, CollectorKind::Parameter)
             || (parameterAlias
-                && rawCollectorKindIs(metadata, RawCollectorKind::Localparam))
+                && collectorKindIs(metadata, CollectorKind::Localparam))
             || (semanticOnly
                 && (metadata.declarationKind == DeclarationKind::Parameter
                     || (parameterAlias
                         && metadata.declarationKind
                             == DeclarationKind::Localparam)));
     case SemanticCompletionKind::AlwaysProcess:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Always)
-            || rawCollectorKindIs(metadata, RawCollectorKind::AlwaysFf)
-            || rawCollectorKindIs(metadata, RawCollectorKind::AlwaysComb)
-            || rawCollectorKindIs(metadata, RawCollectorKind::AlwaysLatch)
+        return collectorKindIs(metadata, CollectorKind::Always)
+            || collectorKindIs(metadata, CollectorKind::AlwaysFf)
+            || collectorKindIs(metadata, CollectorKind::AlwaysComb)
+            || collectorKindIs(metadata, CollectorKind::AlwaysLatch)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Process);
     case SemanticCompletionKind::ContinuousAssign:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Assign)
+        return collectorKindIs(metadata, CollectorKind::Assign)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Process);
     case SemanticCompletionKind::Typedef:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Typedef)
+        return collectorKindIs(metadata, CollectorKind::Typedef)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Typedef);
     case SemanticCompletionKind::EnumValue:
-        return rawCollectorKindIs(metadata, RawCollectorKind::EnumValue);
+        return collectorKindIs(metadata, CollectorKind::EnumValue);
     case SemanticCompletionKind::EnumType:
-        return rawCollectorKindIs(metadata, RawCollectorKind::Enum)
-            || (rawCollectorKindIs(metadata, RawCollectorKind::Typedef)
+        return collectorKindIs(metadata, CollectorKind::Enum)
+            || (collectorKindIs(metadata, CollectorKind::Typedef)
                 && rawTypeText == QLatin1String("enum"))
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Typedef
                 && rawTypeText == QLatin1String("enum"));
     case SemanticCompletionKind::EnumVariable:
-        return rawCollectorKindIs(metadata, RawCollectorKind::EnumVariable);
+        return collectorKindIs(metadata, CollectorKind::EnumVariable);
     case SemanticCompletionKind::StructMember:
-        return rawCollectorKindIs(metadata, RawCollectorKind::StructMember)
+        return collectorKindIs(metadata, CollectorKind::StructMember)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::StructMember);
     case SemanticCompletionKind::PackedStructType:
-        return rawCollectorKindIs(metadata, RawCollectorKind::PackedStruct)
+        return collectorKindIs(metadata, CollectorKind::PackedStruct)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Struct);
     case SemanticCompletionKind::UnpackedStructType:
-        return rawCollectorKindIs(metadata, RawCollectorKind::UnpackedStruct)
+        return collectorKindIs(metadata, CollectorKind::UnpackedStruct)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::Struct);
     case SemanticCompletionKind::PackedStructVariable:
-        return rawCollectorKindIs(
+        return collectorKindIs(
                    metadata,
-                   RawCollectorKind::PackedStructVariable)
+                   CollectorKind::PackedStructVariable)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::StructVariable);
     case SemanticCompletionKind::UnpackedStructVariable:
-        return rawCollectorKindIs(
+        return collectorKindIs(
                    metadata,
-                   RawCollectorKind::UnpackedStructVariable)
+                   CollectorKind::UnpackedStructVariable)
             || (semanticOnly
                 && metadata.declarationKind == DeclarationKind::StructVariable);
     case SemanticCompletionKind::User:

@@ -28,7 +28,7 @@ static SemanticSymbolRecord semanticSymbolRecordForSymbol(
     record.usageRole = metadata.usageRole;
     record.visibility = metadata.visibility;
     record.sourceRole = metadata.sourceRole;
-    record.rawCollectorKind = metadata.rawCollectorKind;
+    record.collectorKind = metadata.collectorKind;
     record.owner.kind = metadata.ownerScope;
     record.owner.name = symbol.moduleScope;
     record.owner.interfaceLike = metadata.interfaceLikeOwner;

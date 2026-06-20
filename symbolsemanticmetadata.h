@@ -68,7 +68,7 @@ enum class DeclarationGroup {
     Signal
 };
 
-enum class RawCollectorKind {
+enum class CollectorKind {
     Reg,
     Wire,
     Logic,
