@@ -55,6 +55,7 @@ Thin UI consumers
 - I3 fourth block is complete: legacy `sym_list` current-module lookup and module-scope auto-inference are deleted; module lookup stays on semantic-record `SemanticIndex` paths.
 - I3 fifth block is complete: `SymbolRelationshipEngine` no longer accepts, stores, or exposes a `sym_list` database pointer; relationship engine files are guarded against reintroducing `sym_list`.
 - I3 sixth block is complete: `SemanticIndex` now owns the attached relationship engine pointer for relationship queries, completion relationship facts, and snapshot publication instead of fetching it from `sym_list`.
+- I3 seventh block is complete: `sym_list` no longer stores, exposes, or forwards a relationship engine; `SemanticIndex` directly rebuilds native relationship facts when records change or an engine is attached.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

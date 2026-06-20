@@ -15,7 +15,6 @@
 
 class MainWindow;
 class ScopeManager;
-class SymbolRelationshipEngine;
 
 class sym_list{
 public:
@@ -153,9 +152,6 @@ public:
     /** Same as above; if content is non-empty, updates fileStates (contentHash, symbolRelevantHash, lastAnalyzedLineCount) for needsAnalysis. */
     void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols, const QString& content);
 
-    SymbolRelationshipEngine* getRelationshipEngine() const;
-    void setRelationshipEngine(SymbolRelationshipEngine* engine);
-
     ScopeManager* getScopeManager() const;
 
     QString getCachedFileContent(const QString& fileName) const;
@@ -182,7 +178,6 @@ private:
     int nextSymbolId = 1;
     int allocateSymbolId();
 
-    SymbolRelationshipEngine* relationshipEngine = nullptr;
     mutable ScopeManager* m_scopeManager = nullptr;
 
     static std::unique_ptr<sym_list> instance;
@@ -215,10 +210,8 @@ private:
     void addToIndexes(int symbolIndex);
     void removeFromIndexes(int symbolIndex);
 
-    void rebuildAllRelationships();
-    void buildSymbolRelationships(const QString& fileName);
     QList<SymbolInfo> symbolsForFileSnapshot(const QString& fileName) const;
-    /** Rebuild ScopeManager tree and CONTAINS relationships for fileName from current symbolDatabase entries. */
+    /** Rebuild ScopeManager tree for fileName from current symbolDatabase entries. */
     void rebuildScopeAndRelationshipsForFile(const QString& fileName);
     void analyzeVariableReferences(const QString& fileName, const QString& content);
 

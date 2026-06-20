@@ -324,6 +324,9 @@ void SemanticIndex::updateSymbolRecordsForFile(
         fileName,
         records,
         content);
+
+    if (m_relationshipEngine)
+        m_relationshipEngine->buildFileRelationships(fileName);
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
@@ -468,8 +471,8 @@ void SemanticIndex::attachRelationshipEngine(SymbolRelationshipEngine* engine)
         engine->setSymbolRecordProvider([this](const QString& fileName) {
             return getSymbolRecords(fileName);
         });
+        engine->rebuildAllRelationships();
     }
-    symbolDatabase()->setRelationshipEngine(engine);
 }
 
 SymbolRelationshipEngine* SemanticIndex::relationshipEngine() const

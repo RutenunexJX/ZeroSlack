@@ -1,6 +1,5 @@
 #include "syminfo.h"
 #include "scope_tree.h"
-#include "symbolrelationshipengine.h"
 
 #include <QWriteLocker>
 #include <QMutex>
@@ -55,9 +54,6 @@ void sym_list::clearSymbolsForFile(const QString& fileName)
 {
     getScopeManager()->clearFile(fileName);
 
-    if (relationshipEngine) {
-        relationshipEngine->invalidateFileRelationships(fileName);
-    }
     if (fileNameIndex.contains(fileName)) {
         QList<int> indicesToRemove = fileNameIndex[fileName];
         for (int index : indicesToRemove) {

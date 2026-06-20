@@ -1,6 +1,5 @@
 #include "syminfo.h"
 #include "scope_tree.h"
-#include "symbolrelationshipengine.h"
 
 #include <algorithm>
 #include <QStack>
@@ -16,36 +15,6 @@ ScopeManager* sym_list::getScopeManager() const
     if (!m_scopeManager)
         m_scopeManager = new ScopeManager();
     return m_scopeManager;
-}
-
-SymbolRelationshipEngine* sym_list::getRelationshipEngine() const
-{
-    return relationshipEngine;
-}
-
-void sym_list::setRelationshipEngine(SymbolRelationshipEngine* engine)
-{
-    relationshipEngine = engine;
-
-    if (engine) {
-        rebuildAllRelationships();
-    }
-}
-
-void sym_list::rebuildAllRelationships()
-{
-    if (!relationshipEngine)
-        return;
-
-    relationshipEngine->rebuildAllRelationships();
-}
-
-void sym_list::buildSymbolRelationships(const QString& fileName)
-{
-    if (!relationshipEngine)
-        return;
-
-    relationshipEngine->buildFileRelationships(fileName);
 }
 
 void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
@@ -125,5 +94,4 @@ void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
         }
     }
 
-    buildSymbolRelationships(fileName);
 }

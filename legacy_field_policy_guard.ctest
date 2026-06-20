@@ -185,6 +185,7 @@ set(PHASE_I3_RECORD_NATIVE_RELATIONSHIP_ENGINE_FILES
 )
 
 set(PHASE_I3_NATIVE_RELATIONSHIP_OWNER_FILES
+    semanticindexstore.cpp
     semanticindexcompletionrelationships.cpp
     semanticindexrelationships.cpp
     semanticindexsnapshotpublication.cpp
@@ -1151,7 +1152,7 @@ foreach(relative_path IN LISTS PHASE_I3_NATIVE_RELATIONSHIP_OWNER_FILES)
     endif()
     file(READ "${path}" content)
     string(REGEX MATCH
-        "getRelationshipEngine[ \t\r\n]*\\("
+        "(getRelationshipEngine|setRelationshipEngine)[ \t\r\n]*\\("
         legacy_relationship_owner_match
         "${content}")
 
@@ -1183,7 +1184,7 @@ foreach(relative_path IN LISTS PHASE_I3_NATIVE_CONTAINMENT_FORWARDING_FILES)
     endif()
     file(READ "${path}" content)
     string(REGEX MATCH
-        "(analyzeModuleContainment|relationshipEngine[ \t\r\n]*->[ \t\r\n]*addRelationship[ \t\r\n]*\\(|SymbolRelationshipEngine::CONTAINS)"
+        "(analyzeModuleContainment|getRelationshipEngine[ \t\r\n]*\\(|setRelationshipEngine[ \t\r\n]*\\(|buildSymbolRelationships[ \t\r\n]*\\(|rebuildAllRelationships[ \t\r\n]*\\(|relationshipEngine[ \t\r\n]*->[ \t\r\n]*addRelationship[ \t\r\n]*\\(|SymbolRelationshipEngine::CONTAINS)"
         legacy_containment_match
         "${content}")
 
