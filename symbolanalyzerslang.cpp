@@ -81,9 +81,7 @@ void SymbolAnalyzer::analyzeProject(
     WorkspaceAnalysisResult result =
         SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
             svFiles,
-            semanticSymbolRecordsForSymbols(
-                allSymbols,
-                SymbolTaxonomy::packageScopeNames(allSymbols)),
+            semanticSymbolRecordsForCollectedSymbols(allSymbols),
             isCancelled);
     result.protectedFiles = workspaceProtectedFiles;
     result.generation = ++workspaceAnalysisGeneration;

@@ -14,6 +14,8 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
 QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     const QList<sym_list::SymbolInfo>& symbols,
     const QSet<QString>& packageScopes);
+QList<SemanticSymbolRecord> semanticSymbolRecordsForCollectedSymbols(
+    const QList<sym_list::SymbolInfo>& symbols);
 QList<sym_list::SymbolInfo> symbolInfosForSemanticRecords(
     const QList<SemanticSymbolRecord>& records);
 void updateSymbolDatabaseRecordsForFile(

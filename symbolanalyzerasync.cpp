@@ -63,9 +63,7 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
         WorkspaceAnalysisResult result =
             SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
                 svFiles,
-                semanticSymbolRecordsForSymbols(
-                    symbols,
-                    SymbolTaxonomy::packageScopeNames(symbols)),
+                semanticSymbolRecordsForCollectedSymbols(symbols),
                 isCancelled);
         SlangManager diagnosticsAnalyzer;
         result.diagnostics =

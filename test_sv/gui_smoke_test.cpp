@@ -34,6 +34,7 @@
 #include "filecommandcoordinator.h"
 #include "navigationwidget.h"
 #include "semanticcollectoradapter.h"
+#include "symboltaxonomylegacy.h"
 #include "navigationmanager.h"
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"

@@ -24,6 +24,7 @@
 #include "semanticcollectoradapter.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
+#include "symboltaxonomylegacy.h"
 #include "mycodeeditor.h"
 
 static int g_checks = 0, g_fails = 0;

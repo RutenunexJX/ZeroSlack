@@ -23,6 +23,7 @@
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
+#include "symboltaxonomylegacy.h"
 #include "syminfo.h"
 #include "scopebandservice.h"
 #include "mycodeeditor.h"

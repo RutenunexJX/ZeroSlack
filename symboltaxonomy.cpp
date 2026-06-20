@@ -1,4 +1,4 @@
-#include "symboltaxonomy.h"
+#include "symboltaxonomylegacy.h"
 
 #include <QFileInfo>
 

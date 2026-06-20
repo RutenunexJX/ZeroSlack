@@ -1,4 +1,5 @@
 #include "semanticcollectoradapter.h"
+#include "symboltaxonomylegacy.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -88,6 +89,14 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
             records.append(record);
     }
     return records;
+}
+
+QList<SemanticSymbolRecord> semanticSymbolRecordsForCollectedSymbols(
+    const QList<sym_list::SymbolInfo>& symbols)
+{
+    return semanticSymbolRecordsForSymbols(
+        symbols,
+        SymbolTaxonomy::packageScopeNames(symbols));
 }
 
 sym_list::SymbolInfo symbolInfoForSemanticRecord(
