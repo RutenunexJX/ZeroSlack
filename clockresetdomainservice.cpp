@@ -8,10 +8,10 @@
 #include <algorithm>
 
 namespace {
-bool stableKeyMatchesSymbol(const SymbolStableKey& key,
-                            const sym_list::SymbolInfo& symbol)
+bool stableKeyMatchesRecord(const SymbolStableKey& key,
+                            const SemanticSymbolRecord& record)
 {
-    return key.isValid() && symbolStableKeyForSymbol(symbol) == key;
+    return key.isValid() && record.stableKey == key;
 }
 
 QString normalizedClockResetFileName(const QString& fileName)
@@ -22,42 +22,25 @@ QString normalizedClockResetFileName(const QString& fileName)
         QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-RtlInsightCodeLink codeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
 {
-    if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        return RtlInsightLink::fromFileLine(fileName,
-                                            record.location.startLine,
-                                            record.location.startColumn);
-    }
-    return RtlInsightLink::fromSymbol(fallback);
+    return RtlInsightLink::fromFileLine(record.location.fileName,
+                                        record.location.startLine,
+                                        record.location.startColumn);
 }
 
 QString displayNameForRecord(
     const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback,
     const QString& defaultName)
 {
     if (!record.name.isEmpty())
         return record.name;
-    if (!fallback.symbolName.isEmpty())
-        return fallback.symbolName;
     return defaultName;
 }
 
-QString sourceRoleDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString sourceRoleDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
-    SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(fallback);
-    if (record.isValid())
-        metadata.sourceRole = record.sourceRole;
-    return SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    return SymbolTaxonomy::sourceRoleDisplayName(record.sourceRole);
 }
 
 SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
@@ -66,58 +49,39 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
     return semanticMetadataForSymbolRecord(record);
 }
 
-QString ownerNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString ownerNameForRecord(const SemanticSymbolRecord& record)
 {
-    if (!record.owner.name.isEmpty())
-        return record.owner.name;
-    return semanticSymbolRecordForSymbol(fallback).owner.name;
+    return record.owner.name;
 }
 
-QString recordFileName(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString recordFileName(const SemanticSymbolRecord& record)
 {
-    return record.location.fileName.isEmpty()
-        ? fallback.fileName
-        : record.location.fileName;
+    return record.location.fileName;
 }
 
-int recordStartLine(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+int recordStartLine(const SemanticSymbolRecord& record)
 {
-    return record.location.startLine > 0
-        ? record.location.startLine
-        : fallback.startLine;
+    return record.location.startLine;
 }
 
-int recordStartColumn(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+int recordStartColumn(const SemanticSymbolRecord& record)
 {
-    return record.location.startColumn > 0
-        ? record.location.startColumn
-        : fallback.startColumn;
+    return record.location.startColumn;
 }
 
-SymbolStableKey clockResetStableKeyForSymbol(const sym_list::SymbolInfo& symbol)
+SymbolStableKey clockResetStableKeyForRecord(const SemanticSymbolRecord& record)
 {
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    return record.stableKey.isValid()
-        ? record.stableKey
-        : symbolStableKeyForSymbol(symbol);
+    return record.stableKey;
 }
 
-QList<SemanticRelationshipResult> clockResetRelationshipResultsForSymbol(
+QList<SemanticRelationshipResult> clockResetRelationshipResultsForRecord(
     SemanticIndex* index,
-    const sym_list::SymbolInfo& symbol,
+    const SemanticSymbolRecord& record,
     bool outgoing)
 {
     if (!index)
         return {};
-    const SymbolStableKey stableKey = clockResetStableKeyForSymbol(symbol);
+    const SymbolStableKey stableKey = clockResetStableKeyForRecord(record);
     return stableKey.isValid()
         ? index->getRelationshipResults(stableKey, outgoing)
         : QList<SemanticRelationshipResult>();
@@ -125,18 +89,18 @@ QList<SemanticRelationshipResult> clockResetRelationshipResultsForSymbol(
 
 bool acceptsRelationship(const SemanticRelationshipResult& relationship,
                          const ClockResetDomainQuery& query);
-bool acceptsCandidate(const sym_list::SymbolInfo& symbol,
+bool acceptsCandidate(const SemanticSymbolRecord& record,
                       const ClockResetDomainQuery& query,
-                      const sym_list::SymbolInfo& moduleSymbol);
-bool isTimingCandidate(const sym_list::SymbolInfo& symbol,
+                      const SemanticSymbolRecord& moduleRecord);
+bool isTimingCandidate(const SemanticSymbolRecord& record,
                        SymbolRelationshipEngine::RelationType* type);
 bool hasMappedTimingRelationship(SemanticIndex* index,
-                                 const sym_list::SymbolInfo& symbol,
+                                 const SemanticSymbolRecord& record,
                                  SymbolRelationshipEngine::RelationType type,
                                  const ClockResetDomainQuery& query);
-sym_list::SymbolInfo moduleForCandidate(
-    const sym_list::SymbolInfo& symbol,
-    const QList<sym_list::SymbolInfo>& symbols);
+SemanticSymbolRecord moduleForCandidate(
+    const SemanticSymbolRecord& record,
+    const QList<SemanticSymbolRecord>& records);
 }
 
 std::unique_ptr<ClockResetDomainService> ClockResetDomainService::instance = nullptr;
@@ -262,12 +226,12 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
     QSet<QString> seenRelationships;
     int count = 0;
 
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
-    for (const sym_list::SymbolInfo& symbol : symbols) {
+    const QList<SemanticSymbolRecord> records =
+        semanticIndex()->getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
         const QList<SemanticRelationshipResult> relationships =
-            clockResetRelationshipResultsForSymbol(semanticIndex(),
-                                                   symbol,
+            clockResetRelationshipResultsForRecord(semanticIndex(),
+                                                   record,
                                                    true);
         for (const SemanticRelationshipResult& relationship : relationships) {
             if (relationship.relationship.type != type)
@@ -304,8 +268,7 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
                         ? entry.domainSignalRecord.stableKey
                         : relationship.fromStableKey;
                 entry.domainSignalCodeLink =
-                    codeLinkForRecord(entry.domainSignalRecord,
-                                      {});
+                    codeLinkForRecord(entry.domainSignalRecord);
                 entryBySignalKey.insert(signalKey, entries.size());
                 entries.append(entry);
             }
@@ -323,8 +286,7 @@ QList<ClockResetDomainEntry> ClockResetDomainService::buildDomains(
                     ? member.moduleSymbolRecord.stableKey
                     : relationship.toStableKey;
             member.moduleCodeLink =
-                codeLinkForRecord(member.moduleSymbolRecord,
-                                  {});
+                codeLinkForRecord(member.moduleSymbolRecord);
             member.provenance = relationship.provenance;
             member.confidence = relationship.confidence;
             member.evidenceText = relationship.evidenceText;
@@ -350,32 +312,32 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
     const ClockResetDomainQuery& query) const
 {
     QList<ClockResetDomainEvidenceRow> rows;
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
-    for (const sym_list::SymbolInfo& symbol : symbols) {
+    const QList<SemanticSymbolRecord> records =
+        semanticIndex()->getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
         SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::CLOCKS;
-        if (!isTimingCandidate(symbol, &type))
+        if (!isTimingCandidate(record, &type))
             continue;
 
-        const sym_list::SymbolInfo moduleSymbol =
-            moduleForCandidate(symbol, symbols);
-        if (!acceptsCandidate(symbol, query, moduleSymbol))
+        const SemanticSymbolRecord moduleRecord =
+            moduleForCandidate(record, records);
+        if (!acceptsCandidate(record, query, moduleRecord))
             continue;
-        if (hasMappedTimingRelationship(semanticIndex(), symbol, type, query))
+        if (hasMappedTimingRelationship(semanticIndex(), record, type, query))
             continue;
 
         ClockResetDomainEvidenceRow row;
-        row.domainSignalRecord = semanticSymbolRecordForSymbol(symbol);
-        row.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
+        row.domainSignalRecord = record;
+        row.moduleSymbolRecord = moduleRecord;
         row.domainSignalStableKey = row.domainSignalRecord.stableKey.isValid()
             ? row.domainSignalRecord.stableKey
-            : symbolStableKeyForSymbol(symbol);
+            : SymbolStableKey();
         row.moduleStableKey = row.moduleSymbolRecord.stableKey.isValid()
             ? row.moduleSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(moduleSymbol);
-        row.signalCodeLink = codeLinkForRecord(row.domainSignalRecord, symbol);
+            : SymbolStableKey();
+        row.signalCodeLink = codeLinkForRecord(row.domainSignalRecord);
         row.moduleCodeLink =
-            codeLinkForRecord(row.moduleSymbolRecord, moduleSymbol);
+            codeLinkForRecord(row.moduleSymbolRecord);
         row.relationshipType = type;
         row.provenance = RelationshipProvenance::FeatureGenerated;
         row.confidence = 100;
@@ -385,14 +347,12 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
             : QStringLiteral("Unmapped Reset");
         row.signalDisplayName =
             displayNameForRecord(row.domainSignalRecord,
-                                 symbol,
                                  QStringLiteral("<unnamed>"));
         const QString ownerName =
-            ownerNameForRecord(row.domainSignalRecord, symbol);
+            ownerNameForRecord(row.domainSignalRecord);
         row.moduleDisplayName = row.moduleSymbolRecord.name.isEmpty()
             ? ownerName
             : displayNameForRecord(row.moduleSymbolRecord,
-                                   moduleSymbol,
                                    ownerName);
         if (row.moduleDisplayName.isEmpty())
             row.moduleDisplayName = QStringLiteral("<unknown module>");
@@ -405,7 +365,7 @@ QList<ClockResetDomainEvidenceRow> ClockResetDomainService::unmappedTimingRows(
         row.detailDisplayName =
             unmappedDetailDisplayName(row.signalDisplayName, type);
         row.sourceRoleDisplayName =
-            sourceRoleDisplayNameForRecord(row.domainSignalRecord, symbol);
+            sourceRoleDisplayNameForRecord(row.domainSignalRecord);
         rows.append(row);
     }
 
@@ -463,26 +423,22 @@ bool acceptsRelationship(
 }
 
 bool acceptsCandidate(
-    const sym_list::SymbolInfo& symbol,
+    const SemanticSymbolRecord& record,
     const ClockResetDomainQuery& query,
-    const sym_list::SymbolInfo& moduleSymbol)
+    const SemanticSymbolRecord& moduleRecord)
 {
-    const SemanticSymbolRecord signalRecord =
-        semanticSymbolRecordForSymbol(symbol);
-    const SemanticSymbolRecord moduleRecord =
-        semanticSymbolRecordForSymbol(moduleSymbol);
-    const QString ownerName = ownerNameForRecord(signalRecord, symbol);
+    const QString ownerName = ownerNameForRecord(record);
     if (query.moduleStableKey.isValid())
-        return stableKeyMatchesSymbol(query.moduleStableKey, moduleSymbol);
+        return stableKeyMatchesRecord(query.moduleStableKey, moduleRecord);
     if (!query.moduleName.isEmpty()
         && ownerName != query.moduleName
         && moduleRecord.name != query.moduleName) {
         return false;
     }
     if (!query.fileName.isEmpty()
-        && normalizedClockResetFileName(symbol.fileName)
+        && normalizedClockResetFileName(record.location.fileName)
             != normalizedClockResetFileName(query.fileName)
-        && normalizedClockResetFileName(moduleSymbol.fileName)
+        && normalizedClockResetFileName(moduleRecord.location.fileName)
             != normalizedClockResetFileName(query.fileName)) {
         return false;
     }
@@ -490,14 +446,13 @@ bool acceptsCandidate(
 }
 
 bool isTimingCandidate(
-    const sym_list::SymbolInfo& symbol,
+    const SemanticSymbolRecord& record,
     SymbolRelationshipEngine::RelationType* type)
 {
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
     if (record.name.isEmpty() || record.owner.name.isEmpty())
         return false;
     const SymbolTaxonomy::SemanticMetadata metadata =
-        SymbolTaxonomy::semanticMetadata(symbol);
+        semanticMetadataForSymbolRecord(record);
     if (!SymbolTaxonomy::isPortDeclaration(metadata)
         && !SymbolTaxonomy::isSignalDeclaration(metadata)) {
         return false;
@@ -525,12 +480,12 @@ namespace {
 
 bool hasMappedTimingRelationship(
     SemanticIndex* index,
-    const sym_list::SymbolInfo& symbol,
+    const SemanticSymbolRecord& record,
     SymbolRelationshipEngine::RelationType type,
     const ClockResetDomainQuery& query)
 {
     const QList<SemanticRelationshipResult> relationships =
-        clockResetRelationshipResultsForSymbol(index, symbol, true);
+        clockResetRelationshipResultsForRecord(index, record, true);
     for (const SemanticRelationshipResult& relationship : relationships) {
         if (relationship.relationship.type != type)
             continue;
@@ -540,26 +495,21 @@ bool hasMappedTimingRelationship(
     return false;
 }
 
-sym_list::SymbolInfo moduleForCandidate(
-    const sym_list::SymbolInfo& symbol,
-    const QList<sym_list::SymbolInfo>& symbols)
+SemanticSymbolRecord moduleForCandidate(
+    const SemanticSymbolRecord& record,
+    const QList<SemanticSymbolRecord>& records)
 {
-    const SemanticSymbolRecord symbolRecord =
-        semanticSymbolRecordForSymbol(symbol);
-    const QString ownerName = ownerNameForRecord(symbolRecord, symbol);
-    for (const sym_list::SymbolInfo& candidate : symbols) {
-        const SemanticSymbolRecord candidateRecord =
-            semanticSymbolRecordForSymbol(candidate);
-        if (candidateRecord.name == ownerName
+    const QString ownerName = ownerNameForRecord(record);
+    for (const SemanticSymbolRecord& candidate : records) {
+        if (candidate.name == ownerName
             && SymbolTaxonomy::isModuleDeclaration(
-                SymbolTaxonomy::semanticMetadata(candidate))) {
+                semanticMetadataForSymbolRecord(candidate))) {
             return candidate;
         }
     }
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    missing.symbolName = ownerName;
-    missing.fileName = symbol.fileName;
+    SemanticSymbolRecord missing;
+    missing.name = ownerName;
+    missing.location.fileName = record.location.fileName;
     return missing;
 }
 
@@ -696,12 +646,10 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
     row.signalDisplayName =
         entry.domainSignalDisplayName.isEmpty()
             ? displayNameForRecord(row.domainSignalRecord,
-                                   sym_list::SymbolInfo(),
                                    QStringLiteral("<unnamed>"))
             : entry.domainSignalDisplayName;
     row.moduleDisplayName = member.moduleDisplayName.isEmpty()
         ? displayNameForRecord(row.moduleSymbolRecord,
-                               sym_list::SymbolInfo(),
                                QStringLiteral("<unnamed>"))
         : member.moduleDisplayName;
     row.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
@@ -715,8 +663,7 @@ ClockResetDomainEvidenceRow ClockResetDomainService::evidenceRow(
                                   row.moduleDisplayName,
                                   type);
     row.sourceRoleDisplayName = member.sourceRoleDisplayName.isEmpty()
-        ? sourceRoleDisplayNameForRecord(row.moduleSymbolRecord,
-                                         sym_list::SymbolInfo())
+        ? sourceRoleDisplayNameForRecord(row.moduleSymbolRecord)
         : member.sourceRoleDisplayName;
     return row;
 }
@@ -836,7 +783,6 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
     entry.sectionDisplayName = domainSectionDisplayName(type);
     entry.domainSignalDisplayName =
         displayNameForRecord(entry.domainSignalRecord,
-                             sym_list::SymbolInfo(),
                              QStringLiteral("<unnamed>"));
     entry.detailDisplayName = domainDetailDisplayName(type, entry.modules.size());
     for (ClockResetDomainMember& member : entry.modules) {
@@ -844,7 +790,6 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
             member.sectionDisplayName = QStringLiteral("Module");
         member.moduleDisplayName =
             displayNameForRecord(member.moduleSymbolRecord,
-                                 sym_list::SymbolInfo(),
                                  QStringLiteral("<unnamed>"));
         member.relationshipTypeDisplayName = relationshipTypeDisplayName(type);
         member.provenanceDisplayName = provenanceDisplayName(member.provenance);
@@ -853,8 +798,7 @@ void ClockResetDomainService::fillEntryDisplayMetadata(
         if (member.detailDisplayName.isEmpty())
             member.detailDisplayName = memberDetailDisplayName(type);
         member.sourceRoleDisplayName =
-            sourceRoleDisplayNameForRecord(member.moduleSymbolRecord,
-                                           sym_list::SymbolInfo());
+            sourceRoleDisplayNameForRecord(member.moduleSymbolRecord);
     }
 }
 
@@ -863,30 +807,28 @@ void ClockResetDomainService::sortEntries(QList<ClockResetDomainEntry>& entries)
     std::sort(entries.begin(), entries.end(),
               [](const ClockResetDomainEntry& lhs,
                  const ClockResetDomainEntry& rhs) {
-                  const sym_list::SymbolInfo left = {};
-                  const sym_list::SymbolInfo right = {};
                   const QString leftFileName =
-                      recordFileName(lhs.domainSignalRecord, left);
+                      recordFileName(lhs.domainSignalRecord);
                   const QString rightFileName =
-                      recordFileName(rhs.domainSignalRecord, right);
+                      recordFileName(rhs.domainSignalRecord);
                   if (leftFileName != rightFileName)
                       return leftFileName < rightFileName;
                   const int leftLine =
-                      recordStartLine(lhs.domainSignalRecord, left);
+                      recordStartLine(lhs.domainSignalRecord);
                   const int rightLine =
-                      recordStartLine(rhs.domainSignalRecord, right);
+                      recordStartLine(rhs.domainSignalRecord);
                   if (leftLine != rightLine)
                       return leftLine < rightLine;
                   const int leftColumn =
-                      recordStartColumn(lhs.domainSignalRecord, left);
+                      recordStartColumn(lhs.domainSignalRecord);
                   const int rightColumn =
-                      recordStartColumn(rhs.domainSignalRecord, right);
+                      recordStartColumn(rhs.domainSignalRecord);
                   if (leftColumn != rightColumn)
                       return leftColumn < rightColumn;
                   const QString leftName =
-                      displayNameForRecord(lhs.domainSignalRecord, left, QString());
+                      displayNameForRecord(lhs.domainSignalRecord, QString());
                   const QString rightName =
-                      displayNameForRecord(rhs.domainSignalRecord, right, QString());
+                      displayNameForRecord(rhs.domainSignalRecord, QString());
                   if (leftName != rightName)
                       return leftName < rightName;
                   return lhs.domainSignalRecord.localHandle
@@ -899,30 +841,28 @@ void ClockResetDomainService::sortMembers(QList<ClockResetDomainMember>& members
     std::sort(members.begin(), members.end(),
               [](const ClockResetDomainMember& lhs,
                  const ClockResetDomainMember& rhs) {
-                  const sym_list::SymbolInfo left = {};
-                  const sym_list::SymbolInfo right = {};
                   const QString leftFileName =
-                      recordFileName(lhs.moduleSymbolRecord, left);
+                      recordFileName(lhs.moduleSymbolRecord);
                   const QString rightFileName =
-                      recordFileName(rhs.moduleSymbolRecord, right);
+                      recordFileName(rhs.moduleSymbolRecord);
                   if (leftFileName != rightFileName)
                       return leftFileName < rightFileName;
                   const int leftLine =
-                      recordStartLine(lhs.moduleSymbolRecord, left);
+                      recordStartLine(lhs.moduleSymbolRecord);
                   const int rightLine =
-                      recordStartLine(rhs.moduleSymbolRecord, right);
+                      recordStartLine(rhs.moduleSymbolRecord);
                   if (leftLine != rightLine)
                       return leftLine < rightLine;
                   const int leftColumn =
-                      recordStartColumn(lhs.moduleSymbolRecord, left);
+                      recordStartColumn(lhs.moduleSymbolRecord);
                   const int rightColumn =
-                      recordStartColumn(rhs.moduleSymbolRecord, right);
+                      recordStartColumn(rhs.moduleSymbolRecord);
                   if (leftColumn != rightColumn)
                       return leftColumn < rightColumn;
                   const QString leftName =
-                      displayNameForRecord(lhs.moduleSymbolRecord, left, QString());
+                      displayNameForRecord(lhs.moduleSymbolRecord, QString());
                   const QString rightName =
-                      displayNameForRecord(rhs.moduleSymbolRecord, right, QString());
+                      displayNameForRecord(rhs.moduleSymbolRecord, QString());
                   if (leftName != rightName)
                       return leftName < rightName;
                   return lhs.moduleSymbolRecord.localHandle
