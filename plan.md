@@ -215,6 +215,25 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - When a subphase is complete and verified, report it as 0% remaining, then make the next subphase current at 100% remaining.
 - Do not mark all Phase I complete until I0-I5 are complete, docs are current, full Ninja and full CTest pass, and final legacy scans prove the zero-legacy target.
 
+### Phase J: Test Fixture Native Cleanup
+
+- Status: planned.
+- Goal: remove the remaining fixture-only legacy carrier from tracked tests so legacy names are absent from repo source except historical docs, migration notes, and guard definitions.
+- J0: define the final repo-wide fixture cleanup allowlist in `legacy_field_policy_guard.ctest`; keep docs and guard patterns as explicit exceptions, and fail on new `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `symbolId`, `symbolType`, `moduleScope`, `dataType`, `syminfo`, `getSymbolById`, and `findSymbolId` uses outside the current fixture cleanup scope.
+- J1: introduce semantic-native test builders for symbol records, metadata, owners, type info, local handles, stable keys, and relationship endpoints so tests no longer need to hand-author `sym_list::SymbolInfo`.
+- J2: migrate completion and jump tests from `sym_list` fixture data to native builders and query/report contracts.
+- J3: migrate relationship and GUI smoke tests from `sym_list` fixture data to native builders, preserving current behavior coverage.
+- J4: delete `test_sv/syminfo*` and the reverse fixture adapter once no tracked test includes or builds them.
+- J5: upgrade the final zero target from core-source-only to repo-source except docs/guard definitions, then pass full Ninja, full CTest, normal guard, final zero-target guard, static scans, and `git diff --check`.
+
+### Phase J Goal Mode
+
+- Track Phase J progress by subphase, not by the whole phase.
+- Each subphase J0 through J5 starts at 100% remaining when it becomes current.
+- At the end of every work turn, report the current subphase and the remaining percentage for that subphase.
+- When a subphase is complete and verified, report it as 0% remaining, then make the next subphase current at 100% remaining.
+- Do not mark all Phase J complete until J0-J5 are complete, docs are current, full Ninja and full CTest pass, and final repo-source legacy scans prove the fixture carrier is gone.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
@@ -227,6 +246,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - F1-F3 should proceed in small serial blocks when changing semantic symbol records, relationship identity, compatibility APIs, owner/type metadata, completion item models, or query normalization.
 - Phase H should proceed in small serial blocks; avoid mixing guard expansion, snapshot/store migration, completion contract migration, feature-service helper migration, and collector adapter deletion in one commit.
 - Phase I should proceed in strict subphase order unless a later subphase exposes a small prerequisite cleanup; do not mix collector-native emission, store replacement, relationship/scope migration, and carrier deletion in one commit.
+- Phase J should proceed in strict subphase order; do not mix test-builder introduction, completion/jump migration, relationship/GUI migration, carrier deletion, and final guard tightening in one commit.
 - Reduce batch size when blocks share core files, API boundaries, or real fixture expectations.
 
 ## Good Work Blocks

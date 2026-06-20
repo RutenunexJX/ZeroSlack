@@ -29,6 +29,7 @@ Thin UI consumers
 - Phase G Complete Legacy Field Deletion is complete on this branch, including the post-G release gate.
 - Phase H Semantic Core Slimdown is complete on this branch: remaining legacy type adapters, redundant APIs, and compatibility logic have been deleted or confined to the collector/import, taxonomy, and `syminfo` transition boundary.
 - Phase I Semantic Store Native / Collector Native is complete on this branch: the remaining legacy collector/store body has been replaced or confined to fixture-only test carriers, and the zero-legacy core scan passes.
+- Next phase: Phase J Test Fixture Native Cleanup should remove the remaining fixture-only `sym_list` / `syminfo` carrier from `test_sv`, migrate tracked tests to semantic-native builders, and upgrade the final zero target from core-source-only to repo-source except docs and guard definitions.
 - I0 is complete: `legacy_field_policy_guard.ctest` now defines the Phase I zero-legacy target terms and an opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` final scan for I5.
 - G0 is complete: `SemanticRelationshipResult` no longer carries legacy `fromSymbol` / `toSymbol` endpoint payloads; relationship consumers use endpoint records and stable keys.
 - G1 is complete: `SemanticDefinitionResult` no longer carries legacy `symbol` payloads; consumers use `symbolRecord` / `symbolStableKey`.
@@ -81,6 +82,7 @@ Thin UI consumers
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.
+- During Phase J, do not touch product semantics for feature expansion; focus on replacing test fixtures with native semantic records, deleting `test_sv/syminfo*`, and tightening guards after each migrated block.
 
 ## Current Architecture
 

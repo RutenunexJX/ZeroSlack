@@ -185,6 +185,26 @@ UI Layer
 - Move to the next subphase only after the current subphase is implemented, verified, and committed.
 - Phase I completion requires I0-I5 completion, current docs, full Ninja, full CTest, guard success, and final static legacy scans.
 
+### Phase J: Test Fixture Native Cleanup
+
+- Status: planned.
+- Purpose: delete the remaining fixture-only legacy `sym_list` / `syminfo` carrier after Phase I proved the core source is clean.
+- Phase J should not add RTL feature behavior; it should preserve existing behavior while replacing test fixture inputs with semantic-native builders.
+- J0 defines the repo-wide fixture cleanup allowlist and guards the remaining test-only legacy terms.
+- J1 introduces native test builders for semantic records, metadata, owners, type info, stable keys, local handles, and relationship endpoints.
+- J2 migrates completion and jump tests away from `sym_list::SymbolInfo`.
+- J3 migrates relationship and GUI smoke tests away from `sym_list::SymbolInfo`.
+- J4 deletes `test_sv/syminfo*` and the reverse fixture adapter once no tracked test includes or builds them.
+- J5 passes the release gate and upgrades the zero target from core source to repo source except docs and guard definitions.
+
+### Phase J Goal Mode
+
+- Progress is tracked per subphase J0-J5.
+- Each subphase is its own 100% unit.
+- End every work turn by naming the current subphase and reporting that subphase's remaining percentage.
+- Move to the next subphase only after the current subphase is implemented, verified, and committed.
+- Phase J completion requires J0-J5 completion, current docs, full Ninja, full CTest, guard success, final repo-source static legacy scans, and deletion of the fixture-only legacy carrier.
+
 ## Architecture Rules
 
 - New semantic features should flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
@@ -213,6 +233,7 @@ The foundation is healthy when:
 - product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, Phase G, and the release gate after Phase G pass
 - Phase H is complete on this branch: remaining legacy collector compatibility is deleted from semantic core contracts or confined to the final guarded transition allowlist
 - Phase I is done only when the remaining legacy collector/store body is replaced by semantic-native collection and storage, and the final scans prove legacy carrier names are gone from core source
+- Phase J is done only when tracked tests use semantic-native fixture builders, `test_sv/syminfo*` and reverse fixture adapters are deleted, and final scans prove legacy carrier names are gone from repo source except docs and guard definitions
 - `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
 - `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
 - `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts
