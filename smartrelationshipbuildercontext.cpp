@@ -1,5 +1,4 @@
 #include "smartrelationshipbuilder.h"
-#include "semanticcollectoradapter.h"
 #include "semanticindex.h"
 #include "symboltaxonomy.h"
 
@@ -9,8 +8,9 @@ void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName,
                                                     AnalysisContext& context)
 {
     context.currentFileName = fileName;
-    context.fileSymbolRecords =
-        semanticSymbolRecordsForDatabase(symbolDatabase, fileName);
+    context.fileSymbolRecords = m_symbolRecordProvider
+        ? m_symbolRecordProvider(fileName)
+        : QList<SemanticSymbolRecord>();
     context.localSymbolHandles.clear();
 
     for (const SemanticSymbolRecord& record : std::as_const(context.fileSymbolRecords)) {

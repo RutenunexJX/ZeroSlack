@@ -1,5 +1,4 @@
 #include "smartrelationshipbuilder.h"
-#include "semanticcollectoradapter.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 
@@ -202,9 +201,8 @@ SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
         }
     }
 
-    if (symbolDatabase) {
-        const QList<SemanticSymbolRecord> records =
-            semanticSymbolRecordsForDatabase(symbolDatabase);
+    if (m_symbolRecordProvider) {
+        const QList<SemanticSymbolRecord> records = m_symbolRecordProvider(QString());
         for (const SemanticSymbolRecord& record : records) {
             if (record.name == symbolName)
                 return record;

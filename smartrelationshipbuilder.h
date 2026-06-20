@@ -6,9 +6,9 @@
 #include <QStringList>
 #include <QHash>
 #include <QList>
+#include <functional>
 #include "slangmanager.h"
 #include "symbolrelationshipengine.h"
-#include "syminfo.h"
 #include <QVector>
 #include <QSet>
 
@@ -28,9 +28,12 @@ class SmartRelationshipBuilder : public QObject
     Q_OBJECT
 
 public:
+    using SymbolRecordProvider =
+        std::function<QList<SemanticSymbolRecord>(const QString& fileName)>;
+
     explicit SmartRelationshipBuilder(SymbolRelationshipEngine* engine,
-                                    sym_list* symbolDatabase,
                                     SlangManager* slangManager,
+                                    SymbolRecordProvider symbolRecordProvider = {},
                                     QObject *parent = nullptr);
     ~SmartRelationshipBuilder();
 
@@ -76,8 +79,8 @@ signals:
 
 private:
     SymbolRelationshipEngine* relationshipEngine;
-    sym_list* symbolDatabase;
     SlangManager* m_slangManager = nullptr;
+    SymbolRecordProvider m_symbolRecordProvider;
 
     int analysisDepth = 3;
     bool enableAdvancedAnalysis = true;

@@ -2,12 +2,17 @@
 #include "semanticindex.h"
 #include <QApplication>
 #include <algorithm>
+#include <utility>
 
-SmartRelationshipBuilder::SmartRelationshipBuilder(SymbolRelationshipEngine* engine,
-                                                 sym_list* symbolDatabase,
-                                                 SlangManager* slangManager,
-                                                 QObject *parent)
-    : QObject(parent), relationshipEngine(engine), symbolDatabase(symbolDatabase), m_slangManager(slangManager)
+SmartRelationshipBuilder::SmartRelationshipBuilder(
+    SymbolRelationshipEngine* engine,
+    SlangManager* slangManager,
+    SymbolRecordProvider symbolRecordProvider,
+    QObject *parent)
+    : QObject(parent),
+      relationshipEngine(engine),
+      m_slangManager(slangManager),
+      m_symbolRecordProvider(std::move(symbolRecordProvider))
 {
 }
 
@@ -21,8 +26,8 @@ void SmartRelationshipBuilder::analyzeFile(const QString& fileName, const QStrin
         return;
     }
 
-    if (!relationshipEngine || !symbolDatabase) {
-        emit analysisError(fileName, "Missing relationship engine or symbol database");
+    if (!relationshipEngine) {
+        emit analysisError(fileName, "Missing relationship engine");
         return;
     }
 
@@ -133,8 +138,8 @@ void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, c
         return;
     }
 
-    if (!relationshipEngine || !symbolDatabase) {
-        emit analysisError(fileName, "Missing relationship engine or symbol database");
+    if (!relationshipEngine) {
+        emit analysisError(fileName, "Missing relationship engine");
         return;
     }
 

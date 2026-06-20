@@ -472,7 +472,12 @@ std::unique_ptr<SmartRelationshipBuilder> SemanticIndex::createRelationshipBuild
     QObject* parent) const
 {
     return std::make_unique<SmartRelationshipBuilder>(
-        engine, symbolDatabase(), slangManager, parent);
+        engine,
+        slangManager,
+        [this](const QString& fileName) {
+            return getSymbolRecords(fileName);
+        },
+        parent);
 }
 
 QList<SemanticDiagnostic> SemanticIndex::getDiagnostics(const QString& fileName) const
