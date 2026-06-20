@@ -30,16 +30,11 @@ public:
         CompletionCommandKind commandKind,
         const QString& prefix,
         int maxResults = 15) const;
-    QStringList findSymbolCompletionsByType(
-        sym_list::sym_type_e symbolType,
-        const QString& prefix,
-        int maxResults = 15) const;
     bool matchesCompletionAbbreviation(const QString& text,
                                        const QString& abbreviation) const;
     int calculateCompletionMatchScore(const QString& text,
                                       const QString& abbreviation) const;
     int completionItemScore(const QString& text, const QString& prefix) const;
-    QString symbolTypeDescription(sym_list::sym_type_e symbolType) const;
     CommandSymbolPresentation commandSymbolPresentation(
         CompletionCommandKind kind) const;
     CommandSymbolCompletionItem commandSymbolCompletionItem(
@@ -94,19 +89,11 @@ public:
     QStringList findModuleSymbolsByKind(const QString& moduleName,
                                         CompletionCommandKind commandKind,
                                         const QString& prefix = QString()) const;
-    QStringList findModuleSymbolsByType(const QString& moduleName,
-                                        sym_list::sym_type_e symbolType,
-                                        const QString& prefix = QString()) const;
     QStringList findGlobalSymbolCompletions(const QString& prefix = QString()) const;
     QStringList findGlobalSymbolsByKind(CompletionCommandKind commandKind,
                                         const QString& prefix = QString()) const;
-    QStringList findGlobalSymbolsByType(sym_list::sym_type_e symbolType,
-                                        const QString& prefix = QString()) const;
     QStringList findVariableCompletionsInScope(const QString& moduleName,
                                                CompletionCommandKind commandKind,
-                                               const QString& prefix = QString()) const;
-    QStringList findVariableCompletionsInScope(const QString& moduleName,
-                                               sym_list::sym_type_e variableType,
                                                const QString& prefix = QString()) const;
     QStringList findTaskFunctionCompletions(const QString& prefix = QString()) const;
     QStringList findInstantiableModuleCompletions(const QString& prefix = QString()) const;

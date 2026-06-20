@@ -16,11 +16,6 @@ public:
         const QStringList& names,
         const QString& prefix,
         int maxResults);
-    static QVector<QPair<QString, int>> scoredTypedSymbolNames(
-        SemanticIndex* semanticIndex,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix,
-        int maxResults);
     static QStringList namesFromScored(
         const QVector<QPair<QString, int>>& scored,
         int maxResults);
@@ -38,19 +33,6 @@ public:
         const QString& fileName,
         int cursorLine,
         const QString& prefix);
-    static QStringList moduleSymbolsByType(
-        SemanticIndex* semanticIndex,
-        const QString& moduleName,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix);
-    static QStringList globalSymbolsByType(
-        SemanticIndex* semanticIndex,
-        sym_list::sym_type_e symbolType,
-        const QString& prefix);
-    static QStringList taskFunctionCompletions(
-        SemanticIndex* semanticIndex,
-        const QString& prefix);
-    static bool isGlobalSymbolType(sym_list::sym_type_e type);
 };
 
 #endif // COMPLETIONSYMBOLQUERY_H

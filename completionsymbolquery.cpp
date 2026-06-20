@@ -1,7 +1,5 @@
 #include "completionsymbolquery.h"
 
-#include "symboltaxonomy.h"
-
 #include <QSet>
 #include <Qt>
 
@@ -53,66 +51,4 @@ QStringList CompletionSymbolQuery::scopeCompletions(
     }
     result.sort(Qt::CaseInsensitive);
     return result;
-}
-
-QStringList CompletionSymbolQuery::moduleSymbolsByType(
-    SemanticIndex* semanticIndex,
-    const QString& moduleName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix)
-{
-    QStringList result;
-    if (!semanticIndex || moduleName.isEmpty())
-        return result;
-
-    return namesFromSymbols(
-        semanticIndex->getCommandCompletionSymbols(moduleName, symbolType, prefix));
-}
-
-QStringList CompletionSymbolQuery::globalSymbolsByType(
-    SemanticIndex* semanticIndex,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix)
-{
-    QStringList result;
-    if (!semanticIndex || !isGlobalSymbolType(symbolType))
-        return result;
-
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticIndex->getCommandCompletionSymbols(QString(), symbolType, prefix);
-    QSet<QString> seenNames;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (!SymbolTaxonomy::isGlobalSymbolInfoVisible(symbol, symbolType))
-            continue;
-
-        const QString key = symbol.symbolName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(symbol.symbolName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
-}
-
-QStringList CompletionSymbolQuery::taskFunctionCompletions(
-    SemanticIndex* semanticIndex,
-    const QString& prefix)
-{
-    QStringList result;
-    if (!semanticIndex)
-        return result;
-
-    result.append(namesFromSymbols(
-        semanticIndex->getTypedCompletionSymbols(sym_list::sym_task, prefix)));
-    result.append(namesFromSymbols(
-        semanticIndex->getTypedCompletionSymbols(sym_list::sym_function, prefix)));
-    result.removeDuplicates();
-    result.sort(Qt::CaseInsensitive);
-    return result;
-}
-
-bool CompletionSymbolQuery::isGlobalSymbolType(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::isCommandGlobalCompletionType(type);
 }

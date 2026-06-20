@@ -29,12 +29,6 @@ QStringList CompletionManager::getAllSymbolCompletions(const QString& prefix)
     return CompletionService::getInstance()->findAllSymbolCompletions(prefix);
 }
 
-QStringList CompletionManager::getSymbolCompletions(sym_list::sym_type_e symbolType, const QString& prefix)
-{
-    return CompletionService::getInstance()->findSymbolCompletionsByType(
-        symbolType, prefix);
-}
-
 QStringList CompletionManager::getSymbolCompletions(
     CompletionCommandKind commandKind,
     const QString& prefix)
@@ -140,14 +134,6 @@ QStringList CompletionManager::getResetSignalCompletions(const QString& prefix)
     return CompletionService::getInstance()->findResetSignalCompletions(prefix);
 }
 
-QStringList CompletionManager::getVariableCompletionsInScope(const QString& moduleName,
-                                                           sym_list::sym_type_e variableType,
-                                                           const QString& prefix)
-{
-    return CompletionService::getInstance()->findVariableCompletionsInScope(
-        moduleName, variableType, prefix);
-}
-
 QStringList CompletionManager::getVariableCompletionsInScope(
     const QString& moduleName,
     CompletionCommandKind commandKind,
@@ -192,13 +178,6 @@ QStringList CompletionManager::getGlobalSymbolCompletions(const QString& prefix)
     return CompletionService::getInstance()->findGlobalSymbolCompletions(prefix);
 }
 
-QStringList CompletionManager::getModuleInternalVariablesByType(const QString& moduleName,
-                                                               sym_list::sym_type_e symbolType,
-                                                               const QString& prefix) {
-    return CompletionService::getInstance()->findModuleSymbolsByType(
-        moduleName, symbolType, prefix);
-}
-
 QStringList CompletionManager::getModuleInternalVariablesByKind(
     const QString& moduleName,
     CompletionCommandKind commandKind,
@@ -215,13 +194,6 @@ QStringList CompletionManager::getGlobalSymbolsByKind(
     return CompletionService::getInstance()->findGlobalSymbolsByKind(
         commandKind, prefix);
 }
-
-QStringList CompletionManager::getGlobalSymbolsByType(sym_list::sym_type_e symbolType,
-                                                     const QString& prefix)
-{
-    return CompletionService::getInstance()->findGlobalSymbolsByType(symbolType, prefix);
-}
-
 
 QStringList CompletionManager::getStructMemberCompletions(const QString& prefix,
                                                          const QString& structTypeName)

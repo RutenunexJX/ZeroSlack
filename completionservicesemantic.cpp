@@ -4,12 +4,8 @@
 #include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
 #include "semanticindex.h"
-#include "symboltaxonomy.h"
 
-QString CompletionService::symbolTypeDescription(sym_list::sym_type_e symbolType) const
-{
-    return SymbolTaxonomy::symbolTypeLabel(symbolType);
-}
+#include <Qt>
 
 QStringList CompletionService::findModuleInternalVariableCompletions(
     const QString& moduleName,
@@ -32,15 +28,6 @@ QStringList CompletionService::findModuleSymbolsByKind(
         CompletionSemanticQuery::commandSymbolRecords(semanticIndex(), query));
 }
 
-QStringList CompletionService::findModuleSymbolsByType(
-    const QString& moduleName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix) const
-{
-    return CompletionSymbolQuery::moduleSymbolsByType(
-        semanticIndex(), moduleName, symbolType, prefix);
-}
-
 QStringList CompletionService::findGlobalSymbolCompletions(const QString& prefix) const
 {
     return CompletionSymbolQuery::namesFromSymbols(
@@ -58,14 +45,6 @@ QStringList CompletionService::findGlobalSymbolsByKind(
         CompletionSemanticQuery::commandSymbolRecords(semanticIndex(), query));
 }
 
-QStringList CompletionService::findGlobalSymbolsByType(
-    sym_list::sym_type_e symbolType,
-    const QString& prefix) const
-{
-    return CompletionSymbolQuery::globalSymbolsByType(
-        semanticIndex(), symbolType, prefix);
-}
-
 QStringList CompletionService::findVariableCompletionsInScope(
     const QString& moduleName,
     CompletionCommandKind commandKind,
@@ -80,21 +59,21 @@ QStringList CompletionService::findVariableCompletionsInScope(
         : findModuleSymbolsByKind(moduleName, commandKind, prefix);
 }
 
-QStringList CompletionService::findVariableCompletionsInScope(
-    const QString& moduleName,
-    sym_list::sym_type_e variableType,
-    const QString& prefix) const
-{
-    if (moduleName.isEmpty()) {
-        return CompletionSymbolQuery::namesFromSymbols(
-            semanticIndex()->getTypedCompletionSymbols(variableType, prefix));
-    }
-    return findModuleSymbolsByType(moduleName, variableType, prefix);
-}
-
 QStringList CompletionService::findTaskFunctionCompletions(const QString& prefix) const
 {
-    return CompletionSymbolQuery::taskFunctionCompletions(semanticIndex(), prefix);
+    QStringList result = CompletionSymbolQuery::namesFromRecords(
+        CompletionSemanticQuery::typedSymbolRecords(
+            semanticIndex(),
+            CompletionCommandKind::Task,
+            prefix));
+    result.append(CompletionSymbolQuery::namesFromRecords(
+        CompletionSemanticQuery::typedSymbolRecords(
+            semanticIndex(),
+            CompletionCommandKind::Function,
+            prefix)));
+    result.removeDuplicates();
+    result.sort(Qt::CaseInsensitive);
+    return result;
 }
 
 QStringList CompletionService::findInstantiableModuleCompletions(const QString& prefix) const

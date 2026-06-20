@@ -213,8 +213,10 @@ int main(int argc, char** argv) {
            "CompletionModel service scoring",
            firstScoredModelSymbol.toLocal8Bit().constData());
     expectEq("CompletionService symbol desc",
-             CompletionService::getInstance()->symbolTypeDescription(sym_list::sym_logic),
-             QStringLiteral("logic"));
+             CompletionService::getInstance()
+                 ->commandSymbolPresentation(CompletionCommandKind::Logic)
+                 .typeDescription,
+             QStringLiteral("logic variables"));
     expectEq("CompletionModel symbol desc",
              modelScoring.getItem(modelScoring.index(2, 0)).description,
              QStringLiteral("logic"));
@@ -349,9 +351,10 @@ int main(int argc, char** argv) {
                        == QStringLiteral("No matching commands - No commands match your input"),
                true);
     expectEq("CompletionService interface desc",
-             CompletionService::getInstance()->symbolTypeDescription(
-                 sym_list::sym_interface),
-             QStringLiteral("interface"));
+             CompletionService::getInstance()
+                 ->commandSymbolPresentation(CompletionCommandKind::Interface)
+                 .typeDescription,
+             QStringLiteral("interfaces"));
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(sym_list::sym_interface_modport),
              QStringLiteral("modport"));

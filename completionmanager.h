@@ -8,7 +8,6 @@
 #include <QList>
 #include <memory>
 #include "completiontypes.h"
-#include "syminfo.h"
 
 class CompletionManager
 {
@@ -37,7 +36,6 @@ public:
     QStringList getKeywordCompletions(const QString& prefix);
     QStringList getSymbolCompletions(CompletionCommandKind commandKind,
                                      const QString& prefix);
-    QStringList getSymbolCompletions(sym_list::sym_type_e symbolType, const QString& prefix);
 
     QStringList getModuleChildrenCompletions(const QString& moduleName, const QString& prefix = "");
     QStringList getRelatedSymbolCompletions(const QString& symbolName, const QString& prefix = "");
@@ -47,9 +45,6 @@ public:
 
     QStringList getVariableCompletionsInScope(const QString& moduleName,
                                              CompletionCommandKind commandKind,
-                                             const QString& prefix = "");
-    QStringList getVariableCompletionsInScope(const QString& moduleName,
-                                             sym_list::sym_type_e variableType,
                                              const QString& prefix = "");
     QStringList getTaskFunctionCompletions(const QString& prefix = "");
     QStringList getInstantiableModules(const QString& prefix = "");
@@ -66,16 +61,8 @@ public:
                                                 CompletionCommandKind commandKind,
                                                 const QString& prefix = "");
 
-    QStringList getModuleInternalVariablesByType(const QString& moduleName,
-                                                sym_list::sym_type_e symbolType,
-                                                const QString& prefix = "");
-
     QStringList getGlobalSymbolsByKind(CompletionCommandKind commandKind,
                                       const QString& prefix = "");
-
-    QStringList getGlobalSymbolsByType(sym_list::sym_type_e symbolType,
-                                      const QString& prefix = "");
-
 
     QString getStructTypeForVariable(const QString &varName, const QString &currentModule);
     QStringList getStructMemberCompletions(const QString &prefix, const QString &structTypeName);

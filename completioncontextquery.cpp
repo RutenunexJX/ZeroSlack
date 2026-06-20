@@ -2,11 +2,30 @@
 
 #include "completioncontexthelper.h"
 #include "completionmatcher.h"
+#include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
 #include "semanticindex.h"
 
 #include <Qt>
 #include <algorithm>
+
+namespace {
+
+QStringList commandKindCompletions(
+    SemanticIndex* semanticIndex,
+    const QString& moduleName,
+    const QString& prefix,
+    CompletionCommandKind kind)
+{
+    CommandCompletionQuery query;
+    query.prefix = prefix;
+    query.moduleName = moduleName;
+    query.commandKind = kind;
+    return CompletionSymbolQuery::namesFromRecords(
+        CompletionSemanticQuery::commandSymbolRecords(semanticIndex, query));
+}
+
+}
 
 QStringList CompletionContextQuery::contextAwareCompletions(
     SemanticIndex* semanticIndex,
@@ -97,24 +116,24 @@ QStringList CompletionContextQuery::contextAwareCompletions(
     if (context.contains(QStringLiteral("task"))
         || context.contains(QStringLiteral("function"))
         || context.contains(QStringLiteral("call"))) {
-        result.append(
-            CompletionSymbolQuery::taskFunctionCompletions(semanticIndex, prefix));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::Task));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::Function));
     }
 
     if (context.contains(QStringLiteral("typedef"))
         || context.contains(QStringLiteral("type"))) {
-        result.append(
-            CompletionSymbolQuery::globalSymbolsByType(
-                semanticIndex, sym_list::sym_typedef, prefix));
-        result.append(
-            CompletionSymbolQuery::globalSymbolsByType(
-                semanticIndex, sym_list::sym_enum, prefix));
-        result.append(
-            CompletionSymbolQuery::globalSymbolsByType(
-                semanticIndex, sym_list::sym_packed_struct, prefix));
-        result.append(
-            CompletionSymbolQuery::globalSymbolsByType(
-                semanticIndex, sym_list::sym_unpacked_struct, prefix));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::Typedef));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::EnumType));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix,
+            CompletionCommandKind::PackedStructType));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix,
+            CompletionCommandKind::UnpackedStructType));
     }
 
     if (context.contains(QStringLiteral("reg"))
@@ -122,39 +141,39 @@ QStringList CompletionContextQuery::contextAwareCompletions(
         || context.contains(QStringLiteral("logic"))
         || context.contains(QStringLiteral("var"))) {
         result.append(CompletionMatcher::svKeywordCompletions(prefix));
-        result.append(
-            CompletionSymbolQuery::globalSymbolsByType(
-                semanticIndex, sym_list::sym_enum, prefix));
-        result.append(
-            CompletionSymbolQuery::globalSymbolsByType(
-                semanticIndex, sym_list::sym_packed_struct, prefix));
-        result.append(
-            CompletionSymbolQuery::globalSymbolsByType(
-                semanticIndex, sym_list::sym_unpacked_struct, prefix));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::EnumType));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix,
+            CompletionCommandKind::PackedStructType));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix,
+            CompletionCommandKind::UnpackedStructType));
     }
 
     if (result.isEmpty()
         || context == QLatin1String("general")
         || context.isEmpty()) {
         if (!currentModule.isEmpty()) {
-            result.append(CompletionSymbolQuery::moduleSymbolsByType(
-                semanticIndex, currentModule, sym_list::sym_reg, prefix));
-            result.append(CompletionSymbolQuery::moduleSymbolsByType(
-                semanticIndex, currentModule, sym_list::sym_wire, prefix));
-            result.append(CompletionSymbolQuery::moduleSymbolsByType(
-                semanticIndex, currentModule, sym_list::sym_logic, prefix));
+            result.append(commandKindCompletions(
+                semanticIndex, currentModule, prefix, CompletionCommandKind::Reg));
+            result.append(commandKindCompletions(
+                semanticIndex, currentModule, prefix, CompletionCommandKind::Wire));
+            result.append(commandKindCompletions(
+                semanticIndex, currentModule, prefix, CompletionCommandKind::Logic));
         }
 
-        result.append(CompletionSymbolQuery::globalSymbolsByType(
-            semanticIndex, sym_list::sym_module, prefix));
-        result.append(CompletionSymbolQuery::globalSymbolsByType(
-            semanticIndex, sym_list::sym_enum, prefix));
-        result.append(CompletionSymbolQuery::globalSymbolsByType(
-            semanticIndex, sym_list::sym_packed_struct, prefix));
-        result.append(CompletionSymbolQuery::globalSymbolsByType(
-            semanticIndex, sym_list::sym_task, prefix));
-        result.append(CompletionSymbolQuery::globalSymbolsByType(
-            semanticIndex, sym_list::sym_function, prefix));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::Module));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::EnumType));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix,
+            CompletionCommandKind::PackedStructType));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::Task));
+        result.append(commandKindCompletions(
+            semanticIndex, QString(), prefix, CompletionCommandKind::Function));
         result.append(CompletionMatcher::svKeywordCompletions(prefix));
     }
 
