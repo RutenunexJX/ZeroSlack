@@ -272,7 +272,7 @@ int main(int argc, char** argv) {
                    && modelScoring.getItem(modelScoring.index(2, 0)).sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource
                    && modelScoring.getItem(modelScoring.index(2, 0))
-                          .symbolRecord.rawCollectorKind == sym_list::sym_logic,
+                          .symbolRecord.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_logic),
                true);
     expectBool("CompletionModel header selectable",
                modelScoring.getItem(modelScoring.index(0, 0)).selectable,
@@ -340,7 +340,7 @@ int main(int argc, char** argv) {
                    == SymbolTaxonomy::DeclarationKind::Module
                    && metadataDescriptionModel.getItem(
                        metadataDescriptionModel.index(0, 0))
-                          .symbolRecord.rawCollectorKind == sym_list::sym_module,
+                          .symbolRecord.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_module),
                true);
     expectBool("CompletionModel metadata semantic fields",
                metadataDescriptionModel.getItem(
@@ -445,7 +445,7 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::isInternalCompletionCandidate(logicMetadata),
                true);
     expectBool("SymbolTaxonomy metadata raw compatibility",
-               logicMetadata.rawCollectorKind == sym_list::sym_logic,
+               logicMetadata.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_logic),
                true);
     expectBool("SymbolTaxonomy metadata global completion type",
                SymbolTaxonomy::isGlobalCompletionCandidate(metadataSignal),
@@ -484,7 +484,7 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::SymbolOwnerScope::Global;
     syntheticModuleMetadata.visibility =
         SymbolTaxonomy::SymbolVisibility::Global;
-    syntheticModuleMetadata.rawCollectorKind = sym_list::sym_user;
+    syntheticModuleMetadata.rawCollectorKind = SymbolTaxonomy::rawCollectorKind(sym_list::sym_user);
     expectBool("SymbolTaxonomy search intent uses semantic metadata",
                SymbolTaxonomy::matchesSearchIntent(
                    syntheticModuleMetadata,
@@ -519,7 +519,7 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::DeclarationKind::Instance;
     syntheticInstanceMetadata.usageRole =
         SymbolTaxonomy::SymbolUsageRole::Declaration;
-    syntheticInstanceMetadata.rawCollectorKind = sym_list::sym_user;
+    syntheticInstanceMetadata.rawCollectorKind = SymbolTaxonomy::rawCollectorKind(sym_list::sym_user);
     expectBool("SymbolTaxonomy metadata instance declaration",
                SymbolTaxonomy::isInstanceDeclaration(syntheticInstanceMetadata),
                true);
@@ -2081,7 +2081,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool commandLogicOk = commandLogicSymbols.size() == 1
         && commandLogicSymbols.first().name == QStringLiteral("enable")
-        && commandLogicSymbols.first().rawCollectorKind == sym_list::sym_logic
+        && commandLogicSymbols.first().rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_logic)
         && commandLogicSymbols.first().owner.name == QStringLiteral("top");
     if (!commandLogicOk)
         ++g_fails;
@@ -2098,7 +2098,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool packedStructOk = packedStructVars.size() == 1
         && packedStructVars.first().name == QStringLiteral("pixel")
-        && packedStructVars.first().rawCollectorKind == sym_list::sym_packed_struct_var
+        && packedStructVars.first().rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_packed_struct_var)
         && packedStructVars.first().owner.name == QStringLiteral("top");
     if (!packedStructOk)
         ++g_fails;
@@ -2479,7 +2479,7 @@ int main(int argc, char** argv) {
         snapshotIndex.getSymbolRecords();
     bool snapshotStructRecordOk = false;
     for (const SemanticSymbolRecord& record : snapshotStructRecords) {
-        if (record.rawCollectorKind != sym_list::sym_packed_struct_var)
+        if (record.rawCollectorKind != SymbolTaxonomy::rawCollectorKind(sym_list::sym_packed_struct_var))
             continue;
         if (record.name == QStringLiteral("snap_pixel")
             && record.owner.name == QStringLiteral("snap_top")
@@ -2527,7 +2527,7 @@ int main(int argc, char** argv) {
         && snapshotModuleCompletion.items.first().label
             == QStringLiteral("snap_enable")
         && snapshotModuleCompletion.items.first().symbolRecord.rawCollectorKind
-            == sym_list::sym_logic
+            == SymbolTaxonomy::rawCollectorKind(sym_list::sym_logic)
         && snapshotModuleCompletion.items.first().symbolRecord.owner.name
             == QStringLiteral("snap_top");
     if (!snapshotModuleSymbolOk)
@@ -2550,7 +2550,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotLogicCommandOk = snapshotLogicCommandSymbols.size() == 1
         && snapshotLogicCommandSymbols.first().name == QStringLiteral("snap_enable")
-        && snapshotLogicCommandSymbols.first().rawCollectorKind == sym_list::sym_logic
+        && snapshotLogicCommandSymbols.first().rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_logic)
         && snapshotLogicCommandSymbols.first().owner.name == QStringLiteral("snap_top");
     if (!snapshotLogicCommandOk)
         ++g_fails;
@@ -2587,7 +2587,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotTaskCommandOk = snapshotTaskCommandSymbols.size() == 1
         && snapshotTaskCommandSymbols.first().name == QStringLiteral("snap_task")
-        && snapshotTaskCommandSymbols.first().rawCollectorKind == sym_list::sym_task
+        && snapshotTaskCommandSymbols.first().rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_task)
         && snapshotTaskCommandSymbols.first().owner.name.isEmpty();
     if (!snapshotTaskCommandOk)
         ++g_fails;
@@ -2708,7 +2708,7 @@ int main(int argc, char** argv) {
     const bool snapshotMemberSymbolOk = snapshotMemberCompletion.items.size() == 1
         && snapshotMemberCompletion.items.first().label == QStringLiteral("blue")
         && snapshotMemberCompletion.items.first().symbolRecord.rawCollectorKind
-            == sym_list::sym_struct_member
+            == SymbolTaxonomy::rawCollectorKind(sym_list::sym_struct_member)
         && snapshotMemberCompletion.items.first().symbolRecord.owner.name
             == QStringLiteral("snap_pixel_t");
     if (!snapshotMemberSymbolOk)
@@ -2835,7 +2835,7 @@ int main(int argc, char** argv) {
         snapshotIndex.getSymbolRecords();
     bool snapshotEnumRecordOk = false;
     for (const SemanticSymbolRecord& record : snapshotEnumRecords) {
-        if (record.rawCollectorKind != sym_list::sym_enum_value)
+        if (record.rawCollectorKind != SymbolTaxonomy::rawCollectorKind(sym_list::sym_enum_value))
             continue;
         if (record.name == QStringLiteral("SNAP_IDLE")
             && record.owner.name == QStringLiteral("snap_top")) {
@@ -3005,7 +3005,7 @@ int main(int argc, char** argv) {
     const bool snapshotCommandOk = snapshotCommandSymbols.size() == 1
         && snapshotCommandSymbols.first().name == QStringLiteral("snap_pixel")
         && snapshotCommandSymbols.first().rawCollectorKind
-            == sym_list::sym_packed_struct_var
+            == SymbolTaxonomy::rawCollectorKind(sym_list::sym_packed_struct_var)
         && snapshotCommandSymbols.first().owner.name == QStringLiteral("snap_top")
         && snapshotCommandSymbols.first().type.rawTypeText
             == QStringLiteral("snap_pixel_t");

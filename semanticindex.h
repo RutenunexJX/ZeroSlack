@@ -91,7 +91,8 @@ struct SemanticSymbolRecord {
         SymbolTaxonomy::SymbolVisibility::Unknown;
     SymbolTaxonomy::SourceRole sourceRole =
         SymbolTaxonomy::SourceRole::Unknown;
-    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
+    SymbolTaxonomy::RawCollectorKind rawCollectorKind =
+        SymbolTaxonomy::RawCollectorKind::User;
     SemanticSymbolOwner owner;
     SemanticSymbolTypeReference type;
 

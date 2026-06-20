@@ -136,7 +136,6 @@ set(RECORD_NATIVE_SERVICE_FILES
 set(H0_LEGACY_CORE_ALLOWLIST
     semanticcollectoradapter.cpp
     semanticcollectoradapter.h
-    semanticindex.h
     semanticindexstore.cpp
     slangmanager.h
     slangmanagersymbols.cpp

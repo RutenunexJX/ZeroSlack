@@ -1098,7 +1098,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         SymbolTaxonomy::SymbolVisibility::Global;
     metadataOutlineModule.sourceRole =
         SymbolTaxonomy::SourceRole::DesignSource;
-    metadataOutlineModule.rawCollectorKind = sym_list::sym_user;
+    metadataOutlineModule.rawCollectorKind =
+        SymbolTaxonomy::rawCollectorKind(sym_list::sym_user);
     metadataOutlineModule.stableKey.fileName = topPath;
     metadataOutlineModule.stableKey.symbolName = metadataOutlineModule.name;
     metadataOutlineModule.stableKey.declarationKind =
@@ -1191,7 +1192,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                     && row.symbolStableKey == row.symbolRecord.stableKey
                     && row.symbolRecord.declarationKind
                         == SymbolTaxonomy::DeclarationKind::Module
-                    && row.symbolRecord.rawCollectorKind == sym_list::sym_user
+                    && row.symbolRecord.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_user)
                     && row.displayName == QStringLiteral("metadata_rel_top")
                     && row.typeDisplayName == group.displayName
                     && row.iconKind == SymbolOutlineIconKind::Module);
@@ -3921,7 +3922,7 @@ static void runModuleBriefServiceFixture()
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
         SymbolTaxonomy::semanticMetadata(module);
     expectBool("semantic metadata keeps raw module kind",
-               moduleMetadata.rawCollectorKind == sym_list::sym_module,
+               moduleMetadata.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_module),
                true);
     expectBool("semantic metadata classifies module declaration",
                moduleMetadata.declarationKind
@@ -3938,7 +3939,7 @@ static void runModuleBriefServiceFixture()
                        == SymbolTaxonomy::SymbolOwnerScope::Global
                    && report.moduleSymbolRecord.visibility
                        == SymbolTaxonomy::SymbolVisibility::Global
-                   && report.moduleSymbolRecord.rawCollectorKind == sym_list::sym_module,
+                   && report.moduleSymbolRecord.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_module),
                true);
     expectBool("taxonomy recognizes module brief port",
                SymbolTaxonomy::isPortDeclaration(symbols.at(2).symbolType),
@@ -3960,7 +3961,7 @@ static void runModuleBriefServiceFixture()
     SemanticSymbolRecord snapshotPort;
     for (const SemanticSymbolRecord& record : snapshotRecords) {
         if (record.name == QStringLiteral("clk")
-            && record.rawCollectorKind == sym_list::sym_port_input) {
+            && record.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_port_input)) {
             snapshotPort = record;
             break;
         }
@@ -3973,7 +3974,7 @@ static void runModuleBriefServiceFixture()
                        == SymbolTaxonomy::SymbolUsageRole::Declaration
                    && snapshotPort.sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource
-                   && snapshotPort.rawCollectorKind == sym_list::sym_port_input,
+                   && snapshotPort.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_port_input),
                true);
     expectBool("taxonomy groups module brief port",
                SymbolTaxonomy::declarationGroup(symbols.at(2).symbolType)

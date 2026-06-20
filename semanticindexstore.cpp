@@ -123,7 +123,7 @@ sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
     sym_list::SymbolInfo symbol;
     symbol.symbolId = record.localHandle;
     symbol.symbolName = record.name;
-    symbol.symbolType = record.rawCollectorKind;
+    symbol.symbolType = SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
     symbol.fileName = record.location.fileName;
     symbol.startLine = record.location.startLine;
     symbol.startColumn = record.location.startColumn;

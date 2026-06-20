@@ -16,6 +16,7 @@ using SymbolOwnerScope = SymbolSemanticMetadata::SymbolOwnerScope;
 using SymbolVisibility = SymbolSemanticMetadata::SymbolVisibility;
 using SymbolUsageRole = SymbolSemanticMetadata::SymbolUsageRole;
 using DeclarationGroup = SymbolSemanticMetadata::DeclarationGroup;
+using RawCollectorKind = SymbolSemanticMetadata::RawCollectorKind;
 
 enum class SymbolSearchIntent {
     Any,
@@ -59,10 +60,12 @@ struct SemanticMetadata {
     SymbolOwnerScope ownerScope = SymbolOwnerScope::Unknown;
     SymbolVisibility visibility = SymbolVisibility::Unknown;
     SourceRole sourceRole = SourceRole::Unknown;
-    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
+    RawCollectorKind rawCollectorKind = RawCollectorKind::User;
     bool interfaceLikeOwner = false;
 };
 
+RawCollectorKind rawCollectorKind(sym_list::sym_type_e type);
+sym_list::sym_type_e legacySymbolType(RawCollectorKind kind);
 DeclarationKind declarationKind(sym_list::sym_type_e type);
 SymbolUsageRole usageRole(sym_list::sym_type_e type);
 DeclarationGroup declarationGroup(sym_list::sym_type_e type);
