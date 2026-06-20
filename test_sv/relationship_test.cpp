@@ -61,6 +61,19 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
             fileContents));
 }
 
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
+    const QList<SemanticSymbolRecord>& records,
+    const QList<SemanticRelationship>& relationships = {},
+    const QList<SemanticDiagnostic>& diagnostics = {},
+    const QHash<QString, QString>& fileContents = {})
+{
+    return std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(records,
+                                                 relationships,
+                                                 diagnostics,
+                                                 fileContents));
+}
+
 static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
     const SemanticIndexSnapshot& snapshot)
 {
@@ -821,8 +834,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QVector<RelationshipToAdd> snapshotBackedRels =
         snapshotBuilder.computeRelationships(topPath,
                                              contents.value(topPath),
-                                             semanticSymbolInfoCarriersForRecords(
-                                                 symbolOnlySnapshot->getSymbolRecords(topPath)),
+                                             symbolOnlySnapshot->getSymbolRecords(topPath),
                                              symbolOnlySnapshot.get());
     expectBool("snapshot builder resolves cross-file stage",
                hasRel(snapshotBackedRels, topId, stageId, SymbolRelationshipEngine::INSTANTIATES),
@@ -1042,34 +1054,36 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("snapshot navigation outline exposes row metadata",
                snapshotOutlineHasRowMetadata,
                true);
-    QList<sym_list::SymbolInfo> metadataOutlineSymbols =
-        semanticSymbolInfoCarriersForRecords(snapshot->getSymbolRecords());
-    sym_list::SymbolInfo metadataOutlineModule;
-    metadataOutlineModule.fileName = topPath;
-    metadataOutlineModule.symbolName = QStringLiteral("metadata_rel_top");
-    metadataOutlineModule.symbolType = sym_list::sym_user;
-    metadataOutlineModule.startLine = 1;
-    metadataOutlineModule.startColumn = 1;
-    metadataOutlineModule.endLine = 1;
-    metadataOutlineModule.endColumn = 1;
-    metadataOutlineModule.symbolId = 900001;
-    metadataOutlineModule.hasSemanticMetadata = true;
-    metadataOutlineModule.semanticDeclarationKind =
-        SymbolSemanticMetadata::DeclarationKind::Module;
-    metadataOutlineModule.semanticUsageRole =
-        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
-    metadataOutlineModule.semanticOwnerScope =
-        SymbolSemanticMetadata::SymbolOwnerScope::Global;
-    metadataOutlineModule.semanticVisibility =
-        SymbolSemanticMetadata::SymbolVisibility::Global;
-    metadataOutlineModule.semanticSourceRole =
-        SymbolSemanticMetadata::SourceRole::DesignSource;
+    QList<SemanticSymbolRecord> metadataOutlineRecords =
+        snapshot->getSymbolRecords();
+    SemanticSymbolRecord metadataOutlineModule;
+    metadataOutlineModule.location.fileName = topPath;
+    metadataOutlineModule.location.startLine = 1;
+    metadataOutlineModule.location.startColumn = 1;
+    metadataOutlineModule.location.endLine = 1;
+    metadataOutlineModule.location.endColumn = 1;
+    metadataOutlineModule.name = QStringLiteral("metadata_rel_top");
+    metadataOutlineModule.localHandle = 900001;
+    metadataOutlineModule.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Module;
+    metadataOutlineModule.usageRole =
+        SymbolTaxonomy::SymbolUsageRole::Declaration;
+    metadataOutlineModule.owner.kind =
+        SymbolTaxonomy::SymbolOwnerScope::Global;
+    metadataOutlineModule.visibility =
+        SymbolTaxonomy::SymbolVisibility::Global;
+    metadataOutlineModule.sourceRole =
+        SymbolTaxonomy::SourceRole::DesignSource;
     metadataOutlineModule.rawCollectorKind = sym_list::sym_user;
-    metadataOutlineSymbols.append(metadataOutlineModule);
+    metadataOutlineModule.stableKey.fileName = topPath;
+    metadataOutlineModule.stableKey.symbolName = metadataOutlineModule.name;
+    metadataOutlineModule.stableKey.declarationKind =
+        metadataOutlineModule.declarationKind;
+    metadataOutlineRecords.append(metadataOutlineModule);
     SemanticIndex metadataOutlineIndex;
     metadataOutlineIndex.setSnapshot(
-        sharedSnapshotFromSymbols(
-            metadataOutlineSymbols,
+        sharedSnapshotFromRecords(
+            metadataOutlineRecords,
             snapshot->relationships(),
             snapshot->diagnostics(),
             snapshot->fileContents()));
@@ -1083,7 +1097,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("metadata outline search finds module",
                metadataOutlineSearchResults.size() == 1
                    && metadataOutlineSearchResults.first().symbolRecord.localHandle
-                       == metadataOutlineModule.symbolId,
+                       == metadataOutlineModule.localHandle,
                true);
     SearchQuery metadataTypedSearchQuery;
     metadataTypedSearchQuery.text = QStringLiteral("metadata_rel_top");
@@ -1094,7 +1108,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("metadata typed search finds module",
                metadataTypedSearchResults.size() == 1
                    && metadataTypedSearchResults.first().symbolRecord.localHandle
-                       == metadataOutlineModule.symbolId
+                       == metadataOutlineModule.localHandle
                    && metadataTypedSearchResults.first().symbolRecord.isValid()
                    && metadataTypedSearchResults.first().symbolRecord.stableKey
                        == metadataTypedSearchResults.first().symbolStableKey
@@ -1127,7 +1141,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("metadata definition search finds module",
                metadataDefinitionSearchResults.size() == 1
                    && metadataDefinitionSearchResults.first().symbolRecord.localHandle
-                       == metadataOutlineModule.symbolId
+                       == metadataOutlineModule.localHandle
                    && metadataDefinitionSearchResults.first()
                           .symbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module,
@@ -1149,7 +1163,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 metadataOutlineGroupedAsModule
                 || (row.symbolRecord.isValid()
                     && row.symbolRecord.localHandle
-                        == metadataOutlineModule.symbolId
+                        == metadataOutlineModule.localHandle
                     && row.symbolStableKey == row.symbolRecord.stableKey
                     && row.symbolRecord.declarationKind
                         == SymbolTaxonomy::DeclarationKind::Module
@@ -2056,8 +2070,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     SemanticIndex captureIndex(db);
     const auto capturedSnapshot =
         captureIndex.captureSnapshotPreservingDiagnostics();
-    captureIndex.setSnapshot(sharedSnapshotFromSymbols(
-        semanticSymbolInfoCarriersForRecords(capturedSnapshot->getSymbolRecords()),
+    captureIndex.setSnapshot(sharedSnapshotFromRecords(
+        capturedSnapshot->getSymbolRecords(),
         capturedSnapshot->relationships(),
         QList<SemanticDiagnostic>{errorDiagnostic},
         capturedSnapshot->fileContents()));
@@ -2065,8 +2079,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         captureIndex.captureSnapshotPreservingDiagnostics();
     expectInt("semantic index capture preserves diagnostics",
               recapturedSnapshot->diagnostics().size(), 1);
-    captureIndex.setSnapshot(sharedSnapshotFromSymbols(
-        semanticSymbolInfoCarriersForRecords(recapturedSnapshot->getSymbolRecords()),
+    captureIndex.setSnapshot(sharedSnapshotFromRecords(
+        recapturedSnapshot->getSymbolRecords(),
         recapturedSnapshot->relationships(),
         QList<SemanticDiagnostic>{warningDiagnostic, errorDiagnostic},
         recapturedSnapshot->fileContents()));
