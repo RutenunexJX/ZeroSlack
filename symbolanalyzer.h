@@ -24,7 +24,7 @@ struct OpenDocumentContent {
 struct WorkspaceFileAnalysis {
     QString fileName;
     QString content;
-    QList<sym_list::SymbolInfo> symbols;
+    QList<SemanticSymbolRecord> symbolRecords;
 };
 
 struct WorkspaceAnalysisResult {
@@ -39,7 +39,7 @@ struct FileAnalysisResult {
     QString fileName;
     QString content;
     QString contentHash;
-    QList<sym_list::SymbolInfo> symbols;
+    QList<SemanticSymbolRecord> symbolRecords;
     QList<SemanticDiagnostic> diagnostics;
     std::uint64_t generation = 0;
 };
@@ -93,11 +93,11 @@ private:
     void updateFileSymbols(
         const QString& fileName,
         const QString& content,
-        const QList<sym_list::SymbolInfo>& symbols);
+        const QList<SemanticSymbolRecord>& symbolRecords);
     void publishFileAnalysisResult(
         const QString& fileName,
         const QString& content,
-        const QList<sym_list::SymbolInfo>& symbols,
+        const QList<SemanticSymbolRecord>& symbolRecords,
         const QList<SemanticDiagnostic>& diagnostics);
     int publishWorkspaceAnalysisResult(
         const WorkspaceAnalysisResult& result,

@@ -16,14 +16,15 @@ QString normalizedWorkspaceSymbolFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-QHash<QString, QList<sym_list::SymbolInfo>> groupSymbolsByFile(
-    const QList<sym_list::SymbolInfo>& list)
+QHash<QString, QList<SemanticSymbolRecord>> groupRecordsByFile(
+    const QList<SemanticSymbolRecord>& records)
 {
-    QHash<QString, QList<sym_list::SymbolInfo>> byFile;
-    for (const sym_list::SymbolInfo& symbol : list) {
-        const QString normalized = normalizedWorkspaceSymbolFileName(symbol.fileName);
+    QHash<QString, QList<SemanticSymbolRecord>> byFile;
+    for (const SemanticSymbolRecord& record : records) {
+        const QString normalized =
+            normalizedWorkspaceSymbolFileName(record.location.fileName);
         if (!normalized.isEmpty())
-            byFile[normalized].append(symbol);
+            byFile[normalized].append(record);
     }
     return byFile;
 }
@@ -41,11 +42,12 @@ QString readTextFile(const QString& filePath)
 
 WorkspaceAnalysisResult SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
     const QStringList& svFiles,
-    const QList<sym_list::SymbolInfo>& allSymbols,
+    const QList<SemanticSymbolRecord>& allRecords,
     std::function<bool()> isCancelled)
 {
     WorkspaceAnalysisResult result;
-    QHash<QString, QList<sym_list::SymbolInfo>> byFile = groupSymbolsByFile(allSymbols);
+    QHash<QString, QList<SemanticSymbolRecord>> byFile =
+        groupRecordsByFile(allRecords);
     result.files.reserve(svFiles.size());
 
     for (const QString& filePath : svFiles) {
@@ -54,9 +56,9 @@ WorkspaceAnalysisResult SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
         WorkspaceFileAnalysis fileResult;
         fileResult.fileName = filePath;
         fileResult.content = readTextFile(filePath);
-        fileResult.symbols =
+        fileResult.symbolRecords =
             byFile.value(normalizedWorkspaceSymbolFileName(filePath));
-        result.totalSymbols += fileResult.symbols.size();
+        result.totalSymbols += fileResult.symbolRecords.size();
         result.files.append(std::move(fileResult));
     }
 

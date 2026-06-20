@@ -57,12 +57,14 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 
     QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles]() {
         SlangManager symbolAnalyzer;
-        QList<sym_list::SymbolInfo> symbols =
+        const auto symbols =
             symbolAnalyzer.extractWorkspaceSymbols(svFiles, includeDirs, defines);
         WorkspaceAnalysisResult result =
             SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
                 svFiles,
-                symbols,
+                semanticSymbolRecordsForSymbols(
+                    symbols,
+                    SymbolTaxonomy::packageScopeNames(symbols)),
                 isCancelled);
         SlangManager diagnosticsAnalyzer;
         result.diagnostics =
@@ -140,9 +142,10 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
                 }
                 publishFileAnalysisResult(result.fileName,
                                           result.content,
-                                          result.symbols,
+                                          result.symbolRecords,
                                           result.diagnostics);
-                emit analysisCompleted(result.fileName, result.symbols.size());
+                emit analysisCompleted(result.fileName,
+                                       result.symbolRecords.size());
             });
     watcher->setFuture(QtConcurrent::run([fileName, content, expectedContentHash, generation]() {
         FileAnalysisResult result;
@@ -151,7 +154,9 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
         result.contentHash = expectedContentHash;
         result.generation = generation;
         SlangManager symbolAnalyzer;
-        result.symbols = symbolAnalyzer.extractSymbols(fileName, content);
+        result.symbolRecords =
+            semanticSymbolRecordsForSymbols(
+                symbolAnalyzer.extractSymbols(fileName, content));
         SlangManager diagnosticsAnalyzer;
         result.diagnostics = diagnosticsAnalyzer.extractDiagnostics(fileName, content);
         return result;

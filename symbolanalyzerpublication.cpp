@@ -45,19 +45,21 @@ void SymbolAnalyzer::publishOpenDocumentResults(
 void SymbolAnalyzer::updateFileSymbols(
     const QString& fileName,
     const QString& content,
-    const QList<sym_list::SymbolInfo>& symbols)
+    const QList<SemanticSymbolRecord>& symbolRecords)
 {
-    SemanticIndex::getInstance()->updateSymbolsForFile(fileName, symbols, content);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(fileName,
+                                                             symbolRecords,
+                                                             content);
 }
 
 void SymbolAnalyzer::publishFileAnalysisResult(
     const QString& fileName,
     const QString& content,
-    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SemanticSymbolRecord>& symbolRecords,
     const QList<SemanticDiagnostic>& diagnostics)
 {
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    semanticIndex->updateSymbolsForFile(fileName, symbols, content);
+    semanticIndex->updateSymbolRecordsForFile(fileName, symbolRecords, content);
     semanticIndex->publishSnapshotReplacingDiagnostics({fileName}, diagnostics);
 }
 
@@ -78,7 +80,7 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
         updateFileSymbols(
             fileResult.fileName,
             fileResult.content,
-            fileResult.symbols);
+            fileResult.symbolRecords);
         analyzedFiles.append(fileResult.fileName);
         filesAnalyzed++;
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);

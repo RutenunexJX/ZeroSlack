@@ -9,7 +9,7 @@ namespace SymbolAnalyzerWorkspace {
 
 WorkspaceAnalysisResult buildWorkspaceAnalysisResult(
     const QStringList& svFiles,
-    const QList<sym_list::SymbolInfo>& allSymbols,
+    const QList<SemanticSymbolRecord>& allRecords,
     std::function<bool()> isCancelled);
 
 } // namespace SymbolAnalyzerWorkspace

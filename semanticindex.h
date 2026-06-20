@@ -238,6 +238,10 @@ public:
     void updateSymbolsForFile(const QString& fileName,
                               const QList<sym_list::SymbolInfo>& symbols,
                               const QString& content);
+    void updateSymbolRecordsForFile(
+        const QString& fileName,
+        const QList<SemanticSymbolRecord>& records,
+        const QString& content);
     void publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics = {});
     void publishSnapshotReplacingDiagnostics(
         const QStringList& fileNames,

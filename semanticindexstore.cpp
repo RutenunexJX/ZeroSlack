@@ -117,6 +117,36 @@ QStringList scopeSymbolNamesForRecords(
     return result;
 }
 
+sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
+{
+    sym_list::SymbolInfo symbol;
+    symbol.symbolId = record.localHandle;
+    symbol.symbolName = record.name;
+    symbol.symbolType = record.rawCollectorKind;
+    symbol.fileName = record.location.fileName;
+    symbol.startLine = record.location.startLine;
+    symbol.startColumn = record.location.startColumn;
+    symbol.endLine = record.location.endLine;
+    symbol.endColumn = record.location.endColumn;
+    symbol.position = record.location.position;
+    symbol.length = record.location.length;
+    symbol.moduleScope = record.owner.name;
+    symbol.dataType = record.type.rawTypeText;
+    return symbol;
+}
+
+QList<sym_list::SymbolInfo> symbolInfosForRecords(
+    const QList<SemanticSymbolRecord>& records)
+{
+    QList<sym_list::SymbolInfo> symbols;
+    symbols.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.isValid())
+            symbols.append(symbolInfoForRecord(record));
+    }
+    return symbols;
+}
+
 }
 
 void SemanticIndex::updateSymbolsForFile(const QString& fileName,
@@ -124,6 +154,14 @@ void SemanticIndex::updateSymbolsForFile(const QString& fileName,
                                          const QString& content)
 {
     symbolDatabase()->setSymbolsForFile(fileName, symbols, content);
+}
+
+void SemanticIndex::updateSymbolRecordsForFile(
+    const QString& fileName,
+    const QList<SemanticSymbolRecord>& records,
+    const QString& content)
+{
+    updateSymbolsForFile(fileName, symbolInfosForRecords(records), content);
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(

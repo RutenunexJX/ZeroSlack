@@ -25,13 +25,15 @@ void SymbolAnalyzer::analyzeOpenDocuments(
 
         svFiles.append(fileName);
         SlangManager symbolAnalyzer;
-        QList<sym_list::SymbolInfo> list =
+        const auto symbols =
             symbolAnalyzer.extractSymbols(fileName, content);
-        updateFileSymbols(fileName, content, list);
+        const QList<SemanticSymbolRecord> records =
+            semanticSymbolRecordsForSymbols(symbols);
+        updateFileSymbols(fileName, content, records);
         SlangManager diagnosticsAnalyzer;
         diagnostics.append(
             diagnosticsAnalyzer.extractDiagnostics(fileName, content));
-        symbolsFromOpenFiles += list.size();
+        symbolsFromOpenFiles += records.size();
     }
 
     publishOpenDocumentResults(svFiles, diagnostics);
@@ -65,7 +67,7 @@ void SymbolAnalyzer::analyzeProject(
     }
 
     SlangManager symbolAnalyzer;
-    QList<sym_list::SymbolInfo> allSymbols =
+    const auto allSymbols =
         symbolAnalyzer.extractWorkspaceSymbols(svFiles,
                                                project.includeDirs,
                                                project.defines);
@@ -78,7 +80,9 @@ void SymbolAnalyzer::analyzeProject(
     WorkspaceAnalysisResult result =
         SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
             svFiles,
-            allSymbols,
+            semanticSymbolRecordsForSymbols(
+                allSymbols,
+                SymbolTaxonomy::packageScopeNames(allSymbols)),
             isCancelled);
     result.protectedFiles = workspaceProtectedFiles;
     result.generation = ++workspaceAnalysisGeneration;
@@ -109,13 +113,15 @@ void SymbolAnalyzer::analyzeFile(const QString& filePath)
     file.close();
 
     SlangManager symbolAnalyzer;
-    QList<sym_list::SymbolInfo> list =
+    const auto symbols =
         symbolAnalyzer.extractSymbols(filePath, content);
+    const QList<SemanticSymbolRecord> records =
+        semanticSymbolRecordsForSymbols(symbols);
     SlangManager diagnosticsAnalyzer;
     QList<SemanticDiagnostic> diagnostics =
         diagnosticsAnalyzer.extractDiagnostics(filePath, content);
-    publishFileAnalysisResult(filePath, content, list, diagnostics);
-    emit analysisCompleted(filePath, list.size());
+    publishFileAnalysisResult(filePath, content, records, diagnostics);
+    emit analysisCompleted(filePath, records.size());
 }
 
 void SymbolAnalyzer::analyzeFileContent(
@@ -125,11 +131,13 @@ void SymbolAnalyzer::analyzeFileContent(
     if (fileName.isEmpty() || !isSystemVerilogFile(fileName))
         return;
     SlangManager symbolAnalyzer;
-    QList<sym_list::SymbolInfo> list =
+    const auto symbols =
         symbolAnalyzer.extractSymbols(fileName, content);
+    const QList<SemanticSymbolRecord> records =
+        semanticSymbolRecordsForSymbols(symbols);
     SlangManager diagnosticsAnalyzer;
     QList<SemanticDiagnostic> diagnostics =
         diagnosticsAnalyzer.extractDiagnostics(fileName, content);
-    publishFileAnalysisResult(fileName, content, list, diagnostics);
-    emit analysisCompleted(fileName, list.size());
+    publishFileAnalysisResult(fileName, content, records, diagnostics);
+    emit analysisCompleted(fileName, records.size());
 }
