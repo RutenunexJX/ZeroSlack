@@ -988,7 +988,7 @@ foreach(relative_path IN LISTS PHASE_I2_NATIVE_STORE_QUERY_FILES)
     endif()
     file(READ "${path}" content)
     string(REGEX MATCH
-        "(semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles)[ \t\r\n]*\\("
+        "((semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles)[ \t\r\n]*\\(|symbolDatabase[ \t\r\n]*\\([ \t\r\n]*\\)[ \t\r\n]*->[ \t\r\n]*(getCachedFileContent|contentAffectsSymbols)[ \t\r\n]*\\()"
         legacy_query_match
         "${content}")
 
@@ -1007,7 +1007,7 @@ endif()
 if(phase_i2_query_violations)
     list(JOIN phase_i2_query_violations "\n  " phase_i2_query_violation_text)
     message(FATAL_ERROR
-        "Phase I2 SemanticIndex record queries must not read legacy sym_list records:\n  ${phase_i2_query_violation_text}")
+        "Phase I2 SemanticIndex queries must not read legacy sym_list records or content state:\n  ${phase_i2_query_violation_text}")
 endif()
 
 set(h0_allowlist_missing_files)

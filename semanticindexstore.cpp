@@ -400,7 +400,7 @@ QString SemanticIndex::getCachedFileContent(const QString& fileName) const
             return content;
     }
 
-    return symbolDatabase()->getCachedFileContent(fileName);
+    return {};
 }
 
 QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int cursorLine) const
@@ -448,7 +448,7 @@ bool SemanticIndex::contentAffectsSymbols(const QString& fileName,
     if (hasNativeFileState(fileName))
         return nativeContentAffectsSymbols(fileName, content);
 
-    return symbolDatabase()->contentAffectsSymbols(fileName, content);
+    return true;
 }
 
 void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,
