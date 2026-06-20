@@ -257,6 +257,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "completionmodelupdates.cpp|CompletionModel::updateCompletions[ \t\r\n]*\\([^\\)]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
     "completionmodel.h|updateSymbolCompletions[ \t\r\n]*\\([^\\)]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
     "completionmodelupdates.cpp|CompletionModel::updateSymbolCompletions[ \t\r\n]*\\([^\\)]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
+    "completionmodel.h|struct[ \t\r\n]+CompletionItem[ \t\r\n]*\\{[^}]*sym_list::sym_type_e[ \t\r\n]+symbolType"
     "completionservice.h|symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "completionservicesemantic.cpp|CompletionService::symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "completionservice.h|commandSymbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"

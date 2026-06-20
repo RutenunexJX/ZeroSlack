@@ -47,7 +47,6 @@ void fillSymbolMetadataFromRecord(
 {
     item.symbolRecord = record;
     item.symbolStableKey = record.stableKey;
-    item.symbolType = record.rawCollectorKind;
 
     const SymbolTaxonomy::SemanticMetadata metadata =
         metadataForRecord(record);
@@ -79,7 +78,6 @@ void CompletionModel::updateCompletions(const CompletionResult &completion,
         item.symbolStableKey = item.symbolRecord.stableKey.isValid()
             ? item.symbolRecord.stableKey
             : semanticItem.symbolStableKey;
-        item.symbolType = item.symbolRecord.rawCollectorKind;
         item.score = completionService->completionItemScore(semanticItem.label, prefix);
         item.description = semanticItem.typeDisplayName;
         item.typeDisplayName = semanticItem.typeDisplayName;

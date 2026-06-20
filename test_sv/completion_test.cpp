@@ -244,9 +244,8 @@ int main(int argc, char** argv) {
                        == SymbolTaxonomy::SymbolOwnerScope::Module
                    && modelScoring.getItem(modelScoring.index(2, 0)).sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource
-                   && modelScoring.getItem(modelScoring.index(2, 0)).symbolType
-                       == modelScoring.getItem(modelScoring.index(2, 0))
-                              .symbolRecord.rawCollectorKind,
+                   && modelScoring.getItem(modelScoring.index(2, 0))
+                          .symbolRecord.rawCollectorKind == sym_list::sym_logic,
                true);
     expectBool("CompletionModel header selectable",
                modelScoring.getItem(modelScoring.index(0, 0)).selectable,
@@ -313,13 +312,8 @@ int main(int argc, char** argv) {
                    metadataDescriptionModel.index(0, 0)).symbolRecord.declarationKind
                    == SymbolTaxonomy::DeclarationKind::Module
                    && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0)).symbolType
-                       == metadataDescriptionModel.getItem(
-                           metadataDescriptionModel.index(0, 0))
-                              .symbolRecord.rawCollectorKind
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0)).symbolType
-                       == sym_list::sym_module,
+                       metadataDescriptionModel.index(0, 0))
+                          .symbolRecord.rawCollectorKind == sym_list::sym_module,
                true);
     expectBool("CompletionModel metadata semantic fields",
                metadataDescriptionModel.getItem(
