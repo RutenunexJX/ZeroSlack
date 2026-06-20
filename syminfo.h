@@ -221,7 +221,6 @@ private:
 
     void rebuildAllRelationships();
     void buildSymbolRelationships(const QString& fileName);
-    void analyzeModuleContainment(const QString& fileName);
     QList<SymbolInfo> symbolsForFileSnapshot(const QString& fileName) const;
     /** Rebuild ScopeManager tree and CONTAINS relationships for fileName from current symbolDatabase entries. */
     void rebuildScopeAndRelationshipsForFile(const QString& fileName);

@@ -2657,10 +2657,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     AnalysisScheduler documentSaveScheduler;
     SymbolAnalyzer documentSaveAnalyzer;
     SymbolRelationshipEngine documentSaveEngine;
+    SemanticIndex documentSaveIndex(db);
+    documentSaveIndex.attachRelationshipEngine(&documentSaveEngine);
     SmartRelationshipBuilder documentSaveBuilder(
         &documentSaveEngine,
-        db,
-        &slang);
+        &slang,
+        [&documentSaveIndex](const QString& fileName) {
+            return documentSaveIndex.getSymbolRecords(fileName);
+        });
     DocumentModel documentSaveModel;
     MyCodeEditor documentSaveEditor;
     const QString documentSavePath =
@@ -7969,8 +7973,14 @@ int main(int argc, char** argv)
     auto* db = sym_list::getInstance();
 
     SymbolRelationshipEngine engine;
-    db->setRelationshipEngine(&engine);
-    SmartRelationshipBuilder builder(&engine, db, &slang);
+    SemanticIndex index(db);
+    index.attachRelationshipEngine(&engine);
+    SmartRelationshipBuilder builder(
+        &engine,
+        &slang,
+        [&index](const QString& fileName) {
+            return index.getSymbolRecords(fileName);
+        });
 
     runInlineRelationshipRegression(slang, db, builder);
     runMultiFileRelationshipFixture(slang, db, engine, builder);
