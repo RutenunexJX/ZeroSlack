@@ -48,15 +48,6 @@ bool globalSymbolInfoVisibleForRecord(
 
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getCommandCompletionSymbols(
-    const QString& moduleName,
-    sym_list::sym_type_e symbolType,
-    const QString& prefix) const
-{
-    return semanticSymbolInfoCarriersForRecords(
-        getCommandCompletionSymbolRecords(moduleName, symbolType, prefix));
-}
-
 QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
     const QString& moduleName,
     sym_list::sym_type_e symbolType,

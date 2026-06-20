@@ -148,18 +148,18 @@ QStringList SemanticIndex::getModulePortCompletionNames(
     if (!moduleExists)
         return {};
 
-    QList<sym_list::SymbolInfo> portSymbols;
-    portSymbols.append(getCommandCompletionSymbols(moduleTypeName,
-                                                   sym_list::sym_wire,
-                                                   prefix));
-    portSymbols.append(getCommandCompletionSymbols(moduleTypeName,
-                                                   sym_list::sym_reg,
-                                                   prefix));
-    portSymbols.append(getCommandCompletionSymbols(moduleTypeName,
-                                                   sym_list::sym_logic,
-                                                   prefix));
+    QList<SemanticSymbolRecord> portRecords;
+    portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
+                                                         sym_list::sym_wire,
+                                                         prefix));
+    portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
+                                                         sym_list::sym_reg,
+                                                         prefix));
+    portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
+                                                         sym_list::sym_logic,
+                                                         prefix));
     return uniqueSortedCompletionContextSymbolNames(
-        semanticSymbolRecordsForSymbols(portSymbols));
+        portRecords);
 }
 
 QString SemanticIndex::getStructTypeForVariable(const QString& variableName,
