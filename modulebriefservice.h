@@ -133,35 +133,32 @@ private:
     static std::unique_ptr<ModuleBriefService> instance;
 
     SemanticIndex* semanticIndex() const;
-    sym_list::SymbolInfo resolveModule(
+    SemanticSymbolRecord resolveModule(
         const ModuleBriefQuery& query,
         ModuleBriefNotFoundReason* reason) const;
-    QList<sym_list::SymbolInfo> symbolsInModule(
-        const sym_list::SymbolInfo& moduleSymbol,
-        const QList<sym_list::SymbolInfo>& symbols,
+    QList<SemanticSymbolRecord> symbolsInModule(
+        const SemanticSymbolRecord& moduleRecord,
+        const QList<SemanticSymbolRecord>& records,
         SymbolTaxonomy::DeclarationGroup group) const;
-    QList<sym_list::SymbolInfo> importSymbols(
-        const sym_list::SymbolInfo& moduleSymbol,
+    QList<SemanticSymbolRecord> importSymbols(
         const SymbolStableKey& moduleStableKey) const;
     QList<SemanticDiagnostic> diagnosticsForModule(
-        const sym_list::SymbolInfo& moduleSymbol) const;
+        const SemanticSymbolRecord& moduleRecord) const;
     ModuleBriefRelationshipSummary relationshipSummary(
-        const sym_list::SymbolInfo& moduleSymbol,
         const SymbolStableKey& moduleStableKey) const;
     QList<ModuleBriefRelationshipEvidenceRow> relationshipEvidenceRows(
-        const sym_list::SymbolInfo& moduleSymbol,
         const SymbolStableKey& moduleStableKey) const;
 
     static QList<ModuleBriefSymbolRow> symbolRows(
-        const QList<sym_list::SymbolInfo>& symbols,
+        const QList<SemanticSymbolRecord>& records,
         const QString& sectionDisplayName);
     static QList<ModuleBriefDiagnosticRow> diagnosticRows(
         const QList<SemanticDiagnostic>& diagnostics);
     static QList<ModuleBriefContextRow> contextRows(
-        const QList<sym_list::SymbolInfo>& imports,
-        const QList<sym_list::SymbolInfo>& ports,
-        const QList<sym_list::SymbolInfo>& instances,
-        const QList<sym_list::SymbolInfo>& allSymbols);
+        const QList<SemanticSymbolRecord>& imports,
+        const QList<SemanticSymbolRecord>& ports,
+        const QList<SemanticSymbolRecord>& instances,
+        const QList<SemanticSymbolRecord>& allRecords);
     static QList<ModuleBriefRelationshipRow> relationshipRows(
         const ModuleBriefRelationshipSummary& summary);
     static QString symbolTypeDisplayName(const SemanticSymbolRecord& record);

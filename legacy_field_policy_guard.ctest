@@ -122,6 +122,7 @@ set(RECORD_METADATA_HELPER_FILES
 
 set(RECORD_NATIVE_SERVICE_FILES
     clockresetdomainservice.cpp
+    modulebriefservice.cpp
     relationshipanalysisworker.cpp
     semanticdiffservice.cpp
     signaljourneyservice.cpp

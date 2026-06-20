@@ -6,21 +6,9 @@
 std::unique_ptr<ModuleBriefService> ModuleBriefService::instance = nullptr;
 
 namespace {
-sym_list::SymbolInfo missingModuleBriefSymbol()
+SemanticSymbolRecord missingModuleBriefRecord()
 {
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = -1;
-    return symbol;
-}
-
-int moduleBriefLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolId;
-}
-
-sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
-{
-    return semanticSymbolInfoCarrierForRecord(record);
+    return {};
 }
 
 SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
@@ -29,29 +17,17 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForRecord(
     return semanticMetadataForSymbolRecord(record);
 }
 
-RtlInsightCodeLink codeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
 {
-    if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        const int line = record.location.startLine > 0
-            ? record.location.startLine
-            : fallback.startLine;
-        const int column = record.location.startColumn > 0
-            ? record.location.startColumn
-            : fallback.startColumn;
-        return RtlInsightLink::fromFileLine(fileName, line, column);
-    }
-    return RtlInsightLink::fromSymbol(fallback);
+    return RtlInsightLink::fromFileLine(record.location.fileName,
+                                        record.location.startLine,
+                                        record.location.startColumn);
 }
 
-bool isInsideModule(const sym_list::SymbolInfo& symbol,
-                    const sym_list::SymbolInfo& moduleSymbol);
-QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols);
-void sortSymbols(QList<sym_list::SymbolInfo>& symbols);
+bool isInsideModule(const SemanticSymbolRecord& record,
+                    const SemanticSymbolRecord& moduleRecord);
+QSet<QString> interfaceNames(const QList<SemanticSymbolRecord>& records);
+void sortRecords(QList<SemanticSymbolRecord>& records);
 
 }
 
@@ -78,9 +54,9 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     const ModuleBriefQuery& query) const
 {
     ModuleBriefReport report;
-    const sym_list::SymbolInfo moduleSymbol =
+    const SemanticSymbolRecord moduleRecord =
         resolveModule(query, &report.notFoundReason);
-    if (moduleBriefLocalHandleForSymbol(moduleSymbol) < 0) {
+    if (moduleRecord.localHandle < 0) {
         report.notFoundReasonDisplayName =
             notFoundReasonDisplayName(report.notFoundReason);
         return report;
@@ -88,29 +64,27 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
 
     report.found = true;
     report.notFoundReason = ModuleBriefNotFoundReason::None;
-    report.moduleSymbolRecord = semanticSymbolRecordForSymbol(moduleSymbol);
-    report.moduleStableKey = report.moduleSymbolRecord.stableKey.isValid()
-        ? report.moduleSymbolRecord.stableKey
-        : symbolStableKeyForSymbol(moduleSymbol);
+    report.moduleSymbolRecord = moduleRecord;
+    report.moduleStableKey = report.moduleSymbolRecord.stableKey;
     report.moduleDisplayName = symbolDisplayName(report.moduleSymbolRecord);
-    const QList<sym_list::SymbolInfo> symbols =
-        semanticSymbolInfoCarriersForRecords(semanticIndex()->getSymbolRecords());
+    const QList<SemanticSymbolRecord> records =
+        semanticIndex()->getSymbolRecords();
 
-    const QList<sym_list::SymbolInfo> ports = symbolsInModule(
-        moduleSymbol,
-        symbols,
+    const QList<SemanticSymbolRecord> ports = symbolsInModule(
+        moduleRecord,
+        records,
         SymbolTaxonomy::DeclarationGroup::Port);
-    const QList<sym_list::SymbolInfo> parameters = symbolsInModule(
-        moduleSymbol,
-        symbols,
+    const QList<SemanticSymbolRecord> parameters = symbolsInModule(
+        moduleRecord,
+        records,
         SymbolTaxonomy::DeclarationGroup::Parameter);
-    const QList<sym_list::SymbolInfo> instances = symbolsInModule(
-        moduleSymbol,
-        symbols,
+    const QList<SemanticSymbolRecord> instances = symbolsInModule(
+        moduleRecord,
+        records,
         SymbolTaxonomy::DeclarationGroup::Instance);
-    const QList<sym_list::SymbolInfo> imports =
-        importSymbols(moduleSymbol, report.moduleStableKey);
-    report.diagnostics = diagnosticsForModule(moduleSymbol);
+    const QList<SemanticSymbolRecord> imports =
+        importSymbols(report.moduleStableKey);
+    report.diagnostics = diagnosticsForModule(moduleRecord);
     report.portRows = symbolRows(ports, QStringLiteral("Port"));
     report.parameterRows = symbolRows(parameters, QStringLiteral("Parameter"));
     report.instanceRows = symbolRows(instances, QStringLiteral("Instance"));
@@ -119,11 +93,10 @@ ModuleBriefReport ModuleBriefService::buildModuleBrief(
     report.contextRows = contextRows(imports,
                                      ports,
                                      instances,
-                                     symbols);
-    report.relationshipSummary = relationshipSummary(moduleSymbol,
-                                                     report.moduleStableKey);
-    report.relationshipEvidenceRows = relationshipEvidenceRows(moduleSymbol,
-                                                               report.moduleStableKey);
+                                     records);
+    report.relationshipSummary = relationshipSummary(report.moduleStableKey);
+    report.relationshipEvidenceRows =
+        relationshipEvidenceRows(report.moduleStableKey);
     return report;
 }
 
@@ -132,7 +105,7 @@ SemanticIndex* ModuleBriefService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-sym_list::SymbolInfo ModuleBriefService::resolveModule(
+SemanticSymbolRecord ModuleBriefService::resolveModule(
     const ModuleBriefQuery& query,
     ModuleBriefNotFoundReason* reason) const
 {
@@ -145,21 +118,21 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
         if (!record.isValid()) {
             if (reason)
                 *reason = ModuleBriefNotFoundReason::NoMatchingModule;
-            return missingModuleBriefSymbol();
+            return missingModuleBriefRecord();
         }
         if (!SymbolTaxonomy::isModuleDeclaration(
                 semanticMetadataForRecord(record))) {
             if (reason)
                 *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
-            return missingModuleBriefSymbol();
+            return missingModuleBriefRecord();
         }
-        return symbolInfoForRecord(record);
+        return record;
     }
 
     if (query.moduleName.isEmpty()) {
         if (reason)
             *reason = ModuleBriefNotFoundReason::EmptyModuleName;
-        return missingModuleBriefSymbol();
+        return missingModuleBriefRecord();
     }
 
     SemanticDefinitionQuery definitionQuery;
@@ -170,45 +143,43 @@ sym_list::SymbolInfo ModuleBriefService::resolveModule(
     if (!definition.found) {
         if (reason)
             *reason = ModuleBriefNotFoundReason::NoMatchingModule;
-        return missingModuleBriefSymbol();
+        return missingModuleBriefRecord();
     }
     if (!SymbolTaxonomy::isModuleDeclaration(
             semanticMetadataForRecord(definition.symbolRecord))) {
         if (reason)
             *reason = ModuleBriefNotFoundReason::UnsupportedSymbolKind;
-        return missingModuleBriefSymbol();
+        return missingModuleBriefRecord();
     }
-    const sym_list::SymbolInfo symbol =
-        symbolInfoForRecord(definition.symbolRecord);
-    if (moduleBriefLocalHandleForSymbol(symbol) < 0)
-        return missingModuleBriefSymbol();
-    return symbol;
+    const SemanticSymbolRecord record = definition.symbolRecord;
+    if (record.localHandle < 0)
+        return missingModuleBriefRecord();
+    return record;
 }
 
-QList<sym_list::SymbolInfo> ModuleBriefService::symbolsInModule(
-    const sym_list::SymbolInfo& moduleSymbol,
-    const QList<sym_list::SymbolInfo>& symbols,
+QList<SemanticSymbolRecord> ModuleBriefService::symbolsInModule(
+    const SemanticSymbolRecord& moduleRecord,
+    const QList<SemanticSymbolRecord>& records,
     SymbolTaxonomy::DeclarationGroup group) const
 {
-    QList<sym_list::SymbolInfo> result;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
+    QList<SemanticSymbolRecord> result;
+    for (const SemanticSymbolRecord& record : records) {
         if (SymbolTaxonomy::declarationGroup(
-                SymbolTaxonomy::semanticMetadata(symbol)) != group) {
+                semanticMetadataForRecord(record)) != group) {
             continue;
         }
-        if (!isInsideModule(symbol, moduleSymbol))
+        if (!isInsideModule(record, moduleRecord))
             continue;
-        result.append(symbol);
+        result.append(record);
     }
-    sortSymbols(result);
+    sortRecords(result);
     return result;
 }
 
-QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
-    const sym_list::SymbolInfo& moduleSymbol,
+QList<SemanticSymbolRecord> ModuleBriefService::importSymbols(
     const SymbolStableKey& moduleStableKey) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     QSet<int> seen;
     const QList<SemanticRelationshipResult> relationships =
         moduleStableKey.isValid()
@@ -225,31 +196,28 @@ QList<sym_list::SymbolInfo> ModuleBriefService::importSymbols(
             continue;
         if (seen.contains(localHandle))
             continue;
-        const sym_list::SymbolInfo packageSymbol =
-            symbolInfoForRecord(packageRecord);
-        if (moduleBriefLocalHandleForSymbol(packageSymbol) < 0)
-            continue;
         seen.insert(localHandle);
-        result.append(packageSymbol);
+        result.append(packageRecord);
     }
-    sortSymbols(result);
+    sortRecords(result);
     return result;
 }
 
 QList<SemanticDiagnostic> ModuleBriefService::diagnosticsForModule(
-    const sym_list::SymbolInfo& moduleSymbol) const
+    const SemanticSymbolRecord& moduleRecord) const
 {
     QList<SemanticDiagnostic> result;
     const QList<SemanticDiagnostic> diagnostics =
-        semanticIndex()->getDiagnostics(moduleSymbol.fileName);
+        semanticIndex()->getDiagnostics(moduleRecord.location.fileName);
     for (const SemanticDiagnostic& diagnostic : diagnostics) {
         if (diagnostic.line <= 0) {
             result.append(diagnostic);
             continue;
         }
-        const bool afterStart = diagnostic.line >= moduleSymbol.startLine;
-        const bool beforeEnd = moduleSymbol.endLine <= 0
-            || diagnostic.line <= moduleSymbol.endLine;
+        const bool afterStart =
+            diagnostic.line >= moduleRecord.location.startLine;
+        const bool beforeEnd = moduleRecord.location.endLine <= 0
+            || diagnostic.line <= moduleRecord.location.endLine;
         if (afterStart && beforeEnd)
             result.append(diagnostic);
     }
@@ -265,7 +233,6 @@ QList<SemanticDiagnostic> ModuleBriefService::diagnosticsForModule(
 }
 
 ModuleBriefRelationshipSummary ModuleBriefService::relationshipSummary(
-    const sym_list::SymbolInfo& moduleSymbol,
     const SymbolStableKey& moduleStableKey) const
 {
     ModuleBriefRelationshipSummary summary;
@@ -290,7 +257,6 @@ ModuleBriefRelationshipSummary ModuleBriefService::relationshipSummary(
 }
 
 QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEvidenceRows(
-    const sym_list::SymbolInfo& moduleSymbol,
     const SymbolStableKey& moduleStableKey) const
 {
     QList<ModuleBriefRelationshipEvidenceRow> rows;
@@ -334,44 +300,40 @@ QList<ModuleBriefRelationshipEvidenceRow> ModuleBriefService::relationshipEviden
 namespace {
 
 bool isInsideModule(
-    const sym_list::SymbolInfo& symbol,
-    const sym_list::SymbolInfo& moduleSymbol)
+    const SemanticSymbolRecord& record,
+    const SemanticSymbolRecord& moduleRecord)
 {
-    if (moduleBriefLocalHandleForSymbol(symbol)
-        == moduleBriefLocalHandleForSymbol(moduleSymbol)) {
+    if (record.localHandle == moduleRecord.localHandle) {
         return false;
     }
 
-    const SemanticSymbolRecord symbolRecord =
-        semanticSymbolRecordForSymbol(symbol);
-    const SemanticSymbolRecord moduleRecord =
-        semanticSymbolRecordForSymbol(moduleSymbol);
     if (!moduleRecord.name.isEmpty()
-        && symbolRecord.owner.name == moduleRecord.name) {
+        && record.owner.name == moduleRecord.name) {
         return true;
     }
-    if (symbol.fileName != moduleSymbol.fileName)
+    if (record.location.fileName != moduleRecord.location.fileName)
         return false;
-    if (moduleSymbol.startLine <= 0 || symbol.startLine <= 0)
+    if (moduleRecord.location.startLine <= 0
+        || record.location.startLine <= 0)
         return false;
-    if (symbol.startLine < moduleSymbol.startLine)
+    if (record.location.startLine < moduleRecord.location.startLine)
         return false;
-    return moduleSymbol.endLine <= 0 || symbol.startLine <= moduleSymbol.endLine;
+    return moduleRecord.location.endLine <= 0
+        || record.location.startLine <= moduleRecord.location.endLine;
 }
 
 }
 
 QList<ModuleBriefSymbolRow> ModuleBriefService::symbolRows(
-    const QList<sym_list::SymbolInfo>& symbols,
+    const QList<SemanticSymbolRecord>& records,
     const QString& sectionDisplayName)
 {
     QList<ModuleBriefSymbolRow> rows;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    for (const SemanticSymbolRecord& record : records) {
         ModuleBriefSymbolRow row;
         row.symbolRecord = record;
         row.symbolStableKey = record.stableKey;
-        row.codeLink = codeLinkForRecord(record, symbol);
+        row.codeLink = codeLinkForRecord(record);
         row.sectionDisplayName = sectionDisplayName;
         row.symbolDisplayName = symbolDisplayName(record);
         row.typeDisplayName = symbolTypeDisplayName(record);
@@ -422,19 +384,18 @@ QList<ModuleBriefRelationshipRow> ModuleBriefService::relationshipRows(
 }
 
 QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
-    const QList<sym_list::SymbolInfo>& imports,
-    const QList<sym_list::SymbolInfo>& ports,
-    const QList<sym_list::SymbolInfo>& instances,
-    const QList<sym_list::SymbolInfo>& allSymbols)
+    const QList<SemanticSymbolRecord>& imports,
+    const QList<SemanticSymbolRecord>& ports,
+    const QList<SemanticSymbolRecord>& instances,
+    const QList<SemanticSymbolRecord>& allRecords)
 {
     QList<ModuleBriefContextRow> rows;
     QSet<QString> seen;
-    const QSet<QString> interfaces = interfaceNames(allSymbols);
+    const QSet<QString> interfaces = interfaceNames(allRecords);
 
     auto appendRow = [&](const QString& section,
                          const QString& kind,
-                         const sym_list::SymbolInfo& symbol) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+                         const SemanticSymbolRecord& record) {
         const QString key = QStringLiteral("%1:%2:%3:%4:%5")
                                 .arg(section)
                                 .arg(record.localHandle)
@@ -448,7 +409,7 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         ModuleBriefContextRow row;
         row.symbolRecord = record;
         row.symbolStableKey = record.stableKey;
-        row.codeLink = codeLinkForRecord(record, symbol);
+        row.codeLink = codeLinkForRecord(record);
         row.sectionDisplayName = section;
         row.symbolDisplayName = symbolDisplayName(record);
         row.contextKindDisplayName = kind;
@@ -460,44 +421,41 @@ QList<ModuleBriefContextRow> ModuleBriefService::contextRows(
         rows.append(row);
     };
 
-    for (const sym_list::SymbolInfo& packageSymbol : imports) {
-        appendRow(QStringLiteral("Package"), QStringLiteral("package import"), packageSymbol);
-        const SemanticSymbolRecord packageRecord =
-            semanticSymbolRecordForSymbol(packageSymbol);
-        QList<sym_list::SymbolInfo> packageMembers;
-        for (const sym_list::SymbolInfo& symbol : allSymbols) {
-            const SemanticSymbolRecord symbolRecord =
-                semanticSymbolRecordForSymbol(symbol);
-            if (symbolRecord.owner.name != packageRecord.name)
+    for (const SemanticSymbolRecord& packageRecord : imports) {
+        appendRow(QStringLiteral("Package"),
+                  QStringLiteral("package import"),
+                  packageRecord);
+        QList<SemanticSymbolRecord> packageMembers;
+        for (const SemanticSymbolRecord& record : allRecords) {
+            if (record.owner.name != packageRecord.name)
                 continue;
             if (!SymbolTaxonomy::isPackageVisibleDefinition(
-                    SymbolTaxonomy::semanticMetadata(symbol))) {
+                    semanticMetadataForRecord(record))) {
                 continue;
             }
-            packageMembers.append(symbol);
+            packageMembers.append(record);
         }
-        sortSymbols(packageMembers);
-        for (const sym_list::SymbolInfo& symbol : packageMembers) {
-            const SemanticSymbolRecord symbolRecord =
-                semanticSymbolRecordForSymbol(symbol);
+        sortRecords(packageMembers);
+        for (const SemanticSymbolRecord& record : packageMembers) {
             appendRow(QStringLiteral("Package Member"),
                       QStringLiteral("package %1")
-                          .arg(symbolTypeDisplayName(symbolRecord)),
-                      symbol);
+                          .arg(symbolTypeDisplayName(record)),
+                      record);
         }
     }
 
-    for (const sym_list::SymbolInfo& port : ports) {
+    for (const SemanticSymbolRecord& port : ports) {
         const SymbolTaxonomy::SemanticMetadata metadata =
-            SymbolTaxonomy::semanticMetadata(port);
+            semanticMetadataForRecord(port);
         if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
             && metadata.interfaceLikeOwner) {
             appendRow(QStringLiteral("Interface"), QStringLiteral("interface port"), port);
         }
     }
 
-    for (const sym_list::SymbolInfo& instance : instances) {
-        const QString interfaceName = SymbolTaxonomy::interfaceTypeName(instance);
+    for (const SemanticSymbolRecord& instance : instances) {
+        const QString interfaceName =
+            SymbolTaxonomy::interfaceTypeName(instance.type.rawTypeText);
         if (!interfaceName.isEmpty() && interfaces.contains(interfaceName)) {
             appendRow(QStringLiteral("Interface"),
                       QStringLiteral("interface instance"),
@@ -609,14 +567,14 @@ QString ModuleBriefService::contextDetailDisplayName(
 
 namespace {
 
-QSet<QString> interfaceNames(const QList<sym_list::SymbolInfo>& symbols)
+QSet<QString> interfaceNames(const QList<SemanticSymbolRecord>& records)
 {
     QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::semanticMetadata(symbol).declarationKind
+    for (const SemanticSymbolRecord& record : records) {
+        if (semanticMetadataForSymbolRecord(record).declarationKind
                 == SymbolTaxonomy::DeclarationKind::Interface
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
+            && !record.name.isEmpty()) {
+            names.insert(record.name);
         }
     }
     return names;
@@ -694,11 +652,9 @@ void ModuleBriefService::fillRelationshipEvidenceMetadata(
             ? row.toSymbolRecord
             : row.fromSymbolRecord;
     }
-    row.peerCodeLink = codeLinkForRecord(row.peerSymbolRecord, {});
-    row.fromCodeLink = codeLinkForRecord(row.fromSymbolRecord,
-                                         {});
-    row.toCodeLink = codeLinkForRecord(row.toSymbolRecord,
-                                       {});
+    row.peerCodeLink = codeLinkForRecord(row.peerSymbolRecord);
+    row.fromCodeLink = codeLinkForRecord(row.fromSymbolRecord);
+    row.toCodeLink = codeLinkForRecord(row.toSymbolRecord);
     row.provenance = relationship.provenance;
     row.confidence = relationship.confidence;
     row.evidenceText = relationship.evidenceText;
@@ -749,21 +705,20 @@ void ModuleBriefService::sortRelationshipEvidenceRows(
 
 namespace {
 
-void sortSymbols(QList<sym_list::SymbolInfo>& symbols)
+void sortRecords(QList<SemanticSymbolRecord>& records)
 {
-    std::sort(symbols.begin(), symbols.end(),
-              [](const sym_list::SymbolInfo& lhs,
-                 const sym_list::SymbolInfo& rhs) {
-                  if (lhs.fileName != rhs.fileName)
-                      return lhs.fileName < rhs.fileName;
-                  if (lhs.startLine != rhs.startLine)
-                      return lhs.startLine < rhs.startLine;
-                  if (lhs.startColumn != rhs.startColumn)
-                      return lhs.startColumn < rhs.startColumn;
-                  if (lhs.symbolName != rhs.symbolName)
-                      return lhs.symbolName < rhs.symbolName;
-                  return moduleBriefLocalHandleForSymbol(lhs)
-                      < moduleBriefLocalHandleForSymbol(rhs);
+    std::sort(records.begin(), records.end(),
+              [](const SemanticSymbolRecord& lhs,
+                 const SemanticSymbolRecord& rhs) {
+                  if (lhs.location.fileName != rhs.location.fileName)
+                      return lhs.location.fileName < rhs.location.fileName;
+                  if (lhs.location.startLine != rhs.location.startLine)
+                      return lhs.location.startLine < rhs.location.startLine;
+                  if (lhs.location.startColumn != rhs.location.startColumn)
+                      return lhs.location.startColumn < rhs.location.startColumn;
+                  if (lhs.name != rhs.name)
+                      return lhs.name < rhs.name;
+                  return lhs.localHandle < rhs.localHandle;
               });
 }
 
