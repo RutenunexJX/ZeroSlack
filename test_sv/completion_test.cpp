@@ -545,8 +545,11 @@ int main(int argc, char** argv) {
     metadataInstanceSymbol.semanticUsageRole =
         SymbolTaxonomy::SymbolUsageRole::Declaration;
     metadataInstanceSymbol.rawCollectorKind = sym_list::sym_user;
-    expectBool("SymbolTaxonomy symbol instance declaration",
-               SymbolTaxonomy::isInstanceDeclaration(metadataInstanceSymbol),
+    const SymbolTaxonomy::SemanticMetadata metadataInstanceSymbolMetadata =
+        SymbolTaxonomy::semanticMetadata(metadataInstanceSymbol);
+    expectBool("SymbolTaxonomy metadata instance declaration",
+               SymbolTaxonomy::isInstanceDeclaration(
+                   metadataInstanceSymbolMetadata),
                true);
     sym_list::SymbolInfo metadataKeySymbol;
     metadataKeySymbol.symbolName = QStringLiteral("metadata_top");
@@ -637,8 +640,10 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo packageSymbol;
     packageSymbol.symbolType = sym_list::sym_package;
     packageSymbol.symbolName = QStringLiteral("pkg_scope");
-    expectBool("SymbolTaxonomy package symbol overload",
-               SymbolTaxonomy::isPackageDeclaration(packageSymbol),
+    const SymbolTaxonomy::SemanticMetadata packageMetadata =
+        SymbolTaxonomy::semanticMetadata(packageSymbol);
+    expectBool("SymbolTaxonomy package metadata declaration",
+               SymbolTaxonomy::isPackageDeclaration(packageMetadata),
                true);
     expectBool("SymbolTaxonomy package scope names",
                SymbolTaxonomy::packageScopeNames({packageSymbol})
@@ -736,8 +741,10 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo moduleSymbol;
     moduleSymbol.symbolType = sym_list::sym_module;
     moduleSymbol.symbolName = QStringLiteral("top");
-    expectBool("SymbolTaxonomy module symbol overload",
-               SymbolTaxonomy::isModuleDeclaration(moduleSymbol),
+    const SymbolTaxonomy::SemanticMetadata moduleMetadata =
+        SymbolTaxonomy::semanticMetadata(moduleSymbol);
+    expectBool("SymbolTaxonomy module metadata declaration",
+               SymbolTaxonomy::isModuleDeclaration(moduleMetadata),
                true);
     expectBool("SymbolTaxonomy symbol in module scope",
                SymbolTaxonomy::isSymbolInModuleScope(

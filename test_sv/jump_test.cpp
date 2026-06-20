@@ -607,20 +607,18 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo taxonomyInterfaceOwner;
     taxonomyInterfaceOwner.symbolName = QStringLiteral("if_bus");
     taxonomyInterfaceOwner.symbolType = sym_list::sym_interface;
-    expectEq("SymbolTaxonomy interface owner scope",
-             SymbolTaxonomy::interfaceScopeFromOwner(taxonomyInterfaceOwner),
-             QStringLiteral("if_bus"));
+    expectBool("SymbolTaxonomy interface owner metadata",
+               SymbolTaxonomy::semanticMetadata(taxonomyInterfaceOwner).declarationKind
+                   == SymbolTaxonomy::DeclarationKind::Interface,
+               true);
     taxonomyInterfaceOwner.symbolName = QStringLiteral("bus_port");
     taxonomyInterfaceOwner.symbolType = sym_list::sym_port_interface_modport;
     taxonomyInterfaceOwner.dataType = QStringLiteral("if_bus.master");
-    expectEq("SymbolTaxonomy modport owner scope",
-             SymbolTaxonomy::interfaceScopeFromOwner(taxonomyInterfaceOwner),
-             QStringLiteral("if_bus"));
     expectEq("SymbolTaxonomy interface type name",
-             SymbolTaxonomy::interfaceTypeName(taxonomyInterfaceOwner),
+             SymbolTaxonomy::interfaceTypeName(taxonomyInterfaceOwner.dataType),
              QStringLiteral("if_bus"));
     expectEq("SymbolTaxonomy interface modport name",
-             SymbolTaxonomy::interfaceModportName(taxonomyInterfaceOwner),
+             SymbolTaxonomy::interfaceModportName(taxonomyInterfaceOwner.dataType),
              QStringLiteral("master"));
     expectBool("SymbolTaxonomy modport member-scope candidate",
                SymbolTaxonomy::isMemberScopeDefinitionCandidate(

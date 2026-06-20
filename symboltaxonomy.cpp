@@ -459,34 +459,10 @@ QString interfaceTypeName(const QString& dataType)
     return dot >= 0 ? dataType.left(dot) : dataType;
 }
 
-QString interfaceTypeName(const sym_list::SymbolInfo& symbol)
-{
-    const SemanticMetadata metadata = semanticMetadata(symbol);
-    if (metadata.declarationKind == DeclarationKind::Interface)
-        return symbol.symbolName;
-    if (!metadata.interfaceLikeOwner
-        && metadata.declarationKind != DeclarationKind::Instance) {
-        return QString();
-    }
-    return interfaceTypeName(symbol.dataType);
-}
-
 QString interfaceModportName(const QString& dataType)
 {
     const int dot = dataType.indexOf(QLatin1Char('.'));
     return dot >= 0 ? dataType.mid(dot + 1) : QString();
-}
-
-QString interfaceModportName(const sym_list::SymbolInfo& symbol)
-{
-    return interfaceModportName(symbol.dataType);
-}
-
-QString interfaceScopeFromOwner(const sym_list::SymbolInfo& symbol)
-{
-    if (!isInterfaceLikeOwner(symbol.symbolType))
-        return QString();
-    return interfaceTypeName(symbol);
 }
 
 bool isModuleDeclaration(sym_list::sym_type_e type)
@@ -507,16 +483,6 @@ bool isModuleDeclaration(const SemanticMetadata& metadata)
 bool isPackageDeclaration(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::Package;
-}
-
-bool isModuleDeclaration(const sym_list::SymbolInfo& symbol)
-{
-    return isModuleDeclaration(semanticMetadata(symbol));
-}
-
-bool isPackageDeclaration(const sym_list::SymbolInfo& symbol)
-{
-    return isPackageDeclaration(semanticMetadata(symbol));
 }
 
 bool isPortDeclaration(sym_list::sym_type_e type)
@@ -570,11 +536,6 @@ bool isInstanceDeclaration(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::Instance
         && metadata.usageRole == SymbolUsageRole::Declaration;
-}
-
-bool isInstanceDeclaration(const sym_list::SymbolInfo& symbol)
-{
-    return isInstanceDeclaration(semanticMetadata(symbol));
 }
 
 bool isPortConnectionPeer(sym_list::sym_type_e type)
@@ -1191,8 +1152,10 @@ QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
 {
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (isPackageDeclaration(symbol) && !symbol.symbolName.isEmpty())
+        if (isPackageDeclaration(semanticMetadata(symbol))
+            && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);
+        }
     }
     return names;
 }
@@ -1251,7 +1214,7 @@ bool isSymbolInModuleContext(
     const QString& moduleName)
 {
     return isSymbolInModuleScope(symbol, moduleName)
-        || (isModuleDeclaration(symbol)
+        || (isModuleDeclaration(semanticMetadata(symbol))
             && symbol.symbolName == moduleName);
 }
 
