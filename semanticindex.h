@@ -299,7 +299,7 @@ public:
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
     QString getStructTypeForVariable(const QString& variableName,
                                      const QString& moduleName = QString()) const;
-    QList<sym_list::SymbolInfo> getStructMembers(
+    QList<SemanticSymbolRecord> getStructMemberRecords(
         const QString& structTypeName = QString()) const;
     QList<sym_list::SymbolInfo> getModuleInternalSymbolsByType(
         const QString& moduleName,

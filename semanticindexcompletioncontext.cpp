@@ -199,10 +199,10 @@ QString SemanticIndex::getStructTypeForVariable(const QString& variableName,
     return QString();
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getStructMembers(
+QList<SemanticSymbolRecord> SemanticIndex::getStructMemberRecords(
     const QString& structTypeName) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     const QList<SemanticSymbolRecord> members =
         completionContextRecordsByRawKind(getSymbolRecords(),
                                           sym_list::sym_struct_member);
@@ -210,23 +210,22 @@ QList<sym_list::SymbolInfo> SemanticIndex::getStructMembers(
         if (!structTypeName.isEmpty()
             && ownerNameForCompletionContextRecord(record) != structTypeName)
             continue;
-        result.append(semanticSymbolInfoCarrierForRecord(record));
+        result.append(record);
     }
 
     std::stable_sort(result.begin(), result.end(),
-                     [](const sym_list::SymbolInfo& a,
-                        const sym_list::SymbolInfo& b) {
-        const int nameCompare = QString::compare(a.symbolName,
-                                                 b.symbolName,
+                     [](const SemanticSymbolRecord& a,
+                        const SemanticSymbolRecord& b) {
+        const int nameCompare = QString::compare(a.name,
+                                                 b.name,
                                                  Qt::CaseInsensitive);
         if (nameCompare != 0)
             return nameCompare < 0;
-        if (a.fileName != b.fileName)
-            return a.fileName < b.fileName;
-        if (a.startLine != b.startLine)
-            return a.startLine < b.startLine;
-        return completionContextLocalHandleForSymbol(a)
-            < completionContextLocalHandleForSymbol(b);
+        if (a.location.fileName != b.location.fileName)
+            return a.location.fileName < b.location.fileName;
+        if (a.location.startLine != b.location.startLine)
+            return a.location.startLine < b.location.startLine;
+        return a.localHandle < b.localHandle;
     });
     return result;
 }

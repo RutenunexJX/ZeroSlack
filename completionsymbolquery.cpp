@@ -3,22 +3,22 @@
 #include <QSet>
 #include <Qt>
 
-QList<sym_list::SymbolInfo> CompletionSymbolQuery::structMemberSymbols(
+QList<SemanticSymbolRecord> CompletionSymbolQuery::structMemberRecords(
     SemanticIndex* semanticIndex,
     const QString& structTypeName,
     const QString& prefix)
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     if (!semanticIndex)
         return result;
 
     QSet<QString> seenNames;
-    const QList<sym_list::SymbolInfo> members =
-        semanticIndex->getStructMembers(structTypeName);
-    for (const sym_list::SymbolInfo& member : members) {
-        if (!nameMatches(member.symbolName, prefix))
+    const QList<SemanticSymbolRecord> members =
+        semanticIndex->getStructMemberRecords(structTypeName);
+    for (const SemanticSymbolRecord& member : members) {
+        if (!nameMatches(member.name, prefix))
             continue;
-        const QString key = member.symbolName.toCaseFolded();
+        const QString key = member.name.toCaseFolded();
         if (seenNames.contains(key))
             continue;
         seenNames.insert(key);

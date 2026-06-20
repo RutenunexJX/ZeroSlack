@@ -51,8 +51,8 @@ QStringList CompletionContextQuery::contextAwareCompletions(
                 semanticIndex->getStructTypeForVariable(
                     structVariableName, currentModule);
             if (!structTypeName.isEmpty()) {
-                result.append(CompletionSymbolQuery::namesFromSymbols(
-                    CompletionSymbolQuery::structMemberSymbols(
+                result.append(CompletionSymbolQuery::namesFromRecords(
+                    CompletionSymbolQuery::structMemberRecords(
                         semanticIndex, structTypeName, prefix)));
                 if (!result.isEmpty())
                     return result;

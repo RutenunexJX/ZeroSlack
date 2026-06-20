@@ -85,9 +85,8 @@ QList<SemanticSymbolRecord> completionRecords(
         return {};
 
     if (!query.structTypeNameForMember.isEmpty()) {
-        return semanticSymbolRecordsForSymbols(
-            CompletionSymbolQuery::structMemberSymbols(
-                semanticIndex, query.structTypeNameForMember, query.prefix));
+        return CompletionSymbolQuery::structMemberRecords(
+            semanticIndex, query.structTypeNameForMember, query.prefix);
     }
 
     if (query.prefix.isEmpty())

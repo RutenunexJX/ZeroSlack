@@ -88,8 +88,8 @@ QStringList CompletionService::findStructMemberCompletions(
     CompletionQuery query;
     query.prefix = prefix;
     query.structTypeNameForMember = structTypeName;
-    return CompletionSymbolQuery::namesFromSymbols(
-        CompletionSymbolQuery::structMemberSymbols(
+    return CompletionSymbolQuery::namesFromRecords(
+        CompletionSymbolQuery::structMemberRecords(
             semanticIndex(), query.structTypeNameForMember, query.prefix));
 }
 

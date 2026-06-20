@@ -24,7 +24,7 @@ public:
     static QStringList namesFromRecords(
         const QList<SemanticSymbolRecord>& records);
     static bool nameMatches(const QString& name, const QString& prefix);
-    static QList<sym_list::SymbolInfo> structMemberSymbols(
+    static QList<SemanticSymbolRecord> structMemberRecords(
         SemanticIndex* semanticIndex,
         const QString& structTypeName,
         const QString& prefix);
