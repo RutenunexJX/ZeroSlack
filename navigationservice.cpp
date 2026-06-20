@@ -26,10 +26,38 @@ QString outlineDisplayName(const SemanticSymbolRecord& record)
     return label;
 }
 
-sym_list::sym_type_e outlineGroupTypeForRecord(
+SymbolTaxonomy::DeclarationKind outlineGroupKindForRecord(
     const SemanticSymbolRecord& record)
 {
-    return SymbolTaxonomy::outlineGroupType(outlineMetadata(record));
+    return outlineMetadata(record).declarationKind;
+}
+
+QList<SymbolTaxonomy::DeclarationKind> outlineDeclarationKindOrder()
+{
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    return {
+        DeclarationKind::Module,
+        DeclarationKind::Interface,
+        DeclarationKind::Package,
+        DeclarationKind::Typedef,
+        DeclarationKind::Enum,
+        DeclarationKind::Struct,
+        DeclarationKind::StructVariable,
+        DeclarationKind::StructMember,
+        DeclarationKind::Signal,
+        DeclarationKind::Port,
+        DeclarationKind::Parameter,
+        DeclarationKind::Localparam,
+        DeclarationKind::Instance,
+        DeclarationKind::Task,
+        DeclarationKind::Function,
+        DeclarationKind::Macro,
+        DeclarationKind::Process,
+        DeclarationKind::Generate,
+        DeclarationKind::Constraint,
+        DeclarationKind::User,
+        DeclarationKind::Unknown,
+    };
 }
 
 SymbolOutlineIconKind outlineIconKind(const SemanticSymbolRecord& record)
@@ -155,7 +183,7 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             subroutineScopes.insert(record.name);
     }
 
-    QHash<sym_list::sym_type_e, QList<SearchResult>> byType;
+    QHash<int, QList<SearchResult>> byType;
     for (const SearchResult& result : searchResults) {
         const SemanticSymbolRecord record = outlineSymbolRecord(result);
         const SymbolTaxonomy::SemanticMetadata metadata =
@@ -164,12 +192,14 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             SymbolTaxonomy::isSubroutineDeclaration(metadata);
         if (!isSubroutine && subroutineScopes.contains(record.owner.name))
             continue;
-        byType[SymbolTaxonomy::outlineGroupType(metadata)].append(result);
+        byType[static_cast<int>(metadata.declarationKind)].append(result);
     }
 
     QList<SymbolOutlineGroup> result;
-    for (sym_list::sym_type_e symbolType : SymbolTaxonomy::outlineSymbolTypes()) {
-        QList<SearchResult> outlineResults = byType.value(symbolType);
+    for (SymbolTaxonomy::DeclarationKind declarationKind :
+         outlineDeclarationKindOrder()) {
+        QList<SearchResult> outlineResults =
+            byType.value(static_cast<int>(declarationKind));
         if (outlineResults.isEmpty())
             continue;
 
@@ -188,7 +218,7 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
             const SemanticSymbolRecord firstRecord =
                 outlineSymbolRecord(outlineResults.first());
             SymbolOutlineGroup group;
-            group.symbolType = outlineGroupTypeForRecord(firstRecord);
+            group.declarationKind = outlineGroupKindForRecord(firstRecord);
             group.displayName = outlineDisplayName(firstRecord);
             group.iconKind = outlineIconKind(firstRecord);
             group.symbolRows = outlineRows(outlineResults, group.displayName);

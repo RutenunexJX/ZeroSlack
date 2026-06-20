@@ -1051,10 +1051,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     for (const SymbolOutlineGroup& group : snapshotOutlineGroups) {
         snapshotOutlineHasDisplayName =
             snapshotOutlineHasDisplayName
-            || (group.symbolType == sym_list::sym_module
+            || (group.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Module
                 && group.displayName == QStringLiteral("Module")
                 && !group.symbolRows.isEmpty());
-        if (group.symbolType == sym_list::sym_module
+        if (group.declarationKind == SymbolTaxonomy::DeclarationKind::Module
             && group.displayName == QStringLiteral("Module")
             && group.iconKind == SymbolOutlineIconKind::Module
             && !group.symbolRows.isEmpty()) {
@@ -1176,7 +1177,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         metadataOutlineNavigationService.findSymbolOutline(metadataOutlineQuery);
     bool metadataOutlineGroupedAsModule = false;
     for (const SymbolOutlineGroup& group : metadataOutlineGroups) {
-        if (group.symbolType != sym_list::sym_module
+        if (group.declarationKind != SymbolTaxonomy::DeclarationKind::Module
             || group.displayName != QStringLiteral("Module")) {
             continue;
         }

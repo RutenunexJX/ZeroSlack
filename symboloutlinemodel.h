@@ -2,7 +2,6 @@
 #define SYMBOLOUTLINEMODEL_H
 
 #include "semanticindex.h"
-#include "syminfo.h"
 
 #include <QList>
 #include <QString>
@@ -28,7 +27,8 @@ struct SymbolOutlineSymbolRow {
 };
 
 struct SymbolOutlineGroup {
-    sym_list::sym_type_e symbolType = sym_list::sym_module;
+    SymbolTaxonomy::DeclarationKind declarationKind =
+        SymbolTaxonomy::DeclarationKind::Module;
     QString displayName;
     SymbolOutlineIconKind iconKind = SymbolOutlineIconKind::Symbol;
     QList<SymbolOutlineSymbolRow> symbolRows;

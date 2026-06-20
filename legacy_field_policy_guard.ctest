@@ -77,7 +77,6 @@ set(RECORD_FIRST_METADATA_FILES
     definitionnavigationservice.cpp
     fsmgraphservice.cpp
     modulebriefservice.cpp
-    navigationservice.cpp
     semanticdiffservice.cpp
     scopebandservice.cpp
     semanticindexcompletioncontext.cpp
@@ -156,7 +155,6 @@ set(H0_LEGACY_CORE_ALLOWLIST
     symbolanalyzerslang.cpp
     symbolanalyzerworkspace.cpp
     symbolanalyzerworkspace.h
-    symboloutlinemodel.h
     symbolrelationshipengine.cpp
     symboltaxonomy.cpp
     symboltaxonomy.h

@@ -1633,7 +1633,7 @@ static void runNavigationHierarchyModelRegression()
     outlineRow.iconKind = SymbolOutlineIconKind::Module;
 
     SymbolOutlineGroup outlineGroup;
-    outlineGroup.symbolType = sym_list::sym_module;
+    outlineGroup.declarationKind = SymbolTaxonomy::DeclarationKind::Module;
     outlineGroup.displayName = QStringLiteral("Module");
     outlineGroup.iconKind = SymbolOutlineIconKind::Module;
     outlineGroup.symbolRows = {outlineRow};
