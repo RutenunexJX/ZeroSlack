@@ -1,10 +1,20 @@
 #include "symbolrelationshipengine.h"
+#include "semanticindex.h"
 #include "symboltaxonomy.h"
 #include "syminfo.h"
 #include <QCoreApplication>
 #include <QThread>
 #include <QMetaObject>
 #include <algorithm>
+
+namespace {
+bool recordIsInModule(const SemanticSymbolRecord& record,
+                      const SemanticSymbolRecord& moduleRecord)
+{
+    return record.location.fileName == moduleRecord.location.fileName
+        && record.location.startLine > moduleRecord.location.startLine;
+}
+}
 
 SymbolRelationshipEngine::SymbolRelationshipEngine(QObject *parent)
     : QObject(parent)
@@ -184,23 +194,25 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
     beginUpdate();
     invalidateFileRelationships(fileName);
 
-    QList<sym_list::SymbolInfo> fileSymbols = symbols()->findSymbolsByFileName(fileName);
+    const QList<SemanticSymbolRecord> fileRecords =
+        semanticSymbolRecordsForSymbols(symbols()->findSymbolsByFileName(fileName));
 
-    for (const sym_list::SymbolInfo& symbol : std::as_const(fileSymbols)) {
-        if (SymbolTaxonomy::isModuleDeclaration(symbol)) {
-            int moduleId = symbol.symbolId;
-            symbolsByFile[fileName].insert(moduleId);
+    for (const SemanticSymbolRecord& record : std::as_const(fileRecords)) {
+        if (SymbolTaxonomy::isModuleDeclaration(
+                semanticMetadataForSymbolRecord(record))) {
+            const int moduleHandle = record.localHandle;
+            symbolsByFile[fileName].insert(moduleHandle);
 
-            for (const sym_list::SymbolInfo& otherSymbol : std::as_const(fileSymbols)) {
-                if (otherSymbol.symbolId != moduleId &&
-                    isSymbolInModule(otherSymbol, symbol)) {
+            for (const SemanticSymbolRecord& otherRecord : std::as_const(fileRecords)) {
+                if (otherRecord.localHandle != moduleHandle
+                    && recordIsInModule(otherRecord, record)) {
 
-                    addRelationship(moduleId, otherSymbol.symbolId, CONTAINS);
-                    symbolsByFile[fileName].insert(otherSymbol.symbolId);
+                    addRelationship(moduleHandle, otherRecord.localHandle, CONTAINS);
+                    symbolsByFile[fileName].insert(otherRecord.localHandle);
                 }
             }
         } else {
-            symbolsByFile[fileName].insert(symbol.symbolId);
+            symbolsByFile[fileName].insert(record.localHandle);
         }
     }
 
@@ -224,16 +236,15 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
 {
     clearAllRelationships();
 
-    QList<sym_list::SymbolInfo> allSymbols = symbols()->getAllSymbols();
+    const QList<SemanticSymbolRecord> allRecords =
+        semanticSymbolRecordsForSymbols(symbols()->getAllSymbols());
 
-    QHash<QString, QList<sym_list::SymbolInfo>> symbolsByFile;
-    for (const sym_list::SymbolInfo& symbol : std::as_const(allSymbols)) {
-        symbolsByFile[symbol.fileName].append(symbol);
-    }
+    QSet<QString> files;
+    for (const SemanticSymbolRecord& record : std::as_const(allRecords))
+        files.insert(record.location.fileName);
 
-    for (auto it = symbolsByFile.begin(); it != symbolsByFile.end(); ++it) {
-        buildFileRelationships(it.key());
-    }
+    for (const QString& fileName : std::as_const(files))
+        buildFileRelationships(fileName);
 }
 
 void SymbolRelationshipEngine::invalidateCache()
