@@ -6,21 +6,9 @@
 std::unique_ptr<SignalJourneyService> SignalJourneyService::instance = nullptr;
 
 namespace {
-sym_list::SymbolInfo missingSignalJourneySymbol()
+SemanticSymbolRecord missingSignalJourneyRecord()
 {
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = -1;
-    return symbol;
-}
-
-int signalJourneyLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolId;
-}
-
-sym_list::SymbolInfo symbolInfoForRecord(const SemanticSymbolRecord& record)
-{
-    return semanticSymbolInfoCarrierForRecord(record);
+    return {};
 }
 
 QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type)
@@ -54,92 +42,68 @@ QString relationshipTypeDisplayName(SymbolRelationshipEngine::RelationType type)
     return QStringLiteral("Relationship");
 }
 
-RtlInsightCodeLink codeLinkForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
 {
-    if (record.isValid()) {
-        const QString fileName = fallback.fileName.isEmpty()
-            ? record.location.fileName
-            : fallback.fileName;
-        return RtlInsightLink::fromFileLine(fileName,
-                                            record.location.startLine,
-                                            record.location.startColumn);
-    }
-    return RtlInsightLink::fromSymbol(fallback);
+    return RtlInsightLink::fromFileLine(record.location.fileName,
+                                        record.location.startLine,
+                                        record.location.startColumn);
 }
 
-QString symbolDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString symbolDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.name.isEmpty())
         return record.name;
-    if (!fallback.symbolName.isEmpty())
-        return fallback.symbolName;
     return QStringLiteral("<unknown>");
 }
 
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    return semanticMetadataForSymbolRecord(record, fallback);
+    return semanticMetadataForSymbolRecord(record);
 }
 
-QString typeDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString typeDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
-    return SymbolTaxonomy::symbolTypeLabel(
-        metadataForRecord(record, fallback));
+    return SymbolTaxonomy::symbolTypeLabel(metadataForRecord(record));
 }
 
-QString sourceRoleDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString sourceRoleDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     return SymbolTaxonomy::sourceRoleDisplayName(
-        metadataForRecord(record, fallback).sourceRole);
+        metadataForRecord(record).sourceRole);
 }
 
-QString interfaceBaseDisplayNameForRecord(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+QString interfaceBaseDisplayNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.type.resolvedTypeName.isEmpty())
         return record.type.resolvedTypeName;
-    return SymbolTaxonomy::interfaceTypeName(fallback);
+    return SymbolTaxonomy::interfaceTypeName(record.type.rawTypeText);
 }
 
-SymbolStableKey signalJourneyStableKeyForSymbol(
-    const sym_list::SymbolInfo& symbol)
+SymbolStableKey signalJourneyStableKeyForRecord(
+    const SemanticSymbolRecord& record)
 {
-    const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
-    return record.stableKey.isValid()
-        ? record.stableKey
-        : symbolStableKeyForSymbol(symbol);
+    return record.stableKey;
 }
 
-QList<SemanticRelationshipResult> signalJourneyRelationshipResultsForSymbol(
+QList<SemanticRelationshipResult> signalJourneyRelationshipResultsForRecord(
     SemanticIndex* index,
-    const sym_list::SymbolInfo& symbol,
+    const SemanticSymbolRecord& record,
     bool outgoing)
 {
     if (!index)
         return {};
-    const SymbolStableKey stableKey = signalJourneyStableKeyForSymbol(symbol);
+    const SymbolStableKey stableKey = signalJourneyStableKeyForRecord(record);
     return stableKey.isValid()
         ? index->getRelationshipResults(stableKey, outgoing)
         : QList<SemanticRelationshipResult>();
 }
 
 bool isInterfaceConnectionPeer(const SemanticSymbolRecord& record,
-                               const sym_list::SymbolInfo& fallback,
                                const QSet<QString>& interfaceNames)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
-        metadataForRecord(record, fallback);
+        metadataForRecord(record);
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface
         || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Modport
         || (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
@@ -149,7 +113,7 @@ bool isInterfaceConnectionPeer(const SemanticSymbolRecord& record,
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
         && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration) {
         const QString interfaceName =
-            interfaceBaseDisplayNameForRecord(record, fallback);
+            interfaceBaseDisplayNameForRecord(record);
         return !interfaceName.isEmpty() && interfaceNames.contains(interfaceName);
     }
     return !record.owner.name.isEmpty()
@@ -157,35 +121,16 @@ bool isInterfaceConnectionPeer(const SemanticSymbolRecord& record,
         && SymbolTaxonomy::isDefinitionCandidate(metadata);
 }
 
-bool isInterfaceConnectionPeer(const sym_list::SymbolInfo& symbol,
-                               const QSet<QString>& interfaceNames)
-{
-    return isInterfaceConnectionPeer(
-        semanticSymbolRecordForSymbol(symbol),
-        symbol,
-        interfaceNames);
-}
-
 bool isJourneyDeclaration(const SemanticSymbolRecord& record,
-                          const sym_list::SymbolInfo& fallback,
                           const QSet<QString>& interfaceNames)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
-        metadataForRecord(record, fallback);
+        metadataForRecord(record);
     if (SymbolTaxonomy::isSignalDeclaration(metadata)
         || SymbolTaxonomy::isPortDeclaration(metadata)) {
         return true;
     }
-    return isInterfaceConnectionPeer(record, fallback, interfaceNames);
-}
-
-bool isJourneyDeclaration(const sym_list::SymbolInfo& symbol,
-                          const QSet<QString>& interfaceNames)
-{
-    return isJourneyDeclaration(
-        semanticSymbolRecordForSymbol(symbol),
-        symbol,
-        interfaceNames);
+    return isInterfaceConnectionPeer(record, interfaceNames);
 }
 }
 
@@ -212,9 +157,9 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
     const SignalJourneyQuery& query) const
 {
     SignalJourneyReport report;
-    const sym_list::SymbolInfo signal =
+    const SemanticSymbolRecord signal =
         resolveSignal(query, &report.notFoundReason);
-    if (signalJourneyLocalHandleForSymbol(signal) < 0) {
+    if (signal.localHandle < 0) {
         report.notFoundReasonDisplayName =
             notFoundReasonDisplayName(report.notFoundReason);
         return report;
@@ -222,7 +167,7 @@ SignalJourneyReport SignalJourneyService::buildSignalJourney(
 
     report.found = true;
     report.notFoundReason = SignalJourneyNotFoundReason::None;
-    report.declarationSymbolRecord = semanticSymbolRecordForSymbol(signal);
+    report.declarationSymbolRecord = signal;
     fillDeclarationDisplayMetadata(report, signal);
     report.assignments = relationshipItems(
         signal,
@@ -243,7 +188,7 @@ SemanticIndex* SignalJourneyService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-sym_list::SymbolInfo SignalJourneyService::resolveSignal(
+SemanticSymbolRecord SignalJourneyService::resolveSignal(
     const SignalJourneyQuery& query,
     SignalJourneyNotFoundReason* reason) const
 {
@@ -256,20 +201,20 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
         if (!record.isValid()) {
             if (reason)
                 *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
-            return missingSignalJourneySymbol();
+            return missingSignalJourneyRecord();
         }
-        if (!isJourneyDeclaration(record, {}, interfaceNames())) {
+        if (!isJourneyDeclaration(record, interfaceNames())) {
             if (reason)
                 *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
-            return missingSignalJourneySymbol();
+            return missingSignalJourneyRecord();
         }
-        return symbolInfoForRecord(record);
+        return record;
     }
 
     if (query.signalName.isEmpty()) {
         if (reason)
             *reason = SignalJourneyNotFoundReason::EmptySignalName;
-        return missingSignalJourneySymbol();
+        return missingSignalJourneyRecord();
     }
 
     SemanticDefinitionQuery definitionQuery;
@@ -281,31 +226,28 @@ sym_list::SymbolInfo SignalJourneyService::resolveSignal(
     if (!definition.found) {
         if (reason)
             *reason = SignalJourneyNotFoundReason::NoMatchingSignal;
-        return missingSignalJourneySymbol();
+        return missingSignalJourneyRecord();
     }
     if (!isJourneyDeclaration(
             definition.symbolRecord,
-            {},
             interfaceNames())) {
         if (reason)
             *reason = SignalJourneyNotFoundReason::UnsupportedSymbolKind;
-        return missingSignalJourneySymbol();
+        return missingSignalJourneyRecord();
     }
-    const sym_list::SymbolInfo symbol =
-        symbolInfoForRecord(definition.symbolRecord);
-    if (signalJourneyLocalHandleForSymbol(symbol) < 0)
-        return missingSignalJourneySymbol();
-    return symbol;
+    if (definition.symbolRecord.localHandle < 0)
+        return missingSignalJourneyRecord();
+    return definition.symbolRecord;
 }
 
 QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
-    const sym_list::SymbolInfo& signal,
+    const SemanticSymbolRecord& signal,
     bool outgoing,
     const QList<SymbolRelationshipEngine::RelationType>& types) const
 {
     QList<SignalJourneyItem> items;
     const QList<SemanticRelationshipResult> relationships =
-        signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+        signalJourneyRelationshipResultsForRecord(semanticIndex(),
                                                   signal,
                                                   outgoing);
     for (const SemanticRelationshipResult& relationship : relationships) {
@@ -325,20 +267,20 @@ QList<SignalJourneyItem> SignalJourneyService::relationshipItems(
 }
 
 QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
-    const sym_list::SymbolInfo& signal) const
+    const SemanticSymbolRecord& signal) const
 {
     QList<SignalJourneyItem> items;
     QSet<QString> seen;
     auto appendDirection = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
-            signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+            signalJourneyRelationshipResultsForRecord(semanticIndex(),
                                                       signal,
                                                       outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
             const SemanticSymbolRecord peerRecord =
                 outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
             if (!SymbolTaxonomy::isPortConnectionPeer(
-                    metadataForRecord(peerRecord, {}))) {
+                    metadataForRecord(peerRecord))) {
                 continue;
             }
             const QString key = QStringLiteral("%1:%2:%3")
@@ -362,20 +304,20 @@ QList<SignalJourneyItem> SignalJourneyService::portConnectionItems(
 }
 
 QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
-    const sym_list::SymbolInfo& signal) const
+    const SemanticSymbolRecord& signal) const
 {
     QList<SignalJourneyItem> items;
     QSet<QString> seen;
     const QSet<QString> interfaces = interfaceNames();
     auto appendDirection = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
-            signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+            signalJourneyRelationshipResultsForRecord(semanticIndex(),
                                                       signal,
                                                       outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
             const SemanticSymbolRecord peerRecord =
                 outgoing ? relationship.toSymbolRecord : relationship.fromSymbolRecord;
-            if (!isInterfaceConnectionPeer(peerRecord, {}, interfaces))
+            if (!isInterfaceConnectionPeer(peerRecord, interfaces))
                 continue;
             const QString key = QStringLiteral("%1:%2:%3")
                                     .arg(relationship.relationship.fromId)
@@ -401,13 +343,13 @@ QList<SignalJourneyItem> SignalJourneyService::interfaceConnectionItems(
 }
 
 QList<SignalJourneyItem> SignalJourneyService::timingConnectionItems(
-    const sym_list::SymbolInfo& signal) const
+    const SemanticSymbolRecord& signal) const
 {
     QList<SignalJourneyItem> items;
     QSet<QString> seen;
     auto appendDirection = [&](bool outgoing) {
         const QList<SemanticRelationshipResult> relationships =
-            signalJourneyRelationshipResultsForSymbol(semanticIndex(),
+            signalJourneyRelationshipResultsForRecord(semanticIndex(),
                                                       signal,
                                                       outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
@@ -518,11 +460,10 @@ QString SignalJourneyService::evidenceDisplayName(const QString& evidenceText)
 }
 
 QString SignalJourneyService::interfaceConnectionKindDisplayName(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
-        metadataForRecord(record, fallback);
+        metadataForRecord(record);
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Port
         && metadata.interfaceLikeOwner) {
         return QStringLiteral("interface port");
@@ -533,7 +474,7 @@ QString SignalJourneyService::interfaceConnectionKindDisplayName(
         return QStringLiteral("interface declaration");
     if (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Instance
         && metadata.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration
-        && !interfaceBaseDisplayNameForRecord(record, fallback).isEmpty()) {
+        && !interfaceBaseDisplayNameForRecord(record).isEmpty()) {
         return QStringLiteral("interface instance");
     }
     if (!record.owner.name.isEmpty())
@@ -542,10 +483,9 @@ QString SignalJourneyService::interfaceConnectionKindDisplayName(
 }
 
 QString SignalJourneyService::interfaceBaseDisplayName(
-    const SemanticSymbolRecord& record,
-    const sym_list::SymbolInfo& fallback)
+    const SemanticSymbolRecord& record)
 {
-    const QString baseName = interfaceBaseDisplayNameForRecord(record, fallback);
+    const QString baseName = interfaceBaseDisplayNameForRecord(record);
     if (!baseName.isEmpty())
         return baseName;
     return record.owner.name;
@@ -553,30 +493,24 @@ QString SignalJourneyService::interfaceBaseDisplayName(
 
 void SignalJourneyService::fillDeclarationDisplayMetadata(
     SignalJourneyReport& report,
-    const sym_list::SymbolInfo& declaration)
+    const SemanticSymbolRecord& declaration)
 {
     if (!report.declarationSymbolRecord.isValid())
-        report.declarationSymbolRecord =
-            semanticSymbolRecordForSymbol(declaration);
+        report.declarationSymbolRecord = declaration;
     report.declarationStableKey =
-        report.declarationSymbolRecord.stableKey.isValid()
-            ? report.declarationSymbolRecord.stableKey
-            : symbolStableKeyForSymbol(declaration);
+        report.declarationSymbolRecord.stableKey;
     report.declarationCodeLink =
-        codeLinkForRecord(report.declarationSymbolRecord, declaration);
+        codeLinkForRecord(report.declarationSymbolRecord);
     report.declarationDisplayName =
-        symbolDisplayNameForRecord(report.declarationSymbolRecord,
-                                   declaration);
+        symbolDisplayNameForRecord(report.declarationSymbolRecord);
     report.declarationTypeDisplayName =
-        typeDisplayNameForRecord(report.declarationSymbolRecord,
-                                 declaration);
+        typeDisplayNameForRecord(report.declarationSymbolRecord);
     report.declarationFileDisplayName =
         report.declarationCodeLink.fileDisplayName;
     report.declarationLineDisplayName =
         report.declarationCodeLink.lineDisplayName;
     report.declarationSourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(report.declarationSymbolRecord,
-                                       declaration);
+        sourceRoleDisplayNameForRecord(report.declarationSymbolRecord);
 }
 
 void SignalJourneyService::fillDisplayMetadata(
@@ -599,12 +533,9 @@ void SignalJourneyService::fillDisplayMetadata(
     item.peerStableKey = item.peerSymbolRecord.stableKey.isValid()
         ? item.peerSymbolRecord.stableKey
         : (item.outgoing ? item.toStableKey : item.fromStableKey);
-    item.peerCodeLink = codeLinkForRecord(item.peerSymbolRecord,
-                                          {});
-    item.fromCodeLink = codeLinkForRecord(item.fromSymbolRecord,
-                                          {});
-    item.toCodeLink = codeLinkForRecord(item.toSymbolRecord,
-                                        {});
+    item.peerCodeLink = codeLinkForRecord(item.peerSymbolRecord);
+    item.fromCodeLink = codeLinkForRecord(item.fromSymbolRecord);
+    item.toCodeLink = codeLinkForRecord(item.toSymbolRecord);
     item.provenance = relationship.provenance;
     item.confidence = relationship.confidence;
     item.evidenceText = relationship.evidenceText;
@@ -615,30 +546,26 @@ void SignalJourneyService::fillDisplayMetadata(
     item.confidenceDisplayName = confidenceDisplayName(item.confidence);
     item.evidenceDisplayName = evidenceDisplayName(item.evidenceText);
     item.peerSymbolDisplayName =
-        symbolDisplayNameForRecord(item.peerSymbolRecord, {});
+        symbolDisplayNameForRecord(item.peerSymbolRecord);
     item.fromSymbolDisplayName =
-        symbolDisplayNameForRecord(item.fromSymbolRecord, {});
+        symbolDisplayNameForRecord(item.fromSymbolRecord);
     item.toSymbolDisplayName =
-        symbolDisplayNameForRecord(item.toSymbolRecord, {});
+        symbolDisplayNameForRecord(item.toSymbolRecord);
     item.fromTypeDisplayName =
-        typeDisplayNameForRecord(item.fromSymbolRecord, {});
+        typeDisplayNameForRecord(item.fromSymbolRecord);
     item.toTypeDisplayName =
-        typeDisplayNameForRecord(item.toSymbolRecord, {});
+        typeDisplayNameForRecord(item.toSymbolRecord);
     item.fromSourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(item.fromSymbolRecord,
-                                       {});
+        sourceRoleDisplayNameForRecord(item.fromSymbolRecord);
     item.toSourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(item.toSymbolRecord,
-                                       {});
+        sourceRoleDisplayNameForRecord(item.toSymbolRecord);
     item.connectionKindDisplayName = QStringLiteral("relationship");
     item.peerTypeDisplayName =
-        typeDisplayNameForRecord(item.peerSymbolRecord, {});
+        typeDisplayNameForRecord(item.peerSymbolRecord);
     item.peerSourceRoleDisplayName =
-        sourceRoleDisplayNameForRecord(item.peerSymbolRecord,
-                                       {});
+        sourceRoleDisplayNameForRecord(item.peerSymbolRecord);
     item.interfaceBaseDisplayName =
-        interfaceBaseDisplayNameForRecord(item.peerSymbolRecord,
-                                          {});
+        interfaceBaseDisplayNameForRecord(item.peerSymbolRecord);
     item.peerFileDisplayName = item.peerCodeLink.fileDisplayName;
     item.peerLineDisplayName = item.peerCodeLink.lineDisplayName;
     item.detailDisplayName = QStringLiteral("%1 %2")
@@ -651,10 +578,9 @@ void SignalJourneyService::fillInterfaceDisplayMetadata(
     const SemanticSymbolRecord& peerRecord)
 {
     item.connectionKindDisplayName =
-        interfaceConnectionKindDisplayName(item.peerSymbolRecord,
-                                           {});
+        interfaceConnectionKindDisplayName(item.peerSymbolRecord);
     item.interfaceBaseDisplayName =
-        interfaceBaseDisplayName(peerRecord, {});
+        interfaceBaseDisplayName(peerRecord);
 }
 
 void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)

@@ -96,19 +96,19 @@ private:
     static std::unique_ptr<SignalJourneyService> instance;
 
     SemanticIndex* semanticIndex() const;
-    sym_list::SymbolInfo resolveSignal(
+    SemanticSymbolRecord resolveSignal(
         const SignalJourneyQuery& query,
         SignalJourneyNotFoundReason* reason) const;
     QList<SignalJourneyItem> relationshipItems(
-        const sym_list::SymbolInfo& signal,
+        const SemanticSymbolRecord& signal,
         bool outgoing,
         const QList<SymbolRelationshipEngine::RelationType>& types) const;
     QList<SignalJourneyItem> portConnectionItems(
-        const sym_list::SymbolInfo& signal) const;
+        const SemanticSymbolRecord& signal) const;
     QList<SignalJourneyItem> interfaceConnectionItems(
-        const sym_list::SymbolInfo& signal) const;
+        const SemanticSymbolRecord& signal) const;
     QList<SignalJourneyItem> timingConnectionItems(
-        const sym_list::SymbolInfo& signal) const;
+        const SemanticSymbolRecord& signal) const;
 
     QSet<QString> interfaceNames() const;
     static QString directionDisplayName(bool outgoing);
@@ -118,14 +118,12 @@ private:
     static QString confidenceDisplayName(int confidence);
     static QString evidenceDisplayName(const QString& evidenceText);
     static QString interfaceConnectionKindDisplayName(
-        const SemanticSymbolRecord& record,
-        const sym_list::SymbolInfo& fallback);
+        const SemanticSymbolRecord& record);
     static QString interfaceBaseDisplayName(
-        const SemanticSymbolRecord& record,
-        const sym_list::SymbolInfo& fallback);
+        const SemanticSymbolRecord& record);
     static void fillDeclarationDisplayMetadata(
         SignalJourneyReport& report,
-        const sym_list::SymbolInfo& declaration);
+        const SemanticSymbolRecord& declaration);
     static void fillDisplayMetadata(SignalJourneyItem& item,
                                     const SemanticRelationshipResult& relationship,
                                     const SemanticSymbolRecord& peerRecord);

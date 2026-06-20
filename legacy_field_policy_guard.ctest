@@ -124,6 +124,7 @@ set(RECORD_NATIVE_SERVICE_FILES
     clockresetdomainservice.cpp
     relationshipanalysisworker.cpp
     semanticdiffservice.cpp
+    signaljourneyservice.cpp
     scopebandservice.cpp
 )
 
