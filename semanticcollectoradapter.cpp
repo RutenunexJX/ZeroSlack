@@ -99,50 +99,6 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForCollectedSymbols(
         SymbolTaxonomy::packageScopeNames(symbols));
 }
 
-namespace {
-sym_list::SymbolInfo legacyRelationshipSymbolForSemanticRecord(
-    const SemanticSymbolRecord& record)
-{
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = record.localHandle;
-    symbol.symbolName = record.name;
-    symbol.symbolType = SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
-    symbol.fileName = record.location.fileName;
-    symbol.startLine = record.location.startLine;
-    symbol.startColumn = record.location.startColumn;
-    symbol.endLine = record.location.endLine;
-    symbol.endColumn = record.location.endColumn;
-    symbol.position = record.location.position;
-    symbol.length = record.location.length;
-    symbol.moduleScope = record.owner.name;
-    symbol.dataType = record.type.rawTypeText;
-    return symbol;
-}
-
-}
-
-void mirrorSemanticRecordsToLegacyRelationshipDatabase(
-    sym_list* database,
-    const QString& fileName,
-    const QList<SemanticSymbolRecord>& records,
-    const QString& content)
-{
-    if (!database)
-        return;
-
-    QList<sym_list::SymbolInfo> symbols;
-    symbols.reserve(records.size());
-    for (const SemanticSymbolRecord& record : records) {
-        if (record.isValid())
-            symbols.append(legacyRelationshipSymbolForSemanticRecord(record));
-    }
-
-    database->setSymbolsForFile(
-        fileName,
-        symbols,
-        content);
-}
-
 QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabase(
     sym_list* database,
     const QString& fileName)

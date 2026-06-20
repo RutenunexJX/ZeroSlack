@@ -37,7 +37,7 @@ Thin UI consumers
 - The Phase G release gate passed locally with full Ninja and full CTest.
 - The Phase H release gate passed locally with full Ninja, full CTest, `legacy_field_policy_guard`, static legacy API scans, docs consistency review, and forbidden-file regression checks.
 - Completion compatibility, snapshot/store `SymbolInfo` carriers, feature-service internal helpers, `syminfo` legacy queries, and collector/import adapter surfaces were tightened during Phase H.
-- Phase I progress tracking uses per-subphase accounting: each I subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage. Current subphase: I3.
+- Phase I progress tracking uses per-subphase accounting: each I subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage. Current subphase: I4.
 - I1 first block is complete: Slang collection now exposes semantic-native record APIs and `SymbolAnalyzer` consumes `extractSymbolRecords` / `extractWorkspaceSymbolRecords` directly instead of converting collector symbols in the analyzer layer.
 - I1 second block is complete: `slangsymbolcollector` now builds `SemanticSymbolRecord` as the primary collector output.
 - I1 is complete: `collectSymbols`, `extractSymbols`, and `extractWorkspaceSymbols` are deleted from the tracked collector/manager/test source, leaving Slang symbol extraction record-native.
@@ -47,8 +47,8 @@ Thin UI consumers
 - I2 fourth block is complete: `SemanticIndex::refreshStructTypedefEnumForFile` is native-only, and the redundant `sym_list` refresh API is deleted and guarded against returning.
 - I2 fifth block is complete: `SemanticIndex::getSymbolRecords` no longer reads legacy `sym_list` records through the adapter; record queries merge only native store and snapshot data.
 - I2 sixth block is complete: `SemanticIndex` cached-content and content-change queries no longer fall back to `sym_list`; missing native state conservatively requests analysis.
-- I2 is complete: the remaining write path is explicitly named `mirrorSemanticRecordsToLegacyRelationshipDatabase` and is an I3 transition boundary for scope/relationship containment migration, not a `SemanticIndex` store query fallback.
-- I3 is current: migrate scope rebuild, module containment, relationship containment, and module lookup away from the legacy relationship mirror.
+- I2 is complete: `SemanticIndex` no longer reads legacy `sym_list` records through the adapter, and the former I3 write mirror has been removed.
+- I3 is complete: scope rebuild, module containment, relationship containment, and module lookup have moved away from the legacy relationship mirror.
 - I3 first block is complete: `SmartRelationshipBuilder` consumes semantic records through a `SemanticIndex` record provider instead of reading records back from `sym_list` or the collector adapter.
 - I3 second block is complete: `SymbolRelationshipEngine` file rebuild paths consume semantic records through a provider and no longer expose the legacy `symbols()` DB-to-record accessor.
 - I3 third block is complete: `sym_list` relationship rebuild and scope refresh now forward containment work to the semantic-record relationship engine instead of adding CONTAINS edges from legacy fields.
@@ -56,6 +56,8 @@ Thin UI consumers
 - I3 fifth block is complete: `SymbolRelationshipEngine` no longer accepts, stores, or exposes a `sym_list` database pointer; relationship engine files are guarded against reintroducing `sym_list`.
 - I3 sixth block is complete: `SemanticIndex` now owns the attached relationship engine pointer for relationship queries, completion relationship facts, and snapshot publication instead of fetching it from `sym_list`.
 - I3 seventh block is complete: `sym_list` no longer stores, exposes, or forwards a relationship engine; `SemanticIndex` directly rebuilds native relationship facts when records change or an engine is attached.
+- I3 eighth block is complete: `SemanticIndex` no longer mirrors semantic records back into `sym_list`, and the reverse relationship/scope mirror conversion is deleted and guarded against returning.
+- I4 is current: delete the remaining legacy carrier APIs and compatibility taxonomy surface now that semantic store, scope, and relationship paths no longer depend on them.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

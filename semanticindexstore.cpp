@@ -1,6 +1,5 @@
 #include "semanticindex.h"
 
-#include "semanticcollectoradapter.h"
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
 
@@ -318,12 +317,6 @@ void SemanticIndex::updateSymbolRecordsForFile(
     const QString& content)
 {
     replaceNativeSymbolRecordsForFile(fileName, records, content);
-
-    mirrorSemanticRecordsToLegacyRelationshipDatabase(
-        symbolDatabase(),
-        fileName,
-        records,
-        content);
 
     if (m_relationshipEngine)
         m_relationshipEngine->buildFileRelationships(fileName);
