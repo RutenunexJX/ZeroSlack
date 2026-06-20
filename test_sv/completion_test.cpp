@@ -500,7 +500,7 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::isCommandGlobalCompletionType(metadataGlobal),
                true);
     expectBool("SymbolTaxonomy metadata global info type",
-               SymbolTaxonomy::isGlobalSymbolInfoType(metadataGlobal),
+               SymbolTaxonomy::isGlobalSemanticSymbolType(metadataGlobal),
                true);
     SymbolTaxonomy::SemanticMetadata syntheticModuleMetadata;
     syntheticModuleMetadata.declarationKind =
@@ -732,10 +732,10 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo moduleSymbol;
     moduleSymbol.symbolType = sym_list::sym_module;
     moduleSymbol.symbolName = QStringLiteral("top");
-    const SymbolTaxonomy::SemanticMetadata moduleMetadata =
+    const SymbolTaxonomy::SemanticMetadata finalModuleMetadata =
         semanticMetadataForSymbolInfo(moduleSymbol);
     expectBool("SymbolTaxonomy module metadata declaration",
-               SymbolTaxonomy::isModuleDeclaration(moduleMetadata),
+               SymbolTaxonomy::isModuleDeclaration(finalModuleMetadata),
                true);
 
     AlternateCommandService* alternateCommandService =
@@ -1895,15 +1895,14 @@ int main(int argc, char** argv) {
                    QStringLiteral("top"),
                    QStringLiteral("logic"),
                    2100);
-    navSymbol.fileName = path;
-    SemanticIndex::getInstance()->setSnapshot(
-        sharedSnapshotFromSymbols(
-            QList<sym_list::SymbolInfo>{navSymbol},
-            QList<SemanticRelationship>{},
-            QList<SemanticDiagnostic>{},
-            QHash<QString, QString>{{path, content}}));
+    const QString navPath = QStringLiteral("navigation_target.sv");
+    navSymbol.fileName = navPath;
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        navPath,
+        semanticSymbolRecordsForSymbols({navSymbol}),
+        QStringLiteral("module top; logic jump_sig; endmodule\n"));
     EditorSemanticContext identifierNavigationContext;
-    identifierNavigationContext.fileName = path;
+    identifierNavigationContext.fileName = navPath;
     identifierNavigationContext.moduleName = QStringLiteral("top");
     identifierNavigationContext.lineText = QStringLiteral("assign jump_sig = 1'b1;");
     identifierNavigationContext.column =
@@ -1951,6 +1950,10 @@ int main(int argc, char** argv) {
                emptyClickState.action == EditorSourceNavigationClickAction::None
                    && !emptyClickState.acceptEvent,
                true);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        navPath,
+        {},
+        QString());
     SemanticIndex::getInstance()->clearSnapshot();
 
     EditorSourceSymbolShortcutContext sourceShortcutContext;

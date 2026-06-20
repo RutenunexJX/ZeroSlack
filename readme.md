@@ -28,7 +28,7 @@ Thin UI consumers
 - Phase F1-F3 semantic migration is complete on this branch, including record-first relationship/reference/report paths and the post-F3 release gate.
 - Phase G Complete Legacy Field Deletion is complete on this branch, including the post-G release gate.
 - Phase H Semantic Core Slimdown is complete on this branch: remaining legacy type adapters, redundant APIs, and compatibility logic have been deleted or confined to the collector/import, taxonomy, and `syminfo` transition boundary.
-- Phase I Semantic Store Native / Collector Native is active on this branch: replace the remaining `sym_list::SymbolInfo` / `sym_type_e` collector and store body with semantic-native collection, storage, scope, and relationship internals.
+- Phase I Semantic Store Native / Collector Native is complete on this branch: the remaining legacy collector/store body has been replaced or confined to fixture-only test carriers, and the zero-legacy core scan passes.
 - I0 is complete: `legacy_field_policy_guard.ctest` now defines the Phase I zero-legacy target terms and an opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` final scan for I5.
 - G0 is complete: `SemanticRelationshipResult` no longer carries legacy `fromSymbol` / `toSymbol` endpoint payloads; relationship consumers use endpoint records and stable keys.
 - G1 is complete: `SemanticDefinitionResult` no longer carries legacy `symbol` payloads; consumers use `symbolRecord` / `symbolStableKey`.
@@ -37,7 +37,7 @@ Thin UI consumers
 - The Phase G release gate passed locally with full Ninja and full CTest.
 - The Phase H release gate passed locally with full Ninja, full CTest, `legacy_field_policy_guard`, static legacy API scans, docs consistency review, and forbidden-file regression checks.
 - Completion compatibility, snapshot/store `SymbolInfo` carriers, feature-service internal helpers, `syminfo` legacy queries, and collector/import adapter surfaces were tightened during Phase H.
-- Phase I progress tracking uses per-subphase accounting: each I subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage. Current subphase: I5.
+- Phase I progress tracking uses per-subphase accounting: each I subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage. Current subphase: I5 complete.
 - I1 first block is complete: Slang collection now exposes semantic-native record APIs and `SymbolAnalyzer` consumes `extractSymbolRecords` / `extractWorkspaceSymbolRecords` directly instead of converting collector symbols in the analyzer layer.
 - I1 second block is complete: `slangsymbolcollector` now builds `SemanticSymbolRecord` as the primary collector output.
 - I1 is complete: `collectSymbols`, `extractSymbols`, and `extractWorkspaceSymbols` are deleted from the tracked collector/manager/test source, leaving Slang symbol extraction record-native.
@@ -73,10 +73,11 @@ Thin UI consumers
 - I4 thirteenth block is complete: tracked tests no longer include the removed `semanticcollectoradapter` header; legacy fixture-to-record conversion is isolated in a test fixture helper and guarded against adapter include regressions.
 - I4 fourteenth block is complete: direct `symboltaxonomylegacy.h` includes in tracked tests are isolated to the legacy fixture conversion helper and guarded against spreading back into test bodies.
 - I4 fifteenth block is complete: global `symboltaxonomylegacy.h` includes are guarded to remain isolated to `symboltaxonomy.cpp` and the test fixture conversion helper.
-- I5 is current: run the Phase I release gate, enable the zero-legacy target scan, resolve remaining final-scan findings, and update docs.
+- I5 is complete: the Phase I release gate passed with full Ninja, full CTest, normal `legacy_field_policy_guard.ctest`, opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET`, static core legacy scans, and `git diff --check`.
 - I5 first block is complete: lowercase `rawCollectorKind` / `requestedRawCollectorKind` field and helper names were renamed to semantic-native `collectorKind` / `CollectorKind` naming, and the guard continues to reserve the raw names as retired compatibility terms.
 - I5 second block is complete: `symboltaxonomylegacy.h` and the production `sym_type_e` taxonomy overloads were deleted; test fixture conversion now owns the remaining `SymbolInfo` to semantic metadata adapter needed by tracked tests.
 - I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake no longer builds them, and the Phase I zero target now passes for core source while fixture-only `sym_list` remains under `test_sv`.
+- I5 fourth block is complete: stale core `syminfo` includes and `SymbolInfo` naming were removed, tracked tests were migrated to fixture-local/native semantic helpers, GUI smoke fixtures synchronize native records before snapshot-only checks, and the final Phase I release gate passed.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

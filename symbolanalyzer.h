@@ -10,7 +10,6 @@
 #include <functional>
 #include "projectmodel.h"
 #include "semanticindex.h"
-#include "syminfo.h"
 
 class WorkspaceManager;
 template <typename T>

@@ -1,7 +1,6 @@
 #ifndef SEMANTICINDEX_H
 #define SEMANTICINDEX_H
 
-#include "syminfo.h"
 #include "symbolrelationshipengine.h"
 #include "symboltaxonomy.h"
 

@@ -3,8 +3,6 @@
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
 
-#include "syminfo.h"
-
 #include <QKeyEvent>
 #include <QMouseEvent>
 

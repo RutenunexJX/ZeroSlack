@@ -109,10 +109,15 @@ int main(int argc, char** argv) {
     f.close();
 
     SlangManager mgr;
+    const QList<SemanticSymbolRecord> symbolRecords =
+        mgr.extractSymbolRecords(path, content);
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         path,
-        mgr.extractSymbolRecords(path, content),
+        symbolRecords,
         content);
+    sym_list::getInstance()->setSymbolsForFile(
+        path,
+        fixtureSymbolsForRecords(symbolRecords));
 
     // After the semantic record mirror, function-local symbols keep their
     // subroutine owner scope rather than being inferred from module bounds.
@@ -207,6 +212,10 @@ int main(int argc, char** argv) {
     pixelVar.startColumn = 5;
     syntheticSymbols.append(pixelVar);
     sym_list::getInstance()->setSymbolsForFile(syntheticFile, syntheticSymbols);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        syntheticFile,
+        semanticSymbolRecordsForSymbols(syntheticSymbols),
+        QString());
 
     DefinitionQuery memberQuery;
     memberQuery.symbolName = QStringLiteral("red");
@@ -1082,10 +1091,10 @@ int main(int argc, char** argv) {
         && counterTarget.localFile
         && counterTarget.line == counter.startLine
         && counterTarget.symbolRecord.isValid()
-        && counterTarget.symbolRecord.localHandle == counter.symbolId
         && counterTarget.symbolRecord.stableKey == counterTarget.symbolStableKey
         && counterTarget.symbolRecord.name == QStringLiteral("counter")
-        && counterTarget.symbolRecord.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_reg)
+        && counterTarget.symbolRecord.declarationKind
+            == SymbolTaxonomy::DeclarationKind::Signal
         && counterTarget.ownerDisplayName == QStringLiteral("top")
         && counterTarget.sourceRoleDisplayName == QStringLiteral("design source");
     if (!counterOk) ++g_fails;
@@ -1101,10 +1110,15 @@ int main(int argc, char** argv) {
     if (hf.open(QIODevice::ReadOnly | QFile::Text)) {
         QString hc = QTextStream(&hf).readAll();
         hf.close();
+        const QList<SemanticSymbolRecord> helperRecords =
+            mgr.extractSymbolRecords(helperPath, hc);
         SemanticIndex::getInstance()->updateSymbolRecordsForFile(
             helperPath,
-            mgr.extractSymbolRecords(helperPath, hc),
+            helperRecords,
             hc);
+        sym_list::getInstance()->setSymbolsForFile(
+            helperPath,
+            fixtureSymbolsForRecords(helperRecords));
 
         int helperStartLine = -1;
         for (const auto& s : symbolsNamed(QStringLiteral("helper_mod")))

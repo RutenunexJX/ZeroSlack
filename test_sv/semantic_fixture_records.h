@@ -166,6 +166,26 @@ static bool fixtureTypeHasInterfaceLikeOwner(sym_list::sym_type_e type)
         || type == sym_list::sym_port_interface_modport;
 }
 
+static SemanticSymbolTypeReference fixtureTypeReferenceForSymbol(
+    const sym_list::SymbolInfo& symbol)
+{
+    SemanticSymbolTypeReference type;
+    type.rawTypeText = symbol.dataType;
+    if (symbol.dataType.isEmpty())
+        return type;
+
+    const QStringList parts = symbol.dataType.split(QLatin1Char('.'));
+    type.resolvedTypeName = parts.value(0);
+    if (parts.size() > 1)
+        type.modportName = parts.value(1);
+    if (symbol.symbolType == sym_list::sym_inst
+        || symbol.symbolType == sym_list::sym_port_interface
+        || symbol.symbolType == sym_list::sym_port_interface_modport) {
+        type.resolvedTypeKind = SymbolTaxonomy::DeclarationKind::Interface;
+    }
+    return type;
+}
+
 static SymbolTaxonomy::SymbolOwnerScope ownerScopeForFixtureSymbol(
     const sym_list::SymbolInfo& symbol,
     const QSet<QString>& packageScopes = {})
@@ -273,13 +293,54 @@ static SemanticSymbolRecord semanticSymbolRecordForSymbol(
     record.owner.kind = metadata.ownerScope;
     record.owner.name = symbol.moduleScope;
     record.owner.interfaceLike = metadata.interfaceLikeOwner;
-    record.type.rawTypeText = symbol.dataType;
+    record.type = fixtureTypeReferenceForSymbol(symbol);
 
     record.stableKey.fileName = record.location.fileName;
     record.stableKey.symbolName = record.name;
     record.stableKey.declarationKind = record.declarationKind;
     record.stableKey.ownerScope = record.owner.name;
     return record;
+}
+
+static sym_list::SymbolInfo fixtureSymbolInfoForRecord(
+    const SemanticSymbolRecord& record)
+{
+    sym_list::SymbolInfo symbol;
+    symbol.fileName = record.location.fileName;
+    symbol.symbolName = record.name;
+    symbol.symbolType =
+        static_cast<sym_list::sym_type_e>(record.collectorKind);
+    symbol.startLine = record.location.startLine;
+    symbol.startColumn = record.location.startColumn;
+    symbol.endLine = record.location.endLine;
+    symbol.endColumn = record.location.endColumn;
+    symbol.position = record.location.position;
+    symbol.length = record.location.length;
+    symbol.symbolId = record.localHandle;
+    symbol.moduleScope = record.owner.name;
+    symbol.dataType = record.type.rawTypeText;
+    symbol.hasSemanticMetadata = true;
+    symbol.semanticDeclarationKind = record.declarationKind;
+    symbol.semanticUsageRole = record.usageRole;
+    symbol.semanticOwnerScope = record.owner.kind;
+    symbol.semanticVisibility = record.visibility;
+    symbol.semanticSourceRole = record.sourceRole;
+    symbol.collectorKind =
+        static_cast<sym_list::sym_type_e>(record.collectorKind);
+    symbol.interfaceLikeOwner = record.owner.interfaceLike;
+    return symbol;
+}
+
+static QList<sym_list::SymbolInfo> fixtureSymbolsForRecords(
+    const QList<SemanticSymbolRecord>& records)
+{
+    QList<sym_list::SymbolInfo> symbols;
+    symbols.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.isValid())
+            symbols.append(fixtureSymbolInfoForRecord(record));
+    }
+    return symbols;
 }
 
 static QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
@@ -291,6 +352,42 @@ static QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     for (const sym_list::SymbolInfo& symbol : symbols)
         records.append(semanticSymbolRecordForSymbol(symbol, packageScopes));
     return records;
+}
+
+static QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabase(
+    const sym_list* db,
+    const QString& fileName = QString(),
+    const QSet<QString>& packageScopes = {})
+{
+    if (!db)
+        return {};
+    return semanticSymbolRecordsForSymbols(db->getAllSymbols(fileName),
+                                           packageScopes);
+}
+
+static void importFixtureSymbolsIntoSemanticIndex(SemanticIndex& index,
+                                                  const sym_list* db)
+{
+    if (!db)
+        return;
+
+    QHash<QString, QList<sym_list::SymbolInfo>> symbolsByFile;
+    for (const sym_list::SymbolInfo& symbol : db->getAllSymbols())
+        symbolsByFile[symbol.fileName].append(symbol);
+
+    for (auto it = symbolsByFile.cbegin(); it != symbolsByFile.cend(); ++it) {
+        index.updateSymbolRecordsForFile(
+            it.key(),
+            semanticSymbolRecordsForSymbols(it.value()),
+            db->getCachedFileContent(it.key()));
+    }
+}
+
+static SemanticIndex semanticIndexFromFixtureDatabase(const sym_list* db)
+{
+    SemanticIndex index;
+    importFixtureSymbolsIntoSemanticIndex(index, db);
+    return index;
 }
 
 #endif // TEST_SV_SEMANTIC_FIXTURE_RECORDS_H

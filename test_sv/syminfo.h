@@ -139,6 +139,11 @@ public:
     };
 
     QString getCachedFileContent(const QString& fileName) const;
+    void setCachedFileContent(const QString& fileName,
+                              const QString& content);
+    QList<SymbolInfo> getAllSymbols(const QString& fileName = QString()) const;
+    void setSymbolsForFile(const QString& fileName,
+                           const QList<SymbolInfo>& symbols);
 
     static bool isValidModuleName(const QString& name);
 
@@ -170,6 +175,7 @@ private:
     QString calculateContentHash(const QString& content);
     QString calculateSymbolRelevantHash(const QString& content);
 
+    QHash<QString, QList<SymbolInfo>> symbolsByFile;
     QHash<QString, QString> previousFileContents;
 
 };

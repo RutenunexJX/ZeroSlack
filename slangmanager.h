@@ -2,7 +2,6 @@
 #define SLANGMANAGER_H
 
 #include "semanticindex.h"
-#include "syminfo.h"
 #include <QString>
 #include <QStringList>
 #include <QVector>

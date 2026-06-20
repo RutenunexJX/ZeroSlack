@@ -734,7 +734,7 @@ bool isCommandGlobalCompletionType(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Enum;
 }
 
-bool isGlobalSymbolInfoType(const SemanticMetadata& metadata)
+bool isGlobalSemanticSymbolType(const SemanticMetadata& metadata)
 {
     if (isGlobalSymbolCollectorKind(metadata.collectorKind)) {
         return true;

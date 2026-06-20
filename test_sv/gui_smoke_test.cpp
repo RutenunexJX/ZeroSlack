@@ -406,9 +406,27 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     outgoingRelationship.toId = target.symbolId;
     outgoingRelationship.type = SymbolRelationshipEngine::CALLS;
 
+    const QList<sym_list::SymbolInfo> referenceSymbols{
+        referenced,
+        referencing,
+        externalReferencing,
+        target,
+    };
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        fixturePath,
+        semanticSymbolRecordsForSymbols(
+            QList<sym_list::SymbolInfo>{referenced, referencing, target},
+            packageScopeNames(referenceSymbols)),
+        QString());
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        externalReferencing.fileName,
+        semanticSymbolRecordsForSymbols(
+            QList<sym_list::SymbolInfo>{externalReferencing},
+            packageScopeNames(referenceSymbols)),
+        QString());
     SemanticIndex::getInstance()->setSnapshot(
         snapshotFromSymbols(
-            QList<sym_list::SymbolInfo>{referenced, referencing, externalReferencing, target},
+            referenceSymbols,
             QList<SemanticRelationship>{incomingRelationship,
                                         externalIncomingRelationship,
                                         outgoingRelationship}));
@@ -904,6 +922,10 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         "endmodule\n");
     QHash<QString, QString> fileContents;
     fileContents.insert(fixturePath, content);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        fixturePath,
+        semanticSymbolRecordsForSymbols(symbols, packageScopeNames(symbols)),
+        content);
     SemanticDiagnostic insightDiagnostic;
     insightDiagnostic.fileName = fixturePath;
     insightDiagnostic.line = 6;
@@ -916,7 +938,6 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             relationships,
             QList<SemanticDiagnostic>{insightDiagnostic},
             fileContents));
-
     expectBool("RTL insights panel exists", rtlInsightsTree(window) != nullptr, true);
     if (!window.semanticDocks || !window.semanticDocks->rtlInsightsPanelCoordinator())
         return;

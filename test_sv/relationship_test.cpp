@@ -141,13 +141,66 @@ static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
 
 static SemanticIndexSnapshot snapshotFromSemanticIndex(
     sym_list* db,
-    const QList<SemanticDiagnostic>& diagnostics = {})
+    const QList<SemanticDiagnostic>& diagnostics = {},
+    SymbolRelationshipEngine* relationshipEngine = nullptr)
 {
-    SemanticIndex index(db);
+    SemanticIndex index = semanticIndexFromFixtureDatabase(db);
     const std::shared_ptr<const SemanticIndexSnapshot> captured =
         index.captureSnapshotPreservingDiagnostics();
+    QList<SemanticRelationship> relationships;
+    if (relationshipEngine) {
+        static const QList<SymbolRelationshipEngine::RelationType> relationshipTypes = {
+            SymbolRelationshipEngine::CONTAINS,
+            SymbolRelationshipEngine::REFERENCES,
+            SymbolRelationshipEngine::INSTANTIATES,
+            SymbolRelationshipEngine::CALLS,
+            SymbolRelationshipEngine::INHERITS,
+            SymbolRelationshipEngine::IMPLEMENTS,
+            SymbolRelationshipEngine::ASSIGNS_TO,
+            SymbolRelationshipEngine::READS_FROM,
+            SymbolRelationshipEngine::CLOCKS,
+            SymbolRelationshipEngine::RESETS,
+            SymbolRelationshipEngine::GENERATES,
+            SymbolRelationshipEngine::CONSTRAINS,
+        };
+        QSet<QString> seen;
+        for (const SemanticSymbolRecord& record : captured->getSymbolRecords()) {
+            const int symbolHandle = record.localHandle;
+            if (symbolHandle < 0)
+                continue;
+            for (SymbolRelationshipEngine::RelationType type : relationshipTypes) {
+                const QList<int> related =
+                    relationshipEngine->getRelatedSymbols(symbolHandle, type, true);
+                for (int relatedHandle : related) {
+                    SemanticRelationship relationship;
+                    relationship.fromId = symbolHandle;
+                    relationship.toId = relatedHandle;
+                    relationship.type = type;
+                    const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
+                        relationshipEngine->getRelationshipMetadata(
+                            relationship.fromId,
+                            relationship.toId,
+                            relationship.type);
+                    if (metadata.found) {
+                        relationship.provenance =
+                            RelationshipProvenance::Inferred;
+                        relationship.confidence = metadata.confidence;
+                        relationship.evidenceText = metadata.context;
+                    }
+                    const QString key = QStringLiteral("%1:%2:%3")
+                                            .arg(relationship.fromId)
+                                            .arg(relationship.toId)
+                                            .arg(static_cast<int>(relationship.type));
+                    if (seen.contains(key))
+                        continue;
+                    seen.insert(key);
+                    relationships.append(relationship);
+                }
+            }
+        }
+    }
     return SemanticIndexSnapshot::fromSymbolRecords(captured->getSymbolRecords(),
-                                                    captured->relationships(),
+                                                    relationships,
                                                     diagnostics,
                                                     captured->fileContents());
 }
@@ -335,10 +388,17 @@ static void runInlineRelationshipRegression(SlangManager& slang,
         "  end\n"
         "endmodule\n");
 
-    SemanticIndex semanticIndex(db);
+    QList<SemanticSymbolRecord> records =
+        slang.extractSymbolRecords(path, content);
+    for (SemanticSymbolRecord& record : records)
+        record.location.fileName = path;
+    db->setSymbolsForFile(path, fixtureSymbolsForRecords(records));
+    db->setCachedFileContent(path, content);
+
+    SemanticIndex semanticIndex = semanticIndexFromFixtureDatabase(db);
     semanticIndex.updateSymbolRecordsForFile(
         path,
-        slang.extractSymbolRecords(path, content),
+        records,
         content);
     QList<sym_list::SymbolInfo> symbols = symbolsInFile(db->getAllSymbols(), path);
 
@@ -426,16 +486,42 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     QHash<QString, QList<SemanticSymbolRecord>> recordsByFile;
     for (SemanticSymbolRecord record : workspaceRecords) {
-        record.location.fileName = normalizedPath(record.location.fileName);
-        recordsByFile[record.location.fileName].append(record);
+        const QString recordPath = normalizedPath(record.location.fileName);
+        QString matchedPath;
+        for (const QString& path : paths) {
+            if (recordPath == path
+                || QFileInfo(recordPath).fileName() == QFileInfo(path).fileName()) {
+                matchedPath = path;
+                break;
+            }
+        }
+        if (matchedPath.isEmpty())
+            continue;
+        record.location.fileName = matchedPath;
+        recordsByFile[matchedPath].append(record);
     }
 
-    SemanticIndex semanticIndex(db);
-    for (const QString& path : paths)
+    for (const QString& path : paths) {
+        if (!recordsByFile.value(path).isEmpty())
+            continue;
+
+        QList<SemanticSymbolRecord> fileRecords =
+            slang.extractSymbolRecords(path, contents.value(path));
+        for (SemanticSymbolRecord& record : fileRecords)
+            record.location.fileName = path;
+        recordsByFile[path] = fileRecords;
+    }
+
+    SemanticIndex semanticIndex = semanticIndexFromFixtureDatabase(db);
+    for (const QString& path : paths) {
+        db->setSymbolsForFile(path,
+                              fixtureSymbolsForRecords(recordsByFile.value(path)));
+        db->setCachedFileContent(path, contents.value(path));
         semanticIndex.updateSymbolRecordsForFile(
             path,
             recordsByFile.value(path),
             contents.value(path));
+    }
 
     const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
     const QList<sym_list::SymbolInfo> topSymbols = symbolsInFile(allSymbols, topPath);
@@ -476,7 +562,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("top clock extracted", topClkId > 0, true);
     expectBool("top reset extracted", topRstId > 0, true);
 
-    SemanticIndex index(db);
+    SemanticIndex index = semanticIndexFromFixtureDatabase(db);
+    SmartRelationshipBuilder fixtureBuilder(
+        &engine,
+        &slang,
+        [&index](const QString& fileName) {
+            return index.getSymbolRecords(fileName);
+        });
     SemanticQueryContext queryContext;
     queryContext.fileName = topPath;
     queryContext.moduleName = QStringLiteral("rel_top");
@@ -568,7 +660,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         slang.extractDiagnostics(temporaryBrokenPath, brokenContent);
     expectBool("slang diagnostics flow from temp path",
                !temporaryBrokenDiagnostics.isEmpty(), true);
-    SemanticIndex diagnosticIndex(db);
+    SemanticIndex diagnosticIndex = semanticIndexFromFixtureDatabase(db);
     diagnosticIndex.setSnapshot(sharedSnapshotFromSymbols(
         snapshotFromSemanticIndex(db, brokenDiagnostics)));
     DiagnosticService brokenDiagnosticService(&diagnosticIndex);
@@ -631,7 +723,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     errorDiagnostic.severity = SemanticDiagnostic::Error;
     errorDiagnostic.owner = SemanticDiagnostic::SlangCompiler;
 
-    SemanticIndex diagnosticReportIndex(db);
+    SemanticIndex diagnosticReportIndex = semanticIndexFromFixtureDatabase(db);
     diagnosticReportIndex.setSnapshot(sharedSnapshotFromSymbols(
         snapshotFromSemanticIndex(db, {
             infoDiagnostic,
@@ -904,10 +996,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     QVector<RelationshipToAdd> rels =
-        builder.computeRelationships(topPath,
-                                     contents.value(topPath),
-                                     index.getSymbolRecords(topPath),
-                                     nullptr);
+        fixtureBuilder.computeRelationships(topPath,
+                                            contents.value(topPath),
+                                            index.getSymbolRecords(topPath),
+                                            nullptr);
 
     expectBool("top instantiates cross-file stage",
                hasRel(rels, topId, stageId, SymbolRelationshipEngine::INSTANTIATES), true);
@@ -924,7 +1016,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     index.attachRelationshipEngine(&engine);
     expectBool("semantic index attaches relationship engine",
-               db->getRelationshipEngine() == &engine, true);
+               index.relationshipEngine() == &engine, true);
     const std::unique_ptr<SmartRelationshipBuilder> facadeBuilder =
         index.createRelationshipBuilder(&engine, &slang);
     expectBool("semantic index creates relationship builder",
@@ -972,9 +1064,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("relationship cache separates incoming direction",
                incomingReferenceIds.contains(stageId), false);
 
-    SemanticIndex snapshotIndex(db);
+    SemanticIndex snapshotIndex = semanticIndexFromFixtureDatabase(db);
     const auto snapshot = sharedSnapshotFromSymbols(
-        snapshotFromSemanticIndex(db));
+        snapshotFromSemanticIndex(db, {}, &engine));
     snapshotIndex.setSnapshot(snapshot);
     expectBool("semantic snapshot returns top symbols",
                snapshotIndex.getSymbolRecords(topPath).size() == topSymbols.size(), true);
@@ -2183,7 +2275,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && diagnosticReplacementSnapshot.getDiagnostics(stagePath).first().message
                        == errorDiagnostic.message,
                true);
-    SemanticIndex captureIndex(db);
+    SemanticIndex captureIndex = semanticIndexFromFixtureDatabase(db);
     const auto capturedSnapshot =
         captureIndex.captureSnapshotPreservingDiagnostics();
     captureIndex.setSnapshot(sharedSnapshotFromRecords(
@@ -2209,7 +2301,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && replacedCaptureSnapshot->getDiagnostics(stagePath).first().message
                        == errorDiagnostic.message,
                true);
-    SemanticIndex guardedIndex(db);
+    SemanticIndex guardedIndex = semanticIndexFromFixtureDatabase(db);
     const auto guardedBaseSnapshot =
         sharedSnapshotFromSymbols(
             snapshotFromSemanticIndex(db));
@@ -2253,9 +2345,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                                       SymbolRelationshipEngine::INSTANTIATES),
                false);
 
+    const auto previousGlobalSnapshot = SemanticIndex::getInstance()->snapshot();
+    SemanticIndex::getInstance()->setSnapshot(snapshot);
+
     AnalysisScheduler scheduler;
     scheduler.setRelationshipEngine(&engine);
-    scheduler.setRelationshipBuilder(&builder);
+    scheduler.setRelationshipBuilder(&fixtureBuilder);
     SingleFileRelationshipAnalysisResult singleFileSchedulerResult;
     bool singleFileSchedulerFinished = false;
     bool singleFileSchedulerProgress = false;
@@ -2669,7 +2764,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     AnalysisScheduler documentSaveScheduler;
     SymbolAnalyzer documentSaveAnalyzer;
     SymbolRelationshipEngine documentSaveEngine;
-    SemanticIndex documentSaveIndex(db);
+    SemanticIndex documentSaveIndex = semanticIndexFromFixtureDatabase(db);
     documentSaveIndex.attachRelationshipEngine(&documentSaveEngine);
     SmartRelationshipBuilder documentSaveBuilder(
         &documentSaveEngine,
@@ -2809,6 +2904,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     schedulerProject.workspaceRoot = fixtureDir.absolutePath();
     schedulerProject.allFiles = paths;
     schedulerProject.systemVerilogFiles = paths;
+    SemanticIndex::getInstance()->setSnapshot(snapshot);
     WorkspaceRelationshipAnalysisResult schedulerResult;
     bool schedulerFinished = false;
     bool schedulerWorkspaceProgress = false;
@@ -3819,6 +3915,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("reference report assignment write subject display name",
                rspDataReferenceReport.subjectDisplayName == QStringLiteral("rsp_data"),
                true);
+
+    if (previousGlobalSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(previousGlobalSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
 }
 
 static void runModuleBriefServiceFixture()
@@ -8005,7 +8106,7 @@ int main(int argc, char** argv)
     auto* db = sym_list::getInstance();
 
     SymbolRelationshipEngine engine;
-    SemanticIndex index(db);
+    SemanticIndex index = semanticIndexFromFixtureDatabase(db);
     index.attachRelationshipEngine(&engine);
     SmartRelationshipBuilder builder(
         &engine,

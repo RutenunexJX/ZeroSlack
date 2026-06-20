@@ -89,7 +89,7 @@ bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent in
 bool isInternalCompletionCandidate(const SemanticMetadata& metadata);
 bool isGlobalCompletionCandidate(const SemanticMetadata& metadata);
 bool isCommandGlobalCompletionType(const SemanticMetadata& metadata);
-bool isGlobalSymbolInfoType(const SemanticMetadata& metadata);
+bool isGlobalSemanticSymbolType(const SemanticMetadata& metadata);
 bool isDefinitionVisibleInContext(
     const SemanticMetadata& metadata,
     const QString& ownerName,

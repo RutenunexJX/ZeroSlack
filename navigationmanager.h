@@ -7,7 +7,6 @@
 #include <memory>
 #include "modulehierarchymodel.h"
 #include "symboloutlinemodel.h"
-#include "syminfo.h"
 
 class NavigationWidget;
 class NavigationService;
