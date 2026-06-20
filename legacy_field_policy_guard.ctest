@@ -167,8 +167,6 @@ set(PHASE_I2_NATIVE_STORE_QUERY_FILES
 )
 
 set(PHASE_I2_REMOVED_GENERIC_BRIDGE_FILES
-    semanticcollectoradapter.cpp
-    semanticcollectoradapter.h
     semanticindexstore.cpp
 )
 
@@ -197,9 +195,12 @@ set(PHASE_I3_NATIVE_CONTAINMENT_FORWARDING_FILES
 )
 
 set(PHASE_I3_REMOVED_LEGACY_RELATIONSHIP_MIRROR_FILES
+    semanticindexstore.cpp
+)
+
+set(PHASE_I4_REMOVED_LEGACY_COLLECTOR_ADAPTER_FILES
     semanticcollectoradapter.cpp
     semanticcollectoradapter.h
-    semanticindexstore.cpp
 )
 
 set(PHASE_I3_REMOVED_LEGACY_MODULE_LOOKUP_FILES
@@ -209,8 +210,6 @@ set(PHASE_I3_REMOVED_LEGACY_MODULE_LOOKUP_FILES
 )
 
 set(H0_LEGACY_CORE_ALLOWLIST
-    semanticcollectoradapter.cpp
-    semanticcollectoradapter.h
     slangmanager.h
     slangmanagersymbols.cpp
     slangsymbolcollector.cpp
@@ -1244,6 +1243,20 @@ if(phase_i3_relationship_mirror_violations)
         "Phase I3 semantic records must not mirror back into legacy sym_list relationship/scope storage:\n  ${phase_i3_relationship_mirror_violation_text}")
 endif()
 
+set(phase_i4_legacy_collector_adapter_violations)
+foreach(relative_path IN LISTS PHASE_I4_REMOVED_LEGACY_COLLECTOR_ADAPTER_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(EXISTS "${path}")
+        list(APPEND phase_i4_legacy_collector_adapter_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(phase_i4_legacy_collector_adapter_violations)
+    list(JOIN phase_i4_legacy_collector_adapter_violations "\n  " phase_i4_legacy_collector_adapter_violation_text)
+    message(FATAL_ERROR
+        "Phase I4 removed legacy collector adapter files must not return:\n  ${phase_i4_legacy_collector_adapter_violation_text}")
+endif()
+
 set(phase_i3_module_lookup_missing_files)
 set(phase_i3_module_lookup_violations)
 foreach(relative_path IN LISTS PHASE_I3_REMOVED_LEGACY_MODULE_LOOKUP_FILES)
@@ -1349,8 +1362,6 @@ foreach(entry IN LISTS F3_REMOVED_COMPATIBILITY_PATTERNS)
     list(REMOVE_AT patterns 0)
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
     if(NOT EXISTS "${path}")
-        list(APPEND f3_removed_compatibility_violations
-             "${relative_path} (missing file)")
         continue()
     endif()
     file(READ "${path}" content)
