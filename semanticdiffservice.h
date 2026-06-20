@@ -163,7 +163,7 @@ private:
     static bool symbolCategory(
         const SymbolTaxonomy::SemanticMetadata& metadata,
         SemanticDiffSymbolCategory* category);
-    static bool symbolInScope(const sym_list::SymbolInfo& symbol,
+    static bool symbolInScope(const SemanticSymbolRecord& record,
                               const QString& moduleName,
                               const QString& fileName);
     static bool relationshipInScope(
@@ -174,9 +174,9 @@ private:
     static bool diagnosticInScope(const SemanticDiagnostic& diagnostic,
                                   const QString& fileName);
 
-    static QString symbolKey(const sym_list::SymbolInfo& symbol,
+    static QString symbolKey(const SemanticSymbolRecord& record,
                              SemanticDiffSymbolCategory category);
-    static QString symbolSignature(const sym_list::SymbolInfo& symbol);
+    static QString symbolSignature(const SemanticSymbolRecord& record);
     static sym_list::SymbolInfo relationshipEndpointSymbol(
         const SemanticRelationship& relationship,
         const SemanticIndexSnapshot& snapshot,
@@ -201,8 +201,8 @@ private:
     static QString confidenceDisplayName(int confidence);
     static QString evidenceDisplayName(const QString& evidenceText);
     static void fillDisplayMetadata(SemanticDiffSymbolChange& change,
-                                    const sym_list::SymbolInfo& beforeSymbol,
-                                    const sym_list::SymbolInfo& afterSymbol);
+                                    const SemanticSymbolRecord& beforeRecord,
+                                    const SemanticSymbolRecord& afterRecord);
     static void fillDisplayMetadata(SemanticDiffRelationshipChange& change,
                                     const sym_list::SymbolInfo& beforeFromSymbol,
                                     const sym_list::SymbolInfo& beforeToSymbol,
