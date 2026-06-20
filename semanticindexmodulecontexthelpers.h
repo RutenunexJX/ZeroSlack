@@ -22,7 +22,7 @@ bool moduleContextNameMatches(const QString& name, const QString& prefix);
 
 bool isModuleRangeSymbolType(sym_list::sym_type_e type);
 
-void sortModuleContextSymbols(QList<sym_list::SymbolInfo>& symbols);
+void sortModuleContextSymbolRecords(QList<SemanticSymbolRecord>& records);
 
 } // namespace semantic_index_module_context
 

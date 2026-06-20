@@ -108,12 +108,11 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
         semanticIndex->refreshStructTypedefEnumForFile(
             query.fileName, query.documentText);
 
-        return semanticSymbolRecordsForSymbols(
-            semanticIndex->getModuleContextSymbolsByType(
-                query.moduleName,
-                query.fileName,
-                adapterRawCollectorKind,
-                query.prefix));
+        return semanticIndex->getModuleContextSymbolRecordsByType(
+            query.moduleName,
+            query.fileName,
+            adapterRawCollectorKind,
+            query.prefix);
     }
 
     return semanticIndex->getCommandCompletionSymbolRecords(

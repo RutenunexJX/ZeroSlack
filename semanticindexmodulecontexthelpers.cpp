@@ -22,11 +22,6 @@ SymbolTaxonomy::SemanticMetadata moduleContextMetadataForRecord(
     metadata.interfaceLikeOwner = record.owner.interfaceLike;
     return metadata;
 }
-
-int moduleContextLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolId;
-}
 }
 
 QString normalizedModuleContextFileName(const QString& fileName)
@@ -90,22 +85,21 @@ bool isModuleRangeSymbolType(sym_list::sym_type_e type)
     return SymbolTaxonomy::isModuleRangeType(type);
 }
 
-void sortModuleContextSymbols(QList<sym_list::SymbolInfo>& symbols)
+void sortModuleContextSymbolRecords(QList<SemanticSymbolRecord>& records)
 {
-    std::stable_sort(symbols.begin(), symbols.end(),
-                     [](const sym_list::SymbolInfo& a,
-                        const sym_list::SymbolInfo& b) {
-        const int nameCompare = QString::compare(a.symbolName,
-                                                 b.symbolName,
+    std::stable_sort(records.begin(), records.end(),
+                     [](const SemanticSymbolRecord& a,
+                        const SemanticSymbolRecord& b) {
+        const int nameCompare = QString::compare(a.name,
+                                                 b.name,
                                                  Qt::CaseInsensitive);
         if (nameCompare != 0)
             return nameCompare < 0;
-        if (a.startLine != b.startLine)
-            return a.startLine < b.startLine;
-        if (a.fileName != b.fileName)
-            return a.fileName < b.fileName;
-        return moduleContextLocalHandleForSymbol(a)
-            < moduleContextLocalHandleForSymbol(b);
+        if (a.location.startLine != b.location.startLine)
+            return a.location.startLine < b.location.startLine;
+        if (a.location.fileName != b.location.fileName)
+            return a.location.fileName < b.location.fileName;
+        return a.localHandle < b.localHandle;
     });
 }
 

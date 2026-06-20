@@ -27,16 +27,6 @@ QString stableDedupeKeyForModuleContextRecord(
              record.name);
 }
 
-sym_list::SymbolInfo moduleContextSymbolInfoForRecord(
-    const SemanticSymbolRecord& record)
-{
-    return semanticSymbolInfoCarrierForRecord(record);
-}
-
-int moduleContextLocalHandleForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return symbol.symbolId;
-}
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
@@ -144,26 +134,26 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
     return result;
 }
 
-QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
+QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
     const QString& moduleName,
     const QString& fileName,
     sym_list::sym_type_e symbolType,
     const QString& prefix) const
 {
-    QList<sym_list::SymbolInfo> result;
+    QList<SemanticSymbolRecord> result;
     if (moduleName.isEmpty() || fileName.isEmpty())
         return result;
 
     const QString normalizedTargetFile = normalizedModuleContextFileName(fileName);
-    const QList<sym_list::SymbolInfo> fileSymbols =
-        semanticSymbolInfoCarriersForRecords(getSymbolRecords(fileName));
-    sym_list::SymbolInfo moduleSymbol;
+    const QList<SemanticSymbolRecord> fileRecords = getSymbolRecords(fileName);
+    SemanticSymbolRecord moduleRecord;
     bool foundModule = false;
-    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (SymbolTaxonomy::isModuleDeclaration(symbol)
-            && symbol.symbolName == moduleName
-            && normalizedModuleContextFileName(symbol.fileName) == normalizedTargetFile) {
-            moduleSymbol = symbol;
+    for (const SemanticSymbolRecord& record : fileRecords) {
+        if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+            && record.name == moduleName
+            && normalizedModuleContextFileName(record.location.fileName)
+                == normalizedTargetFile) {
+            moduleRecord = record;
             foundModule = true;
             break;
         }
@@ -172,29 +162,27 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         return result;
 
     int moduleEndLineExclusive = std::numeric_limits<int>::max();
-    for (const sym_list::SymbolInfo& symbol : fileSymbols) {
-        if (!SymbolTaxonomy::isModuleDeclaration(symbol))
+    for (const SemanticSymbolRecord& record : fileRecords) {
+        if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
             continue;
-        if (moduleContextLocalHandleForSymbol(symbol)
-            == moduleContextLocalHandleForSymbol(moduleSymbol)) {
+        if (record.localHandle == moduleRecord.localHandle) {
             continue;
         }
-        if (symbol.startLine > moduleSymbol.startLine
-            && symbol.startLine < moduleEndLineExclusive) {
-            moduleEndLineExclusive = symbol.startLine;
+        if (record.location.startLine > moduleRecord.location.startLine
+            && record.location.startLine < moduleEndLineExclusive) {
+            moduleEndLineExclusive = record.location.startLine;
         }
     }
 
-    auto inModuleRange = [&moduleSymbol, moduleEndLineExclusive](
-                             const sym_list::SymbolInfo& symbol) {
-        return symbol.fileName == moduleSymbol.fileName
-            && symbol.startLine > moduleSymbol.startLine
-            && symbol.startLine < moduleEndLineExclusive;
+    auto inModuleRange = [&moduleRecord, moduleEndLineExclusive](
+                             const SemanticSymbolRecord& record) {
+        return record.location.fileName == moduleRecord.location.fileName
+            && record.location.startLine > moduleRecord.location.startLine
+            && record.location.startLine < moduleEndLineExclusive;
     };
 
     QSet<QString> seenStableKeys;
-    auto appendSymbol = [&](const sym_list::SymbolInfo& symbol) {
-        const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+    auto appendRecord = [&](const SemanticSymbolRecord& record) {
         if (!moduleContextSymbolTypeMatches(record, symbolType)) {
             return;
         }
@@ -205,21 +193,19 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
             return;
         seenStableKeys.insert(dedupeKey);
-        result.append(symbol);
+        result.append(record);
     };
 
-    const QList<sym_list::SymbolInfo> allSymbols =
-        semanticSymbolInfoCarriersForRecords(getSymbolRecords());
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+    const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
+    for (const SemanticSymbolRecord& record : allRecords) {
         bool isCorrectModule = false;
         if (isModuleRangeSymbolType(symbolType)) {
-            isCorrectModule = inModuleRange(symbol);
+            isCorrectModule = inModuleRange(record);
         } else {
-            const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
             isCorrectModule = record.owner.name == moduleName;
         }
         if (isCorrectModule)
-            appendSymbol(symbol);
+            appendRecord(record);
     }
 
     QString fileContent = getCachedFileContent(fileName);
@@ -243,7 +229,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
         const QStringList lines = fileContent.split('\n');
         for (int i = 0; i < lines.size(); ++i) {
             const int lineNumber = i + 1;
-            if (lineNumber < moduleSymbol.startLine
+            if (lineNumber < moduleRecord.location.startLine
                 || lineNumber >= moduleEndLineExclusive) {
                 continue;
             }
@@ -254,11 +240,10 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
                 const QString includePath = includeMatch.captured(1).trimmed();
                 const QString absoluteIncludePath =
                     QDir(baseDir).absoluteFilePath(includePath);
-                const QList<sym_list::SymbolInfo> includeSymbols =
-                    semanticSymbolInfoCarriersForRecords(
-                        getSymbolRecords(absoluteIncludePath));
-                for (const sym_list::SymbolInfo& symbol : includeSymbols)
-                    appendSymbol(symbol);
+                const QList<SemanticSymbolRecord> includeRecords =
+                    getSymbolRecords(absoluteIncludePath);
+                for (const SemanticSymbolRecord& record : includeRecords)
+                    appendRecord(record);
             }
 
             const QRegularExpressionMatch starMatch = importStarRegex.match(line);
@@ -274,8 +259,7 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
             }
         }
 
-        for (const sym_list::SymbolInfo& symbol : allSymbols) {
-            const SemanticSymbolRecord record = semanticSymbolRecordForSymbol(symbol);
+        for (const SemanticSymbolRecord& record : allRecords) {
             bool imported = starPackages.contains(record.owner.name);
             if (!imported) {
                 auto it = importedSymbolsByPackage.constFind(record.owner.name);
@@ -283,16 +267,12 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
                     && it->contains(record.name);
             }
             if (imported)
-                appendSymbol(symbol);
+                appendRecord(record);
         }
     }
 
     if (result.isEmpty()) {
-        const SemanticSymbolRecord moduleRecord =
-            semanticSymbolRecordForSymbol(moduleSymbol);
-        const SymbolStableKey moduleStableKey = moduleRecord.stableKey.isValid()
-            ? moduleRecord.stableKey
-            : symbolStableKeyForSymbol(moduleSymbol);
+        const SymbolStableKey moduleStableKey = moduleRecord.stableKey;
         const QList<SemanticRelationshipResult> relationships =
             moduleStableKey.isValid()
                 ? getRelationshipResults(moduleStableKey, true)
@@ -307,13 +287,11 @@ QList<sym_list::SymbolInfo> SemanticIndex::getModuleContextSymbolsByType(
             const SemanticSymbolRecord resolvedTargetRecord = targetRecord.isValid()
                 ? targetRecord
                 : getSymbolRecordByStableKey(targetKey);
-            const sym_list::SymbolInfo targetSymbol =
-                moduleContextSymbolInfoForRecord(resolvedTargetRecord);
-            if (moduleContextLocalHandleForSymbol(targetSymbol) >= 0)
-                appendSymbol(targetSymbol);
+            if (resolvedTargetRecord.localHandle >= 0)
+                appendRecord(resolvedTargetRecord);
         }
     }
 
-    sortModuleContextSymbols(result);
+    sortModuleContextSymbolRecords(result);
     return result;
 }

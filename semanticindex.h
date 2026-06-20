@@ -306,7 +306,7 @@ public:
         sym_list::sym_type_e symbolType,
         const QString& prefix = QString(),
         bool useRelationshipFallback = true) const;
-    QList<sym_list::SymbolInfo> getModuleContextSymbolsByType(
+    QList<SemanticSymbolRecord> getModuleContextSymbolRecordsByType(
         const QString& moduleName,
         const QString& fileName,
         sym_list::sym_type_e symbolType,
