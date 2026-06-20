@@ -4,6 +4,8 @@
 
 namespace SymbolTaxonomy {
 
+namespace {
+
 RawCollectorKind rawCollectorKind(sym_list::sym_type_e type)
 {
     return static_cast<RawCollectorKind>(type);
@@ -13,8 +15,6 @@ sym_list::sym_type_e legacySymbolType(RawCollectorKind kind)
 {
     return static_cast<sym_list::sym_type_e>(kind);
 }
-
-namespace {
 
 bool rawCollectorKindIs(const SemanticMetadata& metadata,
                         RawCollectorKind kind)

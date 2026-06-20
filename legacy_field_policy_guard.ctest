@@ -274,6 +274,7 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "symboltaxonomy\\.cpp|semanticMetadataMatchesRequest[ \t\r\n]*\\("
     "symboltaxonomylegacy\\.h|(isOutlineSymbol|outlineGroupType|outlineSymbolTypes)[ \t\r\n]*\\("
     "symboltaxonomy\\.cpp|(outlineGroupType|outlineSymbolTypes)[ \t\r\n]*\\("
+    "symboltaxonomylegacy\\.h|(rawCollectorKind|legacySymbolType)[ \t\r\n]*\\("
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS

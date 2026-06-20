@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
                    && memberNavigationTarget.symbolRecord.name
                        == QStringLiteral("red")
                    && memberNavigationTarget.symbolRecord.rawCollectorKind
-                       == SymbolTaxonomy::rawCollectorKind(sym_list::sym_struct_member)
+                       == static_cast<SymbolTaxonomy::RawCollectorKind>(sym_list::sym_struct_member)
                    && memberNavigationTarget.ownerDisplayName
                        == QStringLiteral("pixel_t")
                    && memberNavigationTarget.sourceRoleDisplayName
@@ -469,7 +469,7 @@ int main(int argc, char** argv) {
                    && snapshotNavigationTarget.symbolTypeText
                        == QStringLiteral("module")
                    && snapshotNavigationTarget.symbolRecord.rawCollectorKind
-                       == SymbolTaxonomy::rawCollectorKind(sym_list::sym_module)
+                       == static_cast<SymbolTaxonomy::RawCollectorKind>(sym_list::sym_module)
                    && snapshotNavigationTarget.ownerDisplayName
                        == QStringLiteral("global")
                    && snapshotNavigationTarget.sourceRoleDisplayName
@@ -510,7 +510,7 @@ int main(int argc, char** argv) {
         && snapshotInterfaceResult.symbolRecord.localHandle
             == snapshotHelperInterface.symbolId
         && snapshotInterfaceResult.symbolRecord.rawCollectorKind
-            == SymbolTaxonomy::rawCollectorKind(sym_list::sym_interface);
+            == static_cast<SymbolTaxonomy::RawCollectorKind>(sym_list::sym_interface);
     if (!snapshotInterfaceOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot cross-file interface\n",
@@ -717,7 +717,7 @@ int main(int argc, char** argv) {
         && metadataScopedDefinitions.first().owner.name == QStringLiteral("snap_top")
         && metadataScopedDefinitions.first().declarationKind
                == SymbolTaxonomy::DeclarationKind::Module
-        && metadataScopedDefinitions.first().rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_user)
+        && metadataScopedDefinitions.first().rawCollectorKind == static_cast<SymbolTaxonomy::RawCollectorKind>(sym_list::sym_user)
         && metadataScopedDefinitions.first().stableKey.isValid();
     if (!metadataScopedDefinitionsOk)
         ++g_fails;
@@ -1085,7 +1085,7 @@ int main(int argc, char** argv) {
         && counterTarget.symbolRecord.localHandle == counter.symbolId
         && counterTarget.symbolRecord.stableKey == counterTarget.symbolStableKey
         && counterTarget.symbolRecord.name == QStringLiteral("counter")
-        && counterTarget.symbolRecord.rawCollectorKind == SymbolTaxonomy::rawCollectorKind(sym_list::sym_reg)
+        && counterTarget.symbolRecord.rawCollectorKind == static_cast<SymbolTaxonomy::RawCollectorKind>(sym_list::sym_reg)
         && counterTarget.ownerDisplayName == QStringLiteral("top")
         && counterTarget.sourceRoleDisplayName == QStringLiteral("design source");
     if (!counterOk) ++g_fails;
