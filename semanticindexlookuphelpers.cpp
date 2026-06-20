@@ -14,21 +14,8 @@ QString normalizedLookupFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-bool symbolSearchTypeMatches(const sym_list::SymbolInfo& symbol,
-                             const QList<SymbolTaxonomy::DeclarationKind>& declarationKinds,
-                             const QList<sym_list::sym_type_e>& rawCollectorKinds,
-                             SymbolTaxonomy::SymbolSearchIntent intent)
-{
-    return symbolSearchTypeMatches(
-        semanticSymbolRecordForSymbol(symbol),
-        declarationKinds,
-        rawCollectorKinds,
-        intent);
-}
-
 bool symbolSearchTypeMatches(const SemanticSymbolRecord& record,
                              const QList<SymbolTaxonomy::DeclarationKind>& declarationKinds,
-                             const QList<sym_list::sym_type_e>& rawCollectorKinds,
                              SymbolTaxonomy::SymbolSearchIntent intent)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
@@ -43,26 +30,7 @@ bool symbolSearchTypeMatches(const SemanticSymbolRecord& record,
     if (!declarationKinds.isEmpty()) {
         return declarationKinds.contains(record.declarationKind);
     }
-    if (!rawCollectorKinds.isEmpty()) {
-        for (sym_list::sym_type_e type : rawCollectorKinds) {
-            if (SymbolTaxonomy::matchesRequestedSymbolType(
-                    metadata,
-                    type,
-                    record.type.rawTypeText)) {
-                return true;
-            }
-        }
-        return false;
-    }
     return SymbolTaxonomy::matchesSearchIntent(metadata, intent);
-}
-
-bool semanticDefinitionSymbolMatches(const sym_list::SymbolInfo& symbol,
-                                     const QString& searchWord)
-{
-    return semanticDefinitionRecordMatches(
-        semanticSymbolRecordForSymbol(symbol),
-        searchWord);
 }
 
 bool semanticDefinitionRecordMatches(const SemanticSymbolRecord& record,
@@ -82,11 +50,6 @@ bool semanticDefinitionRecordMatches(const SemanticSymbolRecord& record,
             record.owner.interfaceLike});
 }
 
-int semanticDefinitionTypePriority(const sym_list::SymbolInfo& symbol)
-{
-    return semanticDefinitionTypePriority(semanticSymbolRecordForSymbol(symbol));
-}
-
 int semanticDefinitionTypePriority(const SemanticSymbolRecord& record)
 {
     return SymbolTaxonomy::definitionPriority(
@@ -98,15 +61,6 @@ int semanticDefinitionTypePriority(const SemanticSymbolRecord& record)
             record.sourceRole,
             record.rawCollectorKind,
             record.owner.interfaceLike});
-}
-
-bool semanticDefinitionSkipForStructMemberType(
-    const sym_list::SymbolInfo& symbol,
-    const SemanticDefinitionQuery& query)
-{
-    return semanticDefinitionSkipForStructMemberType(
-        semanticSymbolRecordForSymbol(symbol),
-        query);
 }
 
 bool semanticDefinitionSkipForStructMemberType(
