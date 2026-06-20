@@ -89,3 +89,99 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForSymbols(
     }
     return records;
 }
+
+sym_list::SymbolInfo symbolInfoForSemanticRecord(
+    const SemanticSymbolRecord& record)
+{
+    sym_list::SymbolInfo symbol;
+    symbol.symbolId = record.localHandle;
+    symbol.symbolName = record.name;
+    symbol.symbolType = SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
+    symbol.fileName = record.location.fileName;
+    symbol.startLine = record.location.startLine;
+    symbol.startColumn = record.location.startColumn;
+    symbol.endLine = record.location.endLine;
+    symbol.endColumn = record.location.endColumn;
+    symbol.position = record.location.position;
+    symbol.length = record.location.length;
+    symbol.moduleScope = record.owner.name;
+    symbol.dataType = record.type.rawTypeText;
+    return symbol;
+}
+
+QList<sym_list::SymbolInfo> symbolInfosForSemanticRecords(
+    const QList<SemanticSymbolRecord>& records)
+{
+    QList<sym_list::SymbolInfo> symbols;
+    symbols.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.isValid())
+            symbols.append(symbolInfoForSemanticRecord(record));
+    }
+    return symbols;
+}
+
+void updateSymbolDatabaseRecordsForFile(
+    sym_list* database,
+    const QString& fileName,
+    const QList<SemanticSymbolRecord>& records,
+    const QString& content)
+{
+    if (!database)
+        return;
+
+    database->setSymbolsForFile(
+        fileName,
+        symbolInfosForSemanticRecords(records),
+        content);
+}
+
+QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabase(
+    sym_list* database,
+    const QString& fileName)
+{
+    if (!database)
+        return {};
+
+    if (fileName.isEmpty()) {
+        const QList<sym_list::SymbolInfo> allSymbols = database->getAllSymbols();
+        return semanticSymbolRecordsForSymbols(
+            allSymbols,
+            SymbolTaxonomy::packageScopeNames(allSymbols));
+    }
+
+    const QList<sym_list::SymbolInfo> symbols =
+        database->findSymbolsByFileName(fileName);
+    const QList<sym_list::SymbolInfo> allSymbols = database->getAllSymbols();
+    const QSet<QString> packageScopes =
+        SymbolTaxonomy::packageScopeNames(allSymbols);
+    if (!symbols.isEmpty())
+        return semanticSymbolRecordsForSymbols(symbols, packageScopes);
+
+    QList<SemanticSymbolRecord> records;
+    const QString normalizedTarget = normalizedStableKeyFileName(fileName);
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        if (normalizedStableKeyFileName(symbol.fileName) == normalizedTarget)
+            records.append(semanticSymbolRecordForSymbol(symbol, packageScopes));
+    }
+    return records;
+}
+
+QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseExcludingFiles(
+    sym_list* database,
+    const QSet<QString>& normalizedFileNames)
+{
+    QList<SemanticSymbolRecord> records;
+    if (!database)
+        return records;
+
+    const QList<sym_list::SymbolInfo> allSymbols = database->getAllSymbols();
+    const QSet<QString> packageScopes =
+        SymbolTaxonomy::packageScopeNames(allSymbols);
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        const QString normalized = normalizedStableKeyFileName(symbol.fileName);
+        if (!normalized.isEmpty() && !normalizedFileNames.contains(normalized))
+            records.append(semanticSymbolRecordForSymbol(symbol, packageScopes));
+    }
+    return records;
+}
