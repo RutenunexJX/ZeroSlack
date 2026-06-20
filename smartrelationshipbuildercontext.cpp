@@ -8,10 +8,9 @@ void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName,
                                                     AnalysisContext& context)
 {
     context.currentFileName = fileName;
-    const QList<sym_list::SymbolInfo> fileSymbols =
-        symbolDatabase->findSymbolsByFileName(fileName);
     context.fileSymbolRecords =
-        semanticSymbolRecordsForSymbols(fileSymbols);
+        semanticSymbolRecordsForSymbols(
+            symbolDatabase->findSymbolsByFileName(fileName));
     context.localSymbolHandles.clear();
 
     for (const SemanticSymbolRecord& record : std::as_const(context.fileSymbolRecords)) {

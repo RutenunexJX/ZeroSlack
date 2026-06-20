@@ -143,8 +143,6 @@ set(H0_LEGACY_CORE_ALLOWLIST
     slangsymbolcollector.h
     slangsymbolcollectorhelpers.cpp
     slangsymbolcollectorhelpers.h
-    smartrelationshipbuilderanalysis.cpp
-    smartrelationshipbuildercontext.cpp
     symbolanalyzer.h
     symbolanalyzerasync.cpp
     symbolanalyzerpublication.cpp
@@ -454,7 +452,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "syminfo.h|findSymbolIdByName[ \t\r\n]*\\("
     "syminfoindex.cpp|findSymbolIdByName[ \t\r\n]*\\("
     "smartrelationshipbuilder.h|findSymbolIdByName[ \t\r\n]*\\("
-    "smartrelationshipbuilderanalysis.cpp|findSymbolIdByName[ \t\r\n]*\\("
     "smartrelationshipbuildertiming.cpp|findSymbolIdByName[ \t\r\n]*\\("
     "smartrelationshipbuilder.h|currentModuleId"
     "smartrelationshipbuilder.h|localSymbolIds"
@@ -548,9 +545,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "modulebriefservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "signaljourneyservice.cpp|isJourneyDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "semanticindexcompletionrelationships.cpp|symbolStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
-    "smartrelationshipbuilderanalysis.cpp|snapshot->[ \t\r\n]*findSymbolId"
-    "smartrelationshipbuilderanalysis.cpp|snapshot->[ \t\r\n]*getSymbolById"
-    "smartrelationshipbuilderanalysis.cpp|symbolDatabase->[ \t\r\n]*getSymbolById"
     "signaljourneyservice.h|signalSymbolId"
     "signaljourneyservice.h|isJourneyDeclaration[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "signaljourneyservice.h|isInterfaceConnectionPeer[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
