@@ -347,6 +347,7 @@ private:
     QHash<QString, QString> m_nativeFileContents;
     QHash<QString, NativeFileState> m_nativeFileStates;
     QHash<QString, int> m_nativeStableKeyIndexes;
+    QSet<QString> m_nativeCoveredFiles;
     int m_nextNativeLocalHandle = 1;
     static std::unique_ptr<SemanticIndex> instance;
 
@@ -359,6 +360,7 @@ private:
         const QString& fileName = QString()) const;
     SemanticSymbolRecord nativeSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
+    bool hasNativeFileCoverage(const QString& fileName) const;
     bool hasNativeCachedFileContent(const QString& fileName) const;
     QString nativeCachedFileContent(const QString& fileName) const;
     void updateNativeFileState(const QString& fileName, const QString& content);

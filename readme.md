@@ -43,6 +43,7 @@ Thin UI consumers
 - I1 is complete: `collectSymbols`, `extractSymbols`, and `extractWorkspaceSymbols` are deleted from the tracked collector/manager/test source, leaving Slang symbol extraction record-native.
 - I2 first block is complete: `SemanticIndex` now owns a semantic-native record/content store with local handles and stable-key indexes before bridging records into the remaining `sym_list` compatibility layer.
 - I2 second block is complete: native file content state now drives `contentAffectsSymbols`, and native records/content override older snapshot entries after file replacement.
+- I2 third block is complete: native file coverage now prevents stale snapshot or `sym_list` fallback records from resurfacing after a file is replaced with zero semantic symbols.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

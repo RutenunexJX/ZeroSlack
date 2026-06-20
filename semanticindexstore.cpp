@@ -162,6 +162,8 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
     if (normalizedTarget.isEmpty())
         return;
 
+    m_nativeCoveredFiles.insert(normalizedTarget);
+
     for (int i = m_nativeSymbolRecords.size() - 1; i >= 0; --i) {
         const QString normalized =
             normalizedStoreFileName(m_nativeSymbolRecords.at(i).location.fileName);
@@ -234,6 +236,14 @@ SemanticSymbolRecord SemanticIndex::nativeSymbolRecordByStableKey(
     if (index < 0 || index >= m_nativeSymbolRecords.size())
         return {};
     return m_nativeSymbolRecords.at(index);
+}
+
+bool SemanticIndex::hasNativeFileCoverage(const QString& fileName) const
+{
+    const QString normalizedTarget = normalizedStoreFileName(fileName);
+    if (normalizedTarget.isEmpty())
+        return false;
+    return m_nativeCoveredFiles.contains(normalizedTarget);
 }
 
 bool SemanticIndex::hasNativeCachedFileContent(const QString& fileName) const
@@ -321,7 +331,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
 {
     sym_list* db = symbolDatabase();
     const QList<SemanticSymbolRecord> nativeRecords = nativeSymbolRecords(fileName);
-    if (!nativeRecords.isEmpty())
+    if (!fileName.isEmpty() && hasNativeFileCoverage(fileName))
         return nativeRecords;
 
     if (m_snapshot) {
@@ -332,13 +342,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
                 return records;
         } else {
             QSet<QString> snapshotFiles;
-            QSet<QString> nativeFiles;
-            for (const SemanticSymbolRecord& record : m_nativeSymbolRecords) {
-                const QString normalized =
-                    normalizedStoreFileName(record.location.fileName);
-                if (!normalized.isEmpty())
-                    nativeFiles.insert(normalized);
-            }
+            const QSet<QString> nativeFiles = m_nativeCoveredFiles;
 
             QList<SemanticSymbolRecord> mergedSnapshotRecords;
             for (const SemanticSymbolRecord& record : std::as_const(records)) {
@@ -362,6 +366,15 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
         }
     }
 
+    if (fileName.isEmpty() && !m_nativeCoveredFiles.isEmpty()) {
+        QList<SemanticSymbolRecord> records = m_nativeSymbolRecords;
+        records.append(
+            semanticSymbolRecordsForDatabaseExcludingFiles(
+                db,
+                m_nativeCoveredFiles));
+        return records;
+    }
+
     return semanticSymbolRecordsForDatabase(db, fileName);
 }
 
@@ -375,6 +388,8 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
         nativeSymbolRecordByStableKey(key);
     if (nativeRecord.isValid())
         return nativeRecord;
+    if (hasNativeFileCoverage(key.fileName))
+        return {};
 
     if (m_snapshot) {
         const SemanticSymbolRecord record =
