@@ -4,53 +4,6 @@
 
 extern thread_local bool s_holdingWriteLock;
 
-QList<sym_list::SymbolInfo> sym_list::findSymbolsByName(const QString& symbolName)
-{
-    QReadLocker lock(&symbolDbLock);
-    QList<SymbolInfo> result;
-
-    if (symbolNameIndex.contains(symbolName)) {
-        const QList<int>& indices = symbolNameIndex[symbolName];
-        result.reserve(indices.size());
-
-        for (int index : indices) {
-            if (index < symbolDatabase.size()) {
-                result.append(symbolDatabase[index]);
-            }
-        }
-    }
-
-    return result;
-}
-
-QList<sym_list::SymbolInfo> sym_list::findSymbolsByFileName(const QString& fileName)
-{
-    QList<SymbolInfo> result;
-    if (s_holdingWriteLock) {
-        if (fileNameIndex.contains(fileName)) {
-            const QList<int>& indices = fileNameIndex[fileName];
-            result.reserve(indices.size());
-            for (int index : indices) {
-                if (index < symbolDatabase.size()) {
-                    result.append(symbolDatabase[index]);
-                }
-            }
-        }
-        return result;
-    }
-    QReadLocker lock(&symbolDbLock);
-    if (fileNameIndex.contains(fileName)) {
-        const QList<int>& indices = fileNameIndex[fileName];
-        result.reserve(indices.size());
-        for (int index : indices) {
-            if (index < symbolDatabase.size()) {
-                result.append(symbolDatabase[index]);
-            }
-        }
-    }
-    return result;
-}
-
 QList<sym_list::SymbolInfo> sym_list::getAllSymbols()
 {
     if (s_holdingWriteLock) {
@@ -60,9 +13,35 @@ QList<sym_list::SymbolInfo> sym_list::getAllSymbols()
     return symbolDatabase;
 }
 
+QList<sym_list::SymbolInfo> sym_list::symbolsForFileSnapshot(const QString& fileName) const
+{
+    QList<SymbolInfo> result;
+    if (s_holdingWriteLock) {
+        if (fileNameIndex.contains(fileName)) {
+            const QList<int>& indices = fileNameIndex[fileName];
+            result.reserve(indices.size());
+            for (int index : indices) {
+                if (index < symbolDatabase.size())
+                    result.append(symbolDatabase[index]);
+            }
+        }
+        return result;
+    }
+
+    QReadLocker lock(&symbolDbLock);
+    if (fileNameIndex.contains(fileName)) {
+        const QList<int>& indices = fileNameIndex[fileName];
+        result.reserve(indices.size());
+        for (int index : indices) {
+            if (index < symbolDatabase.size())
+                result.append(symbolDatabase[index]);
+        }
+    }
+    return result;
+}
+
 void sym_list::rebuildAllIndexes()
 {
-    symbolNameIndex.clear();
     fileNameIndex.clear();
     symbolIdToIndex.clear();
     for (int i = 0; i < symbolDatabase.size(); ++i) {
@@ -77,7 +56,6 @@ void sym_list::addToIndexes(int symbolIndex)
         return;
 
     const SymbolInfo& symbol = symbolDatabase[symbolIndex];
-    symbolNameIndex[symbol.symbolName].append(symbolIndex);
     fileNameIndex[symbol.fileName].append(symbolIndex);
 }
 
@@ -87,13 +65,6 @@ void sym_list::removeFromIndexes(int symbolIndex)
         return;
 
     const SymbolInfo& symbol = symbolDatabase[symbolIndex];
-
-    if (symbolNameIndex.contains(symbol.symbolName)) {
-        symbolNameIndex[symbol.symbolName].removeAll(symbolIndex);
-        if (symbolNameIndex[symbol.symbolName].isEmpty()) {
-            symbolNameIndex.remove(symbol.symbolName);
-        }
-    }
 
     if (fileNameIndex.contains(symbol.fileName)) {
         fileNameIndex[symbol.fileName].removeAll(symbolIndex);

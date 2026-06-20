@@ -62,7 +62,7 @@ void sym_list::buildSymbolRelationships(const QString& fileName)
     if (!relationshipEngine)
         return;
 
-    QList<SymbolInfo> fileSymbols = findSymbolsByFileName(fileName);
+    QList<SymbolInfo> fileSymbols = symbolsForFileSnapshot(fileName);
     if (fileSymbols.isEmpty())
         return;
 
@@ -75,7 +75,7 @@ void sym_list::analyzeModuleContainment(const QString& fileName)
     if (!relationshipEngine)
         return;
 
-    QList<SymbolInfo> fileSymbols = findSymbolsByFileName(fileName);
+    QList<SymbolInfo> fileSymbols = symbolsForFileSnapshot(fileName);
 
     QList<SymbolInfo> modules;
     for (const SymbolInfo& symbol : fileSymbols) {
@@ -109,14 +109,7 @@ void sym_list::analyzeModuleContainment(const QString& fileName)
 
 void sym_list::rebuildScopeAndRelationshipsForFile(const QString& fileName)
 {
-    if (!fileNameIndex.contains(fileName))
-        return;
-
-    QList<SymbolInfo> fileSymbols;
-    for (int index : fileNameIndex[fileName]) {
-        if (index < symbolDatabase.size())
-            fileSymbols.append(symbolDatabase[index]);
-    }
+    QList<SymbolInfo> fileSymbols = symbolsForFileSnapshot(fileName);
     if (fileSymbols.isEmpty())
         return;
 

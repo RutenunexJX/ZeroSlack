@@ -145,8 +145,6 @@ public:
     };
 
     void addSymbol(const SymbolInfo& symbol);
-    QList<SymbolInfo> findSymbolsByFileName(const QString& fileName);
-    QList<SymbolInfo> findSymbolsByName(const QString& symbolName);
     QList<SymbolInfo> getAllSymbols();
     void clearSymbolsForFile(const QString& fileName);
 
@@ -183,7 +181,6 @@ private:
     mutable QReadWriteLock symbolDbLock;
     QList<SymbolInfo> symbolDatabase;
 
-    QHash<QString, QList<int>> symbolNameIndex;
     QHash<QString, QList<int>> fileNameIndex;
     QHash<int, int> symbolIdToIndex;
 
@@ -226,6 +223,7 @@ private:
     void rebuildAllRelationships();
     void buildSymbolRelationships(const QString& fileName);
     void analyzeModuleContainment(const QString& fileName);
+    QList<SymbolInfo> symbolsForFileSnapshot(const QString& fileName) const;
     /** Rebuild ScopeManager tree and CONTAINS relationships for fileName from current symbolDatabase entries. */
     void rebuildScopeAndRelationshipsForFile(const QString& fileName);
     void analyzeVariableReferences(const QString& fileName, const QString& content);

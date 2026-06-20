@@ -209,6 +209,19 @@ static QString normalizedPath(const QString& path)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
 }
 
+static QList<sym_list::SymbolInfo> symbolsInFile(
+    const QList<sym_list::SymbolInfo>& symbols,
+    const QString& fileName)
+{
+    QList<sym_list::SymbolInfo> matches;
+    const QString normalizedFileName = normalizedPath(fileName);
+    for (const auto& symbol : symbols) {
+        if (normalizedPath(symbol.fileName) == normalizedFileName)
+            matches.append(symbol);
+    }
+    return matches;
+}
+
 static sym_list::SymbolInfo makeModuleBriefSymbol(
     int id,
     const QString& fileName,
@@ -260,7 +273,7 @@ static void runInlineRelationshipRegression(SlangManager& slang,
         "endmodule\n");
 
     db->setSymbolsForFile(path, slang.extractSymbols(path, content), content);
-    QList<sym_list::SymbolInfo> symbols = db->findSymbolsByFileName(path);
+    QList<sym_list::SymbolInfo> symbols = symbolsInFile(db->getAllSymbols(), path);
 
     const int alphaId = symbolId(symbols, QStringLiteral("alpha"), sym_list::sym_module);
     const int betaId = symbolId(symbols, QStringLiteral("beta"), sym_list::sym_module);
@@ -353,8 +366,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         db->setSymbolsForFile(path, symbolsByFile.value(path), contents.value(path));
 
     const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
-    const QList<sym_list::SymbolInfo> topSymbols = db->findSymbolsByFileName(topPath);
-    const QList<sym_list::SymbolInfo> stageSymbols = db->findSymbolsByFileName(stagePath);
+    const QList<sym_list::SymbolInfo> topSymbols = symbolsInFile(allSymbols, topPath);
+    const QList<sym_list::SymbolInfo> stageSymbols = symbolsInFile(allSymbols, stagePath);
 
     const int packageId = symbolIdInFile(allSymbols, QStringLiteral("rel_pkg"),
                                          sym_list::sym_package, pkgPath);

@@ -152,20 +152,12 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabase(
     if (!database)
         return {};
 
-    if (fileName.isEmpty()) {
-        const QList<sym_list::SymbolInfo> allSymbols = database->getAllSymbols();
-        return semanticSymbolRecordsForSymbols(
-            allSymbols,
-            SymbolTaxonomy::packageScopeNames(allSymbols));
-    }
-
-    const QList<sym_list::SymbolInfo> symbols =
-        database->findSymbolsByFileName(fileName);
     const QList<sym_list::SymbolInfo> allSymbols = database->getAllSymbols();
     const QSet<QString> packageScopes =
         SymbolTaxonomy::packageScopeNames(allSymbols);
-    if (!symbols.isEmpty())
-        return semanticSymbolRecordsForSymbols(symbols, packageScopes);
+    if (fileName.isEmpty()) {
+        return semanticSymbolRecordsForSymbols(allSymbols, packageScopes);
+    }
 
     QList<SemanticSymbolRecord> records;
     const QString normalizedTarget = normalizedStableKeyFileName(fileName);
@@ -183,9 +175,16 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseByName(
     if (!database)
         return {};
 
+    const QList<sym_list::SymbolInfo> allSymbols = database->getAllSymbols();
+    QList<sym_list::SymbolInfo> matches;
+    for (const sym_list::SymbolInfo& symbol : allSymbols) {
+        if (symbol.symbolName == symbolName)
+            matches.append(symbol);
+    }
+
     return semanticSymbolRecordsForSymbols(
-        database->findSymbolsByName(symbolName),
-        SymbolTaxonomy::packageScopeNames(database->getAllSymbols()));
+        matches,
+        SymbolTaxonomy::packageScopeNames(allSymbols));
 }
 
 QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseExcludingFiles(

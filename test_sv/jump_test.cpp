@@ -71,6 +71,16 @@ static void placeCursor(MyCodeEditor& ed, int block) {
     ed.setTextCursor(c);
 }
 
+static QList<sym_list::SymbolInfo> symbolsNamed(const QString& name)
+{
+    QList<sym_list::SymbolInfo> matches;
+    for (const auto& symbol : sym_list::getInstance()->getAllSymbols()) {
+        if (symbol.symbolName == name)
+            matches.append(symbol);
+    }
+    return matches;
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
 
@@ -87,7 +97,7 @@ int main(int argc, char** argv) {
     // After the full GUI path (setSymbolsForFile -> rebuildScopeAndRelationships -> analyzeModuleContainment),
     // function-local symbols must KEEP their subroutine moduleScope (not get clobbered to the module).
     auto scopeOf = [](const QString& name, sym_list::sym_type_e t) -> QString {
-        for (const auto& s : sym_list::getInstance()->findSymbolsByName(name))
+        for (const auto& s : symbolsNamed(name))
             if (s.symbolType == t) return s.moduleScope;
         return QStringLiteral("<none>");
     };
@@ -1036,7 +1046,7 @@ int main(int argc, char** argv) {
 
     // Local definition target: editor context resolves to the definition location.
     sym_list::SymbolInfo counter;
-    for (const auto& s : sym_list::getInstance()->findSymbolsByName("counter"))
+    for (const auto& s : symbolsNamed(QStringLiteral("counter")))
         if (s.symbolType == sym_list::sym_reg) counter = s;
     placeCursor(ed, 95);
     const DefinitionNavigationTarget counterTarget =
@@ -1075,7 +1085,7 @@ int main(int argc, char** argv) {
         sym_list::getInstance()->setSymbolsForFile(helperPath, mgr.extractSymbols(helperPath, hc), hc);
 
         int helperStartLine = -1;
-        for (const auto& s : sym_list::getInstance()->findSymbolsByName("helper_mod"))
+        for (const auto& s : symbolsNamed(QStringLiteral("helper_mod")))
             if (s.symbolType == sym_list::sym_module) helperStartLine = s.startLine;
 
         placeCursor(ed, 29);  // outside any module in test_symbols.sv -> no scope filter

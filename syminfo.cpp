@@ -17,7 +17,6 @@ sym_list::sym_list()
     symbolDatabase.reserve(1000);
     commentRegions.reserve(100);
 
-    symbolNameIndex.reserve(500);
     fileNameIndex.reserve(50);
     symbolIdToIndex.reserve(1000);
 }
