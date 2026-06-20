@@ -37,11 +37,8 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
             {});
     }
 
-    const auto symbols = symbolDatabase->getAllSymbols();
     const QList<SemanticSymbolRecord> symbolRecords =
-        semanticSymbolRecordsForSymbols(
-            symbols,
-            SymbolTaxonomy::packageScopeNames(symbols));
+        semanticSymbolRecordsForDatabase(symbolDatabase);
 
     QList<SemanticRelationship> relationships;
     if (SymbolRelationshipEngine* engine =

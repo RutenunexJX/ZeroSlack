@@ -167,6 +167,18 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabase(
     return records;
 }
 
+QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseByName(
+    sym_list* database,
+    const QString& symbolName)
+{
+    if (!database)
+        return {};
+
+    return semanticSymbolRecordsForSymbols(
+        database->findSymbolsByName(symbolName),
+        SymbolTaxonomy::packageScopeNames(database->getAllSymbols()));
+}
+
 QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseExcludingFiles(
     sym_list* database,
     const QSet<QString>& normalizedFileNames)

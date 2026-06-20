@@ -158,6 +158,7 @@ set(H0_LEGACY_CORE_PATTERNS
     "\\.(symbolId|symbolType|moduleScope|dataType)([^A-Za-z0-9_]|$)"
     "(^|[^A-Za-z0-9_])(getSymbolById|findSymbolId|getRelationships)[ \t\r\n]*\\("
     "(getCommandCompletionSymbols|getTypedCompletionSymbols|getGlobalSymbolInfosByType|getModuleInternalSymbolsByType|getModuleContextSymbolsByType)[ \t\r\n]*\\("
+    "(findSymbolsByName|findSymbolsByFileName|getAllSymbols)[ \t\r\n]*\\("
     "(findGlobalSymbolInfosByType|findModuleInternalSymbolInfosByType|findModuleContextSymbolInfosByType)[ \t\r\n]*\\("
     "(findSymbolsByType|getSymbolNamesByType|getSymbolCountByType|getUniqueSymbolNames|hasSymbol)[ \t\r\n]*\\("
     "(^|[^A-Za-z0-9_])legacyTypes([^A-Za-z0-9_]|$)"

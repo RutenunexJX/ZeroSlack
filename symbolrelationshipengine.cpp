@@ -196,7 +196,7 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
     invalidateFileRelationships(fileName);
 
     const QList<SemanticSymbolRecord> fileRecords =
-        semanticSymbolRecordsForSymbols(symbols()->findSymbolsByFileName(fileName));
+        semanticSymbolRecordsForDatabase(symbols(), fileName);
 
     for (const SemanticSymbolRecord& record : std::as_const(fileRecords)) {
         if (SymbolTaxonomy::isModuleDeclaration(
@@ -238,7 +238,7 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
     clearAllRelationships();
 
     const QList<SemanticSymbolRecord> allRecords =
-        semanticSymbolRecordsForSymbols(symbols()->getAllSymbols());
+        semanticSymbolRecordsForDatabase(symbols());
 
     QSet<QString> files;
     for (const SemanticSymbolRecord& record : std::as_const(allRecords))

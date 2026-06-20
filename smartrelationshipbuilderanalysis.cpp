@@ -204,8 +204,9 @@ SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
 
     if (symbolDatabase) {
         const QList<SemanticSymbolRecord> records =
-            semanticSymbolRecordsForSymbols(
-                symbolDatabase->findSymbolsByName(symbolName));
+            semanticSymbolRecordsForDatabaseByName(
+                symbolDatabase,
+                symbolName);
         if (!records.isEmpty())
             return records.first();
     }

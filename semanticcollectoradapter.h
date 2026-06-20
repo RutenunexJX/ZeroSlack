@@ -24,6 +24,9 @@ void updateSymbolDatabaseRecordsForFile(
 QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabase(
     sym_list* database,
     const QString& fileName = QString());
+QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseByName(
+    sym_list* database,
+    const QString& symbolName);
 QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseExcludingFiles(
     sym_list* database,
     const QSet<QString>& normalizedFileNames);
