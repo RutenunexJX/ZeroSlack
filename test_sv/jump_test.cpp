@@ -33,7 +33,7 @@ static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbol
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (SymbolTaxonomy::isPackageDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))
+                semanticMetadataForSymbolInfo(symbol))
             && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);
         }
@@ -391,7 +391,7 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::SymbolVisibility::ScopeLocal;
     snapshotMetadataScopedDuplicate.semanticSourceRole =
         SymbolTaxonomy::SourceRole::DesignSource;
-    snapshotMetadataScopedDuplicate.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    snapshotMetadataScopedDuplicate.collectorKind = sym_list::sym_user;
     snapshotDefinitionSymbols.append(snapshotMetadataScopedDuplicate);
 
     sym_list::SymbolInfo snapshotGlobalMetadataDuplicate =
@@ -610,17 +610,18 @@ int main(int argc, char** argv) {
            snapshotPackageTypedefOk ? "PASS" : "FAIL");
 
     expectBool("SymbolTaxonomy package parameter visible",
-               SymbolTaxonomy::isPackageVisibleDefinition(sym_list::sym_parameter),
+               SymbolTaxonomy::isPackageVisibleDefinition(
+                   semanticMetadataForFixtureType(sym_list::sym_parameter)),
                true);
     expectBool("SymbolTaxonomy interface owner includes modport port",
-               SymbolTaxonomy::isInterfaceLikeOwner(
-                   sym_list::sym_port_interface_modport),
+               semanticMetadataForFixtureType(sym_list::sym_port_interface_modport)
+                   .interfaceLikeOwner,
                true);
     sym_list::SymbolInfo taxonomyInterfaceOwner;
     taxonomyInterfaceOwner.symbolName = QStringLiteral("if_bus");
     taxonomyInterfaceOwner.symbolType = sym_list::sym_interface;
     expectBool("SymbolTaxonomy interface owner metadata",
-               SymbolTaxonomy::semanticMetadata(taxonomyInterfaceOwner).declarationKind
+               semanticMetadataForSymbolInfo(taxonomyInterfaceOwner).declarationKind
                    == SymbolTaxonomy::DeclarationKind::Interface,
                true);
     taxonomyInterfaceOwner.symbolName = QStringLiteral("bus_port");
@@ -634,7 +635,7 @@ int main(int argc, char** argv) {
              QStringLiteral("master"));
     expectBool("SymbolTaxonomy modport member-scope candidate",
                SymbolTaxonomy::isMemberScopeDefinitionCandidate(
-                   sym_list::sym_interface_modport),
+                   semanticMetadataForFixtureType(sym_list::sym_interface_modport)),
                true);
     expectBool("SymbolTaxonomy detects svh header role",
                SymbolTaxonomy::sourceRoleForFileName(QStringLiteral("rtl/pkg_defs.svh"))

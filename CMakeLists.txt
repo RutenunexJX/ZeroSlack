@@ -310,7 +310,6 @@ set(ZEROSLACK_CORE_SOURCES
     symboloutlinemodel.h
     symbolsemanticmetadata.h
     symboltaxonomy.h
-    symboltaxonomylegacy.h
     syminfo.h
     tabdocumentqueries.h
     tabfileio.h

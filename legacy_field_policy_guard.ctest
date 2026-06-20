@@ -202,6 +202,10 @@ set(PHASE_I4_REMOVED_LEGACY_COLLECTOR_ADAPTER_FILES
     semanticcollectoradapter.h
 )
 
+set(PHASE_I5_REMOVED_LEGACY_TAXONOMY_FILES
+    symboltaxonomylegacy.h
+)
+
 set(PHASE_I4_NATIVE_SEMANTIC_INDEX_FILES
     semanticindex.cpp
     semanticindex.h
@@ -227,7 +231,6 @@ set(H0_LEGACY_CORE_ALLOWLIST
     slangsymbolcollectorhelpers.cpp
     slangsymbolcollectorhelpers.h
     symboltaxonomy.cpp
-    symboltaxonomylegacy.h
     syminfo.cpp
     syminfo.h
     syminfomodulelookup.cpp
@@ -263,18 +266,8 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "symboltaxonomy.cpp|legacyRawCollectorKind[ \t\r\n]*\\("
     "symboltaxonomy.cpp|hasLegacyRawCollectorKind[ \t\r\n]*\\("
     "(attachSemanticMetadata|withSemanticMetadata)[ \t\r\n]*\\("
-    "symboltaxonomylegacy\\.h|SymbolOwnerScope[ \t\r\n]+ownerScope[ \t\r\n]*\\("
-    "symboltaxonomylegacy\\.h|SymbolVisibility[ \t\r\n]+visibility[ \t\r\n]*\\("
-    "symboltaxonomylegacy\\.h|interface(TypeName|ModportName|ScopeFromOwner)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "symboltaxonomylegacy\\.h|is(Module|Package|Instance)Declaration[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "symboltaxonomylegacy\\.h|is(PackageScopeVisibleCompletion|PackageScopeVisibleDefinition|CommandCompletionScopeVisible|GlobalSymbolInfoVisible)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "symboltaxonomylegacy\\.h|(definitionContextPriorityAdjustment|isSymbolInModuleScope|isSymbolInModuleContext|isDefinitionVisibleInContext)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "symboltaxonomylegacy\\.h|packageScopeNames[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "symboltaxonomylegacy\\.h|(matchesRequestedSymbolType|commandSymbolTypeMatches|typedCompletionSymbolTypeMatches)[ \t\r\n]*\\("
     "symboltaxonomy\\.cpp|semanticMetadataMatchesRequest[ \t\r\n]*\\("
-    "symboltaxonomylegacy\\.h|(isOutlineSymbol|outlineGroupType|outlineSymbolTypes)[ \t\r\n]*\\("
     "symboltaxonomy\\.cpp|(outlineGroupType|outlineSymbolTypes)[ \t\r\n]*\\("
-    "symboltaxonomylegacy\\.h|(rawCollectorKind|legacySymbolType)[ \t\r\n]*\\("
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
@@ -1280,6 +1273,20 @@ if(phase_i4_legacy_collector_adapter_violations)
         "Phase I4 removed legacy collector adapter files must not return:\n  ${phase_i4_legacy_collector_adapter_violation_text}")
 endif()
 
+set(phase_i5_legacy_taxonomy_file_violations)
+foreach(relative_path IN LISTS PHASE_I5_REMOVED_LEGACY_TAXONOMY_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(EXISTS "${path}")
+        list(APPEND phase_i5_legacy_taxonomy_file_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(phase_i5_legacy_taxonomy_file_violations)
+    list(JOIN phase_i5_legacy_taxonomy_file_violations "\n  " phase_i5_legacy_taxonomy_file_violation_text)
+    message(FATAL_ERROR
+        "Phase I5 removed legacy taxonomy files must not return:\n  ${phase_i5_legacy_taxonomy_file_violation_text}")
+endif()
+
 file(GLOB phase_i4_test_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
@@ -1308,10 +1315,6 @@ endif()
 
 set(phase_i4_legacy_taxonomy_include_violations)
 foreach(relative_path IN LISTS phase_i4_test_sources)
-    if(relative_path STREQUAL "test_sv/semantic_fixture_records.h")
-        continue()
-    endif()
-
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
     file(READ "${path}" content)
     string(REGEX MATCH
@@ -1328,7 +1331,7 @@ endforeach()
 if(phase_i4_legacy_taxonomy_include_violations)
     list(JOIN phase_i4_legacy_taxonomy_include_violations "\n  " phase_i4_legacy_taxonomy_include_violation_text)
     message(FATAL_ERROR
-        "Phase I4 legacy taxonomy header must stay isolated to the test fixture conversion helper:\n  ${phase_i4_legacy_taxonomy_include_violation_text}")
+        "Phase I5 removed legacy taxonomy header must not be included by tests:\n  ${phase_i4_legacy_taxonomy_include_violation_text}")
 endif()
 
 file(GLOB phase_i4_legacy_taxonomy_include_sources
@@ -1340,11 +1343,6 @@ file(GLOB phase_i4_legacy_taxonomy_include_sources
 )
 set(phase_i4_global_legacy_taxonomy_include_violations)
 foreach(relative_path IN LISTS phase_i4_legacy_taxonomy_include_sources)
-    if(relative_path STREQUAL "symboltaxonomy.cpp"
-       OR relative_path STREQUAL "test_sv/semantic_fixture_records.h")
-        continue()
-    endif()
-
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
     file(READ "${path}" content)
     string(REGEX MATCH
@@ -1361,7 +1359,7 @@ endforeach()
 if(phase_i4_global_legacy_taxonomy_include_violations)
     list(JOIN phase_i4_global_legacy_taxonomy_include_violations "\n  " phase_i4_global_legacy_taxonomy_include_violation_text)
     message(FATAL_ERROR
-        "Phase I4 legacy taxonomy header must stay isolated to symboltaxonomy.cpp and the test fixture conversion helper:\n  ${phase_i4_global_legacy_taxonomy_include_violation_text}")
+        "Phase I5 removed legacy taxonomy header must not be included by tracked source:\n  ${phase_i4_global_legacy_taxonomy_include_violation_text}")
 endif()
 
 set(phase_i4_semantic_index_missing_files)

@@ -57,7 +57,7 @@ static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbol
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (SymbolTaxonomy::isPackageDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))
+                semanticMetadataForSymbolInfo(symbol))
             && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);
         }

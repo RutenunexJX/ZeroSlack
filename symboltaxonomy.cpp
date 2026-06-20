@@ -1,4 +1,4 @@
-#include "symboltaxonomylegacy.h"
+#include "symboltaxonomy.h"
 
 #include <QFileInfo>
 
@@ -6,14 +6,283 @@ namespace SymbolTaxonomy {
 
 namespace {
 
-CollectorKind collectorKindFromLegacyType(sym_list::sym_type_e type)
+bool isDefinitionCollectorKind(CollectorKind kind)
 {
-    return static_cast<CollectorKind>(type);
+    switch (kind) {
+    case CollectorKind::Module:
+    case CollectorKind::Interface:
+    case CollectorKind::InterfaceModport:
+    case CollectorKind::Package:
+    case CollectorKind::Inst:
+    case CollectorKind::Task:
+    case CollectorKind::Function:
+    case CollectorKind::PortInput:
+    case CollectorKind::PortOutput:
+    case CollectorKind::PortInout:
+    case CollectorKind::PortRef:
+    case CollectorKind::PortInterface:
+    case CollectorKind::PortInterfaceModport:
+    case CollectorKind::Reg:
+    case CollectorKind::Wire:
+    case CollectorKind::Logic:
+    case CollectorKind::Parameter:
+    case CollectorKind::Localparam:
+    case CollectorKind::PackedStruct:
+    case CollectorKind::UnpackedStruct:
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
+    case CollectorKind::StructMember:
+    case CollectorKind::Typedef:
+    case CollectorKind::Enum:
+    case CollectorKind::EnumVariable:
+    case CollectorKind::EnumValue:
+        return true;
+    case CollectorKind::InterfaceAssocStruct:
+    case CollectorKind::InterfaceParameter:
+    case CollectorKind::DefParameter:
+    case CollectorKind::GenerateIf:
+    case CollectorKind::GenerateFor:
+    case CollectorKind::GenerateCase:
+    case CollectorKind::Always:
+    case CollectorKind::AlwaysFf:
+    case CollectorKind::AlwaysComb:
+    case CollectorKind::AlwaysLatch:
+    case CollectorKind::Assign:
+    case CollectorKind::DefIfdef:
+    case CollectorKind::DefIfndef:
+    case CollectorKind::DefElse:
+    case CollectorKind::DefElsif:
+    case CollectorKind::DefEndif:
+    case CollectorKind::DefDefine:
+    case CollectorKind::Case:
+    case CollectorKind::Casex:
+    case CollectorKind::Casez:
+    case CollectorKind::Endcase:
+    case CollectorKind::CaseDefault:
+    case CollectorKind::FsmState:
+    case CollectorKind::Initial:
+    case CollectorKind::XilinxConstraint:
+    case CollectorKind::User:
+    case CollectorKind::ModuleParameter:
+    case CollectorKind::InstPin:
+        return false;
+    }
+    return false;
 }
 
-sym_list::sym_type_e legacySymbolType(CollectorKind kind)
+int collectorKindDefinitionPriority(CollectorKind kind)
 {
-    return static_cast<sym_list::sym_type_e>(kind);
+    switch (kind) {
+    case CollectorKind::Module: return 0;
+    case CollectorKind::Interface: return 1;
+    case CollectorKind::Package: return 2;
+    case CollectorKind::InterfaceModport:
+    case CollectorKind::PortInput:
+    case CollectorKind::PortOutput:
+    case CollectorKind::PortInout:
+    case CollectorKind::PortRef:
+    case CollectorKind::PortInterface:
+    case CollectorKind::PortInterfaceModport: return 3;
+    case CollectorKind::Task:
+    case CollectorKind::Function: return 4;
+    case CollectorKind::Reg:
+    case CollectorKind::Wire:
+    case CollectorKind::Logic:
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
+    case CollectorKind::EnumVariable: return 5;
+    case CollectorKind::Parameter:
+    case CollectorKind::Localparam:
+    case CollectorKind::Enum:
+    case CollectorKind::PackedStruct:
+    case CollectorKind::UnpackedStruct:
+    case CollectorKind::Typedef: return 6;
+    case CollectorKind::StructMember:
+    case CollectorKind::EnumValue: return 7;
+    case CollectorKind::InterfaceAssocStruct:
+    case CollectorKind::InterfaceParameter:
+    case CollectorKind::DefParameter:
+    case CollectorKind::GenerateIf:
+    case CollectorKind::GenerateFor:
+    case CollectorKind::GenerateCase:
+    case CollectorKind::Always:
+    case CollectorKind::AlwaysFf:
+    case CollectorKind::AlwaysComb:
+    case CollectorKind::AlwaysLatch:
+    case CollectorKind::Assign:
+    case CollectorKind::DefIfdef:
+    case CollectorKind::DefIfndef:
+    case CollectorKind::DefElse:
+    case CollectorKind::DefElsif:
+    case CollectorKind::DefEndif:
+    case CollectorKind::DefDefine:
+    case CollectorKind::Case:
+    case CollectorKind::Casex:
+    case CollectorKind::Casez:
+    case CollectorKind::Endcase:
+    case CollectorKind::CaseDefault:
+    case CollectorKind::FsmState:
+    case CollectorKind::Initial:
+    case CollectorKind::XilinxConstraint:
+    case CollectorKind::User:
+    case CollectorKind::ModuleParameter:
+    case CollectorKind::Inst:
+    case CollectorKind::InstPin:
+        return 10;
+    }
+    return 10;
+}
+
+QString collectorKindLabel(CollectorKind kind)
+{
+    switch (kind) {
+    case CollectorKind::Module:
+        return QStringLiteral("module");
+    case CollectorKind::Interface:
+    case CollectorKind::InterfaceAssocStruct:
+        return QStringLiteral("interface");
+    case CollectorKind::Package:
+        return QStringLiteral("package");
+    case CollectorKind::Typedef:
+        return QStringLiteral("typedef");
+    case CollectorKind::EnumValue:
+        return QStringLiteral("enum value");
+    case CollectorKind::Enum:
+    case CollectorKind::EnumVariable:
+        return QStringLiteral("enum");
+    case CollectorKind::Parameter:
+    case CollectorKind::ModuleParameter:
+    case CollectorKind::InterfaceParameter:
+    case CollectorKind::DefParameter:
+        return QStringLiteral("parameter");
+    case CollectorKind::Localparam:
+        return QStringLiteral("localparam");
+    case CollectorKind::PortInput:
+        return QStringLiteral("input");
+    case CollectorKind::PortOutput:
+        return QStringLiteral("output");
+    case CollectorKind::PortInout:
+        return QStringLiteral("inout");
+    case CollectorKind::PortRef:
+        return QStringLiteral("ref");
+    case CollectorKind::PortInterface:
+        return QStringLiteral("interface port");
+    case CollectorKind::PortInterfaceModport:
+        return QStringLiteral("modport port");
+    case CollectorKind::Reg:
+        return QStringLiteral("reg");
+    case CollectorKind::Wire:
+        return QStringLiteral("wire");
+    case CollectorKind::Logic:
+        return QStringLiteral("logic");
+    case CollectorKind::PackedStruct:
+    case CollectorKind::UnpackedStruct:
+        return QStringLiteral("struct");
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
+        return QStringLiteral("struct variable");
+    case CollectorKind::StructMember:
+        return QStringLiteral("member");
+    case CollectorKind::Inst:
+    case CollectorKind::InstPin:
+        return QStringLiteral("instance");
+    case CollectorKind::InterfaceModport:
+        return QStringLiteral("modport");
+    case CollectorKind::Task:
+        return QStringLiteral("task");
+    case CollectorKind::Function:
+        return QStringLiteral("function");
+    case CollectorKind::DefDefine:
+    case CollectorKind::DefIfdef:
+    case CollectorKind::DefIfndef:
+    case CollectorKind::DefElse:
+    case CollectorKind::DefElsif:
+    case CollectorKind::DefEndif:
+        return QStringLiteral("macro");
+    case CollectorKind::Always:
+    case CollectorKind::AlwaysFf:
+    case CollectorKind::AlwaysComb:
+    case CollectorKind::AlwaysLatch:
+    case CollectorKind::Assign:
+    case CollectorKind::Initial:
+    case CollectorKind::Case:
+    case CollectorKind::Casex:
+    case CollectorKind::Casez:
+    case CollectorKind::Endcase:
+    case CollectorKind::CaseDefault:
+    case CollectorKind::FsmState:
+        return QStringLiteral("process");
+    case CollectorKind::GenerateIf:
+    case CollectorKind::GenerateFor:
+    case CollectorKind::GenerateCase:
+        return QStringLiteral("generate");
+    case CollectorKind::XilinxConstraint:
+        return QStringLiteral("constraint");
+    case CollectorKind::User:
+        return QStringLiteral("user");
+    }
+    return QStringLiteral("symbol");
+}
+
+bool isInternalCompletionCollectorKind(CollectorKind kind)
+{
+    return kind == CollectorKind::Reg
+        || kind == CollectorKind::Wire
+        || kind == CollectorKind::Logic
+        || kind == CollectorKind::Localparam
+        || kind == CollectorKind::Parameter;
+}
+
+bool isGlobalCompletionCollectorKind(CollectorKind kind)
+{
+    return kind == CollectorKind::Module
+        || kind == CollectorKind::Task
+        || kind == CollectorKind::Function
+        || kind == CollectorKind::Interface
+        || kind == CollectorKind::Package;
+}
+
+bool isCommandGlobalCollectorKind(CollectorKind kind)
+{
+    return kind == CollectorKind::Module
+        || kind == CollectorKind::Task
+        || kind == CollectorKind::Function
+        || kind == CollectorKind::Interface
+        || kind == CollectorKind::Package
+        || kind == CollectorKind::Typedef
+        || kind == CollectorKind::DefDefine
+        || kind == CollectorKind::PackedStruct
+        || kind == CollectorKind::UnpackedStruct
+        || kind == CollectorKind::Enum;
+}
+
+bool isGlobalSymbolCollectorKind(CollectorKind kind)
+{
+    return kind == CollectorKind::Module
+        || kind == CollectorKind::Task
+        || kind == CollectorKind::Function
+        || kind == CollectorKind::Interface
+        || kind == CollectorKind::Package
+        || kind == CollectorKind::Typedef
+        || kind == CollectorKind::DefDefine
+        || kind == CollectorKind::PackedStruct
+        || kind == CollectorKind::UnpackedStruct
+        || kind == CollectorKind::PackedStructVariable
+        || kind == CollectorKind::UnpackedStructVariable
+        || kind == CollectorKind::Enum;
+}
+
+bool isFsmStateRegisterCollectorKind(CollectorKind kind)
+{
+    return kind == CollectorKind::Reg
+        || kind == CollectorKind::Logic
+        || kind == CollectorKind::EnumVariable;
+}
+
+bool isFsmStateValueCollectorKind(CollectorKind kind)
+{
+    return kind == CollectorKind::EnumValue
+        || kind == CollectorKind::FsmState;
 }
 
 bool collectorKindIs(const SemanticMetadata& metadata,
@@ -93,137 +362,6 @@ bool isOutlineCollectorKind(CollectorKind kind)
 
 }
 
-DeclarationKind declarationKind(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_module:
-        return DeclarationKind::Module;
-    case sym_list::sym_interface:
-    case sym_list::sym_interface_assco_struct:
-        return DeclarationKind::Interface;
-    case sym_list::sym_package:
-        return DeclarationKind::Package;
-    case sym_list::sym_typedef:
-        return DeclarationKind::Typedef;
-    case sym_list::sym_enum:
-    case sym_list::sym_enum_var:
-    case sym_list::sym_enum_value:
-        return DeclarationKind::Enum;
-    case sym_list::sym_parameter:
-    case sym_list::sym_module_parameter:
-    case sym_list::sym_interface_parameter:
-    case sym_list::sym_def_parameter:
-        return DeclarationKind::Parameter;
-    case sym_list::sym_localparam:
-        return DeclarationKind::Localparam;
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport:
-        return DeclarationKind::Port;
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-        return DeclarationKind::Signal;
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-        return DeclarationKind::Struct;
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-        return DeclarationKind::StructVariable;
-    case sym_list::sym_struct_member:
-        return DeclarationKind::StructMember;
-    case sym_list::sym_inst:
-    case sym_list::sym_inst_pin:
-        return DeclarationKind::Instance;
-    case sym_list::sym_interface_modport:
-        return DeclarationKind::Modport;
-    case sym_list::sym_task:
-        return DeclarationKind::Task;
-    case sym_list::sym_function:
-        return DeclarationKind::Function;
-    case sym_list::sym_def_define:
-    case sym_list::sym_def_ifdef:
-    case sym_list::sym_def_ifndef:
-    case sym_list::sym_def_else:
-    case sym_list::sym_def_elsif:
-    case sym_list::sym_def_endif:
-        return DeclarationKind::Macro;
-    case sym_list::sym_always:
-    case sym_list::sym_always_ff:
-    case sym_list::sym_always_comb:
-    case sym_list::sym_always_latch:
-    case sym_list::sym_assign:
-    case sym_list::sym_initial:
-    case sym_list::sym_case:
-    case sym_list::sym_casex:
-    case sym_list::sym_casez:
-    case sym_list::sym_endcase:
-    case sym_list::sym_case_default:
-    case sym_list::sym_fsm_state:
-        return DeclarationKind::Process;
-    case sym_list::sym_generate_if:
-    case sym_list::sym_generate_for:
-    case sym_list::sym_generate_case:
-        return DeclarationKind::Generate;
-    case sym_list::sym_xilinx_constraint:
-        return DeclarationKind::Constraint;
-    case sym_list::sym_user:
-        return DeclarationKind::User;
-    }
-    return DeclarationKind::Unknown;
-}
-
-SymbolUsageRole usageRole(sym_list::sym_type_e type)
-{
-    switch (declarationKind(type)) {
-    case DeclarationKind::Unknown:
-        return SymbolUsageRole::Unknown;
-    case DeclarationKind::Process:
-    case DeclarationKind::Generate:
-        return SymbolUsageRole::Process;
-    case DeclarationKind::Instance:
-        if (type == sym_list::sym_inst_pin)
-            return SymbolUsageRole::Reference;
-        return SymbolUsageRole::Declaration;
-    case DeclarationKind::Module:
-    case DeclarationKind::Interface:
-    case DeclarationKind::Package:
-    case DeclarationKind::Typedef:
-    case DeclarationKind::Enum:
-    case DeclarationKind::Parameter:
-    case DeclarationKind::Localparam:
-    case DeclarationKind::Port:
-    case DeclarationKind::Signal:
-    case DeclarationKind::Struct:
-    case DeclarationKind::StructVariable:
-    case DeclarationKind::StructMember:
-    case DeclarationKind::Modport:
-    case DeclarationKind::Task:
-    case DeclarationKind::Function:
-    case DeclarationKind::Macro:
-    case DeclarationKind::Constraint:
-    case DeclarationKind::User:
-        return SymbolUsageRole::Declaration;
-    }
-    return SymbolUsageRole::Unknown;
-}
-
-DeclarationGroup declarationGroup(sym_list::sym_type_e type)
-{
-    if (isPortDeclaration(type))
-        return DeclarationGroup::Port;
-    if (isParameterDeclaration(type))
-        return DeclarationGroup::Parameter;
-    if (isInstanceDeclaration(type))
-        return DeclarationGroup::Instance;
-    if (isSignalDeclaration(type))
-        return DeclarationGroup::Signal;
-    return DeclarationGroup::Unknown;
-}
-
 DeclarationGroup declarationGroup(const SemanticMetadata& metadata)
 {
     switch (metadata.declarationKind) {
@@ -263,126 +401,11 @@ DeclarationGroup declarationGroup(const SemanticMetadata& metadata)
     return DeclarationGroup::Unknown;
 }
 
-namespace {
-
-SymbolOwnerScope legacyOwnerScope(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes)
-{
-    const DeclarationKind kind = declarationKind(symbol.symbolType);
-    if (isGlobalDefinition(symbol.symbolType))
-        return SymbolOwnerScope::Global;
-    if (kind == DeclarationKind::Modport)
-        return SymbolOwnerScope::Interface;
-    if (kind == DeclarationKind::StructMember)
-        return SymbolOwnerScope::Struct;
-    if (!symbol.moduleScope.isEmpty()) {
-        if (packageScopes.contains(symbol.moduleScope)
-            && isPackageVisibleDefinition(symbol.symbolType)) {
-            return SymbolOwnerScope::Package;
-        }
-        return SymbolOwnerScope::Module;
-    }
-    return SymbolOwnerScope::Unknown;
-}
-
-SymbolVisibility legacyVisibility(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes)
-{
-    const SymbolOwnerScope scope = legacyOwnerScope(symbol, packageScopes);
-    if (scope == SymbolOwnerScope::Global)
-        return SymbolVisibility::Global;
-    if (scope == SymbolOwnerScope::Package
-        && isPackageVisibleDefinition(symbol.symbolType)) {
-        return SymbolVisibility::PackageVisible;
-    }
-    if (scope == SymbolOwnerScope::Interface
-        || scope == SymbolOwnerScope::Struct) {
-        return SymbolVisibility::Member;
-    }
-    if (scope == SymbolOwnerScope::Module)
-        return SymbolVisibility::ScopeLocal;
-    return SymbolVisibility::Unknown;
-}
-
-SemanticMetadata computedSemanticMetadata(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes)
-{
-    SemanticMetadata metadata;
-    metadata.declarationKind = declarationKind(symbol.symbolType);
-    metadata.usageRole = usageRole(symbol.symbolType);
-    metadata.ownerScope = legacyOwnerScope(symbol, packageScopes);
-    metadata.visibility = legacyVisibility(symbol, packageScopes);
-    metadata.sourceRole = sourceRoleForFileName(symbol.fileName);
-    metadata.collectorKind = collectorKindFromLegacyType(symbol.symbolType);
-    metadata.interfaceLikeOwner = isInterfaceLikeOwner(symbol.symbolType);
-    return metadata;
-}
-
-} // namespace
-
-SemanticMetadata semanticMetadata(
-    const sym_list::SymbolInfo& symbol,
-    const QSet<QString>& packageScopes)
-{
-    if (symbol.hasSemanticMetadata) {
-        SemanticMetadata metadata;
-        metadata.declarationKind = symbol.semanticDeclarationKind;
-        metadata.usageRole = symbol.semanticUsageRole;
-        metadata.ownerScope = symbol.semanticOwnerScope;
-        metadata.visibility = symbol.semanticVisibility;
-        metadata.sourceRole = symbol.semanticSourceRole;
-        metadata.collectorKind = collectorKindFromLegacyType(symbol.collectorKind);
-        metadata.interfaceLikeOwner = symbol.interfaceLikeOwner;
-        return metadata;
-    }
-
-    return computedSemanticMetadata(symbol, packageScopes);
-}
-
-bool isDefinitionCandidate(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_module:
-    case sym_list::sym_interface:
-    case sym_list::sym_interface_modport:
-    case sym_list::sym_package:
-    case sym_list::sym_inst:
-    case sym_list::sym_task:
-    case sym_list::sym_function:
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport:
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_struct_member:
-    case sym_list::sym_typedef:
-    case sym_list::sym_enum:
-    case sym_list::sym_enum_var:
-    case sym_list::sym_enum_value:
-        return true;
-    default:
-        return false;
-    }
-}
-
 bool isDefinitionCandidate(const SemanticMetadata& metadata)
 {
     if (metadata.usageRole != SymbolUsageRole::Declaration)
         return false;
-    if (isDefinitionCandidate(legacySymbolType(metadata.collectorKind)))
+    if (isDefinitionCollectorKind(metadata.collectorKind))
         return true;
     if (hasCollectorKind(metadata))
         return false;
@@ -416,34 +439,11 @@ bool isDefinitionCandidate(const SemanticMetadata& metadata)
     return false;
 }
 
-bool isGlobalDefinition(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package;
-}
-
 bool isGlobalDefinition(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::Module
         || metadata.declarationKind == DeclarationKind::Interface
         || metadata.declarationKind == DeclarationKind::Package;
-}
-
-bool isPackageVisibleDefinition(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_typedef:
-    case sym_list::sym_enum:
-    case sym_list::sym_enum_value:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-        return true;
-    default:
-        return false;
-    }
 }
 
 bool isPackageVisibleDefinition(const SemanticMetadata& metadata)
@@ -453,14 +453,6 @@ bool isPackageVisibleDefinition(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Typedef
         || metadata.declarationKind == DeclarationKind::Enum
         || metadata.declarationKind == DeclarationKind::Struct;
-}
-
-bool isInterfaceLikeOwner(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_interface
-        || type == sym_list::sym_inst
-        || type == sym_list::sym_port_interface
-        || type == sym_list::sym_port_interface_modport;
 }
 
 QString interfaceTypeName(const QString& dataType)
@@ -478,16 +470,6 @@ QString interfaceModportName(const QString& dataType)
     return dot >= 0 ? dataType.mid(dot + 1) : QString();
 }
 
-bool isModuleDeclaration(sym_list::sym_type_e type)
-{
-    return declarationKind(type) == DeclarationKind::Module;
-}
-
-bool isPackageDeclaration(sym_list::sym_type_e type)
-{
-    return declarationKind(type) == DeclarationKind::Package;
-}
-
 bool isModuleDeclaration(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::Module;
@@ -498,29 +480,9 @@ bool isPackageDeclaration(const SemanticMetadata& metadata)
     return metadata.declarationKind == DeclarationKind::Package;
 }
 
-bool isPortDeclaration(sym_list::sym_type_e type)
-{
-    return declarationKind(type) == DeclarationKind::Port;
-}
-
 bool isPortDeclaration(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::Port;
-}
-
-bool isParameterDeclaration(sym_list::sym_type_e type)
-{
-    const DeclarationKind kind = declarationKind(type);
-    return kind == DeclarationKind::Parameter
-        || kind == DeclarationKind::Localparam;
-}
-
-bool isSignalDeclaration(sym_list::sym_type_e type)
-{
-    const DeclarationKind kind = declarationKind(type);
-    return kind == DeclarationKind::Signal
-        || kind == DeclarationKind::StructVariable
-        || type == sym_list::sym_enum_var;
 }
 
 bool isSignalDeclaration(const SemanticMetadata& metadata)
@@ -530,19 +492,9 @@ bool isSignalDeclaration(const SemanticMetadata& metadata)
         || collectorKindIs(metadata, CollectorKind::EnumVariable);
 }
 
-bool isLogicDeclaration(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_logic;
-}
-
 bool isLogicDeclaration(const SemanticMetadata& metadata)
 {
     return collectorKindIs(metadata, CollectorKind::Logic);
-}
-
-bool isInstanceDeclaration(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_inst;
 }
 
 bool isInstanceDeclaration(const SemanticMetadata& metadata)
@@ -551,52 +503,24 @@ bool isInstanceDeclaration(const SemanticMetadata& metadata)
         && metadata.usageRole == SymbolUsageRole::Declaration;
 }
 
-bool isPortConnectionPeer(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_inst_pin
-        || isPortDeclaration(type);
-}
-
 bool isPortConnectionPeer(const SemanticMetadata& metadata)
 {
     return collectorKindIs(metadata, CollectorKind::InstPin)
         || isPortDeclaration(metadata);
 }
 
-bool isFsmStateRegisterDeclaration(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_reg
-        || type == sym_list::sym_logic
-        || type == sym_list::sym_enum_var;
-}
-
 bool isFsmStateRegisterDeclaration(const SemanticMetadata& metadata)
 {
     if (hasCollectorKind(metadata))
-        return isFsmStateRegisterDeclaration(
-            legacySymbolType(metadata.collectorKind));
+        return isFsmStateRegisterCollectorKind(metadata.collectorKind);
     return false;
-}
-
-bool isFsmStateValueDeclaration(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_enum_value
-        || type == sym_list::sym_fsm_state;
 }
 
 bool isFsmStateValueDeclaration(const SemanticMetadata& metadata)
 {
     if (hasCollectorKind(metadata))
-        return isFsmStateValueDeclaration(
-            legacySymbolType(metadata.collectorKind));
+        return isFsmStateValueCollectorKind(metadata.collectorKind);
     return false;
-}
-
-bool isSubroutineDeclaration(sym_list::sym_type_e type)
-{
-    const DeclarationKind kind = declarationKind(type);
-    return kind == DeclarationKind::Task
-        || kind == DeclarationKind::Function;
 }
 
 bool isSubroutineDeclaration(const SemanticMetadata& metadata)
@@ -605,29 +529,10 @@ bool isSubroutineDeclaration(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Function;
 }
 
-bool isModuleRangeType(sym_list::sym_type_e type)
-{
-    const DeclarationKind kind = declarationKind(type);
-    return kind == DeclarationKind::Struct
-        || kind == DeclarationKind::StructVariable;
-}
-
-bool isMemberScopeDefinitionCandidate(sym_list::sym_type_e type)
-{
-    const DeclarationKind kind = declarationKind(type);
-    return kind == DeclarationKind::StructMember
-        || kind == DeclarationKind::Modport;
-}
-
 bool isMemberScopeDefinitionCandidate(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::StructMember
         || metadata.declarationKind == DeclarationKind::Modport;
-}
-
-bool isDirectModuleContextCompletionRequest(sym_list::sym_type_e requestedType)
-{
-    return isModuleRangeType(requestedType);
 }
 
 bool isOutlineSymbol(const SemanticMetadata& metadata)
@@ -664,43 +569,10 @@ bool isOutlineSymbol(const SemanticMetadata& metadata)
     return false;
 }
 
-int definitionPriority(sym_list::sym_type_e type)
-{
-    switch (type) {
-    case sym_list::sym_module: return 0;
-    case sym_list::sym_interface: return 1;
-    case sym_list::sym_package: return 2;
-    case sym_list::sym_interface_modport: return 3;
-    case sym_list::sym_port_input:
-    case sym_list::sym_port_output:
-    case sym_list::sym_port_inout:
-    case sym_list::sym_port_ref:
-    case sym_list::sym_port_interface:
-    case sym_list::sym_port_interface_modport: return 3;
-    case sym_list::sym_task:
-    case sym_list::sym_function: return 4;
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-    case sym_list::sym_enum_var: return 5;
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_enum:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-    case sym_list::sym_typedef: return 6;
-    case sym_list::sym_struct_member:
-    case sym_list::sym_enum_value: return 7;
-    default: return 10;
-    }
-}
-
 int definitionPriority(const SemanticMetadata& metadata)
 {
     if (hasCollectorKind(metadata))
-        return definitionPriority(legacySymbolType(metadata.collectorKind));
+        return collectorKindDefinitionPriority(metadata.collectorKind);
 
     switch (metadata.declarationKind) {
     case DeclarationKind::Module:
@@ -738,80 +610,11 @@ int definitionPriority(const SemanticMetadata& metadata)
     return 10;
 }
 
-QString symbolTypeLabel(sym_list::sym_type_e type)
-{
-    switch (declarationKind(type)) {
-    case DeclarationKind::Module:
-        return QStringLiteral("module");
-    case DeclarationKind::Interface:
-        return QStringLiteral("interface");
-    case DeclarationKind::Package:
-        return QStringLiteral("package");
-    case DeclarationKind::Typedef:
-        return QStringLiteral("typedef");
-    case DeclarationKind::Enum:
-        return type == sym_list::sym_enum_value
-            ? QStringLiteral("enum value")
-            : QStringLiteral("enum");
-    case DeclarationKind::Parameter:
-        return QStringLiteral("parameter");
-    case DeclarationKind::Localparam:
-        return QStringLiteral("localparam");
-    case DeclarationKind::Port:
-        if (type == sym_list::sym_port_input)
-            return QStringLiteral("input");
-        if (type == sym_list::sym_port_output)
-            return QStringLiteral("output");
-        if (type == sym_list::sym_port_inout)
-            return QStringLiteral("inout");
-        if (type == sym_list::sym_port_ref)
-            return QStringLiteral("ref");
-        if (type == sym_list::sym_port_interface)
-            return QStringLiteral("interface port");
-        if (type == sym_list::sym_port_interface_modport)
-            return QStringLiteral("modport port");
-        return QStringLiteral("port");
-    case DeclarationKind::Signal:
-        if (type == sym_list::sym_reg)
-            return QStringLiteral("reg");
-        if (type == sym_list::sym_wire)
-            return QStringLiteral("wire");
-        return QStringLiteral("logic");
-    case DeclarationKind::Struct:
-        return QStringLiteral("struct");
-    case DeclarationKind::StructVariable:
-        return QStringLiteral("struct variable");
-    case DeclarationKind::StructMember:
-        return QStringLiteral("member");
-    case DeclarationKind::Instance:
-        return QStringLiteral("instance");
-    case DeclarationKind::Modport:
-        return QStringLiteral("modport");
-    case DeclarationKind::Task:
-        return QStringLiteral("task");
-    case DeclarationKind::Function:
-        return QStringLiteral("function");
-    case DeclarationKind::Macro:
-        return QStringLiteral("macro");
-    case DeclarationKind::Process:
-        return QStringLiteral("process");
-    case DeclarationKind::Generate:
-        return QStringLiteral("generate");
-    case DeclarationKind::Constraint:
-        return QStringLiteral("constraint");
-    case DeclarationKind::User:
-        return QStringLiteral("user");
-    case DeclarationKind::Unknown:
-        break;
-    }
-    return QStringLiteral("symbol");
-}
-
 QString symbolTypeLabel(const SemanticMetadata& metadata)
 {
     if (hasCollectorKind(metadata)
         || metadata.declarationKind == DeclarationKind::User) {
-        return symbolTypeLabel(legacySymbolType(metadata.collectorKind));
+        return collectorKindLabel(metadata.collectorKind);
     }
 
     switch (metadata.declarationKind) {
@@ -862,13 +665,6 @@ QString symbolTypeLabel(const SemanticMetadata& metadata)
     return QStringLiteral("symbol");
 }
 
-bool matchesSearchIntent(sym_list::sym_type_e type, SymbolSearchIntent intent)
-{
-    sym_list::SymbolInfo symbol;
-    symbol.symbolType = type;
-    return matchesSearchIntent(semanticMetadata(symbol), intent);
-}
-
 bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent intent)
 {
     switch (intent) {
@@ -894,19 +690,9 @@ bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent in
     return false;
 }
 
-bool isInternalCompletionCandidate(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_reg
-        || type == sym_list::sym_wire
-        || type == sym_list::sym_logic
-        || type == sym_list::sym_localparam
-        || type == sym_list::sym_parameter;
-}
-
 bool isInternalCompletionCandidate(const SemanticMetadata& metadata)
 {
-    if (isInternalCompletionCandidate(
-            legacySymbolType(metadata.collectorKind))) {
+    if (isInternalCompletionCollectorKind(metadata.collectorKind)) {
         return true;
     }
     if (hasCollectorKind(metadata))
@@ -916,19 +702,9 @@ bool isInternalCompletionCandidate(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Localparam;
 }
 
-bool isGlobalCompletionCandidate(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package;
-}
-
 bool isGlobalCompletionCandidate(const SemanticMetadata& metadata)
 {
-    if (isGlobalCompletionCandidate(
-            legacySymbolType(metadata.collectorKind))) {
+    if (isGlobalCompletionCollectorKind(metadata.collectorKind)) {
         return true;
     }
     if (hasCollectorKind(metadata))
@@ -940,24 +716,9 @@ bool isGlobalCompletionCandidate(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Package;
 }
 
-bool isCommandGlobalCompletionType(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_enum;
-}
-
 bool isCommandGlobalCompletionType(const SemanticMetadata& metadata)
 {
-    if (isCommandGlobalCompletionType(
-            legacySymbolType(metadata.collectorKind))) {
+    if (isCommandGlobalCollectorKind(metadata.collectorKind)) {
         return true;
     }
     if (hasCollectorKind(metadata))
@@ -973,26 +734,9 @@ bool isCommandGlobalCompletionType(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Enum;
 }
 
-bool isGlobalSymbolInfoType(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_task
-        || type == sym_list::sym_function
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_typedef
-        || type == sym_list::sym_def_define
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_packed_struct_var
-        || type == sym_list::sym_unpacked_struct_var
-        || type == sym_list::sym_enum;
-}
-
 bool isGlobalSymbolInfoType(const SemanticMetadata& metadata)
 {
-    if (isGlobalSymbolInfoType(
-            legacySymbolType(metadata.collectorKind))) {
+    if (isGlobalSymbolCollectorKind(metadata.collectorKind)) {
         return true;
     }
     if (hasCollectorKind(metadata))
@@ -1007,39 +751,6 @@ bool isGlobalSymbolInfoType(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Struct
         || metadata.declarationKind == DeclarationKind::StructVariable
         || metadata.declarationKind == DeclarationKind::Enum;
-}
-
-bool isAlwaysGlobalSymbolInfoType(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_packed_struct
-        || type == sym_list::sym_unpacked_struct
-        || type == sym_list::sym_enum;
-}
-
-bool isAlwaysGlobalCommandSymbolType(sym_list::sym_type_e type)
-{
-    return type == sym_list::sym_module
-        || type == sym_list::sym_interface
-        || type == sym_list::sym_package
-        || type == sym_list::sym_def_define;
-}
-
-bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType)
-{
-    switch (requestedType) {
-    case sym_list::sym_parameter:
-    case sym_list::sym_localparam:
-    case sym_list::sym_typedef:
-    case sym_list::sym_enum:
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-        return true;
-    default:
-        return false;
-    }
 }
 
 bool isDefinitionVisibleInContext(

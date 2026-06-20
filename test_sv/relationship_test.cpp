@@ -51,7 +51,7 @@ static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbol
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (SymbolTaxonomy::isPackageDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))
+                semanticMetadataForSymbolInfo(symbol))
             && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);
         }
@@ -4014,7 +4014,7 @@ static void runModuleBriefServiceFixture()
                        == report.relationshipEvidenceRows.first().fromStableKey,
                true);
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
-        SymbolTaxonomy::semanticMetadata(module);
+        semanticMetadataForSymbolInfo(module);
     expectBool("semantic metadata keeps raw module kind",
                moduleMetadata.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_module),
                true);
@@ -4036,10 +4036,11 @@ static void runModuleBriefServiceFixture()
                    && report.moduleSymbolRecord.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_module),
                true);
     expectBool("taxonomy recognizes module brief port",
-               SymbolTaxonomy::isPortDeclaration(symbols.at(2).symbolType),
+               SymbolTaxonomy::isPortDeclaration(
+                   semanticMetadataForSymbolInfo(symbols.at(2))),
                true);
     const SymbolTaxonomy::SemanticMetadata portMetadata =
-        SymbolTaxonomy::semanticMetadata(symbols.at(2));
+        semanticMetadataForSymbolInfo(symbols.at(2));
     expectBool("semantic metadata classifies port declaration",
                portMetadata.declarationKind
                    == SymbolTaxonomy::DeclarationKind::Port,
@@ -4071,21 +4072,27 @@ static void runModuleBriefServiceFixture()
                    && snapshotPort.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_port_input),
                true);
     expectBool("taxonomy groups module brief port",
-               SymbolTaxonomy::declarationGroup(symbols.at(2).symbolType)
+               SymbolTaxonomy::declarationGroup(
+                   semanticMetadataForSymbolInfo(symbols.at(2)))
                    == SymbolTaxonomy::DeclarationGroup::Port,
                true);
     expectBool("taxonomy recognizes module brief parameter",
-               SymbolTaxonomy::isParameterDeclaration(symbols.at(1).symbolType),
+               SymbolTaxonomy::declarationGroup(
+                   semanticMetadataForSymbolInfo(symbols.at(1)))
+                   == SymbolTaxonomy::DeclarationGroup::Parameter,
                true);
     expectBool("taxonomy groups module brief parameter",
-               SymbolTaxonomy::declarationGroup(symbols.at(1).symbolType)
+               SymbolTaxonomy::declarationGroup(
+                   semanticMetadataForSymbolInfo(symbols.at(1)))
                    == SymbolTaxonomy::DeclarationGroup::Parameter,
                true);
     expectBool("taxonomy recognizes module brief instance",
-               SymbolTaxonomy::isInstanceDeclaration(symbols.at(5).symbolType),
+               SymbolTaxonomy::isInstanceDeclaration(
+                   semanticMetadataForSymbolInfo(symbols.at(5))),
                true);
     expectBool("taxonomy groups module brief instance",
-               SymbolTaxonomy::declarationGroup(symbols.at(5).symbolType)
+               SymbolTaxonomy::declarationGroup(
+                   semanticMetadataForSymbolInfo(symbols.at(5)))
                    == SymbolTaxonomy::DeclarationGroup::Instance,
                true);
     QList<sym_list::SymbolInfo> packageSymbols;
@@ -4807,7 +4814,8 @@ static void runSignalJourneyServiceFixture()
                    == SymbolTaxonomy::DeclarationKind::Signal,
                true);
     expectBool("taxonomy recognizes signal journey port peer",
-               SymbolTaxonomy::isPortConnectionPeer(symbols.at(4).symbolType),
+               SymbolTaxonomy::isPortConnectionPeer(
+                   semanticMetadataForSymbolInfo(symbols.at(4))),
                true);
     expectInt("signal journey assignment count", report.assignments.size(), 1);
     expectInt("signal journey read count", report.reads.size(), 1);
@@ -5815,10 +5823,12 @@ static void runFsmGraphServiceFixture()
                    && report.notFoundReasonDisplayName.isEmpty(),
                true);
     expectBool("taxonomy recognizes fsm state register",
-               SymbolTaxonomy::isFsmStateRegisterDeclaration(stateQ.symbolType),
+               SymbolTaxonomy::isFsmStateRegisterDeclaration(
+                   semanticMetadataForSymbolInfo(stateQ)),
                true);
     expectBool("taxonomy recognizes fsm state value",
-               SymbolTaxonomy::isFsmStateValueDeclaration(idle.symbolType),
+               SymbolTaxonomy::isFsmStateValueDeclaration(
+                   semanticMetadataForSymbolInfo(idle)),
                true);
     expectInt("fsm graph count", report.graphs.size(), 1);
     expectBool("fsm graph state register",
@@ -6982,15 +6992,15 @@ static void runRealWorkspaceIncludeFixture()
     QSet<QString> packageScopes;
     packageScopes.insert(QStringLiteral("gl_pkg"));
     const SymbolTaxonomy::SemanticMetadata packageMetadata =
-        SymbolTaxonomy::semanticMetadata(packageSymbol, packageScopes);
+        semanticMetadataForSymbolInfo(packageSymbol, packageScopes);
     const SymbolTaxonomy::SemanticMetadata packageParamMetadata =
-        SymbolTaxonomy::semanticMetadata(packageParamSymbol, packageScopes);
+        semanticMetadataForSymbolInfo(packageParamSymbol, packageScopes);
     const SymbolTaxonomy::SemanticMetadata packageTypedefMetadata =
-        SymbolTaxonomy::semanticMetadata(packageTypedefSymbol, packageScopes);
+        semanticMetadataForSymbolInfo(packageTypedefSymbol, packageScopes);
     const SymbolTaxonomy::SemanticMetadata interfaceModportMetadata =
-        SymbolTaxonomy::semanticMetadata(interfaceModportSymbol, packageScopes);
+        semanticMetadataForSymbolInfo(interfaceModportSymbol, packageScopes);
     const SymbolTaxonomy::SemanticMetadata interfaceInstMetadata =
-        SymbolTaxonomy::semanticMetadata(interfaceInstSymbol, packageScopes);
+        semanticMetadataForSymbolInfo(interfaceInstSymbol, packageScopes);
     expectBool("real workspace taxonomy marks global package",
                packageMetadata.ownerScope
                    == SymbolTaxonomy::SymbolOwnerScope::Global,

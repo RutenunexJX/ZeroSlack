@@ -30,7 +30,7 @@ static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbol
     QSet<QString> names;
     for (const sym_list::SymbolInfo& symbol : symbols) {
         if (SymbolTaxonomy::isPackageDeclaration(
-                SymbolTaxonomy::semanticMetadata(symbol))
+                semanticMetadataForSymbolInfo(symbol))
             && !symbol.symbolName.isEmpty()) {
             names.insert(symbol.symbolName);
         }
@@ -320,7 +320,7 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::SymbolOwnerScope::Global;
     metadataModelSymbol.semanticVisibility =
         SymbolTaxonomy::SymbolVisibility::Global;
-    metadataModelSymbol.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_module);
+    metadataModelSymbol.collectorKind = sym_list::sym_module;
     const SemanticSymbolRecord metadataModelRecord =
         semanticSymbolRecordForSymbol(metadataModelSymbol);
     CompletionResult metadataCompletion;
@@ -401,14 +401,18 @@ int main(int argc, char** argv) {
                  .typeDescription,
              QStringLiteral("interfaces"));
     expectEq("SymbolTaxonomy modport label",
-             SymbolTaxonomy::symbolTypeLabel(sym_list::sym_interface_modport),
+             SymbolTaxonomy::symbolTypeLabel(
+                 semanticMetadataForFixtureType(sym_list::sym_interface_modport)),
              QStringLiteral("modport"));
-    expectBool("SymbolTaxonomy struct range type",
-               SymbolTaxonomy::isModuleRangeType(sym_list::sym_packed_struct_var),
+    expectBool("SymbolTaxonomy struct variable metadata",
+               semanticMetadataForFixtureType(sym_list::sym_packed_struct_var)
+                   .declarationKind
+                   == SymbolTaxonomy::DeclarationKind::StructVariable,
                true);
-    expectBool("SymbolTaxonomy direct context completion",
-               SymbolTaxonomy::isDirectModuleContextCompletionRequest(
-                   sym_list::sym_unpacked_struct_var),
+    expectBool("SymbolTaxonomy direct context metadata",
+               semanticMetadataForFixtureType(sym_list::sym_unpacked_struct_var)
+                   .declarationKind
+                   == SymbolTaxonomy::DeclarationKind::StructVariable,
                true);
     SymbolTaxonomy::SemanticMetadata enumTypedefMetadata;
     enumTypedefMetadata.declarationKind =
@@ -432,9 +436,9 @@ int main(int argc, char** argv) {
         SymbolSemanticMetadata::SymbolVisibility::ScopeLocal;
     metadataSignalSymbol.semanticSourceRole =
         SymbolSemanticMetadata::SourceRole::DesignSource;
-    metadataSignalSymbol.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    metadataSignalSymbol.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataSignal =
-        SymbolTaxonomy::semanticMetadata(metadataSignalSymbol);
+        semanticMetadataForSymbolInfo(metadataSignalSymbol);
     expectBool("SymbolTaxonomy metadata command type",
                SymbolTaxonomy::semanticCompletionKindMatches(
                    metadataSignal,
@@ -455,7 +459,7 @@ int main(int argc, char** argv) {
     completionModuleSymbol.symbolType = sym_list::sym_module;
     completionModuleSymbol.fileName = QStringLiteral("rtl/top.sv");
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
-        SymbolTaxonomy::semanticMetadata(completionModuleSymbol);
+        semanticMetadataForSymbolInfo(completionModuleSymbol);
     expectBool("SymbolTaxonomy metadata global completion",
                SymbolTaxonomy::isGlobalCompletionCandidate(moduleMetadata),
                true);
@@ -463,7 +467,7 @@ int main(int argc, char** argv) {
     logicSymbol.symbolType = sym_list::sym_logic;
     logicSymbol.fileName = QStringLiteral("rtl/top.sv");
     const SymbolTaxonomy::SemanticMetadata logicMetadata =
-        SymbolTaxonomy::semanticMetadata(logicSymbol);
+        semanticMetadataForSymbolInfo(logicSymbol);
     expectBool("SymbolTaxonomy metadata internal completion",
                SymbolTaxonomy::isInternalCompletionCandidate(logicMetadata),
                true);
@@ -486,9 +490,9 @@ int main(int argc, char** argv) {
         SymbolSemanticMetadata::SymbolVisibility::Global;
     metadataGlobalModule.semanticSourceRole =
         SymbolSemanticMetadata::SourceRole::DesignSource;
-    metadataGlobalModule.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    metadataGlobalModule.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataGlobal =
-        SymbolTaxonomy::semanticMetadata(metadataGlobalModule);
+        semanticMetadataForSymbolInfo(metadataGlobalModule);
     expectBool("SymbolTaxonomy metadata global completion candidate",
                SymbolTaxonomy::isGlobalCompletionCandidate(metadataGlobal),
                true);
@@ -553,9 +557,9 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::DeclarationKind::Instance;
     metadataInstanceSymbol.semanticUsageRole =
         SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataInstanceSymbol.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    metadataInstanceSymbol.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataInstanceSymbolMetadata =
-        SymbolTaxonomy::semanticMetadata(metadataInstanceSymbol);
+        semanticMetadataForSymbolInfo(metadataInstanceSymbol);
     expectBool("SymbolTaxonomy metadata instance declaration",
                SymbolTaxonomy::isInstanceDeclaration(
                    metadataInstanceSymbolMetadata),
@@ -566,7 +570,7 @@ int main(int argc, char** argv) {
     metadataKeySymbol.hasSemanticMetadata = true;
     metadataKeySymbol.semanticDeclarationKind =
         SymbolTaxonomy::DeclarationKind::Module;
-    metadataKeySymbol.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    metadataKeySymbol.collectorKind = sym_list::sym_user;
     const SymbolStableKey metadataKey =
         stableKeyForSymbol(metadataKeySymbol);
     expectBool("stable key uses semantic declaration kind",
@@ -600,7 +604,7 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo metadataStateRegister;
     metadataStateRegister.symbolType = sym_list::sym_logic;
     const SymbolTaxonomy::SemanticMetadata stateRegisterMetadata =
-        SymbolTaxonomy::semanticMetadata(metadataStateRegister);
+        semanticMetadataForSymbolInfo(metadataStateRegister);
     expectBool("SymbolTaxonomy metadata fsm state register",
                SymbolTaxonomy::isFsmStateRegisterDeclaration(
                    stateRegisterMetadata),
@@ -608,7 +612,7 @@ int main(int argc, char** argv) {
     sym_list::SymbolInfo metadataStateValue;
     metadataStateValue.symbolType = sym_list::sym_enum_value;
     const SymbolTaxonomy::SemanticMetadata stateValueMetadata =
-        SymbolTaxonomy::semanticMetadata(metadataStateValue);
+        semanticMetadataForSymbolInfo(metadataStateValue);
     expectBool("SymbolTaxonomy metadata fsm state value",
                SymbolTaxonomy::isFsmStateValueDeclaration(stateValueMetadata),
                true);
@@ -640,7 +644,7 @@ int main(int argc, char** argv) {
     packageSymbol.symbolType = sym_list::sym_package;
     packageSymbol.symbolName = QStringLiteral("pkg_scope");
     const SymbolTaxonomy::SemanticMetadata packageMetadata =
-        SymbolTaxonomy::semanticMetadata(packageSymbol);
+        semanticMetadataForSymbolInfo(packageSymbol);
     expectBool("SymbolTaxonomy package metadata declaration",
                SymbolTaxonomy::isPackageDeclaration(packageMetadata),
                true);
@@ -649,7 +653,7 @@ int main(int argc, char** argv) {
                    .contains(QStringLiteral("pkg_scope")),
                true);
     const SymbolTaxonomy::SemanticMetadata packageParameterMetadata =
-        SymbolTaxonomy::semanticMetadata(packageParameter, packageScopes);
+        semanticMetadataForSymbolInfo(packageParameter, packageScopes);
     expectBool("SymbolTaxonomy package definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    packageParameterMetadata,
@@ -668,9 +672,9 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::SymbolOwnerScope::Package;
     metadataPackageParameter.semanticVisibility =
         SymbolTaxonomy::SymbolVisibility::PackageVisible;
-    metadataPackageParameter.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    metadataPackageParameter.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataPackageParameterMetadata =
-        SymbolTaxonomy::semanticMetadata(
+        semanticMetadataForSymbolInfo(
             metadataPackageParameter,
             packageScopes);
     expectBool("SymbolTaxonomy metadata package definition visible",
@@ -691,9 +695,9 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::SymbolOwnerScope::Struct;
     metadataStructMember.semanticVisibility =
         SymbolTaxonomy::SymbolVisibility::Member;
-    metadataStructMember.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    metadataStructMember.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataStructMemberMetadata =
-        SymbolTaxonomy::semanticMetadata(metadataStructMember, packageScopes);
+        semanticMetadataForSymbolInfo(metadataStructMember, packageScopes);
     expectBool("SymbolTaxonomy metadata member definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    metadataStructMemberMetadata,
@@ -708,9 +712,9 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::DeclarationKind::Enum;
     metadataEnumValue.semanticUsageRole =
         SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataEnumValue.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_enum_value);
+    metadataEnumValue.collectorKind = sym_list::sym_enum_value;
     const SymbolTaxonomy::SemanticMetadata metadataEnumValueMetadata =
-        SymbolTaxonomy::semanticMetadata(metadataEnumValue, packageScopes);
+        semanticMetadataForSymbolInfo(metadataEnumValue, packageScopes);
     expectBool("SymbolTaxonomy metadata enum value definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    metadataEnumValueMetadata,
@@ -718,7 +722,7 @@ int main(int argc, char** argv) {
                    QStringLiteral("top")),
                true);
     const SymbolTaxonomy::SemanticMetadata scopedLogicMetadata =
-        SymbolTaxonomy::semanticMetadata(scopedLogic, packageScopes);
+        semanticMetadataForSymbolInfo(scopedLogic, packageScopes);
     expectBool("SymbolTaxonomy scoped logic definition hidden",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    scopedLogicMetadata,
@@ -729,7 +733,7 @@ int main(int argc, char** argv) {
     moduleSymbol.symbolType = sym_list::sym_module;
     moduleSymbol.symbolName = QStringLiteral("top");
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
-        SymbolTaxonomy::semanticMetadata(moduleSymbol);
+        semanticMetadataForSymbolInfo(moduleSymbol);
     expectBool("SymbolTaxonomy module metadata declaration",
                SymbolTaxonomy::isModuleDeclaration(moduleMetadata),
                true);
@@ -2146,7 +2150,7 @@ int main(int argc, char** argv) {
         SymbolSemanticMetadata::SymbolVisibility::PackageVisible;
     semanticPackageParam.semanticSourceRole =
         SymbolSemanticMetadata::SourceRole::DesignSource;
-    semanticPackageParam.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    semanticPackageParam.collectorKind = sym_list::sym_user;
     snapshotSymbols.append(semanticPackageParam);
     snapshotSymbols.append(makeSymbol(QStringLiteral("SNAP_FEATURE"),
                                       sym_list::sym_def_define,
@@ -2196,7 +2200,7 @@ int main(int argc, char** argv) {
         SymbolSemanticMetadata::SymbolVisibility::ScopeLocal;
     semanticTopSignal.semanticSourceRole =
         SymbolSemanticMetadata::SourceRole::DesignSource;
-    semanticTopSignal.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    semanticTopSignal.collectorKind = sym_list::sym_user;
     snapshotSymbols.append(semanticTopSignal);
     snapshotSymbols.append(makeSymbol(QStringLiteral("snap_other_enable"),
                                       sym_list::sym_logic,
@@ -2304,7 +2308,7 @@ int main(int argc, char** argv) {
         SymbolSemanticMetadata::SymbolVisibility::ScopeLocal;
     snapshotMetadataSignal.semanticSourceRole =
         SymbolSemanticMetadata::SourceRole::DesignSource;
-    snapshotMetadataSignal.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    snapshotMetadataSignal.collectorKind = sym_list::sym_user;
     snapshotSymbols.append(snapshotMetadataSignal);
     sym_list::SymbolInfo snapshotOtherModule =
         makeSymbol(QStringLiteral("other_scope"),
@@ -2361,7 +2365,7 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::SymbolVisibility::Global;
     semanticScopeModule.semanticSourceRole =
         SymbolTaxonomy::SourceRole::DesignSource;
-    semanticScopeModule.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    semanticScopeModule.collectorKind = sym_list::sym_user;
     snapshotSymbols.append(semanticScopeModule);
     sym_list::SymbolInfo semanticScopeSignal =
         makeSymbol(QStringLiteral("semantic_signal"),
@@ -2397,7 +2401,7 @@ int main(int argc, char** argv) {
         SymbolTaxonomy::SymbolVisibility::ScopeLocal;
     semanticScopeMetadataSignal.semanticSourceRole =
         SymbolTaxonomy::SourceRole::DesignSource;
-    semanticScopeMetadataSignal.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    semanticScopeMetadataSignal.collectorKind = sym_list::sym_user;
     snapshotSymbols.append(semanticScopeMetadataSignal);
     QList<SemanticRelationship> snapshotRelationships;
     SemanticRelationship containsSnapEnable;
