@@ -204,11 +204,11 @@ SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
 
     if (symbolDatabase) {
         const QList<SemanticSymbolRecord> records =
-            semanticSymbolRecordsForDatabaseByName(
-                symbolDatabase,
-                symbolName);
-        if (!records.isEmpty())
-            return records.first();
+            semanticSymbolRecordsForDatabase(symbolDatabase);
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == symbolName)
+                return record;
+        }
     }
 
     SemanticSymbolRecord missing;

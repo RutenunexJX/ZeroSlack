@@ -99,6 +99,7 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForCollectedSymbols(
         SymbolTaxonomy::packageScopeNames(symbols));
 }
 
+namespace {
 sym_list::SymbolInfo symbolInfoForSemanticRecord(
     const SemanticSymbolRecord& record)
 {
@@ -118,16 +119,6 @@ sym_list::SymbolInfo symbolInfoForSemanticRecord(
     return symbol;
 }
 
-QList<sym_list::SymbolInfo> symbolInfosForSemanticRecords(
-    const QList<SemanticSymbolRecord>& records)
-{
-    QList<sym_list::SymbolInfo> symbols;
-    symbols.reserve(records.size());
-    for (const SemanticSymbolRecord& record : records) {
-        if (record.isValid())
-            symbols.append(symbolInfoForSemanticRecord(record));
-    }
-    return symbols;
 }
 
 void updateSymbolDatabaseRecordsForFile(
@@ -139,9 +130,16 @@ void updateSymbolDatabaseRecordsForFile(
     if (!database)
         return;
 
+    QList<sym_list::SymbolInfo> symbols;
+    symbols.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.isValid())
+            symbols.append(symbolInfoForSemanticRecord(record));
+    }
+
     database->setSymbolsForFile(
         fileName,
-        symbolInfosForSemanticRecords(records),
+        symbols,
         content);
 }
 
@@ -166,25 +164,6 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabase(
             records.append(semanticSymbolRecordForSymbol(symbol, packageScopes));
     }
     return records;
-}
-
-QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseByName(
-    sym_list* database,
-    const QString& symbolName)
-{
-    if (!database)
-        return {};
-
-    const QList<sym_list::SymbolInfo> allSymbols = database->getAllSymbols();
-    QList<sym_list::SymbolInfo> matches;
-    for (const sym_list::SymbolInfo& symbol : allSymbols) {
-        if (symbol.symbolName == symbolName)
-            matches.append(symbol);
-    }
-
-    return semanticSymbolRecordsForSymbols(
-        matches,
-        SymbolTaxonomy::packageScopeNames(allSymbols));
 }
 
 QList<SemanticSymbolRecord> semanticSymbolRecordsForDatabaseExcludingFiles(
