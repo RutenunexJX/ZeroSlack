@@ -41,6 +41,7 @@ Thin UI consumers
 - I1 first block is complete: Slang collection now exposes semantic-native record APIs and `SymbolAnalyzer` consumes `extractSymbolRecords` / `extractWorkspaceSymbolRecords` directly instead of converting collector symbols in the analyzer layer.
 - I1 second block is complete: `slangsymbolcollector` now builds `SemanticSymbolRecord` as the primary collector output.
 - I1 is complete: `collectSymbols`, `extractSymbols`, and `extractWorkspaceSymbols` are deleted from the tracked collector/manager/test source, leaving Slang symbol extraction record-native.
+- I2 first block is complete: `SemanticIndex` now owns a semantic-native record/content store with local handles and stable-key indexes before bridging records into the remaining `sym_list` compatibility layer.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

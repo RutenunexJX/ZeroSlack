@@ -1,6 +1,5 @@
 #include "semanticindex.h"
 
-#include "semanticcollectoradapter.h"
 #include "semanticindexsnapshot.h"
 
 #include <QSet>
@@ -26,10 +25,11 @@ QList<SymbolRelationshipEngine::RelationType> snapshotPublicationRelationshipTyp
 }
 
 SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
+    const SemanticIndex* index,
     sym_list* symbolDatabase,
     QList<SemanticDiagnostic> diagnostics)
 {
-    if (!symbolDatabase) {
+    if (!index || !symbolDatabase) {
         return SemanticIndexSnapshot::fromSymbolRecords(
             {},
             {},
@@ -38,7 +38,7 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
     }
 
     const QList<SemanticSymbolRecord> symbolRecords =
-        semanticSymbolRecordsForDatabase(symbolDatabase);
+        index->getSymbolRecords();
 
     QList<SemanticRelationship> relationships;
     if (SymbolRelationshipEngine* engine =
@@ -91,7 +91,7 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
         seenFiles.insert(fileName);
         fileContents.insert(
             fileName,
-            symbolDatabase->getCachedFileContent(fileName));
+            index->getCachedFileContent(fileName));
     }
 
     return SemanticIndexSnapshot::fromSymbolRecords(
@@ -148,7 +148,7 @@ SemanticIndex::captureSnapshotPreservingDiagnostics() const
     const QList<SemanticDiagnostic> diagnostics =
         m_snapshot ? m_snapshot->diagnostics() : QList<SemanticDiagnostic>();
     return std::make_shared<const SemanticIndexSnapshot>(
-        publicationSnapshotFromSemanticRecords(symbolDatabase(), diagnostics));
+        publicationSnapshotFromSemanticRecords(this, symbolDatabase(), diagnostics));
 }
 
 std::shared_ptr<const SemanticIndexSnapshot>
@@ -162,7 +162,7 @@ SemanticIndex::captureSnapshotReplacingDiagnostics(
             m_snapshot->withReplacedDiagnostics(fileNames, diagnostics).diagnostics();
     }
     return std::make_shared<const SemanticIndexSnapshot>(
-        publicationSnapshotFromSemanticRecords(symbolDatabase(), mergedDiagnostics));
+        publicationSnapshotFromSemanticRecords(this, symbolDatabase(), mergedDiagnostics));
 }
 
 SemanticSnapshotToken

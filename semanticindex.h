@@ -5,6 +5,7 @@
 #include "symbolrelationshipengine.h"
 #include "symboltaxonomy.h"
 
+#include <QHash>
 #include <QList>
 #include <QSet>
 #include <QString>
@@ -336,7 +337,26 @@ private:
     sym_list* m_symbolDatabase = nullptr;
     std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
     std::uint64_t m_snapshotRevision = 0;
+    QList<SemanticSymbolRecord> m_nativeSymbolRecords;
+    QHash<QString, QList<int>> m_nativeRecordIndexesByFile;
+    QHash<QString, QString> m_nativeFileContents;
+    QHash<QString, int> m_nativeStableKeyIndexes;
+    int m_nextNativeLocalHandle = 1;
     static std::unique_ptr<SemanticIndex> instance;
+
+    void replaceNativeSymbolRecordsForFile(
+        const QString& fileName,
+        const QList<SemanticSymbolRecord>& records,
+        const QString& content);
+    void rebuildNativeStoreIndexes();
+    QList<SemanticSymbolRecord> nativeSymbolRecords(
+        const QString& fileName = QString()) const;
+    QList<SemanticSymbolRecord> nativeSymbolRecordsExcludingFiles(
+        const QSet<QString>& normalizedFileNames) const;
+    SemanticSymbolRecord nativeSymbolRecordByStableKey(
+        const SymbolStableKey& key) const;
+    bool hasNativeCachedFileContent(const QString& fileName) const;
+    QString nativeCachedFileContent(const QString& fileName) const;
 
     SemanticDefinitionResult bestDefinitionFromCandidates(
         const QList<SemanticSymbolRecord>& candidates,

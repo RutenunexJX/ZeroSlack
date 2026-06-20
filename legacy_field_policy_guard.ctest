@@ -149,6 +149,10 @@ set(PHASE_I1_RECORD_NATIVE_MANAGER_FILES
     slangmanagersymbols.cpp
 )
 
+set(PHASE_I2_NATIVE_STORE_PUBLICATION_FILES
+    semanticindexsnapshotpublication.cpp
+)
+
 set(H0_LEGACY_CORE_ALLOWLIST
     semanticcollectoradapter.cpp
     semanticcollectoradapter.h
@@ -863,6 +867,38 @@ if(phase_i1_manager_violations)
     list(JOIN phase_i1_manager_violations "\n  " phase_i1_manager_violation_text)
     message(FATAL_ERROR
         "Phase I1 Slang manager/collector legacy extraction APIs must not return:\n  ${phase_i1_manager_violation_text}")
+endif()
+
+set(phase_i2_publication_missing_files)
+set(phase_i2_publication_violations)
+foreach(relative_path IN LISTS PHASE_I2_NATIVE_STORE_PUBLICATION_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND phase_i2_publication_missing_files "${relative_path}")
+        continue()
+    endif()
+    file(READ "${path}" content)
+    string(REGEX MATCH
+        "(semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles)[ \t\r\n]*\\("
+        legacy_store_match
+        "${content}")
+
+    if(legacy_store_match)
+        list(APPEND phase_i2_publication_violations
+             "${relative_path}: ${legacy_store_match}")
+    endif()
+endforeach()
+
+if(phase_i2_publication_missing_files)
+    list(JOIN phase_i2_publication_missing_files "\n  " phase_i2_publication_missing_text)
+    message(FATAL_ERROR
+        "Phase I2 native store publication guard references missing files:\n  ${phase_i2_publication_missing_text}")
+endif()
+
+if(phase_i2_publication_violations)
+    list(JOIN phase_i2_publication_violations "\n  " phase_i2_publication_violation_text)
+    message(FATAL_ERROR
+        "Phase I2 snapshot publication must read native SemanticIndex records:\n  ${phase_i2_publication_violation_text}")
 endif()
 
 set(h0_allowlist_missing_files)

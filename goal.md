@@ -166,6 +166,7 @@ UI Layer
 - Slang collection should emit semantic-native records or store entries as the primary output.
 - I1 is complete: the analyzer-facing collection path consumes semantic-native records directly, the collector internals build `SemanticSymbolRecord` as the primary carrier, and the legacy `collectSymbols` / `extractSymbols` / `extractWorkspaceSymbols` extraction APIs are deleted.
 - The backing semantic store should own semantic-native records, cached content, local handles, stable-key indexes, and file replacement without depending on `sym_list::SymbolInfo`.
+- I2 is in progress: `SemanticIndex` now owns native symbol records, file contents, local handles, and stable-key indexes before bridging to the remaining `sym_list` compatibility layer.
 - Scope rebuild, module containment, module lookup, and relationship containment should use semantic metadata, owner/type records, stable keys, and explicit local handles instead of `symbolId`, `symbolType`, `moduleScope`, or `dataType`.
 - `symboltaxonomylegacy.h`, `sym_list::SymbolInfo`, `sym_list::sym_type_e`, legacy fields, and reverse adapter conversions should be deleted when collector/store migration is complete.
 - Phase I is complete only when the final release gate proves zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes, including a passing `ZEROSLACK_PHASE_I_ZERO_TARGET` scan.
