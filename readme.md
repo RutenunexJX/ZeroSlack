@@ -37,7 +37,7 @@ Thin UI consumers
 - The Phase G release gate passed locally with full Ninja and full CTest.
 - The Phase H release gate passed locally with full Ninja, full CTest, `legacy_field_policy_guard`, static legacy API scans, docs consistency review, and forbidden-file regression checks.
 - Completion compatibility, snapshot/store `SymbolInfo` carriers, feature-service internal helpers, `syminfo` legacy queries, and collector/import adapter surfaces were tightened during Phase H.
-- Phase I progress tracking uses per-subphase accounting: each I subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage. Current subphase: I4.
+- Phase I progress tracking uses per-subphase accounting: each I subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage. Current subphase: I5.
 - I1 first block is complete: Slang collection now exposes semantic-native record APIs and `SymbolAnalyzer` consumes `extractSymbolRecords` / `extractWorkspaceSymbolRecords` directly instead of converting collector symbols in the analyzer layer.
 - I1 second block is complete: `slangsymbolcollector` now builds `SemanticSymbolRecord` as the primary collector output.
 - I1 is complete: `collectSymbols`, `extractSymbols`, and `extractWorkspaceSymbols` are deleted from the tracked collector/manager/test source, leaving Slang symbol extraction record-native.
@@ -57,7 +57,7 @@ Thin UI consumers
 - I3 sixth block is complete: `SemanticIndex` now owns the attached relationship engine pointer for relationship queries, completion relationship facts, and snapshot publication instead of fetching it from `sym_list`.
 - I3 seventh block is complete: `sym_list` no longer stores, exposes, or forwards a relationship engine; `SemanticIndex` directly rebuilds native relationship facts when records change or an engine is attached.
 - I3 eighth block is complete: `SemanticIndex` no longer mirrors semantic records back into `sym_list`, and the reverse relationship/scope mirror conversion is deleted and guarded against returning.
-- I4 is current: delete the remaining legacy carrier APIs and compatibility taxonomy surface now that semantic store, scope, and relationship paths no longer depend on them.
+- I4 is complete: remaining legacy carrier APIs and compatibility taxonomy surface have been deleted or isolated now that semantic store, scope, and relationship paths no longer depend on them.
 - I4 first block is complete: the unused `semanticcollectoradapter` source/header have been removed from CMake and guarded as forbidden legacy collector adapter files.
 - I4 second block is complete: `SemanticIndex` no longer exposes or stores a legacy `sym_list` database injection/access API.
 - I4 third block is complete: dead `sym_list` symbol database mutator/accessor/index/scope-tree storage has been deleted, including `syminfoindex.cpp`, `syminfoscope.cpp`, and `scope_tree.h`.
@@ -72,6 +72,8 @@ Thin UI consumers
 - I4 twelfth block is complete: legacy raw collector kind round-trip helpers have been removed from the public taxonomy compatibility header.
 - I4 thirteenth block is complete: tracked tests no longer include the removed `semanticcollectoradapter` header; legacy fixture-to-record conversion is isolated in a test fixture helper and guarded against adapter include regressions.
 - I4 fourteenth block is complete: direct `symboltaxonomylegacy.h` includes in tracked tests are isolated to the legacy fixture conversion helper and guarded against spreading back into test bodies.
+- I4 fifteenth block is complete: global `symboltaxonomylegacy.h` includes are guarded to remain isolated to `symboltaxonomy.cpp` and the test fixture conversion helper.
+- I5 is current: run the Phase I release gate, enable the zero-legacy target scan, resolve remaining final-scan findings, and update docs.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.
