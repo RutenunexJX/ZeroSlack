@@ -76,6 +76,7 @@ Thin UI consumers
 - I5 is current: run the Phase I release gate, enable the zero-legacy target scan, resolve remaining final-scan findings, and update docs.
 - I5 first block is complete: lowercase `rawCollectorKind` / `requestedRawCollectorKind` field and helper names were renamed to semantic-native `collectorKind` / `CollectorKind` naming, and the guard continues to reserve the raw names as retired compatibility terms.
 - I5 second block is complete: `symboltaxonomylegacy.h` and the production `sym_type_e` taxonomy overloads were deleted; test fixture conversion now owns the remaining `SymbolInfo` to semantic metadata adapter needed by tracked tests.
+- I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake no longer builds them, and the Phase I zero target now passes for core source while fixture-only `sym_list` remains under `test_sv`.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

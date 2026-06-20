@@ -194,9 +194,6 @@ set(ZEROSLACK_CORE_SOURCES
     symboltaxonomy.cpp
     slangsymbolcollector.cpp
     slangsymbolcollectorhelpers.cpp
-    syminfocontent.cpp
-    syminfomodulelookup.cpp
-    syminfo.cpp
     slangmanagerrelationships.cpp
     slangmanagersymbols.cpp
     tabdocumentqueries.cpp
@@ -310,7 +307,6 @@ set(ZEROSLACK_CORE_SOURCES
     symboloutlinemodel.h
     symbolsemanticmetadata.h
     symboltaxonomy.h
-    syminfo.h
     tabdocumentqueries.h
     tabfileio.h
     tabmanager.h
@@ -395,19 +391,37 @@ if(BUILD_TESTING)
     )
     string(REPLACE ";" "\\;" ZEROSLACK_TEST_PATH "${ZEROSLACK_TEST_PATH}")
 
+    set(ZEROSLACK_LEGACY_FIXTURE_SOURCES
+        test_sv/syminfo.cpp
+        test_sv/syminfocontent.cpp
+        test_sv/syminfomodulelookup.cpp
+    )
+
     add_executable(ts_doc_test test_sv/ts_doc_test.cpp)
     target_link_libraries(ts_doc_test PRIVATE zeroslack_core)
 
-    add_executable(completion_test test_sv/completion_test.cpp)
+    add_executable(completion_test
+        test_sv/completion_test.cpp
+        ${ZEROSLACK_LEGACY_FIXTURE_SOURCES}
+    )
     target_link_libraries(completion_test PRIVATE zeroslack_core)
 
-    add_executable(jump_test test_sv/jump_test.cpp)
+    add_executable(jump_test
+        test_sv/jump_test.cpp
+        ${ZEROSLACK_LEGACY_FIXTURE_SOURCES}
+    )
     target_link_libraries(jump_test PRIVATE zeroslack_core)
 
-    add_executable(relationship_test test_sv/relationship_test.cpp)
+    add_executable(relationship_test
+        test_sv/relationship_test.cpp
+        ${ZEROSLACK_LEGACY_FIXTURE_SOURCES}
+    )
     target_link_libraries(relationship_test PRIVATE zeroslack_core)
 
-    add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
+    add_executable(gui_smoke_test
+        test_sv/gui_smoke_test.cpp
+        ${ZEROSLACK_LEGACY_FIXTURE_SOURCES}
+    )
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)

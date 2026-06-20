@@ -172,6 +172,7 @@ UI Layer
 - I5 is current: run the Phase I release gate and update docs. The target is zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes; the opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` guard must pass.
 - I5 first block is complete: lowercase `rawCollectorKind` / `requestedRawCollectorKind` field and helper names were replaced by `collectorKind` fields and `CollectorKind` enum/type names, leaving the remaining I5 work focused on `sym_list`, legacy taxonomy, and `syminfo` zero-target findings.
 - I5 second block is complete: `symboltaxonomylegacy.h` and production `sym_type_e` / `SymbolInfo` taxonomy overloads were deleted; tracked tests use a fixture-local conversion helper instead of a production legacy taxonomy API.
+- I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake no longer builds them, the guard prevents root carrier files from returning, and the Phase I zero target now passes for core source.
 - Remaining `sym_list::SymbolInfo`, `sym_list::sym_type_e`, legacy fields, and reverse adapter conversions should be deleted when collector/store migration is complete.
 - Phase I is complete only when the final release gate proves zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes, including a passing `ZEROSLACK_PHASE_I_ZERO_TARGET` scan.
 

@@ -204,6 +204,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - I5 is current: run the Phase I release gate and update docs. The target is zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes; the opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` guard must pass.
 - I5 first block is complete: lowercase `rawCollectorKind` / `requestedRawCollectorKind` field and helper names were removed from source contracts in favor of `collectorKind` fields and `CollectorKind` enum/type names; the normal guard still catches attempts to reintroduce the retired raw names, while the opt-in zero target now advances to the remaining `sym_list`, legacy taxonomy, and `syminfo` findings.
 - I5 second block is complete: the retired `symboltaxonomylegacy.h` header was deleted and production `SymbolTaxonomy` no longer exposes or implements `sym_list::sym_type_e` / `sym_list::SymbolInfo` overloads; fixture-only conversion moved into `test_sv/semantic_fixture_records.h`, and the opt-in zero target now advances to the remaining `syminfo*` carrier files.
+- I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake no longer builds them, `legacy_field_policy_guard.ctest` prevents the root carrier files from returning, and `ZEROSLACK_PHASE_I_ZERO_TARGET` now passes for core source.
 
 ### Phase I Goal Mode
 

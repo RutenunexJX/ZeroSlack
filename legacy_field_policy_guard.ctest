@@ -154,8 +154,6 @@ set(PHASE_I2_NATIVE_STORE_PUBLICATION_FILES
 )
 
 set(PHASE_I2_REMOVED_LEGACY_REFRESH_FILES
-    syminfo.h
-    syminfocontent.cpp
 )
 
 set(PHASE_I2_NATIVE_STORE_BRIDGE_FILES
@@ -190,7 +188,6 @@ set(PHASE_I3_NATIVE_RELATIONSHIP_OWNER_FILES
 )
 
 set(PHASE_I3_NATIVE_CONTAINMENT_FORWARDING_FILES
-    syminfo.h
 )
 
 set(PHASE_I3_REMOVED_LEGACY_RELATIONSHIP_MIRROR_FILES
@@ -206,6 +203,13 @@ set(PHASE_I5_REMOVED_LEGACY_TAXONOMY_FILES
     symboltaxonomylegacy.h
 )
 
+set(PHASE_I5_REMOVED_LEGACY_SYMINFO_FILES
+    syminfo.cpp
+    syminfo.h
+    syminfocontent.cpp
+    syminfomodulelookup.cpp
+)
+
 set(PHASE_I4_NATIVE_SEMANTIC_INDEX_FILES
     semanticindex.cpp
     semanticindex.h
@@ -218,9 +222,6 @@ set(PHASE_I4_REMOVED_LEGACY_SYM_STORE_FILES
 )
 
 set(PHASE_I3_REMOVED_LEGACY_MODULE_LOOKUP_FILES
-    syminfo.cpp
-    syminfo.h
-    syminfomodulelookup.cpp
 )
 
 set(H0_LEGACY_CORE_ALLOWLIST
@@ -231,9 +232,6 @@ set(H0_LEGACY_CORE_ALLOWLIST
     slangsymbolcollectorhelpers.cpp
     slangsymbolcollectorhelpers.h
     symboltaxonomy.cpp
-    syminfo.cpp
-    syminfo.h
-    syminfomodulelookup.cpp
 )
 
 set(H0_LEGACY_CORE_PATTERNS
@@ -1287,6 +1285,20 @@ if(phase_i5_legacy_taxonomy_file_violations)
         "Phase I5 removed legacy taxonomy files must not return:\n  ${phase_i5_legacy_taxonomy_file_violation_text}")
 endif()
 
+set(phase_i5_legacy_syminfo_file_violations)
+foreach(relative_path IN LISTS PHASE_I5_REMOVED_LEGACY_SYMINFO_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(EXISTS "${path}")
+        list(APPEND phase_i5_legacy_syminfo_file_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(phase_i5_legacy_syminfo_file_violations)
+    list(JOIN phase_i5_legacy_syminfo_file_violations "\n  " phase_i5_legacy_syminfo_file_violation_text)
+    message(FATAL_ERROR
+        "Phase I5 removed legacy syminfo carrier files must not return:\n  ${phase_i5_legacy_syminfo_file_violation_text}")
+endif()
+
 file(GLOB phase_i4_test_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
@@ -1409,10 +1421,6 @@ if(phase_i4_sym_store_file_violations)
 endif()
 
 set(phase_i4_sym_store_surface_files
-    syminfo.cpp
-    syminfo.h
-    syminfocontent.cpp
-    syminfomodulelookup.cpp
 )
 set(phase_i4_sym_store_surface_missing_files)
 set(phase_i4_sym_store_surface_violations)
