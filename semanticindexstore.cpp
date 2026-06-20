@@ -319,7 +319,7 @@ void SemanticIndex::updateSymbolRecordsForFile(
 {
     replaceNativeSymbolRecordsForFile(fileName, records, content);
 
-    updateSymbolDatabaseRecordsForFile(
+    mirrorSemanticRecordsToLegacyRelationshipDatabase(
         symbolDatabase(),
         fileName,
         records,

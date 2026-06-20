@@ -100,7 +100,7 @@ QList<SemanticSymbolRecord> semanticSymbolRecordsForCollectedSymbols(
 }
 
 namespace {
-sym_list::SymbolInfo symbolInfoForSemanticRecord(
+sym_list::SymbolInfo legacyRelationshipSymbolForSemanticRecord(
     const SemanticSymbolRecord& record)
 {
     sym_list::SymbolInfo symbol;
@@ -121,7 +121,7 @@ sym_list::SymbolInfo symbolInfoForSemanticRecord(
 
 }
 
-void updateSymbolDatabaseRecordsForFile(
+void mirrorSemanticRecordsToLegacyRelationshipDatabase(
     sym_list* database,
     const QString& fileName,
     const QList<SemanticSymbolRecord>& records,
@@ -134,7 +134,7 @@ void updateSymbolDatabaseRecordsForFile(
     symbols.reserve(records.size());
     for (const SemanticSymbolRecord& record : records) {
         if (record.isValid())
-            symbols.append(symbolInfoForSemanticRecord(record));
+            symbols.append(legacyRelationshipSymbolForSemanticRecord(record));
     }
 
     database->setSymbolsForFile(
