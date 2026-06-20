@@ -1,7 +1,7 @@
 #ifndef SLANGSYMBOLCOLLECTOR_H
 #define SLANGSYMBOLCOLLECTOR_H
 
-#include "syminfo.h"
+#include "semanticindex.h"
 
 #include <QList>
 
@@ -10,6 +10,9 @@ class Compilation;
 }
 
 namespace slang_symbols {
+
+void collectSymbolRecords(slang::ast::Compilation& compilation,
+                          QList<SemanticSymbolRecord>& outList);
 
 void collectSymbols(slang::ast::Compilation& compilation,
                     QList<sym_list::SymbolInfo>& outList);

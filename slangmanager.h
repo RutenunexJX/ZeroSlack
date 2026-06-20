@@ -105,6 +105,14 @@ public:
                                                const QStringList& includeDirs = {},
                                                const QHash<QString, QString>& defines = {});
 
+    /// Single-file / hot-edit: parse content and extract semantic-native symbol records.
+    /// Returns empty list on parse/elaboration failure (exceptions caught).
+    QList<SemanticSymbolRecord> extractSymbolRecords(
+        const QString& fileName,
+        const QString& content,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {});
+
     /// Single-file / hot-edit: parse content and return Slang diagnostics as semantic data.
     QList<SemanticDiagnostic> extractDiagnostics(const QString& fileName,
                                                  const QString& content,
@@ -114,6 +122,12 @@ public:
     /// Workspace-wide: load all SV files (by path), compile together, extract all symbols.
     /// filePaths are read from disk inside this call. Returns empty list on failure.
     QList<sym_list::SymbolInfo> extractWorkspaceSymbols(
+        const QStringList& filePaths,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {});
+
+    /// Workspace-wide: load all SV files, compile together, and extract semantic-native records.
+    QList<SemanticSymbolRecord> extractWorkspaceSymbolRecords(
         const QStringList& filePaths,
         const QStringList& includeDirs = {},
         const QHash<QString, QString>& defines = {});

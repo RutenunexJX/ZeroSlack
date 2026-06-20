@@ -1,4 +1,5 @@
 #include "slangsymbolcollector.h"
+#include "semanticcollectoradapter.h"
 #include "slangsymbolcollectorhelpers.h"
 
 #include <slang/ast/ASTVisitor.h>
@@ -22,8 +23,10 @@
 using namespace slang::ast;
 using namespace slang_symbols::detail;
 
-void slang_symbols::collectSymbols(slang::ast::Compilation& compilation,
-                                   QList<sym_list::SymbolInfo>& outList)
+namespace {
+
+void collectLegacySymbols(slang::ast::Compilation& compilation,
+                          QList<sym_list::SymbolInfo>& outList)
 {
     const slang::SourceManager* sm = compilation.getSourceManager();
     if (!sm)
@@ -266,4 +269,20 @@ void slang_symbols::collectSymbols(slang::ast::Compilation& compilation,
     );
 
     root.visit(visitor);
+}
+
+}
+
+void slang_symbols::collectSymbolRecords(slang::ast::Compilation& compilation,
+                                         QList<SemanticSymbolRecord>& outList)
+{
+    QList<sym_list::SymbolInfo> legacySymbols;
+    collectLegacySymbols(compilation, legacySymbols);
+    outList = semanticSymbolRecordsForCollectedSymbols(legacySymbols);
+}
+
+void slang_symbols::collectSymbols(slang::ast::Compilation& compilation,
+                                   QList<sym_list::SymbolInfo>& outList)
+{
+    collectLegacySymbols(compilation, outList);
 }

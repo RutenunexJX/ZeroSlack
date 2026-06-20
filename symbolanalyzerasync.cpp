@@ -1,6 +1,5 @@
 #include "symbolanalyzer.h"
 
-#include "semanticcollectoradapter.h"
 #include "slangmanager.h"
 #include "symbolanalyzerworkspace.h"
 #include "workspacemanager.h"
@@ -58,12 +57,12 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 
     QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles]() {
         SlangManager symbolAnalyzer;
-        const auto symbols =
-            symbolAnalyzer.extractWorkspaceSymbols(svFiles, includeDirs, defines);
+        const auto records =
+            symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles, includeDirs, defines);
         WorkspaceAnalysisResult result =
             SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
                 svFiles,
-                semanticSymbolRecordsForCollectedSymbols(symbols),
+                records,
                 isCancelled);
         SlangManager diagnosticsAnalyzer;
         result.diagnostics =
@@ -154,8 +153,7 @@ void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QStr
         result.generation = generation;
         SlangManager symbolAnalyzer;
         result.symbolRecords =
-            semanticSymbolRecordsForSymbols(
-                symbolAnalyzer.extractSymbols(fileName, content));
+            symbolAnalyzer.extractSymbolRecords(fileName, content);
         SlangManager diagnosticsAnalyzer;
         result.diagnostics = diagnosticsAnalyzer.extractDiagnostics(fileName, content);
         return result;
