@@ -67,6 +67,7 @@ Thin UI consumers
 - I4 seventh block is complete: legacy `SymbolInfo` interface helper and declaration-helper overloads have been removed from the public taxonomy compatibility header.
 - I4 eighth block is complete: legacy `SymbolInfo` scope/visibility helper APIs have been deleted; definition visibility callers use the native semantic metadata overload.
 - I4 ninth block is complete: legacy taxonomy no longer exposes `packageScopeNames(QList<SymbolInfo>)`; tests compute package scopes locally before building semantic records.
+- I4 tenth block is complete: legacy completion type matching compatibility APIs have been deleted in favor of `SemanticCompletionKind` metadata matching.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

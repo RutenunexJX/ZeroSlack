@@ -257,57 +257,6 @@ SemanticMetadata computedSemanticMetadata(
     return metadata;
 }
 
-bool semanticMetadataMatchesRequest(
-    const SemanticMetadata& metadata,
-    sym_list::sym_type_e requestedType,
-    const QString& dataType,
-    bool parameterAlias)
-{
-    switch (requestedType) {
-    case sym_list::sym_module:
-        return metadata.declarationKind == DeclarationKind::Module;
-    case sym_list::sym_interface:
-    case sym_list::sym_interface_assco_struct:
-        return metadata.declarationKind == DeclarationKind::Interface;
-    case sym_list::sym_package:
-        return metadata.declarationKind == DeclarationKind::Package;
-    case sym_list::sym_typedef:
-        return metadata.declarationKind == DeclarationKind::Typedef;
-    case sym_list::sym_enum:
-        return metadata.declarationKind == DeclarationKind::Enum
-            || (metadata.declarationKind == DeclarationKind::Typedef
-                && dataType == QLatin1String("enum"));
-    case sym_list::sym_parameter:
-        return metadata.declarationKind == DeclarationKind::Parameter
-            || (parameterAlias
-                && metadata.declarationKind == DeclarationKind::Localparam);
-    case sym_list::sym_localparam:
-        return metadata.declarationKind == DeclarationKind::Localparam;
-    case sym_list::sym_reg:
-    case sym_list::sym_wire:
-    case sym_list::sym_logic:
-        return metadata.declarationKind == DeclarationKind::Signal;
-    case sym_list::sym_packed_struct:
-    case sym_list::sym_unpacked_struct:
-        return metadata.declarationKind == DeclarationKind::Struct;
-    case sym_list::sym_packed_struct_var:
-    case sym_list::sym_unpacked_struct_var:
-        return metadata.declarationKind == DeclarationKind::StructVariable;
-    case sym_list::sym_struct_member:
-        return metadata.declarationKind == DeclarationKind::StructMember;
-    case sym_list::sym_inst:
-        return isInstanceDeclaration(metadata);
-    case sym_list::sym_task:
-        return metadata.declarationKind == DeclarationKind::Task;
-    case sym_list::sym_function:
-        return metadata.declarationKind == DeclarationKind::Function;
-    case sym_list::sym_def_define:
-        return metadata.declarationKind == DeclarationKind::Macro;
-    default:
-        return false;
-    }
-}
-
 } // namespace
 
 SemanticMetadata semanticMetadata(
@@ -679,25 +628,6 @@ sym_list::sym_type_e outlineGroupType(const SemanticMetadata& metadata)
     return sym_list::sym_user;
 }
 
-bool matchesRequestedSymbolType(const SemanticMetadata& metadata,
-                                sym_list::sym_type_e requestedType,
-                                const QString& dataType)
-{
-    if (typedCompletionSymbolTypeMatches(
-            legacySymbolType(metadata.rawCollectorKind),
-            requestedType,
-            dataType)) {
-        return true;
-    }
-    if (hasRawCollectorKind(metadata))
-        return false;
-    return semanticMetadataMatchesRequest(
-        metadata,
-        requestedType,
-        dataType,
-        false);
-}
-
 int definitionPriority(sym_list::sym_type_e type)
 {
     switch (type) {
@@ -956,40 +886,6 @@ bool matchesSearchIntent(const SemanticMetadata& metadata, SymbolSearchIntent in
     return false;
 }
 
-bool commandSymbolTypeMatches(sym_list::sym_type_e symbolType,
-                              sym_list::sym_type_e commandType,
-                              const QString& dataType)
-{
-    if (symbolType == commandType)
-        return true;
-    if (commandType == sym_list::sym_parameter
-        && symbolType == sym_list::sym_localparam) {
-        return true;
-    }
-    return commandType == sym_list::sym_enum
-        && symbolType == sym_list::sym_typedef
-        && dataType == QLatin1String("enum");
-}
-
-bool commandSymbolTypeMatches(const SemanticMetadata& metadata,
-                              sym_list::sym_type_e commandType,
-                              const QString& dataType)
-{
-    if (commandSymbolTypeMatches(
-            legacySymbolType(metadata.rawCollectorKind),
-            commandType,
-            dataType)) {
-        return true;
-    }
-    if (hasRawCollectorKind(metadata))
-        return false;
-    return semanticMetadataMatchesRequest(
-        metadata,
-        commandType,
-        dataType,
-        true);
-}
-
 bool isInternalCompletionCandidate(sym_list::sym_type_e type)
 {
     return type == sym_list::sym_reg
@@ -1149,38 +1045,6 @@ bool isDefinitionVisibleInContext(
         || moduleName.isEmpty()
         || ownerName == moduleName
         || metadata.visibility == SymbolVisibility::PackageVisible;
-}
-
-bool typedCompletionSymbolTypeMatches(
-    sym_list::sym_type_e symbolType,
-    sym_list::sym_type_e requestedType,
-    const QString& dataType)
-{
-    if (symbolType == requestedType)
-        return true;
-    return requestedType == sym_list::sym_enum
-        && symbolType == sym_list::sym_typedef
-        && dataType == QLatin1String("enum");
-}
-
-bool typedCompletionSymbolTypeMatches(
-    const SemanticMetadata& metadata,
-    sym_list::sym_type_e requestedType,
-    const QString& dataType)
-{
-    if (typedCompletionSymbolTypeMatches(
-            legacySymbolType(metadata.rawCollectorKind),
-            requestedType,
-            dataType)) {
-        return true;
-    }
-    if (hasRawCollectorKind(metadata))
-        return false;
-    return semanticMetadataMatchesRequest(
-        metadata,
-        requestedType,
-        dataType,
-        false);
 }
 
 bool semanticCompletionKindMatches(const SemanticMetadata& metadata,

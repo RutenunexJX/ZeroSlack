@@ -411,10 +411,13 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::isDirectModuleContextCompletionRequest(
                    sym_list::sym_unpacked_struct_var),
                true);
-    expectBool("SymbolTaxonomy enum typedef typed completion",
-               SymbolTaxonomy::typedCompletionSymbolTypeMatches(
-                   sym_list::sym_typedef,
-                   sym_list::sym_enum,
+    SymbolTaxonomy::SemanticMetadata enumTypedefMetadata;
+    enumTypedefMetadata.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Typedef;
+    expectBool("SymbolTaxonomy enum typedef semantic completion",
+               SymbolTaxonomy::semanticCompletionKindMatches(
+                   enumTypedefMetadata,
+                   SymbolTaxonomy::SemanticCompletionKind::EnumType,
                    QStringLiteral("enum")),
                true);
     sym_list::SymbolInfo metadataSignalSymbol;
@@ -434,14 +437,14 @@ int main(int argc, char** argv) {
     const SymbolTaxonomy::SemanticMetadata metadataSignal =
         SymbolTaxonomy::semanticMetadata(metadataSignalSymbol);
     expectBool("SymbolTaxonomy metadata command type",
-               SymbolTaxonomy::commandSymbolTypeMatches(
+               SymbolTaxonomy::semanticCompletionKindMatches(
                    metadataSignal,
-                   sym_list::sym_logic),
+                   SymbolTaxonomy::SemanticCompletionKind::Logic),
                true);
     expectBool("SymbolTaxonomy metadata typed completion",
-               SymbolTaxonomy::typedCompletionSymbolTypeMatches(
+               SymbolTaxonomy::semanticCompletionKindMatches(
                    metadataSignal,
-                   sym_list::sym_logic),
+                   SymbolTaxonomy::SemanticCompletionKind::Logic),
                true);
     expectBool("SymbolTaxonomy metadata signal definition candidate",
                SymbolTaxonomy::isDefinitionCandidate(metadataSignal),
@@ -528,9 +531,7 @@ int main(int argc, char** argv) {
                    == sym_list::sym_module,
                true);
     expectBool("SymbolTaxonomy requested type uses metadata",
-               SymbolTaxonomy::matchesRequestedSymbolType(
-                   syntheticModuleMetadata,
-                   sym_list::sym_module),
+               SymbolTaxonomy::isModuleDeclaration(syntheticModuleMetadata),
                true);
     expectEq("SymbolTaxonomy metadata label",
              SymbolTaxonomy::symbolTypeLabel(syntheticModuleMetadata),
