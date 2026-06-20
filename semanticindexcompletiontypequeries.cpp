@@ -38,14 +38,6 @@ bool commandCompletionScopeVisibleForRecord(
                 == SymbolTaxonomy::SymbolVisibility::PackageVisible);
 }
 
-bool globalSymbolInfoVisibleForRecord(
-    const SemanticSymbolRecord& record,
-    sym_list::sym_type_e requestedType)
-{
-    return alwaysGlobalSymbolInfoType(requestedType)
-        || record.owner.name.isEmpty();
-}
-
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
@@ -92,33 +84,5 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
                        Qt::CaseInsensitive)
                 < 0;
         });
-    return result;
-}
-
-QList<sym_list::SymbolInfo> SemanticIndex::getGlobalSymbolInfosByType(
-    sym_list::sym_type_e symbolType,
-    const QString& prefix) const
-{
-    QList<sym_list::SymbolInfo> result;
-    if (!globalSymbolInfoType(symbolType))
-        return result;
-
-    const QList<SemanticSymbolRecord> records = getSymbolRecords();
-    for (const SemanticSymbolRecord& record : records) {
-        const SymbolTaxonomy::SemanticMetadata metadata =
-            completionMetadataForRecord(record);
-        if (!globalSymbolInfoMetadata(metadata)
-            || !commandSymbolTypeMatches(
-                metadata,
-                symbolType,
-                record.type.rawTypeText)
-            || !semanticCompletionNameMatches(record.name, prefix)) {
-            continue;
-        }
-
-        if (globalSymbolInfoVisibleForRecord(record, symbolType))
-            result.append(semanticSymbolInfoCarrierForRecord(record));
-    }
-
     return result;
 }

@@ -67,22 +67,6 @@ inline bool commandGlobalCompletionSymbolType(sym_list::sym_type_e type)
     return SymbolTaxonomy::isCommandGlobalCompletionType(type);
 }
 
-inline bool globalSymbolInfoType(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::isGlobalSymbolInfoType(type);
-}
-
-inline bool globalSymbolInfoMetadata(
-    const SymbolTaxonomy::SemanticMetadata& metadata)
-{
-    return SymbolTaxonomy::isGlobalSymbolInfoType(metadata);
-}
-
-inline bool alwaysGlobalSymbolInfoType(sym_list::sym_type_e type)
-{
-    return SymbolTaxonomy::isAlwaysGlobalSymbolInfoType(type);
-}
-
 inline bool alwaysGlobalCommandSymbolType(sym_list::sym_type_e type)
 {
     return SymbolTaxonomy::isAlwaysGlobalCommandSymbolType(type);
