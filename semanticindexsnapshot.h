@@ -36,7 +36,7 @@ public:
         const QStringList& fileNames,
         const QList<SemanticDiagnostic>& diagnostics) const;
 
-    QList<SemanticRelationship> getRelationships(
+    QList<SemanticRelationship> relationshipsForStableKey(
         const SymbolStableKey& key,
         bool outgoing = true) const;
     QList<SemanticDiagnostic> getDiagnostics(const QString& fileName = QString()) const;

@@ -85,7 +85,7 @@ QList<SemanticRelationship> SemanticIndex::getRelationships(
     bool outgoing) const
 {
     if (m_snapshot)
-        return m_snapshot->getRelationships(key, outgoing);
+        return m_snapshot->relationshipsForStableKey(key, outgoing);
 
     if (!key.isValid())
         return {};

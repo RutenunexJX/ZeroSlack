@@ -2004,14 +2004,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && reboundRelationship.toStableKey == stageStableKey,
                true);
     const QList<SemanticRelationship> reboundRelationships =
-        reboundSnapshot->getRelationships(topStableKey, true);
+        reboundSnapshot->relationshipsForStableKey(topStableKey, true);
     expectBool("semantic snapshot queries rebound relationship",
                reboundRelationships.size() == 1
                    && reboundRelationships.first().fromId == reboundTopSymbol.symbolId
                    && reboundRelationships.first().toId == reboundStageSymbol.symbolId,
                true);
     const QList<SemanticRelationship> reboundStableRelationships =
-        reboundSnapshot->getRelationships(topStableKey, true);
+        reboundSnapshot->relationshipsForStableKey(topStableKey, true);
     expectBool("semantic snapshot queries rebound relationship by stable key",
                reboundStableRelationships.size() == 1
                    && reboundStableRelationships.first().fromId
@@ -2056,7 +2056,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool enrichedTaskHasStableKeys = false;
     const SymbolStableKey captureStableKey = symbolStableKeyForSymbol(captureSymbol);
     for (const SemanticRelationship& relationship :
-         enrichedSnapshot.getRelationships(stageStableKey, true)) {
+         enrichedSnapshot.relationshipsForStableKey(stageStableKey, true)) {
         enrichedFoundTask = enrichedFoundTask
             || (relationship.toId == captureId
                 && relationship.type == SymbolRelationshipEngine::CALLS);
@@ -2192,7 +2192,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool singleFileSchedulerFoundStageRelationship = false;
     if (singleFileSchedulerResult.semanticSnapshot) {
         const QList<SemanticRelationship> schedulerTopRelationships =
-            singleFileSchedulerResult.semanticSnapshot->getRelationships(topStableKey, true);
+            singleFileSchedulerResult.semanticSnapshot
+                ->relationshipsForStableKey(topStableKey, true);
         for (const SemanticRelationship& relationship : schedulerTopRelationships) {
             singleFileSchedulerFoundStageRelationship =
                 singleFileSchedulerFoundStageRelationship
@@ -2755,7 +2756,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     bool schedulerFoundStageRelationship = false;
     if (schedulerResult.semanticSnapshot) {
         const QList<SemanticRelationship> schedulerTopRelationships =
-            schedulerResult.semanticSnapshot->getRelationships(topStableKey, true);
+            schedulerResult.semanticSnapshot
+                ->relationshipsForStableKey(topStableKey, true);
         for (const SemanticRelationship& relationship : schedulerTopRelationships) {
             schedulerFoundStageRelationship = schedulerFoundStageRelationship
                 || (relationship.toId == stageId

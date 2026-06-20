@@ -176,7 +176,7 @@ QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
     return result;
 }
 
-QList<SemanticRelationship> SemanticIndexSnapshot::getRelationships(
+QList<SemanticRelationship> SemanticIndexSnapshot::relationshipsForStableKey(
     const SymbolStableKey& key,
     bool outgoing) const
 {
