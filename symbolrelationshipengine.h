@@ -8,15 +8,20 @@
 #include <QString>
 #include <QPair>
 #include <QStringList>
+#include <functional>
 #include <memory>
 
 class sym_list;
+struct SemanticSymbolRecord;
 
 class SymbolRelationshipEngine : public QObject
 {
     Q_OBJECT
 
 public:
+    using SymbolRecordProvider =
+        std::function<QList<SemanticSymbolRecord>(const QString& fileName)>;
+
     enum RelationType {
         CONTAINS,
         REFERENCES,
@@ -40,10 +45,14 @@ public:
     };
 
     explicit SymbolRelationshipEngine(QObject *parent = nullptr);
+    explicit SymbolRelationshipEngine(
+        SymbolRecordProvider symbolRecordProvider,
+        QObject *parent = nullptr);
     explicit SymbolRelationshipEngine(sym_list* symbols, QObject *parent = nullptr);
     ~SymbolRelationshipEngine();
 
     void setSymbolDatabase(sym_list* symbols);
+    void setSymbolRecordProvider(SymbolRecordProvider symbolRecordProvider);
 
     void addRelationship(int fromSymbolId, int toSymbolId, RelationType type,
                         const QString& context = "", int confidence = 100);
@@ -114,6 +123,7 @@ private:
     QHash<RelationType, QList<QPair<int, int>>> relationshipsByType;
     QHash<QString, QSet<int>> symbolsByFile;
     sym_list* symbolDatabase = nullptr;
+    SymbolRecordProvider m_symbolRecordProvider;
 
     mutable QHash<QString, QList<int>> queryCache;
     mutable bool cacheValid = true;
@@ -124,7 +134,7 @@ private:
     void invalidateCacheForSymbol(int symbolId);
     void addToTypeIndex(int fromId, int toId, RelationType type);
     void removeFromTypeIndex(int fromId, int toId, RelationType type);
-    sym_list* symbols() const;
+    QList<SemanticSymbolRecord> symbolRecords(const QString& fileName = QString()) const;
 
     void findPathRecursive(int currentId, int targetId, int currentDepth, int maxDepth,
                           QSet<int>& visited, QList<int>& currentPath,

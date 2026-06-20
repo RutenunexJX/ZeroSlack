@@ -463,6 +463,11 @@ void SemanticIndex::refreshStructTypedefEnumForFile(const QString& fileName,
 
 void SemanticIndex::attachRelationshipEngine(SymbolRelationshipEngine* engine) const
 {
+    if (engine) {
+        engine->setSymbolRecordProvider([this](const QString& fileName) {
+            return getSymbolRecords(fileName);
+        });
+    }
     symbolDatabase()->setRelationshipEngine(engine);
 }
 

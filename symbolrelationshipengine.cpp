@@ -1,12 +1,11 @@
 #include "symbolrelationshipengine.h"
-#include "semanticcollectoradapter.h"
 #include "semanticindex.h"
 #include "symboltaxonomy.h"
-#include "syminfo.h"
 #include <QCoreApplication>
 #include <QThread>
 #include <QMetaObject>
 #include <algorithm>
+#include <utility>
 
 namespace {
 bool recordIsInModule(const SemanticSymbolRecord& record,
@@ -24,6 +23,14 @@ SymbolRelationshipEngine::SymbolRelationshipEngine(QObject *parent)
     queryCache.reserve(500);
 }
 
+SymbolRelationshipEngine::SymbolRelationshipEngine(
+    SymbolRecordProvider symbolRecordProvider,
+    QObject *parent)
+    : SymbolRelationshipEngine(parent)
+{
+    setSymbolRecordProvider(std::move(symbolRecordProvider));
+}
+
 SymbolRelationshipEngine::SymbolRelationshipEngine(sym_list* symbols, QObject *parent)
     : SymbolRelationshipEngine(parent)
 {
@@ -37,6 +44,12 @@ SymbolRelationshipEngine::~SymbolRelationshipEngine()
 void SymbolRelationshipEngine::setSymbolDatabase(sym_list* symbols)
 {
     symbolDatabase = symbols;
+}
+
+void SymbolRelationshipEngine::setSymbolRecordProvider(
+    SymbolRecordProvider symbolRecordProvider)
+{
+    m_symbolRecordProvider = std::move(symbolRecordProvider);
 }
 
 void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
@@ -195,8 +208,7 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
     beginUpdate();
     invalidateFileRelationships(fileName);
 
-    const QList<SemanticSymbolRecord> fileRecords =
-        semanticSymbolRecordsForDatabase(symbols(), fileName);
+    const QList<SemanticSymbolRecord> fileRecords = symbolRecords(fileName);
 
     for (const SemanticSymbolRecord& record : std::as_const(fileRecords)) {
         if (SymbolTaxonomy::isModuleDeclaration(
@@ -237,8 +249,7 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
 {
     clearAllRelationships();
 
-    const QList<SemanticSymbolRecord> allRecords =
-        semanticSymbolRecordsForDatabase(symbols());
+    const QList<SemanticSymbolRecord> allRecords = symbolRecords();
 
     QSet<QString> files;
     for (const SemanticSymbolRecord& record : std::as_const(allRecords))
@@ -280,7 +291,10 @@ void SymbolRelationshipEngine::removeFromTypeIndex(int fromId, int toId, Relatio
     }
 }
 
-sym_list* SymbolRelationshipEngine::symbols() const
+QList<SemanticSymbolRecord> SymbolRelationshipEngine::symbolRecords(
+    const QString& fileName) const
 {
-    return symbolDatabase ? symbolDatabase : sym_list::getInstance();
+    if (m_symbolRecordProvider)
+        return m_symbolRecordProvider(fileName);
+    return {};
 }

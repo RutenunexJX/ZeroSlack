@@ -806,7 +806,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         injectedRelationshipPath,
         {injectedModule, injectedSignal});
 
-    SymbolRelationshipEngine injectedRelationshipEngine(&injectedRelationshipSymbols);
+    SymbolRelationshipEngine injectedRelationshipEngine(
+        [&injectedRelationshipSymbols](const QString& fileName) {
+            return semanticSymbolRecordsForDatabase(&injectedRelationshipSymbols,
+                                                    fileName);
+        });
     injectedRelationshipEngine.buildFileRelationships(injectedRelationshipPath);
     expectBool("relationship engine uses injected symbol db",
                injectedRelationshipEngine.hasRelationship(
@@ -927,7 +931,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     const auto symbolOnlySnapshot = sharedSnapshotFromSymbols(
         snapshotFromSemanticIndex(db));
-    SmartRelationshipBuilder snapshotBuilder(&engine, nullptr, &slang);
+    SmartRelationshipBuilder snapshotBuilder(&engine, &slang);
     const QVector<RelationshipToAdd> snapshotBackedRels =
         snapshotBuilder.computeRelationships(topPath,
                                              contents.value(topPath),

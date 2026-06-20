@@ -50,6 +50,7 @@ Thin UI consumers
 - I2 is complete: the remaining write path is explicitly named `mirrorSemanticRecordsToLegacyRelationshipDatabase` and is an I3 transition boundary for scope/relationship containment migration, not a `SemanticIndex` store query fallback.
 - I3 is current: migrate scope rebuild, module containment, relationship containment, and module lookup away from the legacy relationship mirror.
 - I3 first block is complete: `SmartRelationshipBuilder` consumes semantic records through a `SemanticIndex` record provider instead of reading records back from `sym_list` or the collector adapter.
+- I3 second block is complete: `SymbolRelationshipEngine` file rebuild paths consume semantic records through a provider and no longer expose the legacy `symbols()` DB-to-record accessor.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.
