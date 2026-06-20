@@ -1,6 +1,5 @@
 #include "syminfo.h"
 
-#include <QReadLocker>
 #include <QRegularExpression>
 
 bool sym_list::isValidModuleName(const QString& name)
@@ -13,6 +12,5 @@ bool sym_list::isValidModuleName(const QString& name)
 
 QString sym_list::getCachedFileContent(const QString& fileName) const
 {
-    QReadLocker lock(&symbolDbLock);
     return previousFileContents.value(fileName, QString());
 }

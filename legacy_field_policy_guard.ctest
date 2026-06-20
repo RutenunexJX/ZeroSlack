@@ -190,7 +190,6 @@ set(PHASE_I3_NATIVE_RELATIONSHIP_OWNER_FILES
 )
 
 set(PHASE_I3_NATIVE_CONTAINMENT_FORWARDING_FILES
-    syminfoscope.cpp
     syminfo.h
 )
 
@@ -206,6 +205,12 @@ set(PHASE_I4_REMOVED_LEGACY_COLLECTOR_ADAPTER_FILES
 set(PHASE_I4_NATIVE_SEMANTIC_INDEX_FILES
     semanticindex.cpp
     semanticindex.h
+)
+
+set(PHASE_I4_REMOVED_LEGACY_SYM_STORE_FILES
+    scope_tree.h
+    syminfoindex.cpp
+    syminfoscope.cpp
 )
 
 set(PHASE_I3_REMOVED_LEGACY_MODULE_LOOKUP_FILES
@@ -225,9 +230,7 @@ set(H0_LEGACY_CORE_ALLOWLIST
     symboltaxonomylegacy.h
     syminfo.cpp
     syminfo.h
-    syminfoindex.cpp
     syminfomodulelookup.cpp
-    syminfoscope.cpp
 )
 
 set(H0_LEGACY_CORE_PATTERNS
@@ -1292,6 +1295,58 @@ if(phase_i4_semantic_index_violations)
     list(JOIN phase_i4_semantic_index_violations "\n  " phase_i4_semantic_index_violation_text)
     message(FATAL_ERROR
         "Phase I4 SemanticIndex must not expose legacy sym_list store injection/access:\n  ${phase_i4_semantic_index_violation_text}")
+endif()
+
+set(phase_i4_sym_store_file_violations)
+foreach(relative_path IN LISTS PHASE_I4_REMOVED_LEGACY_SYM_STORE_FILES)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(EXISTS "${path}")
+        list(APPEND phase_i4_sym_store_file_violations "${relative_path}")
+    endif()
+endforeach()
+
+if(phase_i4_sym_store_file_violations)
+    list(JOIN phase_i4_sym_store_file_violations "\n  " phase_i4_sym_store_file_violation_text)
+    message(FATAL_ERROR
+        "Phase I4 removed legacy sym_list store/scope files must not return:\n  ${phase_i4_sym_store_file_violation_text}")
+endif()
+
+set(phase_i4_sym_store_surface_files
+    syminfo.cpp
+    syminfo.h
+    syminfocontent.cpp
+    syminfomodulelookup.cpp
+)
+set(phase_i4_sym_store_surface_missing_files)
+set(phase_i4_sym_store_surface_violations)
+foreach(relative_path IN LISTS phase_i4_sym_store_surface_files)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND phase_i4_sym_store_surface_missing_files "${relative_path}")
+        continue()
+    endif()
+    file(READ "${path}" content)
+    string(REGEX MATCH
+        "(getAllSymbols[ \t\r\n]*\\(|addSymbol[ \t\r\n]*\\(|setSymbolsForFile[ \t\r\n]*\\(|clearSymbolsForFile[ \t\r\n]*\\(|symbolsForFileSnapshot[ \t\r\n]*\\(|rebuildScopeAndRelationshipsForFile[ \t\r\n]*\\(|getScopeManager[ \t\r\n]*\\(|symbolDatabase|fileNameIndex|symbolIdToIndex|lineBasedSymbols|symbolDbLock|allocateSymbolId[ \t\r\n]*\\(|detectChangedLines[ \t\r\n]*\\(|clearSymbolsForLines[ \t\r\n]*\\(|updateLineBasedSymbols[ \t\r\n]*\\(|rebuildAllIndexes[ \t\r\n]*\\(|addToIndexes[ \t\r\n]*\\(|removeFromIndexes[ \t\r\n]*\\()"
+        legacy_sym_store_match
+        "${content}")
+
+    if(legacy_sym_store_match)
+        list(APPEND phase_i4_sym_store_surface_violations
+             "${relative_path}: ${legacy_sym_store_match}")
+    endif()
+endforeach()
+
+if(phase_i4_sym_store_surface_missing_files)
+    list(JOIN phase_i4_sym_store_surface_missing_files "\n  " phase_i4_sym_store_surface_missing_text)
+    message(FATAL_ERROR
+        "Phase I4 sym_list store surface guard references missing files:\n  ${phase_i4_sym_store_surface_missing_text}")
+endif()
+
+if(phase_i4_sym_store_surface_violations)
+    list(JOIN phase_i4_sym_store_surface_violations "\n  " phase_i4_sym_store_surface_violation_text)
+    message(FATAL_ERROR
+        "Phase I4 sym_list legacy symbol store/index/scope API must not return:\n  ${phase_i4_sym_store_surface_violation_text}")
 endif()
 
 set(phase_i3_module_lookup_missing_files)

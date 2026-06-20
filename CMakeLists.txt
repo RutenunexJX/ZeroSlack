@@ -196,8 +196,6 @@ set(ZEROSLACK_CORE_SOURCES
     slangsymbolcollectorhelpers.cpp
     syminfocontent.cpp
     syminfomodulelookup.cpp
-    syminfoindex.cpp
-    syminfoscope.cpp
     syminfo.cpp
     slangmanagerrelationships.cpp
     slangmanagersymbols.cpp
@@ -222,7 +220,6 @@ set(ZEROSLACK_CORE_SOURCES
     completioncommandmode.h
     completioncommandkindadapter.h
     completionmanager.h
-    scope_tree.h
     version.h
     completionmodel.h
     completionmatcher.h

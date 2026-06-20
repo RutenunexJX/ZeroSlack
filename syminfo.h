@@ -6,15 +6,10 @@
 #include <QString>
 #include <QList>
 #include <QHash>
-#include <QSet>
-#include <QVector>
 #include <memory>
 #include <QDateTime>
-#include <QReadWriteLock>
-#include <QRegularExpression>
 
 class MainWindow;
-class ScopeManager;
 
 class sym_list{
 public:
@@ -143,17 +138,6 @@ public:
         int endColumn;
     };
 
-    void addSymbol(const SymbolInfo& symbol);
-    QList<SymbolInfo> getAllSymbols();
-    void clearSymbolsForFile(const QString& fileName);
-
-    /** Replace all symbols for a file with the given list (e.g. from Slang), then rebuild scope tree and CONTAINS relationships. */
-    void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols);
-    /** Same as above; if content is non-empty, updates fileStates (contentHash, symbolRelevantHash, lastAnalyzedLineCount) for needsAnalysis. */
-    void setSymbolsForFile(const QString& fileName, const QList<SymbolInfo>& symbols, const QString& content);
-
-    ScopeManager* getScopeManager() const;
-
     QString getCachedFileContent(const QString& fileName) const;
 
     static bool isValidModuleName(const QString& name);
@@ -169,23 +153,10 @@ public:
     bool contentAffectsSymbols(const QString& fileName, const QString& content);
 
 private:
-    mutable QReadWriteLock symbolDbLock;
-    QList<SymbolInfo> symbolDatabase;
-
-    QHash<QString, QList<int>> fileNameIndex;
-    QHash<int, int> symbolIdToIndex;
-
-    int nextSymbolId = 1;
-    int allocateSymbolId();
-
-    mutable ScopeManager* m_scopeManager = nullptr;
-
     static std::unique_ptr<sym_list> instance;
 
     void calculateLineColumn(const QString &text, int position, int &line, int &column);
     bool isMatchInComment(int matchStart, int matchLength);
-
-    QString currentFileName;
 
     struct FileState {
         QString contentHash;
@@ -196,24 +167,10 @@ private:
     };
     QHash<QString, FileState> fileStates;
 
-    QHash<QString, QHash<int, QList<SymbolInfo>>> lineBasedSymbols;
-
     QString calculateContentHash(const QString& content);
     QString calculateSymbolRelevantHash(const QString& content);
-    QList<int> detectChangedLines(const QString& fileName, const QString& newContent);
-    void clearSymbolsForLines(const QString& fileName, const QList<int>& lines);
-    void updateLineBasedSymbols(const SymbolInfo& symbol);
 
     QHash<QString, QString> previousFileContents;
-
-    void rebuildAllIndexes();
-    void addToIndexes(int symbolIndex);
-    void removeFromIndexes(int symbolIndex);
-
-    QList<SymbolInfo> symbolsForFileSnapshot(const QString& fileName) const;
-    /** Rebuild ScopeManager tree for fileName from current symbolDatabase entries. */
-    void rebuildScopeAndRelationshipsForFile(const QString& fileName);
-    void analyzeVariableReferences(const QString& fileName, const QString& content);
 
 };
 
