@@ -170,6 +170,29 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - G3 is complete: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, and raw collector compatibility are deleted from product-facing contracts or isolated to collector/import, taxonomy, completion compatibility, snapshot-local, and guarded adapter boundaries.
 - The full Phase G release gate passed locally with full Ninja, full CTest, legacy guard, product-facing API audit, docs consistency review, and forbidden-file regression checks.
 
+### Phase H: Semantic Core Slimdown
+
+- Status: planned next.
+- Goal: remove remaining legacy fields, APIs, redundant interfaces, and redundant compatibility logic from the semantic core rather than continuing to preserve them as broad adapter surfaces.
+- H0: define the final allowlist and strengthen `legacy_field_policy_guard.ctest` so `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `.symbolId`, `.symbolType`, `.moduleScope`, `.dataType`, int-id lookup APIs, and raw collector query APIs are forbidden outside a small explicit adapter boundary.
+- H1: introduce or finalize semantic-native enum/query types for completion, declaration filtering, owner/type metadata, and source roles so callers no longer pass raw collector kinds.
+- H2: migrate `SemanticIndexSnapshot` and semantic store internals from `sym_list::SymbolInfo` carriers to semantic-native records or store entries; keep any required collector conversion in one adapter.
+- H3: migrate completion contracts away from `SymbolInfo` / `sym_type_e`, then delete compatibility entry points such as `getCommandCompletionSymbols`, `getTypedCompletionSymbols`, `getGlobalSymbolInfosByType`, `getModuleInternalSymbolsByType`, and `getModuleContextSymbolsByType`.
+- H4: migrate feature-service private helpers in FSM graph, module brief, signal journey, semantic diff, and similar services to `SemanticSymbolRecord`, stable keys, local handles, and semantic metadata.
+- H5: delete or shrink `syminfo` legacy query APIs and indexes after snapshot/store and completion no longer depend on them.
+- H6: remove redundant conversion, filtering, sorting, and display helper logic left behind by H0-H5; keep only one owner for each semantic policy rule.
+- Phase H must be mostly serial because snapshot/store, completion, feature services, and collector adapters share core contracts.
+- Each H block should stay medium-sized, compile independently, and extend guards before or with the deletion it enables.
+
+### Release Gate After Phase H
+
+- Full Ninja must pass.
+- Full CTest must pass.
+- `legacy_field_policy_guard` must prove legacy field/API use is absent outside the final allowlist.
+- Static scans must confirm no product, service, report, completion, UI, scheduler, analyzer, or snapshot contract exposes `SymbolInfo`, `sym_type_e`, `.symbolId`, `.symbolType`, `.moduleScope`, `.dataType`, `getSymbolById`, `findSymbolId`, int-id relationships, or retired completion compatibility APIs.
+- Docs, goal, and plan consistency checks must pass.
+- Confirm qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, and long-lived scattered perflog probes have not returned.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
@@ -180,6 +203,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Safe batch blocks: focused service tests, independent query-service result migration, UI render-only conversion, and report display-field cleanup.
 - Not suitable for batching: symbol identity changes, `SymbolInfo` layout changes, `sym_type_e` compatibility changes, owner/type model migration, source role migration, snapshot publication rules, relationship rebind rules, and cross-service query contract changes.
 - F1-F3 should proceed in small serial blocks when changing semantic symbol records, relationship identity, compatibility APIs, owner/type metadata, completion item models, or query normalization.
+- Phase H should proceed in small serial blocks; avoid mixing guard expansion, snapshot/store migration, completion contract migration, feature-service helper migration, and collector adapter deletion in one commit.
 - Reduce batch size when blocks share core files, API boundaries, or real fixture expectations.
 
 ## Good Work Blocks

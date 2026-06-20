@@ -101,6 +101,104 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
     signaljourneyservice.cpp
 )
 
+set(H0_LEGACY_CORE_ALLOWLIST
+    clockresetdomainservice.cpp
+    clockresetdomainservice.h
+    completioncommandmode.cpp
+    completioncommandmode.h
+    completioncontextquery.cpp
+    completionmanager.cpp
+    completionmanager.h
+    completionmodel.h
+    completionmodelupdates.cpp
+    completionsemanticquery.cpp
+    completionsemanticquery.h
+    completionservice.cpp
+    completionservice.h
+    completionservicecommand.cpp
+    completionservicesemantic.cpp
+    completiontypes.h
+    completionsymbolquery.cpp
+    completionsymbolquery.h
+    completionsymbolscoring.cpp
+    definitionnavigationservice.cpp
+    fsmgraphservice.cpp
+    fsmgraphservice.h
+    hierarchyservice.cpp
+    modulebriefservice.cpp
+    modulebriefservice.h
+    navigationservice.cpp
+    navigationservicehierarchy.cpp
+    relationshipanalysisworker.cpp
+    scope_tree.h
+    scopebandservice.cpp
+    searchservice.cpp
+    searchservice.h
+    semanticdiffservice.cpp
+    semanticdiffservice.h
+    semanticindex.cpp
+    semanticindex.h
+    semanticindexcompletion.cpp
+    semanticindexcompletioncontext.cpp
+    semanticindexcompletionfilters.h
+    semanticindexcompletionqueries.cpp
+    semanticindexcompletionrelationships.cpp
+    semanticindexcompletiontypequeries.cpp
+    semanticindexlookup.cpp
+    semanticindexlookuphelpers.cpp
+    semanticindexlookuphelpers.h
+    semanticindexmodulecontext.cpp
+    semanticindexmodulecontexthelpers.cpp
+    semanticindexmodulecontexthelpers.h
+    semanticindexrelationships.cpp
+    semanticindexsnapshot.cpp
+    semanticindexsnapshot.h
+    semanticindexsnapshotqueries.cpp
+    semanticindexstore.cpp
+    signaljourneyservice.cpp
+    signaljourneyservice.h
+    slangmanager.h
+    slangmanagersymbols.cpp
+    slangsymbolcollector.cpp
+    slangsymbolcollector.h
+    slangsymbolcollectorhelpers.cpp
+    slangsymbolcollectorhelpers.h
+    smartrelationshipbuilder.cpp
+    smartrelationshipbuilder.h
+    smartrelationshipbuilderanalysis.cpp
+    smartrelationshipbuildercontext.cpp
+    smartrelationshipbuildertiming.cpp
+    symbolanalyzer.h
+    symbolanalyzerasync.cpp
+    symbolanalyzerpublication.cpp
+    symbolanalyzerslang.cpp
+    symbolanalyzerworkspace.cpp
+    symbolanalyzerworkspace.h
+    symboloutlinemodel.h
+    symbolrelationshipengine.cpp
+    symbolrelationshipengine.h
+    symboltaxonomy.cpp
+    symboltaxonomy.h
+    syminfo.cpp
+    syminfo.h
+    syminfocontent.cpp
+    syminfoindex.cpp
+    syminfomodulelookup.cpp
+    syminfoscope.cpp
+)
+
+set(H0_LEGACY_CORE_PATTERNS
+    "sym_list::SymbolInfo"
+    "sym_list::sym_type_e"
+    "(^|[^A-Za-z0-9_:])sym_list::sym_[A-Za-z0-9_]+([^A-Za-z0-9_]|$)"
+    "\\.(symbolId|symbolType|moduleScope|dataType)([^A-Za-z0-9_]|$)"
+    "(^|[^A-Za-z0-9_])(getSymbolById|findSymbolId|getRelationships)[ \t\r\n]*\\("
+    "(getCommandCompletionSymbols|getTypedCompletionSymbols|getGlobalSymbolInfosByType|getModuleInternalSymbolsByType|getModuleContextSymbolsByType)[ \t\r\n]*\\("
+    "(findGlobalSymbolInfosByType|findModuleInternalSymbolInfosByType|findModuleContextSymbolInfosByType)[ \t\r\n]*\\("
+    "(findSymbolsByType|getSymbolNamesByType|getSymbolCountByType|getUniqueSymbolNames|hasSymbol)[ \t\r\n]*\\("
+    "(^|[^A-Za-z0-9_])legacyTypes([^A-Za-z0-9_]|$)"
+)
+
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "clockresetdomainservice.h|moduleSymbolId"
     "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEntry[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
@@ -526,6 +624,50 @@ if(stable_key_violations)
     list(JOIN stable_key_violations "\n  " stable_key_violation_text)
     message(FATAL_ERROR
         "Stable-key migrated services must not resolve through int-id APIs or raw relationship queries:\n  ${stable_key_violation_text}")
+endif()
+
+set(h0_allowlist_missing_files)
+foreach(relative_path IN LISTS H0_LEGACY_CORE_ALLOWLIST)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND h0_allowlist_missing_files "${relative_path}")
+    endif()
+endforeach()
+
+if(h0_allowlist_missing_files)
+    list(JOIN h0_allowlist_missing_files "\n  " h0_allowlist_missing_text)
+    message(FATAL_ERROR
+        "Phase H0 legacy core allowlist references missing files:\n  ${h0_allowlist_missing_text}")
+endif()
+
+file(GLOB h0_first_party_sources
+    RELATIVE "${ZEROSLACK_SOURCE_DIR}"
+    "${ZEROSLACK_SOURCE_DIR}/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/*.h"
+)
+
+set(h0_legacy_core_violations)
+foreach(relative_path IN LISTS h0_first_party_sources)
+    list(FIND H0_LEGACY_CORE_ALLOWLIST "${relative_path}" h0_allowlist_index)
+    if(NOT h0_allowlist_index EQUAL -1)
+        continue()
+    endif()
+
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    file(READ "${path}" content)
+    foreach(pattern IN LISTS H0_LEGACY_CORE_PATTERNS)
+        string(REGEX MATCH "${pattern}" match "${content}")
+        if(match)
+            list(APPEND h0_legacy_core_violations
+                 "${relative_path}: ${pattern}")
+        endif()
+    endforeach()
+endforeach()
+
+if(h0_legacy_core_violations)
+    list(JOIN h0_legacy_core_violations "\n  " h0_legacy_core_text)
+    message(FATAL_ERROR
+        "Phase H0 legacy core terms are forbidden outside the explicit transition allowlist:\n  ${h0_legacy_core_text}")
 endif()
 
 set(f3_removed_compatibility_violations)

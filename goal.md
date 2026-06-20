@@ -148,6 +148,17 @@ UI Layer
 - G3 is complete: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, and raw collector compatibility are deleted from product-facing contracts or isolated to collector/import, taxonomy, completion compatibility, snapshot-local, and guarded adapter boundaries.
 - The Phase G release gate passed locally; broad RTL feature expansion is no longer blocked by Phase G, but must still preserve the architecture rules below.
 
+### Phase H: Semantic Core Slimdown
+
+- Status: planned next.
+- Purpose: turn Phase G's isolated compatibility boundaries into real deletion, so legacy collector fields and APIs stop shaping semantic core contracts.
+- Remove remaining `sym_list::SymbolInfo` and `sym_list::sym_type_e` exposure from product, service, report, completion, snapshot, and query contracts.
+- Replace raw collector-kind query inputs with semantic-native completion, declaration, usage, owner, type, and source-role models.
+- Move snapshot/store internals to semantic-native records or store entries instead of keeping `SymbolInfo` as the default carrier.
+- Keep collector/import conversion in the smallest possible adapter boundary, then delete adapter code when Slang collection can emit semantic-native records directly.
+- Delete redundant conversion, compatibility, filtering, sorting, and display helper logic after each old API disappears.
+- Phase H is complete only when guards enforce the final allowlist and full Ninja plus full CTest pass.
+
 ## Architecture Rules
 
 - New semantic features should flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
@@ -174,9 +185,10 @@ The foundation is healthy when:
 - stale workspace, open-document, and relationship analysis results cannot overwrite newer semantic snapshots
 - product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
 - product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, Phase G, and the release gate after Phase G pass
-- `sym_type_e` remains raw collector compatibility, not the primary product policy surface
-- `symbolId` is snapshot-local unless stable identity rules say otherwise
-- `moduleScope` and `dataType` are not used as overloaded product-policy fields
+- Phase H is complete only when remaining legacy collector compatibility is deleted from semantic core contracts or confined to the final minimal collector adapter allowlist
+- `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
+- `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
+- `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts
 - completion items expose structured semantic identity and insertion metadata
 - query services normalize string inputs into stable subject/context handles before feature logic
 - semantic symbol records carry owner, type, source-role, provenance, and not-found reason metadata instead of overloading legacy fields
@@ -184,6 +196,7 @@ The foundation is healthy when:
 - compatibility APIs are transition-only and guarded away from product-facing code
 - Query Services and RTL feature services consume stable semantic metadata and contracts
 - RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, Phase F0, F1, F2, F3, Phase G, and the release gate after Phase G are in place
+- After Phase H starts, broad RTL feature expansion should avoid new semantic model work until H has removed the old compatibility surfaces it touches.
 - Phase D features are done only when service-level behavior, report shape, UI render path, and real fixture evidence are covered
 - UI panels render reports/models without owning semantic policy
 - scheduler, analyzer, project, document, and editor ownership boundaries stay clear
