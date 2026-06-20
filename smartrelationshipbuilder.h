@@ -13,6 +13,7 @@
 #include <QSet>
 
 class SemanticIndexSnapshot;
+struct SemanticSymbolRecord;
 
 struct RelationshipToAdd {
     int fromId;
@@ -43,7 +44,19 @@ public:
     QVector<RelationshipToAdd> computeRelationships(
         const QString& fileName,
         const QString& content,
+        const QList<SemanticSymbolRecord>& fileSymbolRecords,
+        const SemanticIndexSnapshot* snapshot);
+    QVector<RelationshipToAdd> computeRelationships(
+        const QString& fileName,
+        const QString& content,
         const QList<sym_list::SymbolInfo>& fileSymbols,
+        const SemanticIndexSnapshot* snapshot,
+        const QStringList& includeDirs,
+        const QHash<QString, QString>& defines);
+    QVector<RelationshipToAdd> computeRelationships(
+        const QString& fileName,
+        const QString& content,
+        const QList<SemanticSymbolRecord>& fileSymbolRecords,
         const SemanticIndexSnapshot* snapshot,
         const QStringList& includeDirs,
         const QHash<QString, QString>& defines);

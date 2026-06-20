@@ -1,4 +1,5 @@
 #include "smartrelationshipbuilder.h"
+#include "semanticindex.h"
 #include <QApplication>
 #include <algorithm>
 
@@ -82,6 +83,20 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
 QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     const QString& fileName,
     const QString& content,
+    const QList<SemanticSymbolRecord>& fileSymbolRecords,
+    const SemanticIndexSnapshot* snapshot)
+{
+    return computeRelationships(fileName,
+                                content,
+                                fileSymbolRecords,
+                                snapshot,
+                                QStringList(),
+                                QHash<QString, QString>());
+}
+
+QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
+    const QString& fileName,
+    const QString& content,
     const QList<sym_list::SymbolInfo>& fileSymbols,
     const SemanticIndexSnapshot* snapshot,
     const QStringList& includeDirs,
@@ -126,6 +141,22 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
         collectResults = nullptr;
     }
     return result;
+}
+
+QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
+    const QString& fileName,
+    const QString& content,
+    const QList<SemanticSymbolRecord>& fileSymbolRecords,
+    const SemanticIndexSnapshot* snapshot,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines)
+{
+    return computeRelationships(fileName,
+                                content,
+                                semanticSymbolInfoCarriersForRecords(fileSymbolRecords),
+                                snapshot,
+                                includeDirs,
+                                defines);
 }
 
 void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, const QString& content,

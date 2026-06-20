@@ -121,6 +121,7 @@ set(RECORD_METADATA_HELPER_FILES
 )
 
 set(RECORD_NATIVE_SERVICE_FILES
+    relationshipanalysisworker.cpp
     semanticdiffservice.cpp
     scopebandservice.cpp
 )
