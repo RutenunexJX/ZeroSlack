@@ -24,7 +24,7 @@ QList<SymbolRelationshipEngine::RelationType> snapshotPublicationRelationshipTyp
     };
 }
 
-SemanticIndexSnapshot snapshotFromSymbolDatabaseRecords(
+SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
     sym_list* symbolDatabase,
     QList<SemanticDiagnostic> diagnostics)
 {
@@ -134,7 +134,7 @@ SemanticSnapshotToken SemanticIndex::snapshotToken() const
 void SemanticIndex::publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics)
 {
     setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        snapshotFromSymbolDatabaseRecords(symbolDatabase(), std::move(diagnostics))));
+        publicationSnapshotFromSemanticRecords(symbolDatabase(), std::move(diagnostics))));
 }
 
 void SemanticIndex::publishSnapshotReplacingDiagnostics(
@@ -150,7 +150,7 @@ SemanticIndex::captureSnapshotPreservingDiagnostics() const
     const QList<SemanticDiagnostic> diagnostics =
         m_snapshot ? m_snapshot->diagnostics() : QList<SemanticDiagnostic>();
     return std::make_shared<const SemanticIndexSnapshot>(
-        snapshotFromSymbolDatabaseRecords(symbolDatabase(), diagnostics));
+        publicationSnapshotFromSemanticRecords(symbolDatabase(), diagnostics));
 }
 
 std::shared_ptr<const SemanticIndexSnapshot>
@@ -164,7 +164,7 @@ SemanticIndex::captureSnapshotReplacingDiagnostics(
             m_snapshot->withReplacedDiagnostics(fileNames, diagnostics).diagnostics();
     }
     return std::make_shared<const SemanticIndexSnapshot>(
-        snapshotFromSymbolDatabaseRecords(symbolDatabase(), mergedDiagnostics));
+        publicationSnapshotFromSemanticRecords(symbolDatabase(), mergedDiagnostics));
 }
 
 SemanticSnapshotToken

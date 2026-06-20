@@ -74,6 +74,19 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
                                                  fileContents));
 }
 
+static SemanticIndexSnapshot snapshotFromSemanticIndex(
+    sym_list* db,
+    const QList<SemanticDiagnostic>& diagnostics = {})
+{
+    SemanticIndex index(db);
+    const std::shared_ptr<const SemanticIndexSnapshot> captured =
+        index.captureSnapshotPreservingDiagnostics();
+    return SemanticIndexSnapshot::fromSymbolRecords(captured->getSymbolRecords(),
+                                                    captured->relationships(),
+                                                    diagnostics,
+                                                    captured->fileContents());
+}
+
 static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
     const SemanticIndexSnapshot& snapshot)
 {
@@ -470,7 +483,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !temporaryBrokenDiagnostics.isEmpty(), true);
     SemanticIndex diagnosticIndex(db);
     diagnosticIndex.setSnapshot(sharedSnapshotFromSymbols(
-        SemanticIndexSnapshot::fromSymbolDatabase(db, brokenDiagnostics)));
+        snapshotFromSemanticIndex(db, brokenDiagnostics)));
     DiagnosticService brokenDiagnosticService(&diagnosticIndex);
     DiagnosticQuery brokenDiagnosticQuery;
     brokenDiagnosticQuery.fileName = brokenPath;
@@ -533,7 +546,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     SemanticIndex diagnosticReportIndex(db);
     diagnosticReportIndex.setSnapshot(sharedSnapshotFromSymbols(
-        SemanticIndexSnapshot::fromSymbolDatabase(db, {
+        snapshotFromSemanticIndex(db, {
             infoDiagnostic,
             warningDiagnostic,
             errorDiagnostic,
@@ -838,7 +851,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     const auto symbolOnlySnapshot = sharedSnapshotFromSymbols(
-        SemanticIndexSnapshot::fromSymbolDatabase(db));
+        snapshotFromSemanticIndex(db));
     SmartRelationshipBuilder snapshotBuilder(&engine, nullptr, &slang);
     const QVector<RelationshipToAdd> snapshotBackedRels =
         snapshotBuilder.computeRelationships(topPath,
@@ -870,7 +883,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     SemanticIndex snapshotIndex(db);
     const auto snapshot = sharedSnapshotFromSymbols(
-        SemanticIndexSnapshot::fromSymbolDatabase(db));
+        snapshotFromSemanticIndex(db));
     snapshotIndex.setSnapshot(snapshot);
     expectBool("semantic snapshot returns top symbols",
                snapshotIndex.getSymbolRecords(topPath).size() == topSymbols.size(), true);
@@ -2064,7 +2077,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     replacementDiagnostic.message = QStringLiteral("replacement message");
     replacementDiagnostic.severity = SemanticDiagnostic::Error;
     const SemanticIndexSnapshot diagnosticReplacementSnapshot =
-        SemanticIndexSnapshot::fromSymbolDatabase(db, {
+        snapshotFromSemanticIndex(db, {
             infoDiagnostic,
             warningDiagnostic,
             errorDiagnostic,
@@ -2105,7 +2118,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     SemanticIndex guardedIndex(db);
     const auto guardedBaseSnapshot =
         sharedSnapshotFromSymbols(
-            SemanticIndexSnapshot::fromSymbolDatabase(db));
+            snapshotFromSemanticIndex(db));
     guardedIndex.setSnapshot(guardedBaseSnapshot);
     const SemanticSnapshotToken staleToken = guardedIndex.snapshotToken();
     const auto newerSnapshot =

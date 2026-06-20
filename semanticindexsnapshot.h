@@ -13,9 +13,6 @@ class SemanticIndexSnapshot
 public:
     SemanticIndexSnapshot();
 
-    static SemanticIndexSnapshot fromSymbolDatabase(
-        sym_list* symbolDatabase,
-        QList<SemanticDiagnostic> diagnostics = {});
     static SemanticIndexSnapshot fromSymbolRecords(
         QList<SemanticSymbolRecord> symbolRecords,
         QList<SemanticRelationship> relationships = {},
