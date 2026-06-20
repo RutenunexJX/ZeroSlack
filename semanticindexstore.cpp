@@ -17,6 +17,15 @@ QString normalizedStoreFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
+bool isSemanticModuleName(const QString& name)
+{
+    if (name.isEmpty())
+        return false;
+    static const QRegularExpression svIdentifier(
+        QStringLiteral("^[a-zA-Z_][a-zA-Z0-9_]*$"));
+    return svIdentifier.match(name).hasMatch();
+}
+
 QString stripCommentsFromLine(const QString& line, bool& inBlockComment)
 {
     QString result;
@@ -194,7 +203,7 @@ QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int curs
 
 bool SemanticIndex::isValidModuleName(const QString& name) const
 {
-    return sym_list::isValidModuleName(name);
+    return isSemanticModuleName(name);
 }
 
 int SemanticIndex::findEndModuleLine(const QString& fileName,

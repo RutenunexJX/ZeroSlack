@@ -49,7 +49,8 @@ int endModulePositionInContent(const QString& fileContent,
 
 QString moduleNameAtPositionInContent(const QList<SemanticSymbolRecord>& modules,
                                       int cursorPosition,
-                                      const QString& fileContent)
+                                      const QString& fileContent,
+                                      const SemanticIndex& semanticIndex)
 {
     if (fileContent.isEmpty())
         return QString();
@@ -65,7 +66,7 @@ QString moduleNameAtPositionInContent(const QList<SemanticSymbolRecord>& modules
     for (const SemanticSymbolRecord& module : modules) {
         if (cursorPosition < module.location.position)
             continue;
-        if (!sym_list::isValidModuleName(module.name))
+        if (!semanticIndex.isValidModuleName(module.name))
             continue;
 
         if (module.location.endLine > 0) {
@@ -128,5 +129,5 @@ QString SemanticIndex::currentModuleAt(const QString& fileName, int cursorPositi
             content = QString::fromUtf8(file.readAll());
     }
 
-    return moduleNameAtPositionInContent(modules, cursorPosition, content);
+    return moduleNameAtPositionInContent(modules, cursorPosition, content, *this);
 }
