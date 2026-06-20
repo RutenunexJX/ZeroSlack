@@ -278,6 +278,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "completionsemanticquery.cpp|CompletionSemanticQuery::moduleContextSymbolInfosByType[ \t\r\n]*\\("
     "completionsemanticquery.h|globalSymbolInfosByType[ \t\r\n]*\\("
     "completionsemanticquery.cpp|CompletionSemanticQuery::globalSymbolInfosByType[ \t\r\n]*\\("
+    "completioncommandkindadapter.h|rawCollectorKindForCompletionCommandKind[ \t\r\n]*\\("
     "completionsemanticquery.cpp|rawCollectorKindForCommandKind[ \t\r\n]*\\("
     "completionsymbolquery.h|scoredTypedSymbols[ \t\r\n]*\\("
     "completionsymbolscoring.cpp|CompletionSymbolQuery::scoredTypedSymbols[ \t\r\n]*\\("
