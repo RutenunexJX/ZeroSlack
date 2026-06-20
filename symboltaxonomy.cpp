@@ -1138,18 +1138,6 @@ bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType)
     }
 }
 
-QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
-{
-    QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (isPackageDeclaration(semanticMetadata(symbol))
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
-        }
-    }
-    return names;
-}
-
 bool isDefinitionVisibleInContext(
     const SemanticMetadata& metadata,
     const QString& ownerName,

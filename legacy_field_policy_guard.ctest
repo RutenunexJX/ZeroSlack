@@ -269,6 +269,7 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "symboltaxonomylegacy\\.h|is(Module|Package|Instance)Declaration[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "symboltaxonomylegacy\\.h|is(PackageScopeVisibleCompletion|PackageScopeVisibleDefinition|CommandCompletionScopeVisible|GlobalSymbolInfoVisible)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "symboltaxonomylegacy\\.h|(definitionContextPriorityAdjustment|isSymbolInModuleScope|isSymbolInModuleContext|isDefinitionVisibleInContext)[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "symboltaxonomylegacy\\.h|packageScopeNames[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS

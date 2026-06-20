@@ -53,6 +53,19 @@
 static int g_checks = 0;
 static int g_fails = 0;
 
+static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
+{
+    QSet<QString> names;
+    for (const sym_list::SymbolInfo& symbol : symbols) {
+        if (SymbolTaxonomy::isPackageDeclaration(
+                SymbolTaxonomy::semanticMetadata(symbol))
+            && !symbol.symbolName.isEmpty()) {
+            names.insert(symbol.symbolName);
+        }
+    }
+    return names;
+}
+
 static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromSymbols(
     const QList<sym_list::SymbolInfo>& symbols,
     QList<SemanticRelationship> relationships = {},
@@ -63,7 +76,7 @@ static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromSymbols(
         SemanticIndexSnapshot::fromSymbolRecords(
             semanticSymbolRecordsForSymbols(
                 symbols,
-                SymbolTaxonomy::packageScopeNames(symbols)),
+                packageScopeNames(symbols)),
             std::move(relationships),
             std::move(diagnostics),
             std::move(fileContents)));

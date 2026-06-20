@@ -59,7 +59,6 @@ bool isGlobalSymbolInfoType(sym_list::sym_type_e type);
 bool isAlwaysGlobalSymbolInfoType(sym_list::sym_type_e type);
 bool isAlwaysGlobalCommandSymbolType(sym_list::sym_type_e type);
 bool isPackageVisibleCommandRequest(sym_list::sym_type_e requestedType);
-QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols);
 bool typedCompletionSymbolTypeMatches(
     sym_list::sym_type_e symbolType,
     sym_list::sym_type_e requestedType,
