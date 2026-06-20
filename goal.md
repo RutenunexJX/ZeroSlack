@@ -158,6 +158,24 @@ UI Layer
 - Redundant conversion, compatibility, filtering, sorting, display helper, and raw query APIs were deleted or made private.
 - Phase H release gate passed with guards enforcing the final allowlist and full Ninja plus full CTest passing locally.
 
+### Phase I: Semantic Store Native / Collector Native
+
+- Status: planned next.
+- Purpose: delete the remaining legacy collector/store body instead of only guarding its boundary.
+- Slang collection should emit semantic-native records or store entries as the primary output.
+- The backing semantic store should own semantic-native records, cached content, local handles, stable-key indexes, and file replacement without depending on `sym_list::SymbolInfo`.
+- Scope rebuild, module containment, module lookup, and relationship containment should use semantic metadata, owner/type records, stable keys, and explicit local handles instead of `symbolId`, `symbolType`, `moduleScope`, or `dataType`.
+- `symboltaxonomylegacy.h`, `sym_list::SymbolInfo`, `sym_list::sym_type_e`, legacy fields, and reverse adapter conversions should be deleted when collector/store migration is complete.
+- Phase I is complete only when the final release gate proves zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes.
+
+### Phase I Goal Mode
+
+- Progress is tracked per subphase I0-I5.
+- Each subphase is its own 100% unit.
+- End every work turn by naming the current subphase and reporting that subphase's remaining percentage.
+- Move to the next subphase only after the current subphase is implemented, verified, and committed.
+- Phase I completion requires I0-I5 completion, current docs, full Ninja, full CTest, guard success, and final static legacy scans.
+
 ## Architecture Rules
 
 - New semantic features should flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
@@ -185,6 +203,7 @@ The foundation is healthy when:
 - product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
 - product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, Phase G, and the release gate after Phase G pass
 - Phase H is complete on this branch: remaining legacy collector compatibility is deleted from semantic core contracts or confined to the final guarded transition allowlist
+- Phase I is done only when the remaining legacy collector/store body is replaced by semantic-native collection and storage, and the final scans prove legacy carrier names are gone from core source
 - `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
 - `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
 - `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts

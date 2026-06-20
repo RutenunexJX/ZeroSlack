@@ -28,6 +28,7 @@ Thin UI consumers
 - Phase F1-F3 semantic migration is complete on this branch, including record-first relationship/reference/report paths and the post-F3 release gate.
 - Phase G Complete Legacy Field Deletion is complete on this branch, including the post-G release gate.
 - Phase H Semantic Core Slimdown is complete on this branch: remaining legacy type adapters, redundant APIs, and compatibility logic have been deleted or confined to the collector/import, taxonomy, and `syminfo` transition boundary.
+- Phase I Semantic Store Native / Collector Native is the next planned phase: replace the remaining `sym_list::SymbolInfo` / `sym_type_e` collector and store body with semantic-native collection, storage, scope, and relationship internals.
 - G0 is complete: `SemanticRelationshipResult` no longer carries legacy `fromSymbol` / `toSymbol` endpoint payloads; relationship consumers use endpoint records and stable keys.
 - G1 is complete: `SemanticDefinitionResult` no longer carries legacy `symbol` payloads; consumers use `symbolRecord` / `symbolStableKey`.
 - G2 is complete: `SemanticIndex` / `SemanticIndexSnapshot` no longer expose the retired `SymbolInfo` public APIs such as `getSymbols`, `getSymbolsByType`, `getSymbolByStableKey`, or `findDefinitions`.
@@ -35,9 +36,10 @@ Thin UI consumers
 - The Phase G release gate passed locally with full Ninja and full CTest.
 - The Phase H release gate passed locally with full Ninja, full CTest, `legacy_field_policy_guard`, static legacy API scans, docs consistency review, and forbidden-file regression checks.
 - Completion compatibility, snapshot/store `SymbolInfo` carriers, feature-service internal helpers, `syminfo` legacy queries, and collector/import adapter surfaces were tightened during Phase H.
+- Phase I progress tracking uses per-subphase accounting: each I subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
-- During Phase H, move toward a final model where raw collector compatibility is concentrated in a minimal collector adapter and absent from product, service, report, completion, and snapshot contracts.
+- During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.
 
 ## Current Architecture
 

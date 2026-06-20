@@ -192,6 +192,25 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Docs, goal, and plan consistency checks must pass.
 - Confirm qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, and long-lived scattered perflog probes have not returned.
 
+### Phase I: Semantic Store Native / Collector Native
+
+- Status: planned next.
+- Goal: delete the remaining legacy collector/store body by moving Slang collection, semantic storage, scope rebuild, and relationship containment to semantic-native records or store entries.
+- I0: define the native store/collector migration contract, final zero-legacy target scans, and Phase I guard extensions. No behavior changes beyond docs, guard policy, and narrow scaffolding.
+- I1: make Slang collection emit `SemanticSymbolRecord` or a dedicated `SemanticStoreEntry` as its primary output; keep `SymbolInfo` emission only as a temporary private adapter if required.
+- I2: replace `sym_list` as the backing store with semantic-native storage for records, cached content, file replacement, local handles, and stable-key lookups.
+- I3: migrate scope rebuild, module containment, relationship containment, and module lookup away from `symbolId`, `symbolType`, `moduleScope`, and `dataType` to semantic metadata, owner/type records, stable keys, and explicit local handles.
+- I4: delete the legacy carrier and compatibility taxonomy surface: `sym_list::SymbolInfo`, `sym_list::sym_type_e`, legacy fields, `symboltaxonomylegacy.h`, and remaining adapter reverse conversions.
+- I5: run the Phase I release gate and update docs. The target is zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes.
+
+### Phase I Goal Mode
+
+- Track Phase I progress by subphase, not by the whole phase.
+- Each subphase I0 through I5 starts at 100% remaining when it becomes current.
+- At the end of every work turn, report the current subphase and the remaining percentage for that subphase.
+- When a subphase is complete and verified, report it as 0% remaining, then make the next subphase current at 100% remaining.
+- Do not mark all Phase I complete until I0-I5 are complete, docs are current, full Ninja and full CTest pass, and final legacy scans prove the zero-legacy target.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
@@ -203,6 +222,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Not suitable for batching: symbol identity changes, `SymbolInfo` layout changes, `sym_type_e` compatibility changes, owner/type model migration, source role migration, snapshot publication rules, relationship rebind rules, and cross-service query contract changes.
 - F1-F3 should proceed in small serial blocks when changing semantic symbol records, relationship identity, compatibility APIs, owner/type metadata, completion item models, or query normalization.
 - Phase H should proceed in small serial blocks; avoid mixing guard expansion, snapshot/store migration, completion contract migration, feature-service helper migration, and collector adapter deletion in one commit.
+- Phase I should proceed in strict subphase order unless a later subphase exposes a small prerequisite cleanup; do not mix collector-native emission, store replacement, relationship/scope migration, and carrier deletion in one commit.
 - Reduce batch size when blocks share core files, API boundaries, or real fixture expectations.
 
 ## Good Work Blocks
