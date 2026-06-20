@@ -1,6 +1,6 @@
 #include "slangsymbolcollector.h"
-#include "semanticcollectoradapter.h"
 #include "slangsymbolcollectorhelpers.h"
+#include "symboltaxonomylegacy.h"
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
@@ -22,11 +22,40 @@
 
 using namespace slang::ast;
 using namespace slang_symbols::detail;
+using RawCollectorKind = SymbolTaxonomy::RawCollectorKind;
 
 namespace {
 
-void collectLegacySymbols(slang::ast::Compilation& compilation,
-                          QList<sym_list::SymbolInfo>& outList)
+sym_list::SymbolInfo legacySymbolInfoForRecord(
+    const SemanticSymbolRecord& record)
+{
+    sym_list::SymbolInfo symbol;
+    symbol.symbolId = record.localHandle;
+    symbol.symbolName = record.name;
+    symbol.symbolType = SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
+    symbol.fileName = record.location.fileName;
+    symbol.startLine = record.location.startLine;
+    symbol.startColumn = record.location.startColumn;
+    symbol.endLine = record.location.endLine;
+    symbol.endColumn = record.location.endColumn;
+    symbol.position = record.location.position;
+    symbol.length = record.location.length;
+    symbol.moduleScope = record.owner.name;
+    symbol.dataType = record.type.rawTypeText;
+    symbol.hasSemanticMetadata = true;
+    symbol.semanticDeclarationKind = record.declarationKind;
+    symbol.semanticUsageRole = record.usageRole;
+    symbol.semanticOwnerScope = record.owner.kind;
+    symbol.semanticVisibility = record.visibility;
+    symbol.semanticSourceRole = record.sourceRole;
+    symbol.rawCollectorKind =
+        SymbolTaxonomy::legacySymbolType(record.rawCollectorKind);
+    symbol.interfaceLikeOwner = record.owner.interfaceLike;
+    return symbol;
+}
+
+void collectNativeRecords(slang::ast::Compilation& compilation,
+                          QList<SemanticSymbolRecord>& outList)
 {
     const slang::SourceManager* sm = compilation.getSourceManager();
     if (!sm)
@@ -40,19 +69,19 @@ void collectLegacySymbols(slang::ast::Compilation& compilation,
         const auto* def = defSym ? defSym->as_if<DefinitionSymbol>() : nullptr;
         if (!def)
             continue;
-        sym_list::SymbolInfo info;
-        if (!fillSymbolInfo(sm, *def, info, nullptr))
+        SemanticSymbolRecord record;
+        if (!fillSymbolRecord(sm, *def, record, nullptr))
             continue;
         if (def->definitionKind == DefinitionKind::Module)
-            info.symbolType = sym_list::sym_module;
+            applyCollectorKind(&record, RawCollectorKind::Module);
         else if (def->definitionKind == DefinitionKind::Interface)
-            info.symbolType = sym_list::sym_interface;
+            applyCollectorKind(&record, RawCollectorKind::Interface);
         else if (def->definitionKind == DefinitionKind::Program)
-            info.symbolType = sym_list::sym_module;
+            applyCollectorKind(&record, RawCollectorKind::Module);
         else
             continue;
-        info.moduleScope.clear();
-        outList.append(info);
+        record.owner.name.clear();
+        outList.append(record);
     }
 
     // (2) Top-level auto-instances (uninstantiated/top modules) should not appear as instance
@@ -79,13 +108,14 @@ void collectLegacySymbols(slang::ast::Compilation& compilation,
     auto visitor = makeVisitor(
         [&](auto& v, const InstanceSymbol& inst) {
             if (!topInstances.contains(&inst)) {
-                sym_list::SymbolInfo info;
+                SemanticSymbolRecord record;
                 QString moduleScope;
-                if (fillSymbolInfo(sm, inst, info, &moduleScope)) {
-                    info.symbolType = sym_list::sym_inst;
-                    info.dataType = QString::fromStdString(std::string(inst.getDefinition().name));
-                    info.moduleScope = moduleScope;
-                    outList.append(info);
+                if (fillSymbolRecord(sm, inst, record, &moduleScope)) {
+                    applyCollectorKind(&record, RawCollectorKind::Inst);
+                    record.type.rawTypeText =
+                        QString::fromStdString(std::string(inst.getDefinition().name));
+                    record.owner.name = moduleScope;
+                    outList.append(record);
                 }
             }
             const void* defKey = &inst.getDefinition();
@@ -102,173 +132,181 @@ void collectLegacySymbols(slang::ast::Compilation& compilation,
             // here avoids a wrong moduleScope (the module name) and duplicate members.
             if (var.kind == SymbolKind::Field)
                 return;
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, var, info, &moduleScope))
+            if (!fillSymbolRecord(sm, var, record, &moduleScope))
                 return;
-            info.symbolType = variableOrNetTypeToSymType(var.getType());
-            info.moduleScope = moduleScope;
+            applyCollectorKind(&record, variableOrNetRawCollectorKind(var.getType()));
+            record.owner.name = moduleScope;
             // For enum/struct variables, record the type key in dataType so var.member /
             // enum-value completion can resolve the type (consumed by get{Struct,Enum}TypeForVariable).
             // Typedef'd types use the alias name (members/values already emitted at the typedef site).
             // Inline anonymous types (no alias) have no typedef site, so key members/values by the
             // variable name here and emit them now.
-            if (info.symbolType == sym_list::sym_enum_var
-                || info.symbolType == sym_list::sym_packed_struct_var
-                || info.symbolType == sym_list::sym_unpacked_struct_var) {
+            if (record.rawCollectorKind == RawCollectorKind::EnumVariable
+                || record.rawCollectorKind == RawCollectorKind::PackedStructVariable
+                || record.rawCollectorKind == RawCollectorKind::UnpackedStructVariable) {
                 QString typeName = QString::fromStdString(std::string(var.getType().name));
                 if (!typeName.isEmpty()) {
-                    info.dataType = typeName;  // typedef'd: emitted at typedef site
+                    record.type.rawTypeText = typeName;  // typedef'd: emitted at typedef site
                 } else {
-                    const QString key = info.symbolName;  // anonymous: key by variable name
-                    info.dataType = key;
+                    const QString key = record.name;  // anonymous: key by variable name
+                    record.type.rawTypeText = key;
                     const slang::ast::Type& canon = var.getType().getCanonicalType();
                     if (canon.kind == SymbolKind::EnumType) {
-                        emitEnumValues(sm, canon.as<EnumType>(), key, outList);
+                        emitEnumValueRecords(sm, canon.as<EnumType>(), key, outList);
                     } else if (canon.kind == SymbolKind::PackedStructType) {
-                        emitStructMembers(sm, static_cast<const slang::ast::Scope&>(canon.as<PackedStructType>()), key, outList);
+                        emitStructMemberRecords(sm, static_cast<const slang::ast::Scope&>(canon.as<PackedStructType>()), key, outList);
                     } else if (canon.kind == SymbolKind::UnpackedStructType) {
-                        emitStructMembers(sm, static_cast<const slang::ast::Scope&>(canon.as<UnpackedStructType>()), key, outList);
+                        emitStructMemberRecords(sm, static_cast<const slang::ast::Scope&>(canon.as<UnpackedStructType>()), key, outList);
                     }
                 }
             }
-            outList.append(info);
+            outList.append(record);
             if (var.kind != SymbolKind::FormalArgument)
                 v.visitDefault(var);
         },
         [&](auto& v, const NetSymbol& net) {
             if (portInternals.contains(&net))
                 return;  // backing net of a port; emitted as the port itself
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, net, info, &moduleScope))
+            if (!fillSymbolRecord(sm, net, record, &moduleScope))
                 return;
-            info.symbolType = sym_list::sym_wire;
-            info.moduleScope = moduleScope;
-            outList.append(info);
+            applyCollectorKind(&record, RawCollectorKind::Wire);
+            record.owner.name = moduleScope;
+            outList.append(record);
             v.visitDefault(net);
         },
         [&](auto& v, const SubroutineSymbol& sub) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, sub, info, &moduleScope))
+            if (!fillSymbolRecord(sm, sub, record, &moduleScope))
                 return;
-            info.symbolType = (sub.subroutineKind == SubroutineKind::Task)
-                ? sym_list::sym_task
-                : sym_list::sym_function;
-            info.moduleScope = moduleScope;
-            outList.append(info);
+            applyCollectorKind(&record,
+                (sub.subroutineKind == SubroutineKind::Task)
+                    ? RawCollectorKind::Task
+                    : RawCollectorKind::Function);
+            record.owner.name = moduleScope;
+            outList.append(record);
             v.visitDefault(sub);
         },
         [&](auto& v, const PortSymbol& port) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, port, info, &moduleScope))
+            if (!fillSymbolRecord(sm, port, record, &moduleScope))
                 return;
-            info.symbolType = portDirectionToSymType(port.direction);
-            info.moduleScope = moduleScope;
-            outList.append(info);
+            applyCollectorKind(&record, portDirectionRawCollectorKind(port.direction));
+            record.owner.name = moduleScope;
+            outList.append(record);
             v.visitDefault(port);
         },
         [&](auto& v, const InterfacePortSymbol& port) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, port, info, &moduleScope))
+            if (!fillSymbolRecord(sm, port, record, &moduleScope))
                 return;
-            info.symbolType = port.modport.empty()
-                ? sym_list::sym_port_interface
-                : sym_list::sym_port_interface_modport;
-            info.moduleScope = moduleScope;
+            applyCollectorKind(&record,
+                port.modport.empty()
+                    ? RawCollectorKind::PortInterface
+                    : RawCollectorKind::PortInterfaceModport);
+            record.owner.name = moduleScope;
             if (port.interfaceDef) {
-                info.dataType = QString::fromStdString(
+                record.type.rawTypeText = QString::fromStdString(
                     std::string(port.interfaceDef->name));
                 if (!port.modport.empty()) {
-                    info.dataType += QLatin1Char('.');
-                    info.dataType += QString::fromStdString(std::string(port.modport));
+                    record.type.rawTypeText += QLatin1Char('.');
+                    record.type.rawTypeText += QString::fromStdString(std::string(port.modport));
                 }
             }
-            outList.append(info);
+            outList.append(record);
             v.visitDefault(port);
         },
         [&](auto& v, const ModportSymbol& modport) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, modport, info, &moduleScope))
+            if (!fillSymbolRecord(sm, modport, record, &moduleScope))
                 return;
-            info.symbolType = sym_list::sym_interface_modport;
-            info.moduleScope = moduleScope;
-            outList.append(info);
+            applyCollectorKind(&record, RawCollectorKind::InterfaceModport);
+            record.owner.name = moduleScope;
+            outList.append(record);
             v.visitDefault(modport);
         },
         [&](auto& v, const ParameterSymbol& param) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, param, info, &moduleScope))
+            if (!fillSymbolRecord(sm, param, record, &moduleScope))
                 return;
-            info.symbolType = param.isLocalParam() ? sym_list::sym_localparam : sym_list::sym_parameter;
-            info.moduleScope = moduleScope;
-            outList.append(info);
+            applyCollectorKind(&record,
+                param.isLocalParam()
+                    ? RawCollectorKind::Localparam
+                    : RawCollectorKind::Parameter);
+            record.owner.name = moduleScope;
+            outList.append(record);
             v.visitDefault(param);
         },
         [&](auto& v, const TypeAliasType& typeAlias) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, typeAlias, info, &moduleScope))
+            if (!fillSymbolRecord(sm, typeAlias, record, &moduleScope))
                 return;
-            info.symbolType = sym_list::sym_typedef;
-            info.moduleScope = moduleScope;
-            const QString aliasName = info.symbolName;
+            applyCollectorKind(&record, RawCollectorKind::Typedef);
+            record.owner.name = moduleScope;
+            const QString aliasName = record.name;
             const slang::ast::Type& target = typeAlias.getCanonicalType();
             if (target.kind == SymbolKind::EnumType) {
-                info.dataType = QLatin1String("enum");
-                outList.append(info);
-                emitEnumValues(sm, target.as<EnumType>(), aliasName, outList);
+                record.type.rawTypeText = QLatin1String("enum");
+                outList.append(record);
+                emitEnumValueRecords(sm, target.as<EnumType>(), aliasName, outList);
             }
             else if (target.kind == SymbolKind::PackedStructType
                      || target.kind == SymbolKind::UnpackedStructType) {
                 const bool packed = (target.kind == SymbolKind::PackedStructType);
-                info.dataType = QLatin1String("struct");
-                outList.append(info);
+                record.type.rawTypeText = QLatin1String("struct");
+                outList.append(record);
                 // Emit the struct *type* symbol too, so ns/nsp completion and type-name jump
                 // (which look for sym_packed_struct / sym_unpacked_struct) resolve.
-                sym_list::SymbolInfo typeSym = info;
-                typeSym.symbolType = packed ? sym_list::sym_packed_struct
-                                            : sym_list::sym_unpacked_struct;
-                typeSym.dataType.clear();
-                outList.append(typeSym);
+                SemanticSymbolRecord typeRecord = record;
+                applyCollectorKind(&typeRecord,
+                    packed
+                        ? RawCollectorKind::PackedStruct
+                        : RawCollectorKind::UnpackedStruct);
+                typeRecord.type.rawTypeText.clear();
+                outList.append(typeRecord);
                 const slang::ast::Scope& structScope = packed
                     ? static_cast<const slang::ast::Scope&>(target.as<PackedStructType>())
                     : static_cast<const slang::ast::Scope&>(target.as<UnpackedStructType>());
-                emitStructMembers(sm, structScope, aliasName, outList);
+                emitStructMemberRecords(sm, structScope, aliasName, outList);
             }
             else {
-                outList.append(info);
+                outList.append(record);
             }
             v.visitDefault(typeAlias);
         },
         [&](auto& v, const EnumType& enumType) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, enumType, info, &moduleScope))
+            if (!fillSymbolRecord(sm, enumType, record, &moduleScope))
                 return;
-            info.symbolType = sym_list::sym_enum;
-            info.moduleScope = moduleScope;
-            outList.append(info);
+            applyCollectorKind(&record, RawCollectorKind::Enum);
+            record.owner.name = moduleScope;
+            outList.append(record);
             v.visitDefault(enumType);
         },
         [&](auto& v, const PackageSymbol& pkg) {
-            sym_list::SymbolInfo info;
+            SemanticSymbolRecord record;
             QString moduleScope;
-            if (!fillSymbolInfo(sm, pkg, info, &moduleScope))
+            if (!fillSymbolRecord(sm, pkg, record, &moduleScope))
                 return;
-            info.symbolType = sym_list::sym_package;
-            info.moduleScope = QString::fromStdString(std::string(pkg.name));
-            outList.append(info);
+            applyCollectorKind(&record, RawCollectorKind::Package);
+            record.owner.name = QString::fromStdString(std::string(pkg.name));
+            outList.append(record);
             v.visitDefault(pkg);
         }
     );
 
     root.visit(visitor);
+    finalizeCollectedSymbolRecords(&outList);
 }
 
 }
@@ -276,13 +314,17 @@ void collectLegacySymbols(slang::ast::Compilation& compilation,
 void slang_symbols::collectSymbolRecords(slang::ast::Compilation& compilation,
                                          QList<SemanticSymbolRecord>& outList)
 {
-    QList<sym_list::SymbolInfo> legacySymbols;
-    collectLegacySymbols(compilation, legacySymbols);
-    outList = semanticSymbolRecordsForCollectedSymbols(legacySymbols);
+    collectNativeRecords(compilation, outList);
 }
 
 void slang_symbols::collectSymbols(slang::ast::Compilation& compilation,
                                    QList<sym_list::SymbolInfo>& outList)
 {
-    collectLegacySymbols(compilation, outList);
+    QList<SemanticSymbolRecord> records;
+    collectNativeRecords(compilation, records);
+    outList.reserve(outList.size() + records.size());
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.isValid())
+            outList.append(legacySymbolInfoForRecord(record));
+    }
 }

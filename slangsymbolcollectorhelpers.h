@@ -1,7 +1,7 @@
 #ifndef SLANGSYMBOLCOLLECTORHELPERS_H
 #define SLANGSYMBOLCOLLECTORHELPERS_H
 
-#include "syminfo.h"
+#include "semanticindex.h"
 
 #include <slang/ast/symbols/PortSymbols.h>
 
@@ -21,24 +21,32 @@ class Type;
 
 namespace slang_symbols::detail {
 
-bool fillSymbolInfo(const slang::SourceManager* sm,
-                    const slang::ast::Symbol& sym,
-                    sym_list::SymbolInfo& out,
-                    QString* outModuleScope);
+bool fillSymbolRecord(const slang::SourceManager* sm,
+                      const slang::ast::Symbol& sym,
+                      SemanticSymbolRecord& out,
+                      QString* outOwnerName);
 
-void emitEnumValues(const slang::SourceManager* sm,
-                    const slang::ast::EnumType& et,
-                    const QString& scopeKey,
-                    QList<sym_list::SymbolInfo>& outList);
+void applyCollectorKind(
+    SemanticSymbolRecord* record,
+    SymbolTaxonomy::RawCollectorKind rawKind);
 
-void emitStructMembers(const slang::SourceManager* sm,
-                       const slang::ast::Scope& structScope,
-                       const QString& scopeKey,
-                       QList<sym_list::SymbolInfo>& outList);
+void finalizeCollectedSymbolRecords(QList<SemanticSymbolRecord>* records);
 
-sym_list::sym_type_e variableOrNetTypeToSymType(const slang::ast::Type& type);
+void emitEnumValueRecords(const slang::SourceManager* sm,
+                          const slang::ast::EnumType& et,
+                          const QString& scopeKey,
+                          QList<SemanticSymbolRecord>& outList);
 
-sym_list::sym_type_e portDirectionToSymType(slang::ast::ArgumentDirection dir);
+void emitStructMemberRecords(const slang::SourceManager* sm,
+                             const slang::ast::Scope& structScope,
+                             const QString& scopeKey,
+                             QList<SemanticSymbolRecord>& outList);
+
+SymbolTaxonomy::RawCollectorKind variableOrNetRawCollectorKind(
+    const slang::ast::Type& type);
+
+SymbolTaxonomy::RawCollectorKind portDirectionRawCollectorKind(
+    slang::ast::ArgumentDirection dir);
 
 } // namespace slang_symbols::detail
 
