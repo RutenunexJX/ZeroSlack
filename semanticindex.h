@@ -204,20 +204,15 @@ QString symbolStableKeyText(const SymbolStableKey& key);
 QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);
 
-// Thin facade over the current sym_list-backed semantic store.
-//
-// This is the migration boundary for new code: the first implementation delegates to sym_list
-// and existing services, while later versions can swap in snapshots without changing callers.
+// Thin facade over the semantic-native store and published snapshots.
 class SemanticIndex
 {
 public:
     static SemanticIndex* getInstance();
 
-    explicit SemanticIndex(sym_list* symbolDatabase = nullptr);
+    SemanticIndex();
     ~SemanticIndex();
 
-    void setSymbolDatabase(sym_list* symbolDatabase);
-    sym_list* symbolDatabase() const;
     void setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot);
     void clearSnapshot();
     std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
@@ -335,7 +330,6 @@ public:
     QList<SemanticDiagnostic> getDiagnostics(const QString& fileName = QString()) const;
 
 private:
-    sym_list* m_symbolDatabase = nullptr;
     SymbolRelationshipEngine* m_relationshipEngine = nullptr;
     std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
     std::uint64_t m_snapshotRevision = 0;

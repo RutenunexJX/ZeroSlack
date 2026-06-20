@@ -59,6 +59,7 @@ Thin UI consumers
 - I3 eighth block is complete: `SemanticIndex` no longer mirrors semantic records back into `sym_list`, and the reverse relationship/scope mirror conversion is deleted and guarded against returning.
 - I4 is current: delete the remaining legacy carrier APIs and compatibility taxonomy surface now that semantic store, scope, and relationship paths no longer depend on them.
 - I4 first block is complete: the unused `semanticcollectoradapter` source/header have been removed from CMake and guarded as forbidden legacy collector adapter files.
+- I4 second block is complete: `SemanticIndex` no longer exposes or stores a legacy `sym_list` database injection/access API.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

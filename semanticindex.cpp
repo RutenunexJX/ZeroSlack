@@ -93,19 +93,8 @@ SemanticIndex* SemanticIndex::getInstance()
     return instance.get();
 }
 
-SemanticIndex::SemanticIndex(sym_list* symbolDatabase)
-    : m_symbolDatabase(symbolDatabase ? symbolDatabase : sym_list::getInstance())
+SemanticIndex::SemanticIndex()
 {
 }
 
 SemanticIndex::~SemanticIndex() = default;
-
-void SemanticIndex::setSymbolDatabase(sym_list* symbolDatabase)
-{
-    m_symbolDatabase = symbolDatabase ? symbolDatabase : sym_list::getInstance();
-}
-
-sym_list* SemanticIndex::symbolDatabase() const
-{
-    return m_symbolDatabase ? m_symbolDatabase : sym_list::getInstance();
-}
