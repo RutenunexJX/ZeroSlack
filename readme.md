@@ -70,6 +70,7 @@ Thin UI consumers
 - I4 tenth block is complete: legacy completion type matching compatibility APIs have been deleted in favor of `SemanticCompletionKind` metadata matching.
 - I4 eleventh block is complete: legacy outline grouping compatibility APIs have been deleted; outline checks now use native semantic metadata and raw collector kind directly.
 - I4 twelfth block is complete: legacy raw collector kind round-trip helpers have been removed from the public taxonomy compatibility header.
+- I4 thirteenth block is complete: tracked tests no longer include the removed `semanticcollectoradapter` header; legacy fixture-to-record conversion is isolated in a test fixture helper and guarded against adapter include regressions.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

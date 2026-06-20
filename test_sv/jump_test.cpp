@@ -21,7 +21,7 @@
 #include "editorsemanticcontextservice.h"
 #include "projectmodel.h"
 #include "sourcenavigationservice.h"
-#include "semanticcollectoradapter.h"
+#include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 #include "symboltaxonomylegacy.h"

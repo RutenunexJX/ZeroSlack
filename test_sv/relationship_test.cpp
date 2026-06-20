@@ -17,7 +17,7 @@
 #include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
-#include "semanticcollectoradapter.h"
+#include "semantic_fixture_records.h"
 #include "semanticdiffservice.h"
 #include "signaljourneyservice.h"
 #include "symbolrelationshipengine.h"

@@ -33,7 +33,7 @@
 #include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
 #include "navigationwidget.h"
-#include "semanticcollectoradapter.h"
+#include "semantic_fixture_records.h"
 #include "symboltaxonomylegacy.h"
 #include "navigationmanager.h"
 #include "problemspanelcoordinator.h"
