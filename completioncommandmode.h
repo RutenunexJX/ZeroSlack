@@ -10,11 +10,12 @@ public:
     static CommandModeMatch matchCommandMode(const QString& lineUpToCursor);
     static CommandModeInputState inputState(const QString& lineUpToCursor);
     static CommandSymbolPresentation symbolPresentation(
-        sym_list::sym_type_e symbolType);
+        CompletionCommandKind kind);
     static CommandSymbolCompletionItem symbolCompletionItem(
         const SemanticSymbolRecord& record,
-        sym_list::sym_type_e requestedType,
+        CompletionCommandKind requestedKind,
         const QString& prefix = QString());
+    static bool requiresModuleContext(CompletionCommandKind kind);
     static CompletionActivationState activationState(
         const CompletionActivationQuery& query);
     static CompletionPopupKeyState popupKeyState(

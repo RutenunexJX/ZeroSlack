@@ -40,12 +40,38 @@ struct CompletionResult {
     QList<SemanticCompletionItem> items;
 };
 
+enum class CompletionCommandKind {
+    User,
+    Reg,
+    Wire,
+    Logic,
+    Module,
+    Task,
+    Function,
+    Interface,
+    Package,
+    Macro,
+    Localparam,
+    Parameter,
+    AlwaysProcess,
+    ContinuousAssign,
+    Typedef,
+    EnumValue,
+    EnumType,
+    EnumVariable,
+    StructMember,
+    PackedStructType,
+    UnpackedStructType,
+    PackedStructVariable,
+    UnpackedStructVariable
+};
+
 struct CommandCompletionQuery {
     QString prefix;
     QString fileName;
     QString moduleName;
     QString documentText;
-    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
+    CompletionCommandKind commandKind = CompletionCommandKind::User;
 };
 
 struct ContextCompletionQuery {
@@ -157,7 +183,7 @@ struct CommandSymbolCompletionItem {
 
 struct CommandModeCommand {
     QString prefix;
-    sym_list::sym_type_e rawCollectorKind = sym_list::sym_user;
+    CompletionCommandKind kind = CompletionCommandKind::User;
     QString description;
     QString defaultValue;
 };
@@ -193,7 +219,7 @@ struct CommandModeCompletionState {
     QString input;
     QString completionPrefix;
     CommandModeCommand command;
-    sym_list::sym_type_e requestedRawCollectorKind = sym_list::sym_user;
+    CompletionCommandKind commandKind = CompletionCommandKind::User;
     QList<SemanticSymbolRecord> symbolRecords;
     QList<SymbolStableKey> symbolStableKeys;
 };

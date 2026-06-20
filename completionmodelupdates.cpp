@@ -154,14 +154,14 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
 void CompletionModel::updateSymbolRecordCompletions(
     const QList<SemanticSymbolRecord> &records,
     const QString &prefix,
-    sym_list::sym_type_e symbolType)
+    CompletionCommandKind requestedKind)
 {
     beginResetModel();
     completions.clear();
 
     CompletionService* completionService = CompletionService::getInstance();
     const CommandSymbolPresentation presentation =
-        completionService->commandSymbolPresentation(symbolType);
+        completionService->commandSymbolPresentation(requestedKind);
 
     CompletionItem descItem;
     descItem.text = QString(":: COMMAND MODE - %1 ::").arg(presentation.typeDescription);
@@ -175,7 +175,6 @@ void CompletionModel::updateSymbolRecordCompletions(
     CompletionItem defaultItem;
     defaultItem.text = QString("[DEFAULT] %1").arg(presentation.defaultValue);
     defaultItem.type = SymbolCompletion;
-    defaultItem.symbolType = symbolType;
     defaultItem.description =
         QString("Default %1 declaration").arg(presentation.typeDescription.split(' ').value(0));
     defaultItem.defaultValue = presentation.defaultValue;
@@ -191,7 +190,7 @@ void CompletionModel::updateSymbolRecordCompletions(
         }
 
         const CommandSymbolCompletionItem serviceItem =
-            completionService->commandSymbolCompletionItem(record, symbolType, prefix);
+            completionService->commandSymbolCompletionItem(record, requestedKind, prefix);
         if (addedItems.contains(serviceItem.uniqueKey))
             continue;
         addedItems.insert(serviceItem.uniqueKey);

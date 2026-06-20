@@ -37,10 +37,10 @@ public:
     int completionItemScore(const QString& text, const QString& prefix) const;
     QString symbolTypeDescription(sym_list::sym_type_e symbolType) const;
     CommandSymbolPresentation commandSymbolPresentation(
-        sym_list::sym_type_e symbolType) const;
+        CompletionCommandKind kind) const;
     CommandSymbolCompletionItem commandSymbolCompletionItem(
         const SemanticSymbolRecord& record,
-        sym_list::sym_type_e requestedType,
+        CompletionCommandKind requestedKind,
         const QString& prefix = QString()) const;
     QList<CommandModeCommand> commandModeCommands() const;
     CommandModeMatch matchCommandMode(const QString& lineUpToCursor) const;

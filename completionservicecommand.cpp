@@ -37,7 +37,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     state.input = inputState.input;
     state.completionPrefix = inputState.input.trimmed();
     state.command = inputState.command;
-    state.requestedRawCollectorKind = inputState.command.rawCollectorKind;
+    state.commandKind = inputState.command.kind;
 
     if (state.exitRequested)
         return state;
@@ -47,12 +47,11 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     completionQuery.fileName = query.fileName;
     completionQuery.moduleName = query.moduleName;
     completionQuery.documentText = query.documentText;
-    completionQuery.rawCollectorKind = state.command.rawCollectorKind;
+    completionQuery.commandKind = state.command.kind;
 
     state.symbolRecords = findCommandCompletionSymbolRecords(completionQuery);
     if (state.symbolRecords.isEmpty()
-        && SymbolTaxonomy::isDirectModuleContextCompletionRequest(
-            state.command.rawCollectorKind)
+        && CompletionCommandMode::requiresModuleContext(state.command.kind)
         && completionQuery.moduleName.isEmpty()) {
         state.hidePopup = true;
         return state;
@@ -79,17 +78,17 @@ CompletionPopupKeyState CompletionService::completionPopupKeyState(
 }
 
 CommandSymbolPresentation CompletionService::commandSymbolPresentation(
-    sym_list::sym_type_e symbolType) const
+    CompletionCommandKind kind) const
 {
-    return CompletionCommandMode::symbolPresentation(symbolType);
+    return CompletionCommandMode::symbolPresentation(kind);
 }
 
 CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
     const SemanticSymbolRecord& record,
-    sym_list::sym_type_e requestedType,
+    CompletionCommandKind requestedKind,
     const QString& prefix) const
 {
-    return CompletionCommandMode::symbolCompletionItem(record, requestedType, prefix);
+    return CompletionCommandMode::symbolCompletionItem(record, requestedKind, prefix);
 }
 
 QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const

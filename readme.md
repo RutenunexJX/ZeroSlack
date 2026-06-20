@@ -34,6 +34,7 @@ Thin UI consumers
 - G3 is complete: direct `symbolId`, `symbolType`, `moduleScope`, `dataType`, and `sym_type_e` product-facing use has been removed or isolated to collector/import, taxonomy, completion compatibility, snapshot-local, and guarded adapter boundaries.
 - The Phase G release gate passed locally with full Ninja and full CTest.
 - Phase H should tighten the remaining allowed boundaries: completion compatibility, snapshot/store `SymbolInfo` carriers, feature-service internal helpers, `syminfo` legacy queries, and collector/import adapters.
+- H1 is in progress: command-mode completion query/state/model contracts now use `CompletionCommandKind`; raw collector mapping is isolated inside the completion semantic-query adapter.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase H, move toward a final model where raw collector compatibility is concentrated in a minimal collector adapter and absent from product, service, report, completion, and snapshot contracts.

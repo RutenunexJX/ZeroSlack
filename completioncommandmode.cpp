@@ -7,27 +7,27 @@
 QList<CommandModeCommand> CompletionCommandMode::commands()
 {
     return {
-        {QStringLiteral("r "), sym_list::sym_reg, QStringLiteral("reg variables"), QStringLiteral("reg")},
-        {QStringLiteral("w "), sym_list::sym_wire, QStringLiteral("wire variables"), QStringLiteral("wire")},
-        {QStringLiteral("l "), sym_list::sym_logic, QStringLiteral("logic variables"), QStringLiteral("logic")},
-        {QStringLiteral("m "), sym_list::sym_module, QStringLiteral("modules"), QStringLiteral("module")},
-        {QStringLiteral("t "), sym_list::sym_task, QStringLiteral("tasks"), QStringLiteral("task")},
-        {QStringLiteral("f "), sym_list::sym_function, QStringLiteral("functions"), QStringLiteral("function")},
-        {QStringLiteral("i "), sym_list::sym_interface, QStringLiteral("interfaces"), QStringLiteral("interface")},
-        {QStringLiteral("d "), sym_list::sym_def_define, QStringLiteral("macro definitions"), QStringLiteral("`define")},
-        {QStringLiteral("lp "), sym_list::sym_localparam, QStringLiteral("localparam declarations"), QStringLiteral("localparam")},
-        {QStringLiteral("p "), sym_list::sym_parameter, QStringLiteral("parameter declarations"), QStringLiteral("parameter")},
-        {QStringLiteral("a "), sym_list::sym_always, QStringLiteral("always blocks"), QStringLiteral("always")},
-        {QStringLiteral("c "), sym_list::sym_assign, QStringLiteral("continuous assignments"), QStringLiteral("assign")},
-        {QStringLiteral("u "), sym_list::sym_typedef, QStringLiteral("type definitions"), QStringLiteral("typedef")},
-        {QStringLiteral("ee "), sym_list::sym_enum_value, QStringLiteral("enum values"), QStringLiteral("enum_value")},
-        {QStringLiteral("ne "), sym_list::sym_enum, QStringLiteral("enum types"), QStringLiteral("enum")},
-        {QStringLiteral("e "), sym_list::sym_enum_var, QStringLiteral("enum variables"), QStringLiteral("enum_var")},
-        {QStringLiteral("sm "), sym_list::sym_struct_member, QStringLiteral("struct members"), QStringLiteral("member")},
-        {QStringLiteral("nsp "), sym_list::sym_packed_struct, QStringLiteral("packed struct types"), QStringLiteral("struct")},
-        {QStringLiteral("ns "), sym_list::sym_unpacked_struct, QStringLiteral("unpacked struct types"), QStringLiteral("struct")},
-        {QStringLiteral("sp "), sym_list::sym_packed_struct_var, QStringLiteral("packed struct variables"), QStringLiteral("struct")},
-        {QStringLiteral("s "), sym_list::sym_unpacked_struct_var, QStringLiteral("unpacked struct variables"), QStringLiteral("struct")},
+        {QStringLiteral("r "), CompletionCommandKind::Reg, QStringLiteral("reg variables"), QStringLiteral("reg")},
+        {QStringLiteral("w "), CompletionCommandKind::Wire, QStringLiteral("wire variables"), QStringLiteral("wire")},
+        {QStringLiteral("l "), CompletionCommandKind::Logic, QStringLiteral("logic variables"), QStringLiteral("logic")},
+        {QStringLiteral("m "), CompletionCommandKind::Module, QStringLiteral("modules"), QStringLiteral("module")},
+        {QStringLiteral("t "), CompletionCommandKind::Task, QStringLiteral("tasks"), QStringLiteral("task")},
+        {QStringLiteral("f "), CompletionCommandKind::Function, QStringLiteral("functions"), QStringLiteral("function")},
+        {QStringLiteral("i "), CompletionCommandKind::Interface, QStringLiteral("interfaces"), QStringLiteral("interface")},
+        {QStringLiteral("d "), CompletionCommandKind::Macro, QStringLiteral("macro definitions"), QStringLiteral("`define")},
+        {QStringLiteral("lp "), CompletionCommandKind::Localparam, QStringLiteral("localparam declarations"), QStringLiteral("localparam")},
+        {QStringLiteral("p "), CompletionCommandKind::Parameter, QStringLiteral("parameter declarations"), QStringLiteral("parameter")},
+        {QStringLiteral("a "), CompletionCommandKind::AlwaysProcess, QStringLiteral("always blocks"), QStringLiteral("always")},
+        {QStringLiteral("c "), CompletionCommandKind::ContinuousAssign, QStringLiteral("continuous assignments"), QStringLiteral("assign")},
+        {QStringLiteral("u "), CompletionCommandKind::Typedef, QStringLiteral("type definitions"), QStringLiteral("typedef")},
+        {QStringLiteral("ee "), CompletionCommandKind::EnumValue, QStringLiteral("enum values"), QStringLiteral("enum_value")},
+        {QStringLiteral("ne "), CompletionCommandKind::EnumType, QStringLiteral("enum types"), QStringLiteral("enum")},
+        {QStringLiteral("e "), CompletionCommandKind::EnumVariable, QStringLiteral("enum variables"), QStringLiteral("enum_var")},
+        {QStringLiteral("sm "), CompletionCommandKind::StructMember, QStringLiteral("struct members"), QStringLiteral("member")},
+        {QStringLiteral("nsp "), CompletionCommandKind::PackedStructType, QStringLiteral("packed struct types"), QStringLiteral("struct")},
+        {QStringLiteral("ns "), CompletionCommandKind::UnpackedStructType, QStringLiteral("unpacked struct types"), QStringLiteral("struct")},
+        {QStringLiteral("sp "), CompletionCommandKind::PackedStructVariable, QStringLiteral("packed struct variables"), QStringLiteral("struct")},
+        {QStringLiteral("s "), CompletionCommandKind::UnpackedStructVariable, QStringLiteral("unpacked struct variables"), QStringLiteral("struct")},
     };
 }
 
@@ -72,10 +72,10 @@ CommandModeInputState CompletionCommandMode::inputState(
 }
 
 CommandSymbolPresentation CompletionCommandMode::symbolPresentation(
-    sym_list::sym_type_e symbolType)
+    CompletionCommandKind kind)
 {
     for (const CommandModeCommand& command : commands()) {
-        if (command.rawCollectorKind == symbolType) {
+        if (command.kind == kind) {
             CommandSymbolPresentation presentation;
             presentation.defaultValue = command.defaultValue;
             presentation.typeDescription = command.description;
@@ -91,7 +91,7 @@ CommandSymbolPresentation CompletionCommandMode::symbolPresentation(
 
 CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
     const SemanticSymbolRecord& record,
-    sym_list::sym_type_e requestedType,
+    CompletionCommandKind requestedKind,
     const QString& prefix)
 {
     const QString symbolName = record.name;
@@ -105,19 +105,19 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
     item.ownerScope = item.symbolRecord.owner.kind;
     item.sourceRole = item.symbolRecord.sourceRole;
     item.defaultValue = symbolName;
-    item.description = symbolPresentation(requestedType)
+    item.description = symbolPresentation(requestedKind)
         .typeDescription
         .split(' ')
         .value(0);
 
-    if (requestedType == sym_list::sym_packed_struct_var
-        || requestedType == sym_list::sym_unpacked_struct_var) {
+    if (requestedKind == CompletionCommandKind::PackedStructVariable
+        || requestedKind == CompletionCommandKind::UnpackedStructVariable) {
         const QString structTypeName = item.symbolRecord.owner.name;
         item.text = structTypeName.isEmpty()
             ? symbolName
             : QStringLiteral("%1(%2)").arg(symbolName, structTypeName);
         item.uniqueKey = QStringLiteral("%1:%2").arg(symbolName, structTypeName);
-    } else if (requestedType == sym_list::sym_enum_value) {
+    } else if (requestedKind == CompletionCommandKind::EnumValue) {
         item.text = symbolName;
         item.description = item.symbolRecord.type.rawTypeText.isEmpty()
             ? QStringLiteral("enum")
@@ -130,6 +130,38 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
 
     item.score = CompletionMatcher::completionItemScore(symbolName, prefix);
     return item;
+}
+
+bool CompletionCommandMode::requiresModuleContext(CompletionCommandKind kind)
+{
+    switch (kind) {
+    case CompletionCommandKind::Reg:
+    case CompletionCommandKind::Wire:
+    case CompletionCommandKind::Logic:
+    case CompletionCommandKind::Localparam:
+    case CompletionCommandKind::Parameter:
+    case CompletionCommandKind::AlwaysProcess:
+    case CompletionCommandKind::ContinuousAssign:
+    case CompletionCommandKind::EnumVariable:
+    case CompletionCommandKind::StructMember:
+    case CompletionCommandKind::PackedStructVariable:
+    case CompletionCommandKind::UnpackedStructVariable:
+        return true;
+    case CompletionCommandKind::User:
+    case CompletionCommandKind::Module:
+    case CompletionCommandKind::Task:
+    case CompletionCommandKind::Function:
+    case CompletionCommandKind::Interface:
+    case CompletionCommandKind::Package:
+    case CompletionCommandKind::Macro:
+    case CompletionCommandKind::Typedef:
+    case CompletionCommandKind::EnumValue:
+    case CompletionCommandKind::EnumType:
+    case CompletionCommandKind::PackedStructType:
+    case CompletionCommandKind::UnpackedStructType:
+        return false;
+    }
+    return false;
 }
 
 CompletionActivationState CompletionCommandMode::activationState(

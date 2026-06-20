@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
     CompletionModel modelScoring;
     modelScoring.updateSymbolRecordCompletions(modelScoringRecords,
                                                QStringLiteral("af"),
-                                               sym_list::sym_logic);
+                                               CompletionCommandKind::Logic);
     ++g_checks;
     const QString firstScoredModelSymbol =
         modelScoring.getItem(modelScoring.index(2, 0)).text;
@@ -928,7 +928,7 @@ int main(int argc, char** argv) {
     CompletionModel defaultSelectionModel;
     defaultSelectionModel.updateSymbolRecordCompletions({},
                                                         QStringLiteral("missing"),
-                                                        sym_list::sym_logic);
+                                                        CompletionCommandKind::Logic);
     ++g_checks;
     const QModelIndex defaultSelectableIndex =
         defaultSelectionModel.firstSelectableIndex();
@@ -945,7 +945,8 @@ int main(int argc, char** argv) {
            defaultSelectableIndex.row());
 
     const CommandSymbolPresentation logicPresentation =
-        CompletionService::getInstance()->commandSymbolPresentation(sym_list::sym_logic);
+        CompletionService::getInstance()->commandSymbolPresentation(
+            CompletionCommandKind::Logic);
     expectEq("CompletionService command default",
              logicPresentation.defaultValue,
              QStringLiteral("logic"));
@@ -964,7 +965,7 @@ int main(int argc, char** argv) {
     const CommandSymbolCompletionItem structPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
             structPresentationRecord,
-            sym_list::sym_packed_struct_var);
+            CompletionCommandKind::PackedStructVariable);
     expectEq("CompletionService struct text",
              structPresentationItem.text,
              QStringLiteral("pixel(%1)")
@@ -999,7 +1000,7 @@ int main(int argc, char** argv) {
     const CommandSymbolCompletionItem enumPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
             enumPresentationRecord,
-            sym_list::sym_enum_value);
+            CompletionCommandKind::EnumValue);
     expectEq("CompletionService enum desc",
              enumPresentationItem.description,
              enumPresentationItem.symbolRecord.type.rawTypeText);
@@ -1223,7 +1224,7 @@ int main(int argc, char** argv) {
     const bool commandModeMatchOk = commandModeMatch.matched
         && commandModeMatch.prefixPosition == 0
         && commandModeMatch.input == QStringLiteral("ena")
-        && commandModeMatch.command.rawCollectorKind == sym_list::sym_logic;
+        && commandModeMatch.command.kind == CompletionCommandKind::Logic;
     if (!commandModeMatchOk)
         ++g_fails;
     printf("[%s] %-34s input=\"%s\"\n",
@@ -1238,7 +1239,7 @@ int main(int argc, char** argv) {
         && !commandInputState.exitRequested
         && commandInputState.prefixPosition == 0
         && commandInputState.input == QStringLiteral("ena")
-        && commandInputState.command.rawCollectorKind == sym_list::sym_logic;
+        && commandInputState.command.kind == CompletionCommandKind::Logic;
     if (!commandInputStateOk)
         ++g_fails;
     printf("[%s] %-34s input=\"%s\"\n",
@@ -1253,7 +1254,7 @@ int main(int argc, char** argv) {
         && commandExitState.exitRequested
         && commandExitState.prefixPosition == 0
         && commandExitState.input == QStringLiteral(" ")
-        && commandExitState.command.rawCollectorKind == sym_list::sym_logic;
+        && commandExitState.command.kind == CompletionCommandKind::Logic;
     if (!commandExitStateOk)
         ++g_fails;
     printf("[%s] %-34s input=\"%s\"\n",
@@ -1300,8 +1301,8 @@ int main(int argc, char** argv) {
         && !commandCompletionState.hidePopup
         && commandCompletionState.showCompletions
         && commandCompletionState.completionPrefix == QStringLiteral("en")
-        && commandCompletionState.command.rawCollectorKind == sym_list::sym_logic
-        && commandCompletionState.requestedRawCollectorKind == sym_list::sym_logic;
+        && commandCompletionState.command.kind == CompletionCommandKind::Logic
+        && commandCompletionState.commandKind == CompletionCommandKind::Logic;
     if (!commandCompletionStateOk)
         ++g_fails;
     printf("[%s] %-34s prefix=\"%s\"\n",
@@ -1352,8 +1353,8 @@ int main(int argc, char** argv) {
     const bool commandCompletionHideOk = commandCompletionHideState.matched
         && commandCompletionHideState.hidePopup
         && !commandCompletionHideState.showCompletions
-        && commandCompletionHideState.command.rawCollectorKind
-            == sym_list::sym_packed_struct_var;
+        && commandCompletionHideState.command.kind
+            == CompletionCommandKind::PackedStructVariable;
     if (!commandCompletionHideOk)
         ++g_fails;
     printf("[%s] %-34s\n",
@@ -1456,7 +1457,8 @@ int main(int argc, char** argv) {
                true);
 
     const CommandSymbolPresentation interfacePresentation =
-        CompletionService::getInstance()->commandSymbolPresentation(sym_list::sym_interface);
+        CompletionService::getInstance()->commandSymbolPresentation(
+            CompletionCommandKind::Interface);
     expectEq("CompletionService interface default",
              interfacePresentation.defaultValue,
              QStringLiteral("interface"));
@@ -2046,7 +2048,7 @@ int main(int argc, char** argv) {
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
     commandQuery.moduleName = "top";
-    commandQuery.rawCollectorKind = sym_list::sym_logic;
+    commandQuery.commandKind = CompletionCommandKind::Logic;
     commandQuery.prefix = "en";
     expectList("CompletionService command logic",
                CompletionService::getInstance()->findCommandCompletions(commandQuery),
@@ -2066,7 +2068,7 @@ int main(int argc, char** argv) {
            "CompletionService command symbols",
            commandLogicSymbols.size());
 
-    commandQuery.rawCollectorKind = sym_list::sym_packed_struct_var;
+    commandQuery.commandKind = CompletionCommandKind::PackedStructVariable;
     commandQuery.prefix = "pix";
     commandQuery.documentText = content;
     const QList<SemanticSymbolRecord> packedStructVars =
@@ -2515,7 +2517,7 @@ int main(int argc, char** argv) {
     CommandCompletionQuery snapshotLogicCommandQuery;
     snapshotLogicCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotLogicCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotLogicCommandQuery.rawCollectorKind = sym_list::sym_logic;
+    snapshotLogicCommandQuery.commandKind = CompletionCommandKind::Logic;
     snapshotLogicCommandQuery.prefix = QStringLiteral("snap_e");
     expectList("snapshot command logic names",
                snapshotCompletionService.findCommandCompletions(snapshotLogicCommandQuery),
@@ -2544,14 +2546,15 @@ int main(int argc, char** argv) {
                snapshotCompletionService.findCompletions(snapshotGlobalQuery),
                {"semantic_scope"});
     CommandCompletionQuery snapshotMetadataModuleCommandQuery;
-    snapshotMetadataModuleCommandQuery.rawCollectorKind = sym_list::sym_module;
+    snapshotMetadataModuleCommandQuery.commandKind =
+        CompletionCommandKind::Module;
     snapshotMetadataModuleCommandQuery.prefix = QStringLiteral("semantic");
     expectList("snapshot metadata command module",
                snapshotCompletionService.findCommandCompletions(
                    snapshotMetadataModuleCommandQuery),
                {"semantic_scope"});
     CommandCompletionQuery snapshotTaskCommandQuery;
-    snapshotTaskCommandQuery.rawCollectorKind = sym_list::sym_task;
+    snapshotTaskCommandQuery.commandKind = CompletionCommandKind::Task;
     snapshotTaskCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command task names",
                snapshotCompletionService.findCommandCompletions(snapshotTaskCommandQuery),
@@ -2572,7 +2575,7 @@ int main(int argc, char** argv) {
            snapshotTaskCommandSymbols.size());
     CommandCompletionQuery snapshotModuleCommandQuery;
     snapshotModuleCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotModuleCommandQuery.rawCollectorKind = sym_list::sym_module;
+    snapshotModuleCommandQuery.commandKind = CompletionCommandKind::Module;
     snapshotModuleCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command module in scope",
                snapshotCompletionService.findCommandCompletions(snapshotModuleCommandQuery),
@@ -2593,7 +2596,8 @@ int main(int argc, char** argv) {
            snapshotModuleCommandSymbols.size());
     CommandCompletionQuery snapshotInterfaceCommandQuery;
     snapshotInterfaceCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotInterfaceCommandQuery.rawCollectorKind = sym_list::sym_interface;
+    snapshotInterfaceCommandQuery.commandKind =
+        CompletionCommandKind::Interface;
     snapshotInterfaceCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command interface in scope",
                snapshotCompletionService.findCommandCompletions(snapshotInterfaceCommandQuery),
@@ -2612,7 +2616,7 @@ int main(int argc, char** argv) {
            snapshotInterfaceCommandSymbols.size());
     CommandCompletionQuery snapshotPackageCommandQuery;
     snapshotPackageCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotPackageCommandQuery.rawCollectorKind = sym_list::sym_package;
+    snapshotPackageCommandQuery.commandKind = CompletionCommandKind::Package;
     snapshotPackageCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command package in scope",
                snapshotCompletionService.findCommandCompletions(snapshotPackageCommandQuery),
@@ -2631,7 +2635,8 @@ int main(int argc, char** argv) {
            snapshotPackageCommandSymbols.size());
     CommandCompletionQuery snapshotSemanticPackageParamQuery;
     snapshotSemanticPackageParamQuery.moduleName = QStringLiteral("snap_top");
-    snapshotSemanticPackageParamQuery.rawCollectorKind = sym_list::sym_parameter;
+    snapshotSemanticPackageParamQuery.commandKind =
+        CompletionCommandKind::Parameter;
     snapshotSemanticPackageParamQuery.prefix = QStringLiteral("semantic");
     expectList("snapshot semantic package parameter command",
                snapshotCompletionService.findCommandCompletions(
@@ -2639,7 +2644,7 @@ int main(int argc, char** argv) {
                {"semantic_pkg_param"});
     CommandCompletionQuery snapshotDefineCommandQuery;
     snapshotDefineCommandQuery.moduleName = QStringLiteral("snap_top");
-    snapshotDefineCommandQuery.rawCollectorKind = sym_list::sym_def_define;
+    snapshotDefineCommandQuery.commandKind = CompletionCommandKind::Macro;
     snapshotDefineCommandQuery.prefix = QStringLiteral("SNAP");
     expectList("snapshot command define in scope",
                snapshotCompletionService.findCommandCompletions(snapshotDefineCommandQuery),
@@ -2657,7 +2662,7 @@ int main(int argc, char** argv) {
            "snapshot command define symbols",
            snapshotDefineCommandSymbols.size());
     CommandCompletionQuery snapshotEnumCommandQuery;
-    snapshotEnumCommandQuery.rawCollectorKind = sym_list::sym_enum;
+    snapshotEnumCommandQuery.commandKind = CompletionCommandKind::EnumType;
     snapshotEnumCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command enum typedef",
                snapshotCompletionService.findCommandCompletions(snapshotEnumCommandQuery),
@@ -2966,7 +2971,8 @@ int main(int argc, char** argv) {
     snapshotCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotCommandQuery.moduleName = QStringLiteral("snap_top");
     snapshotCommandQuery.documentText = QStringLiteral("module snap_top;\nendmodule\n");
-    snapshotCommandQuery.rawCollectorKind = sym_list::sym_packed_struct_var;
+    snapshotCommandQuery.commandKind =
+        CompletionCommandKind::PackedStructVariable;
     snapshotCommandQuery.prefix = QStringLiteral("snap");
     const QList<SemanticSymbolRecord> snapshotCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(snapshotCommandQuery);
