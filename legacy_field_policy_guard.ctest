@@ -260,6 +260,8 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "(semanticSymbolRecordsForCollectedSymbols|semanticSymbolRecordsForDatabaseExcludingFiles|updateSymbolDatabaseRecordsForFile)[ \t\r\n]*\\("
     "(^|[^A-Za-z0-9_])(legacyTypes|rawCollectorKind|requestedRawCollectorKind)([^A-Za-z0-9_]|$)"
     "symboltaxonomylegacy\\.h"
+    "symboltaxonomy.cpp|legacyRawCollectorKind[ \t\r\n]*\\("
+    "symboltaxonomy.cpp|hasLegacyRawCollectorKind[ \t\r\n]*\\("
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
