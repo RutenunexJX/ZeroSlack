@@ -269,7 +269,11 @@ static void runInlineRelationshipRegression(SlangManager& slang,
     expectBool("symbols include beta clk", betaClkId > 0, true);
     expectBool("symbols include beta rst_n", rstId > 0, true);
 
-    QVector<RelationshipToAdd> rels = builder.computeRelationships(path, content, symbols);
+    QVector<RelationshipToAdd> rels =
+        builder.computeRelationships(path,
+                                     content,
+                                     semanticSymbolRecordsForSymbols(symbols),
+                                     nullptr);
 
     expectBool("beta instantiates leaf",
                hasRel(rels, betaId, leafId, SymbolRelationshipEngine::INSTANTIATES), true);
@@ -795,9 +799,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && outlineSearchResults.first().symbolRecord.localHandle == captureId,
                true);
 
-    QVector<RelationshipToAdd> rels = builder.computeRelationships(topPath,
-                                                                    contents.value(topPath),
-                                                                    topSymbols);
+    QVector<RelationshipToAdd> rels =
+        builder.computeRelationships(topPath,
+                                     contents.value(topPath),
+                                     index.getSymbolRecords(topPath),
+                                     nullptr);
 
     expectBool("top instantiates cross-file stage",
                hasRel(rels, topId, stageId, SymbolRelationshipEngine::INSTANTIATES), true);
@@ -820,7 +826,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("semantic index creates relationship builder",
                facadeBuilder != nullptr, true);
     const QVector<RelationshipToAdd> facadeBuilderRels =
-        facadeBuilder->computeRelationships(topPath, contents.value(topPath), topSymbols);
+        facadeBuilder->computeRelationships(topPath,
+                                            contents.value(topPath),
+                                            index.getSymbolRecords(topPath),
+                                            nullptr);
     expectBool("semantic index builder uses facade database",
                hasRel(facadeBuilderRels,
                       topId,

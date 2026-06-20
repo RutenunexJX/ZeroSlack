@@ -60,26 +60,6 @@ void SmartRelationshipBuilder::analyzeFile(const QString& fileName, const QStrin
     }
 }
 
-QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(const QString& fileName, const QString& content,
-                                                                          const QList<sym_list::SymbolInfo>& fileSymbols)
-{
-    return computeRelationships(fileName, content, fileSymbols, nullptr);
-}
-
-QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
-    const QString& fileName,
-    const QString& content,
-    const QList<sym_list::SymbolInfo>& fileSymbols,
-    const SemanticIndexSnapshot* snapshot)
-{
-    return computeRelationships(fileName,
-                                content,
-                                fileSymbols,
-                                snapshot,
-                                QStringList(),
-                                QHash<QString, QString>());
-}
-
 QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     const QString& fileName,
     const QString& content,
@@ -92,55 +72,6 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
                                 snapshot,
                                 QStringList(),
                                 QHash<QString, QString>());
-}
-
-QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
-    const QString& fileName,
-    const QString& content,
-    const QList<sym_list::SymbolInfo>& fileSymbols,
-    const SemanticIndexSnapshot* snapshot,
-    const QStringList& includeDirs,
-    const QHash<QString, QString>& defines)
-{
-    QVector<RelationshipToAdd> result;
-    if (checkCancellation(fileName))
-        return result;
-    if (fileSymbols.isEmpty())
-        return result;
-
-    try {
-        AnalysisContext context;
-        setupAnalysisContextFromSymbols(fileName, fileSymbols, snapshot, context);
-        context.includeDirs = includeDirs;
-        context.defines = defines;
-
-        collectResults = &result;
-
-        analyzeModuleInstantiations(content, context);
-        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
-
-        analyzeVariableAssignments(content, context);
-        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
-
-        analyzeVariableReferences(content, context);
-        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
-
-        analyzeTaskFunctionCalls(content, context);
-        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
-
-        if (enableAdvancedAnalysis) {
-            analyzeAlwaysBlocks(content, context);
-            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
-
-            analyzeClockResetRelationships(content, context);
-            if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
-        }
-
-        collectResults = nullptr;
-    } catch (...) {
-        collectResults = nullptr;
-    }
-    return result;
 }
 
 QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(

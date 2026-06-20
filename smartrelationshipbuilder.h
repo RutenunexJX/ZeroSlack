@@ -36,23 +36,11 @@ public:
 
     void analyzeFile(const QString& fileName, const QString& content);
 
-    QVector<RelationshipToAdd> computeRelationships(const QString& fileName, const QString& content,
-                                                    const QList<sym_list::SymbolInfo>& fileSymbols);
-    QVector<RelationshipToAdd> computeRelationships(const QString& fileName, const QString& content,
-                                                    const QList<sym_list::SymbolInfo>& fileSymbols,
-                                                    const SemanticIndexSnapshot* snapshot);
     QVector<RelationshipToAdd> computeRelationships(
         const QString& fileName,
         const QString& content,
         const QList<SemanticSymbolRecord>& fileSymbolRecords,
         const SemanticIndexSnapshot* snapshot);
-    QVector<RelationshipToAdd> computeRelationships(
-        const QString& fileName,
-        const QString& content,
-        const QList<sym_list::SymbolInfo>& fileSymbols,
-        const SemanticIndexSnapshot* snapshot,
-        const QStringList& includeDirs,
-        const QHash<QString, QString>& defines);
     QVector<RelationshipToAdd> computeRelationships(
         const QString& fileName,
         const QString& content,
@@ -103,9 +91,7 @@ private:
         QString currentModuleName;
         int currentModuleLocalHandle = -1;
         QHash<QString, int> localSymbolHandles;
-        QList<sym_list::SymbolInfo> fileSymbols;
         QList<SemanticSymbolRecord> fileSymbolRecords;
-        QHash<int, sym_list::sym_type_e> localHandleToType;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;
         const SemanticIndexSnapshot* snapshot = nullptr;
@@ -114,13 +100,6 @@ private:
     };
 
     void setupAnalysisContext(const QString& fileName, AnalysisContext& context);
-    void setupAnalysisContextFromSymbols(const QString& fileName,
-                                         const QList<sym_list::SymbolInfo>& fileSymbols,
-                                         AnalysisContext& context);
-    void setupAnalysisContextFromSymbols(const QString& fileName,
-                                         const QList<sym_list::SymbolInfo>& fileSymbols,
-                                         const SemanticIndexSnapshot* snapshot,
-                                         AnalysisContext& context);
     void setupAnalysisContextFromRecords(
         const QString& fileName,
         const QList<SemanticSymbolRecord>& fileSymbolRecords,
@@ -134,8 +113,6 @@ private:
     void analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeAlwaysBlocks(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
 
-    sym_list::SymbolInfo findSymbolByName(const QString& symbolName,
-                                          const AnalysisContext& context);
     SemanticSymbolRecord findSymbolRecordByName(
         const QString& symbolName,
         const AnalysisContext& context);

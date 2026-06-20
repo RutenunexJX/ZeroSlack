@@ -8,49 +8,14 @@ void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName,
                                                     AnalysisContext& context)
 {
     context.currentFileName = fileName;
-    context.fileSymbols = symbolDatabase->findSymbolsByFileName(fileName);
+    const QList<sym_list::SymbolInfo> fileSymbols =
+        symbolDatabase->findSymbolsByFileName(fileName);
     context.fileSymbolRecords =
-        semanticSymbolRecordsForSymbols(context.fileSymbols);
+        semanticSymbolRecordsForSymbols(fileSymbols);
     context.localSymbolHandles.clear();
-    context.localHandleToType.clear();
 
     for (const SemanticSymbolRecord& record : std::as_const(context.fileSymbolRecords)) {
         context.localSymbolHandles[record.name] = record.localHandle;
-        context.localHandleToType[record.localHandle] = record.rawCollectorKind;
-
-        if (SymbolTaxonomy::isModuleDeclaration(
-                semanticMetadataForSymbolRecord(record))
-            && context.currentModuleLocalHandle == -1) {
-            context.currentModuleName = record.name;
-            context.currentModuleLocalHandle = record.localHandle;
-        }
-    }
-}
-
-void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(
-    const QString& fileName,
-    const QList<sym_list::SymbolInfo>& fileSymbols,
-    AnalysisContext& context)
-{
-    setupAnalysisContextFromSymbols(fileName, fileSymbols, nullptr, context);
-}
-
-void SmartRelationshipBuilder::setupAnalysisContextFromSymbols(
-    const QString& fileName,
-    const QList<sym_list::SymbolInfo>& fileSymbols,
-    const SemanticIndexSnapshot* snapshot,
-    AnalysisContext& context)
-{
-    context.currentFileName = fileName;
-    context.fileSymbols = fileSymbols;
-    context.fileSymbolRecords = semanticSymbolRecordsForSymbols(fileSymbols);
-    context.localSymbolHandles.clear();
-    context.localHandleToType.clear();
-    context.snapshot = snapshot;
-
-    for (const SemanticSymbolRecord& record : std::as_const(context.fileSymbolRecords)) {
-        context.localSymbolHandles[record.name] = record.localHandle;
-        context.localHandleToType[record.localHandle] = record.rawCollectorKind;
 
         if (SymbolTaxonomy::isModuleDeclaration(
                 semanticMetadataForSymbolRecord(record))
@@ -69,14 +34,11 @@ void SmartRelationshipBuilder::setupAnalysisContextFromRecords(
 {
     context.currentFileName = fileName;
     context.fileSymbolRecords = fileSymbolRecords;
-    context.fileSymbols.clear();
     context.localSymbolHandles.clear();
-    context.localHandleToType.clear();
     context.snapshot = snapshot;
 
     for (const SemanticSymbolRecord& record : std::as_const(fileSymbolRecords)) {
         context.localSymbolHandles[record.name] = record.localHandle;
-        context.localHandleToType[record.localHandle] = record.rawCollectorKind;
 
         if (SymbolTaxonomy::isModuleDeclaration(
                 semanticMetadataForSymbolRecord(record))

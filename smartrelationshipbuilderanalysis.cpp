@@ -155,11 +155,8 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
         if (taskHandle == -1)
             continue;
 
-        const sym_list::sym_type_e taskType = context.localHandleToType.value(
-            taskHandle,
-            taskRecord.rawCollectorKind);
-
-        if (!SymbolTaxonomy::isSubroutineDeclaration(taskType))
+        if (!SymbolTaxonomy::isSubroutineDeclaration(
+                semanticMetadataForSymbolRecord(taskRecord)))
             continue;
 
         int ownerModuleHandle =
@@ -178,31 +175,6 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
     }
 }
 
-sym_list::SymbolInfo SmartRelationshipBuilder::findSymbolByName(
-    const QString& symbolName,
-    const AnalysisContext& context)
-{
-    const SemanticSymbolRecord record = findSymbolRecordByName(symbolName, context);
-    if (record.localHandle >= 0) {
-        sym_list::SymbolInfo symbol;
-        symbol.symbolId = record.localHandle;
-        symbol.symbolName = record.name;
-        symbol.symbolType = record.rawCollectorKind;
-        symbol.fileName = record.location.fileName;
-        symbol.startLine = record.location.startLine;
-        symbol.startColumn = record.location.startColumn;
-        symbol.endLine = record.location.endLine;
-        symbol.endColumn = record.location.endColumn;
-        symbol.moduleScope = record.owner.name;
-        symbol.dataType = record.type.rawTypeText;
-        return symbol;
-    }
-
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    return missing;
-}
-
 SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
     const QString& symbolName,
     const AnalysisContext& context)
@@ -218,8 +190,6 @@ SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
         SemanticSymbolRecord record;
         record.localHandle = localHandle;
         record.name = symbolName;
-        record.rawCollectorKind =
-            context.localHandleToType.value(localHandle, sym_list::sym_user);
         return record;
     }
 

@@ -197,11 +197,8 @@ set(H0_LEGACY_CORE_ALLOWLIST
     slangsymbolcollector.h
     slangsymbolcollectorhelpers.cpp
     slangsymbolcollectorhelpers.h
-    smartrelationshipbuilder.cpp
-    smartrelationshipbuilder.h
     smartrelationshipbuilderanalysis.cpp
     smartrelationshipbuildercontext.cpp
-    smartrelationshipbuildertiming.cpp
     symbolanalyzer.h
     symbolanalyzerasync.cpp
     symbolanalyzerpublication.cpp
