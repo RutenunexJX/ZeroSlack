@@ -2,6 +2,35 @@
 #include <QTextDocument>
 #include <QTextBlock>
 
+namespace {
+int lineCommentStartOutsideString(const QString& text)
+{
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i + 1 < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+
+        if (ch == QLatin1Char('/') && text.at(i + 1) == QLatin1Char('/'))
+            return i;
+    }
+    return -1;
+}
+}
+
 MyHighlighter::MyHighlighter(QTextDocument *parent, const TSDocument *tsdoc)
     : QSyntaxHighlighter(parent), m_tsdoc(tsdoc)
 {
@@ -49,6 +78,12 @@ void MyHighlighter::highlightBlock(const QString &text)
         if (const QTextCharFormat* f = formatFor(s.category))
             setFormat(s.start, s.length, *f);
     }
+
+    const int lineCommentStart = lineCommentStartOutsideString(text);
+    if (lineCommentStart >= 0)
+        setFormat(lineCommentStart,
+                  text.size() - lineCommentStart,
+                  commentFormat);
 
     // Propagate multi-line block-comment state so following blocks re-highlight when a /* */ opens.
     setCurrentBlockState(m_tsdoc->blockEndCommentState(blockStart, text.length()));

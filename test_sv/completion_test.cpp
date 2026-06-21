@@ -7,12 +7,18 @@
 #include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "editorsemanticcontextservice.h"
+#include "myhighlighter.h"
 #include "relationshipservice.h"
+#include "semanticdecorationservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
+#include "tsdocument.h"
 #include <QApplication>
+#include <QColor>
 #include <QFile>
+#include <QTextDocument>
+#include <QTextLayout>
 #include <QTextStream>
 #include <QString>
 #include <QStringList>
@@ -372,6 +378,104 @@ int main(int argc, char** argv) {
                  ->commandSymbolPresentation(CompletionCommandKind::Interface)
                  .typeDescription,
              QStringLiteral("interfaces"));
+
+    const QString decorationFile = QStringLiteral("decor_fixture.sv");
+    const QString decorationText =
+        QStringLiteral("module rtl_top(\n"
+                       "    input clk_main, // 80m\n"
+                       "    lite_if.s S_GENR_LITE_IF // tail\n"
+                       ");\n");
+    const QList<SemanticSymbolRecord> decorationRecords{
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("rtl_top"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(decorationFile)
+            .withLine(1, 1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record(),
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("clk_main"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(decorationFile)
+            .withLine(2, 5)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .record(),
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("S_GENR_LITE_IF"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(decorationFile)
+            .withLine(3, 5)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInterfaceModport)
+            .record(),
+    };
+    SemanticIndex decorationIndex;
+    decorationIndex.setSnapshot(sharedSnapshotFromRecords(decorationRecords));
+    SemanticDecorationService decorationService(&decorationIndex);
+    const SemanticDecorationReport decorationReport =
+        decorationService.decorationsForDocument(
+            SemanticDecorationQuery{decorationFile, decorationText});
+    bool moduleNameDecorated = false;
+    bool portNameDecorated = false;
+    bool interfacePortNameDecorated = false;
+    bool keywordDecorated = false;
+    bool commentDecorated = false;
+    auto decorationStartsInLineComment =
+        [&decorationText](const SemanticDecoration& decoration) {
+            const int lineStart =
+                decorationText.lastIndexOf(QLatin1Char('\n'),
+                                           decoration.startPosition) + 1;
+            int lineEnd = decorationText.indexOf(QLatin1Char('\n'),
+                                                 lineStart);
+            if (lineEnd < 0)
+                lineEnd = decorationText.size();
+            const int lineComment =
+                decorationText.indexOf(QStringLiteral("//"), lineStart);
+            return lineComment >= lineStart
+                && lineComment < lineEnd
+                && decoration.startPosition >= lineComment;
+        };
+    for (const SemanticDecoration& decoration : decorationReport.decorations) {
+        const QString span =
+            decorationText.mid(decoration.startPosition, decoration.length);
+        moduleNameDecorated |= span == QStringLiteral("rtl_top");
+        portNameDecorated |= span == QStringLiteral("clk_main");
+        interfacePortNameDecorated |= span == QStringLiteral("S_GENR_LITE_IF");
+        keywordDecorated |= span == QStringLiteral("module")
+            || span == QStringLiteral("input")
+            || span == QStringLiteral("lite_if.s");
+        commentDecorated |= decorationStartsInLineComment(decoration);
+    }
+    expectBool("SemanticDecoration names not keywords",
+               moduleNameDecorated
+                   && portNameDecorated
+                   && interfacePortNameDecorated
+                   && !keywordDecorated
+                   && !commentDecorated,
+               true);
+
+    const QString commentHighlightText =
+        QStringLiteral("assign a = 1; // 80m\n");
+    TSDocument commentTsDocument;
+    commentTsDocument.setText(commentHighlightText);
+    QTextDocument commentDocument(commentHighlightText);
+    MyHighlighter commentHighlighter(&commentDocument, &commentTsDocument);
+    commentHighlighter.rehighlight();
+    const QTextBlock commentBlock = commentDocument.firstBlock();
+    const int numberInComment =
+        commentBlock.text().indexOf(QStringLiteral("80m"));
+    bool commentNumberUsesCommentFormat = false;
+    for (const QTextLayout::FormatRange& range :
+         commentBlock.layout()->formats()) {
+        if (numberInComment >= range.start
+            && numberInComment < range.start + range.length) {
+            commentNumberUsesCommentFormat =
+                range.format.foreground().color() == QColor(QStringLiteral("#7F848E"))
+                && range.format.fontItalic();
+        }
+    }
+    expectBool("Highlighter line comment wins",
+               commentNumberUsesCommentFormat,
+               true);
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(
                  semanticFixtureMetadata(

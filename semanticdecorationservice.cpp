@@ -1,6 +1,7 @@
 #include "semanticdecorationservice.h"
 
 #include <QChar>
+#include <QPair>
 #include <QTextBlock>
 #include <QTextDocument>
 
@@ -18,6 +19,73 @@ bool isIdentifierStart(QChar ch)
 bool isIdentifierPart(QChar ch)
 {
     return ch.isLetterOrNumber() || ch == QLatin1Char('_');
+}
+
+int lineCommentStart(const QString& line)
+{
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i + 1 < line.size(); ++i) {
+        const QChar ch = line.at(i);
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+
+        if (ch == QLatin1Char('/') && line.at(i + 1) == QLatin1Char('/'))
+            return i;
+    }
+    return -1;
+}
+
+bool hasIdentifierBoundary(const QString& line, int start, int length)
+{
+    const int end = start + length;
+    const bool leftOk =
+        start <= 0 || !isIdentifierPart(line.at(start - 1));
+    const bool rightOk =
+        end >= line.size() || !isIdentifierPart(line.at(end));
+    return leftOk && rightOk;
+}
+
+int findNameOnLine(const QString& line,
+                   const QString& name,
+                   int preferredStartColumn)
+{
+    if (name.isEmpty())
+        return -1;
+
+    const int commentStart = lineCommentStart(line);
+    const int searchEnd = commentStart >= 0 ? commentStart : line.size();
+    const int preferredStart = qBound(0, preferredStartColumn - 1, searchEnd);
+
+    auto findFrom = [&](int start) -> int {
+        int pos = start;
+        while (pos >= 0 && pos < searchEnd) {
+            pos = line.indexOf(name, pos, Qt::CaseSensitive);
+            if (pos < 0 || pos + name.size() > searchEnd)
+                return -1;
+            if (hasIdentifierBoundary(line, pos, name.size()))
+                return pos;
+            ++pos;
+        }
+        return -1;
+    };
+
+    const int afterPreferred = findFrom(preferredStart);
+    if (afterPreferred >= 0)
+        return afterPreferred;
+    return findFrom(0);
 }
 
 SemanticDecorationRole roleForRecord(const SemanticSymbolRecord& record)
@@ -138,28 +206,32 @@ bool shouldDecorateRecord(const SemanticSymbolRecord& record)
     }
 }
 
-int positionForRecord(const SemanticSymbolRecord& record,
-                      const QTextDocument& document)
+QPair<int, int> rangeForRecord(const SemanticSymbolRecord& record,
+                               const QTextDocument& document)
 {
-    if (record.location.position > 0)
-        return record.location.position;
-
     const QTextBlock block =
         document.findBlockByNumber(record.location.startLine - 1);
-    if (!block.isValid() || record.location.startColumn <= 0)
-        return -1;
-    return block.position() + record.location.startColumn - 1;
-}
+    if (block.isValid()) {
+        const int nameStart =
+            findNameOnLine(block.text(),
+                           record.name,
+                           record.location.startColumn);
+        if (nameStart >= 0)
+            return qMakePair(block.position() + nameStart, record.name.size());
+    }
 
-int lengthForRecord(const SemanticSymbolRecord& record)
-{
-    if (record.location.length > 0)
-        return record.location.length;
+    if (record.location.position > 0 && record.location.length > 0)
+        return qMakePair(record.location.position, record.location.length);
+
+    int length = record.name.size();
     if (record.location.endLine == record.location.startLine
         && record.location.endColumn > record.location.startColumn) {
-        return record.location.endColumn - record.location.startColumn;
+        length = record.location.endColumn - record.location.startColumn;
     }
-    return record.name.size();
+    if (block.isValid() && record.location.startColumn > 0)
+        return qMakePair(block.position() + record.location.startColumn - 1,
+                         length);
+    return qMakePair(-1, 0);
 }
 
 void appendRecordDecoration(const SemanticSymbolRecord& record,
@@ -172,8 +244,9 @@ void appendRecordDecoration(const SemanticSymbolRecord& record,
     SemanticDecoration decoration;
     decoration.role = roleForRecord(record);
     decoration.text = record.name;
-    decoration.startPosition = positionForRecord(record, document);
-    decoration.length = lengthForRecord(record);
+    const QPair<int, int> range = rangeForRecord(record, document);
+    decoration.startPosition = range.first;
+    decoration.length = range.second;
     decoration.symbolRecord = record;
     if (decoration.isValid())
         out->append(decoration);
