@@ -626,21 +626,20 @@ int main(int argc, char** argv) {
                semanticMetadataForFixtureType(sym_list::sym_port_interface_modport)
                    .interfaceLikeOwner,
                true);
-    sym_list::SymbolInfo taxonomyInterfaceOwner;
-    taxonomyInterfaceOwner.symbolName = QStringLiteral("if_bus");
-    taxonomyInterfaceOwner.symbolType = sym_list::sym_interface;
     expectBool("SymbolTaxonomy interface owner metadata",
-               semanticMetadataForSymbolInfo(taxonomyInterfaceOwner).declarationKind
+               semanticFixtureMetadata(
+                   SymbolTaxonomy::DeclarationKind::Interface,
+                   SymbolTaxonomy::SymbolOwnerScope::Global)
+                       .declarationKind
                    == SymbolTaxonomy::DeclarationKind::Interface,
                true);
-    taxonomyInterfaceOwner.symbolName = QStringLiteral("bus_port");
-    taxonomyInterfaceOwner.symbolType = sym_list::sym_port_interface_modport;
-    taxonomyInterfaceOwner.dataType = QStringLiteral("if_bus.master");
+    const QString taxonomyInterfacePortType =
+        QStringLiteral("if_bus.master");
     expectEq("SymbolTaxonomy interface type name",
-             SymbolTaxonomy::interfaceTypeName(taxonomyInterfaceOwner.dataType),
+             SymbolTaxonomy::interfaceTypeName(taxonomyInterfacePortType),
              QStringLiteral("if_bus"));
     expectEq("SymbolTaxonomy interface modport name",
-             SymbolTaxonomy::interfaceModportName(taxonomyInterfaceOwner.dataType),
+             SymbolTaxonomy::interfaceModportName(taxonomyInterfacePortType),
              QStringLiteral("master"));
     expectBool("SymbolTaxonomy modport member-scope candidate",
                SymbolTaxonomy::isMemberScopeDefinitionCandidate(

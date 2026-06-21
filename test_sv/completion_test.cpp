@@ -228,20 +228,22 @@ int main(int argc, char** argv) {
                cm->getAbbreviationMatches({"always_ff", "logic"},
                                           QStringLiteral("af")),
                {"always_ff"});
-    QList<sym_list::SymbolInfo> modelScoringSymbols;
-    modelScoringSymbols.append(makeSymbol(QStringLiteral("logic"),
-                                          sym_list::sym_logic,
-                                          QStringLiteral("top"),
-                                          QString(),
-                                          9001));
-    modelScoringSymbols.append(makeSymbol(QStringLiteral("always_ff"),
-                                          sym_list::sym_logic,
-                                          QStringLiteral("top"),
-                                          QString(),
-                                          9002));
-    QList<SemanticSymbolRecord> modelScoringRecords;
-    for (const sym_list::SymbolInfo& symbol : modelScoringSymbols)
-        modelScoringRecords.append(semanticSymbolRecordForSymbol(symbol));
+    const QList<SemanticSymbolRecord> modelScoringRecords{
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("logic"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .inModule(QStringLiteral("top"))
+            .withLocalHandle(9001)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .record(),
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("always_ff"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .inModule(QStringLiteral("top"))
+            .withLocalHandle(9002)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .record(),
+    };
     CompletionModel modelScoring;
     modelScoring.updateSymbolRecordCompletions(modelScoringRecords,
                                                QStringLiteral("af"),
@@ -270,13 +272,13 @@ int main(int argc, char** argv) {
              QStringLiteral("always_ff (logic)"));
     expectBool("CompletionModel symbol stable key",
                modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
-                   == stableKeyForSymbol(modelScoringSymbols.at(1)),
+                   == modelScoringRecords.at(1).stableKey,
                true);
     expectBool("CompletionModel symbol record",
                modelScoring.getItem(modelScoring.index(2, 0)).symbolRecord.stableKey
                    == modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
                    && modelScoring.getItem(modelScoring.index(2, 0))
-                          .symbolRecord.localHandle == modelScoringSymbols.at(1).symbolId,
+                          .symbolRecord.localHandle == modelScoringRecords.at(1).localHandle,
                true);
     expectBool("CompletionModel symbol semantic metadata",
                modelScoring.getItem(modelScoring.index(2, 0)).typeDisplayName
@@ -292,7 +294,8 @@ int main(int argc, char** argv) {
                    && modelScoring.getItem(modelScoring.index(2, 0)).sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource
                    && modelScoring.getItem(modelScoring.index(2, 0))
-                          .symbolRecord.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_logic),
+                          .symbolRecord.collectorKind
+                       == SymbolTaxonomy::CollectorKind::Logic,
                true);
     expectBool("CompletionModel header selectable",
                modelScoring.getItem(modelScoring.index(0, 0)).selectable,
@@ -305,24 +308,15 @@ int main(int argc, char** argv) {
     expectEq("CompletionModel display role",
              modelScoring.data(modelScoring.index(2, 0), Qt::DisplayRole).toString(),
              QStringLiteral("always_ff (logic)"));
-    sym_list::SymbolInfo metadataModelSymbol =
-        makeSymbol(QStringLiteral("metadata_top"),
-                   sym_list::sym_user,
-                   QString(),
-                   QString(),
-                   9005);
-    metadataModelSymbol.hasSemanticMetadata = true;
-    metadataModelSymbol.semanticDeclarationKind =
-        SymbolTaxonomy::DeclarationKind::Module;
-    metadataModelSymbol.semanticUsageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataModelSymbol.semanticOwnerScope =
-        SymbolTaxonomy::SymbolOwnerScope::Global;
-    metadataModelSymbol.semanticVisibility =
-        SymbolTaxonomy::SymbolVisibility::Global;
-    metadataModelSymbol.collectorKind = sym_list::sym_module;
     const SemanticSymbolRecord metadataModelRecord =
-        semanticSymbolRecordForSymbol(metadataModelSymbol);
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("metadata_top"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(QStringLiteral("snapshot_only.sv"))
+            .withLocalHandle(9005)
+            .withSourceRole(SymbolTaxonomy::SourceRole::Unknown)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
     CompletionResult metadataCompletion;
     metadataCompletion.names.append(metadataModelRecord.name);
     CompletionResult::SemanticCompletionItem metadataCompletionItem;
@@ -352,7 +346,7 @@ int main(int argc, char** argv) {
     expectBool("CompletionModel metadata stable key",
                metadataDescriptionModel.getItem(
                    metadataDescriptionModel.index(0, 0)).symbolStableKey
-                   == stableKeyForSymbol(metadataModelSymbol),
+                   == metadataModelRecord.stableKey,
                true);
     expectBool("CompletionModel metadata record",
                metadataDescriptionModel.getItem(
@@ -360,7 +354,8 @@ int main(int argc, char** argv) {
                    == SymbolTaxonomy::DeclarationKind::Module
                    && metadataDescriptionModel.getItem(
                        metadataDescriptionModel.index(0, 0))
-                          .symbolRecord.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_module),
+                          .symbolRecord.collectorKind
+                       == SymbolTaxonomy::CollectorKind::Module,
                true);
     expectBool("CompletionModel metadata semantic fields",
                metadataDescriptionModel.getItem(
@@ -967,14 +962,14 @@ int main(int argc, char** argv) {
              logicPresentation.typeDescription,
              QStringLiteral("logic variables"));
 
-    const sym_list::SymbolInfo structPresentationSymbol =
-        makeSymbol(QStringLiteral("pixel"),
-                   sym_list::sym_packed_struct_var,
-                   QStringLiteral("pixel_t"),
-                   QString(),
-                   9003);
     const SemanticSymbolRecord structPresentationRecord =
-        semanticSymbolRecordForSymbol(structPresentationSymbol);
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("pixel"),
+            SymbolTaxonomy::DeclarationKind::StructVariable)
+            .inModule(QStringLiteral("pixel_t"))
+            .withLocalHandle(9003)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PackedStructVariable)
+            .record();
     const CommandSymbolCompletionItem structPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
             structPresentationRecord,
@@ -993,7 +988,7 @@ int main(int argc, char** argv) {
                    && structPresentationItem.symbolRecord.stableKey
                        == structPresentationItem.symbolStableKey
                    && structPresentationItem.symbolStableKey
-                       == stableKeyForSymbol(structPresentationSymbol)
+                       == structPresentationRecord.stableKey
                    && structPresentationItem.symbolRecord.owner.name
                        == QStringLiteral("pixel_t")
                    && structPresentationItem.declarationKind
@@ -1002,14 +997,15 @@ int main(int argc, char** argv) {
                        == SymbolTaxonomy::SymbolOwnerScope::Module,
                true);
 
-    const sym_list::SymbolInfo enumPresentationSymbol =
-        makeSymbol(QStringLiteral("IDLE"),
-                   sym_list::sym_enum_value,
-                   QStringLiteral("top"),
-                   QStringLiteral("state_t"),
-                   9004);
     const SemanticSymbolRecord enumPresentationRecord =
-        semanticSymbolRecordForSymbol(enumPresentationSymbol);
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("IDLE"),
+            SymbolTaxonomy::DeclarationKind::Enum)
+            .inModule(QStringLiteral("top"))
+            .withLocalHandle(9004)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .withType(QStringLiteral("state_t"))
+            .record();
     const CommandSymbolCompletionItem enumPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
             enumPresentationRecord,
@@ -1889,17 +1885,20 @@ int main(int argc, char** argv) {
                    && includeClickState.acceptEvent,
                true);
 
-    sym_list::SymbolInfo navSymbol =
-        makeSymbol(QStringLiteral("jump_sig"),
-                   sym_list::sym_logic,
-                   QStringLiteral("top"),
-                   QStringLiteral("logic"),
-                   2100);
     const QString navPath = QStringLiteral("navigation_target.sv");
-    navSymbol.fileName = navPath;
+    const SemanticSymbolRecord navSymbol =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("jump_sig"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(navPath)
+            .inModule(QStringLiteral("top"))
+            .withLocalHandle(2100)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .withType(QStringLiteral("logic"))
+            .record();
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         navPath,
-        semanticSymbolRecordsForSymbols({navSymbol}),
+        {navSymbol},
         QStringLiteral("module top; logic jump_sig; endmodule\n"));
     EditorSemanticContext identifierNavigationContext;
     identifierNavigationContext.fileName = navPath;
