@@ -253,10 +253,12 @@ feature direction that violates them.
 - Status: complete in the current worktree.
 - Scope: bug fixes and responsiveness hardening after Phase J, not a new migration phase.
 - Completion popup sizing now derives item width from rendered text and clamps the popup to usable bounds.
+- Completion trigger product logic now separates normal completion from command completion: normal completion can trigger from any identifier position after a two-character prefix, strong contexts such as `.`, backtick, `$`, and `::` trigger earlier, ordinary spaces close or keep completion closed, and command completion requires `;cmd` plus Space.
+- The old single-letter plus Space command triggers such as `l `, `m `, and `r ` are removed; command input is temporary and replaced on accept, `;?` renders command help, Esc cleans command input, and command mode is limited to command-safe positions outside comments and strings.
 - Interface definition navigation now preserves Slang header/source locations instead of rewriting include-origin records to the current analysis file.
 - Named instance port connections now emit semantic-native `InstPin` records; definition resolution uses cursor line/column to jump `.port` names to child module port declarations while preserving actual signal jumps in the parent module.
 - Navigation responsiveness is addressed at the source: opening files from Navigation no longer rebuilds the file tree, hierarchy queries are keyed by file/filter input, and tree population pauses sorting/repaint churn instead of using delayed refresh timers.
-- Verification passed with focused Ninja targets, `jump_test`, `completion_test`, `gui_smoke_test`, normal `legacy_field_policy_guard`, opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`, and `git diff --check`.
+- Verification passed with focused Ninja targets, `jump_test`, `completion_test`, `gui_smoke_test`, normal `legacy_field_policy_guard`, opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`, and `git diff --check`; the completion trigger update additionally passed `completion_test` with 299 checks and `gui_smoke_test` with 249 checks.
 
 ## Batch Policy
 
