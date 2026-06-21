@@ -95,6 +95,8 @@ EditorCompletionQueryHelper::commandModeCompletionRefreshState(
     const EditorSemanticContext& context,
     bool exitedByDoubleSpace)
 {
+    Q_UNUSED(exitedByDoubleSpace)
+
     EditorCommandModeCompletionRefreshState state;
     state.completion = commandModeCompletionState(context);
     state.matched = state.completion.matched;
@@ -105,11 +107,6 @@ EditorCompletionQueryHelper::commandModeCompletionRefreshState(
     }
 
     state.commandModeActive = true;
-
-    if (exitedByDoubleSpace) {
-        state.suppressAfterExit = true;
-        return state;
-    }
 
     if (state.completion.exitRequested) {
         state.commandModeActive = false;

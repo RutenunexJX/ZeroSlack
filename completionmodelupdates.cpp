@@ -135,6 +135,39 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
     endResetModel();
 }
 
+void CompletionModel::updateCommandHelpCompletions(
+    const QList<CommandModeCommand>& commands)
+{
+    beginResetModel();
+    completions.clear();
+
+    CompletionItem headerItem;
+    headerItem.text = QStringLiteral(":: COMMAND HELP - ;cmd + Space ::");
+    headerItem.type = CommandCompletion;
+    headerItem.description = QStringLiteral("Select a command to start it");
+    headerItem.score = 1000;
+    fillDisplayMetadata(headerItem);
+    completions.append(headerItem);
+
+    int score = 999;
+    for (const CommandModeCommand& command : commands) {
+        CompletionItem item;
+        item.text = command.prefix.trimmed();
+        item.type = CommandCompletion;
+        item.description =
+            QStringLiteral("%1 -> %2").arg(command.description, command.defaultValue);
+        item.defaultValue = command.prefix;
+        item.score = score--;
+        fillDisplayMetadata(item);
+        completions.append(item);
+    }
+
+    if (completions.size() > MaxCompletionItems)
+        completions = completions.mid(0, MaxCompletionItems);
+
+    endResetModel();
+}
+
 void CompletionModel::updateSymbolRecordCompletions(
     const QList<SemanticSymbolRecord> &records,
     const QString &prefix,

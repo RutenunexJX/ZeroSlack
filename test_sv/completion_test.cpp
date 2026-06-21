@@ -951,7 +951,8 @@ int main(int argc, char** argv) {
             commandActivationQuery);
     ++g_checks;
     const bool commandActivationOk =
-        commandActivationState.action == CompletionActivationAction::ReplaceLine
+        commandActivationState.action
+            == CompletionActivationAction::ReplaceCommandInput
         && commandActivationState.text == QStringLiteral("logic")
         && commandActivationState.clearCommandMode
         && commandActivationState.hidePopup;
@@ -971,7 +972,8 @@ int main(int argc, char** argv) {
             commandFallbackQuery);
     ++g_checks;
     const bool commandFallbackOk =
-        commandFallbackState.action == CompletionActivationAction::ReplaceLine
+        commandFallbackState.action
+            == CompletionActivationAction::ReplaceCommandInput
         && commandFallbackState.text == QStringLiteral("enable")
         && commandFallbackState.clearCommandMode
         && commandFallbackState.hidePopup;
@@ -1012,7 +1014,7 @@ int main(int argc, char** argv) {
             ->completionActivationState(contextCommandActivation);
     expectBool("EditorContext command activation",
                contextCommandActivationState.action
-                       == CompletionActivationAction::ReplaceLine
+                       == CompletionActivationAction::ReplaceCommandInput
                    && contextCommandActivationState.text
                        == QStringLiteral("logic clk")
                    && contextCommandActivationState.clearCommandMode
@@ -1095,6 +1097,15 @@ int main(int argc, char** argv) {
                        .action
                    == CompletionPopupKeyAction::HidePopupAndClearAlternate,
                true);
+    EditorCompletionPopupKeyContext contextCommandPopupQuery;
+    contextCommandPopupQuery.key = Qt::Key_Escape;
+    contextCommandPopupQuery.commandModeActive = true;
+    expectBool("EditorContext command popup clears",
+               EditorSemanticContextService::getInstance()
+                       ->completionPopupKeyState(contextCommandPopupQuery)
+                       .action
+                   == CompletionPopupKeyAction::HidePopupAndClearCommand,
+               true);
 
     CompletionPopupKeyQuery alternatePopupQuery;
     alternatePopupQuery.mode = CompletionActivationMode::AlternateMode;
@@ -1120,8 +1131,24 @@ int main(int argc, char** argv) {
                        .action == CompletionPopupKeyAction::Consume,
                true);
 
-    const CommandModeMatch commandModeMatch =
+    const CommandModeMatch oldCommandModeMatch =
         CompletionService::getInstance()->matchCommandMode(QStringLiteral("l ena"));
+    expectBool("CompletionService old command reject",
+               !oldCommandModeMatch.matched,
+               true);
+    expectBool("CompletionService old module command reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("m top"))
+                    .matched,
+               true);
+    expectBool("CompletionService old reg command reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("r reset"))
+                    .matched,
+               true);
+
+    const CommandModeMatch commandModeMatch =
+        CompletionService::getInstance()->matchCommandMode(QStringLiteral(";l ena"));
     ++g_checks;
     const bool commandModeMatchOk = commandModeMatch.matched
         && commandModeMatch.prefixPosition == 0
@@ -1133,9 +1160,19 @@ int main(int argc, char** argv) {
            commandModeMatchOk ? "PASS" : "FAIL",
            "CompletionService command match",
            commandModeMatch.input.toLocal8Bit().constData());
+    expectBool("CompletionService module command match",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral(";m top"))
+                       .command.kind == CompletionCommandKind::Module,
+               true);
+    expectBool("CompletionService reg command match",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral(";r reset"))
+                       .command.kind == CompletionCommandKind::Reg,
+               true);
 
     const CommandModeInputState commandInputState =
-        CompletionService::getInstance()->commandModeInputState(QStringLiteral("l ena"));
+        CompletionService::getInstance()->commandModeInputState(QStringLiteral(";l ena"));
     ++g_checks;
     const bool commandInputStateOk = commandInputState.matched
         && !commandInputState.exitRequested
@@ -1150,13 +1187,9 @@ int main(int argc, char** argv) {
            commandInputState.input.toLocal8Bit().constData());
 
     const CommandModeInputState commandExitState =
-        CompletionService::getInstance()->commandModeInputState(QStringLiteral("l  "));
+        CompletionService::getInstance()->commandModeInputState(QStringLiteral(";"));
     ++g_checks;
-    const bool commandExitStateOk = commandExitState.matched
-        && commandExitState.exitRequested
-        && commandExitState.prefixPosition == 0
-        && commandExitState.input == QStringLiteral(" ")
-        && commandExitState.command.kind == CompletionCommandKind::Logic;
+    const bool commandExitStateOk = !commandExitState.matched;
     if (!commandExitStateOk)
         ++g_fails;
     printf("[%s] %-34s input=\"%s\"\n",
@@ -1187,7 +1220,7 @@ int main(int argc, char** argv) {
            "CompletionService command input reject");
 
     CommandModeCompletionQuery commandCompletionQuery;
-    commandCompletionQuery.lineUpToCursor = QStringLiteral("l en");
+    commandCompletionQuery.lineUpToCursor = QStringLiteral(";l en");
     commandCompletionQuery.fileName = path;
     commandCompletionQuery.moduleName = QStringLiteral("top");
     commandCompletionQuery.documentText = content;
@@ -1228,13 +1261,13 @@ int main(int argc, char** argv) {
                true);
 
     CommandModeCompletionQuery commandCompletionExitQuery;
-    commandCompletionExitQuery.lineUpToCursor = QStringLiteral("l  ");
+    commandCompletionExitQuery.lineUpToCursor = QStringLiteral(";");
     const CommandModeCompletionState commandCompletionExitState =
         CompletionService::getInstance()->commandModeCompletionState(
             commandCompletionExitQuery);
     ++g_checks;
-    const bool commandCompletionExitOk = commandCompletionExitState.matched
-        && commandCompletionExitState.exitRequested
+    const bool commandCompletionExitOk = !commandCompletionExitState.matched
+        && !commandCompletionExitState.exitRequested
         && !commandCompletionExitState.showCompletions
         && commandCompletionExitState.symbolRecords.isEmpty()
         && commandCompletionExitState.symbolStableKeys.isEmpty();
@@ -1245,7 +1278,7 @@ int main(int argc, char** argv) {
            "CompletionService command state exit");
 
     CommandModeCompletionQuery commandCompletionHideQuery;
-    commandCompletionHideQuery.lineUpToCursor = QStringLiteral("sp pix");
+    commandCompletionHideQuery.lineUpToCursor = QStringLiteral(";sp pix");
     commandCompletionHideQuery.fileName = path;
     commandCompletionHideQuery.documentText = content;
     const CommandModeCompletionState commandCompletionHideState =
@@ -1264,7 +1297,7 @@ int main(int argc, char** argv) {
            "CompletionService command state hide");
 
     CompletionTriggerQuery commandTriggerQuery;
-    commandTriggerQuery.lineUpToCursor = QStringLiteral("l ena ");
+    commandTriggerQuery.lineUpToCursor = QStringLiteral(";l ena ");
     commandTriggerQuery.commandModeActive = true;
     expectBool("CompletionService trigger command",
                CompletionService::getInstance()->shouldContinueCompletion(
@@ -1293,12 +1326,56 @@ int main(int argc, char** argv) {
     expectBool("CompletionService trigger word hide",
                wordTriggerState.hidePopup,
                false);
+    CompletionTriggerQuery shortWordTriggerQuery;
+    shortWordTriggerQuery.lineUpToCursor = QStringLiteral("assign e");
+    const CompletionTriggerState shortWordTriggerState =
+        CompletionService::getInstance()->completionTriggerState(
+            shortWordTriggerQuery);
+    expectBool("CompletionService trigger short word",
+               shortWordTriggerState.continueCompletion,
+               false);
+    expectBool("CompletionService trigger short word hide",
+               shortWordTriggerState.hidePopup,
+               true);
+    CommandModeCompletionQuery commandCompletionFilterQuery;
+    commandCompletionFilterQuery.lineUpToCursor = QStringLiteral(";l clk");
+    commandCompletionFilterQuery.fileName = path;
+    commandCompletionFilterQuery.moduleName = QStringLiteral("top");
+    commandCompletionFilterQuery.documentText = content;
+    const CommandModeCompletionState commandCompletionFilterState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            commandCompletionFilterQuery);
+    expectBool("CompletionService command filter prefix",
+               commandCompletionFilterState.matched
+                   && commandCompletionFilterState.completionPrefix
+                       == QStringLiteral("clk")
+                   && commandCompletionFilterState.command.kind
+                       == CompletionCommandKind::Logic,
+               true);
 
     CompletionTriggerQuery dotTriggerQuery;
     dotTriggerQuery.lineUpToCursor = QStringLiteral("pixel.");
     expectBool("CompletionService trigger dot",
                CompletionService::getInstance()->shouldContinueCompletion(
                    dotTriggerQuery),
+               true);
+    CompletionTriggerQuery macroTriggerQuery;
+    macroTriggerQuery.lineUpToCursor = QStringLiteral("`");
+    expectBool("CompletionService trigger macro",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   macroTriggerQuery),
+               true);
+    CompletionTriggerQuery systemTaskTriggerQuery;
+    systemTaskTriggerQuery.lineUpToCursor = QStringLiteral("$");
+    expectBool("CompletionService trigger system task",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   systemTaskTriggerQuery),
+               true);
+    CompletionTriggerQuery packageTriggerQuery;
+    packageTriggerQuery.lineUpToCursor = QStringLiteral("pkg::");
+    expectBool("CompletionService trigger package scope",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   packageTriggerQuery),
                true);
 
     CompletionTriggerQuery structSpaceTriggerQuery;
@@ -1307,16 +1384,16 @@ int main(int argc, char** argv) {
     expectBool("CompletionService trigger struct space",
                CompletionService::getInstance()->shouldContinueCompletion(
                    structSpaceTriggerQuery),
-               true);
+               false);
     const CompletionTriggerState structSpaceTriggerState =
         CompletionService::getInstance()->completionTriggerState(
             structSpaceTriggerQuery);
     expectBool("CompletionService trigger struct state",
                structSpaceTriggerState.continueCompletion,
-               true);
+               false);
     expectBool("CompletionService trigger struct hide",
                structSpaceTriggerState.hidePopup,
-               false);
+               true);
 
     CompletionTriggerQuery plainSpaceTriggerQuery;
     plainSpaceTriggerQuery.lineUpToCursor = QStringLiteral("assign value ");
@@ -1336,7 +1413,7 @@ int main(int argc, char** argv) {
                true);
 
     CompletionTriggerQuery commandStopTriggerQuery;
-    commandStopTriggerQuery.lineUpToCursor = QStringLiteral("l ena;");
+    commandStopTriggerQuery.lineUpToCursor = QStringLiteral(";l ena;");
     commandStopTriggerQuery.commandModeActive = true;
     const CompletionTriggerState commandStopTriggerState =
         CompletionService::getInstance()->completionTriggerState(
@@ -1347,6 +1424,32 @@ int main(int argc, char** argv) {
     expectBool("CompletionService trigger command stop hide",
                commandStopTriggerState.hidePopup,
                false);
+
+    const CommandModeCompletionState helpCompletionState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";?")});
+    expectBool("CompletionService command help",
+               helpCompletionState.matched
+                   && helpCompletionState.helpRequested
+                   && helpCompletionState.showCompletions
+                   && helpCompletionState.helpCommands.size() >= 3,
+               true);
+
+    expectBool("CompletionService command statement reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("assign a = b;l "))
+                    .matched,
+               true);
+    expectBool("CompletionService command comment reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("// ;l "))
+                    .matched,
+               true);
+    expectBool("CompletionService command string reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("string s = \";l "))
+                    .matched,
+               true);
 
     CompletionTriggerQuery emptyTriggerQuery;
     const CompletionTriggerState emptyTriggerState =
@@ -1644,7 +1747,7 @@ int main(int argc, char** argv) {
                true);
 
     EditorSemanticContext commandContext;
-    commandContext.lineUpToCursor = QStringLiteral("l ena ");
+    commandContext.lineUpToCursor = QStringLiteral(";l ena ");
     commandContext.fileName = path;
     commandContext.moduleName = QStringLiteral("top");
     commandContext.documentText = content;
@@ -1683,23 +1786,20 @@ int main(int argc, char** argv) {
     const EditorCommandModeCompletionRefreshState suppressedRefreshState =
         EditorSemanticContextService::getInstance()
             ->commandModeCompletionRefreshState(commandContext, true);
-    expectBool("EditorSemanticContext command refresh suppress",
+    expectBool("EditorSemanticContext command refresh no suppress",
                suppressedRefreshState.matched
                    && suppressedRefreshState.commandModeActive
-                   && suppressedRefreshState.suppressAfterExit
-                   && !suppressedRefreshState.showCompletions,
+                   && !suppressedRefreshState.suppressAfterExit
+                   && suppressedRefreshState.showCompletions,
                true);
     EditorSemanticContext commandExitContext;
-    commandExitContext.lineUpToCursor = QStringLiteral("l  ");
+    commandExitContext.lineUpToCursor = QStringLiteral(";");
     const EditorCommandModeCompletionRefreshState contextExitRefreshState =
         EditorSemanticContextService::getInstance()
             ->commandModeCompletionRefreshState(commandExitContext, false);
     expectBool("EditorSemanticContext command refresh exit",
-               contextExitRefreshState.matched
-                   && !contextExitRefreshState.commandModeActive
-                   && contextExitRefreshState.exitRequested
-                   && contextExitRefreshState.markExitedByDoubleSpace
-                   && contextExitRefreshState.clearCommandHighlight,
+               !contextExitRefreshState.matched
+                   && contextExitRefreshState.resetExitedByDoubleSpace,
                true);
     EditorSemanticContext noCommandRefreshContext;
     noCommandRefreshContext.lineUpToCursor = QStringLiteral("assign value");

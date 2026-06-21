@@ -67,6 +67,7 @@ public:
     void updateCompletions(const CompletionResult &completion,
                            const QString &prefix);
     void updateCommandCompletions(const QStringList &commands, const QString &prefix);
+    void updateCommandHelpCompletions(const QList<CommandModeCommand>& commands);
     void clear();
 
     CompletionItem getItem(const QModelIndex &index) const;

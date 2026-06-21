@@ -32,12 +32,19 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
         return state;
 
     state.matched = true;
+    state.helpRequested = inputState.helpRequested;
     state.exitRequested = inputState.exitRequested;
     state.prefixPosition = inputState.prefixPosition;
     state.input = inputState.input;
     state.completionPrefix = inputState.input.trimmed();
     state.command = inputState.command;
     state.commandKind = inputState.command.kind;
+
+    if (state.helpRequested) {
+        state.helpCommands = commandModeCommands();
+        state.showCompletions = true;
+        return state;
+    }
 
     if (state.exitRequested)
         return state;

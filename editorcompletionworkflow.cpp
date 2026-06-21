@@ -132,12 +132,44 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
             selections->clearCommand(editor);
         }
     } else if (activationState.action
+               == CompletionActivationAction::ReplaceCommandInput) {
+        replaceCommandInputAtCursor(activationState.text);
+        if (activationState.clearCommandMode) {
+            modes->clearCommandMode();
+            selections->clearCommand(editor);
+        }
+    } else if (activationState.action
                == CompletionActivationAction::ReplaceWord) {
         completion->replaceWordAtCursor(editor, activationState.text);
     }
 
     if (activationState.hidePopup)
         hideAutoComplete();
+}
+
+void EditorCompletionWorkflow::replaceCommandInputAtCursor(const QString& text)
+{
+    QTextCursor cursor = editor->textCursor();
+    const EditorSemanticContext context = semanticContextForCursor(
+        cursor,
+        false);
+    const CommandModeInputState inputState =
+        semanticService()->commandModeInputState(context);
+    if (!inputState.matched)
+        return;
+
+    const int commandStartPosition =
+        cursor.block().position() + inputState.prefixPosition;
+    cursor.setPosition(commandStartPosition);
+    cursor.setPosition(editor->textCursor().position(), QTextCursor::KeepAnchor);
+    cursor.insertText(text);
+}
+
+void EditorCompletionWorkflow::clearCommandInputAtCursor()
+{
+    replaceCommandInputAtCursor(QString());
+    modes->clearCommandMode();
+    selections->clearCommand(editor);
 }
 
 void EditorCompletionWorkflow::handleCompletionActivated(

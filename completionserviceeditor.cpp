@@ -3,6 +3,83 @@
 #include "completioncontexthelper.h"
 #include "completionsymbolquery.h"
 
+namespace {
+bool isIdentifierChar(QChar ch)
+{
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_');
+}
+
+int trailingIdentifierStart(const QString& text)
+{
+    int pos = text.size();
+    while (pos > 0 && isIdentifierChar(text.at(pos - 1)))
+        --pos;
+    return pos;
+}
+
+bool isPositionInCommentOrString(const QString& line, int position)
+{
+    bool inString = false;
+    bool inBlockComment = false;
+    bool escaped = false;
+
+    for (int i = 0; i <= position && i < line.size(); ++i) {
+        const QChar ch = line.at(i);
+        const QChar next = (i + 1 < line.size()) ? line.at(i + 1) : QChar();
+
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (ch == QLatin1Char('*') && next == QLatin1Char('/')) {
+                inBlockComment = false;
+                ++i;
+            }
+            continue;
+        }
+
+        if (ch == QLatin1Char('/') && next == QLatin1Char('/'))
+            return true;
+        if (ch == QLatin1Char('/') && next == QLatin1Char('*')) {
+            inBlockComment = true;
+            ++i;
+            continue;
+        }
+        if (ch == QLatin1Char('"'))
+            inString = true;
+    }
+
+    return inString || inBlockComment;
+}
+
+bool hasStrongCompletionContext(const QString& lineUpToCursor)
+{
+    if (lineUpToCursor.endsWith(QLatin1Char('.'))
+        || lineUpToCursor.endsWith(QLatin1Char('`'))
+        || lineUpToCursor.endsWith(QLatin1Char('$'))
+        || lineUpToCursor.endsWith(QStringLiteral("::"))) {
+        return true;
+    }
+
+    const int identStart = trailingIdentifierStart(lineUpToCursor);
+    if (identStart <= 0 || identStart >= lineUpToCursor.size())
+        return false;
+
+    const QString beforeIdentifier = lineUpToCursor.left(identStart);
+    return beforeIdentifier.endsWith(QLatin1Char('.'))
+        || beforeIdentifier.endsWith(QLatin1Char('`'))
+        || beforeIdentifier.endsWith(QLatin1Char('$'))
+        || beforeIdentifier.endsWith(QStringLiteral("::"));
+}
+}
+
 EditorCompletionState CompletionService::editorCompletionState(
     const EditorCompletionQuery& query) const
 {
@@ -66,35 +143,37 @@ CompletionTriggerState CompletionService::completionTriggerState(
         state.continueCompletion =
             lastChar.isLetterOrNumber()
             || lastChar == QLatin1Char('_')
-            || lastChar == QLatin1Char(' ');
+            || lastChar == QLatin1Char(' ')
+            || lastChar == QLatin1Char('?');
         state.hidePopup = false;
         return state;
     }
 
-    if (lastChar.isLetterOrNumber()
-        || lastChar == QLatin1Char('_')
-        || lastChar == QLatin1Char('.')) {
+    if (isPositionInCommentOrString(
+            query.lineUpToCursor,
+            query.lineUpToCursor.size() - 1)) {
+        state.hidePopup = true;
+        return state;
+    }
+
+    if (lastChar == QLatin1Char(' ')) {
+        state.hidePopup = true;
+        return state;
+    }
+
+    if (hasStrongCompletionContext(query.lineUpToCursor)) {
         state.continueCompletion = true;
         return state;
     }
 
-    if (lastChar != QLatin1Char(' ')) {
+    if (!isIdentifierChar(lastChar)) {
         state.hidePopup = true;
         return state;
     }
 
-    const QString lineBeforeSpace =
-        query.lineUpToCursor.left(query.lineUpToCursor.size() - 1).trimmed();
-    QString variableName;
-    QString memberPrefix;
-    if (!CompletionContextHelper::tryParseStructMember(
-            lineBeforeSpace, variableName, memberPrefix)) {
-        state.hidePopup = true;
-        return state;
-    }
-
-    state.continueCompletion =
-        !getStructTypeForVariable(variableName, query.moduleName).isEmpty();
+    const int prefixLength =
+        query.lineUpToCursor.size() - trailingIdentifierStart(query.lineUpToCursor);
+    state.continueCompletion = prefixLength >= 2;
     state.hidePopup = !state.continueCompletion;
     return state;
 }

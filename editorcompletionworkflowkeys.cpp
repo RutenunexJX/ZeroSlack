@@ -80,6 +80,10 @@ bool EditorCompletionWorkflow::applyCompletionPopupKeyState(
     case CompletionPopupKeyAction::HidePopup:
         hideAutoComplete();
         return true;
+    case CompletionPopupKeyAction::HidePopupAndClearCommand:
+        clearCommandInputAtCursor();
+        hideAutoComplete();
+        return true;
     case CompletionPopupKeyAction::HidePopupAndClearAlternate:
         hideAutoComplete();
         modes->clearAlternateBuffer();

@@ -102,6 +102,7 @@ enum class CompletionActivationAction {
     None,
     ReplaceWord,
     ReplaceLine,
+    ReplaceCommandInput,
     ExecuteAlternateCommand
 };
 
@@ -126,6 +127,7 @@ enum class CompletionPopupKeyAction {
     ActivateCurrent,
     ActivateCurrentOrFirstSelectable,
     HidePopup,
+    HidePopupAndClearCommand,
     HidePopupAndClearAlternate,
     BackspaceAlternateInput
 };
@@ -190,6 +192,7 @@ struct CommandModeCommand {
 
 struct CommandModeMatch {
     bool matched = false;
+    bool helpRequested = false;
     int prefixPosition = -1;
     QString input;
     CommandModeCommand command;
@@ -197,6 +200,7 @@ struct CommandModeMatch {
 
 struct CommandModeInputState {
     bool matched = false;
+    bool helpRequested = false;
     bool exitRequested = false;
     int prefixPosition = -1;
     QString input;
@@ -212,6 +216,7 @@ struct CommandModeCompletionQuery {
 
 struct CommandModeCompletionState {
     bool matched = false;
+    bool helpRequested = false;
     bool exitRequested = false;
     bool hidePopup = false;
     bool showCompletions = false;
@@ -220,6 +225,7 @@ struct CommandModeCompletionState {
     QString completionPrefix;
     CommandModeCommand command;
     CompletionCommandKind commandKind = CompletionCommandKind::User;
+    QList<CommandModeCommand> helpCommands;
     QList<SemanticSymbolRecord> symbolRecords;
     QList<SymbolStableKey> symbolStableKeys;
 };
