@@ -5,6 +5,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QPlainTextEdit>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QTextBlock>
 #include <QTextBlockFormat>
@@ -41,6 +42,74 @@ void applyLineHeight(MyCodeEditor* editor, double lineHeight)
     cursor.endEditBlock();
     document->setModified(wasModified);
 }
+
+bool containsCjkCharacter(const QString& family)
+{
+    for (const QChar ch : family) {
+        const uint code = ch.unicode();
+        if ((code >= 0x2E80 && code <= 0x2EFF)   // CJK radicals
+            || (code >= 0x3000 && code <= 0x303F) // CJK punctuation
+            || (code >= 0x3040 && code <= 0x30FF) // Hiragana/Katakana
+            || (code >= 0x3100 && code <= 0x312F) // Bopomofo
+            || (code >= 0x3130 && code <= 0x318F) // Hangul compatibility
+            || (code >= 0x31F0 && code <= 0x31FF) // Katakana extensions
+            || (code >= 0x3400 && code <= 0x4DBF) // CJK extension A
+            || (code >= 0x4E00 && code <= 0x9FFF) // CJK unified
+            || (code >= 0xAC00 && code <= 0xD7AF) // Hangul syllables
+            || (code >= 0xF900 && code <= 0xFAFF) // CJK compatibility
+            || (code >= 0xFF00 && code <= 0xFFEF)) { // fullwidth forms
+            return true;
+        }
+    }
+    return false;
+}
+
+QString normalizedFamilyName(const QString& family)
+{
+    QString normalized = family.toLower();
+    normalized.remove(QLatin1Char(' '));
+    normalized.remove(QLatin1Char('-'));
+    normalized.remove(QLatin1Char('_'));
+    return normalized;
+}
+
+bool containsKnownCjkFontAlias(const QString& family)
+{
+    static const QStringList aliases = {
+        QStringLiteral("simsun"),
+        QStringLiteral("nsimsun"),
+        QStringLiteral("simhei"),
+        QStringLiteral("microsoftyahei"),
+        QStringLiteral("microsoftjhenghei"),
+        QStringLiteral("kaiti"),
+        QStringLiteral("fangsong"),
+        QStringLiteral("dengxian"),
+        QStringLiteral("meiryo"),
+        QStringLiteral("yugothic"),
+        QStringLiteral("msgothic"),
+        QStringLiteral("malgungothic"),
+        QStringLiteral("mingliu"),
+        QStringLiteral("pmingliu"),
+        QStringLiteral("dfkai"),
+        QStringLiteral("pingfang"),
+        QStringLiteral("hiragino"),
+        QStringLiteral("heiti"),
+        QStringLiteral("sourcehan"),
+        QStringLiteral("notocjk"),
+        QStringLiteral("notosanscjk"),
+        QStringLiteral("notoserifcjk"),
+        QStringLiteral("batang"),
+        QStringLiteral("gulim"),
+        QStringLiteral("dotum"),
+    };
+
+    const QString normalized = normalizedFamilyName(family);
+    for (const QString& alias : aliases) {
+        if (normalized.contains(alias))
+            return true;
+    }
+    return false;
+}
 }
 
 QStringList EditorAppearance::recommendedFontFamilies()
@@ -58,6 +127,29 @@ QStringList EditorAppearance::recommendedFontFamilies()
     };
 }
 
+bool EditorAppearance::isCjkFontFamily(const QString& family)
+{
+    return containsCjkCharacter(family)
+        || containsKnownCjkFontAlias(family);
+}
+
+QStringList EditorAppearance::systemMonospaceFontFamilies()
+{
+    const QFontDatabase database;
+    QStringList families;
+    QSet<QString> seen;
+    for (const QString& family : database.families()) {
+        if (!database.isFixedPitch(family)
+            || isCjkFontFamily(family)
+            || seen.contains(family.toCaseFolded())) {
+            continue;
+        }
+        seen.insert(family.toCaseFolded());
+        families.append(family);
+    }
+    return families;
+}
+
 QString EditorAppearance::fallbackFontFamily()
 {
     const QFontDatabase database;
@@ -68,15 +160,21 @@ QString EditorAppearance::fallbackFontFamily()
     }
 
     const QFont fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    if (!fixedFont.family().isEmpty())
+    if (!fixedFont.family().isEmpty()
+        && !isCjkFontFamily(fixedFont.family()))
         return fixedFont.family();
+
+    const QStringList monospaceFamilies = systemMonospaceFontFamilies();
+    if (!monospaceFamilies.isEmpty())
+        return monospaceFamilies.first();
 
     return QStringLiteral("Consolas");
 }
 
 QString EditorAppearance::resolveFontFamily(const QString& preferredFamily)
 {
-    if (!preferredFamily.trimmed().isEmpty()) {
+    if (!preferredFamily.trimmed().isEmpty()
+        && !isCjkFontFamily(preferredFamily)) {
         const QFontDatabase database;
         if (database.families().contains(preferredFamily, Qt::CaseInsensitive))
             return preferredFamily;

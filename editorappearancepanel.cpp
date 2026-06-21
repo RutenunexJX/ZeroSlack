@@ -102,8 +102,11 @@ void EditorAppearancePanel::populateFonts()
 
     QStringList added;
     auto addFamily = [this, &added](const QString& family) {
-        if (family.isEmpty() || added.contains(family, Qt::CaseInsensitive))
+        if (family.isEmpty()
+            || EditorAppearance::isCjkFontFamily(family)
+            || added.contains(family, Qt::CaseInsensitive)) {
             return;
+        }
         fontFamilyCombo->addItem(family);
         added.append(family);
     };
@@ -117,10 +120,8 @@ void EditorAppearancePanel::populateFonts()
     if (fontFamilyCombo->count() > 0)
         fontFamilyCombo->insertSeparator(fontFamilyCombo->count());
 
-    for (const QString& family : database.families()) {
-        if (database.isFixedPitch(family))
-            addFamily(family);
-    }
+    for (const QString& family : EditorAppearance::systemMonospaceFontFamilies())
+        addFamily(family);
 
     const QString fallback = EditorAppearance::fallbackFontFamily();
     addFamily(fallback);
@@ -134,12 +135,15 @@ void EditorAppearancePanel::syncFromSettings(
     const QSignalBlocker lineBlocker(lineHeightSpin);
     const QSignalBlocker ligatureBlocker(ligaturesCheck);
 
+    const QString safeFamily =
+        EditorAppearance::resolveFontFamily(options.fontFamily);
     if (fontFamilyCombo
-        && fontFamilyCombo->findText(options.fontFamily) < 0) {
-        fontFamilyCombo->insertItem(0, options.fontFamily);
+        && fontFamilyCombo->findText(safeFamily) < 0
+        && !EditorAppearance::isCjkFontFamily(safeFamily)) {
+        fontFamilyCombo->insertItem(0, safeFamily);
     }
     if (fontFamilyCombo)
-        fontFamilyCombo->setCurrentText(options.fontFamily);
+        fontFamilyCombo->setCurrentText(safeFamily);
     if (fontSizeSpin)
         fontSizeSpin->setValue(options.fontSizePt);
     if (lineHeightSpin)

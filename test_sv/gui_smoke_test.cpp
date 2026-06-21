@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontDatabase>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTabWidget>
@@ -36,6 +37,7 @@
 #include "alternatecommandservice.h"
 #include "documentmodel.h"
 #include "editorappearance.h"
+#include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
 #include "editorcoordinator.h"
 #include "editorsemanticcontextservice.h"
@@ -152,6 +154,103 @@ static void runEditorAppearanceSettingsRegression()
     expectBool("editor applies appearance ligatures",
                editor.font().featureValue(QFont::Tag("liga")) == 1U,
                true);
+
+    expectBool("appearance filters cjk latin alias",
+               EditorAppearance::isCjkFontFamily(QStringLiteral("Microsoft YaHei")),
+               true);
+    expectBool("appearance filters cjk family name",
+               EditorAppearance::isCjkFontFamily(QStringLiteral("微软雅黑")),
+               true);
+    expectBool("appearance keeps latin monospace family",
+               !EditorAppearance::isCjkFontFamily(QStringLiteral("Consolas")),
+               true);
+
+    const QStringList recommended =
+        EditorAppearance::recommendedFontFamilies();
+    const QStringList expectedRecommended{
+        QStringLiteral("JetBrains Mono"),
+        QStringLiteral("Cascadia Code"),
+        QStringLiteral("Maple Mono"),
+        QStringLiteral("Iosevka"),
+        QStringLiteral("Commit Mono"),
+        QStringLiteral("IBM Plex Mono"),
+        QStringLiteral("Fira Code"),
+        QStringLiteral("Consolas"),
+        QStringLiteral("Courier New"),
+    };
+    expectBool("appearance preserves recommended order",
+               recommended == expectedRecommended,
+               true);
+
+    const QString fallback = EditorAppearance::fallbackFontFamily();
+    expectBool("appearance fallback is not cjk",
+               !EditorAppearance::isCjkFontFamily(fallback),
+               true);
+    const QStringList installedFamilies = QFontDatabase().families();
+    QString firstInstalledRecommended;
+    for (const QString& family : recommended) {
+        if (installedFamilies.contains(family, Qt::CaseInsensitive)) {
+            firstInstalledRecommended = family;
+            break;
+        }
+    }
+    if (!firstInstalledRecommended.isEmpty()) {
+        expectBool("appearance recommends installed font before system",
+                   fallback == firstInstalledRecommended,
+                   true);
+    }
+
+    {
+        const QString cjkSettingsFile =
+            settingsDir.filePath(QStringLiteral("appearance_cjk.ini"));
+        {
+            QSettings writer(cjkSettingsFile, QSettings::IniFormat);
+            writer.setValue(QStringLiteral("editorAppearance/fontFamily"),
+                            QStringLiteral("Microsoft YaHei"));
+            writer.setValue(QStringLiteral("editorAppearance/fontSizePt"), 14);
+            writer.sync();
+        }
+        EditorAppearanceSettings cjkReloaded(
+            makeTemporarySettings(cjkSettingsFile));
+        expectBool("appearance cjk saved font falls back",
+                   cjkReloaded.options().fontFamily
+                       == EditorAppearance::fallbackFontFamily(),
+                   true);
+    }
+
+    {
+        EditorAppearanceSettings panelSettings(
+            makeTemporarySettings(
+                settingsDir.filePath(QStringLiteral("appearance_panel.ini"))));
+        EditorAppearancePanel panel(&panelSettings);
+        QComboBox* combo =
+            panel.findChild<QComboBox*>(
+                QStringLiteral("editorFontFamilyCombo"));
+        bool comboHasCjk = false;
+        bool comboHasExpectedLatinMonospace = false;
+        const QStringList systemMonospace =
+            EditorAppearance::systemMonospaceFontFamilies();
+        const QString expectedLatinMonospace =
+            systemMonospace.isEmpty()
+                ? EditorAppearance::fallbackFontFamily()
+                : systemMonospace.first();
+        if (combo) {
+            for (int i = 0; i < combo->count(); ++i) {
+                const QString family = combo->itemText(i);
+                if (EditorAppearance::isCjkFontFamily(family))
+                    comboHasCjk = true;
+                if (family == expectedLatinMonospace)
+                    comboHasExpectedLatinMonospace = true;
+            }
+        }
+        expectBool("appearance combo filters cjk fonts",
+                   combo && !comboHasCjk,
+                   true);
+        expectBool("appearance combo keeps latin monospace fonts",
+                   combo && !EditorAppearance::isCjkFontFamily(expectedLatinMonospace)
+                       && comboHasExpectedLatinMonospace,
+                   true);
+    }
 }
 
 static void runEditorAppearanceCoordinatorRegression()
