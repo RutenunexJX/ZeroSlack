@@ -5791,65 +5791,68 @@ static void runFsmGraphServiceFixture()
         "  end\n"
         "endmodule\n");
 
-    QList<sym_list::SymbolInfo> symbols;
-    sym_list::SymbolInfo module = makeModuleBriefSymbol(
-        9301,
-        fileName,
-        QStringLiteral("fsm_top"),
-        sym_list::sym_module,
-        1);
-    module.endLine = 17;
-    symbols.append(module);
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    using OwnerScope = SymbolTaxonomy::SymbolOwnerScope;
 
-    sym_list::SymbolInfo stateQ = makeModuleBriefSymbol(
-        9302,
-        fileName,
-        QStringLiteral("state_q"),
-        sym_list::sym_enum_var,
-        3,
-        QStringLiteral("fsm_top"));
-    stateQ.dataType = QStringLiteral("state_t");
-    symbols.append(stateQ);
-
-    sym_list::SymbolInfo stateD = makeModuleBriefSymbol(
-        9303,
-        fileName,
-        QStringLiteral("state_d"),
-        sym_list::sym_enum_var,
-        4,
-        QStringLiteral("fsm_top"));
-    stateD.dataType = QStringLiteral("state_t");
-    symbols.append(stateD);
-
-    sym_list::SymbolInfo idle = makeModuleBriefSymbol(
-        9304,
-        fileName,
-        QStringLiteral("IDLE"),
-        sym_list::sym_enum_value,
-        2,
-        QStringLiteral("fsm_top"));
-    idle.dataType = QStringLiteral("state_t");
-    symbols.append(idle);
-
-    sym_list::SymbolInfo run = makeModuleBriefSymbol(
-        9305,
-        fileName,
-        QStringLiteral("RUN"),
-        sym_list::sym_enum_value,
-        2,
-        QStringLiteral("fsm_top"));
-    run.dataType = QStringLiteral("state_t");
-    symbols.append(run);
-
-    sym_list::SymbolInfo done = makeModuleBriefSymbol(
-        9306,
-        fileName,
-        QStringLiteral("DONE"),
-        sym_list::sym_enum_value,
-        2,
-        QStringLiteral("fsm_top"));
-    done.dataType = QStringLiteral("state_t");
-    symbols.append(done);
+    const SemanticSymbolRecord module =
+        SemanticFixtureRecordBuilder(QStringLiteral("fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9301)
+            .withRange(1, 1, 17, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord stateQ =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_q"),
+                                     DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(9302)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("fsm_top"))
+            .withType(QStringLiteral("state_t"))
+            .record();
+    const SemanticSymbolRecord stateD =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_d"),
+                                     DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(9303)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("fsm_top"))
+            .withType(QStringLiteral("state_t"))
+            .record();
+    const SemanticSymbolRecord idle =
+        SemanticFixtureRecordBuilder(QStringLiteral("IDLE"),
+                                     DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(9304)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("fsm_top"))
+            .withType(QStringLiteral("state_t"))
+            .record();
+    const SemanticSymbolRecord run =
+        SemanticFixtureRecordBuilder(QStringLiteral("RUN"),
+                                     DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(9305)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("fsm_top"))
+            .withType(QStringLiteral("state_t"))
+            .record();
+    const SemanticSymbolRecord done =
+        SemanticFixtureRecordBuilder(QStringLiteral("DONE"),
+                                     DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(9306)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("fsm_top"))
+            .withType(QStringLiteral("state_t"))
+            .record();
 
     const QString packageFileName = QStringLiteral("test_sv/fsm_pkg_fixture.sv");
     const QString packageModuleFileName =
@@ -5865,70 +5868,83 @@ static void runFsmGraphServiceFixture()
         "    endcase\n"
         "  end\n"
         "endmodule\n");
-    sym_list::SymbolInfo packageModule = makeModuleBriefSymbol(
-        9310,
-        packageModuleFileName,
-        QStringLiteral("pkg_fsm_top"),
-        sym_list::sym_module,
-        1);
-    packageModule.endLine = 10;
-    symbols.append(packageModule);
-
-    sym_list::SymbolInfo packageCs = makeModuleBriefSymbol(
-        9311,
-        packageModuleFileName,
-        QStringLiteral("cs"),
-        sym_list::sym_enum_var,
-        2,
-        QStringLiteral("pkg_fsm_top"));
-    packageCs.dataType = QStringLiteral("pkg_state_e");
-    symbols.append(packageCs);
-
-    sym_list::SymbolInfo packageNs = makeModuleBriefSymbol(
-        9312,
-        packageModuleFileName,
-        QStringLiteral("ns"),
-        sym_list::sym_enum_var,
-        3,
-        QStringLiteral("pkg_fsm_top"));
-    packageNs.dataType = QStringLiteral("pkg_state_e");
-    symbols.append(packageNs);
-
-    sym_list::SymbolInfo packageIdle = makeModuleBriefSymbol(
-        9313,
-        packageFileName,
-        QStringLiteral("IDLE"),
-        sym_list::sym_enum_value,
-        3,
-        QStringLiteral("fsm_pkg"));
-    packageIdle.dataType = QStringLiteral("pkg_state_e");
-    symbols.append(packageIdle);
-
-    sym_list::SymbolInfo packageRun = makeModuleBriefSymbol(
-        9314,
-        packageFileName,
-        QStringLiteral("RUN"),
-        sym_list::sym_enum_value,
-        4,
-        QStringLiteral("fsm_pkg"));
-    packageRun.dataType = QStringLiteral("pkg_state_e");
-    symbols.append(packageRun);
-
-    sym_list::SymbolInfo noFsmModule = makeModuleBriefSymbol(
-        9315,
-        fileName,
-        QStringLiteral("no_fsm_top"),
-        sym_list::sym_module,
-        20);
-    noFsmModule.endLine = 22;
-    symbols.append(noFsmModule);
+    const SemanticSymbolRecord packageModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("pkg_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(packageModuleFileName)
+            .withLocalHandle(9310)
+            .withRange(1, 1, 10, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord packageCs =
+        SemanticFixtureRecordBuilder(QStringLiteral("cs"),
+                                     DeclarationKind::Enum)
+            .withFile(packageModuleFileName)
+            .withLocalHandle(9311)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("pkg_fsm_top"))
+            .withType(QStringLiteral("pkg_state_e"))
+            .record();
+    const SemanticSymbolRecord packageNs =
+        SemanticFixtureRecordBuilder(QStringLiteral("ns"),
+                                     DeclarationKind::Enum)
+            .withFile(packageModuleFileName)
+            .withLocalHandle(9312)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("pkg_fsm_top"))
+            .withType(QStringLiteral("pkg_state_e"))
+            .record();
+    const SemanticSymbolRecord packageIdle =
+        SemanticFixtureRecordBuilder(QStringLiteral("IDLE"),
+                                     DeclarationKind::Enum)
+            .withFile(packageFileName)
+            .withLocalHandle(9313)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inPackage(QStringLiteral("fsm_pkg"))
+            .withType(QStringLiteral("pkg_state_e"))
+            .record();
+    const SemanticSymbolRecord packageRun =
+        SemanticFixtureRecordBuilder(QStringLiteral("RUN"),
+                                     DeclarationKind::Enum)
+            .withFile(packageFileName)
+            .withLocalHandle(9314)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inPackage(QStringLiteral("fsm_pkg"))
+            .withType(QStringLiteral("pkg_state_e"))
+            .record();
+    const SemanticSymbolRecord noFsmModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("no_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9315)
+            .withRange(20, 1, 22, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const QList<SemanticSymbolRecord> records{
+        module,
+        stateQ,
+        stateD,
+        idle,
+        run,
+        done,
+        packageModule,
+        packageCs,
+        packageNs,
+        packageIdle,
+        packageRun,
+        noFsmModule,
+    };
 
     QHash<QString, QString> fileContents;
     fileContents.insert(fileName, content);
     fileContents.insert(packageModuleFileName, packageModuleContent);
     SemanticIndex index;
-    index.setSnapshot(sharedSnapshotFromSymbols(
-        symbols,
+    index.setSnapshot(sharedSnapshotFromRecords(
+        records,
         QList<SemanticRelationship>(),
         QList<SemanticDiagnostic>(),
         fileContents));
@@ -5941,7 +5957,7 @@ static void runFsmGraphServiceFixture()
 
     expectBool("fsm graph found", report.found, true);
     FsmGraphQuery stableFsmQuery;
-    stableFsmQuery.moduleStableKey = stableKeyForSymbol(module);
+    stableFsmQuery.moduleStableKey = module.stableKey;
     const FsmGraphReport stableFsmReport = service.buildFsmGraph(stableFsmQuery);
     expectBool("fsm graph resolves stable module key",
                stableFsmReport.found
@@ -5960,11 +5976,15 @@ static void runFsmGraphServiceFixture()
                true);
     expectBool("taxonomy recognizes fsm state register",
                SymbolTaxonomy::isFsmStateRegisterDeclaration(
-                   semanticMetadataForSymbolInfo(stateQ)),
+                   semanticFixtureMetadata(DeclarationKind::Enum,
+                                           OwnerScope::Module,
+                                           CollectorKind::EnumVariable)),
                true);
     expectBool("taxonomy recognizes fsm state value",
                SymbolTaxonomy::isFsmStateValueDeclaration(
-                   semanticMetadataForSymbolInfo(idle)),
+                   semanticFixtureMetadata(DeclarationKind::Enum,
+                                           OwnerScope::Module,
+                                           CollectorKind::EnumValue)),
                true);
     expectInt("fsm graph count", report.graphs.size(), 1);
     expectBool("fsm graph state register",
@@ -6352,7 +6372,7 @@ static void runFsmGraphServiceFixture()
                true);
 
     FsmGraphQuery unsupportedModuleQuery;
-    unsupportedModuleQuery.moduleStableKey = stableKeyForSymbol(stateQ);
+    unsupportedModuleQuery.moduleStableKey = stateQ.stableKey;
     const FsmGraphReport unsupportedModuleReport =
         service.buildFsmGraph(unsupportedModuleQuery);
     expectBool("fsm graph unsupported symbol reason",
@@ -6364,7 +6384,7 @@ static void runFsmGraphServiceFixture()
                true);
 
     FsmGraphQuery noFsmGraphQuery;
-    noFsmGraphQuery.moduleStableKey = stableKeyForSymbol(noFsmModule);
+    noFsmGraphQuery.moduleStableKey = noFsmModule.stableKey;
     const FsmGraphReport noFsmGraphReport =
         service.buildFsmGraph(noFsmGraphQuery);
     expectBool("fsm graph no graph reason",
