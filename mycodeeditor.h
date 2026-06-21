@@ -18,6 +18,7 @@ class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
 class EditorSourceNavigationUi;
+struct EditorAppearanceOptions;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -52,6 +53,7 @@ public:
         const QList<SemanticDecoration>& decorations);
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
+    void applyAppearanceSettings(const EditorAppearanceOptions& options);
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;

@@ -2,7 +2,6 @@
 #include <QTabWidget>
 #include <QTabBar>
 #include <QKeyEvent>
-#include <QFont>
 #include "mycodeeditor.h"
 #include "mainwindow.h"
 
@@ -255,12 +254,6 @@ void ModeManager::applyModeStyles()
         "}")
         .arg(tabTextColor, tabBackgroundColor));
 
-    for (int i = 0; i < tabWidget->count(); ++i) {
-        MyCodeEditor *editor = qobject_cast<MyCodeEditor*>(tabWidget->widget(i));
-        if (editor) {
-            editor->setFont(QFont("Consolas", 14));
-        }
-    }
 }
 
 void ModeManager::updateShortcutStates()

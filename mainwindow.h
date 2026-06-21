@@ -5,6 +5,7 @@
 #include <memory>
 
 class AnalysisProgressCoordinator;
+class EditorAppearanceSettings;
 class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
@@ -19,6 +20,7 @@ class FileCommandCoordinator;
 class ModeCommandCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
+class QDockWidget;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -55,6 +57,8 @@ private:
     std::unique_ptr<ModeCommandCoordinator> modeCommandCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
+    std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
+    QDockWidget* editorAppearanceDock = nullptr;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -63,6 +67,7 @@ private:
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupModeCommandCoordinator();
+    void setupEditorAppearanceSettings();
     void setupEditorCoordinator();
 
     void setupManagerConnections();

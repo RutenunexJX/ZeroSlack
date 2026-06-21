@@ -10,7 +10,10 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QFont>
+#include <QSettings>
 #include <QSignalSpy>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -30,10 +33,14 @@
 #include "analysisscheduler.h"
 #include "alternatecommandservice.h"
 #include "documentmodel.h"
+#include "editorappearance.h"
+#include "editorappearancesettings.h"
+#include "editorcoordinator.h"
 #include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
 #include "navigationwidget.h"
 #include "semantic_fixture_records.h"
+#include "modemanager.h"
 #include "navigationmanager.h"
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
@@ -75,6 +82,126 @@ static void expectBool(const char* what, bool got, bool want)
     printf("[%s] %-48s got=%s want=%s\n",
            ok ? "PASS" : "FAIL", what, got ? "true" : "false", want ? "true" : "false");
     fflush(stdout);
+}
+
+static std::unique_ptr<QSettings> makeTemporarySettings(
+    const QString& fileName)
+{
+    return std::make_unique<QSettings>(fileName, QSettings::IniFormat);
+}
+
+static void runEditorAppearanceSettingsRegression()
+{
+    QTemporaryDir settingsDir;
+    expectBool("appearance settings temp dir valid",
+               settingsDir.isValid(),
+               true);
+    if (!settingsDir.isValid())
+        return;
+
+    const QString settingsFile =
+        settingsDir.filePath(QStringLiteral("appearance.ini"));
+    EditorAppearanceOptions options = EditorAppearance::defaultOptions();
+    options.fontFamily = EditorAppearance::fallbackFontFamily();
+    options.fontSizePt = 13;
+    options.lineHeight = 1.5;
+    options.ligaturesEnabled = true;
+
+    {
+        EditorAppearanceSettings settings(
+            makeTemporarySettings(settingsFile));
+        QSignalSpy spy(&settings,
+                       &EditorAppearanceSettings::settingsChanged);
+        settings.setOptions(options);
+        expectBool("appearance settings emits change",
+                   spy.count() == 1,
+                   true);
+    }
+
+    EditorAppearanceSettings reloaded(
+        makeTemporarySettings(settingsFile));
+    const EditorAppearanceOptions persisted = reloaded.options();
+    expectBool("appearance settings persists font",
+               persisted.fontFamily == options.fontFamily,
+               true);
+    expectBool("appearance settings persists size",
+               persisted.fontSizePt == options.fontSizePt,
+               true);
+    expectBool("appearance settings persists line height",
+               qAbs(persisted.lineHeight - options.lineHeight) < 0.001,
+               true);
+    expectBool("appearance settings persists ligatures",
+               persisted.ligaturesEnabled == options.ligaturesEnabled,
+               true);
+
+    MyCodeEditor editor;
+    editor.setPlainText(QStringLiteral("module appearance_probe;\nendmodule\n"));
+    editor.applyAppearanceSettings(options);
+    expectBool("editor applies appearance font size",
+               editor.font().pointSize() == options.fontSizePt,
+               true);
+    expectBool("editor applies appearance family",
+               editor.font().family() == options.fontFamily,
+               true);
+    expectBool("editor applies appearance line height",
+               editor.document()->firstBlock().blockFormat().lineHeight()
+                   == qRound(options.lineHeight * 100.0),
+               true);
+    expectBool("editor applies appearance ligatures",
+               editor.font().featureValue(QFont::Tag("liga")) == 1U,
+               true);
+}
+
+static void runEditorAppearanceCoordinatorRegression()
+{
+    QTemporaryDir settingsDir;
+    expectBool("appearance coordinator temp dir valid",
+               settingsDir.isValid(),
+               true);
+    if (!settingsDir.isValid())
+        return;
+
+    QTabWidget tabsWidget;
+    TabManager tabs(&tabsWidget);
+    ModeManager modes(&tabsWidget);
+    EditorCoordinator coordinator(&tabs, &modes);
+    EditorAppearanceSettings settings(
+        makeTemporarySettings(
+            settingsDir.filePath(QStringLiteral("appearance.ini"))));
+
+    coordinator.setAppearanceSettings(&settings);
+    coordinator.connectSignals();
+
+    tabs.createNewTab();
+    tabs.createNewTab();
+    expectBool("appearance coordinator has editors",
+               tabs.editorCount() == 2,
+               true);
+
+    EditorAppearanceOptions options = EditorAppearance::defaultOptions();
+    options.fontFamily = EditorAppearance::fallbackFontFamily();
+    options.fontSizePt = 15;
+    options.lineHeight = 1.35;
+    options.ligaturesEnabled = false;
+    settings.setOptions(options);
+
+    bool allOpenEditorsUpdated = true;
+    for (int i = 0; i < tabs.editorCount(); ++i) {
+        MyCodeEditor* editor = tabs.getEditorAt(i);
+        allOpenEditorsUpdated = allOpenEditorsUpdated
+            && editor
+            && editor->font().pointSize() == options.fontSizePt
+            && editor->font().featureValue(QFont::Tag("liga")) == 0U;
+    }
+    expectBool("appearance coordinator updates open editors",
+               allOpenEditorsUpdated,
+               true);
+
+    tabs.createNewTab();
+    MyCodeEditor* newEditor = tabs.getCurrentEditor();
+    expectBool("appearance coordinator applies new editor",
+               newEditor && newEditor->font().pointSize() == options.fontSizePt,
+               true);
 }
 
 static bool waitUntil(const std::function<bool()>& predicate, int timeoutMs)
@@ -1740,6 +1867,8 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
 
+    runEditorAppearanceSettingsRegression();
+    runEditorAppearanceCoordinatorRegression();
     runNavigationHierarchyModelRegression();
 
     const QString workspacePath = (argc > 1)

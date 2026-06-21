@@ -16,12 +16,15 @@
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
 #include "diagnosticservice.h"
+#include "editorappearancepanel.h"
+#include "editorappearancesettings.h"
 #include "semanticdecorationservice.h"
 #include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "version.h"
 #include <QCloseEvent>
+#include <QDockWidget>
 #include <QDir>
 #include <QFileInfo>
 #include <QLabel>
@@ -46,6 +49,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupNavigationPane();
     setupNavigationCommandCoordinator();
     setupSemanticDocks();
+    setupEditorAppearanceSettings();
     setupFileCommandCoordinator();
     setupModeCommandCoordinator();
     setupEditorCoordinator();
@@ -242,6 +246,21 @@ void MainWindow::setupModeCommandCoordinator()
     modeCommandCoordinator->connectSignals();
 }
 
+void MainWindow::setupEditorAppearanceSettings()
+{
+    editorAppearanceSettings =
+        std::make_unique<EditorAppearanceSettings>();
+
+    editorAppearanceDock = new QDockWidget(tr("Editor Appearance"), this);
+    editorAppearanceDock->setObjectName(QStringLiteral("editorAppearanceDock"));
+    editorAppearanceDock->setAllowedAreas(
+        Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    editorAppearanceDock->setWidget(
+        new EditorAppearancePanel(editorAppearanceSettings.get(),
+                                  editorAppearanceDock));
+    addDockWidget(Qt::RightDockWidgetArea, editorAppearanceDock);
+}
+
 void MainWindow::setupEditorCoordinator()
 {
     editorCoordinator = std::make_unique<EditorCoordinator>(
@@ -251,6 +270,7 @@ void MainWindow::setupEditorCoordinator()
         fileCommandCoordinator.get(),
         navigationCommandCoordinator.get(),
         semanticDocks ? semanticDocks->refreshCoordinator() : nullptr);
+    editorCoordinator->setAppearanceSettings(editorAppearanceSettings.get());
     editorCoordinator->connectSignals();
 }
 

@@ -1,5 +1,6 @@
 #include "editorcoordinator.h"
 
+#include "editorappearancesettings.h"
 #include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
 #include "modemanager.h"
@@ -179,6 +180,31 @@ void EditorCoordinator::setWorkflowDependencies(
                      newSemanticPanelRefresh);
 }
 
+void EditorCoordinator::setAppearanceSettings(
+    EditorAppearanceSettings* settings)
+{
+    if (appearanceSettings == settings)
+        return;
+
+    if (appearanceSettingsConnection)
+        disconnect(appearanceSettingsConnection);
+
+    appearanceSettings = settings;
+    if (appearanceSettings) {
+        appearanceSettingsConnection = connect(
+            appearanceSettings,
+            &EditorAppearanceSettings::settingsChanged,
+            this,
+            [this](const EditorAppearanceOptions&) {
+                applyAppearanceToOpenEditors();
+            });
+    } else {
+        appearanceSettingsConnection = QMetaObject::Connection();
+    }
+
+    applyAppearanceToOpenEditors();
+}
+
 void EditorCoordinator::connectSignals()
 {
     if (signalsConnected || !tabManager || !modeManager)
@@ -202,6 +228,7 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
         return;
 
     editor->setSemanticContextService(contextService());
+    applyAppearance(editor);
     applyAlternateMode(editor);
     connect(editor, &MyCodeEditor::alternateCommandRequested,
             this, [this, editor](const QString& command) {
@@ -235,9 +262,25 @@ void EditorCoordinator::applyAlternateMode(MyCodeEditor* editor) const
     editor->setAlternateModeEnabled(modeManager->getCurrentMode() == ModeManager::AlternateMode);
 }
 
+void EditorCoordinator::applyAppearance(MyCodeEditor* editor) const
+{
+    if (!editor || !appearanceSettings)
+        return;
+    editor->applyAppearanceSettings(appearanceSettings->options());
+}
+
 EditorSemanticContextService* EditorCoordinator::contextService() const
 {
     return semanticRuntime.contextService();
+}
+
+void EditorCoordinator::applyAppearanceToOpenEditors() const
+{
+    if (!tabManager)
+        return;
+
+    for (int i = 0; i < tabManager->editorCount(); ++i)
+        applyAppearance(tabManager->getEditorAt(i));
 }
 
 void EditorCoordinator::applyAlternateModeToOpenEditors() const

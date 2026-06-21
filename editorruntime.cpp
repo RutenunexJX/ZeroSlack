@@ -81,6 +81,15 @@ void MyCodeEditorState::attachToEditor(MyCodeEditor* editor)
     gutter.updateViewportMargins(editor);
 }
 
+void MyCodeEditorState::applyAppearanceSettings(
+    MyCodeEditor* editor,
+    const EditorAppearanceOptions& options)
+{
+    appearance.apply(editor, options);
+    gutter.updateViewportMargins(editor);
+    handleResize(editor);
+}
+
 EditorSemanticContextService* MyCodeEditorState::semanticService() const
 {
     return semantic.contextService();

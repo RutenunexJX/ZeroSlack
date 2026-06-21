@@ -191,6 +191,12 @@ void MyCodeEditor::clearSearchMatches()
     state->clearSearchMatches(this);
 }
 
+void MyCodeEditor::applyAppearanceSettings(
+    const EditorAppearanceOptions& options)
+{
+    state->applyAppearanceSettings(this, options);
+}
+
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
     if (event->matches(QKeySequence::Find)) {

@@ -91,6 +91,8 @@ set(ZEROSLACK_CORE_SOURCES
     documentsessionstate.cpp
     documentsessionversions.cpp
     editorappearance.cpp
+    editorappearancepanel.cpp
+    editorappearancesettings.cpp
     editorcompletionquery.cpp
     editorcompletionui.cpp
     editorcompletionworkflow.cpp
@@ -236,6 +238,8 @@ set(ZEROSLACK_CORE_SOURCES
     documentsnapshot.h
     documentsessionstate.h
     editorappearance.h
+    editorappearancepanel.h
+    editorappearancesettings.h
     editorcompletionquery.h
     editorcompletionui.h
     editorcompletionworkflow.h

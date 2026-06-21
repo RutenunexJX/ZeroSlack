@@ -5,6 +5,7 @@
 #include <QString>
 
 class FileCommandCoordinator;
+class EditorAppearanceSettings;
 class EditorSemanticContextService;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
@@ -31,6 +32,7 @@ public:
         FileCommandCoordinator* fileCommandCoordinator,
         NavigationCommandCoordinator* navigationCommandCoordinator,
         SemanticPanelRefreshCoordinator* semanticPanelRefresh);
+    void setAppearanceSettings(EditorAppearanceSettings* settings);
 
     void connectSignals();
     void attachEditor(MyCodeEditor* editor);
@@ -77,6 +79,8 @@ private:
     };
 
     EditorSemanticContextService* contextService() const;
+    void applyAppearance(MyCodeEditor* editor) const;
+    void applyAppearanceToOpenEditors() const;
     void applyAlternateMode(MyCodeEditor* editor) const;
     void applyAlternateModeToOpenEditors() const;
     void handleIncludeOpenRequested(MyCodeEditor* editor,
@@ -100,6 +104,8 @@ private:
 
     TabManager* tabManager = nullptr;
     ModeManager* modeManager = nullptr;
+    EditorAppearanceSettings* appearanceSettings = nullptr;
+    QMetaObject::Connection appearanceSettingsConnection;
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
     bool signalsConnected = false;

@@ -82,6 +82,9 @@ struct MyCodeEditorState
                                 const QString& text,
                                 bool caseSensitive);
     void clearSearchMatches(MyCodeEditor* editor);
+    void applyAppearanceSettings(
+        MyCodeEditor* editor,
+        const EditorAppearanceOptions& options);
     void applyLineNavigationTarget(
         MyCodeEditor* editor,
         const SourceLineNavigationTarget& target);
