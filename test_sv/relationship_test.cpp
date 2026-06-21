@@ -888,38 +888,42 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                   .totalCount,
               1);
 
-    sym_list injectedRelationshipSymbols;
     const QString injectedRelationshipPath =
         normalizedPath(fixtureDir.filePath(QStringLiteral("injected_relationships.sv")));
-    sym_list::SymbolInfo injectedModule;
-    injectedModule.fileName = injectedRelationshipPath;
-    injectedModule.symbolName = QStringLiteral("injected_top");
-    injectedModule.symbolType = sym_list::sym_module;
-    injectedModule.startLine = 1;
-    injectedModule.endLine = 9;
-    injectedModule.symbolId = 7201;
-
-    sym_list::SymbolInfo injectedSignal;
-    injectedSignal.fileName = injectedRelationshipPath;
-    injectedSignal.symbolName = QStringLiteral("injected_signal");
-    injectedSignal.symbolType = sym_list::sym_logic;
-    injectedSignal.startLine = 3;
-    injectedSignal.endLine = 3;
-    injectedSignal.symbolId = 7202;
-    injectedRelationshipSymbols.setSymbolsForFile(
-        injectedRelationshipPath,
-        {injectedModule, injectedSignal});
+    const SemanticSymbolRecord injectedModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("injected_top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(injectedRelationshipPath)
+            .withLocalHandle(7201)
+            .withRange(1, 1, 9, 1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord injectedSignal =
+        SemanticFixtureRecordBuilder(QStringLiteral("injected_signal"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(injectedRelationshipPath)
+            .withLocalHandle(7202)
+            .withLine(3)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("injected_top"))
+            .record();
+    const QList<SemanticSymbolRecord> injectedRelationshipRecords{
+        injectedModule,
+        injectedSignal,
+    };
 
     SymbolRelationshipEngine injectedRelationshipEngine(
-        [&injectedRelationshipSymbols](const QString& fileName) {
-            return semanticSymbolRecordsForDatabase(&injectedRelationshipSymbols,
-                                                    fileName);
+        [&injectedRelationshipPath, &injectedRelationshipRecords](
+            const QString& fileName) {
+            if (fileName == injectedRelationshipPath)
+                return injectedRelationshipRecords;
+            return QList<SemanticSymbolRecord>{};
         });
     injectedRelationshipEngine.buildFileRelationships(injectedRelationshipPath);
     expectBool("relationship engine uses injected symbol db",
                injectedRelationshipEngine.hasRelationship(
-                   injectedModule.symbolId,
-                   injectedSignal.symbolId,
+                   injectedModule.localHandle,
+                   injectedSignal.localHandle,
                    SymbolRelationshipEngine::CONTAINS),
                true);
 
@@ -1359,7 +1363,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                     && row.symbolStableKey == row.symbolRecord.stableKey
                     && row.symbolRecord.declarationKind
                         == SymbolTaxonomy::DeclarationKind::Module
-                    && row.symbolRecord.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user)
+                    && row.symbolRecord.collectorKind
+                        == SymbolTaxonomy::CollectorKind::User
                     && row.displayName == QStringLiteral("metadata_rel_top")
                     && row.typeDisplayName == group.displayName
                     && row.iconKind == SymbolOutlineIconKind::Module);
@@ -2153,24 +2158,25 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic snapshot merge deduplicates stable relationship",
               stableDedupedSnapshot.relationships().size(),
               snapshot->relationships().size());
-    sym_list::SymbolInfo reboundTopSymbol = topSymbol;
-    sym_list::SymbolInfo reboundStageSymbol = stageSymbol;
-    reboundTopSymbol.symbolId = topId + 100000;
-    reboundStageSymbol.symbolId = stageId + 100000;
+    SemanticSymbolRecord reboundTopRecord = topRecord;
+    SemanticSymbolRecord reboundStageRecord =
+        snapshotIndex.getSymbolRecordByStableKey(stageStableKey);
+    reboundTopRecord.localHandle = topId + 100000;
+    reboundStageRecord.localHandle = stageId + 100000;
     SemanticRelationship driftingStableRelationship;
     driftingStableRelationship.fromId = topId;
     driftingStableRelationship.toId = stageId;
     driftingStableRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
     driftingStableRelationship.fromStableKey = topStableKey;
     driftingStableRelationship.toStableKey = stageStableKey;
-    const auto reboundSnapshot = sharedSnapshotFromSymbols(
-        QList<sym_list::SymbolInfo>{reboundTopSymbol, reboundStageSymbol},
+    const auto reboundSnapshot = sharedSnapshotFromRecords(
+        QList<SemanticSymbolRecord>{reboundTopRecord, reboundStageRecord},
         QList<SemanticRelationship>{driftingStableRelationship});
     const SemanticRelationship reboundRelationship =
         reboundSnapshot->rebindRelationship(driftingStableRelationship);
     expectBool("semantic snapshot rebinds stable relationship handles",
-               reboundRelationship.fromId == reboundTopSymbol.symbolId
-                   && reboundRelationship.toId == reboundStageSymbol.symbolId
+               reboundRelationship.fromId == reboundTopRecord.localHandle
+                   && reboundRelationship.toId == reboundStageRecord.localHandle
                    && reboundRelationship.fromStableKey == topStableKey
                    && reboundRelationship.toStableKey == stageStableKey,
                true);
@@ -2178,25 +2184,27 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         reboundSnapshot->relationshipsForStableKey(topStableKey, true);
     expectBool("semantic snapshot queries rebound relationship",
                reboundRelationships.size() == 1
-                   && reboundRelationships.first().fromId == reboundTopSymbol.symbolId
-                   && reboundRelationships.first().toId == reboundStageSymbol.symbolId,
+                   && reboundRelationships.first().fromId
+                       == reboundTopRecord.localHandle
+                   && reboundRelationships.first().toId
+                       == reboundStageRecord.localHandle,
                true);
     const QList<SemanticRelationship> reboundStableRelationships =
         reboundSnapshot->relationshipsForStableKey(topStableKey, true);
     expectBool("semantic snapshot queries rebound relationship by stable key",
                reboundStableRelationships.size() == 1
                    && reboundStableRelationships.first().fromId
-                       == reboundTopSymbol.symbolId
+                       == reboundTopRecord.localHandle
                    && reboundStableRelationships.first().toId
-                       == reboundStageSymbol.symbolId,
+                       == reboundStageRecord.localHandle,
                true);
     SemanticIndex reboundIndex;
     reboundIndex.setSnapshot(reboundSnapshot);
     expectBool("semantic index resolves rebound stable key",
                reboundIndex.getSymbolRecordByStableKey(topStableKey).localHandle
-                       == reboundTopSymbol.symbolId
+                       == reboundTopRecord.localHandle
                    && reboundIndex.getSymbolRecordByStableKey(stageStableKey).localHandle
-                       == reboundStageSymbol.symbolId,
+                       == reboundStageRecord.localHandle,
                true);
     const QList<SemanticRelationshipResult> reboundStableResults =
         reboundIndex.getRelationshipResults(topStableKey, true);
@@ -2415,8 +2423,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     workspaceMergeExternalDiagnostic.message = QStringLiteral("external diagnostic");
     workspaceMergeExternalDiagnostic.severity = SemanticDiagnostic::Error;
     SemanticIndex::getInstance()->setSnapshot(
-        sharedSnapshotFromSymbols(
-            QList<sym_list::SymbolInfo>(),
+        sharedSnapshotFromRecords(
+            QList<SemanticSymbolRecord>(),
             QList<SemanticRelationship>(),
             QList<SemanticDiagnostic>{workspaceMergeExternalDiagnostic},
             QHash<QString, QString>()));
