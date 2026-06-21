@@ -52,35 +52,6 @@
 static int g_checks = 0;
 static int g_fails = 0;
 
-static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
-{
-    QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::isPackageDeclaration(
-                semanticMetadataForSymbolInfo(symbol))
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
-        }
-    }
-    return names;
-}
-
-static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromSymbols(
-    const QList<sym_list::SymbolInfo>& symbols,
-    QList<SemanticRelationship> relationships = {},
-    QList<SemanticDiagnostic> diagnostics = {},
-    QHash<QString, QString> fileContents = {})
-{
-    return std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(
-            semanticSymbolRecordsForSymbols(
-                symbols,
-                packageScopeNames(symbols)),
-            std::move(relationships),
-            std::move(diagnostics),
-            std::move(fileContents)));
-}
-
 static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromRecords(
     const QList<SemanticSymbolRecord>& records,
     QList<SemanticRelationship> relationships = {},
@@ -707,205 +678,245 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     }
 }
 
-static sym_list::SymbolInfo makeGuiSmokeSymbol(
+static SemanticSymbolRecord makeGuiSmokeRecord(
     int id,
     const QString& fileName,
     const QString& name,
-    sym_list::sym_type_e type,
+    SymbolTaxonomy::DeclarationKind declarationKind,
+    SymbolTaxonomy::CollectorKind collectorKind,
     int line,
-    const QString& moduleScope = QString())
+    SymbolTaxonomy::SymbolOwnerScope ownerScope =
+        SymbolTaxonomy::SymbolOwnerScope::Unknown,
+    const QString& ownerName = QString(),
+    const QString& rawTypeText = QString())
 {
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = id;
-    symbol.fileName = fileName;
-    symbol.symbolName = name;
-    symbol.symbolType = type;
-    symbol.startLine = line;
-    symbol.endLine = line;
-    symbol.startColumn = 1;
-    symbol.endColumn = 1;
-    symbol.position = 0;
-    symbol.length = name.length();
-    symbol.moduleScope = moduleScope;
-    return symbol;
+    SemanticFixtureRecordBuilder builder(name, declarationKind);
+    builder.withFile(fileName)
+        .withLocalHandle(id)
+        .withLine(line)
+        .withCollectorKind(collectorKind)
+        .withTextSpan(0, name.length());
+    if (ownerScope != SymbolTaxonomy::SymbolOwnerScope::Unknown
+        || !ownerName.isEmpty()) {
+        builder.withOwner(ownerScope, ownerName);
+    }
+    if (!rawTypeText.isEmpty())
+        builder.withType(rawTypeText);
+    return builder.record();
 }
 
 static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fixturePath)
 {
     printf("\n-- RTL insights panel regression --\n");
 
-    QList<sym_list::SymbolInfo> symbols;
-    sym_list::SymbolInfo module = makeGuiSmokeSymbol(
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    using SymbolOwnerScope = SymbolTaxonomy::SymbolOwnerScope;
+
+    QList<SemanticSymbolRecord> records;
+    SemanticSymbolRecord module = makeGuiSmokeRecord(
         9601,
         fixturePath,
         QStringLiteral("insight_top"),
-        sym_list::sym_module,
+        DeclarationKind::Module,
+        CollectorKind::Module,
         1);
-    module.endLine = 18;
-    symbols.append(module);
-    symbols.append(makeGuiSmokeSymbol(
+    module.location.endLine = 18;
+    records.append(module);
+    const SemanticSymbolRecord clk = makeGuiSmokeRecord(
         9602,
         fixturePath,
         QStringLiteral("clk"),
-        sym_list::sym_port_input,
+        DeclarationKind::Port,
+        CollectorKind::PortInput,
         2,
-        QStringLiteral("insight_top")));
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(clk);
+    const SemanticSymbolRecord reset = makeGuiSmokeRecord(
         9603,
         fixturePath,
         QStringLiteral("rst_n"),
-        sym_list::sym_port_input,
+        DeclarationKind::Port,
+        CollectorKind::PortInput,
         3,
-        QStringLiteral("insight_top")));
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(reset);
+    const SemanticSymbolRecord stageInstance = makeGuiSmokeRecord(
         9604,
         fixturePath,
         QStringLiteral("u_stage"),
-        sym_list::sym_inst,
+        DeclarationKind::Instance,
+        CollectorKind::Inst,
         8,
-        QStringLiteral("insight_top")));
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(stageInstance);
 
-    sym_list::SymbolInfo stateQ = makeGuiSmokeSymbol(
+    const SemanticSymbolRecord stateQ = makeGuiSmokeRecord(
         9605,
         fixturePath,
         QStringLiteral("state_q"),
-        sym_list::sym_enum_var,
+        DeclarationKind::Enum,
+        CollectorKind::EnumVariable,
         10,
-        QStringLiteral("insight_top"));
-    stateQ.dataType = QStringLiteral("state_t");
-    symbols.append(stateQ);
-    sym_list::SymbolInfo stateD = makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"),
+        QStringLiteral("state_t"));
+    records.append(stateQ);
+    const SemanticSymbolRecord stateD = makeGuiSmokeRecord(
         9606,
         fixturePath,
         QStringLiteral("state_d"),
-        sym_list::sym_enum_var,
+        DeclarationKind::Enum,
+        CollectorKind::EnumVariable,
         11,
-        QStringLiteral("insight_top"));
-    stateD.dataType = QStringLiteral("state_t");
-    symbols.append(stateD);
-    sym_list::SymbolInfo idle = makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"),
+        QStringLiteral("state_t"));
+    records.append(stateD);
+    const SemanticSymbolRecord idle = makeGuiSmokeRecord(
         9607,
         fixturePath,
         QStringLiteral("IDLE"),
-        sym_list::sym_enum_value,
+        DeclarationKind::Enum,
+        CollectorKind::EnumValue,
         5,
-        QStringLiteral("insight_top"));
-    idle.dataType = QStringLiteral("state_t");
-    symbols.append(idle);
-    sym_list::SymbolInfo run = makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"),
+        QStringLiteral("state_t"));
+    records.append(idle);
+    const SemanticSymbolRecord run = makeGuiSmokeRecord(
         9608,
         fixturePath,
         QStringLiteral("RUN"),
-        sym_list::sym_enum_value,
+        DeclarationKind::Enum,
+        CollectorKind::EnumValue,
         5,
-        QStringLiteral("insight_top"));
-    run.dataType = QStringLiteral("state_t");
-    symbols.append(run);
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"),
+        QStringLiteral("state_t"));
+    records.append(run);
+    const SemanticSymbolRecord dataQ = makeGuiSmokeRecord(
         9609,
         fixturePath,
         QStringLiteral("data_q"),
-        sym_list::sym_logic,
+        DeclarationKind::Signal,
+        CollectorKind::Logic,
         12,
-        QStringLiteral("insight_top")));
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(dataQ);
+    const SemanticSymbolRecord nextData = makeGuiSmokeRecord(
         9610,
         fixturePath,
         QStringLiteral("next_data"),
-        sym_list::sym_logic,
+        DeclarationKind::Signal,
+        CollectorKind::Logic,
         13,
-        QStringLiteral("insight_top")));
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(nextData);
+    const SemanticSymbolRecord consumer = makeGuiSmokeRecord(
         9611,
         fixturePath,
         QStringLiteral("consumer"),
-        sym_list::sym_always_ff,
+        DeclarationKind::Process,
+        CollectorKind::AlwaysFf,
         14,
-        QStringLiteral("insight_top")));
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(consumer);
+    const SemanticSymbolRecord stageDataPin = makeGuiSmokeRecord(
         9612,
         fixturePath,
         QStringLiteral("u_stage.data_i"),
-        sym_list::sym_inst_pin,
+        DeclarationKind::Instance,
+        CollectorKind::InstPin,
         15,
-        QStringLiteral("insight_top")));
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(stageDataPin);
+    const SemanticSymbolRecord scanClk = makeGuiSmokeRecord(
         9613,
         fixturePath,
         QStringLiteral("scan_clk"),
-        sym_list::sym_port_input,
+        DeclarationKind::Port,
+        CollectorKind::PortInput,
         16,
-        QStringLiteral("insight_top")));
-    symbols.append(makeGuiSmokeSymbol(
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"));
+    records.append(scanClk);
+    const SemanticSymbolRecord insightPackage = makeGuiSmokeRecord(
         9614,
         fixturePath,
         QStringLiteral("insight_pkg"),
-        sym_list::sym_package,
-        18));
-    symbols.append(makeGuiSmokeSymbol(
+        DeclarationKind::Package,
+        CollectorKind::Package,
+        18);
+    records.append(insightPackage);
+    records.append(makeGuiSmokeRecord(
         9617,
         fixturePath,
         QStringLiteral("PKG_DEPTH"),
-        sym_list::sym_parameter,
+        DeclarationKind::Parameter,
+        CollectorKind::Parameter,
         21,
+        SymbolOwnerScope::Package,
         QStringLiteral("insight_pkg")));
-    symbols.append(makeGuiSmokeSymbol(
+    records.append(makeGuiSmokeRecord(
         9615,
         fixturePath,
         QStringLiteral("insight_if"),
-        sym_list::sym_interface,
+        DeclarationKind::Interface,
+        CollectorKind::Interface,
         19));
-    sym_list::SymbolInfo interfaceBus = makeGuiSmokeSymbol(
+    const SemanticSymbolRecord interfaceBus = makeGuiSmokeRecord(
         9616,
         fixturePath,
         QStringLiteral("if_bus"),
-        sym_list::sym_inst,
+        DeclarationKind::Instance,
+        CollectorKind::Inst,
         20,
-        QStringLiteral("insight_top"));
-    interfaceBus.dataType = QStringLiteral("insight_if");
-    symbols.append(interfaceBus);
+        SymbolOwnerScope::Module,
+        QStringLiteral("insight_top"),
+        QStringLiteral("insight_if"));
+    records.append(interfaceBus);
 
     QList<SemanticRelationship> relationships;
-    SemanticRelationship packageRel;
-    packageRel.fromId = 9601;
-    packageRel.toId = 9614;
-    packageRel.type = SymbolRelationshipEngine::REFERENCES;
-    relationships.append(packageRel);
-    SemanticRelationship clockRel;
-    clockRel.fromId = 9602;
-    clockRel.toId = 9601;
-    clockRel.type = SymbolRelationshipEngine::CLOCKS;
-    relationships.append(clockRel);
-    SemanticRelationship resetRel;
-    resetRel.fromId = 9603;
-    resetRel.toId = 9601;
-    resetRel.type = SymbolRelationshipEngine::RESETS;
-    relationships.append(resetRel);
-    SemanticRelationship assignRel;
-    assignRel.fromId = 9610;
-    assignRel.toId = 9609;
-    assignRel.type = SymbolRelationshipEngine::ASSIGNS_TO;
-    relationships.append(assignRel);
-    SemanticRelationship readRel;
-    readRel.fromId = 9611;
-    readRel.toId = 9609;
-    readRel.type = SymbolRelationshipEngine::READS_FROM;
-    relationships.append(readRel);
-    SemanticRelationship portRel;
-    portRel.fromId = 9612;
-    portRel.toId = 9609;
-    portRel.type = SymbolRelationshipEngine::REFERENCES;
-    relationships.append(portRel);
-    SemanticRelationship interfaceRel;
-    interfaceRel.fromId = 9616;
-    interfaceRel.toId = 9609;
-    interfaceRel.type = SymbolRelationshipEngine::REFERENCES;
-    relationships.append(interfaceRel);
-    SemanticRelationship instRel;
-    instRel.fromId = 9601;
-    instRel.toId = 9604;
-    instRel.type = SymbolRelationshipEngine::INSTANTIATES;
-    relationships.append(instRel);
+    relationships.append(semanticFixtureRelationship(
+        module,
+        insightPackage,
+        SymbolRelationshipEngine::REFERENCES));
+    relationships.append(semanticFixtureRelationship(
+        clk,
+        module,
+        SymbolRelationshipEngine::CLOCKS));
+    relationships.append(semanticFixtureRelationship(
+        reset,
+        module,
+        SymbolRelationshipEngine::RESETS));
+    relationships.append(semanticFixtureRelationship(
+        nextData,
+        dataQ,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    relationships.append(semanticFixtureRelationship(
+        consumer,
+        dataQ,
+        SymbolRelationshipEngine::READS_FROM));
+    relationships.append(semanticFixtureRelationship(
+        stageDataPin,
+        dataQ,
+        SymbolRelationshipEngine::REFERENCES));
+    relationships.append(semanticFixtureRelationship(
+        interfaceBus,
+        dataQ,
+        SymbolRelationshipEngine::REFERENCES));
+    relationships.append(semanticFixtureRelationship(
+        module,
+        stageInstance,
+        SymbolRelationshipEngine::INSTANTIATES));
 
     const QString content = QStringLiteral(
         "module insight_top(input logic clk, input logic rst_n);\n"
@@ -924,7 +935,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     fileContents.insert(fixturePath, content);
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         fixturePath,
-        semanticSymbolRecordsForSymbols(symbols, packageScopeNames(symbols)),
+        records,
         content);
     SemanticDiagnostic insightDiagnostic;
     insightDiagnostic.fileName = fixturePath;
@@ -933,8 +944,8 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     insightDiagnostic.message = QStringLiteral("insight warning");
     insightDiagnostic.severity = SemanticDiagnostic::Warning;
     SemanticIndex::getInstance()->setSnapshot(
-        snapshotFromSymbols(
-            symbols,
+        snapshotFromRecords(
+            records,
             relationships,
             QList<SemanticDiagnostic>{insightDiagnostic},
             fileContents));
@@ -1369,73 +1380,90 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
 {
     printf("\n-- RTL insights semantic diff regression --\n");
 
-    QList<sym_list::SymbolInfo> beforeSymbols;
-    beforeSymbols.append(makeGuiSmokeSymbol(
+    QList<SemanticSymbolRecord> beforeRecords;
+    const SemanticSymbolRecord beforeModule = makeGuiSmokeRecord(
         9701,
         fixturePath,
         QStringLiteral("diff_top"),
-        sym_list::sym_module,
-        1));
-    beforeSymbols.append(makeGuiSmokeSymbol(
+        SymbolTaxonomy::DeclarationKind::Module,
+        SymbolTaxonomy::CollectorKind::Module,
+        1);
+    beforeRecords.append(beforeModule);
+    beforeRecords.append(makeGuiSmokeRecord(
         9702,
         fixturePath,
         QStringLiteral("data"),
-        sym_list::sym_port_input,
+        SymbolTaxonomy::DeclarationKind::Port,
+        SymbolTaxonomy::CollectorKind::PortInput,
         2,
+        SymbolTaxonomy::SymbolOwnerScope::Module,
         QStringLiteral("diff_top")));
-    beforeSymbols.append(makeGuiSmokeSymbol(
+    beforeRecords.append(makeGuiSmokeRecord(
         9703,
         fixturePath,
         QStringLiteral("stale_q"),
-        sym_list::sym_logic,
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Logic,
         6,
+        SymbolTaxonomy::SymbolOwnerScope::Module,
         QStringLiteral("diff_top")));
-    beforeSymbols.append(makeGuiSmokeSymbol(
+    const SemanticSymbolRecord beforeInstance = makeGuiSmokeRecord(
         9704,
         fixturePath,
         QStringLiteral("u_old"),
-        sym_list::sym_inst,
+        SymbolTaxonomy::DeclarationKind::Instance,
+        SymbolTaxonomy::CollectorKind::Inst,
         10,
-        QStringLiteral("diff_top")));
+        SymbolTaxonomy::SymbolOwnerScope::Module,
+        QStringLiteral("diff_top"));
+    beforeRecords.append(beforeInstance);
 
-    QList<sym_list::SymbolInfo> afterSymbols;
-    afterSymbols.append(makeGuiSmokeSymbol(
+    QList<SemanticSymbolRecord> afterRecords;
+    const SemanticSymbolRecord afterModule = makeGuiSmokeRecord(
         9801,
         fixturePath,
         QStringLiteral("diff_top"),
-        sym_list::sym_module,
-        1));
-    afterSymbols.append(makeGuiSmokeSymbol(
+        SymbolTaxonomy::DeclarationKind::Module,
+        SymbolTaxonomy::CollectorKind::Module,
+        1);
+    afterRecords.append(afterModule);
+    afterRecords.append(makeGuiSmokeRecord(
         9802,
         fixturePath,
         QStringLiteral("data"),
-        sym_list::sym_port_output,
+        SymbolTaxonomy::DeclarationKind::Port,
+        SymbolTaxonomy::CollectorKind::PortOutput,
         2,
+        SymbolTaxonomy::SymbolOwnerScope::Module,
         QStringLiteral("diff_top")));
-    afterSymbols.append(makeGuiSmokeSymbol(
+    afterRecords.append(makeGuiSmokeRecord(
         9803,
         fixturePath,
         QStringLiteral("state_q"),
-        sym_list::sym_logic,
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Logic,
         7,
+        SymbolTaxonomy::SymbolOwnerScope::Module,
         QStringLiteral("diff_top")));
-    afterSymbols.append(makeGuiSmokeSymbol(
+    const SemanticSymbolRecord afterInstance = makeGuiSmokeRecord(
         9804,
         fixturePath,
         QStringLiteral("u_new"),
-        sym_list::sym_inst,
+        SymbolTaxonomy::DeclarationKind::Instance,
+        SymbolTaxonomy::CollectorKind::Inst,
         10,
-        QStringLiteral("diff_top")));
+        SymbolTaxonomy::SymbolOwnerScope::Module,
+        QStringLiteral("diff_top"));
+    afterRecords.append(afterInstance);
 
-    SemanticRelationship beforeRelationship;
-    beforeRelationship.fromId = 9701;
-    beforeRelationship.toId = 9704;
-    beforeRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
-
-    SemanticRelationship afterRelationship;
-    afterRelationship.fromId = 9801;
-    afterRelationship.toId = 9804;
-    afterRelationship.type = SymbolRelationshipEngine::INSTANTIATES;
+    const SemanticRelationship beforeRelationship =
+        semanticFixtureRelationship(beforeModule,
+                                    beforeInstance,
+                                    SymbolRelationshipEngine::INSTANTIATES);
+    const SemanticRelationship afterRelationship =
+        semanticFixtureRelationship(afterModule,
+                                    afterInstance,
+                                    SymbolRelationshipEngine::INSTANTIATES);
 
     SemanticDiagnostic beforeDiagnostic;
     beforeDiagnostic.fileName = fixturePath;
@@ -1451,12 +1479,12 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     afterDiagnostic.message = QStringLiteral("new error");
     afterDiagnostic.severity = SemanticDiagnostic::Error;
 
-    auto beforeSnapshot = snapshotFromSymbols(
-        beforeSymbols,
+    auto beforeSnapshot = snapshotFromRecords(
+        beforeRecords,
         QList<SemanticRelationship>{beforeRelationship},
         QList<SemanticDiagnostic>{beforeDiagnostic});
-    auto afterSnapshot = snapshotFromSymbols(
-        afterSymbols,
+    auto afterSnapshot = snapshotFromRecords(
+        afterRecords,
         QList<SemanticRelationship>{afterRelationship},
         QList<SemanticDiagnostic>{afterDiagnostic});
 
