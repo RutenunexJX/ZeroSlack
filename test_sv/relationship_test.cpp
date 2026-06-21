@@ -4709,132 +4709,153 @@ static void runSignalJourneyServiceFixture()
     printf("\n-- signal journey service fixture --\n");
 
     const QString fileName = QStringLiteral("test_sv/signal_journey_fixture.sv");
-    QList<sym_list::SymbolInfo> symbols;
-    sym_list::SymbolInfo module = makeModuleBriefSymbol(
-        9101,
-        fileName,
-        QStringLiteral("journey_top"),
-        sym_list::sym_module,
-        1);
-    module.endLine = 80;
-    symbols.append(module);
-    symbols.append(makeModuleBriefSymbol(
-        9102,
-        fileName,
-        QStringLiteral("data_q"),
-        sym_list::sym_logic,
-        10,
-        QStringLiteral("journey_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9103,
-        fileName,
-        QStringLiteral("next_data"),
-        sym_list::sym_logic,
-        20,
-        QStringLiteral("journey_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9104,
-        fileName,
-        QStringLiteral("consumer"),
-        sym_list::sym_always_ff,
-        30,
-        QStringLiteral("journey_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9105,
-        fileName,
-        QStringLiteral("u_stage.data_i"),
-        sym_list::sym_inst_pin,
-        40,
-        QStringLiteral("journey_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9106,
-        fileName,
-        QStringLiteral("journey_if"),
-        sym_list::sym_interface,
-        45));
-    sym_list::SymbolInfo interfaceInstance = makeModuleBriefSymbol(
-        9107,
-        fileName,
-        QStringLiteral("if_bus"),
-        sym_list::sym_inst,
-        50,
-        QStringLiteral("journey_top"));
-    interfaceInstance.dataType = QStringLiteral("journey_if");
-    symbols.append(interfaceInstance);
-    symbols.append(makeModuleBriefSymbol(
-        9108,
-        fileName,
-        QStringLiteral("ready"),
-        sym_list::sym_logic,
-        55,
-        QStringLiteral("journey_if")));
-    symbols.append(makeModuleBriefSymbol(
-        9109,
-        fileName,
-        QStringLiteral("clk"),
-        sym_list::sym_port_input,
-        60,
-        QStringLiteral("journey_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9110,
-        fileName,
-        QStringLiteral("rst_n"),
-        sym_list::sym_port_input,
-        61,
-        QStringLiteral("journey_top")));
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    using OwnerScope = SymbolTaxonomy::SymbolOwnerScope;
+
+    const SemanticSymbolRecord module =
+        SemanticFixtureRecordBuilder(QStringLiteral("journey_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9101)
+            .withRange(1, 1, 80, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord dataQ =
+        SemanticFixtureRecordBuilder(QStringLiteral("data_q"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9102)
+            .withLine(10)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    const SemanticSymbolRecord nextData =
+        SemanticFixtureRecordBuilder(QStringLiteral("next_data"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9103)
+            .withLine(20)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    const SemanticSymbolRecord consumer =
+        SemanticFixtureRecordBuilder(QStringLiteral("consumer"),
+                                     DeclarationKind::Process)
+            .withFile(fileName)
+            .withLocalHandle(9104)
+            .withLine(30)
+            .withCollectorKind(CollectorKind::AlwaysFf)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    const SemanticSymbolRecord stageDataPin =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_stage.data_i"),
+                                     DeclarationKind::Instance)
+            .withFile(fileName)
+            .withLocalHandle(9105)
+            .withLine(40)
+            .withCollectorKind(CollectorKind::InstPin)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    const SemanticSymbolRecord journeyIf =
+        SemanticFixtureRecordBuilder(QStringLiteral("journey_if"),
+                                     DeclarationKind::Interface)
+            .withFile(fileName)
+            .withLocalHandle(9106)
+            .withLine(45)
+            .withCollectorKind(CollectorKind::Interface)
+            .record();
+    const SemanticSymbolRecord interfaceInstance =
+        SemanticFixtureRecordBuilder(QStringLiteral("if_bus"),
+                                     DeclarationKind::Instance)
+            .withFile(fileName)
+            .withLocalHandle(9107)
+            .withLine(50)
+            .withCollectorKind(CollectorKind::Inst)
+            .inModule(QStringLiteral("journey_top"))
+            .withType(QStringLiteral("journey_if"),
+                      QStringLiteral("journey_if"),
+                      DeclarationKind::Interface)
+            .record();
+    const SemanticSymbolRecord ready =
+        SemanticFixtureRecordBuilder(QStringLiteral("ready"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9108)
+            .withLine(55)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("journey_if"))
+            .record();
+    const SemanticSymbolRecord clk =
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9109)
+            .withLine(60)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    const SemanticSymbolRecord rstN =
+        SemanticFixtureRecordBuilder(QStringLiteral("rst_n"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9110)
+            .withLine(61)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    const QList<SemanticSymbolRecord> records{
+        module,
+        dataQ,
+        nextData,
+        consumer,
+        stageDataPin,
+        journeyIf,
+        interfaceInstance,
+        ready,
+        clk,
+        rstN,
+    };
 
     QList<SemanticRelationship> relationships;
-    SemanticRelationship assignment;
-    assignment.fromId = 9103;
-    assignment.toId = 9102;
-    assignment.type = SymbolRelationshipEngine::ASSIGNS_TO;
-    assignment.provenance = RelationshipProvenance::Inferred;
-    assignment.confidence = 85;
-    assignment.evidenceText = QStringLiteral("Assigned to data_q at line 20");
-    relationships.append(assignment);
-
-    SemanticRelationship read;
-    read.fromId = 9104;
-    read.toId = 9102;
-    read.type = SymbolRelationshipEngine::READS_FROM;
-    read.provenance = RelationshipProvenance::Inferred;
-    read.confidence = 80;
-    read.evidenceText = QStringLiteral("Read data_q at line 30");
-    relationships.append(read);
-
-    SemanticRelationship portConnection;
-    portConnection.fromId = 9105;
-    portConnection.toId = 9102;
-    portConnection.type = SymbolRelationshipEngine::REFERENCES;
-    relationships.append(portConnection);
-
-    SemanticRelationship interfaceConnection;
-    interfaceConnection.fromId = 9107;
-    interfaceConnection.toId = 9102;
-    interfaceConnection.type = SymbolRelationshipEngine::REFERENCES;
-    relationships.append(interfaceConnection);
-
-    SemanticRelationship interfaceMemberConnection;
-    interfaceMemberConnection.fromId = 9102;
-    interfaceMemberConnection.toId = 9108;
-    interfaceMemberConnection.type = SymbolRelationshipEngine::REFERENCES;
-    relationships.append(interfaceMemberConnection);
-
-    SemanticRelationship clockConnection;
-    clockConnection.fromId = 9109;
-    clockConnection.toId = 9101;
-    clockConnection.type = SymbolRelationshipEngine::CLOCKS;
-    relationships.append(clockConnection);
-
-    SemanticRelationship resetConnection;
-    resetConnection.fromId = 9110;
-    resetConnection.toId = 9101;
-    resetConnection.type = SymbolRelationshipEngine::RESETS;
-    relationships.append(resetConnection);
+    relationships.append(semanticFixtureRelationship(
+        nextData,
+        dataQ,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        RelationshipProvenance::Inferred,
+        85,
+        QStringLiteral("Assigned to data_q at line 20")));
+    relationships.append(semanticFixtureRelationship(
+        consumer,
+        dataQ,
+        SymbolRelationshipEngine::READS_FROM,
+        RelationshipProvenance::Inferred,
+        80,
+        QStringLiteral("Read data_q at line 30")));
+    relationships.append(semanticFixtureRelationship(
+        stageDataPin,
+        dataQ,
+        SymbolRelationshipEngine::REFERENCES));
+    relationships.append(semanticFixtureRelationship(
+        interfaceInstance,
+        dataQ,
+        SymbolRelationshipEngine::REFERENCES));
+    relationships.append(semanticFixtureRelationship(
+        dataQ,
+        ready,
+        SymbolRelationshipEngine::REFERENCES));
+    relationships.append(semanticFixtureRelationship(
+        clk,
+        module,
+        SymbolRelationshipEngine::CLOCKS));
+    relationships.append(semanticFixtureRelationship(
+        rstN,
+        module,
+        SymbolRelationshipEngine::RESETS));
 
     SemanticIndex index;
-    index.setSnapshot(sharedSnapshotFromSymbols(
-        symbols,
+    index.setSnapshot(sharedSnapshotFromRecords(
+        records,
         relationships,
         QList<SemanticDiagnostic>()));
     SignalJourneyService service(&index);
@@ -4909,7 +4930,9 @@ static void runSignalJourneyServiceFixture()
                true);
     expectBool("taxonomy recognizes signal journey port peer",
                SymbolTaxonomy::isPortConnectionPeer(
-                   semanticMetadataForSymbolInfo(symbols.at(4))),
+                   semanticFixtureMetadata(DeclarationKind::Instance,
+                                           OwnerScope::Module,
+                                           CollectorKind::InstPin)),
                true);
     expectInt("signal journey assignment count", report.assignments.size(), 1);
     expectInt("signal journey read count", report.reads.size(), 1);
