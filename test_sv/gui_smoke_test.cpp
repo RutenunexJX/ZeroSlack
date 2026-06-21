@@ -81,6 +81,20 @@ static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromSymbols(
             std::move(fileContents)));
 }
 
+static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromRecords(
+    const QList<SemanticSymbolRecord>& records,
+    QList<SemanticRelationship> relationships = {},
+    QList<SemanticDiagnostic> diagnostics = {},
+    QHash<QString, QString> fileContents = {})
+{
+    return std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(
+            records,
+            std::move(relationships),
+            std::move(diagnostics),
+            std::move(fileContents)));
+}
+
 static void expectBool(const char* what, bool got, bool want)
 {
     ++g_checks;
@@ -339,74 +353,63 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
 {
     printf("\n-- reference dock regression --\n");
 
-    sym_list::SymbolInfo referenced;
-    referenced.fileName = fixturePath;
-    referenced.symbolName = QStringLiteral("target_ref");
-    referenced.symbolType = sym_list::sym_logic;
-    referenced.startLine = 3;
-    referenced.startColumn = 9;
-    referenced.endLine = 3;
-    referenced.endColumn = 18;
-    referenced.position = 0;
-    referenced.length = 10;
-    referenced.symbolId = 9001;
-    referenced.moduleScope = QStringLiteral("ref_top");
+    const SemanticSymbolRecord referenced =
+        SemanticFixtureRecordBuilder(QStringLiteral("target_ref"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(fixturePath)
+            .withLocalHandle(9001)
+            .withRange(3, 9, 3, 18)
+            .withTextSpan(0, 10)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("ref_top"))
+            .record();
+    const SemanticSymbolRecord referencing =
+        SemanticFixtureRecordBuilder(QStringLiteral("source_ref"),
+                                     SymbolTaxonomy::DeclarationKind::Process)
+            .withFile(fixturePath)
+            .withLocalHandle(9002)
+            .withRange(8, 3, 8, 20)
+            .withTextSpan(0, 10)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Assign)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Process)
+            .inModule(QStringLiteral("ref_top"))
+            .record();
+    const SemanticSymbolRecord externalReferencing =
+        SemanticFixtureRecordBuilder(QStringLiteral("external_ref"),
+                                     SymbolTaxonomy::DeclarationKind::Process)
+            .withFile(fixturePath + QStringLiteral(".refs.sv"))
+            .withLocalHandle(9004)
+            .withRange(4, 5, 4, 22)
+            .withTextSpan(0, 12)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Assign)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Process)
+            .inModule(QStringLiteral("ref_external"))
+            .record();
+    const SemanticSymbolRecord target =
+        SemanticFixtureRecordBuilder(QStringLiteral("target_sink"),
+                                     SymbolTaxonomy::DeclarationKind::Function)
+            .withFile(fixturePath)
+            .withLocalHandle(9003)
+            .withRange(12, 12, 12, 22)
+            .withTextSpan(0, 11)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Function)
+            .inModule(QStringLiteral("ref_top"))
+            .record();
 
-    sym_list::SymbolInfo referencing;
-    referencing.fileName = fixturePath;
-    referencing.symbolName = QStringLiteral("source_ref");
-    referencing.symbolType = sym_list::sym_assign;
-    referencing.startLine = 8;
-    referencing.startColumn = 3;
-    referencing.endLine = 8;
-    referencing.endColumn = 20;
-    referencing.position = 0;
-    referencing.length = 10;
-    referencing.symbolId = 9002;
-    referencing.moduleScope = QStringLiteral("ref_top");
+    const SemanticRelationship incomingRelationship =
+        semanticFixtureRelationship(referencing,
+                                    referenced,
+                                    SymbolRelationshipEngine::REFERENCES);
+    const SemanticRelationship externalIncomingRelationship =
+        semanticFixtureRelationship(externalReferencing,
+                                    referenced,
+                                    SymbolRelationshipEngine::READS_FROM);
+    const SemanticRelationship outgoingRelationship =
+        semanticFixtureRelationship(referenced,
+                                    target,
+                                    SymbolRelationshipEngine::CALLS);
 
-    sym_list::SymbolInfo externalReferencing;
-    externalReferencing.fileName = fixturePath + QStringLiteral(".refs.sv");
-    externalReferencing.symbolName = QStringLiteral("external_ref");
-    externalReferencing.symbolType = sym_list::sym_assign;
-    externalReferencing.startLine = 4;
-    externalReferencing.startColumn = 5;
-    externalReferencing.endLine = 4;
-    externalReferencing.endColumn = 22;
-    externalReferencing.position = 0;
-    externalReferencing.length = 12;
-    externalReferencing.symbolId = 9004;
-    externalReferencing.moduleScope = QStringLiteral("ref_external");
-
-    sym_list::SymbolInfo target;
-    target.fileName = fixturePath;
-    target.symbolName = QStringLiteral("target_sink");
-    target.symbolType = sym_list::sym_function;
-    target.startLine = 12;
-    target.startColumn = 12;
-    target.endLine = 12;
-    target.endColumn = 22;
-    target.position = 0;
-    target.length = 11;
-    target.symbolId = 9003;
-    target.moduleScope = QStringLiteral("ref_top");
-
-    SemanticRelationship incomingRelationship;
-    incomingRelationship.fromId = referencing.symbolId;
-    incomingRelationship.toId = referenced.symbolId;
-    incomingRelationship.type = SymbolRelationshipEngine::REFERENCES;
-
-    SemanticRelationship externalIncomingRelationship;
-    externalIncomingRelationship.fromId = externalReferencing.symbolId;
-    externalIncomingRelationship.toId = referenced.symbolId;
-    externalIncomingRelationship.type = SymbolRelationshipEngine::READS_FROM;
-
-    SemanticRelationship outgoingRelationship;
-    outgoingRelationship.fromId = referenced.symbolId;
-    outgoingRelationship.toId = target.symbolId;
-    outgoingRelationship.type = SymbolRelationshipEngine::CALLS;
-
-    const QList<sym_list::SymbolInfo> referenceSymbols{
+    const QList<SemanticSymbolRecord> referenceRecords{
         referenced,
         referencing,
         externalReferencing,
@@ -414,19 +417,15 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
     };
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         fixturePath,
-        semanticSymbolRecordsForSymbols(
-            QList<sym_list::SymbolInfo>{referenced, referencing, target},
-            packageScopeNames(referenceSymbols)),
+        QList<SemanticSymbolRecord>{referenced, referencing, target},
         QString());
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
-        externalReferencing.fileName,
-        semanticSymbolRecordsForSymbols(
-            QList<sym_list::SymbolInfo>{externalReferencing},
-            packageScopeNames(referenceSymbols)),
+        externalReferencing.location.fileName,
+        QList<SemanticSymbolRecord>{externalReferencing},
         QString());
     SemanticIndex::getInstance()->setSnapshot(
-        snapshotFromSymbols(
-            referenceSymbols,
+        snapshotFromRecords(
+            referenceRecords,
             QList<SemanticRelationship>{incomingRelationship,
                                         externalIncomingRelationship,
                                         outgoingRelationship}));
@@ -467,7 +466,8 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                    item && item->text(0) == QStringLiteral("source_ref"),
                    true);
         expectBool("reference row stores source line",
-                   item && item->data(0, Qt::UserRole + 1).toInt() == referencing.startLine,
+                   item && item->data(0, Qt::UserRole + 1).toInt()
+                       == referencing.location.startLine,
                    true);
     }
     if (referenceScopeCombo(window) && referenceTypeCombo(window)) {
@@ -1651,20 +1651,21 @@ static void runNavigationHierarchyModelRegression()
 
     widget.setActiveTab(NavigationWidget::SymbolTab);
 
-    sym_list::SymbolInfo outlineSymbol;
-    outlineSymbol.fileName = QStringLiteral("C:/fixture/relationship_top.sv");
-    outlineSymbol.symbolName = QStringLiteral("rel_top");
-    outlineSymbol.symbolType = sym_list::sym_module;
-    outlineSymbol.startLine = 42;
-    outlineSymbol.startColumn = 7;
-    outlineSymbol.symbolId = 1234;
+    const SemanticSymbolRecord outlineSymbol =
+        SemanticFixtureRecordBuilder(QStringLiteral("rel_top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(QStringLiteral("C:/fixture/relationship_top.sv"))
+            .withLocalHandle(1234)
+            .withLine(42, 7)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
 
     SymbolOutlineSymbolRow outlineRow;
-    outlineRow.symbolRecord = semanticSymbolRecordForSymbol(outlineSymbol);
+    outlineRow.symbolRecord = outlineSymbol;
     outlineRow.symbolStableKey = outlineRow.symbolRecord.stableKey;
-    outlineRow.displayName = outlineSymbol.symbolName;
+    outlineRow.displayName = outlineSymbol.name;
     outlineRow.typeDisplayName = QStringLiteral("Module");
-    outlineRow.detailDisplayName = outlineSymbol.fileName;
+    outlineRow.detailDisplayName = outlineSymbol.location.fileName;
     outlineRow.iconKind = SymbolOutlineIconKind::Module;
 
     SymbolOutlineGroup outlineGroup;
@@ -1690,14 +1691,17 @@ static void runNavigationHierarchyModelRegression()
         widget.onSymbolTreeDoubleClicked(symbolItem, 0);
     expectBool("symbol outline emits payload", symbolClicked, true);
     expectBool("symbol outline preserves file",
-               clickedRow.symbolRecord.location.fileName == outlineSymbol.fileName,
+               clickedRow.symbolRecord.location.fileName
+                   == outlineSymbol.location.fileName,
                true);
     expectBool("symbol outline preserves location",
-               clickedRow.symbolRecord.location.startLine == outlineSymbol.startLine
-                   && clickedRow.symbolRecord.location.startColumn == outlineSymbol.startColumn,
+               clickedRow.symbolRecord.location.startLine
+                       == outlineSymbol.location.startLine
+                   && clickedRow.symbolRecord.location.startColumn
+                       == outlineSymbol.location.startColumn,
                true);
     expectBool("symbol outline preserves id",
-               clickedRow.symbolRecord.localHandle == outlineSymbol.symbolId,
+               clickedRow.symbolRecord.localHandle == outlineSymbol.localHandle,
                true);
     expectBool("symbol outline exposes stable key",
                clickedRow.symbolRecord.stableKey.isValid(),
@@ -2321,8 +2325,8 @@ int main(int argc, char** argv)
         closeDiagnostic.message = QStringLiteral("workspace close probe");
         closeDiagnostic.severity = SemanticDiagnostic::Error;
         SemanticIndex::getInstance()->setSnapshot(
-            snapshotFromSymbols(
-                QList<sym_list::SymbolInfo>{},
+            snapshotFromRecords(
+                QList<SemanticSymbolRecord>{},
                 QList<SemanticRelationship>{},
                 QList<SemanticDiagnostic>{closeDiagnostic}));
         problemsScopeCombo(window)->setCurrentIndex(
@@ -2338,8 +2342,8 @@ int main(int argc, char** argv)
                    }, 2000),
                    true);
         SemanticIndex::getInstance()->setSnapshot(
-            snapshotFromSymbols(
-                QList<sym_list::SymbolInfo>{},
+            snapshotFromRecords(
+                QList<SemanticSymbolRecord>{},
                 QList<SemanticRelationship>{},
                 QList<SemanticDiagnostic>{closeDiagnostic}));
         semanticPanelRefresh(window)->updateProblemsPanel();
