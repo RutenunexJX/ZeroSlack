@@ -68,6 +68,8 @@ public:
                            const QString &prefix);
     void updateCommandCompletions(const QStringList &commands, const QString &prefix);
     void updateCommandHelpCompletions(const QList<CommandModeCommand>& commands);
+    void updateInlineCommandCompletions(
+        const CommandModeCompletionState& state);
     void clear();
 
     CompletionItem getItem(const QModelIndex &index) const;

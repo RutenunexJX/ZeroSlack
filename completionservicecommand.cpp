@@ -1,8 +1,10 @@
 #include "completionservice.h"
 
+#include "codetemplateservice.h"
 #include "completioncommandmode.h"
 #include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
+#include "inlinecommandmode.h"
 #include "symboltaxonomy.h"
 
 QList<CommandModeCommand> CompletionService::commandModeCommands() const
@@ -34,20 +36,49 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     state.matched = true;
     state.helpRequested = inputState.helpRequested;
     state.exitRequested = inputState.exitRequested;
+    state.intent = inputState.intent;
     state.prefixPosition = inputState.prefixPosition;
     state.input = inputState.input;
     state.completionPrefix = inputState.input.trimmed();
     state.command = inputState.command;
+    state.descriptor = inputState.descriptor;
     state.commandKind = inputState.command.kind;
+    state.headerText = InlineCommandMode::headerText(inputState.descriptor);
 
     if (state.helpRequested) {
-        state.helpCommands = commandModeCommands();
+        state.helpDescriptors =
+            InlineCommandMode::descriptorsForIntent(state.intent);
+        if (state.intent == InlineCommandIntent::SemanticCompletion)
+            state.helpCommands = commandModeCommands();
         state.showCompletions = true;
         return state;
     }
 
     if (state.exitRequested)
         return state;
+
+    if (state.intent == InlineCommandIntent::CodeTemplate) {
+        state.templateItems =
+            CodeTemplateService::getInstance()->matchingTemplates(
+                state.descriptor.label,
+                state.completionPrefix);
+        state.showCompletions = true;
+        return state;
+    }
+
+    if (state.intent == InlineCommandIntent::EditorAction) {
+        CodeTemplateItem item;
+        item.commandToken = state.descriptor.label;
+        item.label = state.descriptor.label;
+        item.description = state.descriptor.description.isEmpty()
+            ? QStringLiteral("reserved editor action")
+            : state.descriptor.description;
+        item.defaultValue = state.descriptor.defaultValue;
+        item.insertText = state.descriptor.defaultValue;
+        state.templateItems.append(item);
+        state.showCompletions = true;
+        return state;
+    }
 
     CommandCompletionQuery completionQuery;
     completionQuery.prefix = state.completionPrefix;

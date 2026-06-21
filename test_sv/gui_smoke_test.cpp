@@ -15,6 +15,8 @@
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTabWidget>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QPlainTextEdit>
 #include <QTemporaryDir>
 #include <QTextBlock>
@@ -44,6 +46,9 @@
 #include "editorhoverpopup.h"
 #include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
+#include "globalcontrolcoordinator.h"
+#include "globalcontrolpanel.h"
+#include "globalcontrolservice.h"
 #include "navigationwidget.h"
 #include "semantic_fixture_records.h"
 #include "symbolhoverservice.h"
@@ -2235,6 +2240,80 @@ static void runNavigationHierarchyModelRegression()
                true);
 }
 
+static void runGlobalControlRegression(MainWindow& window,
+                                       NavigationWidget* navWidget)
+{
+    printf("\n-- global control regression --\n");
+
+    GlobalControlService service;
+    const QList<GlobalControlItem> commandMatches =
+        service.query(QStringLiteral("Open Workspace"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundOpenWorkspace = false;
+    for (const GlobalControlItem& item : commandMatches) {
+        if (item.id == QStringLiteral("openWorkspace"))
+            foundOpenWorkspace = true;
+    }
+    expectBool("global control finds command",
+               foundOpenWorkspace,
+               true);
+
+    const QList<GlobalControlItem> fileMatches =
+        service.query(QStringLiteral("SVH_interface"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundFixtureFile = false;
+    for (const GlobalControlItem& item : fileMatches) {
+        if (item.kind == GlobalControlItemKind::File
+            && item.title == QStringLiteral("SVH_interface.sv")) {
+            foundFixtureFile = true;
+        }
+    }
+    expectBool("global control finds workspace file",
+               foundFixtureFile,
+               true);
+
+    bool dispatched = false;
+    GlobalControlCoordinator dispatcherProbe(&window);
+    dispatcherProbe.setActionHandler([&](const GlobalControlItem& item) {
+        dispatched = item.id == QStringLiteral("saveFile");
+    });
+    dispatcherProbe.dispatch(
+        GlobalControlItem{GlobalControlItemKind::Command,
+                          QStringLiteral("saveFile"),
+                          QStringLiteral("Save File"),
+                          QStringLiteral("File")});
+    expectBool("global control dispatches command",
+               dispatched,
+               true);
+
+    QWidget* focusTarget = navWidget ? static_cast<QWidget*>(navWidget) : &window;
+    focusTarget->setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QKeyEvent pressOne(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
+    QKeyEvent releaseOne(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
+    QKeyEvent pressTwo(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
+    QKeyEvent releaseTwo(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
+    qApp->notify(focusTarget, &pressOne);
+    qApp->notify(focusTarget, &releaseOne);
+    qApp->notify(focusTarget, &pressTwo);
+    qApp->notify(focusTarget, &releaseTwo);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+
+    expectBool("double shift opens global control outside editor",
+               window.globalControlCoordinator
+                   && window.globalControlCoordinator->panel
+                   && window.globalControlCoordinator->panel->isVisible(),
+               true);
+
+    if (window.globalControlCoordinator
+        && window.globalControlCoordinator->panel) {
+        window.globalControlCoordinator->panel->hide();
+    }
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -2791,6 +2870,7 @@ int main(int argc, char** argv)
 
     NavigationWidget* navWidget = window.findChild<NavigationWidget*>();
     expectBool("navigation widget exists", navWidget != nullptr, true);
+    runGlobalControlRegression(window, navWidget);
     if (navWidget && editor) {
         navWidget->setActiveTab(NavigationWidget::ModuleTab);
         window.navigationManager->setActiveView(NavigationManager::ModuleHierarchyView);

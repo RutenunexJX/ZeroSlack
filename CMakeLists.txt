@@ -55,6 +55,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisschedulerrelationships.cpp
     analysisschedulerwiring.cpp
     clockresetdomainservice.cpp
+    codetemplateservice.cpp
     mainwindow.cpp
     modulebriefservice.cpp
     alternatecommandservice.cpp
@@ -118,8 +119,12 @@ set(ZEROSLACK_CORE_SOURCES
     filecommandcoordinatoralternate.cpp
     filecommandcoordinator.cpp
     fsmgraphservice.cpp
+    globalcontrolcoordinator.cpp
+    globalcontrolpanel.cpp
+    globalcontrolservice.cpp
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
+    inlinecommandmode.cpp
     sourcenavigationservice.cpp
     tsdocument.cpp
     modecommandcoordinator.cpp
@@ -221,6 +226,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisprogresscoordinator.h
     analysisscheduler.h
     clockresetdomainservice.h
+    codetemplateservice.h
     mainwindow.h
     modulebriefservice.h
     alternatecommandservice.h
@@ -268,7 +274,11 @@ set(ZEROSLACK_CORE_SOURCES
     editormodestate.h
     filecommandcoordinator.h
     fsmgraphservice.h
+    globalcontrolcoordinator.h
+    globalcontrolpanel.h
+    globalcontrolservice.h
     hierarchyservice.h
+    inlinecommandmode.h
     sourcenavigationservice.h
     tsdocument.h
     modecommandcoordinator.h

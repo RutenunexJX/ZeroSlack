@@ -133,9 +133,9 @@ EditorCompletionPopupKeyContext EditorCompletionUi::popupKeyContextForEvent(
 void EditorCompletionUi::updateCommandModeCompletions(
     const EditorCommandModeCompletionRefreshState& commandState) const
 {
-    if (commandState.completion.helpRequested) {
-        model->updateCommandHelpCompletions(
-            commandState.completion.helpCommands);
+    if (commandState.completion.intent != InlineCommandIntent::SemanticCompletion
+        || commandState.completion.helpRequested) {
+        model->updateInlineCommandCompletions(commandState.completion);
         return;
     }
 

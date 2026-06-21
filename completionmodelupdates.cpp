@@ -168,6 +168,83 @@ void CompletionModel::updateCommandHelpCompletions(
     endResetModel();
 }
 
+void CompletionModel::updateInlineCommandCompletions(
+    const CommandModeCompletionState& state)
+{
+    beginResetModel();
+    completions.clear();
+
+    CompletionItem headerItem;
+    if (state.helpRequested) {
+        switch (state.intent) {
+        case InlineCommandIntent::SemanticCompletion:
+            headerItem.text = QStringLiteral(":: COMMAND HELP - ;cmd + Space ::");
+            break;
+        case InlineCommandIntent::CodeTemplate:
+            headerItem.text = QStringLiteral(":: TEMPLATE HELP - ;;cmd + Space ::");
+            break;
+        case InlineCommandIntent::EditorAction:
+            headerItem.text = QStringLiteral(":: ACTION HELP - ;:cmd + Space ::");
+            break;
+        }
+    } else {
+        headerItem.text = state.headerText.isEmpty()
+            ? QStringLiteral(":: INLINE COMMAND ::")
+            : state.headerText;
+    }
+    headerItem.type = CommandCompletion;
+    headerItem.description = QStringLiteral("Inline Command");
+    headerItem.score = 1000;
+    fillDisplayMetadata(headerItem);
+    completions.append(headerItem);
+
+    int score = 999;
+    if (state.helpRequested) {
+        for (const InlineCommandDescriptor& descriptor : state.helpDescriptors) {
+            CompletionItem item;
+            item.text = descriptor.label;
+            item.type = CommandCompletion;
+            item.description =
+                QStringLiteral("%1 -> %2")
+                    .arg(descriptor.description, descriptor.defaultValue);
+            item.defaultValue = descriptor.prefix;
+            item.score = score--;
+            fillDisplayMetadata(item);
+            completions.append(item);
+        }
+    } else {
+        for (const CodeTemplateItem& templateItem : state.templateItems) {
+            CompletionItem item;
+            item.text = templateItem.label.isEmpty()
+                ? templateItem.commandToken
+                : templateItem.label;
+            item.type = CommandCompletion;
+            item.description = templateItem.description;
+            item.defaultValue = templateItem.insertText.isEmpty()
+                ? templateItem.defaultValue
+                : templateItem.insertText;
+            item.score = score--;
+            fillDisplayMetadata(item);
+            completions.append(item);
+        }
+    }
+
+    if (completions.size() == 1) {
+        CompletionItem emptyItem;
+        emptyItem.text = QStringLiteral("No matching commands");
+        emptyItem.type = CommandCompletion;
+        emptyItem.description = QStringLiteral("No inline command entries");
+        emptyItem.selectable = false;
+        fillDisplayMetadata(emptyItem);
+        completions.append(emptyItem);
+    }
+
+    if (completions.size() > MaxCompletionItems)
+        completions = completions.mid(0, MaxCompletionItems);
+
+    endResetModel();
+}
+
 void CompletionModel::updateSymbolRecordCompletions(
     const QList<SemanticSymbolRecord> &records,
     const QString &prefix,

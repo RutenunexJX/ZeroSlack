@@ -17,6 +17,7 @@ class AnalysisCoordinator;
 class AnalysisScheduler;
 class EditorCoordinator;
 class FileCommandCoordinator;
+class GlobalControlCoordinator;
 class ModeCommandCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
@@ -54,6 +55,7 @@ private:
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
+    std::unique_ptr<GlobalControlCoordinator> globalControlCoordinator;
     std::unique_ptr<ModeCommandCoordinator> modeCommandCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
@@ -67,6 +69,7 @@ private:
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupModeCommandCoordinator();
+    void setupGlobalControl();
     void setupEditorAppearanceSettings();
     void setupEditorCoordinator();
 

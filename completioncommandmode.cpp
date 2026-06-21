@@ -1,137 +1,36 @@
 #include "completioncommandmode.h"
 
 #include "completionmatcher.h"
+#include "inlinecommandmode.h"
 
 #include <Qt>
 
-namespace {
-bool isCommandSafePrefix(const QString& text)
-{
-    for (const QChar ch : text) {
-        if (ch != QLatin1Char(' ') && ch != QLatin1Char('\t'))
-            return false;
-    }
-    return true;
-}
-
-bool isPositionInCommentOrString(const QString& line, int position)
-{
-    bool inString = false;
-    bool inBlockComment = false;
-    bool escaped = false;
-
-    for (int i = 0; i < position && i < line.size(); ++i) {
-        const QChar ch = line.at(i);
-        const QChar next = (i + 1 < line.size()) ? line.at(i + 1) : QChar();
-
-        if (inString) {
-            if (escaped)
-                escaped = false;
-            else if (ch == QLatin1Char('\\'))
-                escaped = true;
-            else if (ch == QLatin1Char('"'))
-                inString = false;
-            continue;
-        }
-
-        if (inBlockComment) {
-            if (ch == QLatin1Char('*') && next == QLatin1Char('/')) {
-                inBlockComment = false;
-                ++i;
-            }
-            continue;
-        }
-
-        if (ch == QLatin1Char('/') && next == QLatin1Char('/'))
-            return true;
-        if (ch == QLatin1Char('/') && next == QLatin1Char('*')) {
-            inBlockComment = true;
-            ++i;
-            continue;
-        }
-        if (ch == QLatin1Char('"'))
-            inString = true;
-    }
-
-    return inString || inBlockComment;
-}
-
-CommandModeMatch helpMatch(const QString& lineUpToCursor)
-{
-    CommandModeMatch result;
-    const int prefixPosition = lineUpToCursor.lastIndexOf(QStringLiteral(";?"));
-    if (prefixPosition < 0 || prefixPosition + 2 != lineUpToCursor.size())
-        return result;
-    if (!isCommandSafePrefix(lineUpToCursor.left(prefixPosition)))
-        return result;
-    if (isPositionInCommentOrString(lineUpToCursor, prefixPosition))
-        return result;
-
-    result.matched = true;
-    result.helpRequested = true;
-    result.prefixPosition = prefixPosition;
-    result.input = QStringLiteral("?");
-    result.command = {
-        QStringLiteral(";?"),
-        CompletionCommandKind::User,
-        QStringLiteral("command help"),
-        QStringLiteral(";?")
-    };
-    return result;
-}
-}
-
 QList<CommandModeCommand> CompletionCommandMode::commands()
 {
-    return {
-        {QStringLiteral(";r "), CompletionCommandKind::Reg, QStringLiteral("reg variables"), QStringLiteral("reg")},
-        {QStringLiteral(";w "), CompletionCommandKind::Wire, QStringLiteral("wire variables"), QStringLiteral("wire")},
-        {QStringLiteral(";l "), CompletionCommandKind::Logic, QStringLiteral("logic variables"), QStringLiteral("logic")},
-        {QStringLiteral(";m "), CompletionCommandKind::Module, QStringLiteral("modules"), QStringLiteral("module")},
-        {QStringLiteral(";t "), CompletionCommandKind::Task, QStringLiteral("tasks"), QStringLiteral("task")},
-        {QStringLiteral(";f "), CompletionCommandKind::Function, QStringLiteral("functions"), QStringLiteral("function")},
-        {QStringLiteral(";i "), CompletionCommandKind::Interface, QStringLiteral("interfaces"), QStringLiteral("interface")},
-        {QStringLiteral(";d "), CompletionCommandKind::Macro, QStringLiteral("macro definitions"), QStringLiteral("`define")},
-        {QStringLiteral(";lp "), CompletionCommandKind::Localparam, QStringLiteral("localparam declarations"), QStringLiteral("localparam")},
-        {QStringLiteral(";p "), CompletionCommandKind::Parameter, QStringLiteral("parameter declarations"), QStringLiteral("parameter")},
-        {QStringLiteral(";a "), CompletionCommandKind::AlwaysProcess, QStringLiteral("always blocks"), QStringLiteral("always")},
-        {QStringLiteral(";c "), CompletionCommandKind::ContinuousAssign, QStringLiteral("continuous assignments"), QStringLiteral("assign")},
-        {QStringLiteral(";u "), CompletionCommandKind::Typedef, QStringLiteral("type definitions"), QStringLiteral("typedef")},
-        {QStringLiteral(";ee "), CompletionCommandKind::EnumValue, QStringLiteral("enum values"), QStringLiteral("enum_value")},
-        {QStringLiteral(";ne "), CompletionCommandKind::EnumType, QStringLiteral("enum types"), QStringLiteral("enum")},
-        {QStringLiteral(";e "), CompletionCommandKind::EnumVariable, QStringLiteral("enum variables"), QStringLiteral("enum_var")},
-        {QStringLiteral(";sm "), CompletionCommandKind::StructMember, QStringLiteral("struct members"), QStringLiteral("member")},
-        {QStringLiteral(";nsp "), CompletionCommandKind::PackedStructType, QStringLiteral("packed struct types"), QStringLiteral("struct")},
-        {QStringLiteral(";ns "), CompletionCommandKind::UnpackedStructType, QStringLiteral("unpacked struct types"), QStringLiteral("struct")},
-        {QStringLiteral(";sp "), CompletionCommandKind::PackedStructVariable, QStringLiteral("packed struct variables"), QStringLiteral("struct")},
-        {QStringLiteral(";s "), CompletionCommandKind::UnpackedStructVariable, QStringLiteral("unpacked struct variables"), QStringLiteral("struct")},
-    };
+    QList<CommandModeCommand> result;
+    for (const InlineCommandDescriptor& descriptor :
+         InlineCommandMode::descriptorsForIntent(
+             InlineCommandIntent::SemanticCompletion)) {
+        result.append(InlineCommandMode::toCommandModeCommand(descriptor));
+    }
+    return result;
 }
 
 CommandModeMatch CompletionCommandMode::matchCommandMode(
     const QString& lineUpToCursor)
 {
     CommandModeMatch result;
-    const CommandModeMatch help = helpMatch(lineUpToCursor);
-    if (help.matched)
-        return help;
-
-    for (const CommandModeCommand& command : commands()) {
-        const int prefixPosition = lineUpToCursor.lastIndexOf(command.prefix);
-        if (prefixPosition < 0)
-            continue;
-
-        if (!isCommandSafePrefix(lineUpToCursor.left(prefixPosition)))
-            continue;
-        if (isPositionInCommentOrString(lineUpToCursor, prefixPosition))
-            continue;
-
-        result.matched = true;
-        result.prefixPosition = prefixPosition;
-        result.command = command;
-        result.input = lineUpToCursor.mid(prefixPosition + command.prefix.length());
+    const InlineCommandMatch match = InlineCommandMode::match(lineUpToCursor);
+    if (!match.matched)
         return result;
-    }
+
+    result.matched = true;
+    result.helpRequested = match.helpRequested;
+    result.intent = match.intent;
+    result.prefixPosition = match.prefixPosition;
+    result.input = match.input;
+    result.descriptor = match.descriptor;
+    result.command = InlineCommandMode::toCommandModeCommand(match.descriptor);
     return result;
 }
 
@@ -145,9 +44,11 @@ CommandModeInputState CompletionCommandMode::inputState(
 
     state.matched = true;
     state.helpRequested = match.helpRequested;
+    state.intent = match.intent;
     state.prefixPosition = match.prefixPosition;
     state.input = match.input;
     state.command = match.command;
+    state.descriptor = match.descriptor;
     return state;
 }
 

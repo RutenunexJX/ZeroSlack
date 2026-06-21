@@ -190,21 +190,58 @@ struct CommandModeCommand {
     QString defaultValue;
 };
 
+enum class InlineCommandIntent {
+    SemanticCompletion,
+    CodeTemplate,
+    EditorAction
+};
+
+struct InlineCommandDescriptor {
+    QString prefix;
+    InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;
+    CompletionCommandKind semanticKind = CompletionCommandKind::User;
+    QString label;
+    QString description;
+    QString defaultValue;
+};
+
+struct InlineCommandMatch {
+    bool matched = false;
+    bool helpRequested = false;
+    InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;
+    int prefixPosition = -1;
+    QString commandToken;
+    QString input;
+    InlineCommandDescriptor descriptor;
+};
+
+struct CodeTemplateItem {
+    QString commandToken;
+    QString label;
+    QString description;
+    QString defaultValue;
+    QString insertText;
+};
+
 struct CommandModeMatch {
     bool matched = false;
     bool helpRequested = false;
+    InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;
     int prefixPosition = -1;
     QString input;
     CommandModeCommand command;
+    InlineCommandDescriptor descriptor;
 };
 
 struct CommandModeInputState {
     bool matched = false;
     bool helpRequested = false;
     bool exitRequested = false;
+    InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;
     int prefixPosition = -1;
     QString input;
     CommandModeCommand command;
+    InlineCommandDescriptor descriptor;
 };
 
 struct CommandModeCompletionQuery {
@@ -220,12 +257,17 @@ struct CommandModeCompletionState {
     bool exitRequested = false;
     bool hidePopup = false;
     bool showCompletions = false;
+    InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;
     int prefixPosition = -1;
     QString input;
     QString completionPrefix;
+    QString headerText;
     CommandModeCommand command;
+    InlineCommandDescriptor descriptor;
     CompletionCommandKind commandKind = CompletionCommandKind::User;
     QList<CommandModeCommand> helpCommands;
+    QList<InlineCommandDescriptor> helpDescriptors;
+    QList<CodeTemplateItem> templateItems;
     QList<SemanticSymbolRecord> symbolRecords;
     QList<SymbolStableKey> symbolStableKeys;
 };

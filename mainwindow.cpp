@@ -19,14 +19,22 @@
 #include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
 #include "semanticdecorationservice.h"
+#include "globalcontrolcoordinator.h"
+#include "globalcontrolservice.h"
 #include "semanticdockcoordinator.h"
+#include "semanticindex.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
+#include "activitylogpanelcoordinator.h"
+#include "problemspanelcoordinator.h"
+#include "rtlinsightspanelcoordinator.h"
 #include "version.h"
 #include <QCloseEvent>
+#include <QCoreApplication>
 #include <QDockWidget>
 #include <QDir>
 #include <QFileInfo>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QStatusBar>
 
@@ -52,6 +60,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupEditorAppearanceSettings();
     setupFileCommandCoordinator();
     setupModeCommandCoordinator();
+    setupGlobalControl();
     setupEditorCoordinator();
     setupManagerConnections();
 
@@ -244,6 +253,69 @@ void MainWindow::setupModeCommandCoordinator()
     modeCommandCoordinator = std::make_unique<ModeCommandCoordinator>(
         modeManager.get(), navigationPane.get(), this);
     modeCommandCoordinator->connectSignals();
+}
+
+void MainWindow::setupGlobalControl()
+{
+    globalControlCoordinator =
+        std::make_unique<GlobalControlCoordinator>(this, this);
+    globalControlCoordinator->setProjectModel(
+        workspaceManager ? workspaceManager->getProjectModel() : nullptr);
+    globalControlCoordinator->setSemanticIndex(SemanticIndex::getInstance());
+    globalControlCoordinator->setActionHandler(
+        [this](const GlobalControlItem& item) {
+            if (item.kind == GlobalControlItemKind::File
+                || item.kind == GlobalControlItemKind::Symbol) {
+                if (navigationCommandCoordinator)
+                    navigationCommandCoordinator->navigateToFileAndLine(
+                        item.filePath,
+                        item.line,
+                        item.column);
+                return;
+            }
+
+            if (item.id == QStringLiteral("openWorkspace")) {
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->openDirectoryAsWorkspace();
+            } else if (item.id == QStringLiteral("openFile")) {
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->openFile();
+            } else if (item.id == QStringLiteral("saveFile")) {
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->saveFile();
+            } else if (item.id == QStringLiteral("saveAs")) {
+                if (fileCommandCoordinator)
+                    fileCommandCoordinator->saveFileAs();
+            } else if (item.id == QStringLiteral("find")) {
+                if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr) {
+                    QKeyEvent press(QEvent::KeyPress,
+                                    Qt::Key_F,
+                                    Qt::ControlModifier,
+                                    QStringLiteral("f"));
+                    QCoreApplication::sendEvent(editor, &press);
+                }
+            } else if (item.id == QStringLiteral("toggleNavigation")) {
+                if (navigationPane)
+                    navigationPane->toggleVisible();
+            } else if (item.id == QStringLiteral("toggleProblems")) {
+                if (semanticDocks && semanticDocks->problemsPanelCoordinator())
+                    semanticDocks->problemsPanelCoordinator()->dock()->setVisible(
+                        !semanticDocks->problemsPanelCoordinator()->dock()->isVisible());
+            } else if (item.id == QStringLiteral("toggleActivity")) {
+                if (semanticDocks && semanticDocks->activityLogPanelCoordinator())
+                    semanticDocks->activityLogPanelCoordinator()->dock()->setVisible(
+                        !semanticDocks->activityLogPanelCoordinator()->dock()->isVisible());
+            } else if (item.id == QStringLiteral("toggleRtlInsights")
+                       || item.kind == GlobalControlItemKind::RtlInsight) {
+                if (semanticDocks && semanticDocks->rtlInsightsPanelCoordinator())
+                    semanticDocks->rtlInsightsPanelCoordinator()->dock()->setVisible(
+                        !semanticDocks->rtlInsightsPanelCoordinator()->dock()->isVisible());
+            } else if (item.id == QStringLiteral("editorAppearance")) {
+                if (editorAppearanceDock)
+                    editorAppearanceDock->setVisible(!editorAppearanceDock->isVisible());
+            }
+        });
+    globalControlCoordinator->install();
 }
 
 void MainWindow::setupEditorAppearanceSettings()

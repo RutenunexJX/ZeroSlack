@@ -6,6 +6,7 @@
 #include "completionmodel.h"
 #include "completionsemanticquery.h"
 #include "completionservice.h"
+#include "codetemplateservice.h"
 #include "editorsemanticcontextservice.h"
 #include "myhighlighter.h"
 #include "relationshipservice.h"
@@ -1538,6 +1539,72 @@ int main(int argc, char** argv) {
                    && helpCompletionState.showCompletions
                    && helpCompletionState.helpCommands.size() >= 3,
                true);
+
+    const CommandModeCompletionState templateCompletionState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;l clk")});
+    expectBool("CompletionService template mode",
+               templateCompletionState.matched
+                   && templateCompletionState.intent
+                       == InlineCommandIntent::CodeTemplate
+                   && templateCompletionState.showCompletions
+                   && !templateCompletionState.templateItems.isEmpty()
+                   && templateCompletionState.templateItems.first().insertText
+                       == QStringLiteral("logic clk;"),
+               true);
+    expectBool("CompletionService template command",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral(";;m uart"))
+                       .intent == InlineCommandIntent::CodeTemplate,
+               true);
+    const CommandModeCompletionState actionHelpState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";:?")});
+    expectBool("CompletionService action help",
+               actionHelpState.matched
+                   && actionHelpState.intent == InlineCommandIntent::EditorAction
+                   && actionHelpState.helpRequested
+                   && actionHelpState.showCompletions,
+               true);
+    const CommandModeCompletionState templateHelpState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;?")});
+    expectBool("CompletionService template help",
+               templateHelpState.matched
+                   && templateHelpState.intent == InlineCommandIntent::CodeTemplate
+                   && templateHelpState.helpRequested
+                   && templateHelpState.showCompletions,
+               true);
+    expectBool("CompletionService bare double semicolon reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral(";;"))
+                    .matched,
+               true);
+    expectBool("CompletionService bare action prefix reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral(";:"))
+                    .matched,
+               true);
+    expectBool("CompletionService template statement reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("assign a = b;;l "))
+                    .matched,
+               true);
+    expectBool("CompletionService template comment reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("// ;;l "))
+                    .matched,
+               true);
+    expectBool("CompletionService template string reject",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral("string s = \";;l "))
+                    .matched,
+               true);
+    expectEq("CodeTemplateService seeds logic",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;l"), QStringLiteral("clk"))
+                 .insertText,
+             QStringLiteral("logic clk;"));
 
     expectBool("CompletionService command statement reject",
                !CompletionService::getInstance()
