@@ -1262,30 +1262,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     QList<SemanticSymbolRecord> metadataOutlineRecords =
         snapshot->getSymbolRecords();
-    SemanticSymbolRecord metadataOutlineModule;
-    metadataOutlineModule.location.fileName = topPath;
-    metadataOutlineModule.location.startLine = 1;
-    metadataOutlineModule.location.startColumn = 1;
-    metadataOutlineModule.location.endLine = 1;
-    metadataOutlineModule.location.endColumn = 1;
-    metadataOutlineModule.name = QStringLiteral("metadata_rel_top");
-    metadataOutlineModule.localHandle = 900001;
-    metadataOutlineModule.declarationKind =
-        SymbolTaxonomy::DeclarationKind::Module;
-    metadataOutlineModule.usageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataOutlineModule.owner.kind =
-        SymbolTaxonomy::SymbolOwnerScope::Global;
-    metadataOutlineModule.visibility =
-        SymbolTaxonomy::SymbolVisibility::Global;
-    metadataOutlineModule.sourceRole =
-        SymbolTaxonomy::SourceRole::DesignSource;
-    metadataOutlineModule.collectorKind =
-        static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
-    metadataOutlineModule.stableKey.fileName = topPath;
-    metadataOutlineModule.stableKey.symbolName = metadataOutlineModule.name;
-    metadataOutlineModule.stableKey.declarationKind =
-        metadataOutlineModule.declarationKind;
+    const SemanticSymbolRecord metadataOutlineModule =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("metadata_rel_top"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(topPath)
+            .withLine(1)
+            .withLocalHandle(900001)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::User)
+            .record();
     metadataOutlineRecords.append(metadataOutlineModule);
     SemanticIndex metadataOutlineIndex;
     metadataOutlineIndex.setSnapshot(
