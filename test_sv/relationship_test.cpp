@@ -4189,23 +4189,25 @@ static void runModuleBriefServiceFixture()
                    semanticMetadataForSymbolInfo(symbols.at(5)))
                    == SymbolTaxonomy::DeclarationGroup::Instance,
                true);
-    QList<sym_list::SymbolInfo> packageSymbols;
-    packageSymbols.append(makeModuleBriefSymbol(100,
-                                                fileName,
-                                                QStringLiteral("brief_pkg"),
-                                                sym_list::sym_package,
-                                                1));
-    packageSymbols.append(makeModuleBriefSymbol(101,
-                                                fileName,
-                                                QStringLiteral("WIDTH"),
-                                                sym_list::sym_parameter,
-                                                2,
-                                                QStringLiteral("brief_pkg")));
+    const QList<SemanticSymbolRecord> packageRecords{
+        SemanticFixtureRecordBuilder(QStringLiteral("brief_pkg"),
+                                     SymbolTaxonomy::DeclarationKind::Package)
+            .withFile(fileName)
+            .withLocalHandle(100)
+            .withLine(1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Package)
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("WIDTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(fileName)
+            .withLocalHandle(101)
+            .withLine(2)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Parameter)
+            .inPackage(QStringLiteral("brief_pkg"))
+            .record(),
+    };
     const SemanticIndexSnapshot packageSnapshot =
-        SemanticIndexSnapshot::fromSymbolRecords(
-            semanticSymbolRecordsForSymbols(
-                packageSymbols,
-                packageScopeNames(packageSymbols)));
+        SemanticIndexSnapshot::fromSymbolRecords(packageRecords);
     const QList<SemanticSymbolRecord> annotatedPackageRecords =
         packageSnapshot.getSymbolRecords(fileName);
     SemanticSymbolRecord packageParameter;
@@ -4603,44 +4605,41 @@ static void runScopeBandServiceFixture()
     printf("\n-- scope band service fixture --\n");
 
     const QString fileName = QStringLiteral("scope_band_fixture.sv");
-    QList<sym_list::SymbolInfo> symbols;
-
-    sym_list::SymbolInfo module;
-    module.symbolId = 1;
-    module.symbolName = QStringLiteral("scope_top");
-    module.symbolType = sym_list::sym_module;
-    module.fileName = fileName;
-    module.startLine = 1;
-    module.endLine = 5;
-    symbols.append(module);
-
-    sym_list::SymbolInfo logic;
-    logic.symbolId = 2;
-    logic.symbolName = QStringLiteral("enable");
-    logic.symbolType = sym_list::sym_logic;
-    logic.fileName = fileName;
-    logic.moduleScope = QStringLiteral("scope_top");
-    logic.startLine = 2;
-    logic.endLine = 2;
-    symbols.append(logic);
-
-    sym_list::SymbolInfo wire;
-    wire.symbolId = 3;
-    wire.symbolName = QStringLiteral("raw_wire");
-    wire.symbolType = sym_list::sym_wire;
-    wire.fileName = fileName;
-    wire.moduleScope = QStringLiteral("scope_top");
-    wire.startLine = 3;
-    wire.endLine = 3;
-    symbols.append(wire);
+    const SemanticSymbolRecord module =
+        SemanticFixtureRecordBuilder(QStringLiteral("scope_top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(1)
+            .withRange(1, 1, 5, 1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord logic =
+        SemanticFixtureRecordBuilder(QStringLiteral("enable"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(2)
+            .withLine(2)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("scope_top"))
+            .record();
+    const SemanticSymbolRecord wire =
+        SemanticFixtureRecordBuilder(QStringLiteral("raw_wire"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(3)
+            .withLine(3)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Wire)
+            .inModule(QStringLiteral("scope_top"))
+            .record();
+    const QList<SemanticSymbolRecord> records{module, logic, wire};
 
     QHash<QString, QString> fileContents;
     fileContents.insert(
         fileName,
         QStringLiteral("module scope_top;\nlogic enable;\nwire raw_wire;\nendmodule\n"));
     SemanticIndex index;
-    index.setSnapshot(sharedSnapshotFromSymbols(
-        symbols,
+    index.setSnapshot(sharedSnapshotFromRecords(
+        records,
         QList<SemanticRelationship>(),
         QList<SemanticDiagnostic>(),
         fileContents));
@@ -4655,7 +4654,7 @@ static void runScopeBandServiceFixture()
                !report.modules.isEmpty()
                    && report.modules.first().symbolRecord.isValid()
                    && report.modules.first().symbolRecord.localHandle
-                       == module.symbolId
+                       == module.localHandle
                    && report.modules.first().symbolRecord.stableKey
                        == report.modules.first().symbolStableKey
                    && report.modules.first().symbolRecord.declarationKind
@@ -4674,14 +4673,15 @@ static void runScopeBandServiceFixture()
                        == QStringLiteral("scope_band_fixture.sv")
                    && report.modules.first().codeLink.lineDisplayName
                        == QStringLiteral("1")
-                   && report.modules.first().endLine >= module.startLine,
+                   && report.modules.first().endLine
+                       >= module.location.startLine,
                true);
     expectInt("scope band logic count", report.logics.size(), 1);
     expectBool("scope band logic metadata",
                !report.logics.isEmpty()
                    && report.logics.first().symbolRecord.isValid()
                    && report.logics.first().symbolRecord.localHandle
-                       == logic.symbolId
+                       == logic.localHandle
                    && report.logics.first().symbolRecord.stableKey
                        == report.logics.first().symbolStableKey
                    && report.logics.first().symbolRecord.declarationKind
