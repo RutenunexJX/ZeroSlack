@@ -14,6 +14,7 @@
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTabWidget>
+#include <QPlainTextEdit>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -31,6 +32,7 @@
 #define private public
 #include "mainwindow.h"
 #include "analysisscheduler.h"
+#include "activitylogservice.h"
 #include "alternatecommandservice.h"
 #include "documentmodel.h"
 #include "editorappearance.h"
@@ -202,6 +204,67 @@ static void runEditorAppearanceCoordinatorRegression()
     expectBool("appearance coordinator applies new editor",
                newEditor && newEditor->font().pointSize() == options.fontSizePt,
                true);
+}
+
+static void runActivityLogServiceRegression()
+{
+    ActivityLogService* service = ActivityLogService::getInstance();
+    service->clear();
+    QSignalSpy eventSpy(service, &ActivityLogService::eventAppended);
+    QSignalSpy clearSpy(service, &ActivityLogService::cleared);
+
+    service->append(QStringLiteral("Test"),
+                    ActivityLogLevel::Info,
+                    QStringLiteral("probe"),
+                    12,
+                    QStringLiteral("abc"));
+    expectBool("activity log appends event",
+               service->events().size() == 1 && eventSpy.count() == 1,
+               true);
+    const QString formatted =
+        ActivityLogService::formatEvent(service->events().first());
+    expectBool("activity log formats source",
+               formatted.contains(QStringLiteral("[Test]")),
+               true);
+    expectBool("activity log formats duration",
+               formatted.contains(QStringLiteral("12 ms")),
+               true);
+    service->clear();
+    expectBool("activity log clears events",
+               service->events().isEmpty() && clearSpy.count() >= 1,
+               true);
+}
+
+static void runRtlInsightsOnDemandRegression()
+{
+    ActivityLogService* service = ActivityLogService::getInstance();
+    service->clear();
+
+    RtlInsightsPanelCoordinator panel(nullptr);
+    panel.updateModuleContext(QStringLiteral("probe.sv"),
+                              QStringLiteral("probe_module"),
+                              QStringLiteral("probe_signal"));
+    expectBool("RTL insights context update is passive",
+               service->events().isEmpty(),
+               true);
+    expectBool("RTL insights action list rendered",
+               panel.tree()
+                   && panel.tree()->topLevelItemCount() > 0
+                   && panel.tree()->topLevelItem(0)->text(0).contains(
+                       QStringLiteral("Ready")),
+               true);
+
+    panel.showModuleBrief();
+    bool sawModuleBriefLog = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawModuleBriefLog = sawModuleBriefLog
+            || (event.source == QStringLiteral("RTL Insights")
+                && event.message.contains(QStringLiteral("Module Brief")));
+    }
+    expectBool("RTL insights report logs on demand",
+               sawModuleBriefLog,
+               true);
+    service->clear();
 }
 
 static bool waitUntil(const std::function<bool()>& predicate, int timeoutMs)
@@ -1085,6 +1148,12 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         QStringLiteral("insight_top"),
         QStringLiteral("data_q"));
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("RTL insights defaults to on-demand actions",
+               rtlInsightsTree(window)
+                   && rtlInsightsTree(window)->topLevelItemCount() > 0
+                   && rtlInsightsTree(window)->topLevelItem(0)->text(0).contains(
+                       QStringLiteral("Ready")),
+               true);
 
     bool sawPort = false;
     bool sawClock = false;
@@ -1136,8 +1205,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     bool sawSignalJourneyInterfaceBase = false;
     bool sawSignalJourneyInterfacePeerType = false;
     bool sawSignalJourneyInterfaceSourceRole = false;
-    const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
-    for (QTreeWidgetItem* item : items) {
+    auto scanRtlInsightItems = [&]() {
+        const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
+        for (QTreeWidgetItem* item : items) {
         sawPort = sawPort
             || (item->text(0) == QStringLiteral("Port")
                 && item->text(1) == QStringLiteral("clk"));
@@ -1340,7 +1410,21 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             || (item->text(0) == QStringLiteral("Source Role")
                 && item->text(1) == QStringLiteral("design source")
                 && item->text(2) == QStringLiteral("if_bus"));
-    }
+        }
+    };
+
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleBrief();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    scanRtlInsightItems();
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showClockResetDomainMap();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    scanRtlInsightItems();
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showFsmGraph();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    scanRtlInsightItems();
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalJourney();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    scanRtlInsightItems();
 
     expectBool("RTL insights renders module port", sawPort, true);
     expectBool("RTL insights renders clock domain", sawClock, true);
@@ -1487,6 +1571,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         fixturePath,
         QStringLiteral("insight_top"),
         QStringLiteral("clk"));
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalJourney();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     bool sawTimingJourney = false;
@@ -1867,6 +1952,8 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
 
+    runActivityLogServiceRegression();
+    runRtlInsightsOnDemandRegression();
     runEditorAppearanceSettingsRegression();
     runEditorAppearanceCoordinatorRegression();
     runNavigationHierarchyModelRegression();
@@ -1897,6 +1984,10 @@ int main(int argc, char** argv)
     window.resize(1100, 760);
     window.show();
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
+    expectBool("activity output panel exists",
+               window.findChild<QPlainTextEdit*>(
+                   QStringLiteral("activityOutputText")) != nullptr,
+               true);
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
     const int editorCountBeforeNewAction = window.tabManager->editorCount();
     if (newFileAction) {
@@ -1970,6 +2061,15 @@ int main(int argc, char** argv)
 
     const bool workspaceOpened = window.workspaceManager->openWorkspace(workspacePath);
     expectBool("open workspace", workspaceOpened, true);
+    bool sawWorkspaceActivity = false;
+    for (const ActivityLogEvent& event : ActivityLogService::getInstance()->events()) {
+        sawWorkspaceActivity = sawWorkspaceActivity
+            || (event.source == QStringLiteral("Workspace")
+                && event.message.startsWith(QStringLiteral("Opened ")));
+    }
+    expectBool("workspace open logs activity",
+               sawWorkspaceActivity,
+               true);
     const QStringList svFiles = window.workspaceManager->getSystemVerilogFiles();
     expectBool("workspace has SystemVerilog files", !svFiles.isEmpty(), true);
     const ProjectSnapshot project = window.workspaceManager->projectSnapshot();

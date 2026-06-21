@@ -1,10 +1,9 @@
 #include "analysisprogresscoordinator.h"
 
+#include "activitylogservice.h"
 #include "analysisscheduler.h"
-#include "relationshipprogressdialog.h"
 
 #include <QFileInfo>
-#include <QTimer>
 
 AnalysisProgressCoordinator::AnalysisProgressCoordinator(QWidget* dialogParent, QObject* parent)
     : QObject(parent)
@@ -14,8 +13,6 @@ AnalysisProgressCoordinator::AnalysisProgressCoordinator(QWidget* dialogParent, 
 
 AnalysisProgressCoordinator::~AnalysisProgressCoordinator()
 {
-    if (progressDialog)
-        progressDialog->deleteLater();
 }
 
 void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newScheduler)
@@ -33,13 +30,13 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             &AnalysisScheduler::workspaceSymbolAnalysisStarted,
             this,
             [this](const ProjectSnapshot& project, int totalFiles) {
-                Q_UNUSED(totalFiles)
                 symbolAnalysisCancelled.store(false);
-                const QStringList svFiles = project.systemVerilogFiles;
-                showAnalysisProgress(svFiles);
-                QTimer::singleShot(10, this, [this, svFiles]() {
-                    showSymbolStageStarted(svFiles);
-                });
+                showAnalysisProgress(project.systemVerilogFiles);
+                showSymbolStageStarted(project.systemVerilogFiles);
+                ActivityLogService::getInstance()->append(
+                    QStringLiteral("Analyzer"),
+                    ActivityLogLevel::Info,
+                    QStringLiteral("Scheduled %1 files").arg(totalFiles));
             });
 
     connect(scheduler,
@@ -47,11 +44,17 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             this,
             [this](const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols) {
                 emit statusMessageRequested(
-                    QString("Symbol analysis complete: %1 files, %2 symbols - relationship analysis running...")
+                    QString("Symbol analysis complete: %1 files, %2 symbols")
                         .arg(filesAnalyzed)
                         .arg(totalSymbols),
                     3000);
                 showRelationshipStageStarted(project.systemVerilogFiles);
+                ActivityLogService::getInstance()->append(
+                    QStringLiteral("Analyzer"),
+                    ActivityLogLevel::Info,
+                    QStringLiteral("Parsed %1 files, %2 symbols")
+                        .arg(filesAnalyzed)
+                        .arg(totalSymbols));
             });
 
     connect(scheduler,
@@ -87,21 +90,16 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
     int totalFiles,
     const QString& currentFileName)
 {
-    if (!progressDialog || totalFiles <= 0)
+    if (totalFiles <= 0)
         return;
 
-    progressDialog->progressBar->setValue(filesDone);
-    progressDialog->progressBar->setMaximum(totalFiles);
-    progressDialog->setSymbolAnalysisProgress(filesDone, totalFiles);
-
-    QString shortName = QFileInfo(currentFileName).fileName();
-    if (shortName.length() > 45)
-        shortName = "..." + shortName.right(42);
-    progressDialog->currentFileLabel->setText(
+    const QString shortName = QFileInfo(currentFileName).fileName();
+    emit statusMessageRequested(
         QString("Symbol analysis: %1 / %2 - %3")
             .arg(filesDone)
             .arg(totalFiles)
-            .arg(shortName));
+            .arg(shortName),
+        1000);
 }
 
 bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const
@@ -111,87 +109,25 @@ bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const
 
 void AnalysisProgressCoordinator::showAnalysisProgress(const QStringList& files)
 {
-    if (progressDialog) {
-        progressDialog->disconnect();
-        progressDialog->deleteLater();
-        progressDialog = nullptr;
-    }
-
-    progressDialog = new RelationshipProgressDialog(dialogParent);
-    progressDialog->setAutoClose(false);
-    progressDialog->setMinimumDuration(0);
-    progressDialog->setShowDetails(true);
-
-    connect(progressDialog,
-            &RelationshipProgressDialog::cancelled,
-            this,
-            [this]() {
-                symbolAnalysisCancelled.store(true);
-                if (scheduler)
-                    scheduler->cancelWorkspaceRelationshipAnalysis();
-                emit statusMessageRequested("Analysis cancelled", 3000);
-            });
-
-    connect(progressDialog,
-            &RelationshipProgressDialog::finished,
-            this,
-            [this]() {
-                emit statusMessageRequested("Symbol relationship analysis complete", 3000);
-            });
-
-    progressDialog->startAnalysis(files.size());
-    progressDialog->statusLabel->setText("Initializing analysis environment...");
-    progressDialog->currentFileLabel->setText(
-        QString("Preparing to analyze %1 SystemVerilog files").arg(files.size()));
-    progressDialog->progressBar->setFormat("Initializing...");
-
-    if (progressDialog->config.showDetails) {
-        progressDialog->logProgress("System initialization complete");
-        progressDialog->logProgress("Loading analysis components...");
-    }
-
-    progressDialog->update();
-    progressDialog->repaint();
+    emit statusMessageRequested(
+        QString("Workspace analysis scheduled: %1 files").arg(files.size()),
+        2000);
 }
 
 void AnalysisProgressCoordinator::showSymbolStageStarted(const QStringList& files)
 {
-    if (!progressDialog)
-        return;
-
-    progressDialog->statusLabel->setText("Stage 1/2: Symbol analysis running...");
-    progressDialog->currentFileLabel->setText(
-        "Scanning and parsing SystemVerilog file structure...");
-    progressDialog->progressBar->setFormat("Symbol analysis running... Please wait");
-
-    if (progressDialog->config.showDetails) {
-        progressDialog->logProgress("Starting symbol analysis stage...");
-        progressDialog->logProgress(QString("Found %1 SV files").arg(files.size()));
-    }
-
-    progressDialog->update();
-    progressDialog->repaint();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Symbol analysis started for %1 files").arg(files.size()));
 }
 
 void AnalysisProgressCoordinator::showRelationshipStageStarted(const QStringList& files)
 {
-    if (!progressDialog)
-        return;
-
-    progressDialog->statusLabel->setText("Stage 2/2: Relationship analysis running...");
-    progressDialog->currentFileLabel->setText(
-        "Analyzing symbol dependencies between files...");
-    progressDialog->progressBar->setFormat(QString("%v / %1 files (%p%)").arg(files.size()));
-
-    if (progressDialog->config.showDetails) {
-        progressDialog->logProgress("Starting relationship analysis stage...");
-        progressDialog->logProgress("Analyzing module instantiation relationships...");
-        progressDialog->logProgress("Analyzing variable assignment relationships...");
-        progressDialog->logProgress("Analyzing task/function call relationships...");
-    }
-
-    progressDialog->update();
-    progressDialog->repaint();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Relationship analysis started for %1 files").arg(files.size()));
 }
 
 void AnalysisProgressCoordinator::showRelationshipAnalysisFinished(
@@ -201,37 +137,19 @@ void AnalysisProgressCoordinator::showRelationshipAnalysisFinished(
         ? result.totalFiles
         : result.fileRelationships.size();
 
-    if (progressDialog) {
-        progressDialog->statusLabel->setText("All analysis complete!");
-        if (progressDialog->config.showDetails) {
-            progressDialog->logProgress("Relationship analysis complete!");
-            progressDialog->logProgress(QString("Processed %1 files").arg(totalFiles));
-        }
-    }
-
-    QTimer::singleShot(200, this, [this, totalFiles]() {
-        if (progressDialog)
-            progressDialog->finishAnalysis();
-        emit statusMessageRequested(
-            QString("Relationship analysis complete: %1 files").arg(totalFiles),
-            5000);
-    });
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Relationship analysis complete: %1 files").arg(totalFiles));
+    emit statusMessageRequested(
+        QString("Relationship analysis complete: %1 files").arg(totalFiles),
+        5000);
 }
 
 void AnalysisProgressCoordinator::showRelationshipProgress(
     const QString& fileName,
     int relationshipsFound)
 {
-    if (progressDialog) {
-        progressDialog->updateProgress(fileName, relationshipsFound);
-
-        const QString shortName = QFileInfo(fileName).fileName();
-        if (progressDialog->config.showDetails) {
-            progressDialog->logProgress(
-                QString("%1: found %2 relationships").arg(shortName).arg(relationshipsFound));
-        }
-    }
-
     const QString shortName = QFileInfo(fileName).fileName();
     emit statusMessageRequested(
         QString("Relationship analysis: %1 (%2 relationships)")
@@ -244,25 +162,28 @@ void AnalysisProgressCoordinator::showWorkspaceRelationshipProgress(
     int processedFiles,
     int totalFiles)
 {
-    if (!progressDialog)
-        return;
-
-    progressDialog->statusLabel->setText(
+    emit statusMessageRequested(
         QString("Stage 2/2: Relationship analysis running (%1/%2)")
             .arg(processedFiles)
-            .arg(totalFiles));
+            .arg(totalFiles),
+        1000);
 }
 
 void AnalysisProgressCoordinator::showRelationshipError(const QString& fileName, const QString& error)
 {
-    if (progressDialog && progressDialog->isVisible())
-        progressDialog->showError(fileName, error);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Error,
+        QStringLiteral("%1: %2")
+            .arg(QFileInfo(fileName).fileName(), error));
     emit relationshipAnalysisErrorReported(fileName, error);
 }
 
 void AnalysisProgressCoordinator::showRelationshipCancelled()
 {
-    if (progressDialog)
-        progressDialog->finishAnalysis();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Warning,
+        QStringLiteral("Relationship analysis cancelled"));
     emit statusMessageRequested("Relationship analysis cancelled", 3000);
 }

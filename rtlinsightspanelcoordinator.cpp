@@ -1,5 +1,6 @@
 #include "rtlinsightspanelcoordinator.h"
 
+#include "activitylogservice.h"
 #include "clockresetdomainservice.h"
 #include "fsmgraphservice.h"
 #include "modulebriefservice.h"
@@ -7,10 +8,14 @@
 #include "semanticpanelutils.h"
 #include "signaljourneyservice.h"
 
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QHBoxLayout>
+#include <QPushButton>
 #include <QVBoxLayout>
 
+#include <exception>
 #include <utility>
 
 namespace {
@@ -894,6 +899,24 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
+    auto* actionLayout = new QHBoxLayout;
+    actionLayout->setContentsMargins(0, 0, 0, 0);
+    actionLayout->setSpacing(4);
+    moduleBriefButton = new QPushButton(QStringLiteral("Module Brief"), panel);
+    moduleBriefButton->setObjectName(QStringLiteral("rtlModuleBriefButton"));
+    signalJourneyButton = new QPushButton(QStringLiteral("Signal Journey"), panel);
+    signalJourneyButton->setObjectName(QStringLiteral("rtlSignalJourneyButton"));
+    clockResetButton = new QPushButton(QStringLiteral("Clock/Reset Map"), panel);
+    clockResetButton->setObjectName(QStringLiteral("rtlClockResetButton"));
+    fsmGraphButton = new QPushButton(QStringLiteral("FSM Graph"), panel);
+    fsmGraphButton->setObjectName(QStringLiteral("rtlFsmGraphButton"));
+    actionLayout->addWidget(moduleBriefButton);
+    actionLayout->addWidget(signalJourneyButton);
+    actionLayout->addWidget(clockResetButton);
+    actionLayout->addWidget(fsmGraphButton);
+    actionLayout->addStretch(1);
+    layout->addLayout(actionLayout);
+
     insightsTree = new QTreeWidget(panel);
     insightsTree->setObjectName(QStringLiteral("rtlInsightsTree"));
     insightsTree->setColumnCount(5);
@@ -926,6 +949,16 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                          const int column = item->data(0, Qt::UserRole + 2).toInt();
                          navigationHandler(fileName, line, column);
                      });
+    QObject::connect(moduleBriefButton, &QPushButton::clicked,
+                     insightsDock, [this]() { showModuleBrief(); });
+    QObject::connect(signalJourneyButton, &QPushButton::clicked,
+                     insightsDock, [this]() { showSignalJourney(); });
+    QObject::connect(clockResetButton, &QPushButton::clicked,
+                     insightsDock, [this]() { showClockResetDomainMap(); });
+    QObject::connect(fsmGraphButton, &QPushButton::clicked,
+                     insightsDock, [this]() { showFsmGraph(); });
+
+    renderNoContext();
 }
 
 void RtlInsightsPanelCoordinator::setNavigationHandler(
@@ -948,7 +981,7 @@ void RtlInsightsPanelCoordinator::updateModuleContext(
     currentFileName = fileName;
     currentModuleName = moduleName;
     currentSignalName = signalName;
-    refresh();
+    renderActionList();
 }
 
 void RtlInsightsPanelCoordinator::showModuleInsights(
@@ -973,6 +1006,10 @@ void RtlInsightsPanelCoordinator::showSemanticDiff(
     if (!insightsTree)
         return;
 
+    QElapsedTimer timer;
+    timer.start();
+    logReportStart(QStringLiteral("Semantic Diff"));
+
     const bool hadExpandableItems =
         SemanticPanelUtils::treeHasExpandableItems(insightsTree);
     const QSet<QString> expandedKeys =
@@ -985,8 +1022,18 @@ void RtlInsightsPanelCoordinator::showSemanticDiff(
     query.moduleName = moduleName;
     query.beforeFileName = beforeFileName;
     query.afterFileName = afterFileName;
-    const SemanticDiffReport report =
-        SemanticDiffService::getInstance()->buildSemanticDiff(query);
+    SemanticDiffReport report;
+    try {
+        report = SemanticDiffService::getInstance()->buildSemanticDiff(query);
+    } catch (const std::exception& error) {
+        logReportError(QStringLiteral("Semantic Diff"),
+                       QString::fromLocal8Bit(error.what()));
+        return;
+    } catch (...) {
+        logReportError(QStringLiteral("Semantic Diff"),
+                       QStringLiteral("unknown error"));
+        return;
+    }
 
     appendSemanticDiff(insightsTree, report);
     SemanticPanelUtils::restoreTreeExpansion(insightsTree,
@@ -1009,9 +1056,55 @@ void RtlInsightsPanelCoordinator::showSemanticDiff(
                                  .arg(totalChanges),
                              1500);
     }
+    logReportDone(QStringLiteral("Semantic Diff"),
+                  static_cast<int>(timer.elapsed()));
 }
 
 void RtlInsightsPanelCoordinator::refresh()
+{
+    showModuleBrief();
+}
+
+void RtlInsightsPanelCoordinator::renderNoContext()
+{
+    if (!insightsTree)
+        return;
+
+    insightsTree->clear();
+    createGroupItem(insightsTree, QStringLiteral("No module context"), 0);
+    if (insightsDock)
+        insightsDock->setWindowTitle(QStringLiteral("RTL Insights"));
+    updateActionState();
+}
+
+void RtlInsightsPanelCoordinator::renderActionList()
+{
+    if (!insightsTree)
+        return;
+
+    insightsTree->clear();
+    if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
+        renderNoContext();
+        return;
+    }
+
+    createGroupItem(
+        insightsTree,
+        QStringLiteral("Ready: %1").arg(currentModuleName),
+        4);
+    createGroupItem(
+        insightsTree,
+        currentSignalName.isEmpty()
+            ? QStringLiteral("Select a signal or click Module Brief / Clock/Reset / FSM")
+            : QStringLiteral("Current signal: %1").arg(currentSignalName),
+        0);
+    if (insightsDock)
+        insightsDock->setWindowTitle(QStringLiteral("RTL Insights: %1")
+                                         .arg(currentModuleName));
+    updateActionState();
+}
+
+void RtlInsightsPanelCoordinator::showModuleBrief()
 {
     if (!insightsTree)
         return;
@@ -1023,17 +1116,30 @@ void RtlInsightsPanelCoordinator::refresh()
     insightsTree->clear();
 
     if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
-        createGroupItem(insightsTree, QStringLiteral("No module context"), 0);
-        if (insightsDock)
-            insightsDock->setWindowTitle(QStringLiteral("RTL Insights"));
+        renderNoContext();
         return;
     }
+
+    QElapsedTimer timer;
+    timer.start();
+    logReportStart(QStringLiteral("Module Brief"));
 
     ModuleBriefQuery moduleQuery;
     moduleQuery.fileName = currentFileName;
     moduleQuery.moduleName = currentModuleName;
-    const ModuleBriefReport moduleReport =
-        ModuleBriefService::getInstance()->buildModuleBrief(moduleQuery);
+    ModuleBriefReport moduleReport;
+    try {
+        moduleReport =
+            ModuleBriefService::getInstance()->buildModuleBrief(moduleQuery);
+    } catch (const std::exception& error) {
+        logReportError(QStringLiteral("Module Brief"),
+                       QString::fromLocal8Bit(error.what()));
+        return;
+    } catch (...) {
+        logReportError(QStringLiteral("Module Brief"),
+                       QStringLiteral("unknown error"));
+        return;
+    }
 
     if (!moduleReport.found) {
         createGroupItem(insightsTree,
@@ -1042,6 +1148,8 @@ void RtlInsightsPanelCoordinator::refresh()
         if (insightsDock)
             insightsDock->setWindowTitle(QStringLiteral("RTL Insights: %1")
                                              .arg(currentModuleName));
+        logReportDone(QStringLiteral("Module Brief"),
+                      static_cast<int>(timer.elapsed()));
         return;
     }
 
@@ -1062,42 +1170,6 @@ void RtlInsightsPanelCoordinator::refresh()
     appendRelationshipSummary(insightsTree,
                               moduleReport.relationshipSummary,
                               moduleReport.relationshipEvidenceRows);
-    appendSignalJourney(insightsTree,
-                        currentFileName,
-                        currentModuleName,
-                        currentSignalName);
-
-    ClockResetDomainQuery domainQuery;
-    domainQuery.fileName = currentFileName;
-    domainQuery.moduleName = currentModuleName;
-    const ClockResetDomainReport clockResetReport =
-        ClockResetDomainService::getInstance()->buildClockResetDomainMap(domainQuery);
-    appendClockResetDomains(insightsTree, clockResetReport);
-    appendClockResetEvidenceRows(
-        insightsTree,
-        clockResetReport.evidenceGroupDisplayName.isEmpty()
-            ? QStringLiteral("Domain Evidence")
-            : clockResetReport.evidenceGroupDisplayName,
-        clockResetReport.evidenceRows);
-    appendClockResetEvidenceRows(
-        insightsTree,
-        clockResetReport.ambiguityGroupDisplayName.isEmpty()
-            ? QStringLiteral("Ambiguity")
-            : clockResetReport.ambiguityGroupDisplayName,
-        clockResetReport.ambiguityRows);
-    appendClockResetEvidenceRows(
-        insightsTree,
-        clockResetReport.unmappedGroupDisplayName.isEmpty()
-            ? QStringLiteral("Unmapped Timing Signals")
-            : clockResetReport.unmappedGroupDisplayName,
-        clockResetReport.unmappedRows);
-
-    FsmGraphQuery fsmQuery;
-    fsmQuery.fileName = currentFileName;
-    fsmQuery.moduleName = currentModuleName;
-    appendFsmGraphs(insightsTree,
-                    FsmGraphService::getInstance()->buildFsmGraph(fsmQuery));
-
     SemanticPanelUtils::restoreTreeExpansion(insightsTree,
                                              hadExpandableItems,
                                              expandedKeys);
@@ -1111,4 +1183,189 @@ void RtlInsightsPanelCoordinator::refresh()
                                  .arg(moduleReport.moduleDisplayName),
                              1500);
     }
+    logReportDone(QStringLiteral("Module Brief"),
+                  static_cast<int>(timer.elapsed()));
+}
+
+void RtlInsightsPanelCoordinator::showSignalJourney()
+{
+    if (!insightsTree)
+        return;
+
+    insightsTree->clear();
+    if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
+        renderNoContext();
+        return;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    logReportStart(QStringLiteral("Signal Journey"));
+    try {
+        appendSignalJourney(insightsTree,
+                            currentFileName,
+                            currentModuleName,
+                            currentSignalName);
+    } catch (const std::exception& error) {
+        logReportError(QStringLiteral("Signal Journey"),
+                       QString::fromLocal8Bit(error.what()));
+        return;
+    } catch (...) {
+        logReportError(QStringLiteral("Signal Journey"),
+                       QStringLiteral("unknown error"));
+        return;
+    }
+    if (insightsDock)
+        insightsDock->setWindowTitle(QStringLiteral("RTL Insights: Signal Journey %1")
+                                         .arg(currentSignalName));
+    if (statusMessageHandler)
+        statusMessageHandler(QStringLiteral("Rendered signal journey"), 1500);
+    logReportDone(QStringLiteral("Signal Journey"),
+                  static_cast<int>(timer.elapsed()));
+}
+
+void RtlInsightsPanelCoordinator::showClockResetDomainMap()
+{
+    if (!insightsTree)
+        return;
+
+    insightsTree->clear();
+    if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
+        renderNoContext();
+        return;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    logReportStart(QStringLiteral("Clock/Reset Domain Map"));
+    ClockResetDomainReport report;
+    try {
+        ClockResetDomainQuery query;
+        query.fileName = currentFileName;
+        query.moduleName = currentModuleName;
+        report = ClockResetDomainService::getInstance()->buildClockResetDomainMap(query);
+    } catch (const std::exception& error) {
+        logReportError(QStringLiteral("Clock/Reset Domain Map"),
+                       QString::fromLocal8Bit(error.what()));
+        return;
+    } catch (...) {
+        logReportError(QStringLiteral("Clock/Reset Domain Map"),
+                       QStringLiteral("unknown error"));
+        return;
+    }
+    appendClockResetDomains(insightsTree, report);
+    appendClockResetEvidenceRows(
+        insightsTree,
+        report.evidenceGroupDisplayName.isEmpty()
+            ? QStringLiteral("Domain Evidence")
+            : report.evidenceGroupDisplayName,
+        report.evidenceRows);
+    appendClockResetEvidenceRows(
+        insightsTree,
+        report.ambiguityGroupDisplayName.isEmpty()
+            ? QStringLiteral("Ambiguity")
+            : report.ambiguityGroupDisplayName,
+        report.ambiguityRows);
+    appendClockResetEvidenceRows(
+        insightsTree,
+        report.unmappedGroupDisplayName.isEmpty()
+            ? QStringLiteral("Unmapped Timing Signals")
+            : report.unmappedGroupDisplayName,
+        report.unmappedRows);
+    if (insightsDock)
+        insightsDock->setWindowTitle(QStringLiteral("RTL Insights: Clock/Reset Map %1")
+                                         .arg(currentModuleName));
+    if (statusMessageHandler)
+        statusMessageHandler(QStringLiteral("Rendered clock/reset domain map"), 1500);
+    logReportDone(QStringLiteral("Clock/Reset Domain Map"),
+                  static_cast<int>(timer.elapsed()));
+}
+
+void RtlInsightsPanelCoordinator::showFsmGraph()
+{
+    if (!insightsTree)
+        return;
+
+    insightsTree->clear();
+    if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
+        renderNoContext();
+        return;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    logReportStart(QStringLiteral("FSM Graph"));
+    FsmGraphReport report;
+    try {
+        FsmGraphQuery query;
+        query.fileName = currentFileName;
+        query.moduleName = currentModuleName;
+        report = FsmGraphService::getInstance()->buildFsmGraph(query);
+    } catch (const std::exception& error) {
+        logReportError(QStringLiteral("FSM Graph"),
+                       QString::fromLocal8Bit(error.what()));
+        return;
+    } catch (...) {
+        logReportError(QStringLiteral("FSM Graph"),
+                       QStringLiteral("unknown error"));
+        return;
+    }
+    appendFsmGraphs(insightsTree, report);
+    if (insightsDock)
+        insightsDock->setWindowTitle(QStringLiteral("RTL Insights: FSM Graph %1")
+                                         .arg(currentModuleName));
+    if (statusMessageHandler)
+        statusMessageHandler(QStringLiteral("Rendered FSM graph"), 1500);
+    logReportDone(QStringLiteral("FSM Graph"),
+                  static_cast<int>(timer.elapsed()));
+}
+
+void RtlInsightsPanelCoordinator::updateActionState()
+{
+    const bool hasModule = !currentFileName.isEmpty() && !currentModuleName.isEmpty();
+    if (moduleBriefButton)
+        moduleBriefButton->setEnabled(hasModule);
+    if (signalJourneyButton)
+        signalJourneyButton->setEnabled(hasModule);
+    if (clockResetButton)
+        clockResetButton->setEnabled(hasModule);
+    if (fsmGraphButton)
+        fsmGraphButton->setEnabled(hasModule);
+}
+
+void RtlInsightsPanelCoordinator::logReportStart(const QString& reportName) const
+{
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("RTL Insights"),
+        ActivityLogLevel::Info,
+        QStringLiteral("%1 start for %2")
+            .arg(reportName,
+                 currentModuleName.isEmpty()
+                     ? QStringLiteral("<no module>")
+                     : currentModuleName));
+}
+
+void RtlInsightsPanelCoordinator::logReportDone(
+    const QString& reportName,
+    int durationMs) const
+{
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("RTL Insights"),
+        ActivityLogLevel::Info,
+        QStringLiteral("%1 done for %2")
+            .arg(reportName,
+                 currentModuleName.isEmpty()
+                     ? QStringLiteral("<no module>")
+                     : currentModuleName),
+        durationMs);
+}
+
+void RtlInsightsPanelCoordinator::logReportError(
+    const QString& reportName,
+    const QString& message) const
+{
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("RTL Insights"),
+        ActivityLogLevel::Error,
+        QStringLiteral("%1 failed: %2").arg(reportName, message));
 }

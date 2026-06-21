@@ -9,6 +9,7 @@
 #include <memory>
 
 class SemanticIndexSnapshot;
+class QPushButton;
 
 class RtlInsightsPanelCoordinator
 {
@@ -37,12 +38,27 @@ public:
 private:
     QDockWidget* insightsDock = nullptr;
     QTreeWidget* insightsTree = nullptr;
+    QPushButton* moduleBriefButton = nullptr;
+    QPushButton* signalJourneyButton = nullptr;
+    QPushButton* clockResetButton = nullptr;
+    QPushButton* fsmGraphButton = nullptr;
     QString currentFileName;
     QString currentModuleName;
     QString currentSignalName;
 
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
+
+    void renderActionList();
+    void renderNoContext();
+    void showModuleBrief();
+    void showSignalJourney();
+    void showClockResetDomainMap();
+    void showFsmGraph();
+    void updateActionState();
+    void logReportStart(const QString& reportName) const;
+    void logReportDone(const QString& reportName, int durationMs) const;
+    void logReportError(const QString& reportName, const QString& message) const;
 };
 
 #endif // RTLINSIGHTSPANELCOORDINATOR_H

@@ -1,5 +1,9 @@
 #include "analysisscheduler.h"
 
+#include "activitylogservice.h"
+
+#include <QFileInfo>
+
 void AnalysisScheduler::setDocumentModel(DocumentModel* model)
 {
     if (documentModel == model)
@@ -29,6 +33,12 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
 
 void AnalysisScheduler::scheduleOpenFileAnalysis(const QString& fileName, int delayMs)
 {
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Scheduled open-file analysis for %1 in %2 ms")
+            .arg(QFileInfo(fileName).fileName())
+            .arg(delayMs));
     if (openDocumentAnalysis)
         openDocumentAnalysis->scheduleOpenFileAnalysis(fileName, delayMs);
 }
@@ -60,6 +70,10 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 
 void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
 {
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Editor"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Opened %1").arg(QFileInfo(snapshot.fileName).fileName()));
     if (openDocumentAnalysis)
         openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, false);
 }

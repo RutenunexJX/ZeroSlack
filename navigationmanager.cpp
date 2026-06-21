@@ -1,6 +1,24 @@
 #include "navigationmanager.h"
+#include "activitylogservice.h"
 #include "navigationservice.h"
 #include "navigationwidget.h"
+
+#include <QElapsedTimer>
+
+namespace {
+QString navigationViewName(NavigationManager::NavigationView view)
+{
+    switch (view) {
+    case NavigationManager::FileHierarchyView:
+        return QStringLiteral("file hierarchy");
+    case NavigationManager::ModuleHierarchyView:
+        return QStringLiteral("module hierarchy");
+    case NavigationManager::SymbolHierarchyView:
+        return QStringLiteral("symbol outline");
+    }
+    return QStringLiteral("navigation");
+}
+}
 
 NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
@@ -34,6 +52,8 @@ void NavigationManager::setNavigationService(NavigationService* service)
 
 void NavigationManager::refreshFileHierarchy()
 {
+    QElapsedTimer timer;
+    timer.start();
     if (!shouldRefreshCache()) {
         caches.clearFileList();
     }
@@ -45,10 +65,17 @@ void NavigationManager::refreshFileHierarchy()
     }
 
     emit dataRefreshed(FileHierarchyView);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Navigation"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Rebuilt %1").arg(navigationViewName(FileHierarchyView)),
+        static_cast<int>(timer.elapsed()));
 }
 
 void NavigationManager::refreshModuleHierarchy()
 {
+    QElapsedTimer timer;
+    timer.start();
     const bool changed = updateModuleHierarchyData();
 
     if (navigationWidget && changed) {
@@ -56,10 +83,19 @@ void NavigationManager::refreshModuleHierarchy()
     }
 
     emit dataRefreshed(ModuleHierarchyView);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Navigation"),
+        ActivityLogLevel::Info,
+        QStringLiteral("%1 %2")
+            .arg(changed ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
+                 navigationViewName(ModuleHierarchyView)),
+        static_cast<int>(timer.elapsed()));
 }
 
 void NavigationManager::refreshSymbolHierarchy()
 {
+    QElapsedTimer timer;
+    timer.start();
     const bool changed = updateSymbolHierarchyData();
 
     if (navigationWidget && changed) {
@@ -67,6 +103,13 @@ void NavigationManager::refreshSymbolHierarchy()
     }
 
     emit dataRefreshed(SymbolHierarchyView);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Navigation"),
+        ActivityLogLevel::Info,
+        QStringLiteral("%1 %2")
+            .arg(changed ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
+                 navigationViewName(SymbolHierarchyView)),
+        static_cast<int>(timer.elapsed()));
 }
 
 void NavigationManager::refreshCurrentView()

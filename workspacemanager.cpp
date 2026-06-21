@@ -1,8 +1,10 @@
 #include "workspacemanager.h"
+#include "activitylogservice.h"
 #include <QFileDialog>
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QElapsedTimer>
 #include <utility>
 
 WorkspaceManager::WorkspaceManager(QObject *parent)
@@ -120,6 +122,9 @@ WorkspaceManager::~WorkspaceManager()
 
 bool WorkspaceManager::openWorkspace(const QString& folderPath)
 {
+    QElapsedTimer timer;
+    timer.start();
+
     QString pathToOpen = folderPath;
     if (pathToOpen.isEmpty()) {
         pathToOpen = QFileDialog::getExistingDirectory(
@@ -127,6 +132,11 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
             "Select Workspace Directory");
         if (pathToOpen.isEmpty()) return false; // User cancelled
     }
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Workspace"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Opening %1").arg(QDir::toNativeSeparators(pathToOpen)));
 
     if (isWorkspaceOpen()) {
         closeWorkspace();
@@ -140,18 +150,31 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
     emit workspaceOpened(workspacePath);
     emit filesScanned(files.systemVerilogFiles);
 
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Workspace"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Opened %1 (%2 SystemVerilog files)")
+            .arg(QDir::toNativeSeparators(workspacePath))
+            .arg(files.systemVerilogFiles.size()),
+        static_cast<int>(timer.elapsed()));
+
     return true;
 }
 
 void WorkspaceManager::closeWorkspace()
 {
     if (!isWorkspaceOpen()) return;
+    const QString closingPath = workspacePath;
     stopFileWatching();
     workspacePath.clear();
     files.clear();
     projectModel->closeProject();
 
     emit workspaceClosed();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Workspace"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Closed %1").arg(QDir::toNativeSeparators(closingPath)));
 }
 
 bool WorkspaceManager::isWorkspaceOpen() const

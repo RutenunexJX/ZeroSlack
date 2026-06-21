@@ -7,7 +7,6 @@
 #include <atomic>
 
 class AnalysisScheduler;
-class RelationshipProgressDialog;
 class QWidget;
 struct WorkspaceRelationshipAnalysisResult;
 
@@ -31,7 +30,6 @@ signals:
 
 private:
     QWidget* dialogParent = nullptr;
-    RelationshipProgressDialog* progressDialog = nullptr;
     AnalysisScheduler* scheduler = nullptr;
     std::atomic<bool> symbolAnalysisCancelled{false};
 

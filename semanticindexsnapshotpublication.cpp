@@ -1,5 +1,6 @@
 #include "semanticindex.h"
 
+#include "activitylogservice.h"
 #include "semanticindexsnapshot.h"
 
 #include <QSet>
@@ -104,6 +105,15 @@ void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> sna
 {
     m_snapshot = std::move(snapshot);
     ++m_snapshotRevision;
+    if (m_snapshot) {
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("SemanticIndex"),
+            ActivityLogLevel::Info,
+            QStringLiteral("Published snapshot gen=%1 symbols=%2 relationships=%3")
+                .arg(m_snapshotRevision)
+                .arg(m_snapshot->getSymbolRecords().size())
+                .arg(m_snapshot->relationships().size()));
+    }
 }
 
 void SemanticIndex::clearSnapshot()

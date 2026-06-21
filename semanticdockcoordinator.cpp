@@ -1,5 +1,6 @@
 #include "semanticdockcoordinator.h"
 
+#include "activitylogpanelcoordinator.h"
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "problemspanelcoordinator.h"
@@ -58,11 +59,21 @@ void SemanticDockCoordinator::DockDependencies::addBottomDock(
         mainWindow->addDockWidget(Qt::BottomDockWidgetArea, dock);
 }
 
+void SemanticDockCoordinator::DockDependencies::tabifyBottomDock(
+    QDockWidget* first,
+    QDockWidget* second) const
+{
+    if (mainWindow && first && second)
+        mainWindow->tabifyDockWidget(first, second);
+}
+
 void SemanticDockCoordinator::PanelBundle::createPanels(
     const DockDependencies& dependencies)
 {
     problemsPanel =
         std::make_unique<ProblemsPanelCoordinator>(dependencies.mainWindow);
+    activityLogPanel =
+        std::make_unique<ActivityLogPanelCoordinator>(dependencies.mainWindow);
     referencesPanel =
         std::make_unique<ReferencesPanelCoordinator>(dependencies.mainWindow);
     relationshipsPanel =
@@ -71,9 +82,14 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
         std::make_unique<RtlInsightsPanelCoordinator>(dependencies.mainWindow);
 
     dependencies.addBottomDock(problemsPanel->dock());
+    dependencies.addBottomDock(activityLogPanel->dock());
     dependencies.addBottomDock(referencesPanel->dock());
     dependencies.addBottomDock(relationshipsPanel->dock());
     dependencies.addBottomDock(rtlInsightsPanel->dock());
+    dependencies.tabifyBottomDock(problemsPanel->dock(), activityLogPanel->dock());
+    dependencies.tabifyBottomDock(problemsPanel->dock(), referencesPanel->dock());
+    dependencies.tabifyBottomDock(problemsPanel->dock(), relationshipsPanel->dock());
+    dependencies.tabifyBottomDock(problemsPanel->dock(), rtlInsightsPanel->dock());
 }
 
 void SemanticDockCoordinator::PanelBundle::createRefreshCoordinator(
@@ -121,6 +137,12 @@ void SemanticDockCoordinator::setup()
 SemanticPanelRefreshCoordinator* SemanticDockCoordinator::refreshCoordinator() const
 {
     return panels.semanticPanelRefresh.get();
+}
+
+ActivityLogPanelCoordinator*
+SemanticDockCoordinator::activityLogPanelCoordinator() const
+{
+    return panels.activityLogPanel.get();
 }
 
 ProblemsPanelCoordinator* SemanticDockCoordinator::problemsPanelCoordinator() const

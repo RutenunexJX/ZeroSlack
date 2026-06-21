@@ -1,5 +1,6 @@
 #include "analysiscoordinator.h"
 
+#include "activitylogservice.h"
 #include "analysisprogresscoordinator.h"
 #include "analysisscheduler.h"
 #include "workspacemanager.h"
@@ -18,8 +19,24 @@ void AnalysisCoordinator::connectSchedulerSignals()
                 dependencies.refreshRelationshipDataView();
             });
     connect(scheduler,
+            &AnalysisScheduler::fileSymbolAnalysisStarted,
+            this,
+            [](const QString& fileName) {
+                ActivityLogService::getInstance()->append(
+                    QStringLiteral("Analyzer"),
+                    ActivityLogLevel::Info,
+                    QStringLiteral("File analysis started: %1")
+                        .arg(QFileInfo(fileName).fileName()));
+            });
+    connect(scheduler,
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this, [this](const QString& fileName, int symbolCount) {
+                ActivityLogService::getInstance()->append(
+                    QStringLiteral("Analyzer"),
+                    ActivityLogLevel::Info,
+                    QStringLiteral("File analysis done: %1, %2 symbols")
+                        .arg(QFileInfo(fileName).fileName())
+                        .arg(symbolCount));
                 dependencies.handleFileSymbolAnalysisFinished(fileName,
                                                               symbolCount);
                 refreshActiveEditorForFile(fileName);

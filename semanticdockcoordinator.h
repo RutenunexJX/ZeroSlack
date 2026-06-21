@@ -7,6 +7,7 @@
 #include <memory>
 
 class NavigationCommandCoordinator;
+class ActivityLogPanelCoordinator;
 class NavigationManager;
 class ProblemsPanelCoordinator;
 class ReferencesPanelCoordinator;
@@ -32,6 +33,7 @@ public:
     void setup();
 
     SemanticPanelRefreshCoordinator* refreshCoordinator() const;
+    ActivityLogPanelCoordinator* activityLogPanelCoordinator() const;
     ProblemsPanelCoordinator* problemsPanelCoordinator() const;
     ReferencesPanelCoordinator* referencesPanelCoordinator() const;
     RelationshipsPanelCoordinator* relationshipsPanelCoordinator() const;
@@ -52,12 +54,14 @@ private:
                  NavigationCommandCoordinator* navigationCommandCoordinator);
         bool hasMainWindow() const;
         void addBottomDock(QDockWidget* dock) const;
+        void tabifyBottomDock(QDockWidget* first, QDockWidget* second) const;
     };
 
     struct PanelBundle {
         ~PanelBundle();
 
         std::unique_ptr<ProblemsPanelCoordinator> problemsPanel;
+        std::unique_ptr<ActivityLogPanelCoordinator> activityLogPanel;
         std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
         std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
         std::unique_ptr<RtlInsightsPanelCoordinator> rtlInsightsPanel;
