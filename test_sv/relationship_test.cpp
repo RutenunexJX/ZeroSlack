@@ -23,7 +23,6 @@
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
-#include "syminfo.h"
 #include "scopebandservice.h"
 #include "mycodeeditor.h"
 #include "projectmodel.h"
@@ -46,35 +45,6 @@
 static int g_checks = 0;
 static int g_fails = 0;
 
-static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
-{
-    QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::isPackageDeclaration(
-                semanticMetadataForSymbolInfo(symbol))
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
-        }
-    }
-    return names;
-}
-
-static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
-    const QList<sym_list::SymbolInfo>& symbols,
-    const QList<SemanticRelationship>& relationships = {},
-    const QList<SemanticDiagnostic>& diagnostics = {},
-    const QHash<QString, QString>& fileContents = {})
-{
-    return std::make_shared<SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(
-            semanticSymbolRecordsForSymbols(
-                symbols,
-                packageScopeNames(symbols)),
-            relationships,
-            diagnostics,
-            fileContents));
-}
-
 static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
     const QList<SemanticSymbolRecord>& records,
     const QList<SemanticRelationship>& relationships = {},
@@ -88,63 +58,11 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
                                                  fileContents));
 }
 
-static sym_list::SymbolInfo symbolInfoForRecord(
-    const SemanticSymbolRecord& record)
-{
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = record.localHandle;
-    symbol.symbolName = record.name;
-    symbol.symbolType = static_cast<sym_list::sym_type_e>(record.collectorKind);
-    symbol.fileName = record.location.fileName;
-    symbol.startLine = record.location.startLine;
-    symbol.startColumn = record.location.startColumn;
-    symbol.endLine = record.location.endLine;
-    symbol.endColumn = record.location.endColumn;
-    symbol.position = record.location.position;
-    symbol.length = record.location.length;
-    symbol.moduleScope = record.owner.name;
-    symbol.dataType = record.type.rawTypeText;
-    symbol.hasSemanticMetadata = true;
-    symbol.semanticDeclarationKind = record.declarationKind;
-    symbol.semanticUsageRole = record.usageRole;
-    symbol.semanticOwnerScope = record.owner.kind;
-    symbol.semanticVisibility = record.visibility;
-    symbol.semanticSourceRole = record.sourceRole;
-    symbol.collectorKind =
-        static_cast<sym_list::sym_type_e>(record.collectorKind);
-    symbol.interfaceLikeOwner = record.owner.interfaceLike;
-    return symbol;
-}
-
-static QList<sym_list::SymbolInfo> symbolInfosForRecords(
-    const QList<SemanticSymbolRecord>& records,
-    bool assignIds = false)
-{
-    QList<sym_list::SymbolInfo> symbols;
-    symbols.reserve(records.size());
-    int nextId = 1;
-    for (const SemanticSymbolRecord& record : records) {
-        if (!record.isValid())
-            continue;
-        sym_list::SymbolInfo symbol = symbolInfoForRecord(record);
-        if (assignIds)
-            symbol.symbolId = nextId++;
-        symbols.append(symbol);
-    }
-    return symbols;
-}
-
-static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return semanticSymbolRecordForSymbol(symbol).stableKey;
-}
-
 static SemanticIndexSnapshot snapshotFromSemanticIndex(
-    sym_list* db,
+    SemanticIndex& index,
     const QList<SemanticDiagnostic>& diagnostics = {},
     SymbolRelationshipEngine* relationshipEngine = nullptr)
 {
-    SemanticIndex index = semanticIndexFromFixtureDatabase(db);
     const std::shared_ptr<const SemanticIndexSnapshot> captured =
         index.captureSnapshotPreservingDiagnostics();
     QList<SemanticRelationship> relationships;
@@ -221,54 +139,6 @@ static void expectBool(const char* what, bool got, bool want)
            got ? "true" : "false", want ? "true" : "false");
 }
 
-static int symbolId(const QList<sym_list::SymbolInfo>& symbols,
-                    const QString& name,
-                    sym_list::sym_type_e type)
-{
-    for (const auto& s : symbols) {
-        if (s.symbolName == name && s.symbolType == type)
-            return s.symbolId;
-    }
-    return -1;
-}
-
-static int symbolIdInScope(const QList<sym_list::SymbolInfo>& symbols,
-                           const QString& name,
-                           sym_list::sym_type_e type,
-                           const QString& moduleScope)
-{
-    for (const auto& s : symbols) {
-        if (s.symbolName == name && s.symbolType == type && s.moduleScope == moduleScope)
-            return s.symbolId;
-    }
-    return -1;
-}
-
-static int symbolIdInFile(const QList<sym_list::SymbolInfo>& symbols,
-                          const QString& name,
-                          sym_list::sym_type_e type,
-                          const QString& fileName)
-{
-    for (const auto& s : symbols) {
-        if (s.symbolName == name && s.symbolType == type && s.fileName == fileName)
-            return s.symbolId;
-    }
-    return -1;
-}
-
-static sym_list::SymbolInfo symbolById(const QList<sym_list::SymbolInfo>& symbols,
-                                       int symbolId)
-{
-    for (const auto& symbol : symbols) {
-        if (symbol.symbolId == symbolId)
-            return symbol;
-    }
-
-    sym_list::SymbolInfo missing;
-    missing.symbolId = -1;
-    return missing;
-}
-
 static bool hasRel(const QVector<RelationshipToAdd>& rels,
                    int fromId,
                    int toId,
@@ -323,40 +193,6 @@ static QString loadTextFile(const QString& path)
 static QString normalizedPath(const QString& path)
 {
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
-}
-
-static QList<sym_list::SymbolInfo> symbolsInFile(
-    const QList<sym_list::SymbolInfo>& symbols,
-    const QString& fileName)
-{
-    QList<sym_list::SymbolInfo> matches;
-    const QString normalizedFileName = normalizedPath(fileName);
-    for (const auto& symbol : symbols) {
-        if (normalizedPath(symbol.fileName) == normalizedFileName)
-            matches.append(symbol);
-    }
-    return matches;
-}
-
-static sym_list::SymbolInfo makeModuleBriefSymbol(
-    int id,
-    const QString& fileName,
-    const QString& name,
-    sym_list::sym_type_e type,
-    int line,
-    const QString& moduleScope = QString())
-{
-    sym_list::SymbolInfo symbol;
-    symbol.symbolId = id;
-    symbol.fileName = fileName;
-    symbol.symbolName = name;
-    symbol.symbolType = type;
-    symbol.startLine = line;
-    symbol.endLine = line;
-    symbol.startColumn = 1;
-    symbol.endColumn = 1;
-    symbol.moduleScope = moduleScope;
-    return symbol;
 }
 
 static void runInlineRelationshipRegression(SlangManager& slang,
@@ -506,9 +342,7 @@ static void runInlineRelationshipRegression(SlangManager& slang,
 }
 
 static void runMultiFileRelationshipFixture(SlangManager& slang,
-                                            sym_list* db,
-                                            SymbolRelationshipEngine& engine,
-                                            SmartRelationshipBuilder& builder)
+                                            SymbolRelationshipEngine& engine)
 {
     printf("\n-- multi-file relationship fixture --\n");
 
@@ -560,43 +394,112 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         recordsByFile[path] = fileRecords;
     }
 
-    SemanticIndex semanticIndex = semanticIndexFromFixtureDatabase(db);
+    int nextLocalHandle = 1;
     for (const QString& path : paths) {
-        db->setSymbolsForFile(path,
-                              fixtureSymbolsForRecords(recordsByFile.value(path)));
-        db->setCachedFileContent(path, contents.value(path));
-        semanticIndex.updateSymbolRecordsForFile(
+        QList<SemanticSymbolRecord>& fileRecords = recordsByFile[path];
+        for (SemanticSymbolRecord& record : fileRecords)
+            record.localHandle = nextLocalHandle++;
+    }
+
+    SemanticIndex index;
+    for (const QString& path : paths) {
+        index.updateSymbolRecordsForFile(
             path,
             recordsByFile.value(path),
             contents.value(path));
     }
 
-    const QList<sym_list::SymbolInfo> allSymbols = db->getAllSymbols();
-    const QList<sym_list::SymbolInfo> topSymbols = symbolsInFile(allSymbols, topPath);
-    const QList<sym_list::SymbolInfo> stageSymbols = symbolsInFile(allSymbols, stagePath);
+    const QList<SemanticSymbolRecord> allRecords = index.getSymbolRecords();
+    const QList<SemanticSymbolRecord> topRecords =
+        index.getSymbolRecords(topPath);
+    const auto recordInFile = [&](const QString& name,
+                                  SymbolTaxonomy::CollectorKind kind,
+                                  const QString& fileName) {
+        for (const SemanticSymbolRecord& record : allRecords) {
+            if (record.name == name
+                && record.collectorKind == kind
+                && normalizedPath(record.location.fileName)
+                    == normalizedPath(fileName)) {
+                return record;
+            }
+        }
+        return SemanticSymbolRecord{};
+    };
+    const auto recordInScope = [&](const QList<SemanticSymbolRecord>& records,
+                                   const QString& name,
+                                   SymbolTaxonomy::CollectorKind kind,
+                                   const QString& ownerName) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name
+                && record.collectorKind == kind
+                && record.owner.name == ownerName) {
+                return record;
+            }
+        }
+        return SemanticSymbolRecord{};
+    };
 
-    const int packageId = symbolIdInFile(allSymbols, QStringLiteral("rel_pkg"),
-                                         sym_list::sym_package, pkgPath);
-    const int stateTypeId = symbolIdInFile(allSymbols, QStringLiteral("state_t"),
-                                           sym_list::sym_typedef, pkgPath);
-    const int stateVarId = symbolIdInFile(allSymbols, QStringLiteral("state"),
-                                          sym_list::sym_enum_var, stagePath);
-    const int topId = symbolIdInFile(allSymbols, QStringLiteral("rel_top"),
-                                     sym_list::sym_module, topPath);
-    const int stageId = symbolIdInFile(allSymbols, QStringLiteral("rel_stage"),
-                                       sym_list::sym_module, stagePath);
-    const int captureId = symbolIdInFile(allSymbols, QStringLiteral("capture_sample"),
-                                         sym_list::sym_task, topPath);
-    const int reqValidId = symbolIdInScope(topSymbols, QStringLiteral("req_valid"),
-                                           sym_list::sym_port_input, QStringLiteral("rel_top"));
-    const int stageDataId = symbolIdInScope(topSymbols, QStringLiteral("stage_data"),
-                                            sym_list::sym_logic, QStringLiteral("rel_top"));
-    const int rspDataId = symbolIdInScope(topSymbols, QStringLiteral("rsp_data"),
-                                          sym_list::sym_port_output, QStringLiteral("rel_top"));
-    const int topClkId = symbolIdInScope(topSymbols, QStringLiteral("top_clk"),
-                                         sym_list::sym_port_input, QStringLiteral("rel_top"));
-    const int topRstId = symbolIdInScope(topSymbols, QStringLiteral("top_rst_n"),
-                                         sym_list::sym_port_input, QStringLiteral("rel_top"));
+    const SemanticSymbolRecord packageRecord =
+        recordInFile(QStringLiteral("rel_pkg"),
+                     SymbolTaxonomy::CollectorKind::Package,
+                     pkgPath);
+    const SemanticSymbolRecord stateTypeRecord =
+        recordInFile(QStringLiteral("state_t"),
+                     SymbolTaxonomy::CollectorKind::Typedef,
+                     pkgPath);
+    const SemanticSymbolRecord stateVarRecord =
+        recordInFile(QStringLiteral("state"),
+                     SymbolTaxonomy::CollectorKind::EnumVariable,
+                     stagePath);
+    const SemanticSymbolRecord topRecord =
+        recordInFile(QStringLiteral("rel_top"),
+                     SymbolTaxonomy::CollectorKind::Module,
+                     topPath);
+    const SemanticSymbolRecord stageRecord =
+        recordInFile(QStringLiteral("rel_stage"),
+                     SymbolTaxonomy::CollectorKind::Module,
+                     stagePath);
+    const SemanticSymbolRecord captureRecord =
+        recordInFile(QStringLiteral("capture_sample"),
+                     SymbolTaxonomy::CollectorKind::Task,
+                     topPath);
+    const SemanticSymbolRecord reqValidRecord =
+        recordInScope(topRecords,
+                      QStringLiteral("req_valid"),
+                      SymbolTaxonomy::CollectorKind::PortInput,
+                      QStringLiteral("rel_top"));
+    const SemanticSymbolRecord stageDataRecord =
+        recordInScope(topRecords,
+                      QStringLiteral("stage_data"),
+                      SymbolTaxonomy::CollectorKind::Logic,
+                      QStringLiteral("rel_top"));
+    const SemanticSymbolRecord rspDataRecord =
+        recordInScope(topRecords,
+                      QStringLiteral("rsp_data"),
+                      SymbolTaxonomy::CollectorKind::PortOutput,
+                      QStringLiteral("rel_top"));
+    const SemanticSymbolRecord topClkRecord =
+        recordInScope(topRecords,
+                      QStringLiteral("top_clk"),
+                      SymbolTaxonomy::CollectorKind::PortInput,
+                      QStringLiteral("rel_top"));
+    const SemanticSymbolRecord topRstRecord =
+        recordInScope(topRecords,
+                      QStringLiteral("top_rst_n"),
+                      SymbolTaxonomy::CollectorKind::PortInput,
+                      QStringLiteral("rel_top"));
+
+    const int packageId = packageRecord.localHandle;
+    const int stateTypeId = stateTypeRecord.localHandle;
+    const int stateVarId = stateVarRecord.localHandle;
+    const int topId = topRecord.localHandle;
+    const int stageId = stageRecord.localHandle;
+    const int captureId = captureRecord.localHandle;
+    const int reqValidId = reqValidRecord.localHandle;
+    const int stageDataId = stageDataRecord.localHandle;
+    const int rspDataId = rspDataRecord.localHandle;
+    const int topClkId = topClkRecord.localHandle;
+    const int topRstId = topRstRecord.localHandle;
 
     expectBool("package symbol extracted", packageId > 0, true);
     expectBool("package typedef extracted", stateTypeId > 0, true);
@@ -610,7 +513,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("top clock extracted", topClkId > 0, true);
     expectBool("top reset extracted", topRstId > 0, true);
 
-    SemanticIndex index = semanticIndexFromFixtureDatabase(db);
     SmartRelationshipBuilder fixtureBuilder(
         &engine,
         &slang,
@@ -623,42 +525,35 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QList<SemanticSymbolRecord> facadeStageDefs =
         index.findDefinitionRecords(QStringLiteral("rel_stage"), queryContext);
     expectBool("semantic facade returns top symbols",
-               index.getSymbolRecords(topPath).size() == topSymbols.size(), true);
+               index.getSymbolRecords(topPath).size() == topRecords.size(), true);
     expectBool("semantic facade finds cross-file module",
                !facadeStageDefs.isEmpty()
                    && facadeStageDefs.first().localHandle == stageId,
                true);
-    const sym_list::SymbolInfo topSymbol = symbolById(topSymbols, topId);
-    const sym_list::SymbolInfo stageSymbol = symbolById(stageSymbols, stageId);
-    const sym_list::SymbolInfo captureSymbol = symbolById(topSymbols, captureId);
-    const sym_list::SymbolInfo stageDataSymbol =
-        symbolById(topSymbols, stageDataId);
     expectBool("semantic facade uses fixture symbol record",
-               topSymbol.symbolName == QStringLiteral("rel_top"), true);
-    const SymbolStableKey topFacadeStableKey =
-        stableKeyForSymbol(topSymbol);
-    const SemanticSymbolRecord topRecord =
+               topRecord.name == QStringLiteral("rel_top"), true);
+    const SymbolStableKey topFacadeStableKey = topRecord.stableKey;
+    const SemanticSymbolRecord indexedTopRecord =
         index.getSymbolRecordByStableKey(topFacadeStableKey);
-    const SemanticSymbolRecord stageDataRecord =
-        index.getSymbolRecordByStableKey(
-            stableKeyForSymbol(stageDataSymbol));
+    const SemanticSymbolRecord indexedStageDataRecord =
+        index.getSymbolRecordByStableKey(stageDataRecord.stableKey);
     expectBool("semantic facade exposes symbol record",
-               topRecord.isValid()
-                   && topRecord.name == QStringLiteral("rel_top")
-                   && topRecord.localHandle == topId
-                   && topRecord.stableKey == topFacadeStableKey
-                   && topRecord.declarationKind
+               indexedTopRecord.isValid()
+                   && indexedTopRecord.name == QStringLiteral("rel_top")
+                   && indexedTopRecord.localHandle == topId
+                   && indexedTopRecord.stableKey == topFacadeStableKey
+                   && indexedTopRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module
-                   && topRecord.sourceRole
+                   && indexedTopRecord.sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource,
                true);
     expectBool("semantic facade record carries owner and type",
-               stageDataRecord.isValid()
-                   && stageDataRecord.owner.name == QStringLiteral("rel_top")
-                   && stageDataRecord.owner.kind
+               indexedStageDataRecord.isValid()
+                   && indexedStageDataRecord.owner.name == QStringLiteral("rel_top")
+                   && indexedStageDataRecord.owner.kind
                        == SymbolTaxonomy::SymbolOwnerScope::Module
-                   && stageDataRecord.type.rawTypeText
-                       == stageDataSymbol.dataType,
+                   && indexedStageDataRecord.type.rawTypeText
+                       == stageDataRecord.type.rawTypeText,
                true);
     expectBool("semantic facade finds symbol definition",
                !facadeStageDefs.isEmpty()
@@ -708,9 +603,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         slang.extractDiagnostics(temporaryBrokenPath, brokenContent);
     expectBool("slang diagnostics flow from temp path",
                !temporaryBrokenDiagnostics.isEmpty(), true);
-    SemanticIndex diagnosticIndex = semanticIndexFromFixtureDatabase(db);
+    SemanticIndex diagnosticIndex;
     diagnosticIndex.setSnapshot(sharedSnapshotFromSymbols(
-        snapshotFromSemanticIndex(db, brokenDiagnostics)));
+        snapshotFromSemanticIndex(index, brokenDiagnostics)));
     DiagnosticService brokenDiagnosticService(&diagnosticIndex);
     DiagnosticQuery brokenDiagnosticQuery;
     brokenDiagnosticQuery.fileName = brokenPath;
@@ -771,9 +666,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     errorDiagnostic.severity = SemanticDiagnostic::Error;
     errorDiagnostic.owner = SemanticDiagnostic::SlangCompiler;
 
-    SemanticIndex diagnosticReportIndex = semanticIndexFromFixtureDatabase(db);
+    SemanticIndex diagnosticReportIndex;
     diagnosticReportIndex.setSnapshot(sharedSnapshotFromSymbols(
-        snapshotFromSemanticIndex(db, {
+        snapshotFromSemanticIndex(index, {
             infoDiagnostic,
             warningDiagnostic,
             errorDiagnostic,
@@ -968,7 +863,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             return QList<SemanticSymbolRecord>{};
         });
     injectedRelationshipEngine.buildFileRelationships(injectedRelationshipPath);
-    expectBool("relationship engine uses injected symbol db",
+    expectBool("relationship engine uses injected symbol provider",
                injectedRelationshipEngine.hasRelationship(
                    injectedModule.localHandle,
                    injectedSignal.localHandle,
@@ -1078,7 +973,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                                             contents.value(topPath),
                                             index.getSymbolRecords(topPath),
                                             nullptr);
-    expectBool("semantic index builder uses facade database",
+    expectBool("semantic index builder uses facade records",
                hasRel(facadeBuilderRels,
                       topId,
                       stageId,
@@ -1086,7 +981,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     const auto symbolOnlySnapshot = sharedSnapshotFromSymbols(
-        snapshotFromSemanticIndex(db));
+        snapshotFromSemanticIndex(index));
     SmartRelationshipBuilder snapshotBuilder(&engine, &slang);
     const QVector<RelationshipToAdd> snapshotBackedRels =
         snapshotBuilder.computeRelationships(topPath,
@@ -1116,18 +1011,24 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("relationship cache separates incoming direction",
                incomingReferenceIds.contains(stageId), false);
 
-    SemanticIndex snapshotIndex = semanticIndexFromFixtureDatabase(db);
+    SemanticIndex snapshotIndex;
+    for (const QString& path : paths) {
+        snapshotIndex.updateSymbolRecordsForFile(
+            path,
+            recordsByFile.value(path),
+            contents.value(path));
+    }
     const auto snapshot = sharedSnapshotFromSymbols(
-        snapshotFromSemanticIndex(db, {}, &engine));
+        snapshotFromSemanticIndex(index, {}, &engine));
     snapshotIndex.setSnapshot(snapshot);
     expectBool("semantic snapshot returns top symbols",
-               snapshotIndex.getSymbolRecords(topPath).size() == topSymbols.size(), true);
+               snapshotIndex.getSymbolRecords(topPath).size() == topRecords.size(), true);
     const QList<SemanticSymbolRecord> snapshotTopRecords =
         snapshotIndex.getSymbolRecords(topPath);
     const SemanticSymbolRecord snapshotTopRecord =
-        snapshotIndex.getSymbolRecordByStableKey(stableKeyForSymbol(topSymbol));
+        snapshotIndex.getSymbolRecordByStableKey(topRecord.stableKey);
     expectBool("semantic snapshot exposes symbol records",
-               snapshotTopRecords.size() == topSymbols.size()
+               snapshotTopRecords.size() == topRecords.size()
                    && snapshotTopRecord.isValid()
                    && snapshotTopRecord.localHandle == topId
                    && snapshotTopRecord.declarationKind
@@ -1431,8 +1332,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("semantic snapshot finds module end line from cached content",
               snapshotIndex.findEndModuleLine(topPath, snapshotTopRecordWithoutEnd),
               topEndModuleLine);
-    const SymbolStableKey topStableKey = stableKeyForSymbol(topSymbol);
-    const SymbolStableKey stageStableKey = stableKeyForSymbol(stageSymbol);
+    const SymbolStableKey topStableKey = topRecord.stableKey;
+    const SymbolStableKey stageStableKey = stageRecord.stableKey;
     const QList<SemanticRelationship> snapshotTopRelationships =
         snapshotIndex.relationshipsForStableKey(topStableKey, true);
     bool snapshotFoundStage = false;
@@ -2281,7 +2182,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshot->relationships().size() + 1);
     bool enrichedFoundTask = false;
     bool enrichedTaskHasStableKeys = false;
-    const SymbolStableKey captureStableKey = stableKeyForSymbol(captureSymbol);
+    const SymbolStableKey captureStableKey = captureRecord.stableKey;
     for (const SemanticRelationship& relationship :
          enrichedSnapshot.relationshipsForStableKey(stageStableKey, true)) {
         enrichedFoundTask = enrichedFoundTask
@@ -2304,7 +2205,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     replacementDiagnostic.message = QStringLiteral("replacement message");
     replacementDiagnostic.severity = SemanticDiagnostic::Error;
     const SemanticIndexSnapshot diagnosticReplacementSnapshot =
-        snapshotFromSemanticIndex(db, {
+        snapshotFromSemanticIndex(index, {
             infoDiagnostic,
             warningDiagnostic,
             errorDiagnostic,
@@ -2316,7 +2217,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && diagnosticReplacementSnapshot.getDiagnostics(stagePath).first().message
                        == errorDiagnostic.message,
                true);
-    SemanticIndex captureIndex = semanticIndexFromFixtureDatabase(db);
+    SemanticIndex captureIndex;
+    captureIndex.setSnapshot(sharedSnapshotFromSymbols(
+        snapshotFromSemanticIndex(index, {}, &engine)));
     const auto capturedSnapshot =
         captureIndex.captureSnapshotPreservingDiagnostics();
     captureIndex.setSnapshot(sharedSnapshotFromRecords(
@@ -2342,10 +2245,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && replacedCaptureSnapshot->getDiagnostics(stagePath).first().message
                        == errorDiagnostic.message,
                true);
-    SemanticIndex guardedIndex = semanticIndexFromFixtureDatabase(db);
+    SemanticIndex guardedIndex;
     const auto guardedBaseSnapshot =
         sharedSnapshotFromSymbols(
-            snapshotFromSemanticIndex(db));
+            snapshotFromSemanticIndex(index, {}, &engine));
     guardedIndex.setSnapshot(guardedBaseSnapshot);
     const SemanticSnapshotToken staleToken = guardedIndex.snapshotToken();
     const auto newerSnapshot =
@@ -2805,7 +2708,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     AnalysisScheduler documentSaveScheduler;
     SymbolAnalyzer documentSaveAnalyzer;
     SymbolRelationshipEngine documentSaveEngine;
-    SemanticIndex documentSaveIndex = semanticIndexFromFixtureDatabase(db);
+    SemanticIndex documentSaveIndex;
+    documentSaveIndex.setSnapshot(sharedSnapshotFromSymbols(
+        snapshotFromSemanticIndex(index, {}, &engine)));
     documentSaveIndex.attachRelationshipEngine(&documentSaveEngine);
     SmartRelationshipBuilder documentSaveBuilder(
         &documentSaveEngine,
@@ -3814,8 +3719,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
 
     ReferenceQuery reqValidReferenceQuery;
-    reqValidReferenceQuery.symbolStableKey =
-        stableKeyForSymbol(symbolById(topSymbols, reqValidId));
+    reqValidReferenceQuery.symbolStableKey = reqValidRecord.stableKey;
     reqValidReferenceQuery.types = {SymbolRelationshipEngine::READS_FROM};
     const QList<ReferenceResult> reqValidReferences =
         referenceService.findReferences(reqValidReferenceQuery);
@@ -3925,8 +3829,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                defaultHasResetGroup, true);
 
     ReferenceQuery rspDataReferenceQuery;
-    rspDataReferenceQuery.symbolStableKey =
-        stableKeyForSymbol(symbolById(topSymbols, rspDataId));
+    rspDataReferenceQuery.symbolStableKey = rspDataRecord.stableKey;
     rspDataReferenceQuery.types = {SymbolRelationshipEngine::ASSIGNS_TO};
     const QList<ReferenceResult> rspDataReferences =
         referenceService.findReferences(rspDataReferenceQuery);
@@ -8268,20 +8171,11 @@ int main(int argc, char** argv)
     QApplication app(argc, argv);
 
     SlangManager slang;
-    auto* db = sym_list::getInstance();
 
     SymbolRelationshipEngine engine;
-    SemanticIndex index = semanticIndexFromFixtureDatabase(db);
-    index.attachRelationshipEngine(&engine);
-    SmartRelationshipBuilder builder(
-        &engine,
-        &slang,
-        [&index](const QString& fileName) {
-            return index.getSymbolRecords(fileName);
-        });
 
     runInlineRelationshipRegression(slang, engine);
-    runMultiFileRelationshipFixture(slang, db, engine, builder);
+    runMultiFileRelationshipFixture(slang, engine);
     runModuleBriefServiceFixture();
     runScopeBandServiceFixture();
     runSignalJourneyServiceFixture();
