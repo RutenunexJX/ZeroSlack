@@ -76,6 +76,11 @@ DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& que
         return empty;
     }
 
+    const DefinitionResult instancePinResult =
+        resolveInstancePinDefinition(query);
+    if (instancePinResult.found)
+        return instancePinResult;
+
     const DefinitionQuery resolvedQuery = withResolvedMemberContext(query);
     return toDefinitionResult(
         semanticIndex()->resolveDefinition(toSemanticDefinitionQuery(resolvedQuery)));
@@ -89,6 +94,47 @@ bool DefinitionService::canResolveDefinition(const DefinitionQuery& query) const
 SemanticIndex* DefinitionService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
+}
+
+DefinitionResult DefinitionService::resolveInstancePinDefinition(
+    const DefinitionQuery& query) const
+{
+    DefinitionResult empty;
+    if (query.cursorLine <= 0 || query.cursorColumn < 0)
+        return empty;
+
+    const int oneBasedColumn = query.cursorColumn + 1;
+    const QList<SemanticSymbolRecord> candidates =
+        semanticIndex()->getSymbolRecords(query.fileName);
+    for (const SemanticSymbolRecord& record : candidates) {
+        if (record.name != query.symbolName
+            || record.collectorKind != SymbolTaxonomy::CollectorKind::InstPin
+            || record.location.startLine != query.cursorLine) {
+            continue;
+        }
+
+        const int endColumn = record.location.endColumn > record.location.startColumn
+            ? record.location.endColumn
+            : record.location.startColumn + qMax(1, record.name.size());
+        if (oneBasedColumn < record.location.startColumn
+            || oneBasedColumn > endColumn) {
+            continue;
+        }
+
+        const QString instantiatedModule = !record.type.resolvedTypeName.isEmpty()
+            ? record.type.resolvedTypeName
+            : record.type.rawTypeText;
+        if (instantiatedModule.isEmpty())
+            continue;
+
+        SemanticDefinitionQuery portQuery;
+        portQuery.symbolName = query.symbolName;
+        portQuery.fileName = record.location.fileName;
+        portQuery.moduleName = instantiatedModule;
+        return toDefinitionResult(semanticIndex()->resolveDefinition(portQuery));
+    }
+
+    return empty;
 }
 
 DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQuery& query) const

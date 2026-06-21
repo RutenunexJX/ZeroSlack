@@ -95,6 +95,18 @@ int main(int argc, char** argv) {
     ++g_checks; if (xScope != QStringLiteral("add_one")) ++g_fails;
     printf("[%s] formal-arg x keeps moduleScope=add_one (not clobbered to top)\n",
            xScope == QStringLiteral("add_one") ? "PASS" : "FAIL");
+    bool sawAdderAPin = false;
+    for (const SemanticSymbolRecord& record : symbolRecords) {
+        sawAdderAPin = sawAdderAPin
+            || (record.name == QStringLiteral("a")
+                && record.collectorKind
+                    == SymbolTaxonomy::CollectorKind::InstPin
+                && record.owner.name == QStringLiteral("top")
+                && record.type.resolvedTypeName == QStringLiteral("adder"));
+    }
+    expectBool("Slang collector emits named instance pin",
+               sawAdderAPin,
+               true);
 
     MyCodeEditor ed;
     ed.setPlainText(content);
@@ -149,6 +161,44 @@ int main(int argc, char** argv) {
                EditorSemanticContextService::getInstance()
                    ->canResolveDefinitionTarget(QStringLiteral("red"), topContext),
                true);
+
+    const QString formalPortText = QStringLiteral(".a   (counter)");
+    const int formalPortOffset = content.indexOf(formalPortText);
+    expectBool("test fixture has named instance port .a",
+               formalPortOffset >= 0,
+               true);
+    if (formalPortOffset >= 0) {
+        const int formalPortNamePos = formalPortOffset + 1;
+        const EditorSemanticContext formalPortContext =
+            ed.editorSemanticContextForPosition(formalPortNamePos);
+        const DefinitionNavigationTarget formalPortTarget =
+            EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+                QStringLiteral("a"),
+                formalPortContext);
+        expectBool("Editor jumps instance formal port to child declaration",
+                   formalPortTarget.found
+                       && formalPortTarget.symbolRecord.owner.name
+                           == QStringLiteral("adder")
+                       && formalPortTarget.symbolRecord.collectorKind
+                           == SymbolTaxonomy::CollectorKind::PortInput,
+                   true);
+
+        const int actualSignalPos =
+            formalPortOffset + formalPortText.indexOf(QStringLiteral("counter"));
+        const EditorSemanticContext actualSignalContext =
+            ed.editorSemanticContextForPosition(actualSignalPos);
+        const DefinitionNavigationTarget actualSignalTarget =
+            EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+                QStringLiteral("counter"),
+                actualSignalContext);
+        expectBool("Editor keeps instance actual signal local",
+                   actualSignalTarget.found
+                       && actualSignalTarget.symbolRecord.name
+                           == QStringLiteral("counter")
+                       && actualSignalTarget.symbolRecord.owner.name
+                           == QStringLiteral("top"),
+                   true);
+    }
 
     const QString syntheticFile =
         QFileInfo(path).dir().filePath(QStringLiteral("definition_service_member_context.sv"));
@@ -249,6 +299,97 @@ int main(int argc, char** argv) {
                        == QStringLiteral("pixel_t")
                    && memberNavigationTarget.sourceRoleDisplayName
                        == QStringLiteral("design source"),
+               true);
+
+    const QString interfaceNavigationFile = QStringLiteral("interface_nav.sv");
+    QList<SemanticSymbolRecord> interfaceNavigationRecords;
+    const SemanticSymbolRecord interfaceRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("bus_if"),
+                                     SymbolTaxonomy::DeclarationKind::Interface)
+            .withFile(interfaceNavigationFile)
+            .withLocalHandle(6250)
+            .withLine(1, 1)
+            .record();
+    const SemanticSymbolRecord interfaceModportRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("master"),
+                                     SymbolTaxonomy::DeclarationKind::Modport)
+            .withFile(interfaceNavigationFile)
+            .withLocalHandle(6251)
+            .withLine(2, 5)
+            .inInterface(QStringLiteral("bus_if"))
+            .record();
+    const SemanticSymbolRecord interfacePortRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("bus"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(interfaceNavigationFile)
+            .withLocalHandle(6252)
+            .withLine(10, 5)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"),
+                       {},
+                       true)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInterfaceModport)
+            .withType(QStringLiteral("bus_if.master"),
+                      QStringLiteral("bus_if"),
+                      SymbolTaxonomy::DeclarationKind::Interface,
+                      QStringLiteral("master"))
+            .record();
+    interfaceNavigationRecords.append(interfaceRecord);
+    interfaceNavigationRecords.append(interfaceModportRecord);
+    interfaceNavigationRecords.append(interfacePortRecord);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        interfaceNavigationFile,
+        interfaceNavigationRecords,
+        QString());
+
+    DefinitionNavigationContext interfaceMemberContext;
+    interfaceMemberContext.symbolName = QStringLiteral("master");
+    interfaceMemberContext.fileName = interfaceNavigationFile;
+    interfaceMemberContext.moduleName = QStringLiteral("top");
+    interfaceMemberContext.lineText = QStringLiteral("assign use_bus = bus.master;");
+    interfaceMemberContext.column =
+        interfaceMemberContext.lineText.indexOf(QStringLiteral("master")) + 2;
+    const DefinitionNavigationQuery interfaceMemberNavigationQuery =
+        definitionNavigationService.navigationQueryForContext(interfaceMemberContext);
+    expectEq("DefinitionNavigation interface member prefix",
+             interfaceMemberNavigationQuery.linePrefixBeforeCursor,
+             QStringLiteral("assign use_bus = bus.master"));
+    const DefinitionNavigationTarget interfaceMemberTarget =
+        definitionNavigationService.resolveTarget(interfaceMemberNavigationQuery);
+    expectBool("DefinitionNavigation resolves interface member from mid-token",
+               interfaceMemberTarget.found
+                   && interfaceMemberTarget.symbolName == QStringLiteral("master")
+                   && interfaceMemberTarget.symbolRecord.owner.name
+                       == QStringLiteral("bus_if")
+                   && interfaceMemberTarget.symbolRecord.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Modport,
+               true);
+
+    const QString rtlTopFile = QStringLiteral("rtl_top.sv");
+    const QString svhInterfaceFile = QStringLiteral("SVH_interface.sv");
+    const SemanticSymbolRecord realInterfaceRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("lr_genr_if"),
+                                     SymbolTaxonomy::DeclarationKind::Interface)
+            .withFile(svhInterfaceFile)
+            .withLocalHandle(6260)
+            .withLine(43, 1)
+            .record();
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        rtlTopFile,
+        {realInterfaceRecord},
+        QStringLiteral("module rtl_top; endmodule\n"));
+
+    DefinitionNavigationQuery crossFileInterfaceQuery;
+    crossFileInterfaceQuery.symbolName = QStringLiteral("lr_genr_if");
+    crossFileInterfaceQuery.fileName = rtlTopFile;
+    crossFileInterfaceQuery.moduleName = QStringLiteral("rtl_top");
+    const DefinitionNavigationTarget crossFileInterfaceTarget =
+        definitionNavigationService.resolveTarget(crossFileInterfaceQuery);
+    expectBool("DefinitionNavigation keeps include interface file",
+               crossFileInterfaceTarget.found
+                   && !crossFileInterfaceTarget.localFile
+                   && crossFileInterfaceTarget.fileName == svhInterfaceFile
+                   && crossFileInterfaceTarget.line == 43,
                true);
 
     memberNavigationContext.column = 500;

@@ -9,6 +9,8 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QMenu>
 
@@ -22,6 +24,29 @@ QString sourceSymbolActionText(SourceSymbolAction action)
         return QStringLiteral("Show Relationships");
     }
     return QString();
+}
+
+QString normalizedEditorCoordinatorFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+bool targetIsCurrentEditorFile(
+    const DefinitionNavigationTarget& target,
+    const EditorSemanticContext& context)
+{
+    if (target.fileName.isEmpty())
+        return true;
+
+    const QString targetFile = normalizedEditorCoordinatorFileName(target.fileName);
+    const QString contextFile =
+        normalizedEditorCoordinatorFileName(context.fileName);
+    return !targetFile.isEmpty()
+        && !contextFile.isEmpty()
+        && targetFile == contextFile;
 }
 }
 
@@ -239,7 +264,7 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
     if (!target.found)
         return;
 
-    if (target.localFile) {
+    if (target.localFile && targetIsCurrentEditorFile(target, context)) {
         dependencies.navigateEditorToLine(editor, target.line, target.column);
         return;
     }

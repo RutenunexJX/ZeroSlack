@@ -13,9 +13,11 @@
 #include <slang/ast/symbols/SubroutineSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
+#include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxNode.h>
 #include <slang/text/SourceManager.h>
 
+#include <QHash>
 #include <QSet>
 #include <string>
 
@@ -24,6 +26,89 @@ using namespace slang_symbols::detail;
 using CollectorKind = SymbolTaxonomy::CollectorKind;
 
 namespace {
+
+bool fillLocationFromSource(
+    const slang::SourceManager* sm,
+    slang::SourceLocation location,
+    const QString& name,
+    SemanticSymbolRecord& record)
+{
+    if (!sm || !location.valid() || name.isEmpty())
+        return false;
+
+    record.name = name;
+    record.location.fileName =
+        QString::fromStdString(std::string(sm->getFileName(location)));
+    size_t line = sm->getLineNumber(location);
+    record.location.startLine = (line == 0) ? 1 : static_cast<int>(line);
+    size_t column = sm->getColumnNumber(location);
+    record.location.startColumn = (column == 0) ? 1 : static_cast<int>(column);
+    record.location.endLine = record.location.startLine;
+    record.location.endColumn = record.location.startColumn + name.size();
+    record.location.position = static_cast<int>(location.offset());
+    record.location.length = name.size();
+    record.localHandle = -1;
+    return true;
+}
+
+void emitInstancePinRecords(const slang::SourceManager* sm,
+                            const InstanceSymbol& inst,
+                            const QString& moduleScope,
+                            QList<SemanticSymbolRecord>& outList)
+{
+    const auto* syntax = inst.getSyntax();
+    if (!syntax || syntax->kind != slang::syntax::SyntaxKind::HierarchicalInstance)
+        return;
+
+    const auto& hierarchical =
+        syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
+    QHash<QString, slang::SourceLocation> namedConnectionLocations;
+    for (const slang::syntax::PortConnectionSyntax* portSyntax :
+         hierarchical.connections) {
+        if (!portSyntax
+            || portSyntax->kind != slang::syntax::SyntaxKind::NamedPortConnection) {
+            continue;
+        }
+
+        const auto& named =
+            portSyntax->as<slang::syntax::NamedPortConnectionSyntax>();
+        const QString portName =
+            QString::fromStdString(std::string(named.name.valueText()));
+        if (!portName.isEmpty())
+            namedConnectionLocations.insert(portName, named.name.location());
+    }
+
+    if (namedConnectionLocations.isEmpty())
+        return;
+
+    const QString instantiatedModule =
+        QString::fromStdString(std::string(inst.getDefinition().name));
+    for (const PortConnection* connection : inst.getPortConnections()) {
+        if (!connection)
+            continue;
+        const QString portName =
+            QString::fromStdString(std::string(connection->port.name));
+        if (!namedConnectionLocations.contains(portName))
+            continue;
+
+        SemanticSymbolRecord record;
+        if (!fillLocationFromSource(
+                sm,
+                namedConnectionLocations.value(portName),
+                portName,
+                record)) {
+            continue;
+        }
+
+        applyCollectorKind(&record, CollectorKind::InstPin);
+        record.owner.name = moduleScope;
+        record.type.rawTypeText = instantiatedModule;
+        record.type.resolvedTypeName = instantiatedModule;
+        record.type.resolvedTypeKind =
+            SymbolTaxonomy::DeclarationKind::Module;
+        outList.append(record);
+    }
+}
 
 void collectNativeRecords(slang::ast::Compilation& compilation,
                           QList<SemanticSymbolRecord>& outList)
@@ -85,8 +170,12 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                     applyCollectorKind(&record, CollectorKind::Inst);
                     record.type.rawTypeText =
                         QString::fromStdString(std::string(inst.getDefinition().name));
+                    record.type.resolvedTypeName = record.type.rawTypeText;
+                    record.type.resolvedTypeKind =
+                        SymbolTaxonomy::DeclarationKind::Module;
                     record.owner.name = moduleScope;
                     outList.append(record);
+                    emitInstancePinRecords(sm, inst, moduleScope, outList);
                 }
             }
             const void* defKey = &inst.getDefinition();

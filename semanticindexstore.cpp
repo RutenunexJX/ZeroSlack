@@ -163,13 +163,22 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
 
     m_nativeCoveredFiles.insert(normalizedTarget);
 
+    const QSet<int> previousHandles =
+        m_nativeRecordHandlesByAnalysisFile.take(normalizedTarget);
     for (int i = m_nativeSymbolRecords.size() - 1; i >= 0; --i) {
-        const QString normalized =
-            normalizedStoreFileName(m_nativeSymbolRecords.at(i).location.fileName);
-        if (normalized == normalizedTarget)
+        const SemanticSymbolRecord& existingRecord = m_nativeSymbolRecords.at(i);
+        const QString normalizedLocation =
+            normalizedStoreFileName(existingRecord.location.fileName);
+        const QString normalizedStableKey =
+            normalizedStoreFileName(existingRecord.stableKey.fileName);
+        if (previousHandles.contains(existingRecord.localHandle)
+            || normalizedLocation == normalizedTarget
+            || normalizedStableKey == normalizedTarget) {
             m_nativeSymbolRecords.removeAt(i);
+        }
     }
 
+    QSet<int> nextHandles;
     m_nativeFileContents.insert(fileName, content);
     if (fileName != normalizedTarget)
         m_nativeFileContents.insert(normalizedTarget, content);
@@ -177,15 +186,22 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
     for (SemanticSymbolRecord record : records) {
         if (!record.isValid())
             continue;
-        record.location.fileName = fileName;
+        if (record.location.fileName.isEmpty())
+            record.location.fileName = fileName;
         if (record.localHandle <= 0)
             record.localHandle = m_nextNativeLocalHandle++;
-        record.stableKey.fileName = normalizedTarget;
+        const QString normalizedRecordFile =
+            normalizedStoreFileName(record.location.fileName);
+        record.stableKey.fileName = normalizedRecordFile.isEmpty()
+            ? normalizedTarget
+            : normalizedRecordFile;
         record.stableKey.symbolName = record.name;
         record.stableKey.declarationKind = record.declarationKind;
         record.stableKey.ownerScope = record.owner.name;
+        nextHandles.insert(record.localHandle);
         m_nativeSymbolRecords.append(record);
     }
+    m_nativeRecordHandlesByAnalysisFile.insert(normalizedTarget, nextHandles);
 
     rebuildNativeStoreIndexes();
     updateNativeFileState(fileName, content);

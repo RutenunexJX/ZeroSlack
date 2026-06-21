@@ -49,9 +49,9 @@ void NavigationManager::refreshFileHierarchy()
 
 void NavigationManager::refreshModuleHierarchy()
 {
-    updateModuleHierarchyData();
+    const bool changed = updateModuleHierarchyData();
 
-    if (navigationWidget) {
+    if (navigationWidget && changed) {
         navigationWidget->updateModuleHierarchy(caches.moduleHierarchy);
     }
 
@@ -60,9 +60,9 @@ void NavigationManager::refreshModuleHierarchy()
 
 void NavigationManager::refreshSymbolHierarchy()
 {
-    updateSymbolHierarchyData();
+    const bool changed = updateSymbolHierarchyData();
 
-    if (navigationWidget) {
+    if (navigationWidget && changed) {
         navigationWidget->updateSymbolHierarchy(caches.symbolOutline);
     }
 
@@ -197,10 +197,14 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
     Q_UNUSED(totalSymbols)
 
     // Batch analysis can change module hierarchy and symbol outline data.
-    if (currentView == ModuleHierarchyView || currentView == SymbolHierarchyView) {
+    if (currentView == ModuleHierarchyView) {
         caches.clearSymbolOutline();
         caches.clearModuleHierarchy();
         refreshCurrentView();
+    } else if (currentView == SymbolHierarchyView) {
+        caches.clearSymbolOutline();
+        caches.clearModuleHierarchy();
+        refreshSymbolHierarchy();
     }
 }
 

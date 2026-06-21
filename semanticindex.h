@@ -342,6 +342,7 @@ private:
     QHash<QString, QString> m_nativeFileContents;
     QHash<QString, NativeFileState> m_nativeFileStates;
     QHash<QString, int> m_nativeStableKeyIndexes;
+    QHash<QString, QSet<int>> m_nativeRecordHandlesByAnalysisFile;
     QSet<QString> m_nativeCoveredFiles;
     int m_nextNativeLocalHandle = 1;
     static std::unique_ptr<SemanticIndex> instance;

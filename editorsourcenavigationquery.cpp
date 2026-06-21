@@ -161,6 +161,7 @@ DefinitionNavigationQuery EditorSourceNavigationQuery::definitionNavigationQuery
     navigationContext.fileName = context.fileName;
     navigationContext.moduleName = context.moduleName;
     navigationContext.lineText = context.lineText;
+    navigationContext.cursorLine = context.cursorLine;
     navigationContext.column = context.column;
     return DefinitionNavigationService::getInstance()
         ->navigationQueryForContext(navigationContext);

@@ -86,6 +86,7 @@ Thin UI consumers
 - J4 is complete: `test_sv/syminfo*` files and the reverse fixture adapter in `semantic_fixture_records.h` have been deleted, CMake no longer builds fixture carrier sources, and full Ninja/full CTest/guard checks passed.
 - J5 is complete: the final zero target now scans first-party repo source, including tracked test fixtures, while excluding docs and guard definitions; full Ninja, full CTest, normal guard, final zero-target guard, static scans, and `git diff --check` passed.
 - Phase J progress tracking used per-subphase accounting. Current subphase: J5 complete.
+- Post-J editor navigation and responsiveness fixes are complete in the current worktree: completion popup sizing now uses real item text width, interface definitions preserve cross-file header locations, instance named port clicks jump to child port declarations while actual signal clicks stay local, and Navigation avoids root-cause synchronous rebuilds by caching hierarchy inputs and batching tree population without timer-delay workarounds.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - After Phase J, keep new semantic/test work record-native and keep the repo-source zero target passing.

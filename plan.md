@@ -248,6 +248,16 @@ feature direction that violates them.
 - When a subphase is complete and verified, report it as 0% remaining, then make the next subphase current at 100% remaining.
 - Do not mark all Phase J complete until J0-J5 are complete, docs are current, full Ninja and full CTest pass, and final repo-source legacy scans prove the fixture carrier is gone.
 
+### Post-J Focused Editor Navigation Fixes
+
+- Status: complete in the current worktree.
+- Scope: bug fixes and responsiveness hardening after Phase J, not a new migration phase.
+- Completion popup sizing now derives item width from rendered text and clamps the popup to usable bounds.
+- Interface definition navigation now preserves Slang header/source locations instead of rewriting include-origin records to the current analysis file.
+- Named instance port connections now emit semantic-native `InstPin` records; definition resolution uses cursor line/column to jump `.port` names to child module port declarations while preserving actual signal jumps in the parent module.
+- Navigation responsiveness is addressed at the source: opening files from Navigation no longer rebuilds the file tree, hierarchy queries are keyed by file/filter input, and tree population pauses sorting/repaint churn instead of using delayed refresh timers.
+- Verification passed with focused Ninja targets, `jump_test`, `completion_test`, `gui_smoke_test`, normal `legacy_field_policy_guard`, opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

@@ -15,6 +15,8 @@ struct DefinitionNavigationQuery {
     QString fileName;
     QString moduleName;
     QString linePrefixBeforeCursor;
+    int cursorLine = -1;
+    int cursorColumn = -1;
 };
 
 struct DefinitionNavigationContext {
@@ -22,6 +24,7 @@ struct DefinitionNavigationContext {
     QString fileName;
     QString moduleName;
     QString lineText;
+    int cursorLine = -1;
     int column = -1;
 };
 

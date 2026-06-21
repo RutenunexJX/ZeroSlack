@@ -13,6 +13,7 @@
 #include <QRect>
 #include <QTextCursor>
 #include <QTimer>
+#include <algorithm>
 
 void EditorCompletionUi::init(MyCodeEditor* editor)
 {
@@ -192,7 +193,9 @@ void EditorCompletionUi::showForCursor(
         return;
 
     QRect popupRectangle = cursorRectangle;
-    popupRectangle.setWidth(popup()->sizeHintForColumn(0) + 20);
+    const int hintedWidth = popup()->sizeHintForColumn(0);
+    const int popupWidth = std::clamp(hintedWidth + 24, 240, 720);
+    popupRectangle.setWidth(popupWidth);
     if (selectFirstCompletion) {
         const QModelIndex selectableIndex = firstSelectableIndex();
         if (selectableIndex.isValid())

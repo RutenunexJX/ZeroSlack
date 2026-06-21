@@ -98,6 +98,7 @@ private:
     QIcon getFileIcon(const QString& filePath);
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);
     void expandCurrentFileNodes();
+    QTreeWidgetItem* findFileItemByPath(const QString& filePath);
     QTreeWidgetItem* findItemByText(QTreeWidget* tree, const QString& text, int column = 0);
 };
 

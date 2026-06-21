@@ -65,6 +65,19 @@ int definitionRecordContextPriorityAdjustment(
     return 0;
 }
 
+bool definitionRecordIsInQueryFile(
+    const SemanticSymbolRecord& record,
+    const QString& queryFileName)
+{
+    const QString recordFileName =
+        normalizedLookupFileName(record.location.fileName);
+    const QString queryFile =
+        normalizedLookupFileName(queryFileName);
+    return !recordFileName.isEmpty()
+        && !queryFile.isEmpty()
+        && recordFileName == queryFile;
+}
+
 }
 
 QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
@@ -122,8 +135,11 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
         getSymbolRecords(query.fileName),
         query,
         true);
-    if (local.found)
+    if (local.found) {
+        local.localFile =
+            definitionRecordIsInQueryFile(local.symbolRecord, query.fileName);
         return local;
+    }
 
     QList<SemanticSymbolRecord> globalCandidates =
         findDefinitionRecords(query.symbolName);

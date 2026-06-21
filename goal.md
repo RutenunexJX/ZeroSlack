@@ -246,6 +246,7 @@ The foundation is healthy when:
 - Phase H is complete on this branch: legacy collector compatibility is deleted from semantic core contracts or held only in historical guard definitions
 - Phase I is complete on this branch: the legacy collector/store body is replaced by semantic-native collection and storage, and final scans proved legacy carrier names gone from core source
 - Phase J is done only when tracked tests use semantic-native fixture builders, `test_sv/syminfo*` and reverse fixture adapters are deleted, and final scans prove legacy carrier names are gone from repo source except docs and guard definitions
+- Post-J editor correctness includes usable completion popup sizing, cross-file interface/header definition targets, named instance port formal-to-child-port jumps, actual-signal local jumps, and Navigation responsiveness fixes that remove unnecessary synchronous rebuilds instead of masking stalls with delayed timers
 - `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
 - `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
 - `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts

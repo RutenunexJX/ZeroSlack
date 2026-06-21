@@ -25,10 +25,9 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
 
         connect(connectedTabManager, &TabManager::tabCreated,
                 this, [this](MyCodeEditor*) {
-                    // New tabs can change the file tree.
-                    if (currentView == FileHierarchyView) {
-                        refreshFileHierarchy();
-                    }
+                    // Opening an existing workspace file does not change the
+                    // file hierarchy; activeDocumentChanged handles highlight.
+                    highlightCurrentFileInTree();
                 });
 
         connect(connectedTabManager, &TabManager::tabClosed,

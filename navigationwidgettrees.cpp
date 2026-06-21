@@ -4,6 +4,32 @@
 #include <QFileInfo>
 
 namespace {
+class TreePopulationGuard
+{
+public:
+    explicit TreePopulationGuard(QTreeWidget* tree)
+        : treeWidget(tree),
+          sortingEnabled(tree ? tree->isSortingEnabled() : false)
+    {
+        if (!treeWidget)
+            return;
+        treeWidget->setUpdatesEnabled(false);
+        treeWidget->setSortingEnabled(false);
+    }
+
+    ~TreePopulationGuard()
+    {
+        if (!treeWidget)
+            return;
+        treeWidget->setSortingEnabled(sortingEnabled);
+        treeWidget->setUpdatesEnabled(true);
+    }
+
+private:
+    QTreeWidget* treeWidget = nullptr;
+    bool sortingEnabled = false;
+};
+
 QString symbolRowDisplayName(const SymbolOutlineSymbolRow& row)
 {
     if (!row.displayName.isEmpty())
@@ -43,6 +69,7 @@ bool symbolRowMatchesFilter(
 
 void NavigationWidget::populateFileTree()
 {
+    TreePopulationGuard guard(fileTreeWidget);
     fileTreeWidget->clear();
 
     if (currentFileList.isEmpty()) {
@@ -88,6 +115,7 @@ void NavigationWidget::populateFileTree()
 
 void NavigationWidget::populateModuleTree()
 {
+    TreePopulationGuard guard(moduleTreeWidget);
     moduleTreeWidget->clear();
 
     if (currentModuleHierarchy.isEmpty()) {
@@ -129,6 +157,7 @@ void NavigationWidget::populateModuleTree()
 
 void NavigationWidget::populateSymbolTree()
 {
+    TreePopulationGuard guard(symbolTreeWidget);
     symbolTreeWidget->clear();
     symbolItemPayloads.clear();
     nextSymbolItemPayloadId = 1;
@@ -239,18 +268,28 @@ void NavigationWidget::expandCurrentFileNodes()
 {
     if (currentHighlightedFile.isEmpty()) return;
 
+    QTreeWidgetItem* fileItem = findFileItemByPath(currentHighlightedFile);
+    if (!fileItem)
+        return;
+
+    if (QTreeWidgetItem* dirItem = fileItem->parent()) {
+        dirItem->setExpanded(true);
+    }
+    fileTreeWidget->setCurrentItem(fileItem);
+}
+
+QTreeWidgetItem* NavigationWidget::findFileItemByPath(const QString& filePath)
+{
     for (int i = 0; i < fileTreeWidget->topLevelItemCount(); ++i) {
         QTreeWidgetItem* dirItem = fileTreeWidget->topLevelItem(i);
         for (int j = 0; j < dirItem->childCount(); ++j) {
             QTreeWidgetItem* fileItem = dirItem->child(j);
-            QString filePath = fileItem->data(0, Qt::UserRole).toString();
-            if (filePath == currentHighlightedFile) {
-                dirItem->setExpanded(true);
-                fileTreeWidget->setCurrentItem(fileItem);
-                return;
-            }
+            if (fileItem->data(0, Qt::UserRole).toString() == filePath)
+                return fileItem;
         }
     }
+
+    return nullptr;
 }
 
 QTreeWidgetItem* NavigationWidget::findItemByText(QTreeWidget* tree, const QString& text, int column)

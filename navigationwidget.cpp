@@ -1,6 +1,6 @@
 #include "navigationwidget.h"
-#include <QHeaderView>
 #include <QFileInfo>
+#include <QHeaderView>
 
 NavigationWidget::NavigationWidget(QWidget *parent)
     : QWidget(parent)
@@ -44,10 +44,12 @@ void NavigationWidget::highlightFile(const QString& filePath)
 {
     currentHighlightedFile = filePath;
 
-    QTreeWidgetItem* item = findItemByText(fileTreeWidget, QFileInfo(filePath).fileName());
+    QTreeWidgetItem* item = findFileItemByPath(filePath);
     if (item) {
-        fileTreeWidget->setCurrentItem(item);
-        fileTreeWidget->scrollToItem(item);
+        if (fileTreeWidget->currentItem() != item) {
+            fileTreeWidget->setCurrentItem(item);
+            fileTreeWidget->scrollToItem(item, QAbstractItemView::EnsureVisible);
+        }
     }
 }
 

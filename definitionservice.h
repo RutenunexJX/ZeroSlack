@@ -13,6 +13,8 @@ struct DefinitionQuery {
     QString moduleName;
     QString structTypeNameForMember;
     QString linePrefixBeforeCursor;
+    int cursorLine = -1;
+    int cursorColumn = -1;
 };
 
 struct DefinitionResult {
@@ -46,6 +48,7 @@ private:
     static std::unique_ptr<DefinitionService> instance;
 
     SemanticIndex* semanticIndex() const;
+    DefinitionResult resolveInstancePinDefinition(const DefinitionQuery& query) const;
     DefinitionQuery withResolvedMemberContext(const DefinitionQuery& query) const;
 };
 

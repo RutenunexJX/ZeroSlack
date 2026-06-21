@@ -94,6 +94,11 @@ private:
         QStringList fileList;
         QList<ModuleHierarchyGroup> moduleHierarchy;
         QList<SymbolOutlineGroup> symbolOutline;
+        QString moduleHierarchyFilter;
+        QString symbolOutlineFileName;
+        QString symbolOutlineFilter;
+        bool moduleHierarchyValid = false;
+        bool symbolOutlineValid = false;
 
         void reserveDefaults();
         void clearFileList();
@@ -115,8 +120,8 @@ private:
     // Helper methods
     void setupConnections();
     void updateFileHierarchyData();
-    void updateModuleHierarchyData();
-    void updateSymbolHierarchyData();
+    bool updateModuleHierarchyData();
+    bool updateSymbolHierarchyData();
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;
     QStringList filterFiles(const QStringList& files, const QString& filter) const;

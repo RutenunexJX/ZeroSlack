@@ -1,6 +1,7 @@
 #include "definitionnavigationservice.h"
 
 #include "definitionservice.h"
+#include "sourcenavigationservice.h"
 #include "symboltaxonomy.h"
 
 #include <QFileInfo>
@@ -38,6 +39,18 @@ QString ownerDisplayNameForRecord(const SemanticSymbolRecord& record)
     if (record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global)
         return QStringLiteral("global");
     return QStringLiteral("global");
+}
+
+int linePrefixColumnForContext(const DefinitionNavigationContext& context)
+{
+    int prefixColumn = qBound(0, context.column, context.lineText.size());
+    const SourceIdentifierTarget identifier =
+        SourceNavigationService::getInstance()->identifierAtColumn(
+            context.lineText,
+            context.column);
+    if (identifier.matched)
+        prefixColumn = qMax(prefixColumn, identifier.endColumn);
+    return prefixColumn;
 }
 }
 
@@ -97,10 +110,11 @@ DefinitionNavigationQuery DefinitionNavigationService::navigationQueryForContext
     query.symbolName = context.symbolName;
     query.fileName = context.fileName;
     query.moduleName = context.moduleName;
+    query.cursorLine = context.cursorLine;
+    query.cursorColumn = context.column;
 
     if (context.column >= 0) {
-        const int prefixColumn =
-            qBound(0, context.column, context.lineText.size());
+        const int prefixColumn = linePrefixColumnForContext(context);
         query.linePrefixBeforeCursor = context.lineText.left(prefixColumn);
     }
 
@@ -115,6 +129,8 @@ DefinitionQuery DefinitionNavigationService::toDefinitionQuery(
     definitionQuery.fileName = query.fileName;
     definitionQuery.moduleName = query.moduleName;
     definitionQuery.linePrefixBeforeCursor = query.linePrefixBeforeCursor;
+    definitionQuery.cursorLine = query.cursorLine;
+    definitionQuery.cursorColumn = query.cursorColumn;
     return definitionQuery;
 }
 

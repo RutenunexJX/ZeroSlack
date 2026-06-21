@@ -1,5 +1,6 @@
 #include "completionmodel.h"
 #include <QFont>
+#include <QFontMetrics>
 #include <QColor>
 #include <QSize>
 #include <QStringList>
@@ -100,7 +101,15 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
         }
 
     case Qt::SizeHintRole:
-        return QSize(0, item.rowHeight);
+        {
+            QFont font("Consolas", 9);
+            if (item.emphasized)
+                font.setBold(true);
+            const QString text =
+                item.displayText.isEmpty() ? item.text : item.displayText;
+            return QSize(QFontMetrics(font).horizontalAdvance(text) + 16,
+                         item.rowHeight);
+        }
 
     case Qt::UserRole:
         return QVariant::fromValue(item);

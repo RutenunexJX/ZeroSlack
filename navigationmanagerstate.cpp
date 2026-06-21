@@ -47,11 +47,16 @@ void NavigationManager::NavigationCaches::clearFileList()
 void NavigationManager::NavigationCaches::clearModuleHierarchy()
 {
     moduleHierarchy.clear();
+    moduleHierarchyFilter.clear();
+    moduleHierarchyValid = false;
 }
 
 void NavigationManager::NavigationCaches::clearSymbolOutline()
 {
     symbolOutline.clear();
+    symbolOutlineFileName.clear();
+    symbolOutlineFilter.clear();
+    symbolOutlineValid = false;
 }
 
 void NavigationManager::NavigationCaches::clearAll()
