@@ -7123,211 +7123,166 @@ static void runRealWorkspaceIncludeFixture()
                missingRootHeader,
                false);
 
-    const QList<SemanticSymbolRecord> records =
+    QList<SemanticSymbolRecord> records =
         slang.extractWorkspaceSymbolRecords(snapshot.systemVerilogFiles,
                                             snapshot.includeDirs,
                                             snapshot.defines);
-    QList<sym_list::SymbolInfo> symbols =
-        symbolInfosForRecords(records, true);
+    int nextLocalHandle = 1;
+    for (SemanticSymbolRecord& record : records) {
+        if (record.localHandle <= 0)
+            record.localHandle = nextLocalHandle;
+        if (nextLocalHandle <= record.localHandle)
+            nextLocalHandle = record.localHandle + 1;
+    }
     QHash<QString, QString> fileContents;
     for (const QString& fileName : files)
         fileContents.insert(fileName, loadTextFile(fileName));
-    const int rtlTopId =
-        symbolId(symbols, QStringLiteral("rtl_top"), sym_list::sym_module);
-    const int packageId =
-        symbolId(symbols, QStringLiteral("gl_pkg"), sym_list::sym_package);
-    const int interfaceId =
-        symbolId(symbols, QStringLiteral("lr_genr_if"), sym_list::sym_interface);
-    int packageParamId =
-        symbolId(symbols, QStringLiteral("P_SW_NUM"), sym_list::sym_parameter);
-    if (packageParamId < 0) {
-        packageParamId =
-            symbolId(symbols, QStringLiteral("P_SW_NUM"), sym_list::sym_localparam);
-    }
-    const int packageTypedefId =
-        symbolId(symbols, QStringLiteral("cpld_sw_sp"), sym_list::sym_typedef);
-    const int interfaceModportId =
-        symbolIdInScope(symbols,
-                        QStringLiteral("si"),
-                        sym_list::sym_interface_modport,
-                        QStringLiteral("lr_genr_if"));
-    const int interfaceInstId =
-        symbolIdInScope(symbols,
-                        QStringLiteral("LR_GENR_IF"),
-                        sym_list::sym_inst,
-                        QStringLiteral("rtl_top"));
-    const int realClockId =
-        symbolIdInScope(symbols,
-                        QStringLiteral("clk_main"),
-                        sym_list::sym_port_input,
-                        QStringLiteral("rtl_top"));
-    const int realResetId =
-        symbolIdInScope(symbols,
-                        QStringLiteral("srst_main"),
-                        sym_list::sym_logic,
-                        QStringLiteral("rtl_top"));
-    const int chlCtrlId =
-        symbolId(symbols, QStringLiteral("chl_ctrl"), sym_list::sym_module);
-    const int phyPassCsId =
-        symbolIdInScope(symbols,
-                        QStringLiteral("phy_pass_thrg_cfg_cs"),
-                        sym_list::sym_enum_var,
-                        QStringLiteral("chl_ctrl"));
-    const int phyPassNsId =
-        symbolIdInScope(symbols,
-                        QStringLiteral("phy_pass_thrg_cfg_ns"),
-                        sym_list::sym_enum_var,
-                        QStringLiteral("chl_ctrl"));
-    const auto symbolByName = [&](const QString& name,
-                                  sym_list::sym_type_e type,
-                                  const QString& moduleScope) {
-        sym_list::SymbolInfo found;
-        found.symbolType = sym_list::sym_user;
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (symbol.symbolName == name
-                && symbol.symbolType == type
-                && symbol.moduleScope == moduleScope) {
-                return symbol;
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+
+    const auto recordByNameAndKind = [&](const QString& name,
+                                         CollectorKind collectorKind) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name && record.collectorKind == collectorKind)
+                return record;
+        }
+        return SemanticSymbolRecord{};
+    };
+    const auto recordByNameKindAndOwner = [&](const QString& name,
+                                              CollectorKind collectorKind,
+                                              const QString& ownerName) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name
+                && record.collectorKind == collectorKind
+                && record.owner.name == ownerName) {
+                return record;
             }
         }
-        return found;
+        return SemanticSymbolRecord{};
     };
-    const auto symbolByNameAndType = [&](const QString& name,
-                                         sym_list::sym_type_e type) {
-        sym_list::SymbolInfo found;
-        found.symbolType = sym_list::sym_user;
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (symbol.symbolName == name && symbol.symbolType == type)
-                return symbol;
-        }
-        return found;
-    };
-    sym_list::SymbolInfo packageParamSymbol =
-        symbolByName(QStringLiteral("P_SW_NUM"),
-                     sym_list::sym_parameter,
-                     QStringLiteral("gl_pkg"));
-    if (packageParamSymbol.symbolType == sym_list::sym_user) {
-        packageParamSymbol =
-            symbolByName(QStringLiteral("P_SW_NUM"),
-                         sym_list::sym_localparam,
-                         QStringLiteral("gl_pkg"));
-    }
-    const sym_list::SymbolInfo packageSymbol =
-        symbolByNameAndType(QStringLiteral("gl_pkg"), sym_list::sym_package);
-    const sym_list::SymbolInfo rtlTopSymbol =
-        symbolByNameAndType(QStringLiteral("rtl_top"), sym_list::sym_module);
-    const sym_list::SymbolInfo interfaceSymbol =
-        symbolByNameAndType(QStringLiteral("lr_genr_if"), sym_list::sym_interface);
-    const sym_list::SymbolInfo packageTypedefSymbol =
-        symbolByName(QStringLiteral("cpld_sw_sp"),
-                     sym_list::sym_typedef,
-                     QStringLiteral("gl_pkg"));
-    const sym_list::SymbolInfo interfaceModportSymbol =
-        symbolByName(QStringLiteral("si"),
-                     sym_list::sym_interface_modport,
-                     QStringLiteral("lr_genr_if"));
-    const sym_list::SymbolInfo interfaceInstSymbol =
-        symbolByName(QStringLiteral("LR_GENR_IF"),
-                     sym_list::sym_inst,
-                     QStringLiteral("rtl_top"));
 
-    expectBool("real workspace extracts symbols", symbols.size() > 20, true);
+    const SemanticSymbolRecord rtlTopRecord =
+        recordByNameAndKind(QStringLiteral("rtl_top"), CollectorKind::Module);
+    const SemanticSymbolRecord packageRecord =
+        recordByNameAndKind(QStringLiteral("gl_pkg"), CollectorKind::Package);
+    const SemanticSymbolRecord interfaceRecord =
+        recordByNameAndKind(QStringLiteral("lr_genr_if"),
+                            CollectorKind::Interface);
+    SemanticSymbolRecord packageParamRecord =
+        recordByNameKindAndOwner(QStringLiteral("P_SW_NUM"),
+                                 CollectorKind::Parameter,
+                                 QStringLiteral("gl_pkg"));
+    if (!packageParamRecord.isValid()) {
+        packageParamRecord =
+            recordByNameKindAndOwner(QStringLiteral("P_SW_NUM"),
+                                     CollectorKind::Localparam,
+                                     QStringLiteral("gl_pkg"));
+    }
+    const SemanticSymbolRecord packageTypedefRecord =
+        recordByNameKindAndOwner(QStringLiteral("cpld_sw_sp"),
+                                 CollectorKind::Typedef,
+                                 QStringLiteral("gl_pkg"));
+    const SemanticSymbolRecord interfaceModportRecord =
+        recordByNameKindAndOwner(QStringLiteral("si"),
+                                 CollectorKind::InterfaceModport,
+                                 QStringLiteral("lr_genr_if"));
+    const SemanticSymbolRecord interfaceInstRecord =
+        recordByNameKindAndOwner(QStringLiteral("LR_GENR_IF"),
+                                 CollectorKind::Inst,
+                                 QStringLiteral("rtl_top"));
+    const SemanticSymbolRecord realClockRecord =
+        recordByNameKindAndOwner(QStringLiteral("clk_main"),
+                                 CollectorKind::PortInput,
+                                 QStringLiteral("rtl_top"));
+    const SemanticSymbolRecord realResetRecord =
+        recordByNameKindAndOwner(QStringLiteral("srst_main"),
+                                 CollectorKind::Logic,
+                                 QStringLiteral("rtl_top"));
+    const SemanticSymbolRecord chlCtrlRecord =
+        recordByNameAndKind(QStringLiteral("chl_ctrl"), CollectorKind::Module);
+    const SemanticSymbolRecord phyPassCsRecord =
+        recordByNameKindAndOwner(QStringLiteral("phy_pass_thrg_cfg_cs"),
+                                 CollectorKind::EnumVariable,
+                                 QStringLiteral("chl_ctrl"));
+    const SemanticSymbolRecord phyPassNsRecord =
+        recordByNameKindAndOwner(QStringLiteral("phy_pass_thrg_cfg_ns"),
+                                 CollectorKind::EnumVariable,
+                                 QStringLiteral("chl_ctrl"));
+
+    expectBool("real workspace extracts symbols", records.size() > 20, true);
     expectBool("real workspace has rtl_top module",
-               rtlTopId >= 0, true);
+               rtlTopRecord.isValid(), true);
     expectBool("real workspace has gl_pkg package",
-               packageId >= 0, true);
+               packageRecord.isValid(), true);
     expectBool("real workspace has interface",
-               interfaceId >= 0, true);
+               interfaceRecord.isValid(), true);
     expectBool("real workspace has package parameter",
-               packageParamId >= 0, true);
+               packageParamRecord.isValid(), true);
     expectBool("real workspace has package typedef",
-               packageTypedefId >= 0, true);
+               packageTypedefRecord.isValid(), true);
     expectBool("real workspace has interface modport",
-               interfaceModportId >= 0, true);
+               interfaceModportRecord.isValid(), true);
     expectBool("real workspace has interface instance",
-               interfaceInstId >= 0, true);
+               interfaceInstRecord.isValid(), true);
     expectBool("real workspace has top clock",
-               realClockId >= 0, true);
+               realClockRecord.isValid(), true);
     expectBool("real workspace has top reset",
-               realResetId >= 0, true);
+               realResetRecord.isValid(), true);
     expectBool("real workspace has chl_ctrl module",
-               chlCtrlId >= 0, true);
+               chlCtrlRecord.isValid(), true);
     expectBool("real workspace has chl_ctrl current fsm state",
-               phyPassCsId >= 0, true);
+               phyPassCsRecord.isValid(), true);
     expectBool("real workspace has chl_ctrl next fsm state",
-               phyPassNsId >= 0, true);
-    QSet<QString> packageScopes;
-    packageScopes.insert(QStringLiteral("gl_pkg"));
-    const SymbolTaxonomy::SemanticMetadata packageMetadata =
-        semanticMetadataForSymbolInfo(packageSymbol, packageScopes);
-    const SymbolTaxonomy::SemanticMetadata packageParamMetadata =
-        semanticMetadataForSymbolInfo(packageParamSymbol, packageScopes);
-    const SymbolTaxonomy::SemanticMetadata packageTypedefMetadata =
-        semanticMetadataForSymbolInfo(packageTypedefSymbol, packageScopes);
-    const SymbolTaxonomy::SemanticMetadata interfaceModportMetadata =
-        semanticMetadataForSymbolInfo(interfaceModportSymbol, packageScopes);
-    const SymbolTaxonomy::SemanticMetadata interfaceInstMetadata =
-        semanticMetadataForSymbolInfo(interfaceInstSymbol, packageScopes);
+               phyPassNsRecord.isValid(), true);
     expectBool("real workspace taxonomy marks global package",
-               packageMetadata.ownerScope
+               packageRecord.owner.kind
                    == SymbolTaxonomy::SymbolOwnerScope::Global,
                true);
     expectBool("real workspace taxonomy marks package parameter visibility",
-               packageParamMetadata.visibility
+               packageParamRecord.visibility
                    == SymbolTaxonomy::SymbolVisibility::PackageVisible,
                true);
     expectBool("real workspace taxonomy marks package typedef visibility",
-               packageTypedefMetadata.visibility
+               packageTypedefRecord.visibility
                    == SymbolTaxonomy::SymbolVisibility::PackageVisible,
                true);
     expectBool("real workspace taxonomy marks interface modport member",
-               interfaceModportMetadata.ownerScope
+               interfaceModportRecord.owner.kind
                    == SymbolTaxonomy::SymbolOwnerScope::Interface,
                true);
     expectBool("real workspace taxonomy marks module instance local",
-               interfaceInstMetadata.visibility
+               interfaceInstRecord.visibility
                    == SymbolTaxonomy::SymbolVisibility::ScopeLocal,
                true);
 
     QList<SemanticRelationship> realRelationships;
-    if (packageId >= 0) {
-        for (const sym_list::SymbolInfo& symbol : symbols) {
-            if (symbol.symbolName != QStringLiteral("rtl_top")
-                || symbol.symbolType != sym_list::sym_module) {
-                continue;
-            }
-            SemanticRelationship packageImportRelationship;
-            packageImportRelationship.fromId = symbol.symbolId;
-            packageImportRelationship.toId = packageId;
-            packageImportRelationship.type = SymbolRelationshipEngine::REFERENCES;
-            realRelationships.append(packageImportRelationship);
-            if (realClockId >= 0) {
-                SemanticRelationship clockRelationship;
-                clockRelationship.fromId = realClockId;
-                clockRelationship.toId = symbol.symbolId;
-                clockRelationship.type = SymbolRelationshipEngine::CLOCKS;
-                realRelationships.append(clockRelationship);
-            }
-            if (realResetId >= 0) {
-                SemanticRelationship resetRelationship;
-                resetRelationship.fromId = realResetId;
-                resetRelationship.toId = symbol.symbolId;
-                resetRelationship.type = SymbolRelationshipEngine::RESETS;
-                realRelationships.append(resetRelationship);
-            }
-        }
+    if (rtlTopRecord.isValid() && packageRecord.isValid()) {
+        realRelationships.append(semanticFixtureRelationship(
+            rtlTopRecord,
+            packageRecord,
+            SymbolRelationshipEngine::REFERENCES));
     }
-    if (interfaceInstId >= 0 && interfaceModportId >= 0) {
-        SemanticRelationship interfaceModportRelationship;
-        interfaceModportRelationship.fromId = interfaceInstId;
-        interfaceModportRelationship.toId = interfaceModportId;
-        interfaceModportRelationship.type = SymbolRelationshipEngine::REFERENCES;
-        realRelationships.append(interfaceModportRelationship);
+    if (realClockRecord.isValid() && rtlTopRecord.isValid()) {
+        realRelationships.append(semanticFixtureRelationship(
+            realClockRecord,
+            rtlTopRecord,
+            SymbolRelationshipEngine::CLOCKS));
+    }
+    if (realResetRecord.isValid() && rtlTopRecord.isValid()) {
+        realRelationships.append(semanticFixtureRelationship(
+            realResetRecord,
+            rtlTopRecord,
+            SymbolRelationshipEngine::RESETS));
+    }
+    if (interfaceInstRecord.isValid() && interfaceModportRecord.isValid()) {
+        realRelationships.append(semanticFixtureRelationship(
+            interfaceInstRecord,
+            interfaceModportRecord,
+            SymbolRelationshipEngine::REFERENCES));
     }
 
     SemanticIndex index;
-    index.setSnapshot(sharedSnapshotFromSymbols(
-        symbols,
+    index.setSnapshot(sharedSnapshotFromRecords(
+        records,
         realRelationships,
         QList<SemanticDiagnostic>(),
         fileContents));
@@ -7827,10 +7782,7 @@ static void runRealWorkspaceIncludeFixture()
 
     SignalJourneyService signalJourneyService(&index);
     SignalJourneyQuery interfaceJourneyQuery;
-    interfaceJourneyQuery.signalStableKey =
-        stableKeyForSymbol(symbolByName(QStringLiteral("LR_GENR_IF"),
-                                              sym_list::sym_inst,
-                                              QStringLiteral("rtl_top")));
+    interfaceJourneyQuery.signalStableKey = interfaceInstRecord.stableKey;
     interfaceJourneyQuery.fileName = topPath;
     interfaceJourneyQuery.moduleName = QStringLiteral("rtl_top");
     const SignalJourneyReport interfaceJourney =
@@ -8072,20 +8024,19 @@ static void runRealWorkspaceIncludeFixture()
                sawRealPhyPassTernaryElseTransition,
                true);
 
-    QList<sym_list::SymbolInfo> realBeforeDiffSymbols;
-    realBeforeDiffSymbols.append(rtlTopSymbol);
-    realBeforeDiffSymbols.append(packageSymbol);
-    realBeforeDiffSymbols.append(interfaceInstSymbol);
-    QList<sym_list::SymbolInfo> realAfterDiffSymbols = realBeforeDiffSymbols;
-    realAfterDiffSymbols.append(interfaceSymbol);
-    realAfterDiffSymbols.append(packageTypedefSymbol);
+    QList<SemanticSymbolRecord> realBeforeDiffRecords;
+    realBeforeDiffRecords.append(rtlTopRecord);
+    realBeforeDiffRecords.append(packageRecord);
+    realBeforeDiffRecords.append(interfaceInstRecord);
+    QList<SemanticSymbolRecord> realAfterDiffRecords = realBeforeDiffRecords;
+    realAfterDiffRecords.append(interfaceRecord);
+    realAfterDiffRecords.append(packageTypedefRecord);
     QList<SemanticRelationship> realAfterDiffRelationships;
-    if (rtlTopSymbol.symbolId >= 0 && interfaceInstSymbol.symbolId >= 0) {
-        SemanticRelationship interfaceReference;
-        interfaceReference.fromId = rtlTopSymbol.symbolId;
-        interfaceReference.toId = interfaceInstSymbol.symbolId;
-        interfaceReference.type = SymbolRelationshipEngine::REFERENCES;
-        realAfterDiffRelationships.append(interfaceReference);
+    if (rtlTopRecord.isValid() && interfaceInstRecord.isValid()) {
+        realAfterDiffRelationships.append(semanticFixtureRelationship(
+            rtlTopRecord,
+            interfaceInstRecord,
+            SymbolRelationshipEngine::REFERENCES));
     }
     SemanticDiagnostic realAfterDiffDiagnostic;
     realAfterDiffDiagnostic.fileName = topPath;
@@ -8093,12 +8044,12 @@ static void runRealWorkspaceIncludeFixture()
     realAfterDiffDiagnostic.column = 13;
     realAfterDiffDiagnostic.message = QStringLiteral("real diff diagnostic");
     realAfterDiffDiagnostic.severity = SemanticDiagnostic::Warning;
-    auto realBeforeDiffSnapshot = sharedSnapshotFromSymbols(
-        realBeforeDiffSymbols,
+    auto realBeforeDiffSnapshot = sharedSnapshotFromRecords(
+        realBeforeDiffRecords,
         QList<SemanticRelationship>(),
         QList<SemanticDiagnostic>());
-    auto realAfterDiffSnapshot = sharedSnapshotFromSymbols(
-        realAfterDiffSymbols,
+    auto realAfterDiffSnapshot = sharedSnapshotFromRecords(
+        realAfterDiffRecords,
         realAfterDiffRelationships,
         QList<SemanticDiagnostic>{realAfterDiffDiagnostic});
     SemanticDiffQuery realDiffQuery;
