@@ -248,9 +248,9 @@ feature direction that violates them.
 - When a subphase is complete and verified, report it as 0% remaining, then make the next subphase current at 100% remaining.
 - Do not mark all Phase J complete until J0-J5 are complete, docs are current, full Ninja and full CTest pass, and final repo-source legacy scans prove the fixture carrier is gone.
 
-### Post-J Focused Editor Navigation Fixes
+### Post-J Focused Editor Workflow Fixes
 
-- Status: complete in the current worktree.
+- Status: complete and committed through `d7c72d5`.
 - Scope: bug fixes and responsiveness hardening after Phase J, not a new migration phase.
 - Completion popup sizing now derives item width from rendered text and clamps the popup to usable bounds.
 - Completion trigger product logic now separates normal completion from command completion: normal completion can trigger from any identifier position after a two-character prefix, strong contexts such as `.`, backtick, `$`, and `::` trigger earlier, ordinary spaces close or keep completion closed, and command completion requires `;cmd` plus Space.
