@@ -1,4 +1,4 @@
-// Headless jump-resolution test. Builds sym_list from Slang, constructs a MyCodeEditor offscreen
+// Headless jump-resolution test. Builds semantic records from Slang, constructs a MyCodeEditor offscreen
 // (no window shown), sets its file/text/cursor, and drives definition availability / target resolution.
 #include <QApplication>
 #include <QFile>
@@ -14,7 +14,6 @@
 #include <cstdio>
 #include <memory>
 #include "slangmanager.h"
-#include "syminfo.h"
 #include "completionmodel.h"
 #include "documentmodel.h"
 #include "definitionservice.h"
@@ -62,16 +61,6 @@ static void placeCursor(MyCodeEditor& ed, int block) {
     ed.setTextCursor(c);
 }
 
-static QList<sym_list::SymbolInfo> symbolsNamed(const QString& name)
-{
-    QList<sym_list::SymbolInfo> matches;
-    for (const auto& symbol : sym_list::getInstance()->getAllSymbols()) {
-        if (symbol.symbolName == name)
-            matches.append(symbol);
-    }
-    return matches;
-}
-
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
 
@@ -89,18 +78,19 @@ int main(int argc, char** argv) {
         path,
         symbolRecords,
         content);
-    sym_list::getInstance()->setSymbolsForFile(
-        path,
-        fixtureSymbolsForRecords(symbolRecords));
 
     // After the semantic record mirror, function-local symbols keep their
     // subroutine owner scope rather than being inferred from module bounds.
-    auto scopeOf = [](const QString& name, sym_list::sym_type_e t) -> QString {
-        for (const auto& s : symbolsNamed(name))
-            if (s.symbolType == t) return s.moduleScope;
+    auto scopeOf = [&symbolRecords](const QString& name,
+                                    SymbolTaxonomy::CollectorKind kind)
+        -> QString {
+        for (const SemanticSymbolRecord& record : symbolRecords) {
+            if (record.name == name && record.collectorKind == kind)
+                return record.owner.name;
+        }
         return QStringLiteral("<none>");
     };
-    QString xScope = scopeOf("x", sym_list::sym_logic);
+    QString xScope = scopeOf("x", SymbolTaxonomy::CollectorKind::Logic);
     printf("-- DB moduleScope after setSymbolsForFile: x=%s --\n", xScope.toLocal8Bit().constData());
     ++g_checks; if (xScope != QStringLiteral("add_one")) ++g_fails;
     printf("[%s] formal-arg x keeps moduleScope=add_one (not clobbered to top)\n",
@@ -162,33 +152,44 @@ int main(int argc, char** argv) {
 
     const QString syntheticFile =
         QFileInfo(path).dir().filePath(QStringLiteral("definition_service_member_context.sv"));
-    QList<sym_list::SymbolInfo> syntheticSymbols;
-    sym_list::SymbolInfo otherRed;
-    otherRed.fileName = syntheticFile;
-    otherRed.symbolName = QStringLiteral("red");
-    otherRed.symbolType = sym_list::sym_struct_member;
-    otherRed.moduleScope = QStringLiteral("other_t");
-    otherRed.startLine = 7;
-    otherRed.startColumn = 9;
-    syntheticSymbols.append(otherRed);
+    QList<SemanticSymbolRecord> syntheticRecords;
+    const SemanticSymbolRecord otherRedRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("red"),
+                                     SymbolTaxonomy::DeclarationKind::StructMember)
+            .withFile(syntheticFile)
+            .withLocalHandle(6201)
+            .withLine(7, 9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::StructMember)
+            .inStruct(QStringLiteral("other_t"))
+            .record();
+    syntheticRecords.append(otherRedRecord);
 
-    sym_list::SymbolInfo pixelRed = otherRed;
-    pixelRed.moduleScope = QStringLiteral("pixel_t");
-    pixelRed.startLine = 11;
-    syntheticSymbols.append(pixelRed);
+    const SemanticSymbolRecord pixelRedRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("red"),
+                                     SymbolTaxonomy::DeclarationKind::StructMember)
+            .withFile(syntheticFile)
+            .withLocalHandle(6202)
+            .withLine(11, 9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::StructMember)
+            .inStruct(QStringLiteral("pixel_t"))
+            .record();
+    syntheticRecords.append(pixelRedRecord);
 
-    sym_list::SymbolInfo pixelVar;
-    pixelVar.fileName = syntheticFile;
-    pixelVar.symbolName = QStringLiteral("pixel");
-    pixelVar.symbolType = sym_list::sym_packed_struct_var;
-    pixelVar.dataType = QStringLiteral("pixel_t");
-    pixelVar.startLine = 20;
-    pixelVar.startColumn = 5;
-    syntheticSymbols.append(pixelVar);
-    sym_list::getInstance()->setSymbolsForFile(syntheticFile, syntheticSymbols);
+    const SemanticSymbolRecord pixelVarRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("pixel"),
+                                     SymbolTaxonomy::DeclarationKind::StructVariable)
+            .withFile(syntheticFile)
+            .withLocalHandle(6203)
+            .withLine(20, 5)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::PackedStructVariable)
+            .withType(QStringLiteral("pixel_t"))
+            .record();
+    syntheticRecords.append(pixelVarRecord);
+
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         syntheticFile,
-        semanticSymbolRecordsForSymbols(syntheticSymbols),
+        syntheticRecords,
         QString());
 
     DefinitionQuery memberQuery;
@@ -200,7 +201,8 @@ int main(int argc, char** argv) {
     ++g_checks;
     bool memberOk = memberResult.found
         && memberResult.symbolRecord.owner.name == QStringLiteral("pixel_t")
-        && memberResult.symbolRecord.location.startLine == pixelRed.startLine;
+        && memberResult.symbolRecord.location.startLine
+            == pixelRedRecord.location.startLine;
     if (!memberOk) ++g_fails;
     printf("[%s] DefinitionService resolves pixel.red member context to pixel_t.red\n",
            memberOk ? "PASS" : "FAIL");
@@ -242,7 +244,7 @@ int main(int argc, char** argv) {
                    && memberNavigationTarget.symbolRecord.name
                        == QStringLiteral("red")
                    && memberNavigationTarget.symbolRecord.collectorKind
-                       == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_struct_member)
+                       == SymbolTaxonomy::CollectorKind::StructMember
                    && memberNavigationTarget.ownerDisplayName
                        == QStringLiteral("pixel_t")
                    && memberNavigationTarget.sourceRoleDisplayName
@@ -492,7 +494,7 @@ int main(int argc, char** argv) {
                    && snapshotNavigationTarget.symbolTypeText
                        == QStringLiteral("module")
                    && snapshotNavigationTarget.symbolRecord.collectorKind
-                       == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_module)
+                       == SymbolTaxonomy::CollectorKind::Module
                    && snapshotNavigationTarget.ownerDisplayName
                        == QStringLiteral("global")
                    && snapshotNavigationTarget.sourceRoleDisplayName
@@ -533,7 +535,7 @@ int main(int argc, char** argv) {
         && snapshotInterfaceResult.symbolRecord.localHandle
             == snapshotHelperInterface.localHandle
         && snapshotInterfaceResult.symbolRecord.collectorKind
-            == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_interface);
+            == SymbolTaxonomy::CollectorKind::Interface;
     if (!snapshotInterfaceOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot cross-file interface\n",
@@ -633,13 +635,21 @@ int main(int argc, char** argv) {
     printf("[%s] DefinitionService resolves snapshot package typedef\n",
            snapshotPackageTypedefOk ? "PASS" : "FAIL");
 
+    const SymbolTaxonomy::SemanticMetadata packageParameterMetadata =
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Parameter,
+                                SymbolTaxonomy::SymbolOwnerScope::Package,
+                                SymbolTaxonomy::CollectorKind::Parameter);
     expectBool("SymbolTaxonomy package parameter visible",
                SymbolTaxonomy::isPackageVisibleDefinition(
-                   semanticMetadataForFixtureType(sym_list::sym_parameter)),
+                   packageParameterMetadata),
                true);
+    SymbolTaxonomy::SemanticMetadata interfaceModportPortMetadata =
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Port,
+                                SymbolTaxonomy::SymbolOwnerScope::Module,
+                                SymbolTaxonomy::CollectorKind::PortInterfaceModport);
+    interfaceModportPortMetadata.interfaceLikeOwner = true;
     expectBool("SymbolTaxonomy interface owner includes modport port",
-               semanticMetadataForFixtureType(sym_list::sym_port_interface_modport)
-                   .interfaceLikeOwner,
+               interfaceModportPortMetadata.interfaceLikeOwner,
                true);
     expectBool("SymbolTaxonomy interface owner metadata",
                semanticFixtureMetadata(
@@ -658,7 +668,10 @@ int main(int argc, char** argv) {
              QStringLiteral("master"));
     expectBool("SymbolTaxonomy modport member-scope candidate",
                SymbolTaxonomy::isMemberScopeDefinitionCandidate(
-                   semanticMetadataForFixtureType(sym_list::sym_interface_modport)),
+                   semanticFixtureMetadata(
+                       SymbolTaxonomy::DeclarationKind::Modport,
+                       SymbolTaxonomy::SymbolOwnerScope::Interface,
+                       SymbolTaxonomy::CollectorKind::InterfaceModport)),
                true);
     expectBool("SymbolTaxonomy detects svh header role",
                SymbolTaxonomy::sourceRoleForFileName(QStringLiteral("rtl/pkg_defs.svh"))
@@ -740,7 +753,8 @@ int main(int argc, char** argv) {
         && metadataScopedDefinitions.first().owner.name == QStringLiteral("snap_top")
         && metadataScopedDefinitions.first().declarationKind
                == SymbolTaxonomy::DeclarationKind::Module
-        && metadataScopedDefinitions.first().collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user)
+        && metadataScopedDefinitions.first().collectorKind
+            == SymbolTaxonomy::CollectorKind::User
         && metadataScopedDefinitions.first().stableKey.isValid();
     if (!metadataScopedDefinitionsOk)
         ++g_fails;
@@ -1087,9 +1101,16 @@ int main(int argc, char** argv) {
              QStringLiteral("top"));
 
     // Local definition target: editor context resolves to the definition location.
-    sym_list::SymbolInfo counter;
-    for (const auto& s : symbolsNamed(QStringLiteral("counter")))
-        if (s.symbolType == sym_list::sym_reg) counter = s;
+    SemanticSymbolRecord counterRecord;
+    for (const SemanticSymbolRecord& record : symbolRecords) {
+        if (record.name == QStringLiteral("counter")
+            && record.declarationKind
+                == SymbolTaxonomy::DeclarationKind::Signal
+            && record.owner.name == QStringLiteral("top")) {
+            counterRecord = record;
+            break;
+        }
+    }
     placeCursor(ed, 95);
     const DefinitionNavigationTarget counterTarget =
         EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
@@ -1099,11 +1120,12 @@ int main(int argc, char** argv) {
            counterTarget.found,
            counterTarget.localFile,
            counterTarget.line,
-           counter.startLine);
+           counterRecord.location.startLine);
     ++g_checks;
     bool counterOk = counterTarget.found
         && counterTarget.localFile
-        && counterTarget.line == counter.startLine
+        && counterRecord.isValid()
+        && counterTarget.line == counterRecord.location.startLine
         && counterTarget.symbolRecord.isValid()
         && counterTarget.symbolRecord.stableKey == counterTarget.symbolStableKey
         && counterTarget.symbolRecord.name == QStringLiteral("counter")
@@ -1130,13 +1152,16 @@ int main(int argc, char** argv) {
             helperPath,
             helperRecords,
             hc);
-        sym_list::getInstance()->setSymbolsForFile(
-            helperPath,
-            fixtureSymbolsForRecords(helperRecords));
 
         int helperStartLine = -1;
-        for (const auto& s : symbolsNamed(QStringLiteral("helper_mod")))
-            if (s.symbolType == sym_list::sym_module) helperStartLine = s.startLine;
+        for (const SemanticSymbolRecord& record : helperRecords) {
+            if (record.name == QStringLiteral("helper_mod")
+                && record.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Module) {
+                helperStartLine = record.location.startLine;
+                break;
+            }
+        }
 
         placeCursor(ed, 29);  // outside any module in test_symbols.sv -> no scope filter
         const DefinitionNavigationTarget helperTarget =
