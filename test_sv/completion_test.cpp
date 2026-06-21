@@ -397,15 +397,20 @@ int main(int argc, char** argv) {
              QStringLiteral("interfaces"));
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(
-                 semanticMetadataForFixtureType(sym_list::sym_interface_modport)),
+                 semanticFixtureMetadata(
+                     SymbolTaxonomy::DeclarationKind::Modport,
+                     SymbolTaxonomy::SymbolOwnerScope::Interface,
+                     SymbolTaxonomy::CollectorKind::InterfaceModport)),
              QStringLiteral("modport"));
     expectBool("SymbolTaxonomy struct variable metadata",
-               semanticMetadataForFixtureType(sym_list::sym_packed_struct_var)
+               semanticFixtureMetadata(
+                   SymbolTaxonomy::DeclarationKind::StructVariable)
                    .declarationKind
                    == SymbolTaxonomy::DeclarationKind::StructVariable,
                true);
     expectBool("SymbolTaxonomy direct context metadata",
-               semanticMetadataForFixtureType(sym_list::sym_unpacked_struct_var)
+               semanticFixtureMetadata(
+                   SymbolTaxonomy::DeclarationKind::StructVariable)
                    .declarationKind
                    == SymbolTaxonomy::DeclarationKind::StructVariable,
                true);
@@ -418,22 +423,9 @@ int main(int argc, char** argv) {
                    SymbolTaxonomy::SemanticCompletionKind::EnumType,
                    QStringLiteral("enum")),
                true);
-    sym_list::SymbolInfo metadataSignalSymbol;
-    metadataSignalSymbol.symbolType = sym_list::sym_user;
-    metadataSignalSymbol.hasSemanticMetadata = true;
-    metadataSignalSymbol.semanticDeclarationKind =
-        SymbolSemanticMetadata::DeclarationKind::Signal;
-    metadataSignalSymbol.semanticUsageRole =
-        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
-    metadataSignalSymbol.semanticOwnerScope =
-        SymbolSemanticMetadata::SymbolOwnerScope::Module;
-    metadataSignalSymbol.semanticVisibility =
-        SymbolSemanticMetadata::SymbolVisibility::ScopeLocal;
-    metadataSignalSymbol.semanticSourceRole =
-        SymbolSemanticMetadata::SourceRole::DesignSource;
-    metadataSignalSymbol.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataSignal =
-        semanticMetadataForSymbolInfo(metadataSignalSymbol);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Signal,
+                                SymbolTaxonomy::SymbolOwnerScope::Module);
     expectBool("SymbolTaxonomy metadata command type",
                SymbolTaxonomy::semanticCompletionKindMatches(
                    metadataSignal,
@@ -450,44 +442,30 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata signal definition priority",
                SymbolTaxonomy::definitionPriority(metadataSignal) == 5,
                true);
-    sym_list::SymbolInfo completionModuleSymbol;
-    completionModuleSymbol.symbolType = sym_list::sym_module;
-    completionModuleSymbol.fileName = QStringLiteral("rtl/top.sv");
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
-        semanticMetadataForSymbolInfo(completionModuleSymbol);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Module,
+                                SymbolTaxonomy::SymbolOwnerScope::Global,
+                                SymbolTaxonomy::CollectorKind::Module);
     expectBool("SymbolTaxonomy metadata global completion",
                SymbolTaxonomy::isGlobalCompletionCandidate(moduleMetadata),
                true);
-    sym_list::SymbolInfo logicSymbol;
-    logicSymbol.symbolType = sym_list::sym_logic;
-    logicSymbol.fileName = QStringLiteral("rtl/top.sv");
     const SymbolTaxonomy::SemanticMetadata logicMetadata =
-        semanticMetadataForSymbolInfo(logicSymbol);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Signal,
+                                SymbolTaxonomy::SymbolOwnerScope::Module,
+                                SymbolTaxonomy::CollectorKind::Logic);
     expectBool("SymbolTaxonomy metadata internal completion",
                SymbolTaxonomy::isInternalCompletionCandidate(logicMetadata),
                true);
     expectBool("SymbolTaxonomy metadata raw compatibility",
-               logicMetadata.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_logic),
+               logicMetadata.collectorKind
+                   == SymbolTaxonomy::CollectorKind::Logic,
                true);
     expectBool("SymbolTaxonomy metadata global completion type",
                SymbolTaxonomy::isGlobalCompletionCandidate(metadataSignal),
                false);
-    sym_list::SymbolInfo metadataGlobalModule;
-    metadataGlobalModule.symbolType = sym_list::sym_user;
-    metadataGlobalModule.hasSemanticMetadata = true;
-    metadataGlobalModule.semanticDeclarationKind =
-        SymbolSemanticMetadata::DeclarationKind::Module;
-    metadataGlobalModule.semanticUsageRole =
-        SymbolSemanticMetadata::SymbolUsageRole::Declaration;
-    metadataGlobalModule.semanticOwnerScope =
-        SymbolSemanticMetadata::SymbolOwnerScope::Global;
-    metadataGlobalModule.semanticVisibility =
-        SymbolSemanticMetadata::SymbolVisibility::Global;
-    metadataGlobalModule.semanticSourceRole =
-        SymbolSemanticMetadata::SourceRole::DesignSource;
-    metadataGlobalModule.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataGlobal =
-        semanticMetadataForSymbolInfo(metadataGlobalModule);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Module,
+                                SymbolTaxonomy::SymbolOwnerScope::Global);
     expectBool("SymbolTaxonomy metadata global completion candidate",
                SymbolTaxonomy::isGlobalCompletionCandidate(metadataGlobal),
                true);
@@ -497,16 +475,9 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata global info type",
                SymbolTaxonomy::isGlobalSemanticSymbolType(metadataGlobal),
                true);
-    SymbolTaxonomy::SemanticMetadata syntheticModuleMetadata;
-    syntheticModuleMetadata.declarationKind =
-        SymbolTaxonomy::DeclarationKind::Module;
-    syntheticModuleMetadata.usageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    syntheticModuleMetadata.ownerScope =
-        SymbolTaxonomy::SymbolOwnerScope::Global;
-    syntheticModuleMetadata.visibility =
-        SymbolTaxonomy::SymbolVisibility::Global;
-    syntheticModuleMetadata.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    SymbolTaxonomy::SemanticMetadata syntheticModuleMetadata =
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Module,
+                                SymbolTaxonomy::SymbolOwnerScope::Global);
     expectBool("SymbolTaxonomy search intent uses semantic metadata",
                SymbolTaxonomy::matchesSearchIntent(
                    syntheticModuleMetadata,
@@ -530,12 +501,8 @@ int main(int argc, char** argv) {
     expectEq("SymbolTaxonomy metadata label",
              SymbolTaxonomy::symbolTypeLabel(syntheticModuleMetadata),
              QStringLiteral("module"));
-    SymbolTaxonomy::SemanticMetadata syntheticInstanceMetadata;
-    syntheticInstanceMetadata.declarationKind =
-        SymbolTaxonomy::DeclarationKind::Instance;
-    syntheticInstanceMetadata.usageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    syntheticInstanceMetadata.collectorKind = static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_user);
+    SymbolTaxonomy::SemanticMetadata syntheticInstanceMetadata =
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Instance);
     expectBool("SymbolTaxonomy metadata instance declaration",
                SymbolTaxonomy::isInstanceDeclaration(syntheticInstanceMetadata),
                true);
@@ -544,30 +511,16 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata instance pin not declaration",
                SymbolTaxonomy::isInstanceDeclaration(syntheticInstanceMetadata),
                false);
-    sym_list::SymbolInfo metadataInstanceSymbol;
-    metadataInstanceSymbol.symbolName = QStringLiteral("metadata_u_child");
-    metadataInstanceSymbol.symbolType = sym_list::sym_user;
-    metadataInstanceSymbol.hasSemanticMetadata = true;
-    metadataInstanceSymbol.semanticDeclarationKind =
-        SymbolTaxonomy::DeclarationKind::Instance;
-    metadataInstanceSymbol.semanticUsageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataInstanceSymbol.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataInstanceSymbolMetadata =
-        semanticMetadataForSymbolInfo(metadataInstanceSymbol);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Instance);
     expectBool("SymbolTaxonomy metadata instance declaration",
                SymbolTaxonomy::isInstanceDeclaration(
                    metadataInstanceSymbolMetadata),
                true);
-    sym_list::SymbolInfo metadataKeySymbol;
-    metadataKeySymbol.symbolName = QStringLiteral("metadata_top");
-    metadataKeySymbol.symbolType = sym_list::sym_user;
-    metadataKeySymbol.hasSemanticMetadata = true;
-    metadataKeySymbol.semanticDeclarationKind =
-        SymbolTaxonomy::DeclarationKind::Module;
-    metadataKeySymbol.collectorKind = sym_list::sym_user;
     const SymbolStableKey metadataKey =
-        stableKeyForSymbol(metadataKeySymbol);
+        semanticFixtureStableKey(QString(),
+                                 QStringLiteral("metadata_top"),
+                                 SymbolTaxonomy::DeclarationKind::Module);
     expectBool("stable key uses semantic declaration kind",
                metadataKey.declarationKind
                    == SymbolTaxonomy::DeclarationKind::Module,
@@ -596,18 +549,18 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy metadata logic declaration",
                SymbolTaxonomy::isLogicDeclaration(logicMetadata),
                true);
-    sym_list::SymbolInfo metadataStateRegister;
-    metadataStateRegister.symbolType = sym_list::sym_logic;
     const SymbolTaxonomy::SemanticMetadata stateRegisterMetadata =
-        semanticMetadataForSymbolInfo(metadataStateRegister);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Signal,
+                                SymbolTaxonomy::SymbolOwnerScope::Module,
+                                SymbolTaxonomy::CollectorKind::Logic);
     expectBool("SymbolTaxonomy metadata fsm state register",
                SymbolTaxonomy::isFsmStateRegisterDeclaration(
                    stateRegisterMetadata),
                true);
-    sym_list::SymbolInfo metadataStateValue;
-    metadataStateValue.symbolType = sym_list::sym_enum_value;
     const SymbolTaxonomy::SemanticMetadata stateValueMetadata =
-        semanticMetadataForSymbolInfo(metadataStateValue);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Enum,
+                                SymbolTaxonomy::SymbolOwnerScope::Module,
+                                SymbolTaxonomy::CollectorKind::EnumValue);
     expectBool("SymbolTaxonomy metadata fsm state value",
                SymbolTaxonomy::isFsmStateValueDeclaration(stateValueMetadata),
                true);
@@ -624,111 +577,74 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::isPackageVisibleDefinition(
                    syntheticPackageParameterMetadata),
                true);
-    sym_list::SymbolInfo scopedStruct;
-    scopedStruct.symbolType = sym_list::sym_packed_struct;
-    scopedStruct.moduleScope = QStringLiteral("pkg_scope");
-    sym_list::SymbolInfo scopedLogic;
-    scopedLogic.symbolType = sym_list::sym_logic;
-    scopedLogic.moduleScope = QStringLiteral("top");
     QSet<QString> packageScopes;
     packageScopes.insert(QStringLiteral("pkg_scope"));
-    sym_list::SymbolInfo packageParameter;
-    packageParameter.symbolType = sym_list::sym_parameter;
-    packageParameter.moduleScope = QStringLiteral("pkg_scope");
-    sym_list::SymbolInfo packageSymbol;
-    packageSymbol.symbolType = sym_list::sym_package;
-    packageSymbol.symbolName = QStringLiteral("pkg_scope");
     const SymbolTaxonomy::SemanticMetadata packageMetadata =
-        semanticMetadataForSymbolInfo(packageSymbol);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Package,
+                                SymbolTaxonomy::SymbolOwnerScope::Global,
+                                SymbolTaxonomy::CollectorKind::Package);
     expectBool("SymbolTaxonomy package metadata declaration",
                SymbolTaxonomy::isPackageDeclaration(packageMetadata),
                true);
     expectBool("SymbolTaxonomy package scope names",
-               packageScopeNames({packageSymbol})
-                   .contains(QStringLiteral("pkg_scope")),
+               packageScopes.contains(QStringLiteral("pkg_scope")),
                true);
     const SymbolTaxonomy::SemanticMetadata packageParameterMetadata =
-        semanticMetadataForSymbolInfo(packageParameter, packageScopes);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Parameter,
+                                SymbolTaxonomy::SymbolOwnerScope::Package);
+    const QString packageParameterOwner = QStringLiteral("pkg_scope");
     expectBool("SymbolTaxonomy package definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    packageParameterMetadata,
-                   packageParameter.moduleScope,
+                   packageParameterOwner,
                    QStringLiteral("top")),
                true);
-    sym_list::SymbolInfo metadataPackageParameter;
-    metadataPackageParameter.symbolType = sym_list::sym_user;
-    metadataPackageParameter.moduleScope = QStringLiteral("pkg_scope");
-    metadataPackageParameter.hasSemanticMetadata = true;
-    metadataPackageParameter.semanticDeclarationKind =
-        SymbolTaxonomy::DeclarationKind::Parameter;
-    metadataPackageParameter.semanticUsageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataPackageParameter.semanticOwnerScope =
-        SymbolTaxonomy::SymbolOwnerScope::Package;
-    metadataPackageParameter.semanticVisibility =
-        SymbolTaxonomy::SymbolVisibility::PackageVisible;
-    metadataPackageParameter.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataPackageParameterMetadata =
-        semanticMetadataForSymbolInfo(
-            metadataPackageParameter,
-            packageScopes);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Parameter,
+                                SymbolTaxonomy::SymbolOwnerScope::Package);
+    const QString metadataPackageParameterOwner = QStringLiteral("pkg_scope");
     expectBool("SymbolTaxonomy metadata package definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    metadataPackageParameterMetadata,
-                   metadataPackageParameter.moduleScope,
+                   metadataPackageParameterOwner,
                    QStringLiteral("top")),
                true);
-    sym_list::SymbolInfo metadataStructMember;
-    metadataStructMember.symbolType = sym_list::sym_user;
-    metadataStructMember.moduleScope = QStringLiteral("pixel_t");
-    metadataStructMember.hasSemanticMetadata = true;
-    metadataStructMember.semanticDeclarationKind =
-        SymbolTaxonomy::DeclarationKind::StructMember;
-    metadataStructMember.semanticUsageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataStructMember.semanticOwnerScope =
-        SymbolTaxonomy::SymbolOwnerScope::Struct;
-    metadataStructMember.semanticVisibility =
-        SymbolTaxonomy::SymbolVisibility::Member;
-    metadataStructMember.collectorKind = sym_list::sym_user;
     const SymbolTaxonomy::SemanticMetadata metadataStructMemberMetadata =
-        semanticMetadataForSymbolInfo(metadataStructMember, packageScopes);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::StructMember,
+                                SymbolTaxonomy::SymbolOwnerScope::Struct);
+    const QString metadataStructMemberOwner = QStringLiteral("pixel_t");
     expectBool("SymbolTaxonomy metadata member definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    metadataStructMemberMetadata,
-                   metadataStructMember.moduleScope,
+                   metadataStructMemberOwner,
                    QStringLiteral("top")),
                true);
-    sym_list::SymbolInfo metadataEnumValue;
-    metadataEnumValue.symbolType = sym_list::sym_user;
-    metadataEnumValue.moduleScope = QStringLiteral("state_t");
-    metadataEnumValue.hasSemanticMetadata = true;
-    metadataEnumValue.semanticDeclarationKind =
-        SymbolTaxonomy::DeclarationKind::Enum;
-    metadataEnumValue.semanticUsageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    metadataEnumValue.collectorKind = sym_list::sym_enum_value;
     const SymbolTaxonomy::SemanticMetadata metadataEnumValueMetadata =
-        semanticMetadataForSymbolInfo(metadataEnumValue, packageScopes);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Enum,
+                                SymbolTaxonomy::SymbolOwnerScope::Module,
+                                SymbolTaxonomy::CollectorKind::EnumValue);
+    const QString metadataEnumValueOwner = QStringLiteral("state_t");
     expectBool("SymbolTaxonomy metadata enum value definition visible",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    metadataEnumValueMetadata,
-                   metadataEnumValue.moduleScope,
+                   metadataEnumValueOwner,
                    QStringLiteral("top")),
                true);
     const SymbolTaxonomy::SemanticMetadata scopedLogicMetadata =
-        semanticMetadataForSymbolInfo(scopedLogic, packageScopes);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Signal,
+                                SymbolTaxonomy::SymbolOwnerScope::Module,
+                                SymbolTaxonomy::CollectorKind::Logic);
+    const QString scopedLogicOwner = QStringLiteral("top");
     expectBool("SymbolTaxonomy scoped logic definition hidden",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    scopedLogicMetadata,
-                   scopedLogic.moduleScope,
+                   scopedLogicOwner,
                    QStringLiteral("other_top")),
                false);
-    sym_list::SymbolInfo moduleSymbol;
-    moduleSymbol.symbolType = sym_list::sym_module;
-    moduleSymbol.symbolName = QStringLiteral("top");
     const SymbolTaxonomy::SemanticMetadata finalModuleMetadata =
-        semanticMetadataForSymbolInfo(moduleSymbol);
+        semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Module,
+                                SymbolTaxonomy::SymbolOwnerScope::Global,
+                                SymbolTaxonomy::CollectorKind::Module);
     expectBool("SymbolTaxonomy module metadata declaration",
                SymbolTaxonomy::isModuleDeclaration(finalModuleMetadata),
                true);
