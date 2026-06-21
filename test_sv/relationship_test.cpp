@@ -3920,129 +3920,173 @@ static void runModuleBriefServiceFixture()
     printf("\n-- module brief service fixture --\n");
 
     const QString fileName = QStringLiteral("test_sv/module_brief_fixture.sv");
-    QList<sym_list::SymbolInfo> symbols;
-    sym_list::SymbolInfo module = makeModuleBriefSymbol(
-        9001,
-        fileName,
-        QStringLiteral("brief_top"),
-        sym_list::sym_module,
-        10);
-    module.endLine = 80;
-    symbols.append(module);
-    symbols.append(makeModuleBriefSymbol(
-        9002,
-        fileName,
-        QStringLiteral("WIDTH"),
-        sym_list::sym_parameter,
-        11,
-        QStringLiteral("brief_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9003,
-        fileName,
-        QStringLiteral("clk"),
-        sym_list::sym_port_input,
-        12,
-        QStringLiteral("brief_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9004,
-        fileName,
-        QStringLiteral("rst_n"),
-        sym_list::sym_port_input,
-        13,
-        QStringLiteral("brief_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9005,
-        fileName,
-        QStringLiteral("data_o"),
-        sym_list::sym_port_output,
-        14,
-        QStringLiteral("brief_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9006,
-        fileName,
-        QStringLiteral("u_stage"),
-        sym_list::sym_inst,
-        30,
-        QStringLiteral("brief_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9007,
-        fileName,
-        QStringLiteral("brief_pkg"),
-        sym_list::sym_package,
-        1));
-    symbols.append(makeModuleBriefSymbol(
-        9012,
-        fileName,
-        QStringLiteral("PKG_WIDTH"),
-        sym_list::sym_parameter,
-        2,
-        QStringLiteral("brief_pkg")));
-    symbols.append(makeModuleBriefSymbol(
-        9013,
-        fileName,
-        QStringLiteral("brief_t"),
-        sym_list::sym_typedef,
-        4,
-        QStringLiteral("brief_pkg")));
-    symbols.append(makeModuleBriefSymbol(
-        9009,
-        fileName,
-        QStringLiteral("brief_if"),
-        sym_list::sym_interface,
-        3));
-    sym_list::SymbolInfo interfacePort = makeModuleBriefSymbol(
-        9010,
-        fileName,
-        QStringLiteral("if_port"),
-        sym_list::sym_port_interface_modport,
-        15,
-        QStringLiteral("brief_top"));
-    interfacePort.dataType = QStringLiteral("brief_if.master");
-    symbols.append(interfacePort);
-    sym_list::SymbolInfo interfaceInstance = makeModuleBriefSymbol(
-        9011,
-        fileName,
-        QStringLiteral("if_bus"),
-        sym_list::sym_inst,
-        31,
-        QStringLiteral("brief_top"));
-    interfaceInstance.dataType = QStringLiteral("brief_if");
-    symbols.append(interfaceInstance);
-    symbols.append(makeModuleBriefSymbol(
-        9008,
-        fileName,
-        QStringLiteral("outside_port"),
-        sym_list::sym_port_input,
-        90,
-        QStringLiteral("other_module")));
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    using OwnerScope = SymbolTaxonomy::SymbolOwnerScope;
+    using Visibility = SymbolTaxonomy::SymbolVisibility;
+
+    const SemanticSymbolRecord module =
+        SemanticFixtureRecordBuilder(QStringLiteral("brief_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9001)
+            .withRange(10, 1, 80, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord widthParam =
+        SemanticFixtureRecordBuilder(QStringLiteral("WIDTH"),
+                                     DeclarationKind::Parameter)
+            .withFile(fileName)
+            .withLocalHandle(9002)
+            .withLine(11)
+            .withCollectorKind(CollectorKind::Parameter)
+            .inModule(QStringLiteral("brief_top"))
+            .record();
+    const SemanticSymbolRecord clk =
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9003)
+            .withLine(12)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("brief_top"))
+            .record();
+    const SemanticSymbolRecord rstN =
+        SemanticFixtureRecordBuilder(QStringLiteral("rst_n"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9004)
+            .withLine(13)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("brief_top"))
+            .record();
+    const SemanticSymbolRecord dataO =
+        SemanticFixtureRecordBuilder(QStringLiteral("data_o"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9005)
+            .withLine(14)
+            .withCollectorKind(CollectorKind::PortOutput)
+            .inModule(QStringLiteral("brief_top"))
+            .record();
+    const SemanticSymbolRecord stageInst =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_stage"),
+                                     DeclarationKind::Instance)
+            .withFile(fileName)
+            .withLocalHandle(9006)
+            .withLine(30)
+            .withCollectorKind(CollectorKind::Inst)
+            .inModule(QStringLiteral("brief_top"))
+            .record();
+    const SemanticSymbolRecord package =
+        SemanticFixtureRecordBuilder(QStringLiteral("brief_pkg"),
+                                     DeclarationKind::Package)
+            .withFile(fileName)
+            .withLocalHandle(9007)
+            .withLine(1)
+            .withCollectorKind(CollectorKind::Package)
+            .record();
+    const SemanticSymbolRecord packageWidth =
+        SemanticFixtureRecordBuilder(QStringLiteral("PKG_WIDTH"),
+                                     DeclarationKind::Parameter)
+            .withFile(fileName)
+            .withLocalHandle(9012)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::Parameter)
+            .inPackage(QStringLiteral("brief_pkg"))
+            .record();
+    const SemanticSymbolRecord packageTypedef =
+        SemanticFixtureRecordBuilder(QStringLiteral("brief_t"),
+                                     DeclarationKind::Typedef)
+            .withFile(fileName)
+            .withLocalHandle(9013)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::Typedef)
+            .inPackage(QStringLiteral("brief_pkg"))
+            .record();
+    const SemanticSymbolRecord briefInterface =
+        SemanticFixtureRecordBuilder(QStringLiteral("brief_if"),
+                                     DeclarationKind::Interface)
+            .withFile(fileName)
+            .withLocalHandle(9009)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::Interface)
+            .record();
+    const SemanticSymbolRecord interfacePort =
+        SemanticFixtureRecordBuilder(QStringLiteral("if_port"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9010)
+            .withLine(15)
+            .withCollectorKind(CollectorKind::PortInterfaceModport)
+            .withOwner(OwnerScope::Module,
+                       QStringLiteral("brief_top"),
+                       {},
+                       true)
+            .withType(QStringLiteral("brief_if.master"),
+                      QStringLiteral("brief_if"),
+                      DeclarationKind::Interface,
+                      QStringLiteral("master"))
+            .record();
+    const SemanticSymbolRecord interfaceInstance =
+        SemanticFixtureRecordBuilder(QStringLiteral("if_bus"),
+                                     DeclarationKind::Instance)
+            .withFile(fileName)
+            .withLocalHandle(9011)
+            .withLine(31)
+            .withCollectorKind(CollectorKind::Inst)
+            .inModule(QStringLiteral("brief_top"))
+            .withType(QStringLiteral("brief_if"),
+                      QStringLiteral("brief_if"),
+                      DeclarationKind::Interface)
+            .record();
+    const SemanticSymbolRecord outsidePort =
+        SemanticFixtureRecordBuilder(QStringLiteral("outside_port"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9008)
+            .withLine(90)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("other_module"))
+            .record();
+    const QList<SemanticSymbolRecord> records{
+        module,
+        widthParam,
+        clk,
+        rstN,
+        dataO,
+        stageInst,
+        package,
+        packageWidth,
+        packageTypedef,
+        briefInterface,
+        interfacePort,
+        interfaceInstance,
+        outsidePort,
+    };
 
     QList<SemanticRelationship> relationships;
-    SemanticRelationship importRel;
-    importRel.fromId = 9001;
-    importRel.toId = 9007;
-    importRel.type = SymbolRelationshipEngine::REFERENCES;
-    importRel.provenance = RelationshipProvenance::Inferred;
-    importRel.confidence = 80;
-    importRel.evidenceText = QStringLiteral("Package import at line 1");
-    relationships.append(importRel);
-
-    SemanticRelationship instRel;
-    instRel.fromId = 9001;
-    instRel.toId = 9006;
-    instRel.type = SymbolRelationshipEngine::INSTANTIATES;
-    instRel.provenance = RelationshipProvenance::Inferred;
-    instRel.confidence = 90;
-    instRel.evidenceText = QStringLiteral("Instance: u_stage at line 30");
-    relationships.append(instRel);
-
-    SemanticRelationship clockRel;
-    clockRel.fromId = 9003;
-    clockRel.toId = 9001;
-    clockRel.type = SymbolRelationshipEngine::CLOCKS;
-    clockRel.provenance = RelationshipProvenance::Inferred;
-    clockRel.confidence = 95;
-    clockRel.evidenceText = QStringLiteral("Clock signal clk at line 12");
-    relationships.append(clockRel);
+    relationships.append(semanticFixtureRelationship(
+        module,
+        package,
+        SymbolRelationshipEngine::REFERENCES,
+        RelationshipProvenance::Inferred,
+        80,
+        QStringLiteral("Package import at line 1")));
+    relationships.append(semanticFixtureRelationship(
+        module,
+        stageInst,
+        SymbolRelationshipEngine::INSTANTIATES,
+        RelationshipProvenance::Inferred,
+        90,
+        QStringLiteral("Instance: u_stage at line 30")));
+    relationships.append(semanticFixtureRelationship(
+        clk,
+        module,
+        SymbolRelationshipEngine::CLOCKS,
+        RelationshipProvenance::Inferred,
+        95,
+        QStringLiteral("Clock signal clk at line 12")));
 
     QList<SemanticDiagnostic> diagnostics;
     SemanticDiagnostic moduleDiagnostic;
@@ -4062,8 +4106,8 @@ static void runModuleBriefServiceFixture()
     diagnostics.append(outsideDiagnostic);
 
     SemanticIndex index;
-    index.setSnapshot(sharedSnapshotFromSymbols(
-        symbols,
+    index.setSnapshot(sharedSnapshotFromRecords(
+        records,
         relationships,
         diagnostics));
     ModuleBriefService service(&index);
@@ -4081,14 +4125,15 @@ static void runModuleBriefServiceFixture()
                true);
     expectBool("module brief subject semantic record",
                report.moduleSymbolRecord.isValid()
-                   && report.moduleSymbolRecord.localHandle == module.symbolId
+                   && report.moduleSymbolRecord.localHandle
+                       == module.localHandle
                    && report.moduleSymbolRecord.stableKey == report.moduleStableKey
                    && report.moduleSymbolRecord.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Module
                    && report.moduleSymbolRecord.name == QStringLiteral("brief_top"),
                true);
     ModuleBriefQuery stableModuleBriefQuery;
-    stableModuleBriefQuery.moduleStableKey = stableKeyForSymbol(module);
+    stableModuleBriefQuery.moduleStableKey = module.stableKey;
     const ModuleBriefReport stableModuleBriefReport =
         service.buildModuleBrief(stableModuleBriefQuery);
     expectBool("module brief resolves stable module key",
@@ -4108,9 +4153,11 @@ static void runModuleBriefServiceFixture()
                        == report.relationshipEvidenceRows.first().fromStableKey,
                true);
     const SymbolTaxonomy::SemanticMetadata moduleMetadata =
-        semanticMetadataForSymbolInfo(module);
+        semanticFixtureMetadata(DeclarationKind::Module,
+                                OwnerScope::Global,
+                                CollectorKind::Module);
     expectBool("semantic metadata keeps raw module kind",
-               moduleMetadata.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_module),
+               moduleMetadata.collectorKind == CollectorKind::Module,
                true);
     expectBool("semantic metadata classifies module declaration",
                moduleMetadata.declarationKind
@@ -4126,15 +4173,20 @@ static void runModuleBriefServiceFixture()
                    && report.moduleSymbolRecord.owner.kind
                        == SymbolTaxonomy::SymbolOwnerScope::Global
                    && report.moduleSymbolRecord.visibility
-                       == SymbolTaxonomy::SymbolVisibility::Global
-                   && report.moduleSymbolRecord.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_module),
+                       == Visibility::Global
+                   && report.moduleSymbolRecord.collectorKind
+                       == CollectorKind::Module,
                true);
     expectBool("taxonomy recognizes module brief port",
                SymbolTaxonomy::isPortDeclaration(
-                   semanticMetadataForSymbolInfo(symbols.at(2))),
+                   semanticFixtureMetadata(DeclarationKind::Port,
+                                           OwnerScope::Module,
+                                           CollectorKind::PortInput)),
                true);
     const SymbolTaxonomy::SemanticMetadata portMetadata =
-        semanticMetadataForSymbolInfo(symbols.at(2));
+        semanticFixtureMetadata(DeclarationKind::Port,
+                                OwnerScope::Module,
+                                CollectorKind::PortInput);
     expectBool("semantic metadata classifies port declaration",
                portMetadata.declarationKind
                    == SymbolTaxonomy::DeclarationKind::Port,
@@ -4150,7 +4202,7 @@ static void runModuleBriefServiceFixture()
     SemanticSymbolRecord snapshotPort;
     for (const SemanticSymbolRecord& record : snapshotRecords) {
         if (record.name == QStringLiteral("clk")
-            && record.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_port_input)) {
+            && record.collectorKind == CollectorKind::PortInput) {
             snapshotPort = record;
             break;
         }
@@ -4163,30 +4215,40 @@ static void runModuleBriefServiceFixture()
                        == SymbolTaxonomy::SymbolUsageRole::Declaration
                    && snapshotPort.sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource
-                   && snapshotPort.collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_port_input),
+                   && snapshotPort.collectorKind == CollectorKind::PortInput,
                true);
     expectBool("taxonomy groups module brief port",
                SymbolTaxonomy::declarationGroup(
-                   semanticMetadataForSymbolInfo(symbols.at(2)))
+                   semanticFixtureMetadata(DeclarationKind::Port,
+                                           OwnerScope::Module,
+                                           CollectorKind::PortInput))
                    == SymbolTaxonomy::DeclarationGroup::Port,
                true);
     expectBool("taxonomy recognizes module brief parameter",
                SymbolTaxonomy::declarationGroup(
-                   semanticMetadataForSymbolInfo(symbols.at(1)))
+                   semanticFixtureMetadata(DeclarationKind::Parameter,
+                                           OwnerScope::Module,
+                                           CollectorKind::Parameter))
                    == SymbolTaxonomy::DeclarationGroup::Parameter,
                true);
     expectBool("taxonomy groups module brief parameter",
                SymbolTaxonomy::declarationGroup(
-                   semanticMetadataForSymbolInfo(symbols.at(1)))
+                   semanticFixtureMetadata(DeclarationKind::Parameter,
+                                           OwnerScope::Module,
+                                           CollectorKind::Parameter))
                    == SymbolTaxonomy::DeclarationGroup::Parameter,
                true);
     expectBool("taxonomy recognizes module brief instance",
                SymbolTaxonomy::isInstanceDeclaration(
-                   semanticMetadataForSymbolInfo(symbols.at(5))),
+                   semanticFixtureMetadata(DeclarationKind::Instance,
+                                           OwnerScope::Module,
+                                           CollectorKind::Inst)),
                true);
     expectBool("taxonomy groups module brief instance",
                SymbolTaxonomy::declarationGroup(
-                   semanticMetadataForSymbolInfo(symbols.at(5)))
+                   semanticFixtureMetadata(DeclarationKind::Instance,
+                                           OwnerScope::Module,
+                                           CollectorKind::Inst))
                    == SymbolTaxonomy::DeclarationGroup::Instance,
                true);
     const QList<SemanticSymbolRecord> packageRecords{
