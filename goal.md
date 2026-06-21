@@ -187,14 +187,14 @@ UI Layer
 
 ### Phase J: Test Fixture Native Cleanup
 
-- Status: planned.
+- Status: J4 complete; J5 current.
 - Purpose: delete the remaining fixture-only legacy `sym_list` / `syminfo` carrier after Phase I proved the core source is clean.
 - Phase J should not add RTL feature behavior; it should preserve existing behavior while replacing test fixture inputs with semantic-native builders.
-- J0 defines the repo-wide fixture cleanup allowlist and guards the remaining test-only legacy terms.
-- J1 introduces native test builders for semantic records, metadata, owners, type info, stable keys, local handles, and relationship endpoints.
-- J2 migrates completion and jump tests away from `sym_list::SymbolInfo`.
-- J3 migrates relationship and GUI smoke tests away from `sym_list::SymbolInfo`.
-- J4 deletes `test_sv/syminfo*` and the reverse fixture adapter once no tracked test includes or builds them.
+- J0 is complete: it defines the repo-wide fixture cleanup allowlist and guards the remaining test-only legacy terms.
+- J1 is complete: native test builders cover semantic records, metadata, owners, type info, stable keys, local handles, and relationship endpoints.
+- J2 is complete: completion and jump tests have moved away from `sym_list::SymbolInfo`.
+- J3 is complete: relationship and GUI smoke tests have moved away from `sym_list::SymbolInfo`.
+- J4 is complete: `test_sv/syminfo*` and the reverse fixture adapter have been deleted now that no tracked test includes or builds them.
 - J5 passes the release gate and upgrades the zero target from core source to repo source except docs and guard definitions.
 
 ### Phase J Goal Mode

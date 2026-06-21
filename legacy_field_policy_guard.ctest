@@ -276,10 +276,6 @@ set(PHASE_J_FIXTURE_CLEANUP_ALLOWLIST
     test_sv/jump_test.cpp
     test_sv/relationship_test.cpp
     test_sv/semantic_fixture_records.h
-    test_sv/syminfo.cpp
-    test_sv/syminfo.h
-    test_sv/syminfocontent.cpp
-    test_sv/syminfomodulelookup.cpp
     test_sv/test_symbols.sv
 )
 

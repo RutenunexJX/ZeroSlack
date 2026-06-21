@@ -29,7 +29,7 @@ Thin UI consumers
 - Phase G Complete Legacy Field Deletion is complete on this branch, including the post-G release gate.
 - Phase H Semantic Core Slimdown is complete on this branch: remaining legacy type adapters, redundant APIs, and compatibility logic have been deleted or confined to the collector/import, taxonomy, and `syminfo` transition boundary.
 - Phase I Semantic Store Native / Collector Native is complete on this branch: the remaining legacy collector/store body has been replaced or confined to fixture-only test carriers, and the zero-legacy core scan passes.
-- Next phase: Phase J Test Fixture Native Cleanup should remove the remaining fixture-only `sym_list` / `syminfo` carrier from `test_sv`, migrate tracked tests to semantic-native builders, and upgrade the final zero target from core-source-only to repo-source except docs and guard definitions.
+- Phase J Test Fixture Native Cleanup is in progress: J0-J4 are complete, `test_sv/syminfo*` and the reverse fixture adapter have been deleted, and J5 is next to upgrade the final zero target from core-source-only to repo-source except docs and guard definitions.
 - I0 is complete: `legacy_field_policy_guard.ctest` now defines the Phase I zero-legacy target terms and an opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` final scan for I5.
 - G0 is complete: `SemanticRelationshipResult` no longer carries legacy `fromSymbol` / `toSymbol` endpoint payloads; relationship consumers use endpoint records and stable keys.
 - G1 is complete: `SemanticDefinitionResult` no longer carries legacy `symbol` payloads; consumers use `symbolRecord` / `symbolStableKey`.
@@ -79,6 +79,12 @@ Thin UI consumers
 - I5 second block is complete: `symboltaxonomylegacy.h` and the production `sym_type_e` taxonomy overloads were deleted; test fixture conversion now owns the remaining `SymbolInfo` to semantic metadata adapter needed by tracked tests.
 - I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake no longer builds them, and the Phase I zero target now passes for core source while fixture-only `sym_list` remains under `test_sv`.
 - I5 fourth block is complete: stale core `syminfo` includes and `SymbolInfo` naming were removed, tracked tests were migrated to fixture-local/native semantic helpers, GUI smoke fixtures synchronize native records before snapshot-only checks, and the final Phase I release gate passed.
+- J0 is complete: `legacy_field_policy_guard.ctest` defines the repo-wide fixture cleanup allowlist and guards new `sym_list` / `syminfo` legacy terms outside the current cleanup scope.
+- J1 is complete: semantic-native test record builders cover metadata, owners, type info, local handles, stable keys, and relationship endpoints.
+- J2 is complete: completion and jump tests use semantic-native records instead of hand-authored `sym_list::SymbolInfo` fixture data.
+- J3 is complete: relationship and GUI smoke tests use semantic-native records and no longer include or populate the fixture-only `sym_list` carrier.
+- J4 is complete: `test_sv/syminfo*` files and the reverse fixture adapter in `semantic_fixture_records.h` have been deleted, CMake no longer builds fixture carrier sources, and full Ninja/full CTest/guard checks passed.
+- Phase J progress tracking uses per-subphase accounting: each J subphase starts at 100% remaining and each turn must report the current subphase plus that subphase's remaining percentage. Current subphase: J5 at 100% remaining.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - During Phase I, move the remaining raw collector compatibility out of the collector/store implementation itself so the legacy carrier can be deleted rather than merely guarded.

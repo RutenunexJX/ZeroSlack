@@ -217,13 +217,13 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ### Phase J: Test Fixture Native Cleanup
 
-- Status: planned.
+- Status: J4 complete; J5 current.
 - Goal: remove the remaining fixture-only legacy carrier from tracked tests so legacy names are absent from repo source except historical docs, migration notes, and guard definitions.
-- J0: define the final repo-wide fixture cleanup allowlist in `legacy_field_policy_guard.ctest`; keep docs and guard patterns as explicit exceptions, and fail on new `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `symbolId`, `symbolType`, `moduleScope`, `dataType`, `syminfo`, `getSymbolById`, and `findSymbolId` uses outside the current fixture cleanup scope.
-- J1: introduce semantic-native test builders for symbol records, metadata, owners, type info, local handles, stable keys, and relationship endpoints so tests no longer need to hand-author `sym_list::SymbolInfo`.
-- J2: migrate completion and jump tests from `sym_list` fixture data to native builders and query/report contracts.
-- J3: migrate relationship and GUI smoke tests from `sym_list` fixture data to native builders, preserving current behavior coverage.
-- J4: delete `test_sv/syminfo*` and the reverse fixture adapter once no tracked test includes or builds them.
+- J0 is complete: define the final repo-wide fixture cleanup allowlist in `legacy_field_policy_guard.ctest`; keep docs and guard patterns as explicit exceptions, and fail on new `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `symbolId`, `symbolType`, `moduleScope`, `dataType`, `syminfo`, `getSymbolById`, and `findSymbolId` uses outside the current fixture cleanup scope.
+- J1 is complete: introduce semantic-native test builders for symbol records, metadata, owners, type info, local handles, stable keys, and relationship endpoints so tests no longer need to hand-author `sym_list::SymbolInfo`.
+- J2 is complete: migrate completion and jump tests from `sym_list` fixture data to native builders and query/report contracts.
+- J3 is complete: migrate relationship and GUI smoke tests from `sym_list` fixture data to native builders, preserving current behavior coverage.
+- J4 is complete: delete `test_sv/syminfo*` and the reverse fixture adapter once no tracked test includes or builds them.
 - J5: upgrade the final zero target from core-source-only to repo-source except docs/guard definitions, then pass full Ninja, full CTest, normal guard, final zero-target guard, static scans, and `git diff --check`.
 
 ### Phase J Goal Mode
