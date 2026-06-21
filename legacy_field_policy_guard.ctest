@@ -261,12 +261,14 @@ set(PHASE_I_ZERO_LEGACY_TARGET_PATTERNS
     "(semanticSymbolRecordsForCollectedSymbols|semanticSymbolRecordsForDatabaseExcludingFiles|updateSymbolDatabaseRecordsForFile)[ \t\r\n]*\\("
     "(^|[^A-Za-z0-9_])(legacyTypes|rawCollectorKind|requestedRawCollectorKind)([^A-Za-z0-9_]|$)"
     "symboltaxonomylegacy\\.h"
-    "symboltaxonomy.cpp|legacyRawCollectorKind[ \t\r\n]*\\("
-    "symboltaxonomy.cpp|hasLegacyRawCollectorKind[ \t\r\n]*\\("
+    "(^|[^A-Za-z0-9_])legacyRawCollectorKind[ \t\r\n]*\\("
+    "(^|[^A-Za-z0-9_])hasLegacyRawCollectorKind[ \t\r\n]*\\("
     "(attachSemanticMetadata|withSemanticMetadata)[ \t\r\n]*\\("
-    "symboltaxonomy\\.cpp|semanticMetadataMatchesRequest[ \t\r\n]*\\("
-    "symboltaxonomy\\.cpp|(outlineGroupType|outlineSymbolTypes)[ \t\r\n]*\\("
+    "(^|[^A-Za-z0-9_])semanticMetadataMatchesRequest[ \t\r\n]*\\("
+    "(^|[^A-Za-z0-9_])(outlineGroupType|outlineSymbolTypes)[ \t\r\n]*\\("
 )
+
+set(PHASE_J_ZERO_TARGET_PATTERNS ${PHASE_I_ZERO_LEGACY_TARGET_PATTERNS})
 
 set(PHASE_J_FIXTURE_CLEANUP_ALLOWLIST
     CMakeLists.txt
@@ -1597,24 +1599,43 @@ if(h0_legacy_core_violations)
         "Phase H0 legacy core terms are forbidden outside the explicit transition allowlist:\n  ${h0_legacy_core_text}")
 endif()
 
-if(ZEROSLACK_PHASE_I_ZERO_TARGET)
-    set(phase_i_zero_legacy_violations)
-    foreach(relative_path IN LISTS h0_first_party_sources)
+if(ZEROSLACK_PHASE_I_ZERO_TARGET OR ZEROSLACK_PHASE_J_ZERO_TARGET)
+    file(GLOB phase_j_zero_root_sources
+        RELATIVE "${ZEROSLACK_SOURCE_DIR}"
+        "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
+        "${ZEROSLACK_SOURCE_DIR}/*.cpp"
+        "${ZEROSLACK_SOURCE_DIR}/*.h"
+    )
+    file(GLOB_RECURSE phase_j_zero_test_sources
+        RELATIVE "${ZEROSLACK_SOURCE_DIR}"
+        "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
+        "${ZEROSLACK_SOURCE_DIR}/test_sv/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/test_sv/*.sv"
+        "${ZEROSLACK_SOURCE_DIR}/test_sv/*.svh"
+        "${ZEROSLACK_SOURCE_DIR}/test_sv/*.v"
+    )
+    set(phase_j_zero_repo_sources
+        ${phase_j_zero_root_sources}
+        ${phase_j_zero_test_sources}
+    )
+
+    set(phase_j_zero_legacy_violations)
+    foreach(relative_path IN LISTS phase_j_zero_repo_sources)
         set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
         file(READ "${path}" content)
-        foreach(pattern IN LISTS PHASE_I_ZERO_LEGACY_TARGET_PATTERNS)
+        foreach(pattern IN LISTS PHASE_J_ZERO_TARGET_PATTERNS)
             string(REGEX MATCH "${pattern}" match "${content}")
             if(match)
-                list(APPEND phase_i_zero_legacy_violations
+                list(APPEND phase_j_zero_legacy_violations
                      "${relative_path}: ${pattern}")
             endif()
         endforeach()
     endforeach()
 
-    if(phase_i_zero_legacy_violations)
-        list(JOIN phase_i_zero_legacy_violations "\n  " phase_i_zero_legacy_text)
+    if(phase_j_zero_legacy_violations)
+        list(JOIN phase_j_zero_legacy_violations "\n  " phase_j_zero_legacy_text)
         message(FATAL_ERROR
-            "Phase I zero legacy target is enabled; collector/store legacy carrier terms must be gone from core source:\n  ${phase_i_zero_legacy_text}")
+            "Phase J zero legacy target is enabled; collector/store legacy carrier terms must be gone from repo source outside docs and guard definitions:\n  ${phase_j_zero_legacy_text}")
     endif()
 endif()
 
