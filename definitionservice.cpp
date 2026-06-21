@@ -112,11 +112,16 @@ DefinitionResult DefinitionService::resolveInstancePinDefinition(
             || record.location.startLine != query.cursorLine) {
             continue;
         }
+        if (!query.moduleName.isEmpty()
+            && !record.owner.name.isEmpty()
+            && record.owner.name != query.moduleName) {
+            continue;
+        }
 
         const int endColumn = record.location.endColumn > record.location.startColumn
             ? record.location.endColumn
             : record.location.startColumn + qMax(1, record.name.size());
-        if (oneBasedColumn < record.location.startColumn
+        if (oneBasedColumn < record.location.startColumn - 1
             || oneBasedColumn > endColumn) {
             continue;
         }

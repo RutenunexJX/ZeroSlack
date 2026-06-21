@@ -156,6 +156,7 @@ set(ZEROSLACK_CORE_SOURCES
     searchservice.cpp
     scopebandservice.cpp
     semanticdiffservice.cpp
+    semanticdecorationservice.cpp
     semanticpanelutils.cpp
     semanticpanelrefreshpanels.cpp
     semanticpanelrefreshcoordinator.cpp
@@ -284,6 +285,7 @@ set(ZEROSLACK_CORE_SOURCES
     searchservice.h
     scopebandservice.h
     semanticdiffservice.h
+    semanticdecorationservice.h
     semanticpanelutils.h
     semanticpanelrefreshcoordinator.h
     semanticdockcoordinator.h

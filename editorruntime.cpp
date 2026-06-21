@@ -222,6 +222,7 @@ void MyCodeEditorState::handleLeaveEvent(MyCodeEditor* editor)
 void MyCodeEditorState::refreshScopeAndCurrentLineHighlight(
     MyCodeEditor* editor)
 {
+    selections.highlightCurrentSymbolReferences(editor);
     selections.highlightCurrentLine(editor);
 }
 
@@ -268,9 +269,37 @@ QString MyCodeEditorState::documentFileName() const
     return identity.current();
 }
 
+void MyCodeEditorState::setDiagnosticHighlights(
+    MyCodeEditor* editor,
+    const QList<SemanticDiagnostic>& diagnostics)
+{
+    selections.highlightDiagnostics(editor, diagnostics);
+}
+
+void MyCodeEditorState::setSemanticDecorations(
+    MyCodeEditor* editor,
+    const QList<SemanticDecoration>& decorations)
+{
+    selections.highlightSemanticDecorations(editor, decorations);
+}
+
+void MyCodeEditorState::highlightSearchMatches(
+    MyCodeEditor* editor,
+    const QString& text,
+    bool caseSensitive)
+{
+    selections.highlightSearchMatches(editor, text, caseSensitive);
+}
+
+void MyCodeEditorState::clearSearchMatches(MyCodeEditor* editor)
+{
+    selections.clearSearchMatches(editor);
+}
+
 void MyCodeEditorState::applyLineNavigationTarget(
     MyCodeEditor* editor,
-    const SourceLineNavigationTarget& target) const
+    const SourceLineNavigationTarget& target)
 {
     cursorNavigation.applyLineTarget(editor, target);
+    selections.flashLine(editor);
 }

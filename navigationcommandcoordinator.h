@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 class NavigationManager;
 class MyCodeEditor;
@@ -27,8 +28,19 @@ public:
                               int lineNumber,
                               int columnNumber = -1);
     void navigateToSymbol(const SymbolOutlineSymbolRow& row);
+    void navigateBack();
+    void navigateForward();
 
 private:
+    struct NavigationLocation {
+        QString filePath;
+        int lineNumber = -1;
+        int columnNumber = -1;
+
+        bool isValid() const;
+        bool operator==(const NavigationLocation& other) const;
+    };
+
     struct NavigationTargets {
         TabManager* tabManager = nullptr;
         NavigationManager* navigationManager = nullptr;
@@ -39,6 +51,7 @@ private:
         NavigationManager* navigationManagerObject() const;
         bool activateOrOpenFile(const QString& filePath) const;
         MyCodeEditor* currentEditor() const;
+        NavigationLocation currentLocation() const;
     };
 
     struct LineNavigationResolver {
@@ -49,7 +62,14 @@ private:
 
     NavigationTargets targets;
     LineNavigationResolver lineResolver;
+    QVector<NavigationLocation> backStack;
+    QVector<NavigationLocation> forwardStack;
+    bool replayingHistory = false;
     bool signalsConnected = false;
+
+    void recordCurrentLocationBeforeNavigation(
+        const NavigationLocation& destination);
+    bool applyLocation(const NavigationLocation& location);
 };
 
 #endif // NAVIGATIONCOMMANDCOORDINATOR_H

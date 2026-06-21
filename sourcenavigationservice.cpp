@@ -112,6 +112,13 @@ SourceIdentifierTarget SourceNavigationService::identifierAtColumn(
         hitColumn = lineText.size() - 1;
     }
 
+    if (hitColumn >= 0
+        && lineText.at(hitColumn) == QLatin1Char('.')
+        && hitColumn + 1 < lineText.size()
+        && isIdentifierStart(lineText.at(hitColumn + 1))) {
+        ++hitColumn;
+    }
+
     if (hitColumn < 0 || !isIdentifierPart(lineText.at(hitColumn)))
         return target;
 
@@ -222,7 +229,10 @@ SourceEditorNavigationTarget SourceNavigationService::editorNavigationTargetAtCo
     editorTarget.text = sourceTarget.text;
     editorTarget.startColumn = sourceTarget.startColumn;
     editorTarget.endColumn = sourceTarget.endColumn;
-    editorTarget.cursorColumn = column;
+    editorTarget.cursorColumn =
+        sourceTarget.kind == SourceNavigationTargetKind::Identifier
+            ? sourceTarget.startColumn
+            : column;
     editorTarget.includeTarget =
         sourceTarget.kind == SourceNavigationTargetKind::IncludeDirective;
     editorTarget.identifierTarget =

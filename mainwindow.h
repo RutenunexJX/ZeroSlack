@@ -67,6 +67,10 @@ private:
 
     void setupManagerConnections();
     void setupSemanticRuntime();
+    void refreshActiveEditorDiagnosticHighlights(
+        const QString& changedFileName = QString());
+    void refreshActiveEditorSemanticDecorations(
+        const QString& changedFileName = QString());
 
 };
 

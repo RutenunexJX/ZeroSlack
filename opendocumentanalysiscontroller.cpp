@@ -86,6 +86,15 @@ void OpenDocumentAnalysisController::analyzeOpenDocumentNow(
     if (content.isEmpty())
         return;
 
+    if (isWorkspaceOpen()) {
+        const QString cachedContent =
+            SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
+        if (!cachedContent.isEmpty() && cachedContent == content) {
+            emit documentRefreshRequested(snapshot.fileName);
+            return;
+        }
+    }
+
     if (skipUnchanged
         && !SemanticIndex::getInstance()->contentAffectsSymbols(snapshot.fileName, content)) {
         emit documentRefreshRequested(snapshot.fileName);

@@ -72,9 +72,19 @@ struct MyCodeEditorState
     qreal documentHeightPx(const MyCodeEditor* editor) const;
     void setDocumentFileName(MyCodeEditor* editor, QString fileName);
     QString documentFileName() const;
+    void setDiagnosticHighlights(
+        MyCodeEditor* editor,
+        const QList<SemanticDiagnostic>& diagnostics);
+    void setSemanticDecorations(
+        MyCodeEditor* editor,
+        const QList<SemanticDecoration>& decorations);
+    void highlightSearchMatches(MyCodeEditor* editor,
+                                const QString& text,
+                                bool caseSensitive);
+    void clearSearchMatches(MyCodeEditor* editor);
     void applyLineNavigationTarget(
         MyCodeEditor* editor,
-        const SourceLineNavigationTarget& target) const;
+        const SourceLineNavigationTarget& target);
 };
 
 #endif // EDITORRUNTIME_H

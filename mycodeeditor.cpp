@@ -3,10 +3,96 @@
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
 
+#include <QCheckBox>
+#include <QDialog>
+#include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QKeySequence>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
+#include <QPushButton>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QVBoxLayout>
 
 #include <memory>
+
+namespace {
+void showFindDialog(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    auto* dialog = new QDialog(editor);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QObject::tr("Find"));
+
+    auto* layout = new QVBoxLayout(dialog);
+    auto* row = new QHBoxLayout;
+    auto* label = new QLabel(QObject::tr("Find:"), dialog);
+    auto* input = new QLineEdit(dialog);
+    auto* caseSensitive = new QCheckBox(QObject::tr("Match case"), dialog);
+    auto* previous = new QPushButton(QObject::tr("Previous"), dialog);
+    auto* next = new QPushButton(QObject::tr("Next"), dialog);
+
+    row->addWidget(label);
+    row->addWidget(input, 1);
+    row->addWidget(caseSensitive);
+    row->addWidget(previous);
+    row->addWidget(next);
+    layout->addLayout(row);
+
+    const QString selectedText = editor->textCursor().selectedText();
+    if (!selectedText.isEmpty())
+        input->setText(selectedText);
+
+    auto findText = [editor, input, caseSensitive](bool backwards) {
+        const QString needle = input->text();
+        if (needle.isEmpty())
+            return;
+
+        QTextDocument::FindFlags flags;
+        if (backwards)
+            flags |= QTextDocument::FindBackward;
+        if (caseSensitive->isChecked())
+            flags |= QTextDocument::FindCaseSensitively;
+
+        if (editor->find(needle, flags))
+            return;
+
+        QTextCursor cursor = editor->textCursor();
+        cursor.movePosition(backwards ? QTextCursor::End : QTextCursor::Start);
+        editor->setTextCursor(cursor);
+        editor->find(needle, flags);
+    };
+
+    QObject::connect(next, &QPushButton::clicked, dialog, [findText]() {
+        findText(false);
+    });
+    QObject::connect(previous, &QPushButton::clicked, dialog, [findText]() {
+        findText(true);
+    });
+    QObject::connect(input, &QLineEdit::returnPressed, dialog, [findText]() {
+        findText(false);
+    });
+    QObject::connect(input, &QLineEdit::textChanged, dialog, [editor, input, caseSensitive]() {
+        editor->highlightSearchMatches(input->text(), caseSensitive->isChecked());
+    });
+    QObject::connect(caseSensitive, &QCheckBox::toggled, dialog, [editor, input](bool checked) {
+        editor->highlightSearchMatches(input->text(), checked);
+    });
+    QObject::connect(dialog, &QDialog::finished, dialog, [editor]() {
+        editor->clearSearchMatches();
+    });
+
+    dialog->resize(520, dialog->sizeHint().height());
+    dialog->show();
+    input->setFocus();
+    input->selectAll();
+    editor->highlightSearchMatches(input->text(), caseSensitive->isChecked());
+}
+}
 
 MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
@@ -81,8 +167,38 @@ QString MyCodeEditor::currentModuleName() const
     return state->currentModuleName(this);
 }
 
+void MyCodeEditor::setDiagnosticHighlights(
+    const QList<SemanticDiagnostic>& diagnostics)
+{
+    state->setDiagnosticHighlights(this, diagnostics);
+}
+
+void MyCodeEditor::setSemanticDecorations(
+    const QList<SemanticDecoration>& decorations)
+{
+    state->setSemanticDecorations(this, decorations);
+}
+
+void MyCodeEditor::highlightSearchMatches(
+    const QString& text,
+    bool caseSensitive)
+{
+    state->highlightSearchMatches(this, text, caseSensitive);
+}
+
+void MyCodeEditor::clearSearchMatches()
+{
+    state->clearSearchMatches(this);
+}
+
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
+    if (event->matches(QKeySequence::Find)) {
+        showFindDialog(this);
+        event->accept();
+        return;
+    }
+
     if (state->handleKeyPress(this, event))
         return;
 
@@ -104,6 +220,17 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::BackButton) {
+        emit navigationBackRequested();
+        event->accept();
+        return;
+    }
+    if (event->button() == Qt::ForwardButton) {
+        emit navigationForwardRequested();
+        event->accept();
+        return;
+    }
+
     if (state->handleMousePress(this, event))
         return;
 

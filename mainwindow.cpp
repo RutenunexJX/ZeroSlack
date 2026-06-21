@@ -15,11 +15,15 @@
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
+#include "diagnosticservice.h"
+#include "semanticdecorationservice.h"
 #include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "version.h"
 #include <QCloseEvent>
+#include <QDir>
+#include <QFileInfo>
 #include <QLabel>
 #include <QStatusBar>
 
@@ -79,6 +83,8 @@ void MainWindow::setupManagerConnections()
         [this](const QString& fileName) {
             if (semanticDocks && semanticDocks->refreshCoordinator())
                 semanticDocks->refreshCoordinator()->updateProblemsPanel(fileName);
+            refreshActiveEditorDiagnosticHighlights(fileName);
+            refreshActiveEditorSemanticDecorations(fileName);
         });
     analysisCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
@@ -86,7 +92,96 @@ void MainWindow::setupManagerConnections()
                 statusBar()->showMessage(message, timeoutMs);
         });
     analysisCoordinator->connectSignals();
+    connect(tabManager.get(),
+            &TabManager::activeDocumentChanged,
+            this,
+            [this](const DocumentSnapshot&) {
+                refreshActiveEditorDiagnosticHighlights();
+                refreshActiveEditorSemanticDecorations();
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::fileSymbolAnalysisFinished,
+            this,
+            [this](const QString& fileName, int) {
+                refreshActiveEditorSemanticDecorations(fileName);
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+            this,
+            [this](const ProjectSnapshot&, int, int) {
+                refreshActiveEditorSemanticDecorations();
+            });
 
+}
+
+void MainWindow::refreshActiveEditorDiagnosticHighlights(
+    const QString& changedFileName)
+{
+    if (!tabManager)
+        return;
+
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    if (!editor)
+        return;
+
+    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    if (document.fileName.isEmpty()) {
+        editor->setDiagnosticHighlights({});
+        return;
+    }
+
+    if (!changedFileName.isEmpty()) {
+        const QString changed =
+            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(changedFileName).absoluteFilePath()));
+        const QString current =
+            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(document.fileName).absoluteFilePath()));
+        if (changed != current)
+            return;
+    }
+
+    DiagnosticQuery query;
+    query.fileName = document.fileName;
+    query.includeInfo = false;
+    const QList<DiagnosticResult> results =
+        DiagnosticService::getInstance()->findDiagnostics(query);
+    QList<SemanticDiagnostic> diagnostics;
+    diagnostics.reserve(results.size());
+    for (const DiagnosticResult& result : results)
+        diagnostics.append(result.diagnostic);
+    editor->setDiagnosticHighlights(diagnostics);
+}
+
+void MainWindow::refreshActiveEditorSemanticDecorations(
+    const QString& changedFileName)
+{
+    if (!tabManager)
+        return;
+
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    if (!editor)
+        return;
+
+    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    if (document.fileName.isEmpty()) {
+        editor->setSemanticDecorations({});
+        return;
+    }
+
+    if (!changedFileName.isEmpty()) {
+        const QString changed =
+            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(changedFileName).absoluteFilePath()));
+        const QString current =
+            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(document.fileName).absoluteFilePath()));
+        if (changed != current)
+            return;
+    }
+
+    SemanticDecorationQuery query;
+    query.fileName = document.fileName;
+    query.documentText = editor->toPlainText();
+    const SemanticDecorationReport report =
+        SemanticDecorationService::getInstance()->decorationsForDocument(query);
+    editor->setSemanticDecorations(report.decorations);
 }
 
 

@@ -1,6 +1,10 @@
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
 
+#include "semanticindex.h"
+#include "semanticdecorationservice.h"
+
+#include <QList>
 #include <QPlainTextEdit>
 #include <memory>
 
@@ -42,6 +46,12 @@ public:
     QString documentFileName() const;
     QString currentModuleName() const;
     void executeAlternateModeCommand(const QString& command);
+    void setDiagnosticHighlights(
+        const QList<SemanticDiagnostic>& diagnostics);
+    void setSemanticDecorations(
+        const QList<SemanticDecoration>& decorations);
+    void highlightSearchMatches(const QString& text, bool caseSensitive);
+    void clearSearchMatches();
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
@@ -73,6 +83,8 @@ signals:
                                      const EditorSemanticContext& context);
     void sourceSymbolContextMenuRequested(QMenu* menu,
                                           const EditorSemanticContext& context);
+    void navigationBackRequested();
+    void navigationForwardRequested();
 };
 
 #endif // MYCODEEDITOR_H

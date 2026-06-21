@@ -56,6 +56,8 @@ private:
         void navigateToFileAndLine(const QString& fileName,
                                    int line,
                                    int column) const;
+        void navigateBack() const;
+        void navigateForward() const;
         void showReferencesForSymbol(const QString& symbolName,
                                      const QString& fileName,
                                      const QString& moduleName) const;

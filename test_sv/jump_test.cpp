@@ -11,6 +11,7 @@
 #include <QCompleter>
 #include <QTimer>
 #include <QMouseEvent>
+#include <QTextEdit>
 #include <cstdio>
 #include <memory>
 #include "slangmanager.h"
@@ -20,6 +21,7 @@
 #include "editorsemanticcontextservice.h"
 #include "projectmodel.h"
 #include "sourcenavigationservice.h"
+#include "semanticdecorationservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
@@ -168,6 +170,31 @@ int main(int argc, char** argv) {
                formalPortOffset >= 0,
                true);
     if (formalPortOffset >= 0) {
+        const int formalPortDotPos = formalPortOffset;
+        const EditorSemanticContext formalPortDotContext =
+            ed.editorSemanticContextForPosition(formalPortDotPos);
+        const SourceEditorNavigationTarget formalPortSourceTarget =
+            EditorSemanticContextService::getInstance()
+                ->definitionSourceNavigationTarget(formalPortDotContext);
+        expectBool("Editor treats .formal dot as formal port target",
+                   formalPortSourceTarget.matched
+                       && formalPortSourceTarget.text == QStringLiteral("a")
+                       && formalPortSourceTarget.jumpable
+                       && formalPortSourceTarget.cursorColumn
+                           == formalPortSourceTarget.startColumn,
+                   true);
+        const DefinitionNavigationTarget formalPortDotTarget =
+            EditorSemanticContextService::getInstance()->resolveDefinitionTarget(
+                QStringLiteral("a"),
+                formalPortDotContext);
+        expectBool("Editor jumps instance formal port from dot",
+                   formalPortDotTarget.found
+                       && formalPortDotTarget.symbolRecord.owner.name
+                           == QStringLiteral("adder")
+                       && formalPortDotTarget.symbolRecord.collectorKind
+                           == SymbolTaxonomy::CollectorKind::PortInput,
+                   true);
+
         const int formalPortNamePos = formalPortOffset + 1;
         const EditorSemanticContext formalPortContext =
             ed.editorSemanticContextForPosition(formalPortNamePos);
@@ -199,6 +226,147 @@ int main(int argc, char** argv) {
                            == QStringLiteral("top"),
                    true);
     }
+
+    const QString decorationFile =
+        QFileInfo(path).dir().filePath(QStringLiteral("semantic_decoration_fixture.sv"));
+    const QString decorationContent =
+        QStringLiteral("module top;\n"
+                       "  localparam int WIDTH = 8;\n"
+                       "  logic clk;\n"
+                       "  child u_child (\n"
+                       "    .clk(clk)\n"
+                       "  );\n"
+                       "endmodule\n"
+                       "module child(input logic clk); endmodule\n");
+    QList<SemanticSymbolRecord> decorationRecords;
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(decorationFile)
+            .withLine(1, 8)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("WIDTH"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(decorationFile)
+            .withLine(2, 18)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(decorationFile)
+            .withLine(3, 9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("u_child"),
+                                     SymbolTaxonomy::DeclarationKind::Instance)
+            .withFile(decorationFile)
+            .withLine(4, 9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Inst)
+            .withType(QStringLiteral("child"),
+                      QStringLiteral("child"),
+                      SymbolTaxonomy::DeclarationKind::Module)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(decorationFile)
+            .withRange(5, 6, 5, 9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::InstPin)
+            .withType(QStringLiteral("child"),
+                      QStringLiteral("child"),
+                      SymbolTaxonomy::DeclarationKind::Module)
+            .inModule(QStringLiteral("top"))
+            .record());
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        decorationFile,
+        decorationRecords,
+        decorationContent);
+
+    SemanticDecorationQuery decorationQuery;
+    decorationQuery.fileName = decorationFile;
+    decorationQuery.documentText = decorationContent;
+    const SemanticDecorationReport decorationReport =
+        SemanticDecorationService::getInstance()
+            ->decorationsForDocument(decorationQuery);
+    auto hasDecoration = [&decorationReport](
+        SemanticDecorationRole role,
+        const QString& text) {
+        for (const SemanticDecoration& decoration : decorationReport.decorations) {
+            if (decoration.role == role && decoration.text == text)
+                return true;
+        }
+        return false;
+    };
+    expectBool("SemanticDecoration maps module/interface role",
+               hasDecoration(SemanticDecorationRole::ModuleInterface,
+                             QStringLiteral("top")),
+               true);
+    expectBool("SemanticDecoration maps parameter role",
+               hasDecoration(SemanticDecorationRole::Parameter,
+                             QStringLiteral("WIDTH")),
+               true);
+    expectBool("SemanticDecoration maps instance role",
+               hasDecoration(SemanticDecorationRole::InstanceName,
+                             QStringLiteral("u_child")),
+               true);
+    expectBool("SemanticDecoration maps formal port separately",
+               hasDecoration(SemanticDecorationRole::FormalPort,
+                             QStringLiteral("clk")),
+               true);
+    expectBool("SemanticDecoration maps actual signal separately",
+               hasDecoration(SemanticDecorationRole::ActualSignal,
+                             QStringLiteral("clk")),
+               true);
+
+    MyCodeEditor diagnosticEditor;
+    diagnosticEditor.setPlainText(QStringLiteral("module bad;\n  broken\nendmodule\n"));
+    SemanticDiagnostic diagnostic;
+    diagnostic.fileName = decorationFile;
+    diagnostic.line = 2;
+    diagnostic.column = 3;
+    diagnostic.severity = SemanticDiagnostic::Error;
+    diagnostic.message = QStringLiteral("expected ';'");
+    diagnosticEditor.setDiagnosticHighlights({diagnostic});
+    bool diagnosticLineBackground = false;
+    bool diagnosticWaveUnderline = false;
+    for (const QTextEdit::ExtraSelection& selection :
+         diagnosticEditor.extraSelections()) {
+        diagnosticLineBackground = diagnosticLineBackground
+            || selection.format.hasProperty(QTextFormat::FullWidthSelection);
+        diagnosticWaveUnderline = diagnosticWaveUnderline
+            || selection.format.underlineStyle()
+                == QTextCharFormat::WaveUnderline;
+    }
+    expectBool("Diagnostic decoration has line background",
+               diagnosticLineBackground,
+               true);
+    expectBool("Diagnostic decoration has wave underline",
+               diagnosticWaveUnderline,
+               true);
+    MyCodeEditor semanticStyleEditor;
+    semanticStyleEditor.setPlainText(QStringLiteral("    .clk(clk)\n"));
+    SemanticDecoration formalPortDecoration;
+    formalPortDecoration.role = SemanticDecorationRole::FormalPort;
+    formalPortDecoration.text = QStringLiteral("clk");
+    formalPortDecoration.startPosition = 5;
+    formalPortDecoration.length = 3;
+    semanticStyleEditor.setSemanticDecorations({formalPortDecoration});
+    bool semanticForegroundApplied = false;
+    for (const QTextEdit::ExtraSelection& selection :
+         semanticStyleEditor.extraSelections()) {
+        semanticForegroundApplied = semanticForegroundApplied
+            || selection.format.foreground().style() != Qt::NoBrush;
+    }
+    expectBool("Semantic decoration applies foreground style",
+               semanticForegroundApplied,
+               true);
 
     const QString syntheticFile =
         QFileInfo(path).dir().filePath(QStringLiteral("definition_service_member_context.sv"));
@@ -365,32 +533,71 @@ int main(int argc, char** argv) {
                        == SymbolTaxonomy::DeclarationKind::Modport,
                true);
 
-    const QString rtlTopFile = QStringLiteral("rtl_top.sv");
-    const QString svhInterfaceFile = QStringLiteral("SVH_interface.sv");
-    const SemanticSymbolRecord realInterfaceRecord =
-        SemanticFixtureRecordBuilder(QStringLiteral("lr_genr_if"),
-                                     SymbolTaxonomy::DeclarationKind::Interface)
-            .withFile(svhInterfaceFile)
-            .withLocalHandle(6260)
-            .withLine(43, 1)
-            .record();
-    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
-        rtlTopFile,
-        {realInterfaceRecord},
-        QStringLiteral("module rtl_top; endmodule\n"));
-
-    DefinitionNavigationQuery crossFileInterfaceQuery;
-    crossFileInterfaceQuery.symbolName = QStringLiteral("lr_genr_if");
-    crossFileInterfaceQuery.fileName = rtlTopFile;
-    crossFileInterfaceQuery.moduleName = QStringLiteral("rtl_top");
-    const DefinitionNavigationTarget crossFileInterfaceTarget =
-        definitionNavigationService.resolveTarget(crossFileInterfaceQuery);
-    expectBool("DefinitionNavigation keeps include interface file",
-               crossFileInterfaceTarget.found
-                   && !crossFileInterfaceTarget.localFile
-                   && crossFileInterfaceTarget.fileName == svhInterfaceFile
-                   && crossFileInterfaceTarget.line == 43,
+    const QDir testSvDir = QFileInfo(path).dir();
+    const QString realNewRoot = testSvDir.filePath(QStringLiteral("new"));
+    const QString realRtlTopFile =
+        QDir(realNewRoot).filePath(
+            QStringLiteral("elec_phy_import/top/rtl_top.sv"));
+    const QString realSvhFile =
+        QDir(realNewRoot).filePath(QStringLiteral("_svh.svh"));
+    const QString realInterfaceFile =
+        QDir(realNewRoot).filePath(QStringLiteral("SVH_interface.sv"));
+    const QStringList realFixtureFiles = {
+        realSvhFile,
+        realInterfaceFile,
+        realRtlTopFile,
+    };
+    QHash<QString, QString> realFixtureContentByFile;
+    bool realFixtureAvailable = true;
+    for (const QString& realFile : realFixtureFiles) {
+        QFile realFixture(realFile);
+        if (!realFixture.open(QIODevice::ReadOnly | QFile::Text)) {
+            realFixtureAvailable = false;
+            break;
+        }
+        realFixtureContentByFile.insert(
+            QFileInfo(realFile).absoluteFilePath(),
+            QTextStream(&realFixture).readAll());
+    }
+    expectBool("test_sv/new interface fixture files available",
+               realFixtureAvailable,
                true);
+    if (realFixtureAvailable) {
+        const QList<SemanticSymbolRecord> realNewRecords =
+            mgr.extractWorkspaceSymbolRecords(
+                realFixtureFiles,
+                {realNewRoot});
+        for (const QString& realFile : realFixtureFiles) {
+            const QString absoluteFile = QFileInfo(realFile).absoluteFilePath();
+            QList<SemanticSymbolRecord> fileRecords;
+            for (const SemanticSymbolRecord& record : realNewRecords) {
+                if (QFileInfo(record.location.fileName).absoluteFilePath()
+                    == absoluteFile) {
+                    fileRecords.append(record);
+                }
+            }
+            SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+                absoluteFile,
+                fileRecords,
+                realFixtureContentByFile.value(absoluteFile));
+        }
+
+        DefinitionNavigationQuery crossFileInterfaceQuery;
+        crossFileInterfaceQuery.symbolName = QStringLiteral("lr_genr_if");
+        crossFileInterfaceQuery.fileName =
+            QFileInfo(realRtlTopFile).absoluteFilePath();
+        crossFileInterfaceQuery.moduleName = QStringLiteral("rtl_top");
+        const DefinitionNavigationTarget crossFileInterfaceTarget =
+            definitionNavigationService.resolveTarget(crossFileInterfaceQuery);
+        expectBool("DefinitionNavigation keeps test_sv/new interface file",
+                   crossFileInterfaceTarget.found
+                       && !crossFileInterfaceTarget.localFile
+                       && QFileInfo(crossFileInterfaceTarget.fileName)
+                               .absoluteFilePath()
+                           == QFileInfo(realInterfaceFile).absoluteFilePath()
+                       && crossFileInterfaceTarget.line == 43,
+                   true);
+    }
 
     memberNavigationContext.column = 500;
     const DefinitionNavigationQuery clampedNavigationQuery =
@@ -996,6 +1203,17 @@ int main(int argc, char** argv) {
                                         identifierLine.indexOf(QLatin1Char('+')))
                    .matched,
                false);
+    const QString namedPortLine = QStringLiteral("    .data (data)");
+    const SourceIdentifierTarget namedPortDotTarget =
+        sourceNavigationService->identifierAtColumn(
+            namedPortLine,
+            namedPortLine.indexOf(QLatin1Char('.')));
+    expectBool("SourceNavigation maps .formal dot to identifier",
+               namedPortDotTarget.matched
+                   && namedPortDotTarget.identifier == QStringLiteral("data")
+                   && namedPortDotTarget.startColumn
+                       == namedPortLine.indexOf(QStringLiteral("data")),
+               true);
     const SourceSymbolActionContext symbolActionContext =
         sourceNavigationService->symbolActionContextAtColumn(
             identifierLine,

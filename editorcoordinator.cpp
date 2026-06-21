@@ -107,6 +107,18 @@ void EditorCoordinator::WorkflowDependencies::navigateToFileAndLine(
         navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
 }
 
+void EditorCoordinator::WorkflowDependencies::navigateBack() const
+{
+    if (navigationCommandCoordinator)
+        navigationCommandCoordinator->navigateBack();
+}
+
+void EditorCoordinator::WorkflowDependencies::navigateForward() const
+{
+    if (navigationCommandCoordinator)
+        navigationCommandCoordinator->navigateForward();
+}
+
 void EditorCoordinator::WorkflowDependencies::showReferencesForSymbol(
     const QString& symbolName,
     const QString& fileName,
@@ -205,6 +217,14 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     connect(editor, &MyCodeEditor::sourceSymbolContextMenuRequested,
             this, [this](QMenu* menu, const EditorSemanticContext& context) {
                 handleSourceSymbolContextMenuRequested(menu, context);
+            });
+    connect(editor, &MyCodeEditor::navigationBackRequested,
+            this, [this]() {
+                dependencies.navigateBack();
+            });
+    connect(editor, &MyCodeEditor::navigationForwardRequested,
+            this, [this]() {
+                dependencies.navigateForward();
             });
 }
 

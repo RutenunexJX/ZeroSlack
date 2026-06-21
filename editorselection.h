@@ -1,6 +1,10 @@
 #ifndef EDITORSELECTION_H
 #define EDITORSELECTION_H
 
+#include "semanticindex.h"
+#include "semanticdecorationservice.h"
+
+#include <QList>
 #include <functional>
 
 class MyCodeEditor;
@@ -18,6 +22,18 @@ public:
         MyCodeEditor* editor,
         const EditorSourceNavigationTarget& target);
     void clearHoveredSymbol(QPlainTextEdit* editor);
+    void highlightDiagnostics(
+        MyCodeEditor* editor,
+        const QList<SemanticDiagnostic>& diagnostics);
+    void highlightSemanticDecorations(
+        MyCodeEditor* editor,
+        const QList<SemanticDecoration>& decorations);
+    void highlightCurrentSymbolReferences(MyCodeEditor* editor);
+    void highlightSearchMatches(MyCodeEditor* editor,
+                                const QString& text,
+                                bool caseSensitive);
+    void clearSearchMatches(QPlainTextEdit* editor);
+    void flashLine(MyCodeEditor* editor);
 
 private:
     void removeByProperty(QPlainTextEdit* editor, int property, int value);

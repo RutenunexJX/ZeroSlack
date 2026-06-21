@@ -141,8 +141,10 @@ int main(int argc, char** argv)
                      });
 
     expectBool("open large file", window.tabManager->openFileInTab(largeFile), true);
-    expectBool("initial large-file analysis completes",
-               waitUntil([&]() { return largeFileAnalysisCount > 0; }, 10000), true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectInt("opening workspace-cached file queues no symbol analysis",
+              largeFileAnalysisCount,
+              0);
 
     MyCodeEditor* editor = window.tabManager->getCurrentEditor();
     expectBool("large editor exists", editor != nullptr, true);

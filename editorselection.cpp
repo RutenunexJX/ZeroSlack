@@ -5,6 +5,9 @@
 
 #include <algorithm>
 #include <QColor>
+#include <QFont>
+#include <QMap>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QTextBlock>
 #include <QTextCharFormat>
@@ -13,6 +16,7 @@
 #include <QTextEdit>
 #include <QTextFormat>
 #include <QTimer>
+#include <QPointer>
 
 namespace {
 constexpr int kPrimarySelectionProperty = QTextFormat::UserProperty;
@@ -22,6 +26,17 @@ constexpr int kCommandSelectionProperty = kPrimarySelectionProperty;
 constexpr int kCommandSelectionMarker = 999;
 constexpr int kHoveredSymbolSelectionProperty = QTextFormat::UserProperty + 1;
 constexpr int kHoveredSymbolSelectionMarker = 1001;
+constexpr int kDiagnosticSelectionProperty = QTextFormat::UserProperty + 2;
+constexpr int kDiagnosticSelectionMarker = 1002;
+constexpr int kSemanticSelectionProperty = QTextFormat::UserProperty + 3;
+constexpr int kSemanticSelectionMarker = 1003;
+constexpr int kCurrentSymbolSelectionProperty = QTextFormat::UserProperty + 4;
+constexpr int kCurrentSymbolSelectionMarker = 1004;
+constexpr int kSearchSelectionProperty = QTextFormat::UserProperty + 5;
+constexpr int kSearchSelectionMarker = 1005;
+constexpr int kFlashSelectionProperty = QTextFormat::UserProperty + 6;
+constexpr int kFlashSelectionMarker = 1006;
+constexpr int kMaxPassiveMatchHighlights = 500;
 
 void removeSelectionsByProperty(
     QList<QTextEdit::ExtraSelection>& selections,
@@ -59,6 +74,55 @@ void clampSelectionsToDocument(
         cursor.setPosition(anchor);
         cursor.setPosition(pos, QTextCursor::KeepAnchor);
     }
+}
+
+bool editorUsesDarkPalette(const QPlainTextEdit* editor)
+{
+    const QColor base =
+        editor->palette().color(QPalette::Base);
+    return base.lightness() < 128;
+}
+
+QTextCharFormat semanticFormatForRole(
+    SemanticDecorationRole role,
+    bool dark)
+{
+    QTextCharFormat format;
+    auto color = [dark](const char* darkColor, const char* lightColor) {
+        return QColor(QString::fromLatin1(dark ? darkColor : lightColor));
+    };
+
+    switch (role) {
+    case SemanticDecorationRole::ModuleInterface:
+        format.setForeground(color("#61AFEF", "#005CC5"));
+        format.setFontWeight(QFont::Bold);
+        break;
+    case SemanticDecorationRole::PackageClassType:
+        format.setForeground(color("#56B6C2", "#007C89"));
+        format.setFontWeight(QFont::Bold);
+        break;
+    case SemanticDecorationRole::InstanceName:
+        format.setForeground(color("#E5C07B", "#8A5A00"));
+        break;
+    case SemanticDecorationRole::FormalPort:
+        format.setForeground(color("#98C379", "#22863A"));
+        break;
+    case SemanticDecorationRole::ActualSignal:
+        format.setForeground(color("#D19A66", "#B05A00"));
+        break;
+    case SemanticDecorationRole::Parameter:
+        format.setForeground(color("#E06C75", "#D73A49"));
+        break;
+    case SemanticDecorationRole::Macro:
+        format.setForeground(color("#D7BA7D", "#735C0F"));
+        break;
+    case SemanticDecorationRole::SystemTask:
+        format.setForeground(color("#56B6C2", "#007C89"));
+        break;
+    }
+
+    format.setProperty(kSemanticSelectionProperty, kSemanticSelectionMarker);
+    return format;
 }
 }
 
@@ -178,6 +242,225 @@ void EditorSelection::clearHoveredSymbol(QPlainTextEdit* editor)
         editor,
         kHoveredSymbolSelectionProperty,
         kHoveredSymbolSelectionMarker);
+}
+
+void EditorSelection::highlightDiagnostics(
+    MyCodeEditor* editor,
+    const QList<SemanticDiagnostic>& diagnostics)
+{
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kDiagnosticSelectionProperty,
+            kDiagnosticSelectionMarker);
+
+    QMap<int, SemanticDiagnostic::Severity> severityByLine;
+    for (const SemanticDiagnostic& diagnostic : diagnostics) {
+        if (diagnostic.line <= 0)
+            continue;
+        if (diagnostic.severity != SemanticDiagnostic::Error
+            && diagnostic.severity != SemanticDiagnostic::Warning) {
+            continue;
+        }
+
+        const auto existing = severityByLine.constFind(diagnostic.line);
+        if (existing == severityByLine.constEnd()
+            || diagnostic.severity == SemanticDiagnostic::Error) {
+            severityByLine.insert(diagnostic.line, diagnostic.severity);
+        }
+    }
+
+    for (auto it = severityByLine.constBegin(); it != severityByLine.constEnd(); ++it) {
+        const QTextBlock block =
+            editor->document()->findBlockByNumber(it.key() - 1);
+        if (!block.isValid())
+            continue;
+
+        QTextEdit::ExtraSelection diagnosticSelection;
+        diagnosticSelection.cursor = QTextCursor(block);
+        diagnosticSelection.format.setProperty(
+            QTextFormat::FullWidthSelection,
+            true);
+        diagnosticSelection.format.setProperty(
+            kDiagnosticSelectionProperty,
+            kDiagnosticSelectionMarker);
+        diagnosticSelection.format.setBackground(
+            it.value() == SemanticDiagnostic::Error
+                ? QColor(180, 40, 40, 55)
+                : QColor(200, 160, 35, 55));
+        selections.append(diagnosticSelection);
+    }
+
+    for (const SemanticDiagnostic& diagnostic : diagnostics) {
+        if (diagnostic.line <= 0)
+            continue;
+        if (diagnostic.severity != SemanticDiagnostic::Error
+            && diagnostic.severity != SemanticDiagnostic::Warning) {
+            continue;
+        }
+
+        const QTextBlock block =
+            editor->document()->findBlockByNumber(diagnostic.line - 1);
+        if (!block.isValid())
+            continue;
+
+        const int column = qBound(1, diagnostic.column, block.length());
+        QTextCursor underlineCursor(block);
+        underlineCursor.setPosition(block.position() + column - 1);
+        underlineCursor.setPosition(
+            qMin(block.position() + block.length() - 1,
+                 block.position() + column),
+            QTextCursor::KeepAnchor);
+
+        QTextEdit::ExtraSelection underlineSelection;
+        underlineSelection.cursor = underlineCursor;
+        underlineSelection.format.setUnderlineStyle(
+            QTextCharFormat::WaveUnderline);
+        underlineSelection.format.setUnderlineColor(
+            diagnostic.severity == SemanticDiagnostic::Error
+                ? QColor("#EF4444")
+                : QColor("#FBBF24"));
+        underlineSelection.format.setProperty(
+            kDiagnosticSelectionProperty,
+            kDiagnosticSelectionMarker);
+        selections.append(underlineSelection);
+    }
+
+    clampSelectionsToDocument(editor->document(), selections);
+    editor->setExtraSelections(selections);
+}
+
+void EditorSelection::highlightSemanticDecorations(
+    MyCodeEditor* editor,
+    const QList<SemanticDecoration>& decorations)
+{
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kSemanticSelectionProperty,
+            kSemanticSelectionMarker);
+
+    const bool dark = editorUsesDarkPalette(editor);
+    for (const SemanticDecoration& decoration : decorations) {
+        if (!decoration.isValid())
+            continue;
+
+        QTextEdit::ExtraSelection selection;
+        selection.cursor = editor->textCursor();
+        selection.cursor.setPosition(decoration.startPosition);
+        selection.cursor.setPosition(
+            decoration.startPosition + decoration.length,
+            QTextCursor::KeepAnchor);
+        selection.format = semanticFormatForRole(decoration.role, dark);
+        selections.append(selection);
+    }
+
+    clampSelectionsToDocument(editor->document(), selections);
+    editor->setExtraSelections(selections);
+}
+
+void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
+{
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kCurrentSymbolSelectionProperty,
+            kCurrentSymbolSelectionMarker);
+
+    QTextCursor wordCursor = editor->textCursor();
+    wordCursor.select(QTextCursor::WordUnderCursor);
+    const QString word = wordCursor.selectedText().trimmed();
+    if (word.size() < 2
+        || (!word.at(0).isLetter() && word.at(0) != QLatin1Char('_'))) {
+        editor->setExtraSelections(selections);
+        return;
+    }
+
+    QTextCursor cursor(editor->document());
+    int matchCount = 0;
+    while (!cursor.isNull() && matchCount < kMaxPassiveMatchHighlights) {
+        cursor = editor->document()->find(word, cursor, QTextDocument::FindWholeWords);
+        if (cursor.isNull())
+            break;
+
+        QTextEdit::ExtraSelection match;
+        match.cursor = cursor;
+        match.format.setBackground(QColor(59, 130, 246, 28));
+        match.format.setProperty(
+            kCurrentSymbolSelectionProperty,
+            kCurrentSymbolSelectionMarker);
+        selections.append(match);
+        ++matchCount;
+    }
+
+    editor->setExtraSelections(selections);
+}
+
+void EditorSelection::highlightSearchMatches(
+    MyCodeEditor* editor,
+    const QString& text,
+    bool caseSensitive)
+{
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kSearchSelectionProperty,
+            kSearchSelectionMarker);
+    if (text.isEmpty()) {
+        editor->setExtraSelections(selections);
+        return;
+    }
+
+    QTextDocument::FindFlags flags;
+    if (caseSensitive)
+        flags |= QTextDocument::FindCaseSensitively;
+
+    QTextCursor cursor(editor->document());
+    int matchCount = 0;
+    while (!cursor.isNull() && matchCount < kMaxPassiveMatchHighlights) {
+        cursor = editor->document()->find(text, cursor, flags);
+        if (cursor.isNull())
+            break;
+
+        QTextEdit::ExtraSelection match;
+        match.cursor = cursor;
+        match.format.setBackground(QColor(245, 158, 11, 45));
+        match.format.setProperty(
+            kSearchSelectionProperty,
+            kSearchSelectionMarker);
+        selections.append(match);
+        ++matchCount;
+    }
+
+    editor->setExtraSelections(selections);
+}
+
+void EditorSelection::clearSearchMatches(QPlainTextEdit* editor)
+{
+    removeByProperty(editor, kSearchSelectionProperty, kSearchSelectionMarker);
+}
+
+void EditorSelection::flashLine(MyCodeEditor* editor)
+{
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kFlashSelectionProperty,
+            kFlashSelectionMarker);
+
+    QTextEdit::ExtraSelection flash;
+    flash.cursor = editor->textCursor();
+    flash.format.setBackground(QColor(97, 175, 239, 70));
+    flash.format.setProperty(QTextFormat::FullWidthSelection, true);
+    flash.format.setProperty(kFlashSelectionProperty, kFlashSelectionMarker);
+    selections.append(flash);
+    editor->setExtraSelections(selections);
+
+    const QPointer<QPlainTextEdit> guardedEditor(editor);
+    QTimer::singleShot(650, editor, [this, guardedEditor]() {
+        if (guardedEditor)
+            removeByProperty(guardedEditor, kFlashSelectionProperty, kFlashSelectionMarker);
+    });
 }
 
 void EditorHighlightRefresh::attachToEditor(

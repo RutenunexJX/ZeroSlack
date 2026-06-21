@@ -10,17 +10,18 @@ MyHighlighter::MyHighlighter(QTextDocument *parent, const TSDocument *tsdoc)
 
 void MyHighlighter::initFormats()
 {
-    keywordFormat.setForeground(Qt::darkMagenta);
+    keywordFormat.setForeground(QColor("#C678DD"));
     keywordFormat.setFontWeight(QFont::Bold);
 
-    commentFormat.setForeground(Qt::darkGreen);
+    commentFormat.setForeground(QColor("#7F848E"));
+    commentFormat.setFontItalic(true);
 
-    numberFormat.setForeground(QColor(250, 80, 50));
+    numberFormat.setForeground(QColor("#D19A66"));
 
-    stringFormat.setForeground(QColor(0, 180, 180));
+    stringFormat.setForeground(QColor("#98C379"));
 
     errorFormat.setUnderlineStyle(QTextCharFormat::WaveUnderline);
-    errorFormat.setUnderlineColor(Qt::red);
+    errorFormat.setUnderlineColor(QColor("#EF4444"));
 }
 
 const QTextCharFormat* MyHighlighter::formatFor(HlCategory category) const

@@ -5,6 +5,8 @@
 #include "sourcenavigationservice.h"
 #include "tabmanager.h"
 
+#include <QTextCursor>
+
 NavigationCommandCoordinator::NavigationCommandCoordinator(
     TabManager* tabManager,
     NavigationManager* navigationManager,
@@ -12,6 +14,19 @@ NavigationCommandCoordinator::NavigationCommandCoordinator(
     : QObject(parent)
 {
     targets.set(tabManager, navigationManager);
+}
+
+bool NavigationCommandCoordinator::NavigationLocation::isValid() const
+{
+    return !filePath.isEmpty() && lineNumber > 0;
+}
+
+bool NavigationCommandCoordinator::NavigationLocation::operator==(
+    const NavigationLocation& other) const
+{
+    return filePath == other.filePath
+        && lineNumber == other.lineNumber
+        && columnNumber == other.columnNumber;
 }
 
 void NavigationCommandCoordinator::NavigationTargets::set(
@@ -46,6 +61,25 @@ bool NavigationCommandCoordinator::NavigationTargets::activateOrOpenFile(
 MyCodeEditor* NavigationCommandCoordinator::NavigationTargets::currentEditor() const
 {
     return tabManager ? tabManager->getCurrentEditor() : nullptr;
+}
+
+NavigationCommandCoordinator::NavigationLocation
+NavigationCommandCoordinator::NavigationTargets::currentLocation() const
+{
+    NavigationLocation location;
+    if (!tabManager)
+        return location;
+
+    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    if (!editor || document.fileName.isEmpty())
+        return location;
+
+    const QTextCursor cursor = editor->textCursor();
+    location.filePath = document.fileName;
+    location.lineNumber = cursor.blockNumber() + 1;
+    location.columnNumber = cursor.positionInBlock() + 1;
+    return location;
 }
 
 bool NavigationCommandCoordinator::LineNavigationResolver::applyToEditor(
@@ -92,6 +126,8 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
     int lineNumber,
     int columnNumber)
 {
+    recordCurrentLocationBeforeNavigation({filePath, lineNumber, columnNumber});
+
     if (!targets.activateOrOpenFile(filePath))
         return;
 
@@ -106,6 +142,11 @@ void NavigationCommandCoordinator::navigateEditorToLine(
     int lineNumber,
     int columnNumber)
 {
+    const DocumentSnapshot document =
+        targets.tabManager ? targets.tabManager->getDocumentForEditor(editor)
+                           : DocumentSnapshot();
+    recordCurrentLocationBeforeNavigation(
+        {document.fileName, lineNumber, columnNumber});
     lineResolver.applyToEditor(editor, lineNumber, columnNumber);
 }
 
@@ -120,4 +161,61 @@ void NavigationCommandCoordinator::navigateToSymbol(
     navigateToFileAndLine(row.symbolRecord.location.fileName,
                           row.symbolRecord.location.startLine,
                           row.symbolRecord.location.startColumn);
+}
+
+void NavigationCommandCoordinator::navigateBack()
+{
+    if (backStack.isEmpty())
+        return;
+
+    const NavigationLocation current = targets.currentLocation();
+    const NavigationLocation target = backStack.takeLast();
+    if (current.isValid() && !(current == target))
+        forwardStack.append(current);
+
+    replayingHistory = true;
+    applyLocation(target);
+    replayingHistory = false;
+}
+
+void NavigationCommandCoordinator::navigateForward()
+{
+    if (forwardStack.isEmpty())
+        return;
+
+    const NavigationLocation current = targets.currentLocation();
+    const NavigationLocation target = forwardStack.takeLast();
+    if (current.isValid() && !(current == target))
+        backStack.append(current);
+
+    replayingHistory = true;
+    applyLocation(target);
+    replayingHistory = false;
+}
+
+void NavigationCommandCoordinator::recordCurrentLocationBeforeNavigation(
+    const NavigationLocation& destination)
+{
+    if (replayingHistory)
+        return;
+
+    const NavigationLocation current = targets.currentLocation();
+    if (!current.isValid() || current == destination)
+        return;
+
+    if (backStack.isEmpty() || !(backStack.last() == current))
+        backStack.append(current);
+    forwardStack.clear();
+}
+
+bool NavigationCommandCoordinator::applyLocation(
+    const NavigationLocation& location)
+{
+    if (!location.isValid())
+        return false;
+    if (!targets.activateOrOpenFile(location.filePath))
+        return false;
+    return lineResolver.applyToEditor(targets.currentEditor(),
+                                      location.lineNumber,
+                                      location.columnNumber);
 }
