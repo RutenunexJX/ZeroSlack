@@ -360,8 +360,7 @@ static sym_list::SymbolInfo makeModuleBriefSymbol(
 }
 
 static void runInlineRelationshipRegression(SlangManager& slang,
-                                            sym_list* db,
-                                            SmartRelationshipBuilder& builder)
+                                            SymbolRelationshipEngine& engine)
 {
     printf("\n-- inline multi-module regression --\n");
 
@@ -392,27 +391,68 @@ static void runInlineRelationshipRegression(SlangManager& slang,
         slang.extractSymbolRecords(path, content);
     for (SemanticSymbolRecord& record : records)
         record.location.fileName = path;
-    db->setSymbolsForFile(path, fixtureSymbolsForRecords(records));
-    db->setCachedFileContent(path, content);
+    int nextLocalHandle = 1;
+    for (SemanticSymbolRecord& record : records) {
+        if (record.localHandle <= 0)
+            record.localHandle = nextLocalHandle;
+        if (nextLocalHandle <= record.localHandle)
+            nextLocalHandle = record.localHandle + 1;
+    }
 
-    SemanticIndex semanticIndex = semanticIndexFromFixtureDatabase(db);
-    semanticIndex.updateSymbolRecordsForFile(
-        path,
-        records,
-        content);
-    QList<sym_list::SymbolInfo> symbols = symbolsInFile(db->getAllSymbols(), path);
+    const auto recordByNameAndKind = [&](const QString& name,
+                                         SymbolTaxonomy::CollectorKind kind) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name && record.collectorKind == kind)
+                return record;
+        }
+        return SemanticSymbolRecord{};
+    };
+    const auto recordByNameKindAndOwner =
+        [&](const QString& name,
+            SymbolTaxonomy::CollectorKind kind,
+            const QString& ownerName) {
+            for (const SemanticSymbolRecord& record : records) {
+                if (record.name == name
+                    && record.collectorKind == kind
+                    && record.owner.name == ownerName) {
+                    return record;
+                }
+            }
+            return SemanticSymbolRecord{};
+        };
 
-    const int alphaId = symbolId(symbols, QStringLiteral("alpha"), sym_list::sym_module);
-    const int betaId = symbolId(symbols, QStringLiteral("beta"), sym_list::sym_module);
-    const int leafId = symbolId(symbols, QStringLiteral("leaf"), sym_list::sym_module);
-    const int doBetaId = symbolId(symbols, QStringLiteral("do_beta"), sym_list::sym_task);
-    const int condId = symbolId(symbols, QStringLiteral("cond"), sym_list::sym_port_input);
-    const int srcId = symbolId(symbols, QStringLiteral("src"), sym_list::sym_port_input);
-    const int dstId = symbolId(symbols, QStringLiteral("dst"), sym_list::sym_port_output);
-    const int betaClkId = symbolIdInScope(symbols, QStringLiteral("clk"), sym_list::sym_port_input,
-                                          QStringLiteral("beta"));
-    const int rstId = symbolIdInScope(symbols, QStringLiteral("rst_n"), sym_list::sym_port_input,
-                                      QStringLiteral("beta"));
+    const int alphaId =
+        recordByNameAndKind(QStringLiteral("alpha"),
+                            SymbolTaxonomy::CollectorKind::Module).localHandle;
+    const int betaId =
+        recordByNameAndKind(QStringLiteral("beta"),
+                            SymbolTaxonomy::CollectorKind::Module).localHandle;
+    const int leafId =
+        recordByNameAndKind(QStringLiteral("leaf"),
+                            SymbolTaxonomy::CollectorKind::Module).localHandle;
+    const int doBetaId =
+        recordByNameAndKind(QStringLiteral("do_beta"),
+                            SymbolTaxonomy::CollectorKind::Task).localHandle;
+    const int condId =
+        recordByNameKindAndOwner(QStringLiteral("cond"),
+                                 SymbolTaxonomy::CollectorKind::PortInput,
+                                 QStringLiteral("beta")).localHandle;
+    const int srcId =
+        recordByNameKindAndOwner(QStringLiteral("src"),
+                                 SymbolTaxonomy::CollectorKind::PortInput,
+                                 QStringLiteral("beta")).localHandle;
+    const int dstId =
+        recordByNameKindAndOwner(QStringLiteral("dst"),
+                                 SymbolTaxonomy::CollectorKind::PortOutput,
+                                 QStringLiteral("beta")).localHandle;
+    const int betaClkId =
+        recordByNameKindAndOwner(QStringLiteral("clk"),
+                                 SymbolTaxonomy::CollectorKind::PortInput,
+                                 QStringLiteral("beta")).localHandle;
+    const int rstId =
+        recordByNameKindAndOwner(QStringLiteral("rst_n"),
+                                 SymbolTaxonomy::CollectorKind::PortInput,
+                                 QStringLiteral("beta")).localHandle;
 
     expectBool("symbols include alpha", alphaId > 0, true);
     expectBool("symbols include beta", betaId > 0, true);
@@ -424,10 +464,18 @@ static void runInlineRelationshipRegression(SlangManager& slang,
     expectBool("symbols include beta clk", betaClkId > 0, true);
     expectBool("symbols include beta rst_n", rstId > 0, true);
 
+    SmartRelationshipBuilder builder(
+        &engine,
+        &slang,
+        [&records, &path](const QString& fileName) {
+            if (normalizedPath(fileName) == normalizedPath(path))
+                return records;
+            return QList<SemanticSymbolRecord>{};
+        });
     QVector<RelationshipToAdd> rels =
         builder.computeRelationships(path,
                                      content,
-                                     semanticSymbolRecordsForSymbols(symbols),
+                                     records,
                                      nullptr);
 
     expectBool("beta instantiates leaf",
@@ -8232,7 +8280,7 @@ int main(int argc, char** argv)
             return index.getSymbolRecords(fileName);
         });
 
-    runInlineRelationshipRegression(slang, db, builder);
+    runInlineRelationshipRegression(slang, engine);
     runMultiFileRelationshipFixture(slang, db, engine, builder);
     runModuleBriefServiceFixture();
     runScopeBandServiceFixture();
