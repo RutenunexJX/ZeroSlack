@@ -90,6 +90,10 @@ private:
         MyCodeEditor* editor,
         const QString& symbolName,
         const EditorSemanticContext& context) const;
+    void handleDefinitionPreviewNavigationRequested(
+        const QString& fileName,
+        int line,
+        int column) const;
     void handleSourceNavigationRequested(
         MyCodeEditor* editor,
         const EditorSourceNavigationTarget& target,

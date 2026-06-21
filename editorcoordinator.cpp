@@ -2,6 +2,7 @@
 
 #include "editorappearancesettings.h"
 #include "editorsemanticcontextservice.h"
+#include "definitionpreviewservice.h"
 #include "filecommandcoordinator.h"
 #include "modemanager.h"
 #include "mycodeeditor.h"
@@ -219,6 +220,8 @@ void EditorCoordinator::connectSignals()
                 applyAlternateModeToOpenEditors();
             });
 
+    DefinitionPreviewService::getInstance()->setDocumentModel(
+        tabManager->getDocumentModel());
     signalsConnected = true;
 }
 
@@ -244,6 +247,15 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     connect(editor, &MyCodeEditor::sourceSymbolContextMenuRequested,
             this, [this](QMenu* menu, const EditorSemanticContext& context) {
                 handleSourceSymbolContextMenuRequested(menu, context);
+            });
+    connect(editor,
+            &MyCodeEditor::definitionPreviewNavigationRequested,
+            this,
+            [this](const QString& fileName, int line, int column) {
+                handleDefinitionPreviewNavigationRequested(
+                    fileName,
+                    line,
+                    column);
             });
     connect(editor, &MyCodeEditor::navigationBackRequested,
             this, [this]() {
@@ -335,6 +347,17 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
     const QString targetFile =
         target.fileName.isEmpty() ? context.fileName : target.fileName;
     dependencies.navigateToFileAndLine(targetFile, target.line, target.column);
+}
+
+void EditorCoordinator::handleDefinitionPreviewNavigationRequested(
+    const QString& fileName,
+    int line,
+    int column) const
+{
+    if (!dependencies.canNavigate() || fileName.isEmpty() || line <= 0)
+        return;
+
+    dependencies.navigateToFileAndLine(fileName, line, column);
 }
 
 void EditorCoordinator::handleSourceNavigationRequested(

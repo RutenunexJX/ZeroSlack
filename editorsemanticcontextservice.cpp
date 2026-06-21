@@ -2,6 +2,8 @@
 
 #include "editorcompletionquery.h"
 #include "editorsourcenavigationquery.h"
+#include "definitionpreviewservice.h"
+#include "symbolhoverservice.h"
 
 std::unique_ptr<EditorSemanticContextService>
     EditorSemanticContextService::instance = nullptr;
@@ -120,6 +122,18 @@ QString EditorSemanticContextService::definitionTooltipText(
     return EditorSourceNavigationQuery::definitionTooltipText(
         symbolName,
         context);
+}
+
+SymbolHoverReport EditorSemanticContextService::symbolHoverReport(
+    const EditorSemanticContext& context) const
+{
+    return SymbolHoverService::getInstance()->hoverForContext(context);
+}
+
+DefinitionPreviewReport EditorSemanticContextService::definitionPreviewReport(
+    const EditorSemanticContext& context) const
+{
+    return DefinitionPreviewService::getInstance()->previewForContext(context);
 }
 
 CompletionTriggerQuery EditorSemanticContextService::completionTriggerQuery(

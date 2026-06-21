@@ -78,6 +78,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionsymbolquery.cpp
     completionsymbolscoring.cpp
     definitionnavigationservice.cpp
+    definitionpreviewservice.cpp
     definitionservice.cpp
     diagnosticservice.cpp
     diagnosticsrefreshcontroller.cpp
@@ -104,6 +105,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorfileidentity.cpp
     editorgeometry.cpp
     editorgutter.cpp
+    editorhoverpopup.cpp
     editorruntime.cpp
     editorselection.cpp
     editorsemanticcontextservice.cpp
@@ -194,6 +196,7 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzerpublication.cpp
     symbolanalyzerslang.cpp
     symbolanalyzerworkspace.cpp
+    symbolhoverservice.cpp
     symbolrelationshipqueries.cpp
     symbolrelationshipengine.cpp
     symboltaxonomy.cpp
@@ -234,6 +237,7 @@ set(ZEROSLACK_CORE_SOURCES
     completionsymbolquery.h
     completiontypes.h
     definitionnavigationservice.h
+    definitionpreviewservice.h
     definitionservice.h
     diagnosticservice.h
     diagnosticsrefreshcontroller.h
@@ -252,6 +256,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorfileidentity.h
     editorgeometry.h
     editorgutter.h
+    editorhoverpopup.h
     editorruntime.h
     editorselection.h
     editorsemanticcontextservice.h
@@ -313,6 +318,8 @@ set(ZEROSLACK_CORE_SOURCES
     smartrelationshipbuilder.h
     symbolanalyzer.h
     symbolanalyzerworkspace.h
+    symbolhoverreports.h
+    symbolhoverservice.h
     symbolrelationshipengine.h
     symboloutlinemodel.h
     symbolsemanticmetadata.h

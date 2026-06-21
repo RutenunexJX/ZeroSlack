@@ -19,6 +19,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdown()
 {
+    sourceNavigation.shutdown();
     gutter.destroy();
 }
 
@@ -40,6 +41,15 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
         editor,
         [this, editor](const QRect& rect, int dy) {
             gutter.handleUpdateRequest(editor, rect, dy);
+            if (dy != 0)
+                sourceNavigation.handleEditorScrolled(editor, selections);
+        });
+    QObject::connect(
+        editor,
+        &QPlainTextEdit::textChanged,
+        editor,
+        [this, editor]() {
+            sourceNavigation.handleEditorContentChanged(editor, selections);
         });
 }
 
@@ -149,11 +159,22 @@ void MyCodeEditorState::handleControlKeyRelease(
     MyCodeEditor* editor,
     QKeyEvent* event)
 {
-    sourceNavigation.handleControlKeyRelease(editor, event, selections);
+    sourceNavigation.handleControlKeyRelease(
+        editor,
+        event,
+        semanticService(),
+        sourceContextProvider(editor),
+        selections);
 }
 
 bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 {
+    if (event->key() == Qt::Key_Escape
+        && sourceNavigation.handleEscape(editor, selections)) {
+        event->accept();
+        return true;
+    }
+
     handleControlKeyPress(editor, event);
 
     if (sourceNavigation.handleSourceSymbolShortcut(

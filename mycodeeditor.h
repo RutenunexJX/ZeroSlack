@@ -85,6 +85,9 @@ signals:
                                      const EditorSemanticContext& context);
     void sourceSymbolContextMenuRequested(QMenu* menu,
                                           const EditorSemanticContext& context);
+    void definitionPreviewNavigationRequested(const QString& fileName,
+                                              int line,
+                                              int column);
     void navigationBackRequested();
     void navigationForwardRequested();
 };

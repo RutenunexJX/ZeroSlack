@@ -36,14 +36,17 @@
 #include "activitylogservice.h"
 #include "alternatecommandservice.h"
 #include "documentmodel.h"
+#include "definitionpreviewservice.h"
 #include "editorappearance.h"
 #include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
 #include "editorcoordinator.h"
+#include "editorhoverpopup.h"
 #include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
 #include "navigationwidget.h"
 #include "semantic_fixture_records.h"
+#include "symbolhoverservice.h"
 #include "modemanager.h"
 #include "navigationmanager.h"
 #include "problemspanelcoordinator.h"
@@ -302,6 +305,191 @@ static void runEditorAppearanceCoordinatorRegression()
     MyCodeEditor* newEditor = tabs.getCurrentEditor();
     expectBool("appearance coordinator applies new editor",
                newEditor && newEditor->font().pointSize() == options.fontSizePt,
+               true);
+}
+
+static void runEditorHoverPreviewRegression(const QString& workspacePath)
+{
+    const QString rtlTopPath =
+        QDir(workspacePath).filePath(
+            QStringLiteral("elec_phy_import/top/rtl_top.sv"));
+    QFile rtlTopFile(rtlTopPath);
+    expectBool("hover fixture opens",
+               rtlTopFile.open(QIODevice::ReadOnly | QFile::Text),
+               true);
+    if (!rtlTopFile.isOpen())
+        return;
+    const QString rtlTopText = QTextStream(&rtlTopFile).readAll();
+    rtlTopFile.close();
+
+    const QStringList rtlLines = rtlTopText.split(QLatin1Char('\n'));
+    int moduleLine = -1;
+    int signalLine = -1;
+    for (int i = 0; i < rtlLines.size(); ++i) {
+        if (moduleLine < 0 && rtlLines.at(i).contains(QStringLiteral("module rtl_top")))
+            moduleLine = i + 1;
+        if (signalLine < 0 && rtlLines.at(i).contains(QStringLiteral("clk_main")))
+            signalLine = i + 1;
+    }
+    expectBool("hover fixture has module line", moduleLine > 0, true);
+    expectBool("hover fixture has signal line", signalLine > 0, true);
+    if (moduleLine <= 0 || signalLine <= 0)
+        return;
+
+    const int signalColumn =
+        rtlLines.at(signalLine - 1).indexOf(QStringLiteral("clk_main"));
+    expectBool("hover fixture has signal column", signalColumn >= 0, true);
+    if (signalColumn < 0)
+        return;
+
+    const SemanticSymbolRecord moduleRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("rtl_top"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(rtlTopPath)
+            .withLocalHandle(101)
+            .withLine(moduleLine, 8)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord signalRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("clk_main"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(rtlTopPath)
+            .withLocalHandle(102)
+            .withLine(signalLine, signalColumn + 1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("rtl_top"))
+            .withType(QStringLiteral("logic"))
+            .record();
+
+    SemanticIndex hoverIndex;
+    hoverIndex.setSnapshot(
+        snapshotFromRecords(
+            {moduleRecord, signalRecord},
+            {},
+            {},
+            {{rtlTopPath, rtlTopText}}));
+
+    EditorSemanticContext context;
+    context.fileName = rtlTopPath;
+    context.moduleName = QStringLiteral("rtl_top");
+    context.lineText = rtlLines.at(signalLine - 1);
+    context.lineUpToCursor = context.lineText.left(signalColumn + 1);
+    context.cursorLine = signalLine;
+    context.column = signalColumn + 1;
+    context.cursorPosition = 0;
+
+    SymbolHoverService hoverService(&hoverIndex);
+    const SymbolHoverReport hover = hoverService.hoverForContext(context);
+    expectBool("hover returns local signal",
+               hover.available && hover.symbolName == QStringLiteral("clk_main"),
+               true);
+    expectBool("hover returns kind owner location",
+               !hover.displayKind.isEmpty()
+                   && hover.ownerName == QStringLiteral("rtl_top")
+                   && hover.definitionFile == rtlTopPath
+                   && hover.definitionLine == signalLine,
+               true);
+
+    DefinitionPreviewService previewService(&hoverIndex);
+    const DefinitionPreviewReport preview =
+        previewService.previewForContext(context);
+    bool previewContainsDefinition = false;
+    for (const QString& line : preview.codeLines)
+        previewContainsDefinition |= line.contains(QStringLiteral("clk_main"));
+    expectBool("preview resolves target file line",
+               preview.targetResolved
+                   && preview.targetFile == rtlTopPath
+                   && preview.targetLine == signalLine,
+               true);
+    expectBool("preview includes definition snippet",
+               preview.available && previewContainsDefinition,
+               true);
+    expectBool("preview highlights target line",
+               preview.highlightedLine == signalLine,
+               true);
+
+    DocumentModel documents;
+    MyCodeEditor dirtyEditor;
+    documents.registerEditor(&dirtyEditor, rtlTopPath);
+    QString dirtyText = rtlTopText;
+    QStringList dirtyLines = dirtyText.split(QLatin1Char('\n'));
+    dirtyLines[signalLine - 1].append(QStringLiteral(" // dirty preview marker"));
+    dirtyText = dirtyLines.join(QLatin1Char('\n'));
+    dirtyEditor.setPlainText(dirtyText);
+    documents.refreshEditorState(&dirtyEditor);
+    previewService.setDocumentModel(&documents);
+    const DefinitionPreviewReport dirtyPreview =
+        previewService.previewForContext(context);
+    bool dirtyPreviewUsesOpenText = false;
+    for (const QString& line : dirtyPreview.codeLines)
+        dirtyPreviewUsesOpenText |= line.contains(QStringLiteral("dirty preview marker"));
+    expectBool("preview prefers dirty open text",
+               dirtyPreviewUsesOpenText,
+               true);
+
+    EditorSemanticContext commentContext = context;
+    commentContext.lineText = QStringLiteral("// clk_main");
+    commentContext.column = 4;
+    expectBool("hover ignores comment identifier",
+               !hoverService.hoverForContext(commentContext).available,
+               true);
+
+    EditorSemanticContext stringContext = context;
+    stringContext.lineText = QStringLiteral("assign s = \"clk_main\";");
+    stringContext.column = stringContext.lineText.indexOf(QStringLiteral("clk_main"));
+    expectBool("hover ignores string identifier",
+               !hoverService.hoverForContext(stringContext).available,
+               true);
+
+    SemanticIndex missingTextIndex;
+    missingTextIndex.setSnapshot(snapshotFromRecords({signalRecord}));
+    DefinitionPreviewService missingTextPreview(&missingTextIndex);
+    const DefinitionPreviewReport missingPreview =
+        missingTextPreview.previewForContext(context);
+    expectBool("preview explains unavailable text",
+               missingPreview.targetResolved
+                   && !missingPreview.available
+                   && missingPreview.unavailableReason.contains(
+                       QStringLiteral("preview unavailable")),
+               true);
+
+    EditorHoverPopup popup;
+    bool popupNavigationRequested = false;
+    QString popupFile;
+    int popupLine = -1;
+    int popupColumn = -1;
+    popup.setNavigationHandler(
+        [&](const QString& fileName, int line, int column) {
+            popupNavigationRequested = true;
+            popupFile = fileName;
+            popupLine = line;
+            popupColumn = column;
+        });
+    DefinitionPreviewReport popupReport = missingPreview;
+    popupReport.targetFile = rtlTopPath;
+    popupReport.targetLine = signalLine;
+    popupReport.targetColumn = signalColumn + 1;
+    popup.showPreview(popupReport, QPoint(20, 20), QFont(QStringLiteral("Consolas"), 10));
+    QTest::mouseDClick(&popup, Qt::LeftButton, Qt::NoModifier, QPoint(8, 8));
+    expectBool("preview popup double-click requests navigation",
+               popupNavigationRequested
+                   && popupFile == rtlTopPath
+                   && popupLine == signalLine
+                   && popupColumn == signalColumn + 1,
+               true);
+    popup.closePopup();
+
+    const EditorSourceNavigationTarget navigationTarget =
+        EditorSemanticContextService::getInstance()
+            ->editorSourceNavigationTarget(context, 0);
+    const EditorSourceNavigationClickState clickState =
+        EditorSemanticContextService::getInstance()
+            ->sourceNavigationClickState(navigationTarget);
+    expectBool("ctrl click navigation remains definition action",
+               clickState.action
+                   == EditorSourceNavigationClickAction::NavigateToDefinition,
                true);
 }
 
@@ -2068,6 +2256,7 @@ int main(int argc, char** argv)
 
     expectBool("workspace fixture exists", QFileInfo(workspacePath).isDir(), true);
     expectBool("symbol fixture exists", QFileInfo(symbolFixturePath).isFile(), true);
+    runEditorHoverPreviewRegression(workspacePath);
 
     MainWindow window;
     bool workspaceSymbolsDone = false;

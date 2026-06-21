@@ -13,6 +13,41 @@ SourceNavigationService::SourceNavigationService() = default;
 
 SourceNavigationService::~SourceNavigationService() = default;
 
+namespace {
+bool isInsideLineCommentOrString(const QString& lineText, int column)
+{
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i < lineText.size(); ++i) {
+        if (i == column)
+            return inString;
+
+        const QChar ch = lineText.at(i);
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+
+        if (ch == QLatin1Char('/')
+            && i + 1 < lineText.size()
+            && lineText.at(i + 1) == QLatin1Char('/')) {
+            return column >= i;
+        }
+    }
+    return inString && column >= lineText.size();
+}
+}
+
 IncludeDirectiveTarget SourceNavigationService::includeAtColumn(
     const QString& lineText,
     int column) const
@@ -111,6 +146,9 @@ SourceIdentifierTarget SourceNavigationService::identifierAtColumn(
     if (hitColumn >= lineText.size()) {
         hitColumn = lineText.size() - 1;
     }
+
+    if (isInsideLineCommentOrString(lineText, hitColumn))
+        return target;
 
     if (hitColumn >= 0
         && lineText.at(hitColumn) == QLatin1Char('.')

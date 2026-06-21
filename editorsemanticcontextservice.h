@@ -5,6 +5,7 @@
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
 #include "sourcenavigationservice.h"
+#include "symbolhoverreports.h"
 
 #include <QString>
 #include <QList>
@@ -189,6 +190,10 @@ public:
         const EditorSemanticContext& context) const;
     QString definitionTooltipText(
         const QString& symbolName,
+        const EditorSemanticContext& context) const;
+    SymbolHoverReport symbolHoverReport(
+        const EditorSemanticContext& context) const;
+    DefinitionPreviewReport definitionPreviewReport(
         const EditorSemanticContext& context) const;
     CompletionTriggerQuery completionTriggerQuery(
         const EditorSemanticContext& context) const;
