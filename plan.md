@@ -11,6 +11,20 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Move policy into services only when there is a real production boundary.
 - Expand RTL Insights only through stable semantic contracts and service-owned reports.
 
+## Feature Expansion Guardrails
+
+These constraints are mandatory. Do not merge, commit, or continue a new
+feature direction that violates them.
+
+- New semantic or RTL behavior must flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
+- UI code must render service/model output only; it must not run Slang, scan workspace files, own semantic policy, or patch around missing semantic data.
+- `AnalysisScheduler` and `SymbolAnalyzer` must stay limited to timing, lifecycle, extraction, publication, and refresh routing; they must not own feature policy.
+- New tests and fixtures must use semantic-native records/builders and must not reintroduce `sym_list`, `syminfo`, reverse adapters, legacy taxonomy headers, or legacy field/API names.
+- New feature reports must expose stable keys, semantic records or typed report rows, owner/type/source-role metadata, navigation payloads, evidence, confidence, and not-found reasons where relevant.
+- Real workspace fixtures, especially `test_sv/new`, must cover behavior that depends on package/import/include/interface/modport/cross-file semantics.
+- `legacy_field_policy_guard.ctest` and the final repo-source zero target must keep passing after every feature change.
+- Feature work must be rejected or redesigned if it requires qmake/pro/pri, `.claude`, SVLexer, the old Tree-sitter symbol parser, direct UI Slang execution, UI workspace scans, regex relationship analysis, long-lived scattered perflog, or legacy carrier/API resurrection.
+
 ## Phases
 
 ### Phase A: Semantic State And Snapshot Publication
@@ -176,7 +190,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Goal achieved: remaining legacy fields, APIs, redundant interfaces, and compatibility logic were removed from semantic core contracts or confined to the final guarded transition boundary.
 - H0 is complete: `legacy_field_policy_guard.ctest` defines and enforces the Phase H allowlist for `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `.symbolId`, `.symbolType`, `.moduleScope`, `.dataType`, int-id lookup APIs, raw collector query APIs, and retired completion compatibility APIs.
 - H1 is complete: completion command, selected module, global, and scope query contracts use semantic-native `CompletionCommandKind`; raw collector mapping is isolated inside the semantic-query adapter and taxonomy boundary.
-- H2 is complete for Phase H scope: snapshot/store public contracts and publication paths consume semantic records; remaining `SymbolInfo` conversion is confined to the guarded legacy store/collector adapter boundary.
+- H2 is complete for Phase H scope: snapshot/store public contracts and publication paths consume semantic records; later Phase I/J cleanup removed the first-party `SymbolInfo` carrier path entirely.
 - H3 is complete: retired completion compatibility entry points such as `getCommandCompletionSymbols`, `getTypedCompletionSymbols`, `getGlobalSymbolInfosByType`, `getModuleInternalSymbolsByType`, and `getModuleContextSymbolsByType` are removed and guarded.
 - H4 is complete: feature-service helpers use `SemanticSymbolRecord`, stable keys, local handles, and semantic metadata instead of exposed `SymbolInfo` contracts.
 - H5 is complete: `syminfo` legacy query APIs and indexes were deleted or shrunk, including raw name/file/type query helpers.
@@ -195,17 +209,17 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 ### Phase I: Semantic Store Native / Collector Native
 
 - Status: complete on this branch.
-- Goal: delete the remaining legacy collector/store body by moving Slang collection, semantic storage, scope rebuild, and relationship containment to semantic-native records or store entries.
+- Goal achieved: delete the former legacy collector/store body by moving Slang collection, semantic storage, scope rebuild, and relationship containment to semantic-native records or store entries.
 - I0 is complete: the native store/collector migration contract is documented, `legacy_field_policy_guard.ctest` defines the Phase I zero-legacy target terms, and `ZEROSLACK_PHASE_I_ZERO_TARGET` provides the opt-in final scan for I5 without changing runtime behavior.
 - I1 is complete: Slang collection exposes `collectSymbolRecords`, `SlangManager` exposes `extractSymbolRecords` / `extractWorkspaceSymbolRecords`, and `SymbolAnalyzer` plus tracked tests consume those record-native APIs directly. `collectSymbols`, `extractSymbols`, and `extractWorkspaceSymbols` are deleted.
 - I2 is complete: `SemanticIndex` owns a semantic-native record/content store with file replacement, local handle assignment, stable-key indexes, native content state, native file coverage, native refresh, native/snapshot-only record queries, native content/state queries, and native-over-snapshot replacement semantics; snapshot publication reads records/content from `SemanticIndex` instead of rebuilding records from `sym_list`.
 - I3 is complete: scope rebuild, module containment, relationship containment, and module lookup have moved away from `symbolId`, `symbolType`, `moduleScope`, and `dataType` to semantic metadata, owner/type records, stable keys, and explicit local handles. `SmartRelationshipBuilder`, `SymbolRelationshipEngine`, and `SemanticIndex` relationship rebuilds route containment through semantic records; legacy `sym_list` current-module lookup and module-scope auto-inference are deleted. `SymbolRelationshipEngine` no longer accepts or stores a `sym_list` database pointer, `SemanticIndex` relationship queries, completion relationship facts, and snapshot publication use the native attached relationship engine pointer, `sym_list` no longer stores, exposes, or forwards a relationship engine, and the legacy semantic-record-to-`sym_list` relationship/scope mirror is deleted.
-- I4 is complete: legacy carrier and compatibility taxonomy surface has been deleted or isolated: `sym_list::SymbolInfo`, `sym_list::sym_type_e`, legacy fields, `symboltaxonomylegacy.h`, and remaining adapter reverse conversions are no longer exposed beyond the final guarded transition boundary. The unused `semanticcollectoradapter` source/header are deleted and guarded against returning, tracked tests no longer include the removed adapter header and isolate fixture conversion in `test_sv`, direct tracked-test includes of `symboltaxonomylegacy.h` are isolated to the legacy fixture conversion helper, global `symboltaxonomylegacy.h` includes are guarded to stay isolated to `symboltaxonomy.cpp` and the fixture helper, `SemanticIndex` no longer exposes or stores a legacy `sym_list` database injection/access API, dead `sym_list` symbol database mutator/accessor/index/scope-tree storage has been deleted, native taxonomy metadata checks no longer route through the retired private raw-kind bridge, unused legacy metadata write-back helpers have been removed from the taxonomy compatibility surface, legacy `SymbolInfo` owner/visibility/interface/declaration helper overloads are no longer public taxonomy API, legacy `SymbolInfo` scope/visibility helper APIs have been deleted in favor of the native semantic metadata definition-visibility API, taxonomy no longer exposes `packageScopeNames(QList<SymbolInfo>)`, legacy completion type matching compatibility APIs have been deleted in favor of `SemanticCompletionKind` metadata matching, legacy outline grouping compatibility APIs have been deleted in favor of native semantic metadata checks, and legacy raw collector kind round-trip helpers are no longer public taxonomy compatibility API.
-- I5 is complete: the Phase I release gate passed and docs are current. The final target is met for core source: zero remaining legacy collector/store terms outside historical docs or explicitly named migration notes, proven by the opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` guard.
-- I5 first block is complete: lowercase `rawCollectorKind` / `requestedRawCollectorKind` field and helper names were removed from source contracts in favor of `collectorKind` fields and `CollectorKind` enum/type names; the normal guard still catches attempts to reintroduce the retired raw names, while the opt-in zero target now advances to the remaining `sym_list`, legacy taxonomy, and `syminfo` findings.
-- I5 second block is complete: the retired `symboltaxonomylegacy.h` header was deleted and production `SymbolTaxonomy` no longer exposes or implements `sym_list::sym_type_e` / `sym_list::SymbolInfo` overloads; fixture-only conversion moved into `test_sv/semantic_fixture_records.h`, and the opt-in zero target now advances to the remaining `syminfo*` carrier files.
-- I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake no longer builds them, `legacy_field_policy_guard.ctest` prevents the root carrier files from returning, and `ZEROSLACK_PHASE_I_ZERO_TARGET` now passes for core source.
-- I5 fourth block is complete: stale core `syminfo` includes and `SymbolInfo`-named helpers were removed, tracked tests now route remaining `sym_list` fixture data through fixture-local/native semantic helpers, GUI smoke fixtures update singleton native records before snapshot-based panel checks, and the final full Ninja/full CTest/guard/static-scan release gate passed.
+- I4 is complete: legacy carrier and compatibility taxonomy surface was deleted or isolated; unused adapter files, legacy taxonomy includes, semantic-index legacy injection APIs, dead symbol database storage, legacy metadata helpers, legacy taxonomy overloads, legacy completion matching APIs, and legacy outline grouping APIs were removed or guarded.
+- I5 is complete: the Phase I release gate passed for core source, and Phase J later expanded the final zero target to first-party repo source.
+- I5 first block is complete: lowercase `rawCollectorKind` / `requestedRawCollectorKind` field and helper names were removed from source contracts in favor of `collectorKind` fields and `CollectorKind` enum/type names.
+- I5 second block is complete: the retired `symboltaxonomylegacy.h` header was deleted and production `SymbolTaxonomy` no longer exposes or implements `sym_list::sym_type_e` / `sym_list::SymbolInfo` overloads; tracked tests temporarily used a fixture-local conversion helper until Phase J removed it.
+- I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake stopped building them, and Phase J later deleted the fixture carrier.
+- I5 fourth block is complete: stale core `syminfo` includes and `SymbolInfo`-named helpers were removed, tracked tests moved to semantic-native helpers, GUI smoke fixtures synchronized native records before snapshot-based panel checks, and the final full Ninja/full CTest/guard/static-scan release gate passed.
 
 ### Phase I Goal Mode
 
@@ -218,7 +232,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 ### Phase J: Test Fixture Native Cleanup
 
 - Status: complete.
-- Goal: remove the remaining fixture-only legacy carrier from tracked tests so legacy names are absent from repo source except historical docs, migration notes, and guard definitions.
+- Goal achieved: remove the fixture-only legacy carrier from tracked tests so legacy names are absent from first-party repo source except historical docs, migration notes, and guard definitions.
 - J0 is complete: define the final repo-wide fixture cleanup allowlist in `legacy_field_policy_guard.ctest`; keep docs and guard patterns as explicit exceptions, and fail on new `sym_list::SymbolInfo`, `sym_list::sym_type_e`, `symbolId`, `symbolType`, `moduleScope`, `dataType`, `syminfo`, `getSymbolById`, and `findSymbolId` uses outside the current fixture cleanup scope.
 - J1 is complete: introduce semantic-native test builders for symbol records, metadata, owners, type info, local handles, stable keys, and relationship endpoints so tests no longer need to hand-author `sym_list::SymbolInfo`.
 - J2 is complete: migrate completion and jump tests from `sym_list` fixture data to native builders and query/report contracts.
@@ -276,6 +290,7 @@ Reduce batch size when blocks share core files or API boundaries.
 - Before committing, run `git diff --check`, changed-file ASCII/trailing-whitespace scans, and forbidden-file guards.
 - Prefer real workspace fixtures such as `test_sv/new` for semantic feature expansion.
 - Phase D feature work should prove behavior at the service level before UI smoke coverage.
+- Every feature change must explicitly verify the Feature Expansion Guardrails that apply to its scope, including the final repo-source zero target when semantic/test code changes.
 
 ## Commit Policy
 
