@@ -5237,112 +5237,132 @@ static void runClockResetDomainServiceFixture()
     printf("\n-- clock reset domain service fixture --\n");
 
     const QString fileName = QStringLiteral("test_sv/clock_reset_domain_fixture.sv");
-    QList<sym_list::SymbolInfo> symbols;
-    sym_list::SymbolInfo top = makeModuleBriefSymbol(
-        9201,
-        fileName,
-        QStringLiteral("domain_top"),
-        sym_list::sym_module,
-        1);
-    top.endLine = 80;
-    symbols.append(top);
-    symbols.append(makeModuleBriefSymbol(
-        9202,
-        fileName,
-        QStringLiteral("other_domain"),
-        sym_list::sym_module,
-        90));
-    symbols.append(makeModuleBriefSymbol(
-        9203,
-        fileName,
-        QStringLiteral("clk_i"),
-        sym_list::sym_port_input,
-        10,
-        QStringLiteral("domain_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9204,
-        fileName,
-        QStringLiteral("rst_ni"),
-        sym_list::sym_port_input,
-        11,
-        QStringLiteral("domain_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9205,
-        fileName,
-        QStringLiteral("other_clk"),
-        sym_list::sym_port_input,
-        95,
-        QStringLiteral("other_domain")));
-    symbols.append(makeModuleBriefSymbol(
-        9206,
-        fileName,
-        QStringLiteral("alt_clk_i"),
-        sym_list::sym_port_input,
-        12,
-        QStringLiteral("domain_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9207,
-        fileName,
-        QStringLiteral("scan_clk"),
-        sym_list::sym_port_input,
-        13,
-        QStringLiteral("domain_top")));
-    symbols.append(makeModuleBriefSymbol(
-        9208,
-        fileName,
-        QStringLiteral("por_rst_n"),
-        sym_list::sym_logic,
-        14,
-        QStringLiteral("domain_top")));
-    sym_list::SymbolInfo noTiming = makeModuleBriefSymbol(
-        9209,
-        fileName,
-        QStringLiteral("no_timing_domain"),
-        sym_list::sym_module,
-        120);
-    noTiming.endLine = 122;
-    symbols.append(noTiming);
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+
+    const SemanticSymbolRecord top =
+        SemanticFixtureRecordBuilder(QStringLiteral("domain_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9201)
+            .withRange(1, 1, 80, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord otherDomain =
+        SemanticFixtureRecordBuilder(QStringLiteral("other_domain"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9202)
+            .withLine(90)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord clkI =
+        SemanticFixtureRecordBuilder(QStringLiteral("clk_i"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9203)
+            .withLine(10)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("domain_top"))
+            .record();
+    const SemanticSymbolRecord rstNi =
+        SemanticFixtureRecordBuilder(QStringLiteral("rst_ni"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9204)
+            .withLine(11)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("domain_top"))
+            .record();
+    const SemanticSymbolRecord otherClk =
+        SemanticFixtureRecordBuilder(QStringLiteral("other_clk"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9205)
+            .withLine(95)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("other_domain"))
+            .record();
+    const SemanticSymbolRecord altClkI =
+        SemanticFixtureRecordBuilder(QStringLiteral("alt_clk_i"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9206)
+            .withLine(12)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("domain_top"))
+            .record();
+    const SemanticSymbolRecord scanClk =
+        SemanticFixtureRecordBuilder(QStringLiteral("scan_clk"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9207)
+            .withLine(13)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("domain_top"))
+            .record();
+    const SemanticSymbolRecord porRstN =
+        SemanticFixtureRecordBuilder(QStringLiteral("por_rst_n"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9208)
+            .withLine(14)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("domain_top"))
+            .record();
+    const SemanticSymbolRecord noTiming =
+        SemanticFixtureRecordBuilder(QStringLiteral("no_timing_domain"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9209)
+            .withRange(120, 1, 122, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const QList<SemanticSymbolRecord> records{
+        top,
+        otherDomain,
+        clkI,
+        rstNi,
+        otherClk,
+        altClkI,
+        scanClk,
+        porRstN,
+        noTiming,
+    };
 
     QList<SemanticRelationship> relationships;
-    SemanticRelationship topClock;
-    topClock.fromId = 9203;
-    topClock.toId = 9201;
-    topClock.type = SymbolRelationshipEngine::CLOCKS;
-    topClock.provenance = RelationshipProvenance::Inferred;
-    topClock.confidence = 85;
-    topClock.evidenceText = QStringLiteral("posedge clk_i");
-    relationships.append(topClock);
-
-    SemanticRelationship altTopClock;
-    altTopClock.fromId = 9206;
-    altTopClock.toId = 9201;
-    altTopClock.type = SymbolRelationshipEngine::CLOCKS;
-    altTopClock.provenance = RelationshipProvenance::Inferred;
-    altTopClock.confidence = 80;
-    altTopClock.evidenceText = QStringLiteral("posedge alt_clk_i");
-    relationships.append(altTopClock);
-
-    SemanticRelationship topReset;
-    topReset.fromId = 9204;
-    topReset.toId = 9201;
-    topReset.type = SymbolRelationshipEngine::RESETS;
-    topReset.provenance = RelationshipProvenance::SlangExtracted;
-    topReset.confidence = 95;
-    topReset.evidenceText = QStringLiteral("negedge rst_ni");
-    relationships.append(topReset);
-
-    SemanticRelationship otherClock;
-    otherClock.fromId = 9205;
-    otherClock.toId = 9202;
-    otherClock.type = SymbolRelationshipEngine::CLOCKS;
-    otherClock.provenance = RelationshipProvenance::Inferred;
-    otherClock.confidence = 75;
-    otherClock.evidenceText = QStringLiteral("posedge other_clk");
-    relationships.append(otherClock);
+    relationships.append(semanticFixtureRelationship(
+        clkI,
+        top,
+        SymbolRelationshipEngine::CLOCKS,
+        RelationshipProvenance::Inferred,
+        85,
+        QStringLiteral("posedge clk_i")));
+    relationships.append(semanticFixtureRelationship(
+        altClkI,
+        top,
+        SymbolRelationshipEngine::CLOCKS,
+        RelationshipProvenance::Inferred,
+        80,
+        QStringLiteral("posedge alt_clk_i")));
+    relationships.append(semanticFixtureRelationship(
+        rstNi,
+        top,
+        SymbolRelationshipEngine::RESETS,
+        RelationshipProvenance::SlangExtracted,
+        95,
+        QStringLiteral("negedge rst_ni")));
+    relationships.append(semanticFixtureRelationship(
+        otherClk,
+        otherDomain,
+        SymbolRelationshipEngine::CLOCKS,
+        RelationshipProvenance::Inferred,
+        75,
+        QStringLiteral("posedge other_clk")));
 
     SemanticIndex index;
-    index.setSnapshot(sharedSnapshotFromSymbols(
-        symbols,
+    index.setSnapshot(sharedSnapshotFromRecords(
+        records,
         relationships,
         QList<SemanticDiagnostic>()));
     ClockResetDomainService service(&index);
@@ -5384,7 +5404,7 @@ static void runClockResetDomainServiceFixture()
 
     expectBool("clock reset top found", topReport.found, true);
     ClockResetDomainQuery stableTopQuery;
-    stableTopQuery.moduleStableKey = stableKeyForSymbol(top);
+    stableTopQuery.moduleStableKey = top.stableKey;
     stableTopQuery.moduleName = QStringLiteral("other_domain");
     const ClockResetDomainReport stableTopReport =
         service.buildClockResetDomainMap(stableTopQuery);
@@ -5693,7 +5713,7 @@ static void runClockResetDomainServiceFixture()
     expectBool("clock reset top unmapped reset row", sawUnmappedReset, true);
 
     ClockResetDomainQuery otherStableQuery;
-    otherStableQuery.moduleStableKey = stableKeyForSymbol(symbols.at(1));
+    otherStableQuery.moduleStableKey = otherDomain.stableKey;
     const ClockResetDomainReport otherReport =
         service.buildClockResetDomainMap(otherStableQuery);
     expectInt("clock reset stable key clock domains",
@@ -5722,8 +5742,7 @@ static void runClockResetDomainServiceFixture()
                true);
 
     ClockResetDomainQuery unsupportedModuleQuery;
-    unsupportedModuleQuery.moduleStableKey =
-        stableKeyForSymbol(symbols.at(2));
+    unsupportedModuleQuery.moduleStableKey = clkI.stableKey;
     const ClockResetDomainReport unsupportedModuleReport =
         service.buildClockResetDomainMap(unsupportedModuleQuery);
     expectBool("clock reset unsupported symbol reason",
