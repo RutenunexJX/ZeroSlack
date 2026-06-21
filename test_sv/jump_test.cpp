@@ -28,44 +28,18 @@
 
 static int g_checks = 0, g_fails = 0;
 
-static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
-{
-    QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::isPackageDeclaration(
-                semanticMetadataForSymbolInfo(symbol))
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
-        }
-    }
-    return names;
-}
-
-static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
-    const QList<sym_list::SymbolInfo>& symbols,
+static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
+    const QList<SemanticSymbolRecord>& records,
     const QList<SemanticRelationship>& relationships = {},
     const QList<SemanticDiagnostic>& diagnostics = {},
     const QHash<QString, QString>& fileContents = {})
 {
     return std::make_shared<SemanticIndexSnapshot>(
         SemanticIndexSnapshot::fromSymbolRecords(
-            semanticSymbolRecordsForSymbols(
-                symbols,
-                packageScopeNames(symbols)),
+            records,
             relationships,
             diagnostics,
             fileContents));
-}
-
-static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
-    const SemanticIndexSnapshot& snapshot)
-{
-    return std::make_shared<SemanticIndexSnapshot>(snapshot);
-}
-
-static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return semanticSymbolRecordForSymbol(symbol).stableKey;
 }
 
 static void expectBool(const char* what, bool got, bool want) {
@@ -282,139 +256,177 @@ int main(int argc, char** argv) {
              clampedNavigationQuery.linePrefixBeforeCursor,
              memberNavigationContext.lineText);
 
-    QList<sym_list::SymbolInfo> snapshotDefinitionSymbols;
-    sym_list::SymbolInfo snapshotOtherRed = otherRed;
-    snapshotOtherRed.fileName = QStringLiteral("snapshot_only.sv");
-    snapshotOtherRed.symbolId = 6101;
-    snapshotOtherRed.startLine = 1;
-    snapshotOtherRed.moduleScope = QStringLiteral("other_t");
-    snapshotDefinitionSymbols.append(snapshotOtherRed);
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    using SourceRole = SymbolTaxonomy::SourceRole;
+    using SymbolOwnerScope = SymbolTaxonomy::SymbolOwnerScope;
 
-    sym_list::SymbolInfo snapshotPixelRed = otherRed;
-    snapshotPixelRed.fileName = QStringLiteral("snapshot_only.sv");
-    snapshotPixelRed.symbolId = 6102;
-    snapshotPixelRed.startLine = 2;
-    snapshotPixelRed.moduleScope = QStringLiteral("snap_pixel_t");
-    snapshotDefinitionSymbols.append(snapshotPixelRed);
+    const QString snapshotOnlyFile = QStringLiteral("snapshot_only.sv");
+    QList<SemanticSymbolRecord> snapshotDefinitionRecords;
+    const SemanticSymbolRecord snapshotOtherRed =
+        SemanticFixtureRecordBuilder(QStringLiteral("red"),
+                                     DeclarationKind::StructMember)
+            .withFile(snapshotOnlyFile)
+            .withLocalHandle(6101)
+            .withLine(1, 9)
+            .withCollectorKind(CollectorKind::StructMember)
+            .inStruct(QStringLiteral("other_t"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotOtherRed);
 
-    sym_list::SymbolInfo snapshotPixelVar = pixelVar;
-    snapshotPixelVar.fileName = QStringLiteral("snapshot_only.sv");
-    snapshotPixelVar.symbolName = QStringLiteral("snap_pixel");
-    snapshotPixelVar.symbolId = 6103;
-    snapshotPixelVar.startLine = 3;
-    snapshotPixelVar.moduleScope = QStringLiteral("snap_top");
-    snapshotPixelVar.dataType = QStringLiteral("snap_pixel_t");
-    snapshotDefinitionSymbols.append(snapshotPixelVar);
+    const SemanticSymbolRecord snapshotPixelRed =
+        SemanticFixtureRecordBuilder(QStringLiteral("red"),
+                                     DeclarationKind::StructMember)
+            .withFile(snapshotOnlyFile)
+            .withLocalHandle(6102)
+            .withLine(2, 9)
+            .withCollectorKind(CollectorKind::StructMember)
+            .inStruct(QStringLiteral("snap_pixel_t"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotPixelRed);
 
-    sym_list::SymbolInfo snapshotHelperModule;
-    snapshotHelperModule.fileName = QStringLiteral("snapshot_helper.sv");
-    snapshotHelperModule.symbolName = QStringLiteral("snap_helper");
-    snapshotHelperModule.symbolType = sym_list::sym_module;
-    snapshotHelperModule.startLine = 12;
-    snapshotHelperModule.startColumn = 1;
-    snapshotHelperModule.endLine = 14;
-    snapshotHelperModule.endColumn = 10;
-    snapshotHelperModule.symbolId = 6104;
-    snapshotDefinitionSymbols.append(snapshotHelperModule);
+    const SemanticSymbolRecord snapshotPixelVar =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_pixel"),
+                                     DeclarationKind::StructVariable)
+            .withFile(snapshotOnlyFile)
+            .withLocalHandle(6103)
+            .withLine(3, 5)
+            .withCollectorKind(CollectorKind::PackedStructVariable)
+            .inModule(QStringLiteral("snap_top"))
+            .withType(QStringLiteral("snap_pixel_t"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotPixelVar);
 
-    sym_list::SymbolInfo snapshotHelperInterface = snapshotHelperModule;
-    snapshotHelperInterface.fileName = QStringLiteral("snapshot_if.sv");
-    snapshotHelperInterface.symbolName = QStringLiteral("snap_if");
-    snapshotHelperInterface.symbolType = sym_list::sym_interface;
-    snapshotHelperInterface.startLine = 15;
-    snapshotHelperInterface.symbolId = 6107;
-    snapshotDefinitionSymbols.append(snapshotHelperInterface);
+    const SemanticSymbolRecord snapshotHelperModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_helper"),
+                                     DeclarationKind::Module)
+            .withFile(QStringLiteral("snapshot_helper.sv"))
+            .withLocalHandle(6104)
+            .withRange(12, 1, 14, 10)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    snapshotDefinitionRecords.append(snapshotHelperModule);
 
-    sym_list::SymbolInfo snapshotHelperPackage = snapshotHelperModule;
-    snapshotHelperPackage.fileName = QStringLiteral("snapshot_pkg.sv");
-    snapshotHelperPackage.symbolName = QStringLiteral("snap_pkg");
-    snapshotHelperPackage.symbolType = sym_list::sym_package;
-    snapshotHelperPackage.startLine = 18;
-    snapshotHelperPackage.symbolId = 6108;
-    snapshotDefinitionSymbols.append(snapshotHelperPackage);
+    const SemanticSymbolRecord snapshotHelperInterface =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_if"),
+                                     DeclarationKind::Interface)
+            .withFile(QStringLiteral("snapshot_if.sv"))
+            .withLocalHandle(6107)
+            .withRange(15, 1, 15, 10)
+            .withCollectorKind(CollectorKind::Interface)
+            .record();
+    snapshotDefinitionRecords.append(snapshotHelperInterface);
 
-    sym_list::SymbolInfo snapshotPackageParam = snapshotHelperModule;
-    snapshotPackageParam.fileName = QStringLiteral("snapshot_pkg.sv");
-    snapshotPackageParam.symbolName = QStringLiteral("SNAP_WIDTH");
-    snapshotPackageParam.symbolType = sym_list::sym_parameter;
-    snapshotPackageParam.moduleScope = QStringLiteral("snap_pkg");
-    snapshotPackageParam.startLine = 20;
-    snapshotPackageParam.symbolId = 6109;
-    snapshotDefinitionSymbols.append(snapshotPackageParam);
+    const SemanticSymbolRecord snapshotHelperPackage =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_pkg"),
+                                     DeclarationKind::Package)
+            .withFile(QStringLiteral("snapshot_pkg.sv"))
+            .withLocalHandle(6108)
+            .withRange(18, 1, 18, 10)
+            .withCollectorKind(CollectorKind::Package)
+            .record();
+    snapshotDefinitionRecords.append(snapshotHelperPackage);
 
-    sym_list::SymbolInfo snapshotPackageTypedef = snapshotPackageParam;
-    snapshotPackageTypedef.symbolName = QStringLiteral("snap_word_t");
-    snapshotPackageTypedef.symbolType = sym_list::sym_typedef;
-    snapshotPackageTypedef.startLine = 21;
-    snapshotPackageTypedef.symbolId = 6110;
-    snapshotDefinitionSymbols.append(snapshotPackageTypedef);
+    const SemanticSymbolRecord snapshotPackageParam =
+        SemanticFixtureRecordBuilder(QStringLiteral("SNAP_WIDTH"),
+                                     DeclarationKind::Parameter)
+            .withFile(QStringLiteral("snapshot_pkg.sv"))
+            .withLocalHandle(6109)
+            .withRange(20, 1, 20, 10)
+            .withCollectorKind(CollectorKind::Parameter)
+            .inPackage(QStringLiteral("snap_pkg"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotPackageParam);
 
-    sym_list::SymbolInfo snapshotInterfaceModport = snapshotHelperInterface;
-    snapshotInterfaceModport.symbolName = QStringLiteral("slave");
-    snapshotInterfaceModport.symbolType = sym_list::sym_interface_modport;
-    snapshotInterfaceModport.moduleScope = QStringLiteral("snap_if");
-    snapshotInterfaceModport.startLine = 22;
-    snapshotInterfaceModport.symbolId = 6111;
-    snapshotDefinitionSymbols.append(snapshotInterfaceModport);
+    const SemanticSymbolRecord snapshotPackageTypedef =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_word_t"),
+                                     DeclarationKind::Typedef)
+            .withFile(QStringLiteral("snapshot_pkg.sv"))
+            .withLocalHandle(6110)
+            .withRange(21, 1, 21, 10)
+            .withCollectorKind(CollectorKind::Typedef)
+            .inPackage(QStringLiteral("snap_pkg"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotPackageTypedef);
 
-    sym_list::SymbolInfo snapshotInterfacePort = snapshotHelperInterface;
-    snapshotInterfacePort.fileName = QStringLiteral("snapshot_only.sv");
-    snapshotInterfacePort.symbolName = QStringLiteral("snap_bus");
-    snapshotInterfacePort.symbolType = sym_list::sym_port_interface_modport;
-    snapshotInterfacePort.moduleScope = QStringLiteral("snap_top");
-    snapshotInterfacePort.dataType = QStringLiteral("snap_if.slave");
-    snapshotInterfacePort.startLine = 23;
-    snapshotInterfacePort.symbolId = 6112;
-    snapshotDefinitionSymbols.append(snapshotInterfacePort);
+    const SemanticSymbolRecord snapshotInterfaceModport =
+        SemanticFixtureRecordBuilder(QStringLiteral("slave"),
+                                     DeclarationKind::Modport)
+            .withFile(QStringLiteral("snapshot_if.sv"))
+            .withLocalHandle(6111)
+            .withRange(22, 1, 22, 10)
+            .withCollectorKind(CollectorKind::InterfaceModport)
+            .inInterface(QStringLiteral("snap_if"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotInterfaceModport);
 
-    sym_list::SymbolInfo snapshotLocalDuplicate;
-    snapshotLocalDuplicate.fileName = QStringLiteral("snapshot_only.sv");
-    snapshotLocalDuplicate.symbolName = QStringLiteral("snap_dup");
-    snapshotLocalDuplicate.symbolType = sym_list::sym_module;
-    snapshotLocalDuplicate.startLine = 21;
-    snapshotLocalDuplicate.startColumn = 1;
-    snapshotLocalDuplicate.endLine = 23;
-    snapshotLocalDuplicate.endColumn = 10;
-    snapshotLocalDuplicate.symbolId = 6105;
-    snapshotDefinitionSymbols.append(snapshotLocalDuplicate);
+    const SemanticSymbolRecord snapshotInterfacePort =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_bus"),
+                                     DeclarationKind::Port)
+            .withFile(snapshotOnlyFile)
+            .withLocalHandle(6112)
+            .withRange(23, 1, 23, 10)
+            .withCollectorKind(CollectorKind::PortInterfaceModport)
+            .withOwner(SymbolOwnerScope::Module,
+                       QStringLiteral("snap_top"),
+                       {},
+                       true)
+            .withType(QStringLiteral("snap_if.slave"),
+                      QStringLiteral("snap_if"),
+                      DeclarationKind::Interface,
+                      QStringLiteral("slave"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotInterfacePort);
 
-    sym_list::SymbolInfo snapshotRemoteDuplicate = snapshotLocalDuplicate;
-    snapshotRemoteDuplicate.fileName = QStringLiteral("snapshot_remote.sv");
-    snapshotRemoteDuplicate.startLine = 31;
-    snapshotRemoteDuplicate.symbolId = 6106;
-    snapshotDefinitionSymbols.append(snapshotRemoteDuplicate);
+    const SemanticSymbolRecord snapshotLocalDuplicate =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_dup"),
+                                     DeclarationKind::Module)
+            .withFile(snapshotOnlyFile)
+            .withLocalHandle(6105)
+            .withRange(21, 1, 23, 10)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    snapshotDefinitionRecords.append(snapshotLocalDuplicate);
 
-    sym_list::SymbolInfo snapshotMetadataScopedDuplicate = snapshotRemoteDuplicate;
-    snapshotMetadataScopedDuplicate.symbolName = QStringLiteral("snap_meta_dup");
-    snapshotMetadataScopedDuplicate.moduleScope = QStringLiteral("snap_top");
-    snapshotMetadataScopedDuplicate.symbolType = sym_list::sym_user;
-    snapshotMetadataScopedDuplicate.symbolId = 6113;
-    snapshotMetadataScopedDuplicate.hasSemanticMetadata = true;
-    snapshotMetadataScopedDuplicate.semanticDeclarationKind =
-        SymbolTaxonomy::DeclarationKind::Module;
-    snapshotMetadataScopedDuplicate.semanticUsageRole =
-        SymbolTaxonomy::SymbolUsageRole::Declaration;
-    snapshotMetadataScopedDuplicate.semanticOwnerScope =
-        SymbolTaxonomy::SymbolOwnerScope::Module;
-    snapshotMetadataScopedDuplicate.semanticVisibility =
-        SymbolTaxonomy::SymbolVisibility::ScopeLocal;
-    snapshotMetadataScopedDuplicate.semanticSourceRole =
-        SymbolTaxonomy::SourceRole::DesignSource;
-    snapshotMetadataScopedDuplicate.collectorKind = sym_list::sym_user;
-    snapshotDefinitionSymbols.append(snapshotMetadataScopedDuplicate);
+    const SemanticSymbolRecord snapshotRemoteDuplicate =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_dup"),
+                                     DeclarationKind::Module)
+            .withFile(QStringLiteral("snapshot_remote.sv"))
+            .withLocalHandle(6106)
+            .withRange(31, 1, 31, 10)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    snapshotDefinitionRecords.append(snapshotRemoteDuplicate);
 
-    sym_list::SymbolInfo snapshotGlobalMetadataDuplicate =
-        snapshotMetadataScopedDuplicate;
-    snapshotGlobalMetadataDuplicate.semanticOwnerScope =
-        SymbolTaxonomy::SymbolOwnerScope::Global;
-    snapshotGlobalMetadataDuplicate.semanticVisibility =
-        SymbolTaxonomy::SymbolVisibility::Global;
-    snapshotGlobalMetadataDuplicate.symbolId = 6114;
-    snapshotDefinitionSymbols.append(snapshotGlobalMetadataDuplicate);
+    const SemanticSymbolRecord snapshotMetadataScopedDuplicate =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_meta_dup"))
+            .withFile(QStringLiteral("snapshot_remote.sv"))
+            .withLocalHandle(6113)
+            .withRange(31, 1, 31, 10)
+            .withMetadata(semanticFixtureMetadata(DeclarationKind::Module,
+                                                  SymbolOwnerScope::Module,
+                                                  CollectorKind::User,
+                                                  SourceRole::DesignSource))
+            .withOwner(SymbolOwnerScope::Module, QStringLiteral("snap_top"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotMetadataScopedDuplicate);
+
+    const SemanticSymbolRecord snapshotGlobalMetadataDuplicate =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_meta_dup"))
+            .withFile(QStringLiteral("snapshot_remote.sv"))
+            .withLocalHandle(6114)
+            .withRange(31, 1, 31, 10)
+            .withMetadata(semanticFixtureMetadata(DeclarationKind::Module,
+                                                  SymbolOwnerScope::Global,
+                                                  CollectorKind::User,
+                                                  SourceRole::DesignSource))
+            .withOwner(SymbolOwnerScope::Global)
+            .record();
+    snapshotDefinitionRecords.append(snapshotGlobalMetadataDuplicate);
 
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
-        sharedSnapshotFromSymbols(snapshotDefinitionSymbols));
+        sharedSnapshotFromRecords(snapshotDefinitionRecords));
     DefinitionService snapshotDefinitionService(&snapshotIndex);
     DefinitionQuery snapshotMemberQuery;
     snapshotMemberQuery.symbolName = QStringLiteral("red");
@@ -426,7 +438,8 @@ int main(int argc, char** argv) {
         snapshotDefinitionService.resolveDefinition(snapshotMemberQuery);
     ++g_checks;
     const bool snapshotMemberOk = snapshotMemberResult.found
-        && snapshotMemberResult.symbolRecord.localHandle == snapshotPixelRed.symbolId
+        && snapshotMemberResult.symbolRecord.localHandle
+            == snapshotPixelRed.localHandle
         && snapshotMemberResult.symbolRecord.owner.name == QStringLiteral("snap_pixel_t");
     if (!snapshotMemberOk)
         ++g_fails;
@@ -441,11 +454,12 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotModuleOk = snapshotModuleResult.found
         && !snapshotModuleResult.localFile
-        && snapshotModuleResult.symbolRecord.localHandle == snapshotHelperModule.symbolId
+        && snapshotModuleResult.symbolRecord.localHandle
+            == snapshotHelperModule.localHandle
         && QFileInfo(snapshotModuleResult.symbolRecord.location.fileName).fileName()
             == QStringLiteral("snapshot_helper.sv")
         && snapshotModuleResult.symbolStableKey
-            == stableKeyForSymbol(snapshotHelperModule)
+            == snapshotHelperModule.stableKey
         && snapshotModuleResult.missReason == SemanticDefinitionMissReason::None
         && snapshotModuleResult.visibleCandidateCount > 0;
     if (!snapshotModuleOk)
@@ -466,14 +480,15 @@ int main(int argc, char** argv) {
                snapshotNavigationTarget.found
                    && snapshotNavigationTarget.symbolRecord.isValid()
                    && snapshotNavigationTarget.symbolRecord.localHandle
-                       == snapshotHelperModule.symbolId
+                       == snapshotHelperModule.localHandle
                    && snapshotNavigationTarget.symbolRecord.stableKey
                        == snapshotNavigationTarget.symbolStableKey
                    && snapshotNavigationTarget.symbolRecord.name
                        == QStringLiteral("snap_helper")
                    && snapshotNavigationTarget.fileName.endsWith(
                        QStringLiteral("snapshot_helper.sv"))
-                   && snapshotNavigationTarget.line == snapshotHelperModule.startLine
+                   && snapshotNavigationTarget.line
+                       == snapshotHelperModule.location.startLine
                    && snapshotNavigationTarget.symbolTypeText
                        == QStringLiteral("module")
                    && snapshotNavigationTarget.symbolRecord.collectorKind
@@ -516,7 +531,7 @@ int main(int argc, char** argv) {
     const bool snapshotInterfaceOk = snapshotInterfaceResult.found
         && !snapshotInterfaceResult.localFile
         && snapshotInterfaceResult.symbolRecord.localHandle
-            == snapshotHelperInterface.symbolId
+            == snapshotHelperInterface.localHandle
         && snapshotInterfaceResult.symbolRecord.collectorKind
             == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_interface);
     if (!snapshotInterfaceOk)
@@ -536,7 +551,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotInterfaceModportOk = snapshotInterfaceModportResult.found
         && snapshotInterfaceModportResult.symbolRecord.localHandle
-            == snapshotInterfaceModport.symbolId
+            == snapshotInterfaceModport.localHandle
         && snapshotInterfaceModportResult.symbolRecord.owner.name
             == QStringLiteral("snap_if");
     if (!snapshotInterfaceModportOk)
@@ -555,7 +570,7 @@ int main(int argc, char** argv) {
     expectBool("DefinitionService resolves snapshot interface member context",
                snapshotInterfaceMemberResult.found
                    && snapshotInterfaceMemberResult.symbolRecord.localHandle
-                       == snapshotInterfaceModport.symbolId
+                       == snapshotInterfaceModport.localHandle
                    && snapshotInterfaceMemberResult.symbolRecord.isValid()
                    && snapshotInterfaceMemberResult.symbolRecord.stableKey
                        == snapshotInterfaceMemberResult.symbolStableKey
@@ -573,7 +588,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotPackageOk = snapshotPackageDefinition.found
         && snapshotPackageDefinition.symbolRecord.localHandle
-            == snapshotHelperPackage.symbolId
+            == snapshotHelperPackage.localHandle
         && snapshotPackageDefinition.symbolRecord.declarationKind
             == SymbolTaxonomy::DeclarationKind::Package;
     if (!snapshotPackageOk)
@@ -590,7 +605,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotPackageParamOk = snapshotPackageParamResult.found
         && snapshotPackageParamResult.symbolRecord.localHandle
-            == snapshotPackageParam.symbolId
+            == snapshotPackageParam.localHandle
         && snapshotPackageParamResult.symbolRecord.isValid()
         && snapshotPackageParamResult.symbolRecord.owner.kind
             == SymbolTaxonomy::SymbolOwnerScope::Package
@@ -612,7 +627,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotPackageTypedefOk = snapshotPackageTypedefResult.found
         && snapshotPackageTypedefResult.symbolRecord.localHandle
-            == snapshotPackageTypedef.symbolId;
+            == snapshotPackageTypedef.localHandle;
     if (!snapshotPackageTypedefOk)
         ++g_fails;
     printf("[%s] DefinitionService resolves snapshot package typedef\n",
@@ -693,7 +708,7 @@ int main(int argc, char** argv) {
     const bool snapshotLocalModuleOk = snapshotLocalModuleResult.found
         && snapshotLocalModuleResult.localFile
         && snapshotLocalModuleResult.symbolRecord.localHandle
-            == snapshotLocalDuplicate.symbolId
+            == snapshotLocalDuplicate.localHandle
         && QFileInfo(snapshotLocalModuleResult.symbolRecord.location.fileName).fileName()
             == QStringLiteral("snapshot_only.sv");
     if (!snapshotLocalModuleOk)
@@ -706,7 +721,7 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotResolveDefinitionOk = snapshotLocalDefinition.found
         && snapshotLocalDefinition.symbolRecord.localHandle
-            == snapshotLocalDuplicate.symbolId;
+            == snapshotLocalDuplicate.localHandle;
     if (!snapshotResolveDefinitionOk)
         ++g_fails;
     printf("[%s] DefinitionService keeps snapshot local result\n",
@@ -721,7 +736,7 @@ int main(int argc, char** argv) {
     const bool metadataScopedDefinitionsOk =
         metadataScopedDefinitions.size() == 2
         && metadataScopedDefinitions.first().localHandle
-            == snapshotMetadataScopedDuplicate.symbolId
+            == snapshotMetadataScopedDuplicate.localHandle
         && metadataScopedDefinitions.first().owner.name == QStringLiteral("snap_top")
         && metadataScopedDefinitions.first().declarationKind
                == SymbolTaxonomy::DeclarationKind::Module
