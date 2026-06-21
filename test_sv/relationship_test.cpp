@@ -6402,141 +6402,190 @@ static void runSemanticDiffServiceFixture()
 
     const QString fileName = QStringLiteral("test_sv/semantic_diff_fixture.sv");
 
-    QList<sym_list::SymbolInfo> beforeSymbols;
-    beforeSymbols.append(makeModuleBriefSymbol(
-        9401,
-        fileName,
-        QStringLiteral("diff_top"),
-        sym_list::sym_module,
-        1));
-    beforeSymbols.append(makeModuleBriefSymbol(
-        9402,
-        fileName,
-        QStringLiteral("clk"),
-        sym_list::sym_port_input,
-        2,
-        QStringLiteral("diff_top")));
-    sym_list::SymbolInfo beforeDataPort = makeModuleBriefSymbol(
-        9403,
-        fileName,
-        QStringLiteral("data"),
-        sym_list::sym_port_input,
-        3,
-        QStringLiteral("diff_top"));
-    beforeDataPort.dataType = QStringLiteral("logic [7:0]");
-    beforeSymbols.append(beforeDataPort);
-    beforeSymbols.append(makeModuleBriefSymbol(
-        9404,
-        fileName,
-        QStringLiteral("OLD_PARAM"),
-        sym_list::sym_parameter,
-        4,
-        QStringLiteral("diff_top")));
-    beforeSymbols.append(makeModuleBriefSymbol(
-        9405,
-        fileName,
-        QStringLiteral("u_old"),
-        sym_list::sym_inst,
-        10,
-        QStringLiteral("diff_top")));
-    beforeSymbols.append(makeModuleBriefSymbol(
-        9406,
-        fileName,
-        QStringLiteral("stale_q"),
-        sym_list::sym_logic,
-        12,
-        QStringLiteral("diff_top")));
-    beforeSymbols.append(makeModuleBriefSymbol(
-        9407,
-        fileName,
-        QStringLiteral("old_pkg"),
-        sym_list::sym_package,
-        30));
-    beforeSymbols.append(makeModuleBriefSymbol(
-        9408,
-        fileName,
-        QStringLiteral("old_t"),
-        sym_list::sym_typedef,
-        31,
-        QStringLiteral("diff_top")));
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
 
-    QList<sym_list::SymbolInfo> afterSymbols;
-    afterSymbols.append(makeModuleBriefSymbol(
-        9501,
-        fileName,
-        QStringLiteral("diff_top"),
-        sym_list::sym_module,
-        1));
-    afterSymbols.append(makeModuleBriefSymbol(
-        9502,
-        fileName,
-        QStringLiteral("clk"),
-        sym_list::sym_port_input,
-        2,
-        QStringLiteral("diff_top")));
-    sym_list::SymbolInfo afterDataPort = makeModuleBriefSymbol(
-        9503,
-        fileName,
-        QStringLiteral("data"),
-        sym_list::sym_port_output,
-        3,
-        QStringLiteral("diff_top"));
-    afterDataPort.dataType = QStringLiteral("logic [15:0]");
-    afterSymbols.append(afterDataPort);
-    afterSymbols.append(makeModuleBriefSymbol(
-        9504,
-        fileName,
-        QStringLiteral("DEPTH"),
-        sym_list::sym_parameter,
-        4,
-        QStringLiteral("diff_top")));
-    afterSymbols.append(makeModuleBriefSymbol(
-        9505,
-        fileName,
-        QStringLiteral("u_new"),
-        sym_list::sym_inst,
-        10,
-        QStringLiteral("diff_top")));
-    afterSymbols.append(makeModuleBriefSymbol(
-        9506,
-        fileName,
-        QStringLiteral("state_q"),
-        sym_list::sym_logic,
-        12,
-        QStringLiteral("diff_top")));
-    afterSymbols.append(makeModuleBriefSymbol(
-        9507,
-        fileName,
-        QStringLiteral("diff_if"),
-        sym_list::sym_interface,
-        30));
-    afterSymbols.append(makeModuleBriefSymbol(
-        9508,
-        fileName,
-        QStringLiteral("state_t"),
-        sym_list::sym_typedef,
-        31,
-        QStringLiteral("diff_top")));
+    const SemanticSymbolRecord beforeModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("diff_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9401)
+            .withLine(1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord beforeClk =
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9402)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord beforeDataPort =
+        SemanticFixtureRecordBuilder(QStringLiteral("data"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9403)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("diff_top"))
+            .withType(QStringLiteral("logic [7:0]"))
+            .record();
+    const SemanticSymbolRecord oldParam =
+        SemanticFixtureRecordBuilder(QStringLiteral("OLD_PARAM"),
+                                     DeclarationKind::Parameter)
+            .withFile(fileName)
+            .withLocalHandle(9404)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::Parameter)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord oldInstance =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_old"),
+                                     DeclarationKind::Instance)
+            .withFile(fileName)
+            .withLocalHandle(9405)
+            .withLine(10)
+            .withCollectorKind(CollectorKind::Inst)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord staleSignal =
+        SemanticFixtureRecordBuilder(QStringLiteral("stale_q"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9406)
+            .withLine(12)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord oldPackage =
+        SemanticFixtureRecordBuilder(QStringLiteral("old_pkg"),
+                                     DeclarationKind::Package)
+            .withFile(fileName)
+            .withLocalHandle(9407)
+            .withLine(30)
+            .withCollectorKind(CollectorKind::Package)
+            .record();
+    const SemanticSymbolRecord oldTypedef =
+        SemanticFixtureRecordBuilder(QStringLiteral("old_t"),
+                                     DeclarationKind::Typedef)
+            .withFile(fileName)
+            .withLocalHandle(9408)
+            .withLine(31)
+            .withCollectorKind(CollectorKind::Typedef)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const QList<SemanticSymbolRecord> beforeRecords{
+        beforeModule,
+        beforeClk,
+        beforeDataPort,
+        oldParam,
+        oldInstance,
+        staleSignal,
+        oldPackage,
+        oldTypedef,
+    };
+
+    const SemanticSymbolRecord afterModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("diff_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9501)
+            .withLine(1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord afterClk =
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9502)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::PortInput)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord afterDataPort =
+        SemanticFixtureRecordBuilder(QStringLiteral("data"),
+                                     DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(9503)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::PortOutput)
+            .inModule(QStringLiteral("diff_top"))
+            .withType(QStringLiteral("logic [15:0]"))
+            .record();
+    const SemanticSymbolRecord depthParam =
+        SemanticFixtureRecordBuilder(QStringLiteral("DEPTH"),
+                                     DeclarationKind::Parameter)
+            .withFile(fileName)
+            .withLocalHandle(9504)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::Parameter)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord newInstance =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_new"),
+                                     DeclarationKind::Instance)
+            .withFile(fileName)
+            .withLocalHandle(9505)
+            .withLine(10)
+            .withCollectorKind(CollectorKind::Inst)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord stateSignal =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_q"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9506)
+            .withLine(12)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const SemanticSymbolRecord diffInterface =
+        SemanticFixtureRecordBuilder(QStringLiteral("diff_if"),
+                                     DeclarationKind::Interface)
+            .withFile(fileName)
+            .withLocalHandle(9507)
+            .withLine(30)
+            .withCollectorKind(CollectorKind::Interface)
+            .record();
+    const SemanticSymbolRecord stateTypedef =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_t"),
+                                     DeclarationKind::Typedef)
+            .withFile(fileName)
+            .withLocalHandle(9508)
+            .withLine(31)
+            .withCollectorKind(CollectorKind::Typedef)
+            .inModule(QStringLiteral("diff_top"))
+            .record();
+    const QList<SemanticSymbolRecord> afterRecords{
+        afterModule,
+        afterClk,
+        afterDataPort,
+        depthParam,
+        newInstance,
+        stateSignal,
+        diffInterface,
+        stateTypedef,
+    };
 
     QList<SemanticRelationship> beforeRelationships;
-    SemanticRelationship beforeInst;
-    beforeInst.fromId = 9401;
-    beforeInst.toId = 9405;
-    beforeInst.type = SymbolRelationshipEngine::INSTANTIATES;
-    beforeInst.provenance = RelationshipProvenance::Workspace;
-    beforeInst.confidence = 70;
-    beforeInst.evidenceText = QStringLiteral("old instance u_old");
-    beforeRelationships.append(beforeInst);
+    beforeRelationships.append(semanticFixtureRelationship(
+        beforeModule,
+        oldInstance,
+        SymbolRelationshipEngine::INSTANTIATES,
+        RelationshipProvenance::Workspace,
+        70,
+        QStringLiteral("old instance u_old")));
 
     QList<SemanticRelationship> afterRelationships;
-    SemanticRelationship afterInst;
-    afterInst.fromId = 9501;
-    afterInst.toId = 9505;
-    afterInst.type = SymbolRelationshipEngine::INSTANTIATES;
-    afterInst.provenance = RelationshipProvenance::Inferred;
-    afterInst.confidence = 90;
-    afterInst.evidenceText = QStringLiteral("new instance u_new");
-    afterRelationships.append(afterInst);
+    afterRelationships.append(semanticFixtureRelationship(
+        afterModule,
+        newInstance,
+        SymbolRelationshipEngine::INSTANTIATES,
+        RelationshipProvenance::Inferred,
+        90,
+        QStringLiteral("new instance u_new")));
 
     QList<SemanticDiagnostic> beforeDiagnostics;
     SemanticDiagnostic beforeDiagnostic;
@@ -6556,12 +6605,12 @@ static void runSemanticDiffServiceFixture()
     afterDiagnostic.message = QStringLiteral("new error");
     afterDiagnostics.append(afterDiagnostic);
 
-    auto beforeSnapshot = sharedSnapshotFromSymbols(
-        beforeSymbols,
+    auto beforeSnapshot = sharedSnapshotFromRecords(
+        beforeRecords,
         beforeRelationships,
         beforeDiagnostics);
-    auto afterSnapshot = sharedSnapshotFromSymbols(
-        afterSymbols,
+    auto afterSnapshot = sharedSnapshotFromRecords(
+        afterRecords,
         afterRelationships,
         afterDiagnostics);
 
