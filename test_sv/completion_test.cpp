@@ -1,4 +1,4 @@
-// Headless completion-logic test. Populates sym_list from Slang, then drives CompletionManager's
+// Headless completion-logic test. Populates semantic records from Slang, then drives CompletionManager's
 // public query methods and asserts the results. No GUI window is shown.
 #include "slangmanager.h"
 #include "alternatecommandservice.h"
@@ -11,10 +11,8 @@
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
-#include "syminfo.h"
 #include <QApplication>
 #include <QFile>
-#include <QSet>
 #include <QTextStream>
 #include <QString>
 #include <QStringList>
@@ -24,35 +22,6 @@
 
 static int g_checks = 0;
 static int g_fails = 0;
-
-static QSet<QString> packageScopeNames(const QList<sym_list::SymbolInfo>& symbols)
-{
-    QSet<QString> names;
-    for (const sym_list::SymbolInfo& symbol : symbols) {
-        if (SymbolTaxonomy::isPackageDeclaration(
-                semanticMetadataForSymbolInfo(symbol))
-            && !symbol.symbolName.isEmpty()) {
-            names.insert(symbol.symbolName);
-        }
-    }
-    return names;
-}
-
-static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
-    const QList<sym_list::SymbolInfo>& symbols,
-    const QList<SemanticRelationship>& relationships = {},
-    const QList<SemanticDiagnostic>& diagnostics = {},
-    const QHash<QString, QString>& fileContents = {})
-{
-    return std::make_shared<SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(
-            semanticSymbolRecordsForSymbols(
-                symbols,
-                packageScopeNames(symbols)),
-            relationships,
-            diagnostics,
-            fileContents));
-}
 
 static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
     const QList<SemanticSymbolRecord>& records,
@@ -66,17 +35,6 @@ static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
             relationships,
             diagnostics,
             fileContents));
-}
-
-static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromSymbols(
-    const SemanticIndexSnapshot& snapshot)
-{
-    return std::make_shared<SemanticIndexSnapshot>(snapshot);
-}
-
-static SymbolStableKey stableKeyForSymbol(const sym_list::SymbolInfo& symbol)
-{
-    return semanticSymbolRecordForSymbol(symbol).stableKey;
 }
 
 static QStringList sorted(QStringList l) { l.sort(); return l; }
@@ -119,13 +77,6 @@ static void expectExcludes(const char* what, const QStringList& got, const QStri
            got.join(",").toLocal8Bit().constData());
 }
 
-static QStringList symbolNames(const QList<sym_list::SymbolInfo>& symbols) {
-    QStringList names;
-    for (const auto& symbol : symbols)
-        names << symbol.symbolName;
-    return names;
-}
-
 static QStringList recordNames(const QList<SemanticSymbolRecord>& records) {
     QStringList names;
     for (const auto& record : records)
@@ -138,28 +89,6 @@ static QStringList scoredNames(const QVector<QPair<QString, int>>& scored) {
     for (const auto& item : scored)
         names << item.first;
     return names;
-}
-
-static sym_list::SymbolInfo makeSymbol(const QString& name,
-                                       sym_list::sym_type_e type,
-                                       const QString& moduleScope,
-                                       const QString& dataType,
-                                       int symbolId)
-{
-    sym_list::SymbolInfo symbol;
-    symbol.fileName = QStringLiteral("snapshot_only.sv");
-    symbol.symbolName = name;
-    symbol.symbolType = type;
-    symbol.moduleScope = moduleScope;
-    symbol.dataType = dataType;
-    symbol.startLine = symbolId;
-    symbol.startColumn = 1;
-    symbol.endLine = symbolId;
-    symbol.endColumn = 1;
-    symbol.position = 0;
-    symbol.length = name.size();
-    symbol.symbolId = symbolId;
-    return symbol;
 }
 
 static SemanticSymbolRecord makeSemanticFixtureRecord(
@@ -2038,7 +1967,8 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool commandLogicOk = commandLogicSymbols.size() == 1
         && commandLogicSymbols.first().name == QStringLiteral("enable")
-        && commandLogicSymbols.first().collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_logic)
+        && commandLogicSymbols.first().collectorKind
+            == SymbolTaxonomy::CollectorKind::Logic
         && commandLogicSymbols.first().owner.name == QStringLiteral("top");
     if (!commandLogicOk)
         ++g_fails;
@@ -2055,7 +1985,8 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool packedStructOk = packedStructVars.size() == 1
         && packedStructVars.first().name == QStringLiteral("pixel")
-        && packedStructVars.first().collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_packed_struct_var)
+        && packedStructVars.first().collectorKind
+            == SymbolTaxonomy::CollectorKind::PackedStructVariable
         && packedStructVars.first().owner.name == QStringLiteral("top");
     if (!packedStructOk)
         ++g_fails;
@@ -2456,7 +2387,8 @@ int main(int argc, char** argv) {
         snapshotIndex.getSymbolRecords();
     bool snapshotStructRecordOk = false;
     for (const SemanticSymbolRecord& record : snapshotStructRecords) {
-        if (record.collectorKind != static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_packed_struct_var))
+        if (record.collectorKind
+            != SymbolTaxonomy::CollectorKind::PackedStructVariable)
             continue;
         if (record.name == QStringLiteral("snap_pixel")
             && record.owner.name == QStringLiteral("snap_top")
@@ -2504,7 +2436,7 @@ int main(int argc, char** argv) {
         && snapshotModuleCompletion.items.first().label
             == QStringLiteral("snap_enable")
         && snapshotModuleCompletion.items.first().symbolRecord.collectorKind
-            == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_logic)
+            == SymbolTaxonomy::CollectorKind::Logic
         && snapshotModuleCompletion.items.first().symbolRecord.owner.name
             == QStringLiteral("snap_top");
     if (!snapshotModuleSymbolOk)
@@ -2527,7 +2459,8 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotLogicCommandOk = snapshotLogicCommandSymbols.size() == 1
         && snapshotLogicCommandSymbols.first().name == QStringLiteral("snap_enable")
-        && snapshotLogicCommandSymbols.first().collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_logic)
+        && snapshotLogicCommandSymbols.first().collectorKind
+            == SymbolTaxonomy::CollectorKind::Logic
         && snapshotLogicCommandSymbols.first().owner.name == QStringLiteral("snap_top");
     if (!snapshotLogicCommandOk)
         ++g_fails;
@@ -2564,7 +2497,8 @@ int main(int argc, char** argv) {
     ++g_checks;
     const bool snapshotTaskCommandOk = snapshotTaskCommandSymbols.size() == 1
         && snapshotTaskCommandSymbols.first().name == QStringLiteral("snap_task")
-        && snapshotTaskCommandSymbols.first().collectorKind == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_task)
+        && snapshotTaskCommandSymbols.first().collectorKind
+            == SymbolTaxonomy::CollectorKind::Task
         && snapshotTaskCommandSymbols.first().owner.name.isEmpty();
     if (!snapshotTaskCommandOk)
         ++g_fails;
@@ -2685,7 +2619,7 @@ int main(int argc, char** argv) {
     const bool snapshotMemberSymbolOk = snapshotMemberCompletion.items.size() == 1
         && snapshotMemberCompletion.items.first().label == QStringLiteral("blue")
         && snapshotMemberCompletion.items.first().symbolRecord.collectorKind
-            == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_struct_member)
+            == SymbolTaxonomy::CollectorKind::StructMember
         && snapshotMemberCompletion.items.first().symbolRecord.owner.name
             == QStringLiteral("snap_pixel_t");
     if (!snapshotMemberSymbolOk)
@@ -2812,7 +2746,7 @@ int main(int argc, char** argv) {
         snapshotIndex.getSymbolRecords();
     bool snapshotEnumRecordOk = false;
     for (const SemanticSymbolRecord& record : snapshotEnumRecords) {
-        if (record.collectorKind != static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_enum_value))
+        if (record.collectorKind != SymbolTaxonomy::CollectorKind::EnumValue)
             continue;
         if (record.name == QStringLiteral("SNAP_IDLE")
             && record.owner.name == QStringLiteral("snap_top")) {
@@ -2982,7 +2916,7 @@ int main(int argc, char** argv) {
     const bool snapshotCommandOk = snapshotCommandSymbols.size() == 1
         && snapshotCommandSymbols.first().name == QStringLiteral("snap_pixel")
         && snapshotCommandSymbols.first().collectorKind
-            == static_cast<SymbolTaxonomy::CollectorKind>(sym_list::sym_packed_struct_var)
+            == SymbolTaxonomy::CollectorKind::PackedStructVariable
         && snapshotCommandSymbols.first().owner.name == QStringLiteral("snap_top")
         && snapshotCommandSymbols.first().type.rawTypeText
             == QStringLiteral("snap_pixel_t");
