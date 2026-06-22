@@ -283,6 +283,28 @@ feature direction that violates them.
 - Move from K2 to K3 only after folding behavior, tests, docs, and requested coherent local commit are complete.
 - Phase K completion verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 331 checks, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`.
 
+### Phase L: Regex Logic Native Cleanup
+
+- Status: complete.
+- Purpose achieved: first-party production regex logic has been removed from semantic/editor feature paths and replaced with deterministic SV token boundaries while preserving semantic, snapshot, and service data flow.
+- L0 Regex Inventory and Guard Baseline is complete: current regex cleanup targets are inventoried, docs/guard definitions are the explicit exception class, normal guard prevents new first-party production regex API spread outside the cleanup allowlist, and optional `ZEROSLACK_PHASE_L_ZERO_TARGET` is available for the final L6 gate.
+- L1 Utility Regex Replacement is complete: SV identifier validation, keyword word-boundary checks, module/endmodule scans, and whitespace normalization use shared deterministic token helpers instead of regex in low-risk utility paths.
+- L2 Completion Context Native is complete: `completioncontexthelper.cpp` no longer uses regex parsing; struct member, enum, assignment, and instantiation context use deterministic token helpers with focused completion tests.
+- L3 Module Range / Include / Import Native is complete: module range and scope-band helpers use deterministic token boundaries, and module-context include/import extraction no longer uses regex while preserving the `SemanticIndex` record path.
+- L4 FSM Graph Native Extraction is complete: `fsmgraphservice.cpp` no longer uses raw-file regex transition parsing; case selectors, labels, if conditions, assignment targets, assigned state values, and ternary branch state checks use deterministic token helpers plus semantic state records.
+- L5 Open Document Scheduling Cleanup is complete: keyword-regex structural-change checks are gone and the existing lightweight scheduling policy uses deterministic token-boundary matching.
+- L6 Final Regex Zero Target is complete: guard checks reject regex APIs outside docs and guard definitions; focused tests, affected GUI smoke tests, full Ninja/full CTest, normal/final guards, static scans, and `git diff --check` passed.
+- Do not remove or weaken guard-definition regex. Guard regex is allowed only inside guard definitions because it enforces the cleanup.
+
+### Phase L Goal Mode
+
+- Track Phase L progress by cleanup subphase.
+- L0, L1, L2, L3, L4, L5, and L6 are each their own 100% unit.
+- Current subphase: L6 Final Regex Zero Target complete, 0% remaining.
+- End every work turn by naming the current Phase L subphase and reporting that subphase's remaining percentage.
+- Move from one L subphase to the next only after implementation, verification, docs, and any requested coherent local commit for the current cleanup block are complete.
+- Phase L completion is achieved: L0-L6 are complete, docs are current, first-party production regex logic is removed, docs/guard definitions are the only regex allowlist, focused tests and affected GUI smoke tests passed, full Ninja/full CTest passed, normal/final guards passed, and `git diff --check` is clean.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
@@ -296,6 +318,7 @@ feature direction that violates them.
 - Phase H should proceed in small serial blocks; avoid mixing guard expansion, snapshot/store migration, completion contract migration, feature-service helper migration, and collector adapter deletion in one commit.
 - Phase I should proceed in strict subphase order unless a later subphase exposes a small prerequisite cleanup; do not mix collector-native emission, store replacement, relationship/scope migration, and carrier deletion in one commit.
 - Phase J should proceed in strict subphase order; do not mix test-builder introduction, completion/jump migration, relationship/GUI migration, carrier deletion, and final guard tightening in one commit.
+- Phase L should proceed in strict subphase order; avoid mixing guard expansion, completion context migration, include/import/module range migration, FSM extraction migration, and scheduler change detection in one commit.
 - Reduce batch size when blocks share core files, API boundaries, or real fixture expectations.
 
 ## Good Work Blocks

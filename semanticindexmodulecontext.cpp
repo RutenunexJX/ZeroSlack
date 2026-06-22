@@ -2,13 +2,13 @@
 
 #include "completioncommandkindadapter.h"
 #include "semanticindexmodulecontexthelpers.h"
+#include "svtokenutils.h"
 #include "symboltaxonomy.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
-#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
 #include <limits>
@@ -26,6 +26,102 @@ QString stableDedupeKeyForModuleContextRecord(
         .arg(record.owner.name,
              QString::number(static_cast<int>(record.declarationKind)),
              record.name);
+}
+
+int skipSpaces(const QString& line, int pos)
+{
+    while (pos < line.size() && line.at(pos).isSpace())
+        ++pos;
+    return pos;
+}
+
+bool readIdentifier(
+    const QString& line,
+    int pos,
+    QString& identifier,
+    int& end)
+{
+    if (pos < 0 || pos >= line.size()
+        || !SvTokenUtils::isIdentifierStart(line.at(pos))) {
+        return false;
+    }
+
+    end = pos + 1;
+    while (end < line.size()
+           && SvTokenUtils::isIdentifierContinue(line.at(end))) {
+        ++end;
+    }
+    identifier = line.mid(pos, end - pos);
+    return true;
+}
+
+QString parseIncludePath(const QString& line)
+{
+    const QString trimmed = line.trimmed();
+    if (trimmed.startsWith(QStringLiteral("//")))
+        return QString();
+
+    const int includePos = trimmed.indexOf(QStringLiteral("`include"));
+    if (includePos < 0)
+        return QString();
+    int pos = includePos + QStringLiteral("`include").size();
+    if (pos < trimmed.size()
+        && SvTokenUtils::isIdentifierContinue(trimmed.at(pos))) {
+        return QString();
+    }
+
+    pos = skipSpaces(trimmed, pos);
+    if (pos >= trimmed.size() || trimmed.at(pos) != QLatin1Char('"'))
+        return QString();
+    const int pathStart = pos + 1;
+    const int pathEnd = trimmed.indexOf(QLatin1Char('"'), pathStart);
+    if (pathEnd < 0)
+        return QString();
+    return trimmed.mid(pathStart, pathEnd - pathStart).trimmed();
+}
+
+bool parseImportStatement(
+    const QString& line,
+    QString& packageName,
+    QString& symbolName,
+    bool& importStar)
+{
+    packageName.clear();
+    symbolName.clear();
+    importStar = false;
+
+    const QString trimmed = line.trimmed();
+    if (trimmed.startsWith(QStringLiteral("//")))
+        return false;
+
+    const int importPos =
+        SvTokenUtils::indexOfWord(trimmed, QStringLiteral("import"));
+    if (importPos < 0)
+        return false;
+
+    int pos = skipSpaces(trimmed, importPos + QStringLiteral("import").size());
+    int end = pos;
+    if (!readIdentifier(trimmed, pos, packageName, end))
+        return false;
+
+    pos = skipSpaces(trimmed, end);
+    if (pos + 1 >= trimmed.size()
+        || trimmed.mid(pos, 2) != QStringLiteral("::")) {
+        return false;
+    }
+
+    pos = skipSpaces(trimmed, pos + 2);
+    if (pos < trimmed.size() && trimmed.at(pos) == QLatin1Char('*')) {
+        importStar = true;
+        ++pos;
+    } else if (!readIdentifier(trimmed, pos, symbolName, end)) {
+        return false;
+    } else {
+        pos = end;
+    }
+
+    pos = skipSpaces(trimmed, pos);
+    return pos < trimmed.size() && trimmed.at(pos) == QLatin1Char(';');
 }
 
 }
@@ -218,12 +314,6 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
 
     if (!fileContent.isEmpty()) {
         const QString baseDir = QFileInfo(fileName).absolutePath();
-        static const QRegularExpression includeRegex(
-            QStringLiteral("`include\\s+\"([^\"]+)\""));
-        static const QRegularExpression importStarRegex(
-            QStringLiteral("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*\\*\\s*;"));
-        static const QRegularExpression importSymbolRegex(
-            QStringLiteral("import\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*::\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*;"));
 
         QSet<QString> starPackages;
         QHash<QString, QSet<QString>> importedSymbolsByPackage;
@@ -236,9 +326,8 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
             }
 
             const QString line = lines.at(i);
-            const QRegularExpressionMatch includeMatch = includeRegex.match(line);
-            if (includeMatch.hasMatch()) {
-                const QString includePath = includeMatch.captured(1).trimmed();
+            const QString includePath = parseIncludePath(line);
+            if (!includePath.isEmpty()) {
                 const QString absoluteIncludePath =
                     QDir(baseDir).absoluteFilePath(includePath);
                 const QList<SemanticSymbolRecord> includeRecords =
@@ -247,16 +336,14 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
                     appendRecord(record);
             }
 
-            const QRegularExpressionMatch starMatch = importStarRegex.match(line);
-            if (starMatch.hasMatch()) {
-                starPackages.insert(starMatch.captured(1).trimmed());
-                continue;
-            }
-
-            const QRegularExpressionMatch symbolMatch = importSymbolRegex.match(line);
-            if (symbolMatch.hasMatch()) {
-                importedSymbolsByPackage[symbolMatch.captured(1).trimmed()].insert(
-                    symbolMatch.captured(2).trimmed());
+            QString packageName;
+            QString symbolName;
+            bool importStar = false;
+            if (parseImportStatement(line, packageName, symbolName, importStar)) {
+                if (importStar)
+                    starPackages.insert(packageName);
+                else
+                    importedSymbolsByPackage[packageName].insert(symbolName);
             }
         }
 

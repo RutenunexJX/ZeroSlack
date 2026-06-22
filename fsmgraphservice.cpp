@@ -1,8 +1,8 @@
 #include "fsmgraphservice.h"
 
+#include "svtokenutils.h"
 #include "symboltaxonomy.h"
 
-#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
 
@@ -70,6 +70,164 @@ QString moduleDisplayNameForRecord(const SemanticSymbolRecord& record)
 QString rawTypeTextForRecord(const SemanticSymbolRecord& record)
 {
     return record.type.rawTypeText;
+}
+
+int skipSpaces(const QString& text, int pos)
+{
+    while (pos < text.size() && text.at(pos).isSpace())
+        ++pos;
+    return pos;
+}
+
+int skipSpacesBackward(const QString& text, int endExclusive)
+{
+    int pos = qMin(endExclusive, text.size());
+    while (pos > 0 && text.at(pos - 1).isSpace())
+        --pos;
+    return pos;
+}
+
+bool readIdentifierAt(
+    const QString& text,
+    int pos,
+    QString& identifier,
+    int& end)
+{
+    if (pos < 0 || pos >= text.size()
+        || !SvTokenUtils::isIdentifierStart(text.at(pos))) {
+        return false;
+    }
+    end = pos + 1;
+    while (end < text.size()
+           && SvTokenUtils::isIdentifierContinue(text.at(end), true)) {
+        ++end;
+    }
+    identifier = text.mid(pos, end - pos);
+    return true;
+}
+
+bool readIdentifierEndingAt(
+    const QString& text,
+    int endExclusive,
+    QString& identifier)
+{
+    const int end = skipSpacesBackward(text, endExclusive);
+    int start = end;
+    while (start > 0
+           && SvTokenUtils::isIdentifierContinue(text.at(start - 1), true)) {
+        --start;
+    }
+    if (start == end || !SvTokenUtils::isIdentifierStart(text.at(start)))
+        return false;
+    identifier = text.mid(start, end - start);
+    return true;
+}
+
+int findAssignmentOperator(const QString& code, int* operatorLength = nullptr)
+{
+    for (int i = 0; i < code.size(); ++i) {
+        const QChar ch = code.at(i);
+        const QChar next = i + 1 < code.size() ? code.at(i + 1) : QChar();
+        const QChar prev = i > 0 ? code.at(i - 1) : QChar();
+        if (ch == QLatin1Char('<') && next == QLatin1Char('=')) {
+            if (operatorLength)
+                *operatorLength = 2;
+            return i;
+        }
+        if (ch != QLatin1Char('='))
+            continue;
+        if (prev == QLatin1Char('=')
+            || prev == QLatin1Char('!')
+            || prev == QLatin1Char('<')
+            || prev == QLatin1Char('>')
+            || next == QLatin1Char('=')) {
+            continue;
+        }
+        if (operatorLength)
+            *operatorLength = 1;
+        return i;
+    }
+    return -1;
+}
+
+int matchingParenEnd(const QString& text, int openParen)
+{
+    if (openParen < 0 || openParen >= text.size()
+        || text.at(openParen) != QLatin1Char('(')) {
+        return -1;
+    }
+    int depth = 1;
+    for (int i = openParen + 1; i < text.size(); ++i) {
+        if (text.at(i) == QLatin1Char('('))
+            ++depth;
+        else if (text.at(i) == QLatin1Char(')')) {
+            --depth;
+            if (depth == 0)
+                return i;
+        }
+    }
+    return -1;
+}
+
+QString caseSelector(const QString& code)
+{
+    for (const QString& keyword :
+         {QStringLiteral("case"), QStringLiteral("casez"), QStringLiteral("casex")}) {
+        const int keywordPos = SvTokenUtils::indexOfWord(code, keyword);
+        if (keywordPos < 0)
+            continue;
+        const int parenStart = skipSpaces(code, keywordPos + keyword.size());
+        const int parenEnd = matchingParenEnd(code, parenStart);
+        if (parenEnd > parenStart)
+            return code.mid(parenStart + 1, parenEnd - parenStart - 1).trimmed();
+    }
+    return QString();
+}
+
+QString caseLabel(const QString& code)
+{
+    int pos = skipSpaces(code, 0);
+    QString label;
+    int end = pos;
+    if (SvTokenUtils::isWordAt(code, QStringLiteral("default"), pos)) {
+        label = QStringLiteral("default");
+        end = pos + QStringLiteral("default").size();
+    } else if (!readIdentifierAt(code, pos, label, end)) {
+        return QString();
+    }
+    end = skipSpaces(code, end);
+    return end < code.size() && code.at(end) == QLatin1Char(':')
+        ? label
+        : QString();
+}
+
+QString ifCondition(const QString& code)
+{
+    const int ifPos = SvTokenUtils::indexOfWord(code, QStringLiteral("if"));
+    if (ifPos < 0)
+        return QString();
+    const int parenStart = skipSpaces(code, ifPos + QStringLiteral("if").size());
+    const int parenEnd = matchingParenEnd(code, parenStart);
+    if (parenEnd <= parenStart)
+        return QString();
+    return code.mid(parenStart + 1, parenEnd - parenStart - 1).trimmed();
+}
+
+QList<QString> identifiersInText(const QString& text)
+{
+    QList<QString> identifiers;
+    int pos = 0;
+    while (pos < text.size()) {
+        QString identifier;
+        int end = pos;
+        if (readIdentifierAt(text, pos, identifier, end)) {
+            identifiers.append(identifier);
+            pos = end;
+        } else {
+            ++pos;
+        }
+    }
+    return identifiers;
 }
 
 bool isInsideModule(const SemanticSymbolRecord& record,
@@ -362,15 +520,6 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
     if (startIndex > endIndex)
         return transitions;
 
-    const QRegularExpression caseExpression(
-        QStringLiteral("\\bcase[zx]?\\s*\\(\\s*%1\\s*\\)")
-            .arg(QRegularExpression::escape(stateRegister.name)));
-    const QRegularExpression labelExpression(
-        QStringLiteral("^\\s*([A-Za-z_][A-Za-z0-9_$]*|default)\\s*:"));
-    const QRegularExpression conditionExpression(
-        QStringLiteral("\\bif\\s*\\(([^)]*)\\)"));
-    const QRegularExpression endcaseExpression(QStringLiteral("\\bendcase\\b"));
-
     bool inCase = false;
     QString currentState;
     QString pendingCondition;
@@ -378,21 +527,20 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
     for (int i = startIndex; i <= endIndex; ++i) {
         const QString code = stripLineComment(lines.at(i));
         if (!inCase) {
-            if (code.contains(caseExpression))
+            if (caseSelector(code) == stateRegister.name)
                 inCase = true;
             continue;
         }
 
-        if (code.contains(endcaseExpression)) {
+        if (SvTokenUtils::containsWord(code, QStringLiteral("endcase"))) {
             inCase = false;
             currentState.clear();
             pendingCondition.clear();
             continue;
         }
 
-        const QRegularExpressionMatch labelMatch = labelExpression.match(code);
-        if (labelMatch.hasMatch()) {
-            const QString label = labelMatch.captured(1);
+        const QString label = caseLabel(code);
+        if (!label.isEmpty()) {
             currentState = label == QStringLiteral("default") || stateNames.contains(label)
                 ? label
                 : QString();
@@ -401,9 +549,9 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
         if (currentState.isEmpty())
             continue;
 
-        const QRegularExpressionMatch conditionMatch = conditionExpression.match(code);
-        if (conditionMatch.hasMatch())
-            pendingCondition = conditionMatch.captured(1).trimmed();
+        const QString condition = ifCondition(code);
+        if (!condition.isEmpty())
+            pendingCondition = condition;
 
         const QString target = assignmentTarget(code);
         if (target.isEmpty())
@@ -547,10 +695,13 @@ bool FsmGraphService::looksLikeNextStateName(const QString& name)
 
 QString FsmGraphService::assignmentTarget(const QString& code)
 {
-    const QRegularExpression assignmentExpression(
-        QStringLiteral("\\b([A-Za-z_][A-Za-z0-9_$]*)\\s*(?:<=|=)\\s*"));
-    const QRegularExpressionMatch match = assignmentExpression.match(code);
-    return match.hasMatch() ? match.captured(1) : QString();
+    const int assignment = findAssignmentOperator(code);
+    if (assignment < 0)
+        return QString();
+    QString target;
+    return readIdentifierEndingAt(code, assignment, target)
+        ? target
+        : QString();
 }
 
 QList<QString> FsmGraphService::assignedStateValues(
@@ -559,13 +710,12 @@ QList<QString> FsmGraphService::assignedStateValues(
 {
     QList<QString> states;
     QSet<QString> seen;
-    const int assignment = code.indexOf(QRegularExpression(QStringLiteral("<=|=")));
-    const QString rhs = assignment >= 0 ? code.mid(assignment + 1) : code;
-    const QRegularExpression identifierExpression(
-        QStringLiteral("\\b[A-Za-z_][A-Za-z0-9_$]*\\b"));
-    QRegularExpressionMatchIterator it = identifierExpression.globalMatch(rhs);
-    while (it.hasNext()) {
-        const QString token = it.next().captured(0);
+    int operatorLength = 0;
+    const int assignment = findAssignmentOperator(code, &operatorLength);
+    const QString rhs = assignment >= 0
+        ? code.mid(assignment + operatorLength)
+        : code;
+    for (const QString& token : identifiersInText(rhs)) {
         if (!stateNames.contains(token) || seen.contains(token))
             continue;
         seen.insert(token);
@@ -585,20 +735,19 @@ QString FsmGraphService::transitionConditionForState(
         return pendingCondition;
 
     QString condition = code.left(question).trimmed();
-    const int assignment = condition.indexOf(QRegularExpression(QStringLiteral("<=|=")));
+    int operatorLength = 0;
+    const int assignment = findAssignmentOperator(condition, &operatorLength);
     if (assignment >= 0)
-        condition = condition.mid(assignment + 1).trimmed();
+        condition = condition.mid(assignment + operatorLength).trimmed();
     if (condition.isEmpty())
         condition = pendingCondition;
 
     const QString trueBranch = code.mid(question + 1, colon - question - 1);
     const QString falseBranch = code.mid(colon + 1);
-    if (trueBranch.contains(QRegularExpression(
-            QStringLiteral("\\b%1\\b").arg(QRegularExpression::escape(stateName))))) {
+    if (SvTokenUtils::containsWord(trueBranch, stateName, true)) {
         return condition;
     }
-    if (falseBranch.contains(QRegularExpression(
-            QStringLiteral("\\b%1\\b").arg(QRegularExpression::escape(stateName))))) {
+    if (SvTokenUtils::containsWord(falseBranch, stateName, true)) {
         return condition.isEmpty()
             ? QStringLiteral("else")
             : QStringLiteral("else %1").arg(condition);

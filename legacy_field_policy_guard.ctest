@@ -289,6 +289,20 @@ set(PHASE_J_FIXTURE_CLEANUP_PATTERNS
     "(^|[^A-Za-z0-9_])(getSymbolById|findSymbolId)[ \t\r\n]*\\("
 )
 
+set(PHASE_L_REGEX_CLEANUP_ALLOWLIST
+)
+
+set(PHASE_L_REGEX_CLEANUP_PATTERNS
+    "#include[ \t]*<QRegularExpression>"
+    "#include[ \t]*<QRegExp>"
+    "#include[ \t]*<regex>"
+    "QRegularExpression"
+    "QRegularExpressionMatch"
+    "QRegularExpressionMatchIterator"
+    "QRegExp"
+    "std::regex"
+)
+
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "clockresetdomainservice.h|moduleSymbolId"
     "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEntry[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
@@ -1443,6 +1457,50 @@ if(phase_j_fixture_cleanup_violations)
         "Phase J fixture cleanup legacy terms are forbidden outside the explicit fixture cleanup allowlist:\n  ${phase_j_fixture_cleanup_text}")
 endif()
 
+set(phase_l_regex_allowlist_missing_files)
+foreach(relative_path IN LISTS PHASE_L_REGEX_CLEANUP_ALLOWLIST)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        list(APPEND phase_l_regex_allowlist_missing_files "${relative_path}")
+    endif()
+endforeach()
+
+if(phase_l_regex_allowlist_missing_files)
+    list(JOIN phase_l_regex_allowlist_missing_files "\n  " phase_l_regex_allowlist_missing_text)
+    message(FATAL_ERROR
+        "Phase L regex cleanup allowlist references missing files:\n  ${phase_l_regex_allowlist_missing_text}")
+endif()
+
+file(GLOB phase_l_production_sources
+    RELATIVE "${ZEROSLACK_SOURCE_DIR}"
+    "${ZEROSLACK_SOURCE_DIR}/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/*.h"
+)
+
+set(phase_l_regex_spread_violations)
+foreach(relative_path IN LISTS phase_l_production_sources)
+    list(FIND PHASE_L_REGEX_CLEANUP_ALLOWLIST "${relative_path}" phase_l_allowlist_index)
+    if(NOT phase_l_allowlist_index EQUAL -1)
+        continue()
+    endif()
+
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    file(READ "${path}" content)
+    foreach(pattern IN LISTS PHASE_L_REGEX_CLEANUP_PATTERNS)
+        string(REGEX MATCH "${pattern}" match "${content}")
+        if(match)
+            list(APPEND phase_l_regex_spread_violations
+                 "${relative_path}: ${pattern}")
+        endif()
+    endforeach()
+endforeach()
+
+if(phase_l_regex_spread_violations)
+    list(JOIN phase_l_regex_spread_violations "\n  " phase_l_regex_spread_text)
+    message(FATAL_ERROR
+        "Phase L regex cleanup forbids new first-party production regex API use outside the cleanup allowlist:\n  ${phase_l_regex_spread_text}")
+endif()
+
 set(phase_i4_semantic_index_missing_files)
 set(phase_i4_semantic_index_violations)
 foreach(relative_path IN LISTS PHASE_I4_NATIVE_SEMANTIC_INDEX_FILES)
@@ -1636,6 +1694,42 @@ if(ZEROSLACK_PHASE_I_ZERO_TARGET OR ZEROSLACK_PHASE_J_ZERO_TARGET)
         list(JOIN phase_j_zero_legacy_violations "\n  " phase_j_zero_legacy_text)
         message(FATAL_ERROR
             "Phase J zero legacy target is enabled; collector/store legacy carrier terms must be gone from repo source outside docs and guard definitions:\n  ${phase_j_zero_legacy_text}")
+    endif()
+endif()
+
+if(ZEROSLACK_PHASE_L_ZERO_TARGET)
+    file(GLOB phase_l_zero_root_sources
+        RELATIVE "${ZEROSLACK_SOURCE_DIR}"
+        "${ZEROSLACK_SOURCE_DIR}/*.cpp"
+        "${ZEROSLACK_SOURCE_DIR}/*.h"
+    )
+    file(GLOB_RECURSE phase_l_zero_test_sources
+        RELATIVE "${ZEROSLACK_SOURCE_DIR}"
+        "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
+        "${ZEROSLACK_SOURCE_DIR}/test_sv/*.h"
+    )
+    set(phase_l_zero_sources
+        ${phase_l_zero_root_sources}
+        ${phase_l_zero_test_sources}
+    )
+
+    set(phase_l_zero_regex_violations)
+    foreach(relative_path IN LISTS phase_l_zero_sources)
+        set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+        file(READ "${path}" content)
+        foreach(pattern IN LISTS PHASE_L_REGEX_CLEANUP_PATTERNS)
+            string(REGEX MATCH "${pattern}" match "${content}")
+            if(match)
+                list(APPEND phase_l_zero_regex_violations
+                     "${relative_path}: ${pattern}")
+            endif()
+        endforeach()
+    endforeach()
+
+    if(phase_l_zero_regex_violations)
+        list(JOIN phase_l_zero_regex_violations "\n  " phase_l_zero_regex_text)
+        message(FATAL_ERROR
+            "Phase L zero regex target is enabled; first-party source and tests must not use regex APIs outside docs and guard definitions:\n  ${phase_l_zero_regex_text}")
     endif()
 endif()
 

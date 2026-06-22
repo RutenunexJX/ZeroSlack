@@ -1,13 +1,30 @@
 #include "semanticindex.h"
 
 #include "completionservice.h"
+#include "svtokenutils.h"
 #include "symboltaxonomy.h"
 
 #include <QFile>
-#include <QRegularExpression>
 #include <algorithm>
 
 namespace {
+int nextModuleStartPosition(const QString& fileContent, int from)
+{
+    int position = from;
+    while ((position = SvTokenUtils::indexOfWord(
+                fileContent,
+                QStringLiteral("module"),
+                position)) >= 0) {
+        const int afterKeyword = position + QStringLiteral("module").size();
+        if (afterKeyword < fileContent.size()
+            && fileContent.at(afterKeyword).isSpace()) {
+            return position;
+        }
+        ++position;
+    }
+    return -1;
+}
+
 int endModulePositionInContent(const QString& fileContent,
                                const SemanticSymbolRecord& moduleRecord)
 {
@@ -15,15 +32,13 @@ int endModulePositionInContent(const QString& fileContent,
     int moduleDepth = 0;
     bool foundModule = false;
 
-    static const QRegularExpression moduleStartPattern(QStringLiteral("\\bmodule\\s+"));
-    static const QRegularExpression moduleEndPattern(QStringLiteral("\\bendmodule\\b"));
-
     int pos = searchStart;
     while (pos < fileContent.length()) {
-        const QRegularExpressionMatch startMatch = moduleStartPattern.match(fileContent, pos);
-        const QRegularExpressionMatch endMatch = moduleEndPattern.match(fileContent, pos);
-        const int nextModuleStart = startMatch.hasMatch() ? startMatch.capturedStart(0) : -1;
-        const int nextModuleEnd = endMatch.hasMatch() ? endMatch.capturedStart(0) : -1;
+        const int nextModuleStart = nextModuleStartPosition(fileContent, pos);
+        const int nextModuleEnd = SvTokenUtils::indexOfWord(
+            fileContent,
+            QStringLiteral("endmodule"),
+            pos);
 
         if (nextModuleStart != -1
             && (nextModuleEnd == -1 || nextModuleStart < nextModuleEnd)) {
@@ -31,14 +46,14 @@ int endModulePositionInContent(const QString& fileContent,
                 ++moduleDepth;
                 foundModule = true;
             }
-            pos = nextModuleStart + startMatch.capturedLength(0);
+            pos = nextModuleStart + QStringLiteral("module").size();
         } else if (nextModuleEnd != -1) {
             if (foundModule) {
                 --moduleDepth;
                 if (moduleDepth == 0)
-                    return nextModuleEnd + endMatch.capturedLength(0);
+                    return nextModuleEnd + QStringLiteral("endmodule").size();
             }
-            pos = nextModuleEnd + endMatch.capturedLength(0);
+            pos = nextModuleEnd + QStringLiteral("endmodule").size();
         } else {
             break;
         }

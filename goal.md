@@ -228,6 +228,33 @@ UI Layer
 - K2 is complete only when syntax folding, custom comment-node folding, `;:fd` action completion and selected `fd` marker mode, gutter interactions, undo behavior, and tests are implemented and verified without regex parsing.
 - K3 is complete: Fold Shelf mode, shelf panel/model, move/copy/insert/delete/restore flows, preview, Activity logs, and tests are implemented and verified without regex parsing.
 
+### Phase L: Regex Logic Native Cleanup
+
+- Status: complete.
+- Product goal achieved: regex-driven production logic was removed from semantic/editor feature paths while preserving SystemVerilog understanding through semantic records, `SemanticIndex` / `SemanticIndexSnapshot` flow, service-owned query contracts, and deterministic SV token helpers.
+- L0 Regex Inventory and Guard Baseline is complete: first-party production regex cleanup files are inventoried, docs and guard definitions remain valid regex locations, normal guard blocks new regex API spread, and optional `ZEROSLACK_PHASE_L_ZERO_TARGET` is defined for L6.
+- L1 Utility Regex Replacement is complete: low-risk regex helpers for identifiers, keyword boundaries, module/endmodule scans, and whitespace normalization now use deterministic token helpers.
+- L2 Completion Context Native is complete: completion context parsing no longer uses regex and deterministic token helpers cover struct members, enum values, assignments, and instantiations.
+- L3 Module Range / Include / Import Native is complete: module-range fallback, include/import context collection, and scope-band module end lookup no longer use regex.
+- L4 FSM Graph Native Extraction is complete: FSM transition discovery no longer uses regex and relies on deterministic token parsing plus semantic state records.
+- L5 Open Document Scheduling Cleanup is complete: structural-change scheduling no longer uses keyword regex and preserves the existing lightweight policy with deterministic token-boundary checks.
+- L6 Final Regex Zero Target is complete: guards reject regex APIs outside docs and guard definitions, and focused tests, affected GUI smoke tests, full Ninja/full CTest, guard scans, static scans, and `git diff --check` passed.
+- Phase L must not restore the old Tree-sitter symbol parser, SVLexer, regex relationship analysis, direct UI Slang execution, UI workspace scans, or timer-delay responsiveness masking.
+
+### Phase L Goal Mode
+
+- Progress is tracked per cleanup subphase L0-L6.
+- Each subphase is its own 100% unit.
+- Current subphase: L6 Final Regex Zero Target complete, 0% remaining.
+- End every work turn by naming the current Phase L subphase and reporting that subphase's remaining percentage.
+- L0 is complete only when the regex inventory, cleanup allowlist, and guard plan are documented and the guard baseline can prevent new regex spread.
+- L1 is complete only when low-risk utility regex use is replaced and covered by focused tests or existing guard scans.
+- L2 is complete only when completion context no longer depends on regex parsing and completion tests cover the migrated contexts.
+- L3 is complete only when module range, include, and import context logic no longer depends on regex parsing and real fixture coverage remains intact.
+- L4 is complete: FSM graph transition extraction no longer depends on regex parsing and GUI smoke RTL Insights coverage remains green against `test_sv/new`.
+- L5 is complete: open-document structural scheduling no longer depends on keyword regex and editor workflow coverage remains green.
+- L6 is complete: first-party source/tests reject regex APIs outside docs and guard definitions, docs are current, verification passes, and final scans are clean.
+
 ## Architecture Rules
 
 - New semantic features must flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
@@ -274,6 +301,7 @@ The foundation is healthy when:
 - Global app control is available through Double Shift from editor and non-editor focus as of `d7c72d5`, with search/dispatch results sourced from ProjectModel, SemanticIndexSnapshot, feature services, and existing coordinators instead of UI file scans or direct analysis
 - The current post-J editor workflow baseline is verified by `completion_test` with 311 checks and `gui_smoke_test` with 276 checks for the layered inline command and Global Control paths
 - Phase K is done only when K1 Design Hierarchy, K2 Code Folding/Custom Folding, and K3 Fold Block Shelf are implemented through service/model-backed UI boundaries, verified with focused tests and affected GUI smoke coverage, and proven not to use UI workspace scans, direct UI Slang runs, regex structure/fold parsing, or timer-delay responsiveness masking
+- Phase L is done only when first-party production regex logic is removed from semantic/editor feature paths, docs and guard definitions are the only regex allowlist, completion/module/import/FSM/scheduler behavior is backed by Tree-sitter, Slang/semantic records, `SemanticIndexSnapshot`, or deterministic token helpers, and final guards prove the cleanup
 - `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
 - `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
 - `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts

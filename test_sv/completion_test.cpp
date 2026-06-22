@@ -2,6 +2,7 @@
 // public query methods and asserts the results. No GUI window is shown.
 #include "slangmanager.h"
 #include "alternatecommandservice.h"
+#include "completioncontexthelper.h"
 #include "completionmanager.h"
 #include "completionmodel.h"
 #include "completionsemanticquery.h"
@@ -1861,6 +1862,34 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            rejectsNonMemberContext ? "PASS" : "FAIL",
            "CompletionService member parse reject");
+    expectBool("CompletionContext member empty prefix",
+               CompletionService::getInstance()->tryParseStructMemberContext(
+                   QStringLiteral("pixel."),
+                   parsedVariableName,
+                   parsedMemberPrefix)
+                   && parsedVariableName == QStringLiteral("pixel")
+                   && parsedMemberPrefix.isEmpty(),
+               true);
+    expectEq("CompletionContext struct array variable",
+             CompletionContextHelper::extractStructVariable(
+                 QStringLiteral("pixel_array[idx].")),
+             QStringLiteral("pixel_array"));
+    expectEq("CompletionContext enum assignment",
+             CompletionContextHelper::extractEnumVariable(
+                 QStringLiteral("next_state <= SNAP_IDLE")),
+             QStringLiteral("next_state"));
+    expectEq("CompletionContext enum case",
+             CompletionContextHelper::extractEnumVariable(
+                 QStringLiteral("case (snap_state)")),
+             QStringLiteral("snap_state"));
+    expectEq("CompletionContext enum if equality",
+             CompletionContextHelper::extractEnumVariable(
+                 QStringLiteral("if (snap_state == SNAP_IDLE")),
+             QStringLiteral("snap_state"));
+    expectEq("CompletionContext module type",
+             CompletionContextHelper::extractModuleType(
+                 QStringLiteral("snap_child u_child (")),
+             QStringLiteral("snap_child"));
 
     EditorCompletionQuery editorMemberQuery;
     editorMemberQuery.lineUpToCursor = QStringLiteral("assign result = pixel.bl");

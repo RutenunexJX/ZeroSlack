@@ -2,10 +2,10 @@
 
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
+#include "svtokenutils.h"
 
 #include <QDir>
 #include <QFileInfo>
-#include <QRegularExpression>
 #include <QSet>
 
 namespace {
@@ -42,8 +42,7 @@ QString nativeSymbolRelevantHash(const QString& content)
         QString trimmed = line.trimmed();
         if (trimmed.isEmpty() || trimmed.startsWith(QStringLiteral("//")))
             continue;
-        kept.append(trimmed.replace(QRegularExpression(QStringLiteral("\\s+")),
-                                    QStringLiteral(" ")));
+        kept.append(SvTokenUtils::collapseWhitespaceRuns(trimmed));
     }
     const QString joined = kept.join(QLatin1Char(' ')).trimmed();
     return QString::number(qHash(joined));
@@ -51,11 +50,7 @@ QString nativeSymbolRelevantHash(const QString& content)
 
 bool isSemanticModuleName(const QString& name)
 {
-    if (name.isEmpty())
-        return false;
-    static const QRegularExpression svIdentifier(
-        QStringLiteral("^[a-zA-Z_][a-zA-Z0-9_]*$"));
-    return svIdentifier.match(name).hasMatch();
+    return SvTokenUtils::isIdentifier(name);
 }
 
 QString stripCommentsFromLine(const QString& line, bool& inBlockComment)
@@ -93,13 +88,11 @@ int findEndModuleLineInContent(const QString& content,
         scanStart = 0;
 
     bool inBlockComment = false;
-    static const QRegularExpression moduleWord(QStringLiteral("\\bmodule\\b"));
-    static const QRegularExpression endmoduleWord(QStringLiteral("\\bendmodule\\b"));
     for (int i = scanStart; i < lines.size(); ++i) {
         const QString code = stripCommentsFromLine(lines.at(i), inBlockComment);
-        if (code.contains(moduleWord))
+        if (SvTokenUtils::containsWord(code, QStringLiteral("module")))
             ++moduleDepth;
-        if (code.contains(endmoduleWord)) {
+        if (SvTokenUtils::containsWord(code, QStringLiteral("endmodule"))) {
             --moduleDepth;
             if (moduleDepth == 0)
                 return i;

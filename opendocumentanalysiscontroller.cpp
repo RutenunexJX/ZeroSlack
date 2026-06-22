@@ -2,9 +2,9 @@
 
 #include "documentmodel.h"
 #include "semanticindex.h"
+#include "svtokenutils.h"
 #include "symbolanalyzer.h"
 
-#include <QRegularExpression>
 #include <QTimer>
 
 OpenDocumentAnalysisController::OpenDocumentAnalysisController(QObject* parent)
@@ -177,9 +177,7 @@ bool OpenDocumentAnalysisController::lineContainsStructuralKeyword(
 
     const QString line = lines[oneBasedLine - 1];
     for (const QString& keyword : keywords) {
-        const QRegularExpression word(QStringLiteral("\\b%1\\b")
-                                          .arg(QRegularExpression::escape(keyword)));
-        if (line.contains(word))
+        if (SvTokenUtils::containsWord(line, keyword))
             return true;
     }
     return false;

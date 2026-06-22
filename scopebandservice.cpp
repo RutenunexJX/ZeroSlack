@@ -1,8 +1,7 @@
 #include "scopebandservice.h"
 
+#include "svtokenutils.h"
 #include "symboltaxonomy.h"
-
-#include <QRegularExpression>
 
 std::unique_ptr<ScopeBandService> ScopeBandService::instance = nullptr;
 
@@ -63,14 +62,12 @@ int endModuleLineForRecord(
         scanStart = 0;
 
     bool inBlockComment = false;
-    static const QRegularExpression moduleWord(QStringLiteral("\\bmodule\\b"));
-    static const QRegularExpression endmoduleWord(QStringLiteral("\\bendmodule\\b"));
     for (int i = scanStart; i < lines.size(); ++i) {
         const QString code = stripScopeBandCommentsFromLine(lines.at(i),
                                                             inBlockComment);
-        if (code.contains(moduleWord))
+        if (SvTokenUtils::containsWord(code, QStringLiteral("module")))
             ++moduleDepth;
-        if (code.contains(endmoduleWord)) {
+        if (SvTokenUtils::containsWord(code, QStringLiteral("endmodule"))) {
             --moduleDepth;
             if (moduleDepth == 0)
                 return i + 1;

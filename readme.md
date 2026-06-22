@@ -90,6 +90,9 @@ Thin UI consumers
 - Phase K Follow-up Editor Structure Features is complete. Current subphase: K3 Fold Block Shelf complete, 0% remaining.
 - Phase K delivered K1 Design Hierarchy with right-click Design Top and Files dimming, K2 Tree-sitter-backed Code Folding plus Custom Folding through the `;:fd` action completion, and K3 Fold Block Shelf through `;:fds`.
 - Phase K verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 331 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`.
+- Phase L Regex Logic Native Cleanup is complete. Current subphase: L6 Final Regex Zero Target complete, 0% remaining.
+- Phase L removed regex-driven logic from first-party production semantic/editor feature paths, replacing it with deterministic SV token helpers while preserving semantic record and `SemanticIndex` data flow.
+- Phase L verification passed with full CMake/Ninja build, full CTest 7/7, focused `completion_test` with 321 checks, `jump_test` with 115 checks, `gui_smoke_test` with 331 checks, normal `legacy_field_policy_guard`, opt-in `ZEROSLACK_PHASE_L_ZERO_TARGET`, static production regex API scan, and `git diff --check`.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - After Phase J, keep new semantic/test work record-native and keep the repo-source zero target passing.
@@ -113,6 +116,28 @@ Thin UI consumers
 - At the end of every work turn, report the current Phase K subphase and the remaining percentage for that subphase.
 - Move to the next subphase only after the current feature is implemented, tested, docs are current, and any coherent local commit requested for that block is complete.
 - Phase K is complete only when K1-K3 are implemented and verified, docs are current, `gui_smoke_test` passes for affected UI flows, service tests pass where added, `legacy_field_policy_guard` / final zero-target scans still pass when relevant, and `git diff --check` is clean.
+
+## Phase L: Regex Logic Native Cleanup
+
+- Status: complete.
+- Goal achieved: first-party production regex logic was removed from semantic, editor, completion, navigation, scheduling, and RTL Insights feature paths without restoring old parsers or moving policy into UI.
+- L0 is complete: the repo-wide regex inventory is documented, normal guard blocks new first-party production regex API use outside the cleanup allowlist, and the optional `ZEROSLACK_PHASE_L_ZERO_TARGET` final scan is defined for L6.
+- L1 is complete: low-risk identifier checks, word-boundary keyword checks, and whitespace normalization use deterministic token helpers instead of `QRegularExpression`.
+- L2 is complete: completion context extraction no longer uses `QRegularExpression`; struct member, enum, assignment, and module-instantiation context parsing uses deterministic token helpers with focused completion coverage.
+- L3 is complete: module range, include, and import context logic no longer uses regex; module-context include/import extraction uses deterministic token parsing while preserving `SemanticIndex` record flow.
+- L4 is complete: FSM transition extraction no longer uses raw-file regex scans; case selectors, labels, conditions, assignments, and state references are parsed by deterministic token helpers plus semantic state records.
+- L5 is complete: open-document structural scheduling checks no longer use keyword regex and now use deterministic token-boundary matching for the existing lightweight structural keyword policy.
+- L6 is complete: the final zero target rejects regex APIs in first-party source and tests outside docs and guard definitions, and verification passed with full build, full CTest, focused tests, guard scans, static scans, and `git diff --check`.
+- Phase L must not remove guard regex definitions themselves; those are the enforcement mechanism, not product logic.
+
+## Phase L Goal Mode
+
+- Track Phase L by cleanup subphase, not by the whole phase.
+- L0 through L6 are each their own 100% unit.
+- Current subphase: L6 Final Regex Zero Target complete, 0% remaining.
+- At the end of every work turn, report the current Phase L subphase and the remaining percentage for that subphase.
+- Move to the next subphase only after the current regex cleanup block is implemented or documented as complete, verified, docs are current, and any requested coherent local commit is complete.
+- Phase L is complete: L0-L6 are complete, docs are current, first-party production code no longer uses regex for semantic/editor feature logic, guard exceptions are limited to docs and guard definitions, focused tests and affected GUI smoke tests pass, full Ninja/full CTest passed, and `git diff --check` is clean.
 
 ## Feature Expansion Guardrails
 
