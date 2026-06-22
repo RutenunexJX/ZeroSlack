@@ -52,8 +52,8 @@ MyCodeEditor* TabOpenController::openFile(const QString& fileName) const
     std::unique_ptr<MyCodeEditor> editor(new MyCodeEditor(tabWidget));
     MyCodeEditor* editorPtr = editor.get();
     editorPtr->setPlainText(text);
-    tabWidget->addTab(editor.release(), fileIo->displayName(fileToOpen));
     documentModel->registerEditor(editorPtr, fileToOpen);
+    tabWidget->addTab(editor.release(), fileIo->displayName(fileToOpen));
     tabWidget->setCurrentIndex(tabWidget->count() - 1);
     return editorPtr;
 }

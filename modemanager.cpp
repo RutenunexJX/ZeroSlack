@@ -135,33 +135,24 @@ void ModeManager::applyModeStyles()
 {
     if (!tabWidget) return;
 
-    QString tabTextColor;
-    QString tabBackgroundColor;
-
-    if (modeState.isNormal()) {
-        tabTextColor = "#2c2c2c";
-        tabBackgroundColor = "#f5f5f5";
-    } else {
-        tabTextColor = "#e0e0e0";
-        tabBackgroundColor = "#3c3c3c";
-    }
-
-    tabWidget->tabBar()->setStyleSheet(QString(
+    tabWidget->tabBar()->setStyleSheet(QStringLiteral(
         "QTabBar::tab {"
-        "    background-color: %2;"
-        "    color: %1;"
+        "    background-color: #f3f4f6;"
+        "    color: #1f2937;"
         "    padding: 8px 12px;"
         "    margin-right: 2px;"
+        "    border: 1px solid #d1d5db;"
+        "    border-bottom: none;"
         "}"
         "QTabBar::tab:selected {"
-        "    background-color: %2;"
-        "    color: %1;"
+        "    background-color: #2563eb;"
+        "    color: #ffffff;"
+        "    border-color: #1d4ed8;"
         "}"
         "QTabBar::tab:hover {"
-        "    background-color: %2;"
-        "    color: %1;"
-        "}")
-        .arg(tabTextColor, tabBackgroundColor));
+        "    background-color: #dbeafe;"
+        "    color: #111827;"
+        "}"));
 
 }
 

@@ -238,13 +238,8 @@ void NavigationManager::setupConnections()
                 refreshDesignHierarchy(true);
             });
 
-    connect(navigationWidget, SIGNAL(viewChanged(int)),
-            this, SLOT(onViewChanged(int)));
-
     connect(navigationWidget, &NavigationWidget::viewChanged,
-            this, [this](int index) {
-                setActiveView(static_cast<NavigationView>(index));
-            });
+            this, &NavigationManager::onViewChanged);
 
     connect(navigationWidget, &NavigationWidget::searchFilterChanged,
             this, &NavigationManager::setSearchFilter);

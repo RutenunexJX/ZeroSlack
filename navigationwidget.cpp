@@ -16,11 +16,14 @@ NavigationWidget::~NavigationWidget()
 
 void NavigationWidget::setActiveTab(NavigationTab tab)
 {
-    tabWidget->setCurrentIndex(static_cast<int>(tab));
+    if (tabWidget)
+        tabWidget->setCurrentIndex(static_cast<int>(tab));
 }
 
 NavigationWidget::NavigationTab NavigationWidget::getActiveTab() const
 {
+    if (!tabWidget)
+        return FileTab;
     return static_cast<NavigationTab>(tabWidget->currentIndex());
 }
 
@@ -33,13 +36,15 @@ void NavigationWidget::updateFileHierarchy(const QStringList& files)
 void NavigationWidget::updateModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy)
 {
     currentModuleHierarchy = hierarchy;
-    populateModuleTree();
+    if (moduleTreeWidget)
+        populateModuleTree();
 }
 
 void NavigationWidget::updateSymbolHierarchy(const QList<SymbolOutlineGroup>& symbolGroups)
 {
     currentSymbolHierarchy = symbolGroups;
-    populateSymbolTree();
+    if (symbolTreeWidget)
+        populateSymbolTree();
 }
 
 void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report)
@@ -81,6 +86,8 @@ void NavigationWidget::highlightFile(const QString& filePath)
 
 void NavigationWidget::highlightSymbol(const QString& symbolName)
 {
+    if (!symbolTreeWidget)
+        return;
     QTreeWidgetItem* item = findItemByText(symbolTreeWidget, symbolName);
     if (item) {
         symbolTreeWidget->setCurrentItem(item);
@@ -94,6 +101,8 @@ void NavigationWidget::highlightSymbol(const QString& symbolName)
 
 void NavigationWidget::highlightModule(const QString& moduleName)
 {
+    if (!moduleTreeWidget)
+        return;
     QTreeWidgetItem* item = findItemByText(moduleTreeWidget, moduleName);
     if (item) {
         moduleTreeWidget->setCurrentItem(item);
@@ -217,7 +226,7 @@ void NavigationWidget::setupUI()
     mainLayout->setSpacing(4);
 
     searchLineEdit = new QLineEdit(this);
-    searchLineEdit->setPlaceholderText("Search files, modules, or symbols...");
+    searchLineEdit->setPlaceholderText("Search files or design...");
     searchLineEdit->setClearButtonEnabled(true);
     mainLayout->addWidget(searchLineEdit);
 
@@ -225,8 +234,6 @@ void NavigationWidget::setupUI()
     mainLayout->addWidget(tabWidget);
 
     setupFileTab();
-    setupModuleTab();
-    setupSymbolTab();
     setupDesignTab();
 
     setLayout(mainLayout);
@@ -337,15 +344,6 @@ void NavigationWidget::setupConnections()
     fileTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(fileTreeWidget, &QTreeWidget::customContextMenuRequested,
             this, &NavigationWidget::onFileTreeContextMenuRequested);
-
-    connect(moduleTreeWidget, &QTreeWidget::itemDoubleClicked,
-            this, &NavigationWidget::onModuleTreeDoubleClicked);
-    moduleTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(moduleTreeWidget, &QTreeWidget::customContextMenuRequested,
-            this, &NavigationWidget::onModuleTreeContextMenuRequested);
-
-    connect(symbolTreeWidget, &QTreeWidget::itemDoubleClicked,
-            this, &NavigationWidget::onSymbolTreeDoubleClicked);
 
     connect(designTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onDesignTreeDoubleClicked);

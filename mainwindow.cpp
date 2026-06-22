@@ -44,18 +44,22 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
+#include <QSignalBlocker>
 #include <QStatusBar>
+#include <QTabBar>
 #include <QToolButton>
+#include <QVBoxLayout>
+#include <QWidget>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    this->setCentralWidget(ui->tabWidget);
 
     tabManager = std::unique_ptr<TabManager>(new TabManager(ui->tabWidget, this));
     workspaceManager = std::unique_ptr<WorkspaceManager>(new WorkspaceManager(this));
+    setupWorkspaceBar();
     modeManager = std::unique_ptr<ModeManager>(new ModeManager(ui->tabWidget, this));
     navigationManager = std::unique_ptr<NavigationManager>(new NavigationManager(this));  // NEW
     analysisScheduler = std::unique_ptr<AnalysisScheduler>(new AnalysisScheduler(this));
@@ -76,6 +80,17 @@ MainWindow::MainWindow(QWidget *parent)
     setupEditorCoordinator();
     setupManagerConnections();
 
+    if (editorAppearanceDock)
+        editorAppearanceDock->hide();
+    if (semanticDocks) {
+        if (semanticDocks->activityLogPanelCoordinator()
+            && semanticDocks->activityLogPanelCoordinator()->dock())
+            semanticDocks->activityLogPanelCoordinator()->dock()->hide();
+        if (semanticDocks->rtlInsightsPanelCoordinator()
+            && semanticDocks->rtlInsightsPanelCoordinator()->dock())
+            semanticDocks->rtlInsightsPanelCoordinator()->dock()->hide();
+    }
+
     setWindowTitle(QStringLiteral("ZeroSlack  %1").arg(QLatin1String(APP_VERSION)));
     if (statusBar()) {
         QLabel* versionLabel = new QLabel(
@@ -91,6 +106,78 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::setupWorkspaceBar()
+{
+    QWidget* editorContainer = new QWidget(this);
+    auto* layout = new QVBoxLayout(editorContainer);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    workspaceTabBar = new QTabBar(editorContainer);
+    workspaceTabBar->setObjectName(QStringLiteral("workspaceTabBar"));
+    workspaceTabBar->setExpanding(false);
+    workspaceTabBar->setMovable(false);
+    workspaceTabBar->hide();
+    workspaceTabBar->setStyleSheet(QStringLiteral(
+        "QTabBar#workspaceTabBar { background: #eef2f7; }"
+        "QTabBar#workspaceTabBar::tab {"
+        "  background: #e5e7eb;"
+        "  color: #374151;"
+        "  padding: 5px 12px;"
+        "  border: 1px solid #cbd5e1;"
+        "  border-bottom: none;"
+        "}"
+        "QTabBar#workspaceTabBar::tab:selected {"
+        "  background: #334155;"
+        "  color: #ffffff;"
+        "}"
+        "QTabBar#workspaceTabBar::tab:hover {"
+        "  background: #cbd5e1;"
+        "  color: #111827;"
+        "}"));
+    layout->addWidget(workspaceTabBar);
+    layout->addWidget(ui->tabWidget, 1);
+    setCentralWidget(editorContainer);
+
+    connect(workspaceTabBar,
+            &QTabBar::currentChanged,
+            this,
+            [this](int index) {
+                if (workspaceManager)
+                    workspaceManager->switchWorkspace(index);
+            });
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceListChanged,
+            this,
+            &MainWindow::refreshWorkspaceTabs);
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceActivated,
+            this,
+            [this](int, const QString&, const QString&) {
+                refreshWorkspaceTabs();
+            });
+}
+
+void MainWindow::refreshWorkspaceTabs()
+{
+    if (!workspaceTabBar || !workspaceManager)
+        return;
+
+    const QSignalBlocker blocker(workspaceTabBar);
+    while (workspaceTabBar->count() > 0)
+        workspaceTabBar->removeTab(0);
+    const QList<WorkspaceManager::WorkspaceEntry> entries =
+        workspaceManager->workspaceEntries();
+    for (const WorkspaceManager::WorkspaceEntry& entry : entries) {
+        const int tab = workspaceTabBar->addTab(entry.alias);
+        workspaceTabBar->setTabToolTip(tab, QDir::toNativeSeparators(entry.path));
+    }
+    workspaceTabBar->setVisible(!entries.isEmpty());
+    const int activeIndex = workspaceManager->activeWorkspaceIndex();
+    if (activeIndex >= 0 && activeIndex < workspaceTabBar->count())
+        workspaceTabBar->setCurrentIndex(activeIndex);
 }
 
 void MainWindow::setupManagerConnections()
@@ -117,6 +204,12 @@ void MainWindow::setupManagerConnections()
                 statusBar()->showMessage(message, timeoutMs);
         });
     analysisCoordinator->connectSignals();
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceOpened,
+            this,
+            [this](const QString&) {
+                showPanelById(QStringLiteral("activity"));
+            });
     connect(tabManager.get(),
             &TabManager::activeDocumentChanged,
             this,
@@ -286,7 +379,7 @@ void MainWindow::setupGlobalControl()
                 return;
             }
 
-            if (item.id == QStringLiteral("openWorkspace")) {
+            if (item.id == QStringLiteral("ow")) {
                 if (fileCommandCoordinator)
                     fileCommandCoordinator->openDirectoryAsWorkspace();
             } else if (item.id == QStringLiteral("openFile")) {

@@ -32,12 +32,12 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto* title = new QLabel(QStringLiteral("ZeroSlack Global Control / Search Everywhere"), this);
+    auto* title = new QLabel(QStringLiteral("ZeroSlack Global Control"), this);
     layout->addWidget(title);
 
     searchEdit = new QLineEdit(this);
     searchEdit->setObjectName(QStringLiteral("globalControlSearchEdit"));
-    searchEdit->setPlaceholderText(QStringLiteral("Search actions, commands, files, symbols, templates..."));
+    searchEdit->setPlaceholderText(QStringLiteral("Type ow, fd, or fds"));
     layout->addWidget(searchEdit);
 
     resultList = new QListWidget(this);

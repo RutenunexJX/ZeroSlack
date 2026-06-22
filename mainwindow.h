@@ -27,6 +27,7 @@ class SemanticRuntimeCoordinator;
 class QDockWidget;
 class QLabel;
 class QMenu;
+class QTabBar;
 class QToolButton;
 
 QT_BEGIN_NAMESPACE
@@ -73,6 +74,7 @@ private:
     QMenu* viewMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;
     QLabel* editorModeChip = nullptr;
+    QTabBar* workspaceTabBar = nullptr;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -103,6 +105,8 @@ private:
 
     void setupManagerConnections();
     void setupSemanticRuntime();
+    void setupWorkspaceBar();
+    void refreshWorkspaceTabs();
     void refreshActiveEditorDiagnosticHighlights(
         const QString& changedFileName = QString());
     void refreshActiveEditorSemanticDecorations(

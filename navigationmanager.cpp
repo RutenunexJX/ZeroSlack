@@ -252,7 +252,9 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 
 void NavigationManager::onViewChanged(int index)
 {
-    setActiveView(static_cast<NavigationView>(index));
+    setActiveView(index == NavigationWidget::DesignTab
+                      ? DesignHierarchyView
+                      : FileHierarchyView);
 }
 
 void NavigationManager::onSearchFilterChanged(const QString& filter)

@@ -13,6 +13,7 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QFontMetrics>
+#include <QPixmap>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -34,6 +35,34 @@ Qt::DropAction shelfDropAction(Qt::KeyboardModifiers modifiers)
     return modifiers.testFlag(Qt::ControlModifier)
         ? Qt::CopyAction
         : Qt::MoveAction;
+}
+
+QPixmap foldDragPixmap(const FoldShelfItem& item, const QFont& font)
+{
+    const QSize size(168, 72);
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(QColor(37, 99, 235, 180), 2));
+    painter.setBrush(QColor(219, 234, 254, 235));
+    painter.drawRoundedRect(QRectF(1, 1, size.width() - 2, size.height() - 2), 6, 6);
+
+    QFont labelFont(font);
+    labelFont.setBold(true);
+    painter.setFont(labelFont);
+    painter.setPen(QColor(30, 64, 175));
+    painter.drawText(QRect(12, 10, size.width() - 24, 22),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     item.alias.isEmpty() ? QStringLiteral("fold block") : item.alias);
+
+    painter.setFont(font);
+    painter.setPen(QColor(55, 65, 81));
+    painter.drawText(QRect(12, 36, size.width() - 24, 22),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("%1 lines").arg(item.lineCount));
+    return pixmap;
 }
 }
 
@@ -235,6 +264,8 @@ bool EditorFoldingController::handleFoldShelfMouseMove(
     mime->setData(foldShelfBlockMimeType(), encodeFoldShelfItem(item));
     mime->setText(item.text);
     drag->setMimeData(mime);
+    drag->setPixmap(foldDragPixmap(item, editor->font()));
+    drag->setHotSpot(QPoint(18, 18));
 
     const Qt::DropAction result =
         drag->exec(Qt::MoveAction | Qt::CopyAction, defaultAction);
@@ -455,7 +486,7 @@ void EditorFoldingController::applyVisibility(MyCodeEditor* editor)
         if (!collapsedStartLines.contains(range.startLine))
             continue;
         for (int line = range.startLine + 1; line <= range.endLine; ++line) {
-            QTextBlock block = doc->findBlockByLineNumber(line);
+            QTextBlock block = doc->findBlockByNumber(line);
             if (!block.isValid())
                 continue;
             block.setVisible(false);
@@ -556,6 +587,7 @@ void EditorFoldingController::paintPlaceholders(
 {
     if (!editor || collapsedStartLines.isEmpty())
     {
+        paintCustomFoldBackgrounds(editor, painter);
         paintFoldRegionPreview(editor, painter);
         paintFoldShelfHighlight(editor, painter);
         if (!editor || collapsedStartLines.isEmpty())
@@ -563,6 +595,7 @@ void EditorFoldingController::paintPlaceholders(
     }
 
     painter.save();
+    paintCustomFoldBackgrounds(editor, painter);
     paintFoldRegionPreview(editor, painter);
     paintFoldShelfHighlight(editor, painter);
     painter.setPen(QColor(115, 125, 140));
@@ -590,6 +623,56 @@ void EditorFoldingController::paintPlaceholders(
             + metrics.ascent()
             + qMax(0, static_cast<int>(rect.height()) - metrics.height()) / 2;
         painter.drawText(x, y, label);
+    }
+    painter.restore();
+}
+
+void EditorFoldingController::paintCustomFoldBackgrounds(
+    MyCodeEditor* editor,
+    QPainter& painter) const
+{
+    if (!editor)
+        return;
+
+    painter.save();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(251, 191, 36, 26));
+    for (const TSFoldRange& range : ranges) {
+        if (range.kind != TSFoldRangeKind::Custom
+            || collapsedStartLines.contains(range.startLine)) {
+            continue;
+        }
+        QRectF firstRect;
+        QRectF lastRect;
+        for (int line = range.startLine; line <= range.endLine; ++line) {
+            QTextBlock block = editor->document()->findBlockByNumber(line);
+            if (!block.isValid() || !block.isVisible())
+                continue;
+            const QRectF rect =
+                editor->blockBoundingGeometry(block).translated(editor->contentOffset());
+            if (rect.bottom() < 0 || rect.top() > editor->viewport()->height())
+                continue;
+            painter.drawRect(QRectF(0, rect.top(), editor->viewport()->width(), rect.height()));
+            if (!firstRect.isValid())
+                firstRect = rect;
+            lastRect = rect;
+        }
+        if (firstRect.isValid() && lastRect.isValid()) {
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(QColor(245, 158, 11, 120), 1));
+            const qreal topY = qBound<qreal>(0,
+                                             firstRect.top() + 1,
+                                             editor->viewport()->height() - 1);
+            const qreal bottomY = qBound<qreal>(0,
+                                                lastRect.bottom() - 1,
+                                                editor->viewport()->height() - 1);
+            painter.drawLine(QPointF(0, topY),
+                             QPointF(editor->viewport()->width(), topY));
+            painter.drawLine(QPointF(0, bottomY),
+                             QPointF(editor->viewport()->width(), bottomY));
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(251, 191, 36, 26));
+        }
     }
     painter.restore();
 }

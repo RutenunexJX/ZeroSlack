@@ -5,12 +5,15 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QElapsedTimer>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <utility>
 
 WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
     , projectModel(std::make_unique<ProjectModel>(this))
 {
+    qRegisterMetaType<WorkspaceManager::WorkspaceEntry>("WorkspaceManager::WorkspaceEntry");
     files.reserveDefaults();
 
     connect(projectModel.get(), &ProjectModel::projectChanged,
@@ -126,35 +129,47 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
     timer.start();
 
     QString pathToOpen = folderPath;
+    const bool interactive = pathToOpen.isEmpty();
     if (pathToOpen.isEmpty()) {
         pathToOpen = QFileDialog::getExistingDirectory(
             qobject_cast<QWidget*>(parent()),
             "Select Workspace Directory");
         if (pathToOpen.isEmpty()) return false; // User cancelled
     }
+    pathToOpen = normalizeWorkspacePath(pathToOpen);
+    if (pathToOpen.isEmpty())
+        return false;
+
+    const int existingIndex = workspaceIndexForPath(pathToOpen);
+    if (existingIndex >= 0)
+        return switchWorkspace(existingIndex);
+
+    const QString alias = interactive
+        ? promptWorkspaceAlias(pathToOpen)
+        : defaultWorkspaceAlias(pathToOpen);
+    if (alias.isEmpty())
+        return false;
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Workspace"),
         ActivityLogLevel::Info,
         QStringLiteral("Opening %1").arg(QDir::toNativeSeparators(pathToOpen)));
 
-    if (isWorkspaceOpen()) {
-        closeWorkspace();
-    }
+    WorkspaceEntry entry;
+    entry.alias = alias;
+    entry.path = pathToOpen;
+    workspaces.append(entry);
+    activeIndex = workspaces.size() - 1;
+    emit workspaceListChanged();
 
-    projectModel->setWorkspaceRoot(pathToOpen);
-    workspacePath = projectModel->workspaceRoot();
-    scanDirectory(workspacePath);
-    startFileWatching();
-
-    emit workspaceOpened(workspacePath);
-    emit filesScanned(files.systemVerilogFiles);
+    activateWorkspacePath(entry.path, entry.alias, activeIndex);
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Workspace"),
         ActivityLogLevel::Info,
-        QStringLiteral("Opened %1 (%2 SystemVerilog files)")
+        QStringLiteral("Opened %1 as \"%2\" (%3 SystemVerilog files)")
             .arg(QDir::toNativeSeparators(workspacePath))
+            .arg(workspaceAlias)
             .arg(files.systemVerilogFiles.size()),
         static_cast<int>(timer.elapsed()));
 
@@ -167,6 +182,8 @@ void WorkspaceManager::closeWorkspace()
     const QString closingPath = workspacePath;
     stopFileWatching();
     workspacePath.clear();
+    workspaceAlias.clear();
+    activeIndex = -1;
     files.clear();
     projectModel->closeProject();
 
@@ -187,6 +204,21 @@ QString WorkspaceManager::getWorkspacePath() const
     return workspacePath;
 }
 
+QString WorkspaceManager::getWorkspaceAlias() const
+{
+    return workspaceAlias;
+}
+
+QList<WorkspaceManager::WorkspaceEntry> WorkspaceManager::workspaceEntries() const
+{
+    return workspaces;
+}
+
+int WorkspaceManager::activeWorkspaceIndex() const
+{
+    return activeIndex;
+}
+
 ProjectModel* WorkspaceManager::getProjectModel() const
 {
     return projectModel.get();
@@ -195,6 +227,17 @@ ProjectModel* WorkspaceManager::getProjectModel() const
 ProjectSnapshot WorkspaceManager::projectSnapshot() const
 {
     return projectModel ? projectModel->snapshot() : ProjectSnapshot();
+}
+
+bool WorkspaceManager::switchWorkspace(int index)
+{
+    if (index < 0 || index >= workspaces.size())
+        return false;
+    if (index == activeIndex && isWorkspaceOpen())
+        return true;
+
+    const WorkspaceEntry entry = workspaces.at(index);
+    return activateWorkspacePath(entry.path, entry.alias, index);
 }
 
 QStringList WorkspaceManager::getAllFiles() const
@@ -262,7 +305,7 @@ void WorkspaceManager::onFileChanged(const QString& path)
 
 void WorkspaceManager::onDirectoryChanged(const QString& path)
 {
-    if (path != workspacePath) return;
+    if (normalizeWorkspacePath(path) != workspacePath) return;
 
     QStringList oldFiles = files.allFiles;
     scanDirectory(workspacePath);
@@ -292,6 +335,71 @@ void WorkspaceManager::updateFileWatcher()
     if (!watcher.active() || !isWorkspaceOpen()) return;
 
     watcher.updateFiles(files.allFiles);
+}
+
+bool WorkspaceManager::activateWorkspacePath(const QString& path,
+                                             const QString& alias,
+                                             int index)
+{
+    const QString normalizedPath = normalizeWorkspacePath(path);
+    if (normalizedPath.isEmpty() || alias.trimmed().isEmpty())
+        return false;
+
+    stopFileWatching();
+    files.clear();
+    if (projectModel)
+        projectModel->closeProject();
+
+    workspaceAlias = alias.trimmed();
+    projectModel->setWorkspaceRoot(normalizedPath);
+    workspacePath = projectModel->workspaceRoot();
+    activeIndex = index;
+    scanDirectory(workspacePath);
+    startFileWatching();
+
+    emit workspaceActivated(activeIndex, workspaceAlias, workspacePath);
+    emit workspaceOpened(workspacePath);
+    emit filesScanned(files.systemVerilogFiles);
+    return true;
+}
+
+QString WorkspaceManager::promptWorkspaceAlias(const QString& path) const
+{
+    const QString suggested = defaultWorkspaceAlias(path);
+    bool accepted = false;
+    const QString alias = QInputDialog::getText(
+        qobject_cast<QWidget*>(parent()),
+        QStringLiteral("Workspace Alias"),
+        QStringLiteral("Alias"),
+        QLineEdit::Normal,
+        suggested,
+        &accepted).trimmed();
+    if (!accepted)
+        return QString();
+    return alias.isEmpty() ? suggested : alias;
+}
+
+QString WorkspaceManager::defaultWorkspaceAlias(const QString& path) const
+{
+    const QString name = QFileInfo(path).fileName().trimmed();
+    return name.isEmpty() ? QStringLiteral("workspace") : name;
+}
+
+int WorkspaceManager::workspaceIndexForPath(const QString& path) const
+{
+    const QString normalizedPath = normalizeWorkspacePath(path);
+    for (int i = 0; i < workspaces.size(); ++i) {
+        if (workspaces.at(i).path == normalizedPath)
+            return i;
+    }
+    return -1;
+}
+
+QString WorkspaceManager::normalizeWorkspacePath(const QString& path) const
+{
+    if (path.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
 }
 
 bool WorkspaceManager::isSystemVerilogFile(const QString& fileName) const

@@ -53,13 +53,8 @@ QString designModuleTypeForInstance(const SemanticSymbolRecord& record,
 {
     if (!record.type.resolvedTypeName.isEmpty())
         return record.type.resolvedTypeName;
-    if (!record.type.rawTypeText.isEmpty()) {
-        const QString interfaceType =
-            SymbolTaxonomy::interfaceTypeName(record.type.rawTypeText).trimmed();
-        if (!interfaceType.isEmpty())
-            return interfaceType;
+    if (!record.type.rawTypeText.isEmpty())
         return record.type.rawTypeText.trimmed();
-    }
     if (record.type.stableKey.isValid() && !record.type.stableKey.symbolName.isEmpty())
         return record.type.stableKey.symbolName;
     return fallback;
@@ -335,6 +330,8 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& 
             if (moduleType.isEmpty())
                 moduleType = targetRecord.name;
             const SemanticSymbolRecord definitionRecord = modulesByName.value(moduleType);
+            if (!targetIsModule && !definitionRecord.isValid())
+                continue;
             const QString edgeKey = QStringLiteral("%1:%2:%3:%4")
                 .arg(parentNodeId,
                      targetRecord.name,

@@ -78,6 +78,7 @@ private:
     TSFoldRange customFoldContainingLine(int line) const;
     QString rangeText(MyCodeEditor* editor, const TSFoldRange& range) const;
     bool deleteRange(MyCodeEditor* editor, const TSFoldRange& range);
+    void paintCustomFoldBackgrounds(MyCodeEditor* editor, QPainter& painter) const;
     void paintFoldRegionPreview(MyCodeEditor* editor, QPainter& painter) const;
     void paintFoldShelfHighlight(MyCodeEditor* editor, QPainter& painter) const;
 };

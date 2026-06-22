@@ -78,6 +78,8 @@ QString normalizedNavigationFileName(const QString& fileName)
 
 void NavigationWidget::populateFileTree()
 {
+    if (!fileTreeWidget)
+        return;
     TreePopulationGuard guard(fileTreeWidget);
     fileTreeWidget->clear();
 
@@ -139,6 +141,8 @@ void NavigationWidget::populateFileTree()
 
 void NavigationWidget::populateModuleTree()
 {
+    if (!moduleTreeWidget)
+        return;
     TreePopulationGuard guard(moduleTreeWidget);
     moduleTreeWidget->clear();
 
@@ -181,6 +185,8 @@ void NavigationWidget::populateModuleTree()
 
 void NavigationWidget::populateSymbolTree()
 {
+    if (!symbolTreeWidget)
+        return;
     TreePopulationGuard guard(symbolTreeWidget);
     symbolTreeWidget->clear();
     symbolItemPayloads.clear();
@@ -225,6 +231,8 @@ void NavigationWidget::populateSymbolTree()
 
 void NavigationWidget::populateDesignTree()
 {
+    if (!designTreeWidget)
+        return;
     TreePopulationGuard guard(designTreeWidget);
     designTreeWidget->clear();
     designItemPayloads.clear();
@@ -262,12 +270,6 @@ void NavigationWidget::applySearchFilter()
     switch (getActiveTab()) {
     case FileTab:
         populateFileTree();
-        break;
-    case ModuleTab:
-        populateModuleTree();
-        break;
-    case SymbolTab:
-        populateSymbolTree();
         break;
     case DesignTab:
         populateDesignTree();
@@ -389,6 +391,8 @@ QTreeWidgetItem* NavigationWidget::createSymbolItem(
 void NavigationWidget::expandCurrentFileNodes()
 {
     if (currentHighlightedFile.isEmpty()) return;
+    if (!fileTreeWidget)
+        return;
 
     QTreeWidgetItem* fileItem = findFileItemByPath(currentHighlightedFile);
     if (!fileItem)
@@ -402,6 +406,8 @@ void NavigationWidget::expandCurrentFileNodes()
 
 QTreeWidgetItem* NavigationWidget::findFileItemByPath(const QString& filePath)
 {
+    if (!fileTreeWidget)
+        return nullptr;
     for (int i = 0; i < fileTreeWidget->topLevelItemCount(); ++i) {
         QTreeWidgetItem* dirItem = fileTreeWidget->topLevelItem(i);
         for (int j = 0; j < dirItem->childCount(); ++j) {
@@ -416,6 +422,8 @@ QTreeWidgetItem* NavigationWidget::findFileItemByPath(const QString& filePath)
 
 QTreeWidgetItem* NavigationWidget::findItemByText(QTreeWidget* tree, const QString& text, int column)
 {
+    if (!tree)
+        return nullptr;
     QList<QTreeWidgetItem*> items = tree->findItems(text, Qt::MatchRecursive | Qt::MatchExactly, column);
     return items.isEmpty() ? nullptr : items.first();
 }

@@ -2423,123 +2423,23 @@ static void runNavigationHierarchyModelRegression()
     printf("\n-- navigation hierarchy model regression --\n");
 
     NavigationWidget widget;
-    widget.setActiveTab(NavigationWidget::ModuleTab);
-
-    ModuleHierarchyGroup fileGroup;
-    fileGroup.rootKind = ModuleHierarchyRootKind::FileGroup;
-    fileGroup.rootName = QStringLiteral("C:/fixture/relationship_top.sv");
-    fileGroup.rootDisplayName = QStringLiteral("relationship_top.sv");
-    fileGroup.rootToolTip = fileGroup.rootName;
-    fileGroup.childModules = {QStringLiteral("rel_top")};
-
-    ModuleHierarchyGroup moduleGroup;
-    moduleGroup.rootKind = ModuleHierarchyRootKind::ModuleRoot;
-    moduleGroup.rootName = QStringLiteral("rel_top");
-    moduleGroup.rootDisplayName = QStringLiteral("rel_top");
-    moduleGroup.rootToolTip = QStringLiteral("Module: rel_top");
-    moduleGroup.childModules = {QStringLiteral("rel_stage")};
-
-    widget.updateModuleHierarchy({fileGroup, moduleGroup});
-
-    QTreeWidget* moduleTree = nullptr;
-    QTreeWidgetItem* fileRoot = nullptr;
-    QTreeWidgetItem* moduleRoot = nullptr;
-    QTreeWidgetItem* childModule = nullptr;
-    const QList<QTreeWidget*> trees = widget.findChildren<QTreeWidget*>();
-    for (QTreeWidget* tree : trees) {
-        childModule = findItemByText(tree, QStringLiteral("rel_stage"));
-        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem* top = tree->topLevelItem(i);
-            if (top->text(0) == QStringLiteral("relationship_top.sv"))
-                fileRoot = top;
-            if (top->text(0) == QStringLiteral("rel_top"))
-                moduleRoot = top;
-        }
-        if (fileRoot && moduleRoot && childModule) {
-            moduleTree = tree;
-            break;
-        }
-    }
-
-    expectBool("module hierarchy tree rendered", moduleTree != nullptr, true);
-    expectBool("file group root rendered", fileRoot != nullptr, true);
-    expectBool("module root rendered", moduleRoot != nullptr, true);
-    expectBool("module child rendered", childModule != nullptr, true);
-    if (!moduleTree || !fileRoot || !moduleRoot || !childModule)
-        return;
-
-    QSignalSpy moduleClicks(&widget, &NavigationWidget::moduleDoubleClicked);
-    widget.onModuleTreeDoubleClicked(fileRoot, 0);
-    expectBool("file group root does not navigate", moduleClicks.count() == 0, true);
-
-    widget.onModuleTreeDoubleClicked(moduleRoot, 0);
-    expectBool("module root navigates", moduleClicks.count() == 1, true);
-    expectBool("module root emits name",
-               moduleClicks.takeFirst().at(0).toString() == QStringLiteral("rel_top"),
+    expectBool("navigation only exposes files and design tabs",
+               widget.tabWidget && widget.tabWidget->count() == 2
+                   && widget.tabWidget->tabText(0) == QStringLiteral("Files")
+                   && widget.tabWidget->tabText(1) == QStringLiteral("Design"),
                true);
 
-    widget.onModuleTreeDoubleClicked(childModule, 0);
-    expectBool("module child navigates", moduleClicks.count() == 1, true);
-    expectBool("module child emits name",
-               moduleClicks.takeFirst().at(0).toString() == QStringLiteral("rel_stage"),
-               true);
+    const QString fileTabPath = QStringLiteral("C:/fixture/relationship_top.sv");
+    widget.updateFileHierarchy({fileTabPath});
+    QTreeWidgetItem* fileItem = widget.findFileItemByPath(fileTabPath);
+    expectBool("files tab renders file item", fileItem != nullptr, true);
 
-    widget.setActiveTab(NavigationWidget::SymbolTab);
-
-    const SemanticSymbolRecord outlineSymbol =
-        SemanticFixtureRecordBuilder(QStringLiteral("rel_top"),
-                                     SymbolTaxonomy::DeclarationKind::Module)
-            .withFile(QStringLiteral("C:/fixture/relationship_top.sv"))
-            .withLocalHandle(1234)
-            .withLine(42, 7)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
-            .record();
-
-    SymbolOutlineSymbolRow outlineRow;
-    outlineRow.symbolRecord = outlineSymbol;
-    outlineRow.symbolStableKey = outlineRow.symbolRecord.stableKey;
-    outlineRow.displayName = outlineSymbol.name;
-    outlineRow.typeDisplayName = QStringLiteral("Module");
-    outlineRow.detailDisplayName = outlineSymbol.location.fileName;
-    outlineRow.iconKind = SymbolOutlineIconKind::Module;
-
-    SymbolOutlineGroup outlineGroup;
-    outlineGroup.declarationKind = SymbolTaxonomy::DeclarationKind::Module;
-    outlineGroup.displayName = QStringLiteral("Module");
-    outlineGroup.iconKind = SymbolOutlineIconKind::Module;
-    outlineGroup.symbolRows = {outlineRow};
-    widget.updateSymbolHierarchy({outlineGroup});
-
-    QTreeWidgetItem* symbolItem = findItemByText(widget.symbolTreeWidget,
-                                                 QStringLiteral("rel_top"));
-
-    bool symbolClicked = false;
-    SymbolOutlineSymbolRow clickedRow;
-    QObject::connect(&widget, &NavigationWidget::symbolRowDoubleClicked,
-                     &widget, [&](const SymbolOutlineSymbolRow& row) {
-                         symbolClicked = true;
-                         clickedRow = row;
-                     });
-
-    expectBool("symbol outline item rendered", symbolItem != nullptr, true);
-    if (symbolItem)
-        widget.onSymbolTreeDoubleClicked(symbolItem, 0);
-    expectBool("symbol outline emits payload", symbolClicked, true);
-    expectBool("symbol outline preserves file",
-               clickedRow.symbolRecord.location.fileName
-                   == outlineSymbol.location.fileName,
-               true);
-    expectBool("symbol outline preserves location",
-               clickedRow.symbolRecord.location.startLine
-                       == outlineSymbol.location.startLine
-                   && clickedRow.symbolRecord.location.startColumn
-                       == outlineSymbol.location.startColumn,
-               true);
-    expectBool("symbol outline preserves id",
-               clickedRow.symbolRecord.localHandle == outlineSymbol.localHandle,
-               true);
-    expectBool("symbol outline exposes stable key",
-               clickedRow.symbolRecord.stableKey.isValid(),
+    QSignalSpy fileClicks(&widget, &NavigationWidget::fileDoubleClicked);
+    if (fileItem)
+        widget.onFileTreeDoubleClicked(fileItem, 0);
+    expectBool("files tab double-click emits file",
+               fileClicks.count() == 1
+                   && fileClicks.takeFirst().at(0).toString() == fileTabPath,
                true);
 
     const QString designTopFile = QStringLiteral("C:/fixture/design_top.sv");
@@ -2678,29 +2578,33 @@ static void runGlobalControlRegression(MainWindow& window,
 
     GlobalControlService service;
     const QList<GlobalControlItem> commandMatches =
-        service.query(QStringLiteral("Open Workspace"),
+        service.query(QStringLiteral("ow"),
                       window.workspaceManager->getProjectModel(),
                       SemanticIndex::getInstance());
-    bool foundOpenWorkspace = false;
+    bool foundOpenWorkspaceAction = false;
     for (const GlobalControlItem& item : commandMatches) {
-        if (item.id == QStringLiteral("openWorkspace"))
-            foundOpenWorkspace = true;
+        if (item.id == QStringLiteral("ow"))
+            foundOpenWorkspaceAction = true;
     }
-    expectBool("global control finds command",
-               foundOpenWorkspace,
+    expectBool("global control finds ow command",
+               foundOpenWorkspaceAction,
                true);
 
-    const QList<GlobalControlItem> panelMatches =
-        service.query(QStringLiteral("Show Activity"),
+    const QList<GlobalControlItem> allCommands =
+        service.query(QString(),
                       window.workspaceManager->getProjectModel(),
                       SemanticIndex::getInstance());
-    bool foundShowActivity = false;
-    for (const GlobalControlItem& item : panelMatches) {
-        if (item.id == QStringLiteral("showActivity"))
-            foundShowActivity = true;
+    QSet<QString> commandIds;
+    for (const GlobalControlItem& item : allCommands) {
+        if (item.kind == GlobalControlItemKind::Command)
+            commandIds.insert(item.id);
     }
-    expectBool("global control finds panel reopen command",
-               foundShowActivity,
+    expectBool("global control only exposes ow fd fds",
+               commandIds == QSet<QString>({
+                   QStringLiteral("ow"),
+                   QStringLiteral("fd"),
+                   QStringLiteral("fds"),
+               }),
                true);
 
     const QList<GlobalControlItem> foldActionMatches =
@@ -2739,20 +2643,20 @@ static void runGlobalControlRegression(MainWindow& window,
             foundFixtureFile = true;
         }
     }
-    expectBool("global control finds workspace file",
+    expectBool("global control omits workspace files",
                foundFixtureFile,
-               true);
+               false);
 
     bool dispatched = false;
     GlobalControlCoordinator dispatcherProbe(&window);
     dispatcherProbe.setActionHandler([&](const GlobalControlItem& item) {
-        dispatched = item.id == QStringLiteral("saveFile");
+        dispatched = item.id == QStringLiteral("ow");
     });
     dispatcherProbe.dispatch(
         GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("saveFile"),
-                          QStringLiteral("Save File"),
-                          QStringLiteral("File")});
+                          QStringLiteral("ow"),
+                          QStringLiteral("ow"),
+                          QStringLiteral("Open Workspace")});
     expectBool("global control dispatches command",
                dispatched,
                true);
@@ -3500,7 +3404,7 @@ int main(int argc, char** argv)
     expectBool("navigation widget exists", navWidget != nullptr, true);
     runGlobalControlRegression(window, navWidget);
     if (navWidget && editor) {
-        navWidget->setActiveTab(NavigationWidget::ModuleTab);
+        navWidget->setActiveTab(NavigationWidget::FileTab);
         window.navigationManager->setActiveView(NavigationManager::ModuleHierarchyView);
         window.navigationManager->refreshCurrentView();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -3518,47 +3422,44 @@ int main(int argc, char** argv)
                    waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
                    true);
 
-        QTreeWidget* moduleTree = nullptr;
-        QTreeWidgetItem* moduleItem = nullptr;
-        const QList<QTreeWidget*> trees = navWidget->findChildren<QTreeWidget*>();
-        for (QTreeWidget* tree : trees) {
-            if (!tree->isVisible())
-                continue;
-            if (QTreeWidgetItem* item = findItemByText(tree, QStringLiteral("adder"))) {
-                moduleTree = tree;
-                moduleItem = item;
-                break;
-            }
-        }
-
-        expectBool("navigation module item exists", moduleTree && moduleItem, true);
-        if (moduleTree && moduleItem) {
-            moduleTree->expandAll();
-            moduleTree->scrollToItem(moduleItem);
-            moduleTree->setCurrentItem(moduleItem);
-            moduleTree->setFocus();
+        navWidget->setActiveTab(NavigationWidget::FileTab);
+        window.navigationManager->setActiveView(NavigationManager::FileHierarchyView);
+        window.navigationManager->refreshCurrentView();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        const QStringList navigationFiles =
+            window.workspaceManager->getSystemVerilogFiles();
+        const QString navigationFile =
+            navigationFiles.isEmpty() ? QString() : navigationFiles.first();
+        QTreeWidget* fileTree = navWidget->fileTreeWidget;
+        QTreeWidgetItem* fileItem =
+            navWidget->findFileItemByPath(navigationFile);
+        expectBool("navigation file item exists", fileTree && fileItem, true);
+        if (fileTree && fileItem) {
+            fileTree->expandAll();
+            fileTree->scrollToItem(fileItem);
+            fileTree->setCurrentItem(fileItem);
+            fileTree->setFocus();
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-            const QRect rect = moduleTree->visualItemRect(moduleItem);
+            const QRect rect = fileTree->visualItemRect(fileItem);
             expectBool("navigation item has visual rect", rect.isValid(), true);
-            bool moduleDoubleClicked = false;
-            QObject::connect(navWidget, &NavigationWidget::moduleDoubleClicked,
-                             &window, [&](const QString& moduleName) {
-                                 if (moduleName == QStringLiteral("adder"))
-                                     moduleDoubleClicked = true;
+            bool fileDoubleClicked = false;
+            QObject::connect(navWidget, &NavigationWidget::fileDoubleClicked,
+                             &window, [&](const QString& filePath) {
+                                 if (filePath == navigationFile)
+                                     fileDoubleClicked = true;
                              });
-            QTest::mouseClick(moduleTree->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
-            QTest::mouseDClick(moduleTree->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+            QTest::mouseClick(fileTree->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+            QTest::mouseDClick(fileTree->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-            expectBool("navigation double-click signal emitted", moduleDoubleClicked, true);
+            expectBool("navigation file double-click signal emitted", fileDoubleClicked, true);
 
-            expectBool("navigation double-click jumps to module",
+            expectBool("navigation file double-click activates file",
                        waitUntil([&]() {
                            MyCodeEditor* current = window.tabManager->getCurrentEditor();
                            return current
                                   && window.tabManager
                                          ->getDocumentForEditor(current)
-                                         .fileName == normalizedSymbolFixturePath
-                                  && current->textCursor().blockNumber() == 51;
+                                         .fileName == navigationFile;
                        }, 2000),
                        true);
         }

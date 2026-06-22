@@ -24,9 +24,9 @@ class NavigationWidget : public QWidget
 public:
     enum NavigationTab {
         FileTab = 0,
-        ModuleTab = 1,
-        SymbolTab = 2,
-        DesignTab = 3
+        DesignTab = 1,
+        ModuleTab = FileTab,
+        SymbolTab = FileTab
     };
 
     explicit NavigationWidget(QWidget *parent = nullptr);
@@ -75,28 +75,28 @@ private slots:
     void onDesignTreeContextMenuRequested(const QPoint& pos);
 
 private:
-    QVBoxLayout* mainLayout;
-    QTabWidget* tabWidget;
-    QLineEdit* searchLineEdit;
+    QVBoxLayout* mainLayout = nullptr;
+    QTabWidget* tabWidget = nullptr;
+    QLineEdit* searchLineEdit = nullptr;
 
-    QWidget* fileTab;
-    QTreeWidget* fileTreeWidget;
-    QVBoxLayout* fileTabLayout;
+    QWidget* fileTab = nullptr;
+    QTreeWidget* fileTreeWidget = nullptr;
+    QVBoxLayout* fileTabLayout = nullptr;
 
-    QWidget* moduleTab;
-    QTreeWidget* moduleTreeWidget;
-    QVBoxLayout* moduleTabLayout;
+    QWidget* moduleTab = nullptr;
+    QTreeWidget* moduleTreeWidget = nullptr;
+    QVBoxLayout* moduleTabLayout = nullptr;
 
-    QWidget* symbolTab;
-    QTreeWidget* symbolTreeWidget;
-    QVBoxLayout* symbolTabLayout;
+    QWidget* symbolTab = nullptr;
+    QTreeWidget* symbolTreeWidget = nullptr;
+    QVBoxLayout* symbolTabLayout = nullptr;
 
-    QWidget* designTab;
-    QTreeWidget* designTreeWidget;
-    QVBoxLayout* designTabLayout;
-    QLabel* designTopLabel;
-    QPushButton* designClearButton;
-    QPushButton* designRefreshButton;
+    QWidget* designTab = nullptr;
+    QTreeWidget* designTreeWidget = nullptr;
+    QVBoxLayout* designTabLayout = nullptr;
+    QLabel* designTopLabel = nullptr;
+    QPushButton* designClearButton = nullptr;
+    QPushButton* designRefreshButton = nullptr;
 
     QStringList currentFileList;
     QList<ModuleHierarchyGroup> currentModuleHierarchy;

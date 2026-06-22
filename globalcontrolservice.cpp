@@ -65,39 +65,20 @@ QList<GlobalControlItem> GlobalControlService::query(
     ProjectModel* projectModel,
     SemanticIndex* semanticIndex) const
 {
+    Q_UNUSED(projectModel)
+    Q_UNUSED(semanticIndex)
+
     QList<GlobalControlItem> result;
     appendFiltered(&result, commandItems(), text);
-    appendFiltered(&result, fileItems(projectModel), text);
-    appendFiltered(&result, symbolItems(semanticIndex), text);
-    appendFiltered(&result, templateItems(), text);
-    appendFiltered(&result, rtlInsightItems(), text);
     return result.mid(0, 80);
 }
 
 QList<GlobalControlItem> GlobalControlService::commandItems() const
 {
     return {
-        item(GlobalControlItemKind::Command, QStringLiteral("openWorkspace"), QStringLiteral("Open Workspace"), QStringLiteral("Workspace")),
-        item(GlobalControlItemKind::Command, QStringLiteral("openFile"), QStringLiteral("Open File"), QStringLiteral("File")),
-        item(GlobalControlItemKind::Command, QStringLiteral("saveFile"), QStringLiteral("Save File"), QStringLiteral("File")),
-        item(GlobalControlItemKind::Command, QStringLiteral("saveAs"), QStringLiteral("Save As"), QStringLiteral("File")),
-        item(GlobalControlItemKind::Command, QStringLiteral("find"), QStringLiteral("Find"), QStringLiteral("Editor")),
+        item(GlobalControlItemKind::Command, QStringLiteral("ow"), QStringLiteral("ow"), QStringLiteral("Open Workspace - choose and alias a workspace")),
         item(GlobalControlItemKind::Command, QStringLiteral("fd"), QStringLiteral("fd"), QStringLiteral("Fold Region - mark a custom fold block in the active editor")),
         item(GlobalControlItemKind::Command, QStringLiteral("fds"), QStringLiteral("fds"), QStringLiteral("Fold Shelf - drag custom fold blocks to or from the shelf")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showNavigation"), QStringLiteral("Show Navigation"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showProblems"), QStringLiteral("Show Problems"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showActivity"), QStringLiteral("Show Activity / Output"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showReferences"), QStringLiteral("Show References"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showRelationships"), QStringLiteral("Show Relationships"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showRtlInsights"), QStringLiteral("Show RTL Insights"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showFoldShelf"), QStringLiteral("Show Fold Shelf"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("showEditorAppearance"), QStringLiteral("Show Editor Appearance"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("resetPanelLayout"), QStringLiteral("Reset Panel Layout"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("toggleNavigation"), QStringLiteral("Show/Hide Navigation"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("toggleProblems"), QStringLiteral("Show/Hide Problems"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("toggleActivity"), QStringLiteral("Show/Hide Activity / Output"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Command, QStringLiteral("toggleRtlInsights"), QStringLiteral("Show/Hide RTL Insights"), QStringLiteral("View")),
-        item(GlobalControlItemKind::Setting, QStringLiteral("editorAppearance"), QStringLiteral("Editor Appearance"), QStringLiteral("Settings")),
     };
 }
 
