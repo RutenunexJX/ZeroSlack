@@ -403,13 +403,8 @@ void MyCodeEditorState::executeEditorActionCommand(
     MyCodeEditor* editor,
     const QString& command)
 {
-    const QString normalized = command.trimmed();
-    if (normalized == QStringLiteral(";:fd"))
-        startFoldRegionMarkMode(editor);
-    else if (normalized == QStringLiteral(";:fds")) {
-        startFoldShelfMode(editor);
-        emit editor->foldShelfRequested();
-    }
+    Q_UNUSED(editor);
+    Q_UNUSED(command);
 }
 
 void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)
