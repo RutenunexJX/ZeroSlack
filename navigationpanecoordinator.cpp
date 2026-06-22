@@ -8,6 +8,7 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
     navigationWidget = new NavigationWidget(parent);
 
     navigationDock = new QDockWidget("Navigation", parent);
+    navigationDock->setObjectName(QStringLiteral("navigationDock"));
     navigationDock->setWidget(navigationWidget);
     navigationDock->setFeatures(QDockWidget::DockWidgetMovable |
                                 QDockWidget::DockWidgetFloatable |

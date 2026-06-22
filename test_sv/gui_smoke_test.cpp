@@ -6,6 +6,7 @@
 #include <QAction>
 #include <QCompleter>
 #include <QComboBox>
+#include <QDockWidget>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -18,12 +19,14 @@
 #include <QListWidget>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextStream>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QtTest/QTest>
 
@@ -53,6 +56,7 @@
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
 #include "navigationwidget.h"
+#include "navigationpanecoordinator.h"
 #include "semantic_fixture_records.h"
 #include "symbolhoverservice.h"
 #include "modemanager.h"
@@ -2694,6 +2698,19 @@ static void runGlobalControlRegression(MainWindow& window,
                foundOpenWorkspace,
                true);
 
+    const QList<GlobalControlItem> panelMatches =
+        service.query(QStringLiteral("Show Activity"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundShowActivity = false;
+    for (const GlobalControlItem& item : panelMatches) {
+        if (item.id == QStringLiteral("showActivity"))
+            foundShowActivity = true;
+    }
+    expectBool("global control finds panel reopen command",
+               foundShowActivity,
+               true);
+
     const QList<GlobalControlItem> fileMatches =
         service.query(QStringLiteral("SVH_interface"),
                       window.workspaceManager->getProjectModel(),
@@ -2799,6 +2816,67 @@ int main(int argc, char** argv)
     expectBool("fold shelf dock starts hidden",
                foldShelfDock && !foldShelfDock->isVisible(),
                true);
+    QMenu* viewMenu = window.findChild<QMenu*>(QStringLiteral("viewMenu"));
+    expectBool("view menu exists", viewMenu != nullptr, true);
+    QToolButton* panelsStatusButton =
+        window.findChild<QToolButton*>(QStringLiteral("panelsStatusButton"));
+    expectBool("panels status button exists",
+               panelsStatusButton && panelsStatusButton->menu() == viewMenu,
+               true);
+    QAction* viewFoldShelfAction =
+        window.findChild<QAction*>(QStringLiteral("viewFoldShelfAction"));
+    expectBool("view menu has fold shelf action",
+               viewFoldShelfAction != nullptr,
+               true);
+    if (viewFoldShelfAction) {
+        viewFoldShelfAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("view menu reopens fold shelf",
+               foldShelfDock && foldShelfDock->isVisible(),
+               true);
+    if (foldShelfDock)
+        foldShelfDock->hide();
+
+    QDockWidget* activityDock =
+        window.findChild<QDockWidget*>(QStringLiteral("activityDock"));
+    QAction* viewActivityAction =
+        window.findChild<QAction*>(QStringLiteral("viewActivityAction"));
+    expectBool("view menu has activity action",
+               activityDock && viewActivityAction,
+               true);
+    if (activityDock)
+        activityDock->hide();
+    if (viewActivityAction) {
+        viewActivityAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("view menu reopens activity panel",
+               activityDock && activityDock->isVisible(),
+               true);
+
+    QAction* resetPanelLayoutAction =
+        window.findChild<QAction*>(QStringLiteral("resetPanelLayoutAction"));
+    expectBool("view menu has reset layout action",
+               resetPanelLayoutAction != nullptr,
+               true);
+    if (window.navigationPane && window.navigationPane->dock())
+        window.navigationPane->dock()->hide();
+    if (activityDock)
+        activityDock->hide();
+    if (resetPanelLayoutAction) {
+        resetPanelLayoutAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("reset panel layout reopens navigation",
+               window.navigationPane
+                   && window.navigationPane->dock()
+                   && window.navigationPane->dock()->isVisible(),
+               true);
+    expectBool("reset panel layout reopens activity",
+               activityDock && activityDock->isVisible(),
+               true);
+
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
     const int editorCountBeforeNewAction = window.tabManager->editorCount();
     if (newFileAction) {

@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QString>
 #include <memory>
 
 class AnalysisProgressCoordinator;
@@ -24,6 +25,8 @@ class ModeCommandCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
 class QDockWidget;
+class QMenu;
+class QToolButton;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -66,6 +69,8 @@ private:
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
     std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
     QDockWidget* editorAppearanceDock = nullptr;
+    QMenu* viewMenu = nullptr;
+    QToolButton* panelsStatusButton = nullptr;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -76,6 +81,16 @@ private:
     void setupModeCommandCoordinator();
     void setupGlobalControl();
     void setupFoldBlockShelf();
+    void setupViewMenu();
+    void addPanelViewAction(QDockWidget* dock,
+                            const QString& text,
+                            const QString& objectName);
+    QDockWidget* dockForPanelId(const QString& panelId) const;
+    void showDockWidget(QDockWidget* dock,
+                        const QString& statusMessage = QString());
+    void showPanelById(const QString& panelId);
+    void togglePanelById(const QString& panelId);
+    void resetPanelLayout();
     void showFoldBlockShelf();
     void restoreFoldShelfItem(const QString& id);
     void setupEditorAppearanceSettings();

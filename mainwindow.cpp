@@ -30,8 +30,11 @@
 #include "activitylogpanelcoordinator.h"
 #include "activitylogservice.h"
 #include "problemspanelcoordinator.h"
+#include "referencespanelcoordinator.h"
+#include "relationshipspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "version.h"
+#include <QAction>
 #include <QCloseEvent>
 #include <QCoreApplication>
 #include <QDockWidget>
@@ -39,7 +42,10 @@
 #include <QFileInfo>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
 #include <QStatusBar>
+#include <QToolButton>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -63,8 +69,9 @@ MainWindow::MainWindow(QWidget *parent)
     setupEditorAppearanceSettings();
     setupFileCommandCoordinator();
     setupModeCommandCoordinator();
-    setupGlobalControl();
     setupFoldBlockShelf();
+    setupViewMenu();
+    setupGlobalControl();
     setupEditorCoordinator();
     setupManagerConnections();
 
@@ -298,25 +305,34 @@ void MainWindow::setupGlobalControl()
                                     QStringLiteral("f"));
                     QCoreApplication::sendEvent(editor, &press);
                 }
-            } else if (item.id == QStringLiteral("toggleNavigation")) {
-                if (navigationPane)
-                    navigationPane->toggleVisible();
-            } else if (item.id == QStringLiteral("toggleProblems")) {
-                if (semanticDocks && semanticDocks->problemsPanelCoordinator())
-                    semanticDocks->problemsPanelCoordinator()->dock()->setVisible(
-                        !semanticDocks->problemsPanelCoordinator()->dock()->isVisible());
-            } else if (item.id == QStringLiteral("toggleActivity")) {
-                if (semanticDocks && semanticDocks->activityLogPanelCoordinator())
-                    semanticDocks->activityLogPanelCoordinator()->dock()->setVisible(
-                        !semanticDocks->activityLogPanelCoordinator()->dock()->isVisible());
-            } else if (item.id == QStringLiteral("toggleRtlInsights")
+            } else if (item.id == QStringLiteral("showNavigation")) {
+                showPanelById(QStringLiteral("navigation"));
+            } else if (item.id == QStringLiteral("showProblems")) {
+                showPanelById(QStringLiteral("problems"));
+            } else if (item.id == QStringLiteral("showActivity")) {
+                showPanelById(QStringLiteral("activity"));
+            } else if (item.id == QStringLiteral("showReferences")) {
+                showPanelById(QStringLiteral("references"));
+            } else if (item.id == QStringLiteral("showRelationships")) {
+                showPanelById(QStringLiteral("relationships"));
+            } else if (item.id == QStringLiteral("showRtlInsights")
                        || item.kind == GlobalControlItemKind::RtlInsight) {
-                if (semanticDocks && semanticDocks->rtlInsightsPanelCoordinator())
-                    semanticDocks->rtlInsightsPanelCoordinator()->dock()->setVisible(
-                        !semanticDocks->rtlInsightsPanelCoordinator()->dock()->isVisible());
-            } else if (item.id == QStringLiteral("editorAppearance")) {
-                if (editorAppearanceDock)
-                    editorAppearanceDock->setVisible(!editorAppearanceDock->isVisible());
+                showPanelById(QStringLiteral("rtlInsights"));
+            } else if (item.id == QStringLiteral("showFoldShelf")) {
+                showPanelById(QStringLiteral("foldShelf"));
+            } else if (item.id == QStringLiteral("showEditorAppearance")
+                       || item.id == QStringLiteral("editorAppearance")) {
+                showPanelById(QStringLiteral("editorAppearance"));
+            } else if (item.id == QStringLiteral("resetPanelLayout")) {
+                resetPanelLayout();
+            } else if (item.id == QStringLiteral("toggleNavigation")) {
+                togglePanelById(QStringLiteral("navigation"));
+            } else if (item.id == QStringLiteral("toggleProblems")) {
+                togglePanelById(QStringLiteral("problems"));
+            } else if (item.id == QStringLiteral("toggleActivity")) {
+                togglePanelById(QStringLiteral("activity"));
+            } else if (item.id == QStringLiteral("toggleRtlInsights")) {
+                togglePanelById(QStringLiteral("rtlInsights"));
             }
         });
     globalControlCoordinator->install();
@@ -346,6 +362,195 @@ void MainWindow::showFoldBlockShelf()
     foldShelfDock->raise();
     if (statusBar())
         statusBar()->showMessage(QStringLiteral("Fold Shelf ready"), 3000);
+}
+
+void MainWindow::setupViewMenu()
+{
+    if (!menuBar() || viewMenu)
+        return;
+
+    viewMenu = menuBar()->addMenu(tr("&View"));
+    viewMenu->setObjectName(QStringLiteral("viewMenu"));
+
+    addPanelViewAction(navigationPane ? navigationPane->dock() : nullptr,
+                       tr("Navigation"),
+                       QStringLiteral("viewNavigationAction"));
+    viewMenu->addSeparator();
+    addPanelViewAction(semanticDocks && semanticDocks->problemsPanelCoordinator()
+                           ? semanticDocks->problemsPanelCoordinator()->dock()
+                           : nullptr,
+                       tr("Problems"),
+                       QStringLiteral("viewProblemsAction"));
+    addPanelViewAction(semanticDocks && semanticDocks->activityLogPanelCoordinator()
+                           ? semanticDocks->activityLogPanelCoordinator()->dock()
+                           : nullptr,
+                       tr("Activity / Output"),
+                       QStringLiteral("viewActivityAction"));
+    addPanelViewAction(semanticDocks && semanticDocks->referencesPanelCoordinator()
+                           ? semanticDocks->referencesPanelCoordinator()->dock()
+                           : nullptr,
+                       tr("References"),
+                       QStringLiteral("viewReferencesAction"));
+    addPanelViewAction(semanticDocks && semanticDocks->relationshipsPanelCoordinator()
+                           ? semanticDocks->relationshipsPanelCoordinator()->dock()
+                           : nullptr,
+                       tr("Relationships"),
+                       QStringLiteral("viewRelationshipsAction"));
+    addPanelViewAction(semanticDocks && semanticDocks->rtlInsightsPanelCoordinator()
+                           ? semanticDocks->rtlInsightsPanelCoordinator()->dock()
+                           : nullptr,
+                       tr("RTL Insights"),
+                       QStringLiteral("viewRtlInsightsAction"));
+    addPanelViewAction(foldShelfDock,
+                       tr("Fold Shelf"),
+                       QStringLiteral("viewFoldShelfAction"));
+    viewMenu->addSeparator();
+    addPanelViewAction(editorAppearanceDock,
+                       tr("Editor Appearance"),
+                       QStringLiteral("viewEditorAppearanceAction"));
+
+    viewMenu->addSeparator();
+    QAction* resetLayoutAction = viewMenu->addAction(tr("Reset Panel Layout"));
+    resetLayoutAction->setObjectName(QStringLiteral("resetPanelLayoutAction"));
+    connect(resetLayoutAction, &QAction::triggered,
+            this, &MainWindow::resetPanelLayout);
+
+    if (statusBar()) {
+        panelsStatusButton = new QToolButton(this);
+        panelsStatusButton->setObjectName(QStringLiteral("panelsStatusButton"));
+        panelsStatusButton->setText(tr("Panels"));
+        panelsStatusButton->setToolTip(tr("Open or restore ZeroSlack panels"));
+        panelsStatusButton->setPopupMode(QToolButton::InstantPopup);
+        panelsStatusButton->setMenu(viewMenu);
+        statusBar()->addPermanentWidget(panelsStatusButton);
+    }
+}
+
+void MainWindow::addPanelViewAction(QDockWidget* dock,
+                                    const QString& text,
+                                    const QString& objectName)
+{
+    if (!viewMenu || !dock)
+        return;
+
+    QAction* action = dock->toggleViewAction();
+    action->setText(text);
+    action->setObjectName(objectName);
+    viewMenu->addAction(action);
+}
+
+QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
+{
+    if (panelId == QStringLiteral("navigation"))
+        return navigationPane ? navigationPane->dock() : nullptr;
+    if (panelId == QStringLiteral("problems"))
+        return semanticDocks && semanticDocks->problemsPanelCoordinator()
+            ? semanticDocks->problemsPanelCoordinator()->dock()
+            : nullptr;
+    if (panelId == QStringLiteral("activity"))
+        return semanticDocks && semanticDocks->activityLogPanelCoordinator()
+            ? semanticDocks->activityLogPanelCoordinator()->dock()
+            : nullptr;
+    if (panelId == QStringLiteral("references"))
+        return semanticDocks && semanticDocks->referencesPanelCoordinator()
+            ? semanticDocks->referencesPanelCoordinator()->dock()
+            : nullptr;
+    if (panelId == QStringLiteral("relationships"))
+        return semanticDocks && semanticDocks->relationshipsPanelCoordinator()
+            ? semanticDocks->relationshipsPanelCoordinator()->dock()
+            : nullptr;
+    if (panelId == QStringLiteral("rtlInsights"))
+        return semanticDocks && semanticDocks->rtlInsightsPanelCoordinator()
+            ? semanticDocks->rtlInsightsPanelCoordinator()->dock()
+            : nullptr;
+    if (panelId == QStringLiteral("foldShelf"))
+        return foldShelfDock;
+    if (panelId == QStringLiteral("editorAppearance"))
+        return editorAppearanceDock;
+    return nullptr;
+}
+
+void MainWindow::showDockWidget(QDockWidget* dock,
+                                const QString& statusMessage)
+{
+    if (!dock)
+        return;
+
+    dock->show();
+    dock->raise();
+    dock->activateWindow();
+    if (!statusMessage.isEmpty() && statusBar())
+        statusBar()->showMessage(statusMessage, 3000);
+}
+
+void MainWindow::showPanelById(const QString& panelId)
+{
+    if (panelId == QStringLiteral("foldShelf")) {
+        showFoldBlockShelf();
+        return;
+    }
+
+    QDockWidget* dock = dockForPanelId(panelId);
+    showDockWidget(dock);
+}
+
+void MainWindow::togglePanelById(const QString& panelId)
+{
+    QDockWidget* dock = dockForPanelId(panelId);
+    if (!dock)
+        return;
+
+    if (dock->isVisible())
+        dock->hide();
+    else
+        showPanelById(panelId);
+}
+
+void MainWindow::resetPanelLayout()
+{
+    QDockWidget* navigationDock = dockForPanelId(QStringLiteral("navigation"));
+    QDockWidget* problemsDock = dockForPanelId(QStringLiteral("problems"));
+    QDockWidget* activityDock = dockForPanelId(QStringLiteral("activity"));
+    QDockWidget* referencesDock = dockForPanelId(QStringLiteral("references"));
+    QDockWidget* relationshipsDock = dockForPanelId(QStringLiteral("relationships"));
+    QDockWidget* rtlInsightsDock = dockForPanelId(QStringLiteral("rtlInsights"));
+    QDockWidget* editorAppearanceDockWidget =
+        dockForPanelId(QStringLiteral("editorAppearance"));
+    QDockWidget* foldShelfDockWidget = dockForPanelId(QStringLiteral("foldShelf"));
+
+    if (navigationDock)
+        addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
+    if (editorAppearanceDockWidget)
+        addDockWidget(Qt::RightDockWidgetArea, editorAppearanceDockWidget);
+
+    QDockWidget* bottomDocks[] = {
+        problemsDock,
+        activityDock,
+        referencesDock,
+        relationshipsDock,
+        rtlInsightsDock,
+        foldShelfDockWidget,
+    };
+    for (QDockWidget* dock : bottomDocks) {
+        if (dock)
+            addDockWidget(Qt::BottomDockWidgetArea, dock);
+    }
+    if (problemsDock) {
+        for (QDockWidget* dock : bottomDocks) {
+            if (dock && dock != problemsDock)
+                tabifyDockWidget(problemsDock, dock);
+        }
+    }
+
+    showDockWidget(navigationDock);
+    showDockWidget(editorAppearanceDockWidget);
+    for (QDockWidget* dock : bottomDocks)
+        showDockWidget(dock);
+    if (problemsDock)
+        problemsDock->raise();
+
+    if (statusBar())
+        statusBar()->showMessage(tr("Panel layout reset"), 3000);
 }
 
 void MainWindow::restoreFoldShelfItem(const QString& id)
