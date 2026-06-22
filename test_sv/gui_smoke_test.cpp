@@ -18,6 +18,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QMouseEvent>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -52,6 +53,7 @@
 #include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
 #include "foldblockshelfmodel.h"
+#include "foldblockshelfpanel.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
@@ -2251,6 +2253,8 @@ static void runTreeSitterFoldingProviderRegression()
     expectBool("editor gutter click expands fold", gutterExpanded, true);
 
     MyCodeEditor commandEditor;
+    QSignalSpy commandStatusSpy(&commandEditor,
+                                &MyCodeEditor::editorStatusMessageRequested);
     commandEditor.setPlainText(QStringLiteral(";:fd"));
     QTextCursor commandCursor = commandEditor.textCursor();
     commandCursor.movePosition(QTextCursor::End);
@@ -2270,6 +2274,26 @@ static void runTreeSitterFoldingProviderRegression()
                true);
     expectBool(";:fd selected action enters fold region mark mode",
                commandEditor.foldRegionMarkModeActive(),
+               true);
+    expectBool(";:fd emits start-line mode status",
+               commandStatusSpy.count() > 0
+                   && commandStatusSpy.last().at(0).toString().contains(
+                       QStringLiteral("click start line")),
+               true);
+    QMouseEvent markStartClick(QEvent::MouseButtonPress,
+                               QPointF(6, 4),
+                               QPointF(6, 4),
+                               QPointF(6, 4),
+                               Qt::LeftButton,
+                               Qt::LeftButton,
+                               Qt::NoModifier);
+    const bool startLineSelected =
+        commandEditor.state->handleGutterMousePress(&commandEditor, &markStartClick);
+    expectBool(";:fd gutter start selects next stage",
+               startLineSelected
+                   && commandStatusSpy.count() > 0
+                   && commandStatusSpy.last().at(0).toString().contains(
+                       QStringLiteral("click end line")),
                true);
     QKeyEvent blockedText(QEvent::KeyPress,
                           Qt::Key_A,
@@ -2383,6 +2407,8 @@ static void runTreeSitterFoldingProviderRegression()
                true);
 
     MyCodeEditor shelfCommandEditor;
+    QSignalSpy shelfStatusSpy(&shelfCommandEditor,
+                              &MyCodeEditor::editorStatusMessageRequested);
     QSignalSpy shelfRequestedSpy(&shelfCommandEditor,
                                  &MyCodeEditor::foldShelfRequested);
     MyCodeEditor ambiguousFoldCommandEditor;
@@ -2418,6 +2444,20 @@ static void runTreeSitterFoldingProviderRegression()
                true);
     expectBool(";:fds enters fold shelf mode",
                shelfCommandEditor.foldShelfModeActive(),
+               true);
+    expectBool(";:fds emits shelf mode status",
+               shelfStatusSpy.count() > 0
+                   && shelfStatusSpy.last().at(0).toString().contains(
+                       QStringLiteral("Fold Shelf")),
+               true);
+    QKeyEvent blockedShelfText(QEvent::KeyPress,
+                               Qt::Key_X,
+                               Qt::NoModifier,
+                               QStringLiteral("x"));
+    QApplication::sendEvent(&shelfCommandEditor, &blockedShelfText);
+    expectBool("fold shelf mode blocks text input",
+               shelfCommandEditor.toPlainText().isEmpty()
+                   && shelfCommandEditor.foldShelfModeActive(),
                true);
     QKeyEvent cancelShelf(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(&shelfCommandEditor, &cancelShelf);
@@ -2887,6 +2927,29 @@ int main(int argc, char** argv)
                newFileAction
                    && window.tabManager->editorCount()
                        == editorCountBeforeNewAction + 1,
+               true);
+    QLabel* editorModeChip =
+        window.findChild<QLabel*>(QStringLiteral("editorModeChip"));
+    expectBool("editor mode chip exists",
+               editorModeChip != nullptr && !editorModeChip->isVisible(),
+               true);
+    MyCodeEditor* modeChipEditor = window.tabManager->getCurrentEditor();
+    if (modeChipEditor)
+        modeChipEditor->startFoldShelfMode();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("fold shelf mode shows status chip",
+               editorModeChip
+                   && editorModeChip->isVisible()
+                   && editorModeChip->text().contains(QStringLiteral("Fold Shelf")),
+               true);
+    expectBool("fold shelf mode highlights shelf panel",
+               window.foldShelfPanel && window.foldShelfPanel->shelfModeActive(),
+               true);
+    if (modeChipEditor)
+        modeChipEditor->cancelFoldShelfMode();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("fold shelf mode hides status chip on cancel",
+               editorModeChip && !editorModeChip->isVisible(),
                true);
     QTemporaryDir saveDir;
     expectBool("save temp dir valid", saveDir.isValid(), true);

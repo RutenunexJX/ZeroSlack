@@ -467,8 +467,10 @@ void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
     if (tabManager) {
         for (int i = 0; i < tabManager->editorCount(); ++i) {
-            if (MyCodeEditor* openEditor = tabManager->getEditorAt(i))
+            if (MyCodeEditor* openEditor = tabManager->getEditorAt(i)) {
                 openEditor->cancelFoldRegionMarkMode();
+                openEditor->cancelFoldShelfMode();
+            }
         }
     }
     applyAlternateMode(editor);

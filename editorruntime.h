@@ -68,6 +68,7 @@ struct MyCodeEditorState
     bool handleDrop(MyCodeEditor* editor, QDropEvent* event);
     void handleResize(MyCodeEditor* editor) const;
     bool handleGutterMousePress(MyCodeEditor* editor, QMouseEvent* event);
+    bool handleGutterMouseMove(MyCodeEditor* editor, QMouseEvent* event);
     void paintGutterDecorations(MyCodeEditor* editor,
                                 QPainter& painter,
                                 const QRect& rect) const;

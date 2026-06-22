@@ -281,7 +281,7 @@ feature direction that violates them.
 - End every work turn by naming the current Phase K subphase and reporting that subphase's remaining percentage.
 - Move from K1 to K2 only after Design Hierarchy behavior, tests, docs, and requested coherent local commit are complete.
 - Move from K2 to K3 only after folding behavior, tests, docs, and requested coherent local commit are complete.
-- Phase K completion verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 331 checks, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`.
+- Phase K completion verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 331 checks, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`. The latest Fold mode polish additionally passed a focused `gui_smoke_test` run with 349 checks.
 
 ### Phase L: Regex Logic Native Cleanup
 

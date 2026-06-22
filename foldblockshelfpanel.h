@@ -20,6 +20,8 @@ public:
     void setModel(FoldBlockShelfModel* model);
     FoldBlockShelfModel* model() const;
     void requestDeleteSelectedItem();
+    void setShelfModeActive(bool active);
+    bool shelfModeActive() const;
 
 signals:
     void restoreItemRequested(const QString& id);
@@ -32,8 +34,10 @@ protected:
 private:
     FoldBlockShelfModel* shelfModel = nullptr;
     QListWidget* listWidget = nullptr;
+    bool activeShelfMode = false;
 
     void refresh();
+    void updateModeStyle();
     void showPreview(const FoldShelfItem& item);
     void handleDeleteSelectedItem();
 };

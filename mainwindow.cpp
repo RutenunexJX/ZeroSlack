@@ -71,6 +71,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupModeCommandCoordinator();
     setupFoldBlockShelf();
     setupViewMenu();
+    setupEditorModeChip();
     setupGlobalControl();
     setupEditorCoordinator();
     setupManagerConnections();
@@ -426,6 +427,96 @@ void MainWindow::setupViewMenu()
     }
 }
 
+void MainWindow::setupEditorModeChip()
+{
+    if (!statusBar() || editorModeChip)
+        return;
+
+    editorModeChip = new QLabel(this);
+    editorModeChip->setObjectName(QStringLiteral("editorModeChip"));
+    editorModeChip->setVisible(false);
+    editorModeChip->setTextInteractionFlags(Qt::NoTextInteraction);
+    editorModeChip->setContentsMargins(8, 2, 8, 2);
+    statusBar()->addPermanentWidget(editorModeChip);
+}
+
+void MainWindow::updateEditorModeChip(const QString& message)
+{
+    if (!editorModeChip)
+        return;
+
+    if (message.startsWith(QStringLiteral("Fold region: click start line"))) {
+        editorModeChip->setText(tr("Fold Region - click start line - Esc cancel"));
+        editorModeChip->setStyleSheet(QStringLiteral(
+            "QLabel#editorModeChip {"
+            "  color: #064E3B;"
+            "  background: rgba(16, 185, 129, 0.22);"
+            "  border: 1px solid rgba(16, 185, 129, 0.65);"
+            "  border-radius: 6px;"
+            "  padding: 2px 8px;"
+            "}"));
+        setFoldShelfModeVisualActive(false);
+        editorModeChip->setVisible(true);
+        return;
+    }
+
+    if (message.startsWith(QStringLiteral("Fold region: click end line"))) {
+        editorModeChip->setText(tr("Fold Region - click end line - Esc cancel"));
+        editorModeChip->setStyleSheet(QStringLiteral(
+            "QLabel#editorModeChip {"
+            "  color: #064E3B;"
+            "  background: rgba(16, 185, 129, 0.22);"
+            "  border: 1px solid rgba(16, 185, 129, 0.65);"
+            "  border-radius: 6px;"
+            "  padding: 2px 8px;"
+            "}"));
+        setFoldShelfModeVisualActive(false);
+        editorModeChip->setVisible(true);
+        return;
+    }
+
+    if (message.startsWith(QStringLiteral("Fold Shelf"))) {
+        editorModeChip->setText(tr("Fold Shelf - drag custom fold blocks - Esc cancel"));
+        editorModeChip->setStyleSheet(QStringLiteral(
+            "QLabel#editorModeChip {"
+            "  color: #78350F;"
+            "  background: rgba(245, 158, 11, 0.24);"
+            "  border: 1px solid rgba(245, 158, 11, 0.70);"
+            "  border-radius: 6px;"
+            "  padding: 2px 8px;"
+            "}"));
+        setFoldShelfModeVisualActive(true);
+        editorModeChip->setVisible(true);
+        return;
+    }
+
+    if (message.isEmpty()) {
+        editorModeChip->clear();
+        editorModeChip->setVisible(false);
+        setFoldShelfModeVisualActive(false);
+    }
+}
+
+void MainWindow::setFoldShelfModeVisualActive(bool active)
+{
+    if (foldShelfPanel)
+        foldShelfPanel->setShelfModeActive(active);
+    if (!foldShelfDock)
+        return;
+
+    foldShelfDock->setProperty("foldShelfModeActive", active);
+    foldShelfDock->setStyleSheet(active
+        ? QStringLiteral(
+              "QDockWidget#FoldShelfDock::title {"
+              "  background: rgba(245, 158, 11, 0.35);"
+              "  padding-left: 6px;"
+              "}"
+              "QDockWidget#FoldShelfDock {"
+              "  border: 1px solid rgba(245, 158, 11, 0.70);"
+              "}")
+        : QString());
+}
+
 void MainWindow::addPanelViewAction(QDockWidget* dock,
                                     const QString& text,
                                     const QString& objectName)
@@ -636,6 +727,7 @@ void MainWindow::setupEditorCoordinator()
     editorCoordinator->setAppearanceSettings(editorAppearanceSettings.get());
     editorCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
+            updateEditorModeChip(message);
             if (statusBar()) {
                 if (message.isEmpty())
                     statusBar()->clearMessage();

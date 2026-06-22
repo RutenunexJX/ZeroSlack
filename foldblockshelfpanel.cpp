@@ -83,6 +83,7 @@ QString itemDisplayText(const FoldShelfItem& item)
 FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
     : QWidget(parent)
 {
+    setObjectName(QStringLiteral("foldBlockShelfPanel"));
     setAcceptDrops(true);
 
     auto* layout = new QVBoxLayout(this);
@@ -90,6 +91,7 @@ FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
     layout->setSpacing(4);
 
     listWidget = new FoldShelfListWidget(this);
+    listWidget->setObjectName(QStringLiteral("foldShelfListWidget"));
     listWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     listWidget->setDragEnabled(true);
     listWidget->setDragDropMode(QAbstractItemView::DragOnly);
@@ -101,6 +103,7 @@ FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
                     return;
                 showPreview(shelfModel->item(item->data(Qt::UserRole).toString()));
             });
+    updateModeStyle();
 }
 
 void FoldBlockShelfPanel::setModel(FoldBlockShelfModel* model)
@@ -125,6 +128,37 @@ FoldBlockShelfModel* FoldBlockShelfPanel::model() const
 void FoldBlockShelfPanel::requestDeleteSelectedItem()
 {
     handleDeleteSelectedItem();
+}
+
+void FoldBlockShelfPanel::setShelfModeActive(bool active)
+{
+    if (activeShelfMode == active)
+        return;
+    activeShelfMode = active;
+    updateModeStyle();
+}
+
+bool FoldBlockShelfPanel::shelfModeActive() const
+{
+    return activeShelfMode;
+}
+
+void FoldBlockShelfPanel::updateModeStyle()
+{
+    if (!activeShelfMode) {
+        setStyleSheet(QString());
+        return;
+    }
+
+    setStyleSheet(QStringLiteral(
+        "#foldBlockShelfPanel {"
+        "  border: 2px solid #F59E0B;"
+        "  background: rgba(245, 158, 11, 0.06);"
+        "}"
+        "#foldShelfListWidget {"
+        "  border: 1px solid rgba(245, 158, 11, 0.65);"
+        "  selection-background-color: #F59E0B;"
+        "}"));
 }
 
 void FoldBlockShelfPanel::refresh()

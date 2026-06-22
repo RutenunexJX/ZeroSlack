@@ -21,6 +21,7 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
 private:
@@ -35,6 +36,7 @@ LineNumberWidget::LineNumberWidget(
     , codeEditor(editor)
     , gutter(gutterUi)
 {
+    setMouseTracking(true);
 }
 
 void LineNumberWidget::paintEvent(QPaintEvent* event)
@@ -51,6 +53,14 @@ void LineNumberWidget::mousePressEvent(QMouseEvent* event)
         return;
 
     gutter->handleMousePress(codeEditor, event);
+}
+
+void LineNumberWidget::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!codeEditor || !gutter)
+        return;
+
+    gutter->handleMouseMove(codeEditor, event);
 }
 
 void LineNumberWidget::wheelEvent(QWheelEvent* event)
@@ -158,6 +168,14 @@ void EditorGutter::handleMousePress(MyCodeEditor* editor, QMouseEvent* event) co
             / editor->fontMetrics().height()
         + editor->verticalScrollBar()->value());
     editor->setTextCursor(QTextCursor(block));
+}
+
+void EditorGutter::handleMouseMove(MyCodeEditor* editor, QMouseEvent* event) const
+{
+    if (!editor || !event || !editor->state)
+        return;
+
+    editor->state->handleGutterMouseMove(editor, event);
 }
 
 void EditorGutter::handleWheel(MyCodeEditor* editor, QWheelEvent* event) const

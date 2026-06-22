@@ -25,6 +25,7 @@ class ModeCommandCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
 class QDockWidget;
+class QLabel;
 class QMenu;
 class QToolButton;
 
@@ -71,6 +72,7 @@ private:
     QDockWidget* editorAppearanceDock = nullptr;
     QMenu* viewMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;
+    QLabel* editorModeChip = nullptr;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -91,6 +93,9 @@ private:
     void showPanelById(const QString& panelId);
     void togglePanelById(const QString& panelId);
     void resetPanelLayout();
+    void setupEditorModeChip();
+    void updateEditorModeChip(const QString& message);
+    void setFoldShelfModeVisualActive(bool active);
     void showFoldBlockShelf();
     void restoreFoldShelfItem(const QString& id);
     void setupEditorAppearanceSettings();

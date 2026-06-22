@@ -19,6 +19,7 @@ public:
     void resizeTo(MyCodeEditor* editor, const QRect& contentsRect) const;
     void paint(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleMousePress(MyCodeEditor* editor, QMouseEvent* event) const;
+    void handleMouseMove(MyCodeEditor* editor, QMouseEvent* event) const;
     void handleWheel(MyCodeEditor* editor, QWheelEvent* event) const;
 
 private:

@@ -190,6 +190,14 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         event->accept();
         return true;
     }
+    if (folding.foldShelfModeActive()
+        && !event->text().isEmpty()
+        && !event->modifiers().testFlag(Qt::ControlModifier)) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("Fold Shelf: drag custom fold blocks"));
+        event->accept();
+        return true;
+    }
 
     if (event->key() == Qt::Key_Escape
         && sourceNavigation.handleEscape(editor, selections)) {
@@ -280,6 +288,34 @@ bool MyCodeEditorState::handleGutterMousePress(
     return false;
 }
 
+bool MyCodeEditorState::handleGutterMouseMove(
+    MyCodeEditor* editor,
+    QMouseEvent* event)
+{
+    if (!editor || !event)
+        return false;
+
+    QTextBlock block = editor->firstVisibleBlock();
+    int top = static_cast<int>(editor->blockBoundingGeometry(block)
+                                   .translated(editor->contentOffset())
+                                   .top());
+    int bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
+    const int y = static_cast<int>(event->position().y());
+    while (block.isValid()) {
+        if (y >= top && y <= bottom) {
+            const bool handled =
+                folding.handleFoldRegionHoverLine(editor, block.blockNumber());
+            if (handled)
+                gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
+            return handled;
+        }
+        block = block.next();
+        top = bottom;
+        bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
+    }
+    return false;
+}
+
 void MyCodeEditorState::paintGutterDecorations(
     MyCodeEditor* editor,
     QPainter& painter,
@@ -325,6 +361,9 @@ bool MyCodeEditorState::handleMouseMove(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    if (folding.handleFoldRegionMouseMove(editor, event))
+        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
+
     folding.handleFoldShelfHover(editor, event);
     if (folding.handleFoldShelfMouseMove(editor, event))
         return true;
@@ -376,11 +415,15 @@ void MyCodeEditorState::executeEditorActionCommand(
 void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)
 {
     folding.startFoldRegionMarkMode(editor);
+    if (editor)
+        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
 }
 
 void MyCodeEditorState::cancelFoldRegionMarkMode(MyCodeEditor* editor)
 {
     folding.cancelFoldRegionMarkMode(editor);
+    if (editor)
+        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
 }
 
 bool MyCodeEditorState::foldRegionMarkModeActive() const
@@ -391,11 +434,15 @@ bool MyCodeEditorState::foldRegionMarkModeActive() const
 void MyCodeEditorState::startFoldShelfMode(MyCodeEditor* editor)
 {
     folding.startFoldShelfMode(editor);
+    if (editor)
+        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
 }
 
 void MyCodeEditorState::cancelFoldShelfMode(MyCodeEditor* editor)
 {
     folding.cancelFoldShelfMode(editor);
+    if (editor)
+        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
 }
 
 bool MyCodeEditorState::foldShelfModeActive() const

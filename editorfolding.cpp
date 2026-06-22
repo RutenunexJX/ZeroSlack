@@ -91,15 +91,22 @@ bool EditorFoldingController::toggleFoldAtLine(MyCodeEditor* editor, int line)
 
 void EditorFoldingController::startFoldRegionMarkMode(MyCodeEditor* editor)
 {
+    shelfMode = false;
+    hoveredShelfRange = {};
+    dragShelfRange = {};
     markMode = FoldRegionMarkMode::WaitingForStart;
     pendingStartLine = -1;
+    foldRegionHoverLine = -1;
     updateStatus(editor, QStringLiteral("Fold region: click start line"));
+    if (editor)
+        editor->viewport()->update();
 }
 
 void EditorFoldingController::cancelFoldRegionMarkMode(MyCodeEditor* editor)
 {
     markMode = FoldRegionMarkMode::Inactive;
     pendingStartLine = -1;
+    foldRegionHoverLine = -1;
     updateStatus(editor, QString());
     if (editor)
         editor->viewport()->update();
@@ -112,6 +119,9 @@ bool EditorFoldingController::foldRegionMarkModeActive() const
 
 void EditorFoldingController::startFoldShelfMode(MyCodeEditor* editor)
 {
+    markMode = FoldRegionMarkMode::Inactive;
+    pendingStartLine = -1;
+    foldRegionHoverLine = -1;
     shelfMode = true;
     hoveredShelfRange = {};
     dragShelfRange = {};
@@ -135,6 +145,34 @@ void EditorFoldingController::cancelFoldShelfMode(MyCodeEditor* editor)
 bool EditorFoldingController::foldShelfModeActive() const
 {
     return shelfMode;
+}
+
+bool EditorFoldingController::handleFoldRegionHoverLine(
+    MyCodeEditor* editor,
+    int line)
+{
+    if (!foldRegionMarkModeActive() || line < 0)
+        return false;
+
+    if (foldRegionHoverLine == line)
+        return true;
+
+    foldRegionHoverLine = line;
+    if (editor)
+        editor->viewport()->update();
+    return true;
+}
+
+bool EditorFoldingController::handleFoldRegionMouseMove(
+    MyCodeEditor* editor,
+    QMouseEvent* event)
+{
+    if (!foldRegionMarkModeActive() || !editor || !event)
+        return false;
+
+    const int line =
+        editor->cursorForPosition(event->position().toPoint()).blockNumber();
+    return handleFoldRegionHoverLine(editor, line);
 }
 
 void EditorFoldingController::handleFoldShelfHover(
@@ -283,6 +321,7 @@ bool EditorFoldingController::handleFoldRegionGutterLine(
 
     if (markMode == FoldRegionMarkMode::WaitingForStart) {
         pendingStartLine = line;
+        foldRegionHoverLine = line;
         markMode = FoldRegionMarkMode::WaitingForEnd;
         updateStatus(editor, QStringLiteral("Fold region: click end line"));
         if (editor)
@@ -450,6 +489,41 @@ void EditorFoldingController::paintGutter(
             painter.drawLine(1, top + 1, 1, bottom - 1);
             painter.restore();
         }
+        if (foldRegionMarkModeActive()
+            && (line == foldRegionHoverLine
+                || line == pendingStartLine)) {
+            const bool isPendingStart =
+                line == pendingStartLine
+                && markMode == FoldRegionMarkMode::WaitingForEnd;
+            const bool isHoverEnd =
+                line == foldRegionHoverLine
+                && markMode == FoldRegionMarkMode::WaitingForEnd
+                && line != pendingStartLine;
+            const QString badge = isPendingStart
+                ? QStringLiteral("1")
+                : (isHoverEnd ? QStringLiteral("E") : QStringLiteral("S"));
+            const QColor badgeColor = isPendingStart
+                ? QColor(59, 130, 246)
+                : QColor(16, 185, 129);
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(badgeColor);
+            const QRect badgeRect(1, top + 2, 12, qMax(12, bottom - top - 4));
+            painter.drawRoundedRect(badgeRect, 4, 4);
+            painter.setPen(Qt::white);
+            painter.drawText(badgeRect, Qt::AlignCenter, badge);
+            painter.restore();
+        }
+        if (shelfMode
+            && hoveredShelfRange.startLine >= 0
+            && (line == hoveredShelfRange.startLine
+                || line == hoveredShelfRange.endLine)) {
+            painter.save();
+            painter.setPen(QPen(QColor(245, 158, 11), 2));
+            painter.drawLine(1, top + 1, 1, bottom - 1);
+            painter.restore();
+        }
         if (hasFoldAtLine(line)) {
             const bool collapsed = isCollapsedAtLine(line);
             const int midY = top + (bottom - top) / 2;
@@ -482,12 +556,14 @@ void EditorFoldingController::paintPlaceholders(
 {
     if (!editor || collapsedStartLines.isEmpty())
     {
+        paintFoldRegionPreview(editor, painter);
         paintFoldShelfHighlight(editor, painter);
         if (!editor || collapsedStartLines.isEmpty())
             return;
     }
 
     painter.save();
+    paintFoldRegionPreview(editor, painter);
     paintFoldShelfHighlight(editor, painter);
     painter.setPen(QColor(115, 125, 140));
     const QFontMetrics metrics(editor->font());
@@ -514,6 +590,64 @@ void EditorFoldingController::paintPlaceholders(
             + metrics.ascent()
             + qMax(0, static_cast<int>(rect.height()) - metrics.height()) / 2;
         painter.drawText(x, y, label);
+    }
+    painter.restore();
+}
+
+void EditorFoldingController::paintFoldRegionPreview(
+    MyCodeEditor* editor,
+    QPainter& painter) const
+{
+    if (!editor || !foldRegionMarkModeActive())
+        return;
+
+    int startLine = -1;
+    int endLine = -1;
+    if (markMode == FoldRegionMarkMode::WaitingForStart) {
+        startLine = foldRegionHoverLine;
+        endLine = foldRegionHoverLine;
+    } else if (pendingStartLine >= 0) {
+        startLine = pendingStartLine;
+        endLine = foldRegionHoverLine >= 0
+            ? foldRegionHoverLine
+            : pendingStartLine;
+        if (endLine < startLine)
+            std::swap(startLine, endLine);
+    }
+    if (startLine < 0 || endLine < startLine)
+        return;
+
+    painter.save();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(16, 185, 129, 34));
+    QRectF firstRect;
+    QRectF lastRect;
+    for (int line = startLine; line <= endLine; ++line) {
+        QTextBlock block = editor->document()->findBlockByNumber(line);
+        if (!block.isValid() || !block.isVisible())
+            continue;
+        const QRectF rect =
+            editor->blockBoundingGeometry(block).translated(editor->contentOffset());
+        if (rect.bottom() < 0 || rect.top() > editor->viewport()->height())
+            continue;
+        painter.drawRect(QRectF(0, rect.top(), editor->viewport()->width(), rect.height()));
+        if (!firstRect.isValid())
+            firstRect = rect;
+        lastRect = rect;
+    }
+    if (firstRect.isValid() && lastRect.isValid()) {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor(16, 185, 129, 150), 2));
+        const qreal topY = qBound<qreal>(0,
+                                         firstRect.top() + 1,
+                                         editor->viewport()->height() - 1);
+        const qreal bottomY = qBound<qreal>(0,
+                                            lastRect.bottom() - 1,
+                                            editor->viewport()->height() - 1);
+        painter.drawLine(QPointF(0, topY),
+                         QPointF(editor->viewport()->width(), topY));
+        painter.drawLine(QPointF(0, bottomY),
+                         QPointF(editor->viewport()->width(), bottomY));
     }
     painter.restore();
 }

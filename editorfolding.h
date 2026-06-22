@@ -31,6 +31,8 @@ public:
     bool handleFoldShelfMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleFoldShelfMouseMove(MyCodeEditor* editor, QMouseEvent* event);
     void handleFoldShelfHover(MyCodeEditor* editor, QMouseEvent* event);
+    bool handleFoldRegionHoverLine(MyCodeEditor* editor, int line);
+    bool handleFoldRegionMouseMove(MyCodeEditor* editor, QMouseEvent* event);
     bool handleFoldShelfDragEnter(MyCodeEditor* editor, QDragEnterEvent* event) const;
     bool handleFoldShelfDragMove(MyCodeEditor* editor, QDragMoveEvent* event) const;
     bool handleFoldShelfDrop(MyCodeEditor* editor, QDropEvent* event);
@@ -63,6 +65,7 @@ private:
     QSet<int> collapsedStartLines;
     FoldRegionMarkMode markMode = FoldRegionMarkMode::Inactive;
     int pendingStartLine = -1;
+    int foldRegionHoverLine = -1;
     int defaultAliasCounter = 0;
     bool shelfMode = false;
     TSFoldRange hoveredShelfRange;
@@ -75,6 +78,7 @@ private:
     TSFoldRange customFoldContainingLine(int line) const;
     QString rangeText(MyCodeEditor* editor, const TSFoldRange& range) const;
     bool deleteRange(MyCodeEditor* editor, const TSFoldRange& range);
+    void paintFoldRegionPreview(MyCodeEditor* editor, QPainter& painter) const;
     void paintFoldShelfHighlight(MyCodeEditor* editor, QPainter& painter) const;
 };
 
