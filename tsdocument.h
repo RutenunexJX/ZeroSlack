@@ -2,6 +2,7 @@
 #define TSDOCUMENT_H
 
 #include <QString>
+#include <QList>
 #include <QVector>
 
 extern "C" {
@@ -24,6 +25,18 @@ struct HlSpan {
     int start;          // char offset within the queried block
     int length;         // char length
     HlCategory category;
+};
+
+enum class TSFoldRangeKind {
+    Syntax,
+    Custom
+};
+
+struct TSFoldRange {
+    int startLine = -1; // 0-based QTextBlock line
+    int endLine = -1;   // 0-based inclusive
+    TSFoldRangeKind kind = TSFoldRangeKind::Syntax;
+    QString label;
 };
 
 // Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
@@ -84,6 +97,10 @@ public:
     // QSyntaxHighlighter block state: 1 if the block's end sits inside a block_comment that
     // continues onto the next block (so the following block must be re-highlighted), else 0.
     int blockEndCommentState(int blockStartChar, int blockLenChar) const;
+
+    // Tree-sitter based folding ranges. Custom fold markers are extracted from
+    // Tree-sitter comment nodes rather than regular expressions.
+    QList<TSFoldRange> foldingRanges() const;
 
 private:
     void reparse(TSTree* oldTree);

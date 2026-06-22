@@ -16,6 +16,8 @@
 #include <QMessageBox>
 #include <QMenu>
 
+#include <utility>
+
 namespace {
 QString sourceSymbolActionText(SourceSymbolAction action)
 {
@@ -206,6 +208,23 @@ void EditorCoordinator::setAppearanceSettings(
     applyAppearanceToOpenEditors();
 }
 
+void EditorCoordinator::setStatusMessageHandler(
+    std::function<void(const QString&, int)> handler)
+{
+    statusMessageHandler = std::move(handler);
+}
+
+void EditorCoordinator::setFoldShelfRequestedHandler(std::function<void()> handler)
+{
+    foldShelfRequestedHandler = std::move(handler);
+}
+
+void EditorCoordinator::setFoldShelfItemConsumedHandler(
+    std::function<void(const QString&)> handler)
+{
+    foldShelfItemConsumedHandler = std::move(handler);
+}
+
 void EditorCoordinator::connectSignals()
 {
     if (signalsConnected || !tabManager || !modeManager)
@@ -264,6 +283,21 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     connect(editor, &MyCodeEditor::navigationForwardRequested,
             this, [this]() {
                 dependencies.navigateForward();
+            });
+    connect(editor, &MyCodeEditor::editorStatusMessageRequested,
+            this, [this](const QString& message) {
+                if (statusMessageHandler)
+                    statusMessageHandler(message, message.isEmpty() ? 0 : 5000);
+            });
+    connect(editor, &MyCodeEditor::foldShelfRequested,
+            this, [this]() {
+                if (foldShelfRequestedHandler)
+                    foldShelfRequestedHandler();
+            });
+    connect(editor, &MyCodeEditor::foldShelfItemConsumed,
+            this, [this](const QString& id) {
+                if (foldShelfItemConsumedHandler)
+                    foldShelfItemConsumedHandler(id);
             });
 }
 
@@ -431,6 +465,12 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
 
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
+    if (tabManager) {
+        for (int i = 0; i < tabManager->editorCount(); ++i) {
+            if (MyCodeEditor* openEditor = tabManager->getEditorAt(i))
+                openEditor->cancelFoldRegionMarkMode();
+        }
+    }
     applyAlternateMode(editor);
     dependencies.handleActiveEditorChanged(editor);
 }

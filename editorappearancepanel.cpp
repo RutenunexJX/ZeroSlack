@@ -6,7 +6,6 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
-#include <QFontDatabase>
 #include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -111,20 +110,9 @@ void EditorAppearancePanel::populateFonts()
         added.append(family);
     };
 
-    const QFontDatabase database;
     for (const QString& family : EditorAppearance::recommendedFontFamilies()) {
-        if (database.families().contains(family, Qt::CaseInsensitive))
-            addFamily(family);
-    }
-
-    if (fontFamilyCombo->count() > 0)
-        fontFamilyCombo->insertSeparator(fontFamilyCombo->count());
-
-    for (const QString& family : EditorAppearance::systemMonospaceFontFamilies())
         addFamily(family);
-
-    const QString fallback = EditorAppearance::fallbackFontFamily();
-    addFamily(fallback);
+    }
 }
 
 void EditorAppearancePanel::syncFromSettings(
@@ -137,11 +125,6 @@ void EditorAppearancePanel::syncFromSettings(
 
     const QString safeFamily =
         EditorAppearance::resolveFontFamily(options.fontFamily);
-    if (fontFamilyCombo
-        && fontFamilyCombo->findText(safeFamily) < 0
-        && !EditorAppearance::isCjkFontFamily(safeFamily)) {
-        fontFamilyCombo->insertItem(0, safeFamily);
-    }
     if (fontFamilyCombo)
         fontFamilyCombo->setCurrentText(safeFamily);
     if (fontSizeSpin)

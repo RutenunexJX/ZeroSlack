@@ -17,6 +17,8 @@ class AnalysisCoordinator;
 class AnalysisScheduler;
 class EditorCoordinator;
 class FileCommandCoordinator;
+class FoldBlockShelfModel;
+class FoldBlockShelfPanel;
 class GlobalControlCoordinator;
 class ModeCommandCoordinator;
 class SemanticDockCoordinator;
@@ -55,6 +57,9 @@ private:
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
+    std::unique_ptr<FoldBlockShelfModel> foldShelfModel;
+    FoldBlockShelfPanel* foldShelfPanel = nullptr;
+    QDockWidget* foldShelfDock = nullptr;
     std::unique_ptr<GlobalControlCoordinator> globalControlCoordinator;
     std::unique_ptr<ModeCommandCoordinator> modeCommandCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
@@ -70,6 +75,9 @@ private:
     void setupFileCommandCoordinator();
     void setupModeCommandCoordinator();
     void setupGlobalControl();
+    void setupFoldBlockShelf();
+    void showFoldBlockShelf();
+    void restoreFoldShelfItem(const QString& id);
     void setupEditorAppearanceSettings();
     void setupEditorCoordinator();
 

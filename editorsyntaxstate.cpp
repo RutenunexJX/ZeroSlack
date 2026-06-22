@@ -60,3 +60,8 @@ QString EditorSyntaxState::moduleNameAt(int charPos) const
 {
     return document->enclosingModuleName(charPos < 0 ? 0 : charPos);
 }
+
+const TSDocument* EditorSyntaxState::tsDocument() const
+{
+    return document.get();
+}

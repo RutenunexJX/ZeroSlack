@@ -262,6 +262,26 @@ feature direction that violates them.
 - Navigation responsiveness is addressed at the source: opening files from Navigation no longer rebuilds the file tree, hierarchy queries are keyed by file/filter input, and tree population pauses sorting/repaint churn instead of using delayed refresh timers.
 - Verification passed with focused Ninja targets, `jump_test`, `completion_test`, `gui_smoke_test`, normal `legacy_field_policy_guard`, opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`, and `git diff --check`; the completion trigger update additionally passed `completion_test` with 299 checks and `gui_smoke_test` with 249 checks. The layered inline command and Global Control update passed `completion_test` with 311 checks and `gui_smoke_test` with 276 checks.
 
+### Phase K: Follow-up Editor Structure Features
+
+- Status: complete.
+- Purpose achieved: delivered the three editor structure features as service/model-backed UI work without weakening the semantic, document, scheduler, or analyzer boundaries.
+- K1 Design Hierarchy view is complete: Navigation exposes a Design/Hierarchy tab without a Top dropdown, Design Top is selected from right-click menus, hierarchy nodes render as `instance_name : module_type`, double-click and context-menu navigation use existing navigation paths, reports are cached by snapshot generation plus top, and Files view dimming uses normalized participating files.
+- K2 Code Folding and Custom Folding is complete: folding ranges come from Tree-sitter syntax nodes, custom markers are parsed from Tree-sitter comment nodes without regex, gutter markers collapse/expand ranges, collapsed regions show compact placeholders, and `;:fd` Fold Region Mark Mode inserts custom markers as one undo block.
+- K3 Fold Block Shelf is complete: `;:fds` enters Fold Shelf mode and opens the Fold Shelf dock, custom fold blocks highlight on hover, fold blocks move or Ctrl-copy into the shelf through structured MIME data, shelf items consume or Ctrl-copy back into editors at line boundaries, double-click preview is read-only, moved item deletion offers restore/delete/cancel, restore uses editor/tab edit APIs, and fold/shelf operations log to Activity/Output.
+- K1-K3 tests should prefer `test_sv/new` real SV files, using smaller fixtures only for interaction edges that real files do not cover.
+- Minimum verification for each K subphase: focused target build, relevant service tests, `gui_smoke_test` for editor/UI paths, `git diff --check`, and guard scans when semantic/test source changes.
+
+### Phase K Goal Mode
+
+- Track Phase K progress by feature subphase.
+- K1, K2, and K3 are each their own 100% unit.
+- Current subphase: K3 Fold Block Shelf complete, 0% remaining.
+- End every work turn by naming the current Phase K subphase and reporting that subphase's remaining percentage.
+- Move from K1 to K2 only after Design Hierarchy behavior, tests, docs, and requested coherent local commit are complete.
+- Move from K2 to K3 only after folding behavior, tests, docs, and requested coherent local commit are complete.
+- Phase K completion verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 329 checks, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

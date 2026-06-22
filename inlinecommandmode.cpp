@@ -114,6 +114,8 @@ QList<InlineCommandDescriptor> actionDescriptors()
 {
     return {
         descriptor(QStringLiteral(";:?"), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:?"), QStringLiteral("editor action help"), QStringLiteral(";:?")),
+        descriptor(QStringLiteral(";:fd"), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:fd"), QStringLiteral("create custom fold region"), QStringLiteral(";:fd")),
+        descriptor(QStringLiteral(";:fds"), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:fds"), QStringLiteral("open fold block shelf"), QStringLiteral(";:fds")),
         descriptor(QStringLiteral(";:refs "), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:refs"), QStringLiteral("find references action"), QStringLiteral(";:refs ")),
     };
 }
@@ -149,7 +151,9 @@ QList<InlineCommandDescriptor> InlineCommandMode::descriptorsForIntent(
 {
     QList<InlineCommandDescriptor> result;
     for (const InlineCommandDescriptor& descriptor : descriptors()) {
-        if (descriptor.intent == intent && descriptor.prefix.endsWith(QLatin1Char(' ')))
+        if (descriptor.intent == intent
+            && (descriptor.prefix.endsWith(QLatin1Char(' '))
+                || descriptor.intent == InlineCommandIntent::EditorAction))
             result.append(descriptor);
     }
     return result;
@@ -188,6 +192,26 @@ InlineCommandMatch InlineCommandMode::match(const QString& lineUpToCursor)
     }
 
     const QList<InlineCommandDescriptor> allDescriptors = descriptors();
+    for (const InlineCommandDescriptor& descriptor : allDescriptors) {
+        if (descriptor.prefix.endsWith(QLatin1Char(' ')))
+            continue;
+        const int prefixPosition = lineUpToCursor.lastIndexOf(descriptor.prefix);
+        if (prefixPosition < 0 || prefixPosition + descriptor.prefix.size() != lineUpToCursor.size())
+            continue;
+        if (!isCommandSafePrefix(lineUpToCursor.left(prefixPosition)))
+            continue;
+        if (isPositionInCommentOrString(lineUpToCursor, prefixPosition))
+            continue;
+
+        result.matched = true;
+        result.intent = descriptor.intent;
+        result.prefixPosition = prefixPosition;
+        result.commandToken = descriptor.label;
+        result.descriptor = descriptor;
+        result.input = QString();
+        return result;
+    }
+
     for (const InlineCommandDescriptor& descriptor : allDescriptors) {
         if (!descriptor.prefix.endsWith(QLatin1Char(' ')))
             continue;

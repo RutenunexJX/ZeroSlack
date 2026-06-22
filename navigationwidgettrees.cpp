@@ -1,7 +1,9 @@
 #include "navigationwidget.h"
 
+#include <QBrush>
 #include <QDir>
 #include <QFileInfo>
+#include <QPalette>
 
 namespace {
 class TreePopulationGuard
@@ -65,6 +67,13 @@ bool symbolRowMatchesFilter(
         || row.typeDisplayName.contains(filter, Qt::CaseInsensitive)
         || symbolRowDetailDisplayName(row).contains(filter, Qt::CaseInsensitive);
 }
+
+QString normalizedNavigationFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
 }
 
 void NavigationWidget::populateFileTree()
@@ -104,6 +113,21 @@ void NavigationWidget::populateFileTree()
 
         QTreeWidgetItem* fileItem = createFileItem(filePath);
         dirItem->addChild(fileItem);
+    }
+
+    if (!designParticipatingFiles.isEmpty()) {
+        for (int i = 0; i < fileTreeWidget->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* dirItem = fileTreeWidget->topLevelItem(i);
+            bool hasParticipatingChild = false;
+            for (int j = 0; j < dirItem->childCount(); ++j) {
+                const QString filePath = dirItem->child(j)->data(0, Qt::UserRole).toString();
+                if (fileParticipatesInDesign(filePath)) {
+                    hasParticipatingChild = true;
+                    break;
+                }
+            }
+            applyDesignFileDimming(dirItem, !hasParticipatingChild);
+        }
     }
 
     if (fileTreeWidget->topLevelItemCount() == 1) {
@@ -199,6 +223,40 @@ void NavigationWidget::populateSymbolTree()
     }
 }
 
+void NavigationWidget::populateDesignTree()
+{
+    TreePopulationGuard guard(designTreeWidget);
+    designTreeWidget->clear();
+    designItemPayloads.clear();
+    nextDesignItemPayloadId = 1;
+
+    if (currentDesignHierarchy.topModule.isEmpty()) {
+        QTreeWidgetItem* emptyItem = new QTreeWidgetItem(designTreeWidget);
+        emptyItem->setText(0, "Top not set. Right-click a module or file and choose Set as Design Top.");
+        emptyItem->setFlags(Qt::ItemIsEnabled);
+        return;
+    }
+
+    if (currentDesignHierarchy.nodes.isEmpty()) {
+        QTreeWidgetItem* emptyItem = new QTreeWidgetItem(designTreeWidget);
+        emptyItem->setText(0, QStringLiteral("No hierarchy for %1").arg(currentDesignHierarchy.topModule));
+        emptyItem->setFlags(Qt::ItemIsEnabled);
+        return;
+    }
+
+    QHash<QString, QTreeWidgetItem*> itemsById;
+    for (const DesignHierarchyNode& node : std::as_const(currentDesignHierarchy.nodes)) {
+        QTreeWidgetItem* item = createDesignItem(node);
+        itemsById.insert(node.id, item);
+        if (!node.parentId.isEmpty() && itemsById.contains(node.parentId)) {
+            itemsById.value(node.parentId)->addChild(item);
+        } else {
+            designTreeWidget->addTopLevelItem(item);
+        }
+    }
+    designTreeWidget->expandAll();
+}
+
 void NavigationWidget::applySearchFilter()
 {
     switch (getActiveTab()) {
@@ -210,6 +268,9 @@ void NavigationWidget::applySearchFilter()
         break;
     case SymbolTab:
         populateSymbolTree();
+        break;
+    case DesignTab:
+        populateDesignTree();
         break;
     }
 }
@@ -223,6 +284,9 @@ QTreeWidgetItem* NavigationWidget::createFileItem(const QString& filePath)
     item->setIcon(0, getFileIcon(filePath));
     item->setData(0, Qt::UserRole, filePath);
     item->setToolTip(0, filePath);
+    applyDesignFileDimming(item,
+                           !designParticipatingFiles.isEmpty()
+                               && !fileParticipatesInDesign(filePath));
 
     return item;
 }
@@ -238,6 +302,64 @@ QTreeWidgetItem* NavigationWidget::createModuleItem(const QString& moduleName, c
     item->setToolTip(0, QString("Module: %1\nFile: %2").arg(moduleName, QFileInfo(fileName).fileName()));
 
     return item;
+}
+
+QTreeWidgetItem* NavigationWidget::createDesignItem(const DesignHierarchyNode& node)
+{
+    QTreeWidgetItem* item = new QTreeWidgetItem();
+    const int payloadId = nextDesignItemPayloadId++;
+    designItemPayloads.insert(payloadId, node);
+
+    QString text = QStringLiteral("%1 : %2")
+        .arg(node.instanceName.isEmpty() ? QStringLiteral("<unnamed>") : node.instanceName,
+             node.moduleType.isEmpty() ? QStringLiteral("<unknown>") : node.moduleType);
+    if (node.unresolved)
+        text += QStringLiteral(" (unresolved)");
+
+    item->setText(0, text);
+    item->setIcon(0, getSymbolIcon(node.unresolved
+                                       ? SymbolOutlineIconKind::Symbol
+                                       : SymbolOutlineIconKind::Instance));
+    item->setData(0, Qt::UserRole, node.id);
+    item->setData(0, Qt::UserRole + 1, payloadId);
+    const QString location = node.isTop
+        ? QStringLiteral("%1:%2").arg(node.definitionFile).arg(node.definitionLine)
+        : QStringLiteral("%1:%2").arg(node.instanceFile).arg(node.instanceLine);
+    item->setToolTip(0, node.unresolved
+                            ? QStringLiteral("%1\n%2").arg(location, node.unresolvedReason)
+                            : location);
+    return item;
+}
+
+void NavigationWidget::applyDesignFileDimming(QTreeWidgetItem* item, bool dimmed)
+{
+    if (!item)
+        return;
+    QColor color = palette().color(QPalette::Text);
+    if (dimmed)
+        color.setAlphaF(0.40);
+    item->setForeground(0, QBrush(color));
+}
+
+bool NavigationWidget::fileParticipatesInDesign(const QString& filePath) const
+{
+    if (designParticipatingFiles.isEmpty())
+        return true;
+    return designParticipatingFiles.contains(normalizedNavigationFileName(filePath));
+}
+
+void NavigationWidget::refreshDesignHeader()
+{
+    if (!designTopLabel || !designClearButton || !designRefreshButton)
+        return;
+
+    const bool hasTop = !currentDesignHierarchy.topModule.isEmpty();
+    designTopLabel->setText(hasTop
+                                ? QStringLiteral("Design Top: %1")
+                                      .arg(currentDesignHierarchy.topModule)
+                                : QStringLiteral("Top not set. Right-click a module or file and choose Set as Design Top."));
+    designClearButton->setEnabled(hasTop);
+    designRefreshButton->setEnabled(hasTop);
 }
 
 QTreeWidgetItem* NavigationWidget::createSymbolItem(

@@ -6,6 +6,7 @@
 #include "editorcompletionworkflow.h"
 #include "editorcursornavigation.h"
 #include "editorfileidentity.h"
+#include "editorfolding.h"
 #include "editorgeometry.h"
 #include "editorgutter.h"
 #include "editormodestate.h"
@@ -18,14 +19,20 @@
 
 class MyCodeEditor;
 class QContextMenuEvent;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDropEvent;
 class QKeyEvent;
 class QMouseEvent;
+class QPainter;
+class QPaintEvent;
 
 struct MyCodeEditorState
 {
     EditorAppearance appearance;
     EditorGutter gutter;
     EditorDocumentGeometry geometry;
+    EditorFoldingController folding;
     EditorCursorNavigation cursorNavigation;
     EditorSyntaxState syntax;
     EditorFileIdentity identity;
@@ -56,15 +63,41 @@ struct MyCodeEditorState
     void handleControlKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
     bool handleKeyPress(MyCodeEditor* editor, QKeyEvent* event);
     bool handleKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
+    bool handleDragEnter(MyCodeEditor* editor, QDragEnterEvent* event);
+    bool handleDragMove(MyCodeEditor* editor, QDragMoveEvent* event);
+    bool handleDrop(MyCodeEditor* editor, QDropEvent* event);
     void handleResize(MyCodeEditor* editor) const;
+    bool handleGutterMousePress(MyCodeEditor* editor, QMouseEvent* event);
+    void paintGutterDecorations(MyCodeEditor* editor,
+                                QPainter& painter,
+                                const QRect& rect) const;
+    void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent* event);
-    void handleMouseMove(MyCodeEditor* editor, QMouseEvent* event);
+    bool handleMouseMove(MyCodeEditor* editor, QMouseEvent* event);
     void handleLeaveEvent(MyCodeEditor* editor);
 
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor);
     void setAlternateModeEnabled(bool enabled);
     void executeAlternateModeCommand(const QString& command);
+    void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
+    void startFoldRegionMarkMode(MyCodeEditor* editor);
+    void cancelFoldRegionMarkMode(MyCodeEditor* editor);
+    bool foldRegionMarkModeActive() const;
+    void startFoldShelfMode(MyCodeEditor* editor);
+    void cancelFoldShelfMode(MyCodeEditor* editor);
+    bool foldShelfModeActive() const;
+    bool insertCustomFoldMarkers(MyCodeEditor* editor,
+                                 int startLine,
+                                 int endLine,
+                                 const QString& alias);
+    FoldShelfItem foldShelfItemAtLine(MyCodeEditor* editor,
+                                      int line,
+                                      FoldShelfOriginKind origin) const;
+    bool deleteCustomFoldAtLine(MyCodeEditor* editor, int line);
+    bool insertFoldShelfItemAtLine(MyCodeEditor* editor,
+                                   const FoldShelfItem& item,
+                                   int line);
     void setSemanticContextService(EditorSemanticContextService* service);
     EditorBlockGeometry blockGeometry(
         const MyCodeEditor* editor,

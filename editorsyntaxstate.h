@@ -25,6 +25,7 @@ public:
                    int charsAdded,
                    const QString& text);
     QString moduleNameAt(int charPos) const;
+    const TSDocument* tsDocument() const;
 
 private:
     std::unique_ptr<TSDocument> document;

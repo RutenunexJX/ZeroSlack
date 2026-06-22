@@ -59,9 +59,18 @@ void NavigationManager::NavigationCaches::clearSymbolOutline()
     symbolOutlineValid = false;
 }
 
+void NavigationManager::NavigationCaches::clearDesignHierarchy()
+{
+    designHierarchy = {};
+    designSnapshotGeneration = 0;
+    designHierarchyValid = false;
+}
+
 void NavigationManager::NavigationCaches::clearAll()
 {
     clearFileList();
     clearModuleHierarchy();
     clearSymbolOutline();
+    clearDesignHierarchy();
+    designTopModule.clear();
 }

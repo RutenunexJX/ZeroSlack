@@ -2,4 +2,29 @@
     <qresource prefix="/config">
         <file>config/keywords.txt</file>
     </qresource>
+    <qresource prefix="/fonts">
+        <file>resources/fonts/maple-mono/MapleMono-Regular.ttf</file>
+        <file>resources/fonts/maple-mono/MapleMono-Bold.ttf</file>
+        <file>resources/fonts/maple-mono/MapleMono-Italic.ttf</file>
+        <file>resources/fonts/maple-mono/MapleMono-BoldItalic.ttf</file>
+        <file>resources/fonts/iosevka/Iosevka-Regular.ttf</file>
+        <file>resources/fonts/iosevka/Iosevka-Bold.ttf</file>
+        <file>resources/fonts/iosevka/Iosevka-Italic.ttf</file>
+        <file>resources/fonts/iosevka/Iosevka-BoldItalic.ttf</file>
+        <file>resources/fonts/monaspace-neon/MonaspaceNeon-Regular.otf</file>
+        <file>resources/fonts/monaspace-neon/MonaspaceNeon-Bold.otf</file>
+        <file>resources/fonts/monaspace-neon/MonaspaceNeon-Italic.otf</file>
+        <file>resources/fonts/monaspace-neon/MonaspaceNeon-BoldItalic.otf</file>
+        <file>resources/fonts/intel-one-mono/IntelOneMono-Regular.ttf</file>
+        <file>resources/fonts/intel-one-mono/IntelOneMono-Bold.ttf</file>
+        <file>resources/fonts/intel-one-mono/IntelOneMono-Italic.ttf</file>
+        <file>resources/fonts/intel-one-mono/IntelOneMono-BoldItalic.ttf</file>
+        <file>resources/fonts/geist-mono/GeistMono-Regular.ttf</file>
+        <file>resources/fonts/geist-mono/GeistMono-Bold.ttf</file>
+        <file>resources/fonts/geist-mono/GeistMono-Italic.ttf</file>
+        <file>resources/fonts/geist-mono/GeistMono-BoldItalic.ttf</file>
+        <file>resources/fonts/0xproto/0xProto-Regular.ttf</file>
+        <file>resources/fonts/0xproto/0xProto-Bold.ttf</file>
+        <file>resources/fonts/0xproto/0xProto-Italic.ttf</file>
+    </qresource>
 </RCC>

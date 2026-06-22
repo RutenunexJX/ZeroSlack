@@ -100,11 +100,12 @@ set(ZEROSLACK_CORE_SOURCES
     editorcompletionquery.cpp
     editorcompletionui.cpp
     editorcompletionworkflow.cpp
-    editorcompletionworkflowkeys.cpp
-    editorcoordinator.cpp
-    editorcursornavigation.cpp
-    editorfileidentity.cpp
-    editorgeometry.cpp
+      editorcompletionworkflowkeys.cpp
+      editorcoordinator.cpp
+      editorcursornavigation.cpp
+      editorfileidentity.cpp
+      editorfolding.cpp
+      editorgeometry.cpp
     editorgutter.cpp
     editorhoverpopup.cpp
     editorruntime.cpp
@@ -118,6 +119,8 @@ set(ZEROSLACK_CORE_SOURCES
     editormodestate.cpp
     filecommandcoordinatoralternate.cpp
     filecommandcoordinator.cpp
+    foldblockshelfmodel.cpp
+    foldblockshelfpanel.cpp
     fsmgraphservice.cpp
     globalcontrolcoordinator.cpp
     globalcontrolpanel.cpp
@@ -257,10 +260,11 @@ set(ZEROSLACK_CORE_SOURCES
     editorcompletionquery.h
     editorcompletionui.h
     editorcompletionworkflow.h
-    editorcoordinator.h
-    editorcursornavigation.h
-    editorfileidentity.h
-    editorgeometry.h
+      editorcoordinator.h
+      editorcursornavigation.h
+      editorfileidentity.h
+      editorfolding.h
+      editorgeometry.h
     editorgutter.h
     editorhoverpopup.h
     editorruntime.h
@@ -273,6 +277,8 @@ set(ZEROSLACK_CORE_SOURCES
     editorsyntaxstate.h
     editormodestate.h
     filecommandcoordinator.h
+    foldblockshelfmodel.h
+    foldblockshelfpanel.h
     fsmgraphservice.h
     globalcontrolcoordinator.h
     globalcontrolpanel.h

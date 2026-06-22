@@ -1,5 +1,7 @@
 #include "tsdocument.h"
 #include <cstring>
+#include <algorithm>
+#include <QSet>
 
 extern "C" TSLanguage *tree_sitter_systemverilog();
 
@@ -196,6 +198,122 @@ QString declarationName(const QString& text, TSNode declNode)
     }
     return QString();
 }
+
+bool isFoldableSyntaxNode(const char* type)
+{
+    if (!type)
+        return false;
+    return std::strcmp(type, "module_declaration") == 0
+        || std::strcmp(type, "interface_declaration") == 0
+        || std::strcmp(type, "package_declaration") == 0
+        || std::strcmp(type, "class_declaration") == 0
+        || std::strcmp(type, "function_declaration") == 0
+        || std::strcmp(type, "task_declaration") == 0
+        || std::strcmp(type, "seq_block") == 0
+        || std::strcmp(type, "case_statement") == 0
+        || std::strcmp(type, "conditional_generate_construct") == 0
+        || std::strcmp(type, "loop_generate_construct") == 0
+        || std::strcmp(type, "case_generate_construct") == 0
+        || std::strcmp(type, "generate_region") == 0
+        || std::strcmp(type, "par_block") == 0
+        || std::strcmp(type, "struct_union") == 0
+        || std::strcmp(type, "enum_name_declaration") == 0;
+}
+
+QString foldSyntaxLabel(const char* type)
+{
+    if (!type)
+        return QStringLiteral("...");
+    QString label = QString::fromLatin1(type);
+    label.replace(QLatin1Char('_'), QLatin1Char(' '));
+    return label;
+}
+
+QString nodeText(const QString& text, TSNode node)
+{
+    const uint32_t start = ts_node_start_byte(node);
+    const uint32_t end = ts_node_end_byte(node);
+    if (end <= start)
+        return QString();
+    return text.mid(static_cast<int>(start / 2),
+                    static_cast<int>((end - start) / 2));
+}
+
+QString commentPayload(const QString& commentText)
+{
+    QString payload = commentText;
+    if (payload.startsWith(QStringLiteral("//"))) {
+        payload = payload.mid(2);
+    } else if (payload.startsWith(QStringLiteral("/*"))) {
+        payload = payload.mid(2);
+        if (payload.endsWith(QStringLiteral("*/")))
+            payload.chop(2);
+    }
+    return payload.trimmed();
+}
+
+QString firstToken(const QString& payload, int* tokenEnd)
+{
+    int end = 0;
+    while (end < payload.size() && !payload.at(end).isSpace())
+        ++end;
+    if (tokenEnd)
+        *tokenEnd = end;
+    return payload.left(end);
+}
+
+void collectFoldNodes(const QString& text,
+                      TSNode node,
+                      QList<TSFoldRange>& syntaxRanges,
+                      QList<TSFoldRange>& customRanges,
+                      QList<QPair<int, QString>>& customStack)
+{
+    const char* type = ts_node_type(node);
+    if (type && (std::strcmp(type, "one_line_comment") == 0
+                 || std::strcmp(type, "block_comment") == 0)) {
+        const QString payload = commentPayload(nodeText(text, node));
+        int tokenEnd = 0;
+        const QString token = firstToken(payload, &tokenEnd);
+        if (token == QStringLiteral("fold")) {
+            const QString alias = payload.mid(tokenEnd).trimmed();
+            customStack.append({static_cast<int>(ts_node_start_point(node).row), alias});
+        } else if (token == QStringLiteral("endfold")) {
+            if (!customStack.isEmpty()) {
+                const QPair<int, QString> start = customStack.takeLast();
+                const int endLine = static_cast<int>(ts_node_start_point(node).row);
+                if (endLine > start.first) {
+                    TSFoldRange range;
+                    range.startLine = start.first;
+                    range.endLine = endLine;
+                    range.kind = TSFoldRangeKind::Custom;
+                    range.label = start.second;
+                    customRanges.append(range);
+                }
+            }
+        }
+    }
+
+    if (isFoldableSyntaxNode(type)) {
+        const int startLine = static_cast<int>(ts_node_start_point(node).row);
+        const int endLine = static_cast<int>(ts_node_end_point(node).row);
+        if (endLine > startLine) {
+            TSFoldRange range;
+            range.startLine = startLine;
+            range.endLine = endLine;
+            range.kind = TSFoldRangeKind::Syntax;
+            range.label = foldSyntaxLabel(type);
+            syntaxRanges.append(range);
+        }
+    }
+
+    const uint32_t childCount = ts_node_child_count(node);
+    for (uint32_t i = 0; i < childCount; ++i)
+        collectFoldNodes(text,
+                         ts_node_child(node, i),
+                         syntaxRanges,
+                         customRanges,
+                         customStack);
+}
 } // namespace
 
 QString TSDocument::enclosingModuleName(int charOffset) const
@@ -282,4 +400,41 @@ int TSDocument::blockEndCommentState(int blockStartChar, int blockLenChar) const
         node = ts_node_parent(node);
     }
     return 0;
+}
+
+QList<TSFoldRange> TSDocument::foldingRanges() const
+{
+    QList<TSFoldRange> syntaxRanges;
+    QList<TSFoldRange> customRanges;
+    QList<QPair<int, QString>> customStack;
+    collectFoldNodes(m_text,
+                     ts_tree_root_node(m_tree),
+                     syntaxRanges,
+                     customRanges,
+                     customStack);
+
+    QSet<QString> customExtents;
+    for (const TSFoldRange& range : std::as_const(customRanges)) {
+        customExtents.insert(QStringLiteral("%1:%2")
+                                 .arg(range.startLine)
+                                 .arg(range.endLine));
+    }
+
+    QList<TSFoldRange> result = customRanges;
+    for (const TSFoldRange& range : std::as_const(syntaxRanges)) {
+        const QString extent = QStringLiteral("%1:%2")
+            .arg(range.startLine)
+            .arg(range.endLine);
+        if (!customExtents.contains(extent))
+            result.append(range);
+    }
+    std::sort(result.begin(), result.end(), [](const TSFoldRange& lhs,
+                                               const TSFoldRange& rhs) {
+        if (lhs.startLine != rhs.startLine)
+            return lhs.startLine < rhs.startLine;
+        if (lhs.kind != rhs.kind)
+            return lhs.kind == TSFoldRangeKind::Custom;
+        return lhs.endLine < rhs.endLine;
+    });
+    return result;
 }

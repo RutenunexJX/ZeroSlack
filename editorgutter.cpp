@@ -1,5 +1,6 @@
 #include "editorgutter.h"
 
+#include "editorruntime.h"
 #include "mycodeeditor.h"
 
 #include <QMouseEvent>
@@ -73,7 +74,7 @@ void EditorGutter::destroy()
 
 int EditorGutter::widthFor(MyCodeEditor* editor) const
 {
-    return 8
+    return 22
         + QString::number(editor->blockCount() + 1).length()
             * editor->fontMetrics().horizontalAdvance(QChar('0'));
 }
@@ -116,6 +117,8 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
 {
     QPainter painter(widget);
     painter.fillRect(event->rect(), QColor(100, 100, 100, 20));
+    if (editor->state)
+        editor->state->paintGutterDecorations(editor, painter, event->rect());
 
     QTextBlock block = editor->firstVisibleBlock();
     int blockNumber = block.blockNumber();
@@ -129,9 +132,9 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
     while (block.isValid() && top <= event->rect().bottom()) {
         painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
         painter.drawText(
-            0,
+            14,
             top,
-            widthFor(editor) - 3,
+            widthFor(editor) - 17,
             bottom - top,
             Qt::AlignRight,
             QString::number(blockNumber + 1));
@@ -145,6 +148,11 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
 
 void EditorGutter::handleMousePress(MyCodeEditor* editor, QMouseEvent* event) const
 {
+    if (editor->state && editor->state->handleGutterMousePress(editor, event)) {
+        event->accept();
+        return;
+    }
+
     QTextBlock block = editor->document()->findBlockByLineNumber(
         static_cast<int>(event->position().y())
             / editor->fontMetrics().height()

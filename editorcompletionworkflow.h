@@ -49,6 +49,7 @@ private:
     void applyAlternateModeCompletionDisplayState(
         const EditorAlternateModeCompletionDisplayState& displayState);
     void processAlternateModeInput(const QString& input);
+    void executeEditorActionCommand(const QString& command);
     void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
     void applyCompletionActivationState(
         const CompletionActivationState& activationState);

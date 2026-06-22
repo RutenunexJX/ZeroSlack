@@ -110,20 +110,48 @@ bool containsKnownCjkFontAlias(const QString& family)
     }
     return false;
 }
+
+QStringList bundledFontResourcePaths()
+{
+    return {
+        QStringLiteral(":/fonts/resources/fonts/maple-mono/MapleMono-Regular.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/maple-mono/MapleMono-Bold.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/maple-mono/MapleMono-Italic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/maple-mono/MapleMono-BoldItalic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/iosevka/Iosevka-Regular.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/iosevka/Iosevka-Bold.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/iosevka/Iosevka-Italic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/iosevka/Iosevka-BoldItalic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/monaspace-neon/MonaspaceNeon-Regular.otf"),
+        QStringLiteral(":/fonts/resources/fonts/monaspace-neon/MonaspaceNeon-Bold.otf"),
+        QStringLiteral(":/fonts/resources/fonts/monaspace-neon/MonaspaceNeon-Italic.otf"),
+        QStringLiteral(":/fonts/resources/fonts/monaspace-neon/MonaspaceNeon-BoldItalic.otf"),
+        QStringLiteral(":/fonts/resources/fonts/intel-one-mono/IntelOneMono-Regular.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/intel-one-mono/IntelOneMono-Bold.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/intel-one-mono/IntelOneMono-Italic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/intel-one-mono/IntelOneMono-BoldItalic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/geist-mono/GeistMono-Regular.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/geist-mono/GeistMono-Bold.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/geist-mono/GeistMono-Italic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/geist-mono/GeistMono-BoldItalic.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/0xproto/0xProto-Regular.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/0xproto/0xProto-Bold.ttf"),
+        QStringLiteral(":/fonts/resources/fonts/0xproto/0xProto-Italic.ttf"),
+    };
+}
 }
 
 QStringList EditorAppearance::recommendedFontFamilies()
 {
+    ensureApplicationFontsLoaded();
     return {
-        QStringLiteral("JetBrains Mono"),
         QStringLiteral("Cascadia Code"),
         QStringLiteral("Maple Mono"),
         QStringLiteral("Iosevka"),
-        QStringLiteral("Commit Mono"),
-        QStringLiteral("IBM Plex Mono"),
-        QStringLiteral("Fira Code"),
-        QStringLiteral("Consolas"),
-        QStringLiteral("Courier New"),
+        QStringLiteral("Monaspace Neon"),
+        QStringLiteral("Intel One Mono"),
+        QStringLiteral("Geist Mono"),
+        QStringLiteral("0xProto"),
     };
 }
 
@@ -133,8 +161,26 @@ bool EditorAppearance::isCjkFontFamily(const QString& family)
         || containsKnownCjkFontAlias(family);
 }
 
+bool EditorAppearance::ensureApplicationFontsLoaded()
+{
+    static bool attempted = false;
+    static bool loaded = false;
+    if (attempted)
+        return loaded;
+
+    attempted = true;
+    Q_INIT_RESOURCE(code);
+    for (const QString& path : bundledFontResourcePaths()) {
+        const int fontId = QFontDatabase::addApplicationFont(path);
+        if (fontId >= 0)
+            loaded = true;
+    }
+    return loaded;
+}
+
 QStringList EditorAppearance::systemMonospaceFontFamilies()
 {
+    ensureApplicationFontsLoaded();
     const QFontDatabase database;
     QStringList families;
     QSet<QString> seen;
@@ -152,32 +198,15 @@ QStringList EditorAppearance::systemMonospaceFontFamilies()
 
 QString EditorAppearance::fallbackFontFamily()
 {
-    const QFontDatabase database;
-    const QStringList families = database.families();
-    for (const QString& family : recommendedFontFamilies()) {
-        if (families.contains(family, Qt::CaseInsensitive))
-            return family;
-    }
-
-    const QFont fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    if (!fixedFont.family().isEmpty()
-        && !isCjkFontFamily(fixedFont.family()))
-        return fixedFont.family();
-
-    const QStringList monospaceFamilies = systemMonospaceFontFamilies();
-    if (!monospaceFamilies.isEmpty())
-        return monospaceFamilies.first();
-
-    return QStringLiteral("Consolas");
+    return QStringLiteral("Maple Mono");
 }
 
 QString EditorAppearance::resolveFontFamily(const QString& preferredFamily)
 {
-    if (!preferredFamily.trimmed().isEmpty()
-        && !isCjkFontFamily(preferredFamily)) {
-        const QFontDatabase database;
-        if (database.families().contains(preferredFamily, Qt::CaseInsensitive))
-            return preferredFamily;
+    ensureApplicationFontsLoaded();
+    for (const QString& family : recommendedFontFamilies()) {
+        if (preferredFamily.compare(family, Qt::CaseInsensitive) == 0)
+            return family;
     }
     return fallbackFontFamily();
 }
@@ -186,7 +215,7 @@ EditorAppearanceOptions EditorAppearance::defaultOptions()
 {
     EditorAppearanceOptions options;
     options.fontFamily = fallbackFontFamily();
-    options.fontSizePt = 12;
+    options.fontSizePt = 15;
     options.lineHeight = 1.4;
     options.ligaturesEnabled = false;
     return options;
@@ -204,6 +233,7 @@ void EditorAppearance::apply(
     if (!editor)
         return;
 
+    ensureApplicationFontsLoaded();
     QFont font(resolveFontFamily(options.fontFamily),
                qBound(8, options.fontSizePt, 32));
     font.setStyleHint(QFont::Monospace);

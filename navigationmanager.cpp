@@ -15,6 +15,8 @@ QString navigationViewName(NavigationManager::NavigationView view)
         return QStringLiteral("module hierarchy");
     case NavigationManager::SymbolHierarchyView:
         return QStringLiteral("symbol outline");
+    case NavigationManager::DesignHierarchyView:
+        return QStringLiteral("design hierarchy");
     }
     return QStringLiteral("navigation");
 }
@@ -112,6 +114,26 @@ void NavigationManager::refreshSymbolHierarchy()
         static_cast<int>(timer.elapsed()));
 }
 
+void NavigationManager::refreshDesignHierarchy(bool force)
+{
+    QElapsedTimer timer;
+    timer.start();
+    const bool changed = updateDesignHierarchyData(force);
+
+    if (navigationWidget && (changed || force)) {
+        navigationWidget->updateDesignHierarchy(caches.designHierarchy);
+    }
+
+    emit dataRefreshed(DesignHierarchyView);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Navigation"),
+        ActivityLogLevel::Info,
+        QStringLiteral("%1 %2")
+            .arg(changed || force ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
+                 navigationViewName(DesignHierarchyView)),
+        static_cast<int>(timer.elapsed()));
+}
+
 void NavigationManager::refreshCurrentView()
 {
     switch (currentView) {
@@ -123,6 +145,9 @@ void NavigationManager::refreshCurrentView()
         break;
     case SymbolHierarchyView:
         refreshSymbolHierarchy();
+        break;
+    case DesignHierarchyView:
+        refreshDesignHierarchy();
         break;
     }
 }
@@ -148,6 +173,33 @@ void NavigationManager::navigateToModule(const QString& moduleName)
         navigationService->resolveModuleTarget(moduleName);
     if (target.found)
         navigateToSymbol(target.symbolRow);
+}
+
+void NavigationManager::setDesignTop(const QString& moduleName)
+{
+    if (moduleName.isEmpty())
+        return;
+    caches.designTopModule = moduleName;
+    caches.clearDesignHierarchy();
+    refreshDesignHierarchy(true);
+    if (navigationWidget)
+        navigationWidget->setActiveTab(NavigationWidget::DesignTab);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Navigation"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Selected Design Top %1").arg(moduleName));
+}
+
+void NavigationManager::clearDesignTop()
+{
+    caches.designTopModule.clear();
+    caches.clearDesignHierarchy();
+    if (navigationWidget)
+        navigationWidget->clearDesignHierarchy();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Navigation"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Cleared Design Top"));
 }
 
 void NavigationManager::setSearchFilter(const QString& filter)
@@ -229,6 +281,9 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
             refreshSymbolHierarchy();
         }
         break;
+    case DesignHierarchyView:
+        caches.clearDesignHierarchy();
+        break;
     }
 }
 
@@ -248,6 +303,8 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
         caches.clearSymbolOutline();
         caches.clearModuleHierarchy();
         refreshSymbolHierarchy();
+    } else if (currentView == DesignHierarchyView) {
+        caches.clearDesignHierarchy();
     }
 }
 

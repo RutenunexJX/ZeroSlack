@@ -5,12 +5,16 @@
 
 #include <QCheckBox>
 #include <QDialog>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMouseEvent>
+#include <QPaintEvent>
 #include <QPushButton>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -137,6 +141,12 @@ void MyCodeEditor::resizeEvent(QResizeEvent *event)
     state->handleResize(this);
 }
 
+void MyCodeEditor::paintEvent(QPaintEvent *event)
+{
+    QPlainTextEdit::paintEvent(event);
+    state->paintFoldPlaceholders(this, event);
+}
+
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 {
     state->handleContextMenu(this, event);
@@ -216,12 +226,93 @@ void MyCodeEditor::executeAlternateModeCommand(const QString& command)
     state->executeAlternateModeCommand(command);
 }
 
+void MyCodeEditor::startFoldRegionMarkMode()
+{
+    state->startFoldRegionMarkMode(this);
+}
+
+void MyCodeEditor::cancelFoldRegionMarkMode()
+{
+    state->cancelFoldRegionMarkMode(this);
+}
+
+bool MyCodeEditor::foldRegionMarkModeActive() const
+{
+    return state->foldRegionMarkModeActive();
+}
+
+void MyCodeEditor::startFoldShelfMode()
+{
+    state->startFoldShelfMode(this);
+}
+
+void MyCodeEditor::cancelFoldShelfMode()
+{
+    state->cancelFoldShelfMode(this);
+}
+
+bool MyCodeEditor::foldShelfModeActive() const
+{
+    return state->foldShelfModeActive();
+}
+
+bool MyCodeEditor::insertCustomFoldMarkersForTest(
+    int startLine,
+    int endLine,
+    const QString& alias)
+{
+    return state->insertCustomFoldMarkers(this, startLine, endLine, alias);
+}
+
+FoldShelfItem MyCodeEditor::foldShelfItemAtLineForTest(
+    int line,
+    FoldShelfOriginKind origin) const
+{
+    return state->foldShelfItemAtLine(const_cast<MyCodeEditor*>(this), line, origin);
+}
+
+bool MyCodeEditor::deleteCustomFoldAtLineForTest(int line)
+{
+    return state->deleteCustomFoldAtLine(this, line);
+}
+
+bool MyCodeEditor::insertFoldShelfItemAtLineForTest(
+    const FoldShelfItem& item,
+    int line)
+{
+    return state->insertFoldShelfItemAtLine(this, item, line);
+}
+
 void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 {
     if (state->handleKeyRelease(this, event))
         return;
 
     QPlainTextEdit::keyReleaseEvent(event);
+}
+
+void MyCodeEditor::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (state->handleDragEnter(this, event))
+        return;
+
+    QPlainTextEdit::dragEnterEvent(event);
+}
+
+void MyCodeEditor::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (state->handleDragMove(this, event))
+        return;
+
+    QPlainTextEdit::dragMoveEvent(event);
+}
+
+void MyCodeEditor::dropEvent(QDropEvent* event)
+{
+    if (state->handleDrop(this, event))
+        return;
+
+    QPlainTextEdit::dropEvent(event);
 }
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
@@ -245,7 +336,8 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
-    state->handleMouseMove(this, event);
+    if (state->handleMouseMove(this, event))
+        return;
 
     QPlainTextEdit::mouseMoveEvent(event);
 }

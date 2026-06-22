@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <functional>
 
 class FileCommandCoordinator;
 class EditorAppearanceSettings;
@@ -33,6 +34,10 @@ public:
         NavigationCommandCoordinator* navigationCommandCoordinator,
         SemanticPanelRefreshCoordinator* semanticPanelRefresh);
     void setAppearanceSettings(EditorAppearanceSettings* settings);
+    void setStatusMessageHandler(
+        std::function<void(const QString&, int)> handler);
+    void setFoldShelfRequestedHandler(std::function<void()> handler);
+    void setFoldShelfItemConsumedHandler(std::function<void(const QString&)> handler);
 
     void connectSignals();
     void attachEditor(MyCodeEditor* editor);
@@ -112,6 +117,9 @@ private:
     QMetaObject::Connection appearanceSettingsConnection;
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
+    std::function<void(const QString&, int)> statusMessageHandler;
+    std::function<void()> foldShelfRequestedHandler;
+    std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
 };
 

@@ -2,9 +2,11 @@
 #define NAVIGATIONMANAGER_H
 
 #include <QObject>
+#include <QPoint>
 #include <QStringList>
 #include <QHash>
 #include <memory>
+#include "hierarchyservice.h"
 #include "modulehierarchymodel.h"
 #include "symboloutlinemodel.h"
 
@@ -21,7 +23,8 @@ public:
     enum NavigationView {
         FileHierarchyView,
         ModuleHierarchyView,
-        SymbolHierarchyView
+        SymbolHierarchyView,
+        DesignHierarchyView
     };
 
     explicit NavigationManager(QObject *parent = nullptr);
@@ -42,12 +45,15 @@ public:
     void refreshFileHierarchy();
     void refreshModuleHierarchy();
     void refreshSymbolHierarchy();
+    void refreshDesignHierarchy(bool force = false);
     void refreshCurrentView();
 
     // Navigation operations
     void navigateToFile(const QString& filePath, int lineNumber = -1);
     void navigateToSymbol(const SymbolOutlineSymbolRow& row);
     void navigateToModule(const QString& moduleName);
+    void setDesignTop(const QString& moduleName);
+    void clearDesignTop();
 
     // Search and filter
     void clearSearchFilter();
@@ -72,6 +78,11 @@ private slots:
     void onFileTreeDoubleClicked(const QString& filePath);
     void onSymbolRowTreeDoubleClicked(const SymbolOutlineSymbolRow& row);
     void onModuleTreeDoubleClicked(const QString& moduleName);
+    void onFileContextMenuRequested(const QString& filePath, const QPoint& globalPos);
+    void onModuleContextMenuRequested(const QString& moduleName, const QPoint& globalPos);
+    void onDesignNodeContextMenuRequested(const DesignHierarchyNode& node,
+                                          const QPoint& globalPos);
+    void onDesignNodeDoubleClicked(const DesignHierarchyNode& node);
 
     void onViewChanged(int index);
     void onSearchFilterChanged(const QString &filter);
@@ -94,16 +105,21 @@ private:
         QStringList fileList;
         QList<ModuleHierarchyGroup> moduleHierarchy;
         QList<SymbolOutlineGroup> symbolOutline;
+        DesignHierarchyReport designHierarchy;
         QString moduleHierarchyFilter;
         QString symbolOutlineFileName;
         QString symbolOutlineFilter;
+        QString designTopModule;
+        std::uint64_t designSnapshotGeneration = 0;
         bool moduleHierarchyValid = false;
         bool symbolOutlineValid = false;
+        bool designHierarchyValid = false;
 
         void reserveDefaults();
         void clearFileList();
         void clearModuleHierarchy();
         void clearSymbolOutline();
+        void clearDesignHierarchy();
         void clearAll();
     };
 
@@ -122,6 +138,7 @@ private:
     void updateFileHierarchyData();
     bool updateModuleHierarchyData();
     bool updateSymbolHierarchyData();
+    bool updateDesignHierarchyData(bool force = false);
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;
     QStringList filterFiles(const QStringList& files, const QString& filter) const;

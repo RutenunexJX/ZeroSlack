@@ -1566,6 +1566,42 @@ int main(int argc, char** argv) {
                    && actionHelpState.helpRequested
                    && actionHelpState.showCompletions,
                true);
+    const CommandModeMatch foldActionMatch =
+        CompletionService::getInstance()->matchCommandMode(QStringLiteral(";:fd"));
+    expectBool("CompletionService fold action match",
+               foldActionMatch.matched
+                   && foldActionMatch.intent == InlineCommandIntent::EditorAction
+                   && foldActionMatch.descriptor.label == QStringLiteral(";:fd"),
+               true);
+    const CommandModeCompletionState foldActionState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";:fd")});
+    expectBool("CompletionService fold action completion",
+               foldActionState.matched
+                   && foldActionState.intent == InlineCommandIntent::EditorAction
+                   && foldActionState.showCompletions
+                   && !foldActionState.templateItems.isEmpty(),
+               true);
+    CompletionActivationQuery foldActionActivation;
+    foldActionActivation.selectable = true;
+    foldActionActivation.mode = CompletionActivationMode::CommandMode;
+    foldActionActivation.itemText = QStringLiteral(";:fd");
+    foldActionActivation.defaultValue = QStringLiteral(";:fd");
+    const CompletionActivationState foldActionActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            foldActionActivation);
+    expectBool("CompletionService fold action activation",
+               foldActionActivationState.action
+                       == CompletionActivationAction::ExecuteEditorAction
+                   && foldActionActivationState.text == QStringLiteral(";:fd"),
+               true);
+    const CommandModeMatch foldShelfActionMatch =
+        CompletionService::getInstance()->matchCommandMode(QStringLiteral(";:fds"));
+    expectBool("CompletionService fold shelf action match",
+               foldShelfActionMatch.matched
+                   && foldShelfActionMatch.intent == InlineCommandIntent::EditorAction
+                   && foldShelfActionMatch.descriptor.label == QStringLiteral(";:fds"),
+               true);
     const CommandModeCompletionState templateHelpState =
         CompletionService::getInstance()->commandModeCompletionState(
             CommandModeCompletionQuery{QStringLiteral(";;?")});

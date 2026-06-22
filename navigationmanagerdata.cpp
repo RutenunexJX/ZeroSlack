@@ -57,6 +57,27 @@ bool NavigationManager::updateSymbolHierarchyData()
     return true;
 }
 
+bool NavigationManager::updateDesignHierarchyData(bool force)
+{
+    if (!navigationService)
+        return false;
+    if (caches.designTopModule.isEmpty()) {
+        caches.designHierarchy = {};
+        caches.designHierarchyValid = false;
+        return true;
+    }
+    if (!force && caches.designHierarchyValid
+        && caches.designHierarchy.topModule == caches.designTopModule
+        && caches.designHierarchy.snapshotGeneration == caches.designSnapshotGeneration) {
+        return false;
+    }
+
+    caches.designHierarchy = navigationService->findDesignHierarchy(caches.designTopModule);
+    caches.designSnapshotGeneration = caches.designHierarchy.snapshotGeneration;
+    caches.designHierarchyValid = true;
+    return true;
+}
+
 bool NavigationManager::shouldRefreshCache() const
 {
     // Workspace mode owns the file list.

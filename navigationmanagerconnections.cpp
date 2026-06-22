@@ -1,8 +1,12 @@
 #include "navigationmanager.h"
 
+#include "navigationservice.h"
 #include "navigationwidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
+
+#include <QAction>
+#include <QMenu>
 
 void NavigationManager::connectToTabManager(TabManager* tabManager)
 {
@@ -59,6 +63,8 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     context.clearCurrentWorkspacePath();
                     caches.clearFileList();
                     caches.clearModuleHierarchy();
+                    caches.clearDesignHierarchy();
+                    caches.designTopModule.clear();
                     refreshCurrentView();
                 });
 
@@ -80,6 +86,8 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                                && context.currentFileName == filePath) {
                         caches.clearSymbolOutline();
                         refreshSymbolHierarchy();
+                    } else if (currentView == DesignHierarchyView) {
+                        caches.clearDesignHierarchy();
                     }
                 });
     }
@@ -101,6 +109,87 @@ void NavigationManager::onModuleTreeDoubleClicked(const QString& moduleName)
     navigateToModule(moduleName);
 }
 
+void NavigationManager::onFileContextMenuRequested(
+    const QString& filePath,
+    const QPoint& globalPos)
+{
+    if (!navigationService)
+        return;
+    const QStringList modules = navigationService->modulesDefinedInFile(filePath);
+    if (modules.isEmpty())
+        return;
+
+    QMenu menu;
+    if (modules.size() == 1) {
+        QAction* setTopAction = menu.addAction(QStringLiteral("Set as Design Top"));
+        connect(setTopAction, &QAction::triggered, this, [this, modules]() {
+            setDesignTop(modules.first());
+        });
+    } else {
+        QMenu* topMenu = menu.addMenu(QStringLiteral("Set as Design Top"));
+        for (const QString& moduleName : modules) {
+            QAction* action = topMenu->addAction(moduleName);
+            connect(action, &QAction::triggered, this, [this, moduleName]() {
+                setDesignTop(moduleName);
+            });
+        }
+    }
+    menu.exec(globalPos);
+}
+
+void NavigationManager::onModuleContextMenuRequested(
+    const QString& moduleName,
+    const QPoint& globalPos)
+{
+    if (moduleName.isEmpty())
+        return;
+    QMenu menu;
+    QAction* setTopAction = menu.addAction(QStringLiteral("Set as Design Top"));
+    connect(setTopAction, &QAction::triggered, this, [this, moduleName]() {
+        setDesignTop(moduleName);
+    });
+    menu.exec(globalPos);
+}
+
+void NavigationManager::onDesignNodeContextMenuRequested(
+    const DesignHierarchyNode& node,
+    const QPoint& globalPos)
+{
+    QMenu menu;
+    QAction* instantiationAction =
+        menu.addAction(QStringLiteral("Go to Instantiation"));
+    instantiationAction->setEnabled(!node.isTop && !node.instanceFile.isEmpty());
+    connect(instantiationAction, &QAction::triggered, this, [this, node]() {
+        navigateToFile(node.instanceFile, node.instanceLine);
+    });
+
+    QAction* definitionAction =
+        menu.addAction(QStringLiteral("Go to Module Definition"));
+    definitionAction->setEnabled(!node.definitionFile.isEmpty());
+    connect(definitionAction, &QAction::triggered, this, [this, node]() {
+        navigateToFile(node.definitionFile, node.definitionLine);
+    });
+
+    menu.addSeparator();
+    QAction* setTopAction = menu.addAction(QStringLiteral("Set as Design Top"));
+    setTopAction->setEnabled(!node.moduleType.isEmpty());
+    connect(setTopAction, &QAction::triggered, this, [this, node]() {
+        setDesignTop(node.moduleType);
+    });
+    menu.exec(globalPos);
+}
+
+void NavigationManager::onDesignNodeDoubleClicked(const DesignHierarchyNode& node)
+{
+    if (node.isTop) {
+        if (!node.definitionFile.isEmpty())
+            navigateToFile(node.definitionFile, node.definitionLine);
+        return;
+    }
+    if (!node.instanceFile.isEmpty())
+        navigateToFile(node.instanceFile, node.instanceLine);
+}
+
 void NavigationManager::setupConnections()
 {
     if (!navigationWidget) return;
@@ -116,6 +205,38 @@ void NavigationManager::setupConnections()
 
     connect(navigationWidget, SIGNAL(moduleDoubleClicked(QString)),
             this, SLOT(onModuleTreeDoubleClicked(QString)));
+
+    connect(navigationWidget,
+            &NavigationWidget::fileContextMenuRequested,
+            this,
+            &NavigationManager::onFileContextMenuRequested);
+
+    connect(navigationWidget,
+            &NavigationWidget::moduleContextMenuRequested,
+            this,
+            &NavigationManager::onModuleContextMenuRequested);
+
+    connect(navigationWidget,
+            &NavigationWidget::designNodeContextMenuRequested,
+            this,
+            &NavigationManager::onDesignNodeContextMenuRequested);
+
+    connect(navigationWidget,
+            &NavigationWidget::designNodeDoubleClicked,
+            this,
+            &NavigationManager::onDesignNodeDoubleClicked);
+
+    connect(navigationWidget,
+            &NavigationWidget::clearDesignTopRequested,
+            this,
+            &NavigationManager::clearDesignTop);
+
+    connect(navigationWidget,
+            &NavigationWidget::refreshDesignHierarchyRequested,
+            this,
+            [this]() {
+                refreshDesignHierarchy(true);
+            });
 
     connect(navigationWidget, SIGNAL(viewChanged(int)),
             this, SLOT(onViewChanged(int)));

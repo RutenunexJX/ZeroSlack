@@ -3,13 +3,18 @@
 
 #include "semanticindex.h"
 #include "semanticdecorationservice.h"
+#include "foldblockshelfmodel.h"
 
 #include <QList>
 #include <QPlainTextEdit>
 #include <memory>
 
 class QMenu;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDropEvent;
 class QMouseEvent;
+class QPaintEvent;
 class QRect;
 class QContextMenuEvent;
 class QKeyEvent;
@@ -17,6 +22,8 @@ class QResizeEvent;
 class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
+class EditorFoldingController;
+class EditorCompletionWorkflow;
 class EditorSourceNavigationUi;
 struct EditorAppearanceOptions;
 struct EditorSemanticContext;
@@ -54,15 +61,33 @@ public:
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void applyAppearanceSettings(const EditorAppearanceOptions& options);
+    void startFoldRegionMarkMode();
+    void cancelFoldRegionMarkMode();
+    bool foldRegionMarkModeActive() const;
+    void startFoldShelfMode();
+    void cancelFoldShelfMode();
+    bool foldShelfModeActive() const;
+    bool insertCustomFoldMarkersForTest(int startLine,
+                                        int endLine,
+                                        const QString& alias = QString());
+    FoldShelfItem foldShelfItemAtLineForTest(
+        int line,
+        FoldShelfOriginKind origin = FoldShelfOriginKind::Copied) const;
+    bool deleteCustomFoldAtLineForTest(int line);
+    bool insertFoldShelfItemAtLineForTest(const FoldShelfItem& item, int line);
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
 
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -70,7 +95,9 @@ protected:
 
 private:
     friend class EditorDocumentGeometry;
+    friend class EditorCompletionWorkflow;
     friend class EditorGutter;
+    friend class EditorFoldingController;
     friend class EditorSourceNavigationUi;
     friend struct MyCodeEditorState;
 
@@ -90,6 +117,9 @@ signals:
                                               int column);
     void navigationBackRequested();
     void navigationForwardRequested();
+    void editorStatusMessageRequested(const QString& message);
+    void foldShelfRequested();
+    void foldShelfItemConsumed(const QString& id);
 };
 
 #endif // MYCODEEDITOR_H

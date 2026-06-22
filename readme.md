@@ -87,9 +87,31 @@ Thin UI consumers
 - J5 is complete: the final zero target now scans first-party repo source, including tracked test fixtures, while excluding docs and guard definitions; full Ninja, full CTest, normal guard, final zero-target guard, static scans, and `git diff --check` passed.
 - Phase J progress tracking used per-subphase accounting. Current subphase: J5 complete.
 - Post-J editor navigation, responsiveness, and completion trigger fixes are committed through `d7c72d5`: completion popup sizing now uses real item text width, interface definitions preserve cross-file header locations, instance named port clicks jump to child port declarations while actual signal clicks stay local, Navigation avoids root-cause synchronous rebuilds by caching hierarchy inputs and batching tree population without timer-delay workarounds, normal completion triggers from identifier prefixes or strong contexts without space/semicolon dependence, semantic command completion uses `;cmd` plus Space, code templates use `;;cmd` plus Space, editor action commands reserve the `;:cmd` namespace, `;?` / `;;?` / `;:?` show scoped help, and Double Shift opens the ZeroSlack Global Control overlay from editor or non-editor focus.
+- Phase K Follow-up Editor Structure Features is complete. Current subphase: K3 Fold Block Shelf complete, 0% remaining.
+- Phase K delivered K1 Design Hierarchy with right-click Design Top and Files dimming, K2 Tree-sitter-backed Code Folding plus Custom Folding through `;:fd`, and K3 Fold Block Shelf through `;:fds`.
+- Phase K verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 329 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - After Phase J, keep new semantic/test work record-native and keep the repo-source zero target passing.
+
+## Phase K: Follow-up Editor Structure Features
+
+- Status: complete.
+- K1 Design Hierarchy view is implemented: Navigation has a Design/Hierarchy tab without a Top dropdown; Design Top is set from right-click menus on Files, Module Browser, or Design Hierarchy nodes; nodes render as `instance_name : module_type`; instance double-clicks navigate to instantiation sites; module-definition navigation is available from context menus; reports are cached by snapshot generation plus selected top; Files view dims entries outside the selected hierarchy without hiding them.
+- K2 Code Folding and Custom Folding is implemented: SystemVerilog folding ranges come from Tree-sitter syntax nodes, custom `// fold <alias>` / `// endfold` ranges are parsed from Tree-sitter comment nodes, gutter fold controls collapse/expand regions, and `;:fd` enters Fold Region Mark Mode to insert custom markers as one undo block.
+- K3 Fold Block Shelf is implemented: `;:fds` enters Fold Shelf mode and opens the shelf dock; custom fold blocks highlight on hover, move or Ctrl-copy into the shelf through structured MIME data, shelf items can be consumed or Ctrl-copied back into editors at line boundaries, double-click preview is read-only, moved item deletion offers restore/delete/cancel, and shelf operations log to Activity/Output.
+- K1-K3 must not use regex for structure or custom fold parsing. Custom fold and shelf behavior must reuse Tree-sitter/comment-node parsing and the folding range model.
+- Opening files must not rebuild heavy hierarchy reports, run RTL Insights reports, scan workspace files from UI, or run Slang directly from UI.
+- Activity/Output should record hierarchy builds, Design Top changes, fold/shelf moves, copies, inserts, restores, and warnings without adding long-lived scattered perflog.
+
+## Phase K Goal Mode
+
+- Track Phase K by feature subphase, not by the whole phase.
+- K1, K2, and K3 are each their own 100% unit.
+- Current subphase: K3 Fold Block Shelf complete, 0% remaining.
+- At the end of every work turn, report the current Phase K subphase and the remaining percentage for that subphase.
+- Move to the next subphase only after the current feature is implemented, tested, docs are current, and any coherent local commit requested for that block is complete.
+- Phase K is complete only when K1-K3 are implemented and verified, docs are current, `gui_smoke_test` passes for affected UI flows, service tests pass where added, `legacy_field_policy_guard` / final zero-target scans still pass when relevant, and `git diff --check` is clean.
 
 ## Feature Expansion Guardrails
 

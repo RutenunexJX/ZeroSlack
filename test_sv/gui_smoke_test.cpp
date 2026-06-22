@@ -11,12 +11,13 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
-#include <QFontDatabase>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTabWidget>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QTemporaryDir>
 #include <QTextBlock>
@@ -44,8 +45,10 @@
 #include "editorappearancesettings.h"
 #include "editorcoordinator.h"
 #include "editorhoverpopup.h"
+#include "editorruntime.h"
 #include "editorsemanticcontextservice.h"
 #include "filecommandcoordinator.h"
+#include "foldblockshelfmodel.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
@@ -65,6 +68,7 @@
 #include "semanticruntimecoordinator.h"
 #include "smartrelationshipbuilder.h"
 #include "tabmanager.h"
+#include "tsdocument.h"
 #include "workspacemanager.h"
 #undef private
 
@@ -176,37 +180,60 @@ static void runEditorAppearanceSettingsRegression()
     const QStringList recommended =
         EditorAppearance::recommendedFontFamilies();
     const QStringList expectedRecommended{
-        QStringLiteral("JetBrains Mono"),
         QStringLiteral("Cascadia Code"),
         QStringLiteral("Maple Mono"),
         QStringLiteral("Iosevka"),
-        QStringLiteral("Commit Mono"),
-        QStringLiteral("IBM Plex Mono"),
-        QStringLiteral("Fira Code"),
-        QStringLiteral("Consolas"),
-        QStringLiteral("Courier New"),
+        QStringLiteral("Monaspace Neon"),
+        QStringLiteral("Intel One Mono"),
+        QStringLiteral("Geist Mono"),
+        QStringLiteral("0xProto"),
     };
-    expectBool("appearance preserves recommended order",
+    expectBool("appearance keeps selected editor fonts",
                recommended == expectedRecommended,
+               true);
+    expectBool("appearance loads bundled editor fonts",
+               EditorAppearance::ensureApplicationFontsLoaded(),
                true);
 
     const QString fallback = EditorAppearance::fallbackFontFamily();
-    expectBool("appearance fallback is not cjk",
-               !EditorAppearance::isCjkFontFamily(fallback),
+    expectBool("appearance fallback is Maple Mono",
+               fallback == QStringLiteral("Maple Mono"),
                true);
-    const QStringList installedFamilies = QFontDatabase().families();
-    QString firstInstalledRecommended;
-    for (const QString& family : recommended) {
-        if (installedFamilies.contains(family, Qt::CaseInsensitive)) {
-            firstInstalledRecommended = family;
-            break;
-        }
-    }
-    if (!firstInstalledRecommended.isEmpty()) {
-        expectBool("appearance recommends installed font before system",
-                   fallback == firstInstalledRecommended,
-                   true);
-    }
+    expectBool("appearance default font size is 15pt",
+               EditorAppearance::defaultOptions().fontSizePt == 15,
+               true);
+    expectBool("appearance accepts Maple Mono",
+               EditorAppearance::resolveFontFamily(QStringLiteral("Maple Mono"))
+                   == QStringLiteral("Maple Mono"),
+               true);
+    expectBool("appearance accepts Iosevka",
+               EditorAppearance::resolveFontFamily(QStringLiteral("Iosevka"))
+                   == QStringLiteral("Iosevka"),
+               true);
+    expectBool("appearance accepts Monaspace Neon",
+               EditorAppearance::resolveFontFamily(QStringLiteral("Monaspace Neon"))
+                   == QStringLiteral("Monaspace Neon"),
+               true);
+    expectBool("appearance accepts Intel One Mono",
+               EditorAppearance::resolveFontFamily(QStringLiteral("Intel One Mono"))
+                   == QStringLiteral("Intel One Mono"),
+               true);
+    expectBool("appearance accepts Geist Mono",
+               EditorAppearance::resolveFontFamily(QStringLiteral("Geist Mono"))
+                   == QStringLiteral("Geist Mono"),
+               true);
+    expectBool("appearance accepts 0xProto",
+               EditorAppearance::resolveFontFamily(QStringLiteral("0xProto"))
+                   == QStringLiteral("0xProto"),
+               true);
+    expectBool("appearance rejects non selected saved font",
+               EditorAppearance::resolveFontFamily(QStringLiteral("Consolas"))
+                   == QStringLiteral("Maple Mono"),
+               true);
+    expectBool("appearance rejects commercial saved font",
+               EditorAppearance::resolveFontFamily(QStringLiteral("Berkeley Mono"))
+                   == QStringLiteral("Maple Mono"),
+               true);
 
     {
         const QString cjkSettingsFile =
@@ -234,29 +261,19 @@ static void runEditorAppearanceSettingsRegression()
         QComboBox* combo =
             panel.findChild<QComboBox*>(
                 QStringLiteral("editorFontFamilyCombo"));
-        bool comboHasCjk = false;
-        bool comboHasExpectedLatinMonospace = false;
-        const QStringList systemMonospace =
-            EditorAppearance::systemMonospaceFontFamilies();
-        const QString expectedLatinMonospace =
-            systemMonospace.isEmpty()
-                ? EditorAppearance::fallbackFontFamily()
-                : systemMonospace.first();
+        QStringList comboFamilies;
         if (combo) {
             for (int i = 0; i < combo->count(); ++i) {
                 const QString family = combo->itemText(i);
-                if (EditorAppearance::isCjkFontFamily(family))
-                    comboHasCjk = true;
-                if (family == expectedLatinMonospace)
-                    comboHasExpectedLatinMonospace = true;
+                if (!family.isEmpty())
+                    comboFamilies.append(family);
             }
         }
-        expectBool("appearance combo filters cjk fonts",
-                   combo && !comboHasCjk,
+        expectBool("appearance combo only selected fonts",
+                   combo && comboFamilies == expectedRecommended,
                    true);
-        expectBool("appearance combo keeps latin monospace fonts",
-                   combo && !EditorAppearance::isCjkFontFamily(expectedLatinMonospace)
-                       && comboHasExpectedLatinMonospace,
+        expectBool("appearance combo has no cjk fonts",
+                   combo && !EditorAppearance::isCjkFontFamily(comboFamilies.value(0)),
                    true);
     }
 }
@@ -2115,6 +2132,269 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     expectBool("RTL insights renders removed diff diagnostic", sawRemovedDiagnostic, true);
 }
 
+static void runTreeSitterFoldingProviderRegression()
+{
+    printf("\n-- tree-sitter folding provider regression --\n");
+
+    TSDocument syntaxDocument;
+    syntaxDocument.setText(QStringLiteral(
+        "module fold_top;\n"
+        "  initial begin\n"
+        "    case (sel)\n"
+        "      1'b0: a = b;\n"
+        "      default: a = c;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n"));
+    const QList<TSFoldRange> syntaxRanges = syntaxDocument.foldingRanges();
+    bool hasModuleFold = false;
+    bool hasNestedFold = false;
+    for (const TSFoldRange& range : syntaxRanges) {
+        hasModuleFold = hasModuleFold
+            || (range.kind == TSFoldRangeKind::Syntax
+                && range.startLine == 0
+                && range.endLine >= 7);
+        hasNestedFold = hasNestedFold
+            || (range.kind == TSFoldRangeKind::Syntax
+                && range.startLine > 0
+                && range.endLine > range.startLine);
+    }
+    expectBool("folding provider finds module range", hasModuleFold, true);
+    expectBool("folding provider finds nested syntax range", hasNestedFold, true);
+
+    TSDocument customDocument;
+    customDocument.setText(QStringLiteral(
+        "module fold_top;\n"
+        "// fold clock   reset path\n"
+        "logic clk;\n"
+        "logic rst_n;\n"
+        "// endfold\n"
+        "endmodule\n"));
+    const QList<TSFoldRange> customRanges = customDocument.foldingRanges();
+    bool hasCustomFold = false;
+    for (const TSFoldRange& range : customRanges) {
+        hasCustomFold = hasCustomFold
+            || (range.kind == TSFoldRangeKind::Custom
+                && range.startLine == 1
+                && range.endLine == 4
+                && range.label == QStringLiteral("clock   reset path"));
+    }
+    expectBool("custom fold marker creates range", hasCustomFold, true);
+
+    TSDocument malformedDocument;
+    malformedDocument.setText(QStringLiteral(
+        "// endfold\n"
+        "module fold_top;\n"
+        "// fold never closed\n"
+        "endmodule\n"));
+    const QList<TSFoldRange> malformedRanges = malformedDocument.foldingRanges();
+    bool hasMalformedCustom = false;
+    for (const TSFoldRange& range : malformedRanges)
+        hasMalformedCustom = hasMalformedCustom || range.kind == TSFoldRangeKind::Custom;
+    expectBool("malformed custom fold markers do not create range",
+               hasMalformedCustom,
+               false);
+
+    MyCodeEditor editor;
+    editor.setPlainText(QStringLiteral(
+        "module fold_top;\n"
+        "  logic a;\n"
+        "endmodule\n"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("editor folding has module start",
+               editor.state->folding.hasFoldAtLine(0),
+               true);
+    const bool folded = editor.state->folding.toggleFoldAtLine(&editor, 0);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("editor folding collapses block",
+               folded && !editor.document()->findBlockByNumber(1).isVisible(),
+               true);
+    const bool unfolded = editor.state->folding.toggleFoldAtLine(&editor, 0);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("editor folding expands block",
+               unfolded && editor.document()->findBlockByNumber(1).isVisible(),
+               true);
+
+    MyCodeEditor gutterEditor;
+    gutterEditor.resize(320, 160);
+    gutterEditor.setPlainText(QStringLiteral(
+        "module fold_top;\n"
+        "  logic a;\n"
+        "endmodule\n"));
+    gutterEditor.show();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QMouseEvent foldClick(QEvent::MouseButtonPress,
+                          QPointF(6, 4),
+                          QPointF(6, 4),
+                          QPointF(6, 4),
+                          Qt::LeftButton,
+                          Qt::LeftButton,
+                          Qt::NoModifier);
+    const bool gutterCollapsed =
+        gutterEditor.state->handleGutterMousePress(&gutterEditor, &foldClick)
+        && !gutterEditor.document()->findBlockByNumber(1).isVisible();
+    expectBool("editor gutter click collapses fold", gutterCollapsed, true);
+    QMouseEvent unfoldClick(QEvent::MouseButtonPress,
+                            QPointF(6, 4),
+                            QPointF(6, 4),
+                            QPointF(6, 4),
+                            Qt::LeftButton,
+                            Qt::LeftButton,
+                            Qt::NoModifier);
+    const bool gutterExpanded =
+        gutterEditor.state->handleGutterMousePress(&gutterEditor, &unfoldClick)
+        && gutterEditor.document()->findBlockByNumber(1).isVisible();
+    expectBool("editor gutter click expands fold", gutterExpanded, true);
+
+    MyCodeEditor commandEditor;
+    commandEditor.setPlainText(QStringLiteral(";:fd"));
+    QTextCursor commandCursor = commandEditor.textCursor();
+    commandCursor.movePosition(QTextCursor::End);
+    commandEditor.setTextCursor(commandCursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    commandEditor.state->completionWorkflow.handleAutoCompleteTimer();
+    expectBool(";:fd clears temporary input",
+               commandEditor.toPlainText().isEmpty(),
+               true);
+    expectBool(";:fd enters fold region mark mode",
+               commandEditor.foldRegionMarkModeActive(),
+               true);
+    QKeyEvent blockedText(QEvent::KeyPress,
+                          Qt::Key_A,
+                          Qt::NoModifier,
+                          QStringLiteral("a"));
+    QApplication::sendEvent(&commandEditor, &blockedText);
+    expectBool("fold region mode blocks text input",
+               commandEditor.toPlainText().isEmpty(),
+               true);
+    QKeyEvent cancelFold(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(&commandEditor, &cancelFold);
+    expectBool("Esc cancels fold region mark mode",
+               !commandEditor.foldRegionMarkModeActive(),
+               true);
+
+    MyCodeEditor markerEditor;
+    const QString markerOriginal = QStringLiteral(
+        "module fold_top;\n"
+        "  logic clk;\n"
+        "  logic rst_n;\n"
+        "endmodule\n");
+    markerEditor.setPlainText(markerOriginal);
+    const bool markersInserted =
+        markerEditor.insertCustomFoldMarkersForTest(
+            1,
+            2,
+            QStringLiteral("clock   reset path"));
+    const QString markerText = markerEditor.toPlainText();
+    expectBool(";:fd marker insertion adds alias",
+               markersInserted
+                   && markerText.contains(QStringLiteral("// fold clock   reset path"))
+                   && markerText.contains(QStringLiteral("// endfold")),
+               true);
+    markerEditor.undo();
+    expectBool(";:fd marker insertion is one undo block",
+               markerEditor.toPlainText() == markerOriginal,
+               true);
+
+    FoldBlockShelfModel shelfModel;
+    FoldShelfItem shelfItem;
+    shelfItem.alias = QStringLiteral("clock reset");
+    shelfItem.text = QStringLiteral("// fold clock reset\nlogic clk;\n// endfold\n");
+    shelfItem.sourceFile = QStringLiteral("C:/fixture/fold_top.sv");
+    shelfItem.sourceStartLine = 2;
+    shelfItem.sourceEndLine = 4;
+    shelfItem.originKind = FoldShelfOriginKind::Moved;
+    const QString shelfId = shelfModel.addItem(shelfItem);
+    expectBool("fold shelf model stores item",
+               !shelfId.isEmpty()
+                   && shelfModel.items().size() == 1
+                   && shelfModel.item(shelfId).lineCount == 3,
+               true);
+    expectBool("fold shelf model consumes item",
+               shelfModel.consumeItem(shelfId)
+                   && shelfModel.item(shelfId).consumed,
+               true);
+    expectBool("fold shelf model removes item",
+               shelfModel.removeItem(shelfId)
+                   && shelfModel.items().isEmpty(),
+               true);
+    const QByteArray encodedShelfItem = encodeFoldShelfItem(shelfItem);
+    const FoldShelfItem decodedShelfItem = decodeFoldShelfItem(encodedShelfItem);
+    expectBool("fold shelf item mime round-trips",
+               decodedShelfItem.alias == shelfItem.alias
+                   && decodedShelfItem.text == shelfItem.text
+                   && decodedShelfItem.sourceFile == shelfItem.sourceFile
+                   && decodedShelfItem.originKind == FoldShelfOriginKind::Moved,
+               true);
+
+    MyCodeEditor shelfEditor;
+    shelfEditor.setDocumentFileName(QStringLiteral("C:/fixture/fold_top.sv"));
+    shelfEditor.setPlainText(QStringLiteral(
+        "module fold_top;\n"
+        "// fold reusable block\n"
+        "  logic clk;\n"
+        "  logic rst_n;\n"
+        "// endfold\n"
+        "endmodule\n"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const FoldShelfItem extractedShelfItem =
+        shelfEditor.foldShelfItemAtLineForTest(2, FoldShelfOriginKind::Moved);
+    expectBool("fold shelf extracts custom fold block",
+               extractedShelfItem.alias == QStringLiteral("reusable block")
+                   && extractedShelfItem.text.contains(QStringLiteral("logic clk"))
+                   && extractedShelfItem.sourceStartLine == 1
+                   && extractedShelfItem.sourceEndLine == 4
+                   && extractedShelfItem.originKind == FoldShelfOriginKind::Moved,
+               true);
+    const bool deletedFoldBlock = shelfEditor.deleteCustomFoldAtLineForTest(2);
+    expectBool("fold shelf move deletes source block",
+               deletedFoldBlock
+                   && !shelfEditor.toPlainText().contains(QStringLiteral("logic clk")),
+               true);
+    shelfEditor.undo();
+    expectBool("fold shelf move delete is one undo block",
+               shelfEditor.toPlainText().contains(QStringLiteral("logic clk")),
+               true);
+
+    MyCodeEditor insertShelfEditor;
+    insertShelfEditor.setPlainText(QStringLiteral("module fold_top;\nendmodule\n"));
+    const bool insertedShelfItem =
+        insertShelfEditor.insertFoldShelfItemAtLineForTest(extractedShelfItem, 1);
+    expectBool("fold shelf inserts item at line boundary",
+               insertedShelfItem
+                   && insertShelfEditor.toPlainText().contains(QStringLiteral("// fold reusable block"))
+                   && insertShelfEditor.toPlainText().contains(QStringLiteral("// endfold")),
+               true);
+    insertShelfEditor.undo();
+    expectBool("fold shelf insert is one undo block",
+               insertShelfEditor.toPlainText() == QStringLiteral("module fold_top;\nendmodule\n"),
+               true);
+
+    MyCodeEditor shelfCommandEditor;
+    QSignalSpy shelfRequestedSpy(&shelfCommandEditor,
+                                 &MyCodeEditor::foldShelfRequested);
+    shelfCommandEditor.setPlainText(QStringLiteral(";:fds"));
+    QTextCursor shelfCursor = shelfCommandEditor.textCursor();
+    shelfCursor.movePosition(QTextCursor::End);
+    shelfCommandEditor.setTextCursor(shelfCursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    shelfCommandEditor.state->completionWorkflow.handleAutoCompleteTimer();
+    expectBool(";:fds clears temporary input",
+               shelfCommandEditor.toPlainText().isEmpty(),
+               true);
+    expectBool(";:fds requests fold shelf",
+               shelfRequestedSpy.count() == 1,
+               true);
+    expectBool(";:fds enters fold shelf mode",
+               shelfCommandEditor.foldShelfModeActive(),
+               true);
+    QKeyEvent cancelShelf(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(&shelfCommandEditor, &cancelShelf);
+    expectBool("Esc cancels fold shelf mode",
+               !shelfCommandEditor.foldShelfModeActive(),
+               true);
+}
+
 static void runNavigationHierarchyModelRegression()
 {
     printf("\n-- navigation hierarchy model regression --\n");
@@ -2238,6 +2518,134 @@ static void runNavigationHierarchyModelRegression()
     expectBool("symbol outline exposes stable key",
                clickedRow.symbolRecord.stableKey.isValid(),
                true);
+
+    const QString designTopFile = QStringLiteral("C:/fixture/design_top.sv");
+    const QString designStageFile = QStringLiteral("C:/fixture/design_stage.sv");
+    const QString designExtraFile = QStringLiteral("C:/fixture/design_extra.sv");
+    const SemanticSymbolRecord designTop =
+        makeGuiSmokeRecord(1240,
+                           designTopFile,
+                           QStringLiteral("design_top"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           3);
+    const SemanticSymbolRecord designStage =
+        makeGuiSmokeRecord(1241,
+                           designStageFile,
+                           QStringLiteral("design_stage"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           1);
+    const SemanticSymbolRecord designInstance =
+        makeGuiSmokeRecord(1242,
+                           designTopFile,
+                           QStringLiteral("u_stage"),
+                           SymbolTaxonomy::DeclarationKind::Instance,
+                           SymbolTaxonomy::CollectorKind::Inst,
+                           8,
+                           SymbolTaxonomy::SymbolOwnerScope::Module,
+                           QStringLiteral("design_top"),
+                           QStringLiteral("design_stage"));
+
+    const SemanticRelationship instantiatesStage =
+        semanticFixtureRelationship(designTop,
+                                    designInstance,
+                                    SymbolRelationshipEngine::INSTANTIATES);
+    SemanticIndex designIndex;
+    designIndex.setSnapshot(snapshotFromRecords(
+        {designTop, designStage, designInstance},
+        {instantiatesStage}));
+    HierarchyService designHierarchyService(&designIndex);
+    const DesignHierarchyReport designReport =
+        designHierarchyService.getDesignHierarchyReport(QStringLiteral("design_top"));
+    expectBool("design hierarchy report has top and instance",
+               designReport.nodes.size() == 2,
+               true);
+    expectBool("design hierarchy report keeps selected top",
+               designReport.topModule == QStringLiteral("design_top"),
+               true);
+    expectBool("design hierarchy report has no unresolved modules",
+               designReport.unresolvedModules.isEmpty(),
+               true);
+    expectBool("modules defined in file lists design top",
+               designHierarchyService.modulesDefinedInFile(designTopFile)
+                   .contains(QStringLiteral("design_top")),
+               true);
+
+    const QString normalizedTopFile =
+        QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(designTopFile).absoluteFilePath()));
+    const QString normalizedStageFile =
+        QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(designStageFile).absoluteFilePath()));
+    expectBool("design hierarchy participating files include top",
+               designReport.participatingFiles.contains(normalizedTopFile),
+               true);
+    expectBool("design hierarchy participating files include child definition",
+               designReport.participatingFiles.contains(normalizedStageFile),
+               true);
+
+    widget.setActiveTab(NavigationWidget::DesignTab);
+    widget.updateFileHierarchy({designTopFile, designStageFile, designExtraFile});
+    widget.updateDesignHierarchy(designReport);
+
+    QTreeWidgetItem* designItem = nullptr;
+    QLabel* designStatusLabel = nullptr;
+    for (QLabel* label : widget.findChildren<QLabel*>()) {
+        if (label->text().contains(QStringLiteral("Design Top: design_top"))) {
+            designStatusLabel = label;
+            break;
+        }
+    }
+    for (QTreeWidget* tree : widget.findChildren<QTreeWidget*>()) {
+        designItem = findItemByText(tree, QStringLiteral("u_stage : design_stage"));
+        if (designItem)
+            break;
+    }
+    expectBool("design hierarchy status shows top",
+               designStatusLabel != nullptr,
+               true);
+    expectBool("design hierarchy renders instance text",
+               designItem != nullptr,
+               true);
+
+    bool designDoubleClicked = false;
+    DesignHierarchyNode clickedDesignNode;
+    QObject::connect(&widget, &NavigationWidget::designNodeDoubleClicked,
+                     &widget, [&](const DesignHierarchyNode& node) {
+                         designDoubleClicked = true;
+                         clickedDesignNode = node;
+                     });
+    if (designItem)
+        widget.onDesignTreeDoubleClicked(designItem, 0);
+    expectBool("design hierarchy double-click emits node",
+               designDoubleClicked,
+               true);
+    expectBool("design hierarchy double-click preserves instance site",
+               clickedDesignNode.instanceName == QStringLiteral("u_stage")
+                   && clickedDesignNode.instanceLine == 8,
+               true);
+
+    QTreeWidgetItem* topFileItem = widget.findFileItemByPath(designTopFile);
+    QTreeWidgetItem* extraFileItem = widget.findFileItemByPath(designExtraFile);
+    expectBool("design participating file remains visible",
+               topFileItem != nullptr
+                   && extraFileItem != nullptr
+                   && topFileItem->foreground(0).color().alpha()
+                          > extraFileItem->foreground(0).color().alpha(),
+               true);
+    expectBool("design non-participating file is dimmed",
+               extraFileItem != nullptr
+                   && extraFileItem->foreground(0).color().alpha() < 255,
+               true);
+
+    widget.clearDesignHierarchy();
+    topFileItem = widget.findFileItemByPath(designTopFile);
+    extraFileItem = widget.findFileItemByPath(designExtraFile);
+    expectBool("clear design restores file opacity",
+               topFileItem != nullptr
+                   && extraFileItem != nullptr
+                   && topFileItem->foreground(0).color().alpha()
+                          == extraFileItem->foreground(0).color().alpha(),
+               true);
 }
 
 static void runGlobalControlRegression(MainWindow& window,
@@ -2322,6 +2730,7 @@ int main(int argc, char** argv)
     runRtlInsightsOnDemandRegression();
     runEditorAppearanceSettingsRegression();
     runEditorAppearanceCoordinatorRegression();
+    runTreeSitterFoldingProviderRegression();
     runNavigationHierarchyModelRegression();
 
     const QString workspacePath = (argc > 1)
@@ -2354,6 +2763,14 @@ int main(int argc, char** argv)
     expectBool("activity output panel exists",
                window.findChild<QPlainTextEdit*>(
                    QStringLiteral("activityOutputText")) != nullptr,
+               true);
+    QDockWidget* foldShelfDock =
+        window.findChild<QDockWidget*>(QStringLiteral("FoldShelfDock"));
+    expectBool("fold shelf dock exists",
+               foldShelfDock != nullptr,
+               true);
+    expectBool("fold shelf dock starts hidden",
+               foldShelfDock && !foldShelfDock->isVisible(),
                true);
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
     const int editorCountBeforeNewAction = window.tabManager->editorCount();

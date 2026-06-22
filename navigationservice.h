@@ -39,6 +39,8 @@ public:
         const NavigationModuleQuery& query = {}) const;
     QList<SymbolOutlineGroup> findSymbolOutline(
         const NavigationSymbolOutlineQuery& query) const;
+    DesignHierarchyReport findDesignHierarchy(const QString& topModule) const;
+    QStringList modulesDefinedInFile(const QString& fileName) const;
     NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;
 
 private:

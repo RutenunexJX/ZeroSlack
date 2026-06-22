@@ -228,6 +228,17 @@ QList<SymbolOutlineGroup> NavigationService::findSymbolOutline(
     return result;
 }
 
+DesignHierarchyReport NavigationService::findDesignHierarchy(
+    const QString& topModule) const
+{
+    return hierarchyService.getDesignHierarchyReport(topModule);
+}
+
+QStringList NavigationService::modulesDefinedInFile(const QString& fileName) const
+{
+    return hierarchyService.modulesDefinedInFile(fileName);
+}
+
 NavigationModuleTarget NavigationService::resolveModuleTarget(
     const QString& moduleName) const
 {

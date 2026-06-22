@@ -6,7 +6,10 @@
 
 #include <QList>
 #include <QMap>
+#include <QSet>
 #include <QString>
+#include <QStringList>
+#include <cstdint>
 #include <memory>
 
 struct HierarchyQuery {
@@ -85,6 +88,30 @@ struct HierarchyReport {
     QMap<SymbolRelationshipEngine::RelationType, int> typeCounts;
 };
 
+struct DesignHierarchyNode {
+    QString id;
+    QString parentId;
+    QString instanceName;
+    QString moduleType;
+    QString instanceFile;
+    int instanceLine = -1;
+    int instanceColumn = -1;
+    QString definitionFile;
+    int definitionLine = -1;
+    int definitionColumn = -1;
+    bool isTop = false;
+    bool unresolved = false;
+    QString unresolvedReason;
+};
+
+struct DesignHierarchyReport {
+    QString topModule;
+    QList<DesignHierarchyNode> nodes;
+    QSet<QString> participatingFiles;
+    QList<QString> unresolvedModules;
+    std::uint64_t snapshotGeneration = 0;
+};
+
 class HierarchyService
 {
 public:
@@ -100,6 +127,8 @@ public:
     QList<HierarchyNode> getParents(const HierarchyQuery& query) const;
     QList<HierarchyNode> getHierarchy(const HierarchyQuery& query) const;
     HierarchyReport getHierarchyReport(const HierarchyQuery& query) const;
+    DesignHierarchyReport getDesignHierarchyReport(const QString& topModule) const;
+    QStringList modulesDefinedInFile(const QString& fileName) const;
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
     QList<HierarchyNode> moduleInstantiationChildren(const SymbolStableKey& moduleStableKey) const;
 

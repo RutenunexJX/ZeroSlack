@@ -3,6 +3,7 @@
 #include "editorcompletionui.h"
 #include "editormodestate.h"
 #include "editorselection.h"
+#include "editorruntime.h"
 #include "mycodeeditor.h"
 
 #include <QModelIndex>
@@ -86,6 +87,13 @@ void EditorCompletionWorkflow::executeAlternateModeCommand(
     hideAutoComplete();
 }
 
+void EditorCompletionWorkflow::executeEditorActionCommand(const QString& command)
+{
+    clearCommandInputAtCursor();
+    hideAutoComplete();
+    editor->state->executeEditorActionCommand(editor, command);
+}
+
 void EditorCompletionWorkflow::updateCompletionTriggerForTextChange(
     const QTextCursor& cursor)
 {
@@ -119,6 +127,11 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
     if (activationState.action
         == CompletionActivationAction::ExecuteAlternateCommand) {
         executeAlternateModeCommand(activationState.text);
+        return;
+    }
+    if (activationState.action
+        == CompletionActivationAction::ExecuteEditorAction) {
+        executeEditorActionCommand(activationState.text);
         return;
     }
 
@@ -193,6 +206,13 @@ bool EditorCompletionWorkflow::refreshCommandModeCompletion(
         modes->setCommandModeActive(commandState.commandModeActive);
         if (commandState.suppressAfterExit)
             return true;
+
+        if (commandState.completion.intent == InlineCommandIntent::EditorAction
+            && !commandState.completion.helpRequested
+            && !commandState.completion.descriptor.prefix.endsWith(QLatin1Char(' '))) {
+            executeEditorActionCommand(commandState.completion.descriptor.label);
+            return true;
+        }
 
         if (commandState.exitRequested) {
             if (commandState.clearCommandHighlight)

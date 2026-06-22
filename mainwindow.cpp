@@ -18,6 +18,8 @@
 #include "diagnosticservice.h"
 #include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
+#include "foldblockshelfmodel.h"
+#include "foldblockshelfpanel.h"
 #include "semanticdecorationservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolservice.h"
@@ -26,6 +28,7 @@
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "activitylogpanelcoordinator.h"
+#include "activitylogservice.h"
 #include "problemspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "version.h"
@@ -61,6 +64,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupFileCommandCoordinator();
     setupModeCommandCoordinator();
     setupGlobalControl();
+    setupFoldBlockShelf();
     setupEditorCoordinator();
     setupManagerConnections();
 
@@ -318,6 +322,88 @@ void MainWindow::setupGlobalControl()
     globalControlCoordinator->install();
 }
 
+void MainWindow::setupFoldBlockShelf()
+{
+    foldShelfModel = std::make_unique<FoldBlockShelfModel>(this);
+    foldShelfDock = new QDockWidget(QStringLiteral("Fold Shelf"), this);
+    foldShelfDock->setObjectName(QStringLiteral("FoldShelfDock"));
+    foldShelfPanel = new FoldBlockShelfPanel(foldShelfDock);
+    foldShelfPanel->setModel(foldShelfModel.get());
+    connect(foldShelfPanel,
+            &FoldBlockShelfPanel::restoreItemRequested,
+            this,
+            &MainWindow::restoreFoldShelfItem);
+    foldShelfDock->setWidget(foldShelfPanel);
+    addDockWidget(Qt::BottomDockWidgetArea, foldShelfDock);
+    foldShelfDock->hide();
+}
+
+void MainWindow::showFoldBlockShelf()
+{
+    if (!foldShelfDock)
+        return;
+    foldShelfDock->show();
+    foldShelfDock->raise();
+    if (statusBar())
+        statusBar()->showMessage(QStringLiteral("Fold Shelf ready"), 3000);
+}
+
+void MainWindow::restoreFoldShelfItem(const QString& id)
+{
+    if (!foldShelfModel || !tabManager)
+        return;
+
+    const FoldShelfItem item = foldShelfModel->item(id);
+    if (item.id.isEmpty() || item.text.isEmpty()) {
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("Fold Shelf"),
+            ActivityLogLevel::Warning,
+            QStringLiteral("Restore failed: item unavailable"));
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: item unavailable"), 5000);
+        return;
+    }
+    if (item.sourceFile.isEmpty()) {
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("Fold Shelf"),
+            ActivityLogLevel::Warning,
+            QStringLiteral("Restore failed for \"%1\": source file unavailable").arg(item.alias));
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: source file unavailable"), 5000);
+        return;
+    }
+
+    if (!tabManager->activateOpenFile(item.sourceFile)
+        && !tabManager->openFileInTab(item.sourceFile)) {
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("Fold Shelf"),
+            ActivityLogLevel::Warning,
+            QStringLiteral("Restore failed for \"%1\": source file could not be opened").arg(item.alias));
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: source file could not be opened"), 5000);
+        return;
+    }
+
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    if (!editor || !editor->insertFoldShelfItemAtLineForTest(item, item.sourceStartLine)) {
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("Fold Shelf"),
+            ActivityLogLevel::Warning,
+            QStringLiteral("Restore failed for \"%1\": source location unavailable").arg(item.alias));
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: source location unavailable"), 5000);
+        return;
+    }
+
+    foldShelfModel->removeItem(id);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Fold Shelf"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Restored shelf item \"%1\"").arg(item.alias));
+    if (statusBar())
+        statusBar()->showMessage(QStringLiteral("Fold Shelf item restored"), 3000);
+}
+
 void MainWindow::setupEditorAppearanceSettings()
 {
     editorAppearanceSettings =
@@ -343,6 +429,22 @@ void MainWindow::setupEditorCoordinator()
         navigationCommandCoordinator.get(),
         semanticDocks ? semanticDocks->refreshCoordinator() : nullptr);
     editorCoordinator->setAppearanceSettings(editorAppearanceSettings.get());
+    editorCoordinator->setStatusMessageHandler(
+        [this](const QString& message, int timeoutMs) {
+            if (statusBar()) {
+                if (message.isEmpty())
+                    statusBar()->clearMessage();
+                else
+                    statusBar()->showMessage(message, timeoutMs);
+            }
+        });
+    editorCoordinator->setFoldShelfRequestedHandler([this]() {
+        showFoldBlockShelf();
+    });
+    editorCoordinator->setFoldShelfItemConsumedHandler([this](const QString& id) {
+        if (foldShelfModel)
+            foldShelfModel->consumeItem(id);
+    });
     editorCoordinator->connectSignals();
 }
 

@@ -103,7 +103,8 @@ enum class CompletionActivationAction {
     ReplaceWord,
     ReplaceLine,
     ReplaceCommandInput,
-    ExecuteAlternateCommand
+    ExecuteAlternateCommand,
+    ExecuteEditorAction
 };
 
 struct CompletionActivationQuery {

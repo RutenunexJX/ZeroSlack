@@ -1,6 +1,7 @@
 #include "navigationwidget.h"
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QMenu>
 
 NavigationWidget::NavigationWidget(QWidget *parent)
     : QWidget(parent)
@@ -40,6 +41,31 @@ void NavigationWidget::updateSymbolHierarchy(const QList<SymbolOutlineGroup>& sy
     currentSymbolHierarchy = symbolGroups;
     populateSymbolTree();
 }
+
+void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report)
+{
+    currentDesignHierarchy = report;
+    designParticipatingFiles = report.participatingFiles;
+    refreshDesignHeader();
+    populateDesignTree();
+    populateFileTree();
+}
+
+void NavigationWidget::clearDesignHierarchy()
+{
+    currentDesignHierarchy = {};
+    designParticipatingFiles.clear();
+    refreshDesignHeader();
+    populateDesignTree();
+    populateFileTree();
+}
+
+void NavigationWidget::setDesignParticipatingFiles(const QSet<QString>& fileNames)
+{
+    designParticipatingFiles = fileNames;
+    populateFileTree();
+}
+
 void NavigationWidget::highlightFile(const QString& filePath)
 {
     currentHighlightedFile = filePath;
@@ -138,6 +164,52 @@ void NavigationWidget::onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int colu
         emit symbolRowDoubleClicked(row);
     }
 }
+
+void NavigationWidget::onDesignTreeDoubleClicked(QTreeWidgetItem* item, int column)
+{
+    Q_UNUSED(column)
+
+    if (!item)
+        return;
+    const int payloadId = item->data(0, Qt::UserRole + 1).toInt();
+    if (designItemPayloads.contains(payloadId))
+        emit designNodeDoubleClicked(designItemPayloads.value(payloadId));
+}
+
+void NavigationWidget::onFileTreeContextMenuRequested(const QPoint& pos)
+{
+    QTreeWidgetItem* item = fileTreeWidget->itemAt(pos);
+    if (!item)
+        return;
+    const QString filePath = item->data(0, Qt::UserRole).toString();
+    if (!filePath.isEmpty())
+        emit fileContextMenuRequested(filePath, fileTreeWidget->viewport()->mapToGlobal(pos));
+}
+
+void NavigationWidget::onModuleTreeContextMenuRequested(const QPoint& pos)
+{
+    QTreeWidgetItem* item = moduleTreeWidget->itemAt(pos);
+    if (!item || item->data(0, Qt::UserRole + 1).toBool())
+        return;
+    const QString moduleName = item->text(0);
+    if (!moduleName.isEmpty())
+        emit moduleContextMenuRequested(moduleName,
+                                        moduleTreeWidget->viewport()->mapToGlobal(pos));
+}
+
+void NavigationWidget::onDesignTreeContextMenuRequested(const QPoint& pos)
+{
+    QTreeWidgetItem* item = designTreeWidget->itemAt(pos);
+    if (!item)
+        return;
+    const int payloadId = item->data(0, Qt::UserRole + 1).toInt();
+    if (designItemPayloads.contains(payloadId)) {
+        emit designNodeContextMenuRequested(
+            designItemPayloads.value(payloadId),
+            designTreeWidget->viewport()->mapToGlobal(pos));
+    }
+}
+
 void NavigationWidget::setupUI()
 {
     mainLayout = new QVBoxLayout(this);
@@ -155,6 +227,7 @@ void NavigationWidget::setupUI()
     setupFileTab();
     setupModuleTab();
     setupSymbolTab();
+    setupDesignTab();
 
     setLayout(mainLayout);
 }
@@ -219,6 +292,38 @@ void NavigationWidget::setupSymbolTab()
     tabWidget->addTab(symbolTab, "Symbols");
 }
 
+void NavigationWidget::setupDesignTab()
+{
+    designTab = new QWidget();
+    designTabLayout = new QVBoxLayout(designTab);
+    designTabLayout->setContentsMargins(2, 2, 2, 2);
+    designTabLayout->setSpacing(4);
+
+    QHBoxLayout* topLayout = new QHBoxLayout();
+    topLayout->setContentsMargins(0, 0, 0, 0);
+    topLayout->setSpacing(4);
+    designTopLabel = new QLabel(designTab);
+    designTopLabel->setWordWrap(true);
+    designClearButton = new QPushButton(QStringLiteral("Clear"), designTab);
+    designRefreshButton = new QPushButton(QStringLiteral("Refresh"), designTab);
+    topLayout->addWidget(designTopLabel, 1);
+    topLayout->addWidget(designClearButton);
+    topLayout->addWidget(designRefreshButton);
+    designTabLayout->addLayout(topLayout);
+
+    designTreeWidget = new QTreeWidget(designTab);
+    designTreeWidget->setHeaderLabel("Design Hierarchy");
+    designTreeWidget->setAlternatingRowColors(true);
+    designTreeWidget->setRootIsDecorated(true);
+    designTreeWidget->setSortingEnabled(false);
+    designTreeWidget->header()->hide();
+    designTabLayout->addWidget(designTreeWidget);
+
+    designTab->setLayout(designTabLayout);
+    tabWidget->addTab(designTab, "Design");
+    refreshDesignHeader();
+}
+
 void NavigationWidget::setupConnections()
 {
     connect(tabWidget, &QTabWidget::currentChanged,
@@ -229,10 +334,27 @@ void NavigationWidget::setupConnections()
 
     connect(fileTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onFileTreeDoubleClicked);
+    fileTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(fileTreeWidget, &QTreeWidget::customContextMenuRequested,
+            this, &NavigationWidget::onFileTreeContextMenuRequested);
 
     connect(moduleTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onModuleTreeDoubleClicked);
+    moduleTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(moduleTreeWidget, &QTreeWidget::customContextMenuRequested,
+            this, &NavigationWidget::onModuleTreeContextMenuRequested);
 
     connect(symbolTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onSymbolTreeDoubleClicked);
+
+    connect(designTreeWidget, &QTreeWidget::itemDoubleClicked,
+            this, &NavigationWidget::onDesignTreeDoubleClicked);
+    designTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(designTreeWidget, &QTreeWidget::customContextMenuRequested,
+            this, &NavigationWidget::onDesignTreeContextMenuRequested);
+
+    connect(designClearButton, &QPushButton::clicked,
+            this, &NavigationWidget::clearDesignTopRequested);
+    connect(designRefreshButton, &QPushButton::clicked,
+            this, &NavigationWidget::refreshDesignHierarchyRequested);
 }

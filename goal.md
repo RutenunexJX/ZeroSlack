@@ -204,6 +204,29 @@ UI Layer
 - Move to the next subphase only after the current subphase is implemented, verified, and committed.
 - Phase J completion requires J0-J5 completion, current docs, full Ninja, full CTest, guard success, final repo-source static legacy scans, and deletion of the fixture-only legacy carrier.
 
+### Phase K: Follow-up Editor Structure Features
+
+- Status: complete.
+- Product goal achieved: editor structure tools now make large SystemVerilog workspaces easier to understand, fold, rearrange, and reuse without moving semantic policy into UI code.
+- K1 Design Hierarchy view provides a Navigation Design/Hierarchy tab, right-click-only Design Top selection, cached hierarchy reports, instance nodes rendered as `instance_name : module_type`, instantiation and module-definition navigation, and Files view dimming based on hierarchy participation.
+- K2 Code Folding and Custom Folding provides Tree-sitter folding ranges, gutter collapse/expand controls, custom `// fold <alias>` / `// endfold` ranges parsed from comment nodes, and the `;:fd` Fold Region Mark Mode for inserting custom fold markers as one undoable edit.
+- K3 Fold Block Shelf provides the `;:fds` Fold Shelf mode, custom fold block hover highlighting, move/copy drag into a shelf, consume/copy drag back into editors, preview, protected delete, restore paths for moved code, and Activity/Output logging for shelf operations.
+- Phase K verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 329 checks, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`.
+- Design hierarchy reports must be produced by `HierarchyService` or an equivalent query-service boundary from `SemanticIndexSnapshot`, not by UI file scans or direct Slang runs.
+- Folding and Fold Shelf must reuse Tree-sitter/comment-node parsing and a shared folding range model; regex parsing of code structure or fold directives is not allowed.
+- Fold and shelf edits must use document/editor edit APIs so undo/redo remains coherent and source code cannot be silently lost.
+- Activity/Output logs should expose hierarchy builds, top changes, fold/shelf operations, and malformed custom fold warnings without adding scattered long-lived perflog.
+
+### Phase K Goal Mode
+
+- Progress is tracked per feature subphase K1-K3.
+- Each subphase is its own 100% unit.
+- Current subphase: K3 Fold Block Shelf complete, 0% remaining.
+- End every work turn by naming the current Phase K subphase and reporting that subphase's remaining percentage.
+- K1 is complete only when Design Hierarchy view, right-click top selection, cached reports, navigation actions, Files dimming, and real-fixture tests are implemented and verified.
+- K2 is complete only when syntax folding, custom comment-node folding, `;:fd` marker mode, gutter interactions, undo behavior, and tests are implemented and verified without regex parsing.
+- K3 is complete: Fold Shelf mode, shelf panel/model, move/copy/insert/delete/restore flows, preview, Activity logs, and tests are implemented and verified without regex parsing.
+
 ## Architecture Rules
 
 - New semantic features must flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
@@ -249,6 +272,7 @@ The foundation is healthy when:
 - Post-J editor correctness includes usable completion popup sizing, normal completion that triggers from identifier prefixes or strong semantic contexts, semantic command completion that requires `;cmd` plus Space, code template insertion through `;;cmd` plus Space, reserved editor actions through `;:cmd`, scoped `;?` / `;;?` / `;:?` help, removal of old single-letter plus Space command triggers, cross-file interface/header definition targets, named instance port formal-to-child-port jumps, actual-signal local jumps, and Navigation responsiveness fixes that remove unnecessary synchronous rebuilds instead of masking stalls with delayed timers
 - Global app control is available through Double Shift from editor and non-editor focus as of `d7c72d5`, with search/dispatch results sourced from ProjectModel, SemanticIndexSnapshot, feature services, and existing coordinators instead of UI file scans or direct analysis
 - The current post-J editor workflow baseline is verified by `completion_test` with 311 checks and `gui_smoke_test` with 276 checks for the layered inline command and Global Control paths
+- Phase K is done only when K1 Design Hierarchy, K2 Code Folding/Custom Folding, and K3 Fold Block Shelf are implemented through service/model-backed UI boundaries, verified with focused tests and affected GUI smoke coverage, and proven not to use UI workspace scans, direct UI Slang runs, regex structure/fold parsing, or timer-delay responsiveness masking
 - `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
 - `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
 - `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts
