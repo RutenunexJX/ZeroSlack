@@ -191,6 +191,37 @@ InlineCommandMatch InlineCommandMode::match(const QString& lineUpToCursor)
         return result;
     }
 
+    const QString actionPrefix = QStringLiteral(";:");
+    const int actionPrefixPosition = lineUpToCursor.lastIndexOf(actionPrefix);
+    if (actionPrefixPosition >= 0
+        && actionPrefixPosition + actionPrefix.size() <= lineUpToCursor.size()
+        && isCommandSafePrefix(lineUpToCursor.left(actionPrefixPosition))
+        && !isPositionInCommentOrString(lineUpToCursor, actionPrefixPosition)) {
+        const QString input =
+            lineUpToCursor.mid(actionPrefixPosition + actionPrefix.size());
+        bool actionInput = true;
+        for (const QChar ch : input) {
+            if (!ch.isLetterOrNumber() && ch != QLatin1Char('_')) {
+                actionInput = false;
+                break;
+            }
+        }
+        if (actionInput) {
+            result.matched = true;
+            result.intent = InlineCommandIntent::EditorAction;
+            result.prefixPosition = actionPrefixPosition;
+            result.commandToken = actionPrefix;
+            result.input = input;
+            result.descriptor = descriptor(actionPrefix,
+                                           InlineCommandIntent::EditorAction,
+                                           CompletionCommandKind::User,
+                                           actionPrefix,
+                                           QStringLiteral("editor actions"),
+                                           actionPrefix);
+            return result;
+        }
+    }
+
     const QList<InlineCommandDescriptor> allDescriptors = descriptors();
     for (const InlineCommandDescriptor& descriptor : allDescriptors) {
         if (descriptor.prefix.endsWith(QLatin1Char(' ')))

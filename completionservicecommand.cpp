@@ -7,6 +7,39 @@
 #include "inlinecommandmode.h"
 #include "symboltaxonomy.h"
 
+namespace {
+QString editorActionToken(const InlineCommandDescriptor& descriptor)
+{
+    return descriptor.label.startsWith(QStringLiteral(";:"))
+        ? descriptor.label.mid(2)
+        : descriptor.label;
+}
+
+QList<CodeTemplateItem> matchingEditorActions(const QString& prefix)
+{
+    QList<CodeTemplateItem> items;
+    for (const InlineCommandDescriptor& descriptor :
+         InlineCommandMode::descriptorsForIntent(InlineCommandIntent::EditorAction)) {
+        const QString token = editorActionToken(descriptor);
+        if (!prefix.isEmpty()
+            && !token.startsWith(prefix, Qt::CaseInsensitive)) {
+            continue;
+        }
+
+        CodeTemplateItem item;
+        item.commandToken = descriptor.label;
+        item.label = token;
+        item.description = descriptor.description.isEmpty()
+            ? QStringLiteral("reserved editor action")
+            : descriptor.description;
+        item.defaultValue = descriptor.defaultValue;
+        item.insertText = descriptor.defaultValue;
+        items.append(item);
+    }
+    return items;
+}
+}
+
 QList<CommandModeCommand> CompletionService::commandModeCommands() const
 {
     return CompletionCommandMode::commands();
@@ -67,15 +100,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     }
 
     if (state.intent == InlineCommandIntent::EditorAction) {
-        CodeTemplateItem item;
-        item.commandToken = state.descriptor.label;
-        item.label = state.descriptor.label;
-        item.description = state.descriptor.description.isEmpty()
-            ? QStringLiteral("reserved editor action")
-            : state.descriptor.description;
-        item.defaultValue = state.descriptor.defaultValue;
-        item.insertText = state.descriptor.defaultValue;
-        state.templateItems.append(item);
+        state.templateItems = matchingEditorActions(state.completionPrefix);
         state.showCompletions = true;
         return state;
     }

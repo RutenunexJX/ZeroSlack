@@ -184,7 +184,7 @@ void CompletionModel::updateInlineCommandCompletions(
             headerItem.text = QStringLiteral(":: TEMPLATE HELP - ;;cmd + Space ::");
             break;
         case InlineCommandIntent::EditorAction:
-            headerItem.text = QStringLiteral(":: ACTION HELP - ;:cmd + Space ::");
+            headerItem.text = QStringLiteral(":: ACTION HELP - ;:cmd ::");
             break;
         }
     } else {

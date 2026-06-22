@@ -2253,10 +2253,18 @@ static void runTreeSitterFoldingProviderRegression()
     commandEditor.setTextCursor(commandCursor);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     commandEditor.state->completionWorkflow.handleAutoCompleteTimer();
-    expectBool(";:fd clears temporary input",
+    expectBool(";:fd shows action completion before execution",
+               !commandEditor.foldRegionMarkModeActive()
+                   && commandEditor.state->completion.popupVisible()
+                   && commandEditor.state->completion.rowCount() >= 3
+                   && commandEditor.toPlainText() == QStringLiteral(";:fd"),
+               true);
+    commandEditor.state->completion.activateIndex(
+        commandEditor.state->completion.firstSelectableIndex());
+    expectBool(";:fd selected action clears temporary input",
                commandEditor.toPlainText().isEmpty(),
                true);
-    expectBool(";:fd enters fold region mark mode",
+    expectBool(";:fd selected action enters fold region mark mode",
                commandEditor.foldRegionMarkModeActive(),
                true);
     QKeyEvent blockedText(QEvent::KeyPress,
@@ -2373,12 +2381,31 @@ static void runTreeSitterFoldingProviderRegression()
     MyCodeEditor shelfCommandEditor;
     QSignalSpy shelfRequestedSpy(&shelfCommandEditor,
                                  &MyCodeEditor::foldShelfRequested);
+    MyCodeEditor ambiguousFoldCommandEditor;
+    QSignalSpy ambiguousShelfRequestedSpy(
+        &ambiguousFoldCommandEditor,
+        &MyCodeEditor::foldShelfRequested);
+    ambiguousFoldCommandEditor.setPlainText(QStringLiteral(";:fd"));
+    QTextCursor ambiguousCursor = ambiguousFoldCommandEditor.textCursor();
+    ambiguousCursor.movePosition(QTextCursor::End);
+    ambiguousFoldCommandEditor.setTextCursor(ambiguousCursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    ambiguousFoldCommandEditor.state->completionWorkflow.handleAutoCompleteTimer();
+    expectBool(";:fd without selection does not auto-run",
+               !ambiguousFoldCommandEditor.foldRegionMarkModeActive()
+                   && ambiguousShelfRequestedSpy.count() == 0
+                   && ambiguousFoldCommandEditor.toPlainText() == QStringLiteral(";:fd")
+                   && ambiguousFoldCommandEditor.state->completion.popupVisible(),
+               true);
+
     shelfCommandEditor.setPlainText(QStringLiteral(";:fds"));
     QTextCursor shelfCursor = shelfCommandEditor.textCursor();
     shelfCursor.movePosition(QTextCursor::End);
     shelfCommandEditor.setTextCursor(shelfCursor);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     shelfCommandEditor.state->completionWorkflow.handleAutoCompleteTimer();
+    shelfCommandEditor.state->completion.activateIndex(
+        shelfCommandEditor.state->completion.firstSelectableIndex());
     expectBool(";:fds clears temporary input",
                shelfCommandEditor.toPlainText().isEmpty(),
                true);

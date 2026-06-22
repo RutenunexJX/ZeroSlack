@@ -144,7 +144,8 @@ CompletionTriggerState CompletionService::completionTriggerState(
             lastChar.isLetterOrNumber()
             || lastChar == QLatin1Char('_')
             || lastChar == QLatin1Char(' ')
-            || lastChar == QLatin1Char('?');
+            || lastChar == QLatin1Char('?')
+            || lastChar == QLatin1Char(':');
         state.hidePopup = false;
         return state;
     }

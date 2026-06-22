@@ -4,11 +4,33 @@
 #include "editormodestate.h"
 #include "editorselection.h"
 #include "editorruntime.h"
+#include "inlinecommandmode.h"
 #include "mycodeeditor.h"
 
 #include <QModelIndex>
 #include <QTextBlock>
 #include <QTextCursor>
+
+namespace {
+bool hasLongerExactEditorActionPrefix(const InlineCommandDescriptor& descriptor)
+{
+    if (descriptor.prefix.endsWith(QLatin1Char(' ')))
+        return false;
+
+    for (const InlineCommandDescriptor& item :
+         InlineCommandMode::descriptorsForIntent(InlineCommandIntent::EditorAction)) {
+        if (item.label == descriptor.label)
+            continue;
+        if (item.prefix.endsWith(QLatin1Char(' ')))
+            continue;
+        if (item.prefix.size() > descriptor.prefix.size()
+            && item.prefix.startsWith(descriptor.prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
+}
 
 void EditorCompletionWorkflow::bind(
     MyCodeEditor* nextEditor,
@@ -209,7 +231,15 @@ bool EditorCompletionWorkflow::refreshCommandModeCompletion(
 
         if (commandState.completion.intent == InlineCommandIntent::EditorAction
             && !commandState.completion.helpRequested
-            && !commandState.completion.descriptor.prefix.endsWith(QLatin1Char(' '))) {
+            && !commandState.completion.descriptor.prefix.endsWith(QLatin1Char(' '))
+            && !hasLongerExactEditorActionPrefix(commandState.completion.descriptor)) {
+            executeEditorActionCommand(commandState.completion.descriptor.label);
+            return true;
+        }
+        if (commandState.completion.intent == InlineCommandIntent::EditorAction
+            && !commandState.completion.helpRequested
+            && commandState.completion.descriptor.prefix.endsWith(QLatin1Char(' '))
+            && commandState.completion.input.isEmpty()) {
             executeEditorActionCommand(commandState.completion.descriptor.label);
             return true;
         }

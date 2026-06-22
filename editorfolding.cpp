@@ -610,6 +610,7 @@ void EditorFoldingController::paintFoldShelfHighlight(
     painter.save();
     painter.setPen(Qt::NoPen);
     painter.setBrush(QColor(59, 130, 246, 28));
+    QRectF bottomRect;
     for (int line = hoveredShelfRange.startLine;
          line <= hoveredShelfRange.endLine;
          ++line) {
@@ -621,6 +622,17 @@ void EditorFoldingController::paintFoldShelfHighlight(
         if (rect.bottom() < 0 || rect.top() > editor->viewport()->height())
             continue;
         painter.drawRect(QRectF(0, rect.top(), editor->viewport()->width(), rect.height()));
+        if (line == hoveredShelfRange.endLine)
+            bottomRect = rect;
+    }
+    if (bottomRect.isValid()) {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor(59, 130, 246, 150), 2));
+        const qreal y = qBound<qreal>(0,
+                                      bottomRect.bottom() - 1,
+                                      editor->viewport()->height() - 1);
+        painter.drawLine(QPointF(0, y),
+                         QPointF(editor->viewport()->width(), y));
     }
     painter.restore();
 }

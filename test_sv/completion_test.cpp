@@ -1571,7 +1571,7 @@ int main(int argc, char** argv) {
     expectBool("CompletionService fold action match",
                foldActionMatch.matched
                    && foldActionMatch.intent == InlineCommandIntent::EditorAction
-                   && foldActionMatch.descriptor.label == QStringLiteral(";:fd"),
+                   && foldActionMatch.input == QStringLiteral("fd"),
                true);
     const CommandModeCompletionState foldActionState =
         CompletionService::getInstance()->commandModeCompletionState(
@@ -1580,7 +1580,9 @@ int main(int argc, char** argv) {
                foldActionState.matched
                    && foldActionState.intent == InlineCommandIntent::EditorAction
                    && foldActionState.showCompletions
-                   && !foldActionState.templateItems.isEmpty(),
+                   && foldActionState.templateItems.size() >= 2
+                   && foldActionState.templateItems.at(0).label == QStringLiteral("fd")
+                   && foldActionState.templateItems.at(1).label == QStringLiteral("fds"),
                true);
     CompletionActivationQuery foldActionActivation;
     foldActionActivation.selectable = true;
@@ -1600,7 +1602,7 @@ int main(int argc, char** argv) {
     expectBool("CompletionService fold shelf action match",
                foldShelfActionMatch.matched
                    && foldShelfActionMatch.intent == InlineCommandIntent::EditorAction
-                   && foldShelfActionMatch.descriptor.label == QStringLiteral(";:fds"),
+                   && foldShelfActionMatch.input == QStringLiteral("fds"),
                true);
     const CommandModeCompletionState templateHelpState =
         CompletionService::getInstance()->commandModeCompletionState(
@@ -1616,10 +1618,14 @@ int main(int argc, char** argv) {
                     ->matchCommandMode(QStringLiteral(";;"))
                     .matched,
                true);
-    expectBool("CompletionService bare action prefix reject",
-               !CompletionService::getInstance()
-                    ->matchCommandMode(QStringLiteral(";:"))
-                    .matched,
+    const CommandModeCompletionState actionPrefixState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";:")});
+    expectBool("CompletionService action prefix completion",
+               actionPrefixState.matched
+                   && actionPrefixState.intent == InlineCommandIntent::EditorAction
+                   && actionPrefixState.showCompletions
+                   && !actionPrefixState.templateItems.isEmpty(),
                true);
     expectBool("CompletionService template statement reject",
                !CompletionService::getInstance()
