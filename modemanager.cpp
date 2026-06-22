@@ -5,11 +5,6 @@
 #include "mycodeeditor.h"
 #include "mainwindow.h"
 
-namespace {
-constexpr int kDoubleClickIntervalMs = 300;
-constexpr int kShiftTimeoutMs = 1000;
-}
-
 ModeManager::ModeManager(QTabWidget* tabWidget, QObject *parent)
     : QObject(parent), tabWidget(tabWidget)
 {
@@ -17,7 +12,6 @@ ModeManager::ModeManager(QTabWidget* tabWidget, QObject *parent)
         return;
     }
 
-    shiftGesture.init(this);
     setupModeShortcuts(qobject_cast<QWidget*>(parent));
     applyModeStyles();
 }
@@ -48,70 +42,6 @@ bool ModeManager::ModeState::isNormal() const
 bool ModeManager::ModeState::isAlternate() const
 {
     return currentMode == AlternateMode;
-}
-
-void ModeManager::ShiftGesture::init(ModeManager* owner)
-{
-    releaseTimer = new QTimer(owner);
-    releaseTimer->setSingleShot(true);
-    releaseTimer->setInterval(kShiftTimeoutMs);
-    connect(releaseTimer, &QTimer::timeout,
-            owner, &ModeManager::onShiftTimeout);
-
-    doubleClickTimer = new QTimer(owner);
-    doubleClickTimer->setSingleShot(true);
-    doubleClickTimer->setInterval(kDoubleClickIntervalMs);
-    connect(doubleClickTimer, &QTimer::timeout,
-            owner, &ModeManager::onDoubleClickTimeout);
-}
-
-bool ModeManager::ShiftGesture::handlePress(QKeyEvent* event)
-{
-    if (event->key() != Qt::Key_Shift || event->isAutoRepeat())
-        return false;
-
-    if (!pressed) {
-        pressed = true;
-        releaseTimer->start();
-    }
-    return true;
-}
-
-ModeManager::ShiftReleaseAction
-ModeManager::ShiftGesture::handleRelease(QKeyEvent* event)
-{
-    if (event->key() != Qt::Key_Shift || event->isAutoRepeat())
-        return ShiftReleaseAction::NotHandled;
-
-    ShiftReleaseAction action = ShiftReleaseAction::Handled;
-    if (pressed && releaseTimer->isActive()) {
-        ++clickCount;
-        if (clickCount == 1) {
-            doubleClickTimer->start();
-        } else if (clickCount == 2) {
-            action = ShiftReleaseAction::SwitchMode;
-            resetDoubleClick();
-        }
-    } else {
-        resetDoubleClick();
-    }
-
-    pressed = false;
-    releaseTimer->stop();
-    return action;
-}
-
-void ModeManager::ShiftGesture::handleTimeout()
-{
-    pressed = false;
-    resetDoubleClick();
-}
-
-void ModeManager::ShiftGesture::resetDoubleClick()
-{
-    clickCount = 0;
-    if (doubleClickTimer)
-        doubleClickTimer->stop();
 }
 
 void ModeManager::ShortcutSets::setup(ModeManager* owner, QWidget* parent)
@@ -185,35 +115,14 @@ void ModeManager::setMode(AppMode mode)
 
 bool ModeManager::handleKeyPress(QKeyEvent *event)
 {
-    if (shiftGesture.handlePress(event))
-        return true;
-
-    if (event->key() != Qt::Key_Shift) {
-        resetShiftDoubleClick();
-    }
-
-    return false; // Event not handled, let others process
+    Q_UNUSED(event)
+    return false;
 }
 
 bool ModeManager::handleKeyRelease(QKeyEvent *event)
 {
-    const ShiftReleaseAction action = shiftGesture.handleRelease(event);
-    if (action == ShiftReleaseAction::NotHandled)
-        return false;
-    if (action == ShiftReleaseAction::SwitchMode)
-        switchMode();
-
-        return true; // Event handled
-}
-
-void ModeManager::onShiftTimeout()
-{
-    shiftGesture.handleTimeout();
-}
-
-void ModeManager::onDoubleClickTimeout()
-{
-    resetShiftDoubleClick();
+    Q_UNUSED(event)
+    return false;
 }
 
 void ModeManager::setupModeShortcuts(QWidget* parent)
@@ -259,9 +168,4 @@ void ModeManager::applyModeStyles()
 void ModeManager::updateShortcutStates()
 {
     shortcuts.updateForMode(modeState);
-}
-
-void ModeManager::resetShiftDoubleClick()
-{
-    shiftGesture.resetDoubleClick();
 }

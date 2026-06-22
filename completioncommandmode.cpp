@@ -158,16 +158,6 @@ CompletionActivationState CompletionCommandMode::activationState(
         state.text = query.itemText;
         return state;
     case CompletionActivationMode::CommandMode:
-        if (query.itemText.startsWith(QStringLiteral(";:"))
-            || query.defaultValue.startsWith(QStringLiteral(";:"))) {
-            state.action = CompletionActivationAction::ExecuteEditorAction;
-            state.text = query.defaultValue.isEmpty()
-                ? query.itemText
-                : query.defaultValue;
-            state.clearCommandMode = true;
-            state.hidePopup = true;
-            return state;
-        }
         state.action = CompletionActivationAction::ReplaceCommandInput;
         state.text = query.defaultValue.isEmpty()
             ? query.itemText

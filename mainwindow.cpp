@@ -306,6 +306,13 @@ void MainWindow::setupGlobalControl()
                                     QStringLiteral("f"));
                     QCoreApplication::sendEvent(editor, &press);
                 }
+            } else if (item.id == QStringLiteral("fd")) {
+                if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
+                    editor->startFoldRegionMarkMode();
+            } else if (item.id == QStringLiteral("fds")) {
+                showFoldBlockShelf();
+                if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
+                    editor->startFoldShelfMode();
             } else if (item.id == QStringLiteral("showNavigation")) {
                 showPanelById(QStringLiteral("navigation"));
             } else if (item.id == QStringLiteral("showProblems")) {

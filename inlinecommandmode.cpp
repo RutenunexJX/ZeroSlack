@@ -112,12 +112,7 @@ QList<InlineCommandDescriptor> templateDescriptors()
 
 QList<InlineCommandDescriptor> actionDescriptors()
 {
-    return {
-        descriptor(QStringLiteral(";:?"), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:?"), QStringLiteral("editor action help"), QStringLiteral(";:?")),
-        descriptor(QStringLiteral(";:fd"), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:fd"), QStringLiteral("create custom fold region"), QStringLiteral(";:fd")),
-        descriptor(QStringLiteral(";:fds"), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:fds"), QStringLiteral("open fold block shelf"), QStringLiteral(";:fds")),
-        descriptor(QStringLiteral(";:refs "), InlineCommandIntent::EditorAction, CompletionCommandKind::User, QStringLiteral(";:refs"), QStringLiteral("find references action"), QStringLiteral(";:refs ")),
-    };
+    return {};
 }
 
 bool isHelpToken(const QString& token, InlineCommandIntent* intent)
@@ -128,10 +123,6 @@ bool isHelpToken(const QString& token, InlineCommandIntent* intent)
     }
     if (token == QStringLiteral(";;?")) {
         *intent = InlineCommandIntent::CodeTemplate;
-        return true;
-    }
-    if (token == QStringLiteral(";:?")) {
-        *intent = InlineCommandIntent::EditorAction;
         return true;
     }
     return false;
@@ -165,7 +156,7 @@ InlineCommandMatch InlineCommandMode::match(const QString& lineUpToCursor)
 
     InlineCommandIntent helpIntent = InlineCommandIntent::SemanticCompletion;
     for (const QString& helpToken :
-         {QStringLiteral(";:?"), QStringLiteral(";;?"), QStringLiteral(";?")}) {
+         {QStringLiteral(";;?"), QStringLiteral(";?")}) {
         const int prefixPosition = lineUpToCursor.lastIndexOf(helpToken);
         if (prefixPosition < 0 || prefixPosition + helpToken.size() != lineUpToCursor.size())
             continue;
@@ -189,37 +180,6 @@ InlineCommandMatch InlineCommandMode::match(const QString& lineUpToCursor)
                                        QStringLiteral("inline command help"),
                                        helpToken);
         return result;
-    }
-
-    const QString actionPrefix = QStringLiteral(";:");
-    const int actionPrefixPosition = lineUpToCursor.lastIndexOf(actionPrefix);
-    if (actionPrefixPosition >= 0
-        && actionPrefixPosition + actionPrefix.size() <= lineUpToCursor.size()
-        && isCommandSafePrefix(lineUpToCursor.left(actionPrefixPosition))
-        && !isPositionInCommentOrString(lineUpToCursor, actionPrefixPosition)) {
-        const QString input =
-            lineUpToCursor.mid(actionPrefixPosition + actionPrefix.size());
-        bool actionInput = true;
-        for (const QChar ch : input) {
-            if (!ch.isLetterOrNumber() && ch != QLatin1Char('_')) {
-                actionInput = false;
-                break;
-            }
-        }
-        if (actionInput) {
-            result.matched = true;
-            result.intent = InlineCommandIntent::EditorAction;
-            result.prefixPosition = actionPrefixPosition;
-            result.commandToken = actionPrefix;
-            result.input = input;
-            result.descriptor = descriptor(actionPrefix,
-                                           InlineCommandIntent::EditorAction,
-                                           CompletionCommandKind::User,
-                                           actionPrefix,
-                                           QStringLiteral("editor actions"),
-                                           actionPrefix);
-            return result;
-        }
     }
 
     const QList<InlineCommandDescriptor> allDescriptors = descriptors();

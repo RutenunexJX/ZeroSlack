@@ -37,7 +37,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
 
     searchEdit = new QLineEdit(this);
     searchEdit->setObjectName(QStringLiteral("globalControlSearchEdit"));
-    searchEdit->setPlaceholderText(QStringLiteral("Search commands, files, symbols, templates..."));
+    searchEdit->setPlaceholderText(QStringLiteral("Search actions, commands, files, symbols, templates..."));
     layout->addWidget(searchEdit);
 
     resultList = new QListWidget(this);

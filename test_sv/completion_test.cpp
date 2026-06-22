@@ -1561,29 +1561,22 @@ int main(int argc, char** argv) {
     const CommandModeCompletionState actionHelpState =
         CompletionService::getInstance()->commandModeCompletionState(
             CommandModeCompletionQuery{QStringLiteral(";:?")});
-    expectBool("CompletionService action help",
-               actionHelpState.matched
-                   && actionHelpState.intent == InlineCommandIntent::EditorAction
-                   && actionHelpState.helpRequested
-                   && actionHelpState.showCompletions,
+    expectBool("CompletionService reserved action help inactive",
+               !actionHelpState.matched
+                   && !actionHelpState.showCompletions,
                true);
     const CommandModeMatch foldActionMatch =
         CompletionService::getInstance()->matchCommandMode(QStringLiteral(";:fd"));
-    expectBool("CompletionService fold action match",
-               foldActionMatch.matched
-                   && foldActionMatch.intent == InlineCommandIntent::EditorAction
-                   && foldActionMatch.input == QStringLiteral("fd"),
+    expectBool("CompletionService reserved fold action unmatched",
+               !foldActionMatch.matched,
                true);
     const CommandModeCompletionState foldActionState =
         CompletionService::getInstance()->commandModeCompletionState(
             CommandModeCompletionQuery{QStringLiteral(";:fd")});
-    expectBool("CompletionService fold action completion",
-               foldActionState.matched
-                   && foldActionState.intent == InlineCommandIntent::EditorAction
-                   && foldActionState.showCompletions
-                   && foldActionState.templateItems.size() >= 2
-                   && foldActionState.templateItems.at(0).label == QStringLiteral("fd")
-                   && foldActionState.templateItems.at(1).label == QStringLiteral("fds"),
+    expectBool("CompletionService reserved fold action has no completion",
+               !foldActionState.matched
+                   && !foldActionState.showCompletions
+                   && foldActionState.templateItems.isEmpty(),
                true);
     CompletionActivationQuery foldActionActivation;
     foldActionActivation.selectable = true;
@@ -1593,17 +1586,15 @@ int main(int argc, char** argv) {
     const CompletionActivationState foldActionActivationState =
         CompletionService::getInstance()->completionActivationState(
             foldActionActivation);
-    expectBool("CompletionService fold action activation",
+    expectBool("CompletionService reserved fold action does not execute",
                foldActionActivationState.action
-                       == CompletionActivationAction::ExecuteEditorAction
+                       != CompletionActivationAction::ExecuteEditorAction
                    && foldActionActivationState.text == QStringLiteral(";:fd"),
                true);
     const CommandModeMatch foldShelfActionMatch =
         CompletionService::getInstance()->matchCommandMode(QStringLiteral(";:fds"));
-    expectBool("CompletionService fold shelf action match",
-               foldShelfActionMatch.matched
-                   && foldShelfActionMatch.intent == InlineCommandIntent::EditorAction
-                   && foldShelfActionMatch.input == QStringLiteral("fds"),
+    expectBool("CompletionService reserved fold shelf action unmatched",
+               !foldShelfActionMatch.matched,
                true);
     const CommandModeCompletionState templateHelpState =
         CompletionService::getInstance()->commandModeCompletionState(
@@ -1622,11 +1613,10 @@ int main(int argc, char** argv) {
     const CommandModeCompletionState actionPrefixState =
         CompletionService::getInstance()->commandModeCompletionState(
             CommandModeCompletionQuery{QStringLiteral(";:")});
-    expectBool("CompletionService action prefix completion",
-               actionPrefixState.matched
-                   && actionPrefixState.intent == InlineCommandIntent::EditorAction
-                   && actionPrefixState.showCompletions
-                   && !actionPrefixState.templateItems.isEmpty(),
+    expectBool("CompletionService reserved action prefix inactive",
+               !actionPrefixState.matched
+                   && !actionPrefixState.showCompletions
+                   && actionPrefixState.templateItems.isEmpty(),
                true);
     expectBool("CompletionService template statement reject",
                !CompletionService::getInstance()

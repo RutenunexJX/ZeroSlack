@@ -3,15 +3,10 @@
 #include "globalcontrolpanel.h"
 
 #include <QApplication>
-#include <QDateTime>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QWidget>
 #include <utility>
-
-namespace {
-constexpr qint64 kDoubleShiftIntervalMs = 350;
-}
 
 GlobalControlCoordinator::GlobalControlCoordinator(QWidget* anchorWidget,
                                                    QObject* parent)
@@ -78,48 +73,23 @@ bool GlobalControlCoordinator::handleKeyEvent(QEvent* event)
         return false;
     lastProcessedEvent = event;
 
-    if (event->type() != QEvent::KeyPress
-        && event->type() != QEvent::KeyRelease) {
+    if (event->type() != QEvent::KeyPress)
         return false;
-    }
 
     auto* keyEvent = static_cast<QKeyEvent*>(event);
     if (keyEvent->isAutoRepeat())
         return false;
 
-    if (keyEvent->type() == QEvent::KeyPress) {
-        if (keyEvent->key() == Qt::Key_Shift) {
-            shiftPressed = true;
-            standaloneShift = true;
-            return false;
-        }
-        if (shiftPressed)
-            standaloneShift = false;
+    if (keyEvent->key() != Qt::Key_Space
+        || !keyEvent->modifiers().testFlag(Qt::ControlModifier)
+        || keyEvent->modifiers().testFlag(Qt::AltModifier)
+        || keyEvent->modifiers().testFlag(Qt::MetaModifier)) {
         return false;
     }
 
-    if (keyEvent->key() != Qt::Key_Shift)
-        return false;
-
-    const bool validStandalone = shiftPressed && standaloneShift;
-    shiftPressed = false;
-    standaloneShift = false;
-    if (!validStandalone) {
-        lastShiftReleaseMs = -1;
-        return false;
-    }
-
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (lastShiftReleaseMs >= 0
-        && now - lastShiftReleaseMs <= kDoubleShiftIntervalMs) {
-        lastShiftReleaseMs = -1;
-        open();
-        keyEvent->accept();
-        return true;
-    }
-
-    lastShiftReleaseMs = now;
-    return false;
+    open();
+    keyEvent->accept();
+    return true;
 }
 
 void GlobalControlCoordinator::open()

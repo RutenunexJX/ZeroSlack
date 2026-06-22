@@ -82,6 +82,8 @@ QList<GlobalControlItem> GlobalControlService::commandItems() const
         item(GlobalControlItemKind::Command, QStringLiteral("saveFile"), QStringLiteral("Save File"), QStringLiteral("File")),
         item(GlobalControlItemKind::Command, QStringLiteral("saveAs"), QStringLiteral("Save As"), QStringLiteral("File")),
         item(GlobalControlItemKind::Command, QStringLiteral("find"), QStringLiteral("Find"), QStringLiteral("Editor")),
+        item(GlobalControlItemKind::Command, QStringLiteral("fd"), QStringLiteral("fd"), QStringLiteral("Fold Region - mark a custom fold block in the active editor")),
+        item(GlobalControlItemKind::Command, QStringLiteral("fds"), QStringLiteral("fds"), QStringLiteral("Fold Shelf - drag custom fold blocks to or from the shelf")),
         item(GlobalControlItemKind::Command, QStringLiteral("showNavigation"), QStringLiteral("Show Navigation"), QStringLiteral("View")),
         item(GlobalControlItemKind::Command, QStringLiteral("showProblems"), QStringLiteral("Show Problems"), QStringLiteral("View")),
         item(GlobalControlItemKind::Command, QStringLiteral("showActivity"), QStringLiteral("Show Activity / Output"), QStringLiteral("View")),

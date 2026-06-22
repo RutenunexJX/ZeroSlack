@@ -3,7 +3,6 @@
 
 #include <QObject>
 #include <QShortcut>
-#include <QTimer>
 #include <QKeyEvent>
 #include <memory>
 #include <array>
@@ -40,9 +39,6 @@ signals:
     void navigationToggleRequested();
 
 private:
-    void onShiftTimeout();
-    void onDoubleClickTimeout();
-
     struct ModeState {
         AppMode currentMode = NormalMode;
 
@@ -50,25 +46,6 @@ private:
         bool set(AppMode mode);
         bool isNormal() const;
         bool isAlternate() const;
-    };
-
-    enum class ShiftReleaseAction {
-        NotHandled,
-        Handled,
-        SwitchMode
-    };
-
-    struct ShiftGesture {
-        bool pressed = false;
-        QTimer* doubleClickTimer = nullptr;
-        QTimer* releaseTimer = nullptr;
-        int clickCount = 0;
-
-        void init(ModeManager* owner);
-        bool handlePress(QKeyEvent* event);
-        ShiftReleaseAction handleRelease(QKeyEvent* event);
-        void handleTimeout();
-        void resetDoubleClick();
     };
 
     struct ShortcutSets {
@@ -81,14 +58,12 @@ private:
 
     ModeState modeState;
     QTabWidget* tabWidget = nullptr;
-    ShiftGesture shiftGesture;
     ShortcutSets shortcuts;
 
     // Helper methods
     void setupModeShortcuts(QWidget* parent);
     void applyModeStyles();
     void updateShortcutStates();
-    void resetShiftDoubleClick();
 };
 
 #endif // MODEMANAGER_H

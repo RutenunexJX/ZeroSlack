@@ -2255,27 +2255,11 @@ static void runTreeSitterFoldingProviderRegression()
     MyCodeEditor commandEditor;
     QSignalSpy commandStatusSpy(&commandEditor,
                                 &MyCodeEditor::editorStatusMessageRequested);
-    commandEditor.setPlainText(QStringLiteral(";:fd"));
-    QTextCursor commandCursor = commandEditor.textCursor();
-    commandCursor.movePosition(QTextCursor::End);
-    commandEditor.setTextCursor(commandCursor);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    commandEditor.state->completionWorkflow.handleAutoCompleteTimer();
-    expectBool(";:fd shows action completion before execution",
-               !commandEditor.foldRegionMarkModeActive()
-                   && commandEditor.state->completion.popupVisible()
-                   && commandEditor.state->completion.rowCount() >= 3
-                   && commandEditor.toPlainText() == QStringLiteral(";:fd"),
-               true);
-    commandEditor.state->completion.activateIndex(
-        commandEditor.state->completion.firstSelectableIndex());
-    expectBool(";:fd selected action clears temporary input",
-               commandEditor.toPlainText().isEmpty(),
-               true);
-    expectBool(";:fd selected action enters fold region mark mode",
+    commandEditor.startFoldRegionMarkMode();
+    expectBool("fold region action enters mark mode",
                commandEditor.foldRegionMarkModeActive(),
                true);
-    expectBool(";:fd emits start-line mode status",
+    expectBool("fold region action emits start-line mode status",
                commandStatusSpy.count() > 0
                    && commandStatusSpy.last().at(0).toString().contains(
                        QStringLiteral("click start line")),
@@ -2289,7 +2273,7 @@ static void runTreeSitterFoldingProviderRegression()
                                Qt::NoModifier);
     const bool startLineSelected =
         commandEditor.state->handleGutterMousePress(&commandEditor, &markStartClick);
-    expectBool(";:fd gutter start selects next stage",
+    expectBool("fold region gutter start selects next stage",
                startLineSelected
                    && commandStatusSpy.count() > 0
                    && commandStatusSpy.last().at(0).toString().contains(
@@ -2322,13 +2306,13 @@ static void runTreeSitterFoldingProviderRegression()
             2,
             QStringLiteral("clock   reset path"));
     const QString markerText = markerEditor.toPlainText();
-    expectBool(";:fd marker insertion adds alias",
+    expectBool("fold marker insertion adds alias",
                markersInserted
                    && markerText.contains(QStringLiteral("// fold clock   reset path"))
                    && markerText.contains(QStringLiteral("// endfold")),
                true);
     markerEditor.undo();
-    expectBool(";:fd marker insertion is one undo block",
+    expectBool("fold marker insertion is one undo block",
                markerEditor.toPlainText() == markerOriginal,
                true);
 
@@ -2409,43 +2393,11 @@ static void runTreeSitterFoldingProviderRegression()
     MyCodeEditor shelfCommandEditor;
     QSignalSpy shelfStatusSpy(&shelfCommandEditor,
                               &MyCodeEditor::editorStatusMessageRequested);
-    QSignalSpy shelfRequestedSpy(&shelfCommandEditor,
-                                 &MyCodeEditor::foldShelfRequested);
-    MyCodeEditor ambiguousFoldCommandEditor;
-    QSignalSpy ambiguousShelfRequestedSpy(
-        &ambiguousFoldCommandEditor,
-        &MyCodeEditor::foldShelfRequested);
-    ambiguousFoldCommandEditor.setPlainText(QStringLiteral(";:fd"));
-    QTextCursor ambiguousCursor = ambiguousFoldCommandEditor.textCursor();
-    ambiguousCursor.movePosition(QTextCursor::End);
-    ambiguousFoldCommandEditor.setTextCursor(ambiguousCursor);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    ambiguousFoldCommandEditor.state->completionWorkflow.handleAutoCompleteTimer();
-    expectBool(";:fd without selection does not auto-run",
-               !ambiguousFoldCommandEditor.foldRegionMarkModeActive()
-                   && ambiguousShelfRequestedSpy.count() == 0
-                   && ambiguousFoldCommandEditor.toPlainText() == QStringLiteral(";:fd")
-                   && ambiguousFoldCommandEditor.state->completion.popupVisible(),
-               true);
-
-    shelfCommandEditor.setPlainText(QStringLiteral(";:fds"));
-    QTextCursor shelfCursor = shelfCommandEditor.textCursor();
-    shelfCursor.movePosition(QTextCursor::End);
-    shelfCommandEditor.setTextCursor(shelfCursor);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    shelfCommandEditor.state->completionWorkflow.handleAutoCompleteTimer();
-    shelfCommandEditor.state->completion.activateIndex(
-        shelfCommandEditor.state->completion.firstSelectableIndex());
-    expectBool(";:fds clears temporary input",
-               shelfCommandEditor.toPlainText().isEmpty(),
-               true);
-    expectBool(";:fds requests fold shelf",
-               shelfRequestedSpy.count() == 1,
-               true);
-    expectBool(";:fds enters fold shelf mode",
+    shelfCommandEditor.startFoldShelfMode();
+    expectBool("fold shelf action enters shelf mode",
                shelfCommandEditor.foldShelfModeActive(),
                true);
-    expectBool(";:fds emits shelf mode status",
+    expectBool("fold shelf action emits shelf mode status",
                shelfStatusSpy.count() > 0
                    && shelfStatusSpy.last().at(0).toString().contains(
                        QStringLiteral("Fold Shelf")),
@@ -2751,6 +2703,31 @@ static void runGlobalControlRegression(MainWindow& window,
                foundShowActivity,
                true);
 
+    const QList<GlobalControlItem> foldActionMatches =
+        service.query(QStringLiteral("fd"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundFoldRegionAction = false;
+    bool foundFoldShelfAction = false;
+    bool foldActionsExplainBehavior = false;
+    for (const GlobalControlItem& item : foldActionMatches) {
+        if (item.id == QStringLiteral("fd")) {
+            foundFoldRegionAction = item.title == QStringLiteral("fd")
+                && item.subtitle.contains(QStringLiteral("Fold Region"));
+        }
+        if (item.id == QStringLiteral("fds")) {
+            foundFoldShelfAction = item.title == QStringLiteral("fds")
+                && item.subtitle.contains(QStringLiteral("Fold Shelf"));
+        }
+    }
+    foldActionsExplainBehavior = foundFoldRegionAction && foundFoldShelfAction;
+    expectBool("global control finds fd fold actions",
+               foundFoldRegionAction && foundFoldShelfAction,
+               true);
+    expectBool("global control fold actions include explanations",
+               foldActionsExplainBehavior,
+               true);
+
     const QList<GlobalControlItem> fileMatches =
         service.query(QStringLiteral("SVH_interface"),
                       window.workspaceManager->getProjectModel(),
@@ -2784,17 +2761,13 @@ static void runGlobalControlRegression(MainWindow& window,
     focusTarget->setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    QKeyEvent pressOne(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
-    QKeyEvent releaseOne(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
-    QKeyEvent pressTwo(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
-    QKeyEvent releaseTwo(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
-    qApp->notify(focusTarget, &pressOne);
-    qApp->notify(focusTarget, &releaseOne);
-    qApp->notify(focusTarget, &pressTwo);
-    qApp->notify(focusTarget, &releaseTwo);
+    QKeyEvent ctrlSpace(QEvent::KeyPress,
+                        Qt::Key_Space,
+                        Qt::ControlModifier);
+    qApp->notify(focusTarget, &ctrlSpace);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
-    expectBool("double shift opens global control outside editor",
+    expectBool("Ctrl+Space opens global control outside editor",
                window.globalControlCoordinator
                    && window.globalControlCoordinator->panel
                    && window.globalControlCoordinator->panel->isVisible(),
@@ -2802,8 +2775,78 @@ static void runGlobalControlRegression(MainWindow& window,
 
     if (window.globalControlCoordinator
         && window.globalControlCoordinator->panel) {
+        window.globalControlCoordinator->panel->searchEdit->setText(
+            QStringLiteral("fd"));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        bool panelShowsFoldRegion = false;
+        bool panelShowsFoldShelf = false;
+        for (const GlobalControlItem& item :
+             window.globalControlCoordinator->panel->currentItems) {
+            if (item.id == QStringLiteral("fd")
+                && item.subtitle.contains(QStringLiteral("Fold Region"))) {
+                panelShowsFoldRegion = true;
+            }
+            if (item.id == QStringLiteral("fds")
+                && item.subtitle.contains(QStringLiteral("Fold Shelf"))) {
+                panelShowsFoldShelf = true;
+            }
+        }
+        expectBool("global control fd query shows fd and fds",
+                   panelShowsFoldRegion && panelShowsFoldShelf,
+                   true);
         window.globalControlCoordinator->panel->hide();
     }
+
+    if (window.modeManager)
+        window.modeManager->setMode(ModeManager::NormalMode);
+    QKeyEvent shiftPressOne(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
+    QKeyEvent shiftReleaseOne(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
+    QKeyEvent shiftPressTwo(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
+    QKeyEvent shiftReleaseTwo(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
+    qApp->notify(&window, &shiftPressOne);
+    qApp->notify(&window, &shiftReleaseOne);
+    qApp->notify(&window, &shiftPressTwo);
+    qApp->notify(&window, &shiftReleaseTwo);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool("double shift no longer changes app mode",
+               window.modeManager
+                   && window.modeManager->getCurrentMode()
+                       == ModeManager::NormalMode,
+               true);
+
+    MyCodeEditor* activeEditor = window.tabManager
+        ? window.tabManager->getCurrentEditor()
+        : nullptr;
+    if (activeEditor)
+        activeEditor->cancelFoldShelfMode();
+    window.globalControlCoordinator->dispatch(
+        GlobalControlItem{GlobalControlItemKind::Command,
+                          QStringLiteral("fd"),
+                          QStringLiteral("fd"),
+                          QStringLiteral("Fold Region")});
+    expectBool("global control fd starts fold region mode",
+               activeEditor && activeEditor->foldRegionMarkModeActive(),
+               true);
+    if (activeEditor)
+        activeEditor->cancelFoldRegionMarkMode();
+
+    window.globalControlCoordinator->dispatch(
+        GlobalControlItem{GlobalControlItemKind::Command,
+                          QStringLiteral("fds"),
+                          QStringLiteral("fds"),
+                          QStringLiteral("Fold Shelf")});
+    QDockWidget* foldShelfDock =
+        window.findChild<QDockWidget*>(QStringLiteral("FoldShelfDock"));
+    expectBool("global control fds starts fold shelf mode",
+               activeEditor
+                   && activeEditor->foldShelfModeActive()
+                   && foldShelfDock
+                   && foldShelfDock->isVisible(),
+               true);
+    if (activeEditor)
+        activeEditor->cancelFoldShelfMode();
+    if (foldShelfDock)
+        foldShelfDock->hide();
 }
 
 int main(int argc, char** argv)

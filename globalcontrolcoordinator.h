@@ -37,9 +37,6 @@ private:
     GlobalControlService service;
     std::function<void(const GlobalControlItem&)> actionHandler;
     bool installed = false;
-    bool shiftPressed = false;
-    bool standaloneShift = false;
-    qint64 lastShiftReleaseMs = -1;
     const QEvent* lastProcessedEvent = nullptr;
 
     void installOnWidgetTree(QWidget* widget);
