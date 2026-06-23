@@ -10,6 +10,7 @@
 #include "semanticpanelrefreshcoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "tabmanager.h"
+#include "wavepreviewpanelcoordinator.h"
 #include "workspacemanager.h"
 
 #include <QMainWindow>
@@ -83,6 +84,8 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
         std::make_unique<RtlInsightsPanelCoordinator>(dependencies.mainWindow);
     signalKernelGraphPanel =
         std::make_unique<SignalKernelGraphPanelCoordinator>(dependencies.mainWindow);
+    wavePreviewPanel =
+        std::make_unique<WavePreviewPanelCoordinator>(dependencies.mainWindow);
 
     dependencies.addBottomDock(problemsPanel->dock());
     dependencies.addBottomDock(activityLogPanel->dock());
@@ -90,12 +93,15 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
     dependencies.addBottomDock(relationshipsPanel->dock());
     dependencies.addBottomDock(rtlInsightsPanel->dock());
     dependencies.addBottomDock(signalKernelGraphPanel->dock());
+    dependencies.addBottomDock(wavePreviewPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), activityLogPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), referencesPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), relationshipsPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), rtlInsightsPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(),
                                   signalKernelGraphPanel->dock());
+    dependencies.tabifyBottomDock(problemsPanel->dock(),
+                                  wavePreviewPanel->dock());
 }
 
 void SemanticDockCoordinator::PanelBundle::createRefreshCoordinator(
@@ -176,4 +182,10 @@ SignalKernelGraphPanelCoordinator*
 SemanticDockCoordinator::signalKernelGraphPanelCoordinator() const
 {
     return panels.signalKernelGraphPanel.get();
+}
+
+WavePreviewPanelCoordinator*
+SemanticDockCoordinator::wavePreviewPanelCoordinator() const
+{
+    return panels.wavePreviewPanel.get();
 }

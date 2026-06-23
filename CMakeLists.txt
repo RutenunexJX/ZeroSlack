@@ -125,6 +125,7 @@ set(ZEROSLACK_CORE_SOURCES
     fsmgraphservice.cpp
     formatterservice.cpp
     ghostannotationservice.cpp
+    wavepreviewpanelcoordinator.cpp
     wavepreviewservice.cpp
     globalcontrolcoordinator.cpp
     globalcontrolpanel.cpp
@@ -289,6 +290,7 @@ set(ZEROSLACK_CORE_SOURCES
     fsmgraphservice.h
     formatterservice.h
     ghostannotationservice.h
+    wavepreviewpanelcoordinator.h
     wavepreviewservice.h
     globalcontrolcoordinator.h
     globalcontrolpanel.h

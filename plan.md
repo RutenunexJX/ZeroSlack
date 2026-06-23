@@ -360,8 +360,19 @@ feature direction that violates them.
 - The MVP supports continuous `assign`, `always_comb`, `always_ff`, `always_latch`, and plain `always` blocks. Multiple `always` blocks are preserved as separate block records and merged into signal lanes by assignment target.
 - Assignment events include target, expression text, source signal names, assignment kind, trigger text, line/column evidence, and a simple cycle offset: clocked `always_ff` / posedge-negedge `always` events are offset by 1, while combinational, latch, level-sensitive, and continuous assignments stay at 0.
 - Comments and strings are ignored by the tokenizer, so fake assignments in comments or string literals do not create lanes. Implementation and future extensions must remain no-regex; use deterministic token scans first and semantic records where cross-file fidelity is needed.
-- Next Wave Preview milestones: render a dock/panel or editor-adjacent preview, add live refresh from dirty editor text, add clock/reset grouping, carry guard conditions into event labels, and later use semantic relationships for cross-file/module context.
+- Next Wave Preview milestones: graphical lane/canvas rendering, guard-condition labels, clock/reset grouping, throttled refresh for very large dirty buffers, and later semantic relationships for cross-file/module context.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 392 checks, direct `gui_smoke_test` run with 354 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
+
+### Post-L: Wave Preview Preview-Panel MVP
+
+- Status: implemented in the current worktree.
+- Scope: first visible Wave Preview milestone. It renders the existing data-service report so users can inspect a lightweight waveform sketch before the future graphical wave canvas exists.
+- `WavePreviewPanelCoordinator` owns the dock and tree rendering. MainWindow only routes active editor text, visibility-triggered refresh, and source navigation; it does not derive assignments, scan workspace files, or simulate RTL.
+- The panel is available from View -> Wave Preview, starts hidden on launch, participates in reset panel layout, and refreshes from the current dirty editor buffer while the dock is visible. Opening the dock or resetting the panel layout forces a fresh preview.
+- The rendered model shows per-signal lanes, assignment events, timing hints (`t+0`, `t+1 cycle`, continuous), source signal lists, and line/column evidence. Double-clicking an event navigates to the assignment location when a file-backed location is available.
+- This remains a code-understanding aid. It does not evaluate values, honor all guards, resolve clocks across modules, or replace simulation.
+- Next Wave Preview milestones: graphical lane/canvas rendering, guard-condition labels, clock/reset grouping, semantic cross-file enrichment, and throttled/queued refresh for very large dirty buffers.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 392 checks, direct `gui_smoke_test` run with 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
 
 ## Batch Policy
 

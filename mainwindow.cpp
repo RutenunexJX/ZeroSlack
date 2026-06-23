@@ -35,6 +35,7 @@
 #include "relationshipspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
+#include "wavepreviewpanelcoordinator.h"
 #include "version.h"
 #include <QAction>
 #include <QCloseEvent>
@@ -94,6 +95,9 @@ MainWindow::MainWindow(QWidget *parent)
         if (semanticDocks->signalKernelGraphPanelCoordinator()
             && semanticDocks->signalKernelGraphPanelCoordinator()->dock())
             semanticDocks->signalKernelGraphPanelCoordinator()->dock()->hide();
+        if (semanticDocks->wavePreviewPanelCoordinator()
+            && semanticDocks->wavePreviewPanelCoordinator()->dock())
+            semanticDocks->wavePreviewPanelCoordinator()->dock()->hide();
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack  %1").arg(QLatin1String(APP_VERSION)));
@@ -223,6 +227,29 @@ void MainWindow::setupManagerConnections()
                 refreshActiveEditorDiagnosticHighlights();
                 refreshActiveEditorSemanticDecorations();
                 refreshActiveEditorGhostAnnotations();
+                QDockWidget* waveDock = dockForPanelId(QStringLiteral("wavePreview"));
+                if (waveDock && waveDock->isVisible())
+                    refreshActiveEditorWavePreview();
+            });
+    connect(tabManager.get(),
+            &TabManager::tabCreated,
+            this,
+            [this](MyCodeEditor* editor) {
+                if (!editor)
+                    return;
+                connect(editor,
+                        &MyCodeEditor::textChanged,
+                        this,
+                        [this, editor]() {
+                            QDockWidget* waveDock =
+                                dockForPanelId(QStringLiteral("wavePreview"));
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor
+                                && waveDock
+                                && waveDock->isVisible()) {
+                                refreshActiveEditorWavePreview();
+                            }
+                        });
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::fileSymbolAnalysisFinished,
@@ -344,6 +371,27 @@ void MainWindow::refreshActiveEditorGhostAnnotations(
     editor->setGhostAnnotations(report.annotations);
 }
 
+void MainWindow::refreshActiveEditorWavePreview()
+{
+    if (!tabManager || !semanticDocks
+        || !semanticDocks->wavePreviewPanelCoordinator()) {
+        return;
+    }
+
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    if (!editor) {
+        semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
+            QStringLiteral("No document selected."));
+        return;
+    }
+
+    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
+        document.fileName,
+        editor->toPlainText(),
+        document.dirty);
+}
+
 
 void MainWindow::setupNavigationPane()
 {
@@ -376,6 +424,23 @@ void MainWindow::setupSemanticDocks()
                 statusBar()->showMessage(message, timeoutMs);
         });
     semanticDocks->setup();
+    if (semanticDocks->wavePreviewPanelCoordinator()) {
+        semanticDocks->wavePreviewPanelCoordinator()->setNavigationHandler(
+            [this](const QString& fileName, int line, int column) {
+                if (navigationCommandCoordinator)
+                    navigationCommandCoordinator->navigateToFileAndLine(
+                        fileName, line, column);
+            });
+        if (semanticDocks->wavePreviewPanelCoordinator()->dock()) {
+            connect(semanticDocks->wavePreviewPanelCoordinator()->dock(),
+                    &QDockWidget::visibilityChanged,
+                    this,
+                    [this](bool visible) {
+                        if (visible)
+                            refreshActiveEditorWavePreview();
+                    });
+        }
+    }
 }
 
 void MainWindow::setupFileCommandCoordinator()
@@ -549,6 +614,11 @@ void MainWindow::setupViewMenu()
                            : nullptr,
                        tr("Signal Kernel Graph"),
                        QStringLiteral("viewSignalKernelGraphAction"));
+    addPanelViewAction(semanticDocks && semanticDocks->wavePreviewPanelCoordinator()
+                           ? semanticDocks->wavePreviewPanelCoordinator()->dock()
+                           : nullptr,
+                       tr("Wave Preview"),
+                       QStringLiteral("viewWavePreviewAction"));
     addPanelViewAction(foldShelfDock,
                        tr("Fold Shelf"),
                        QStringLiteral("viewFoldShelfAction"));
@@ -705,6 +775,10 @@ QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
         return semanticDocks && semanticDocks->signalKernelGraphPanelCoordinator()
             ? semanticDocks->signalKernelGraphPanelCoordinator()->dock()
             : nullptr;
+    if (panelId == QStringLiteral("wavePreview"))
+        return semanticDocks && semanticDocks->wavePreviewPanelCoordinator()
+            ? semanticDocks->wavePreviewPanelCoordinator()->dock()
+            : nullptr;
     if (panelId == QStringLiteral("foldShelf"))
         return foldShelfDock;
     if (panelId == QStringLiteral("editorAppearance"))
@@ -731,6 +805,8 @@ void MainWindow::showPanelById(const QString& panelId)
         showFoldBlockShelf();
         return;
     }
+    if (panelId == QStringLiteral("wavePreview"))
+        refreshActiveEditorWavePreview();
 
     QDockWidget* dock = dockForPanelId(panelId);
     showDockWidget(dock);
@@ -758,6 +834,7 @@ void MainWindow::resetPanelLayout()
     QDockWidget* rtlInsightsDock = dockForPanelId(QStringLiteral("rtlInsights"));
     QDockWidget* signalKernelGraphDock =
         dockForPanelId(QStringLiteral("signalKernelGraph"));
+    QDockWidget* wavePreviewDock = dockForPanelId(QStringLiteral("wavePreview"));
     QDockWidget* editorAppearanceDockWidget =
         dockForPanelId(QStringLiteral("editorAppearance"));
     QDockWidget* foldShelfDockWidget = dockForPanelId(QStringLiteral("foldShelf"));
@@ -774,6 +851,7 @@ void MainWindow::resetPanelLayout()
         relationshipsDock,
         rtlInsightsDock,
         signalKernelGraphDock,
+        wavePreviewDock,
         foldShelfDockWidget,
     };
     for (QDockWidget* dock : bottomDocks) {

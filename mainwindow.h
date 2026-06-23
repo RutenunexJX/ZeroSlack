@@ -113,6 +113,7 @@ private:
         const QString& changedFileName = QString());
     void refreshActiveEditorGhostAnnotations(
         const QString& changedFileName = QString());
+    void refreshActiveEditorWavePreview();
 
 };
 

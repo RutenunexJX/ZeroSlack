@@ -75,6 +75,7 @@
 #include "smartrelationshipbuilder.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
+#include "wavepreviewpanelcoordinator.h"
 #include "workspacemanager.h"
 #undef private
 
@@ -906,6 +907,13 @@ static QTreeWidget* rtlInsightsTree(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->rtlInsightsPanelCoordinator()
         ? window.semanticDocks->rtlInsightsPanelCoordinator()->tree()
+        : nullptr;
+}
+
+static QTreeWidget* wavePreviewTree(MainWindow& window)
+{
+    return window.semanticDocks && window.semanticDocks->wavePreviewPanelCoordinator()
+        ? window.semanticDocks->wavePreviewPanelCoordinator()->tree()
         : nullptr;
 }
 
@@ -2999,6 +3007,29 @@ int main(int argc, char** argv)
     if (signalKernelGraphDock)
         signalKernelGraphDock->hide();
 
+    QDockWidget* wavePreviewDock =
+        window.findChild<QDockWidget*>(QStringLiteral("wavePreviewDock"));
+    QAction* viewWavePreviewAction =
+        window.findChild<QAction*>(QStringLiteral("viewWavePreviewAction"));
+    expectBool("wave preview dock exists",
+               wavePreviewDock != nullptr,
+               true);
+    expectBool("wave preview dock starts hidden",
+               wavePreviewDock && !wavePreviewDock->isVisible(),
+               true);
+    expectBool("view menu has wave preview action",
+               wavePreviewDock && viewWavePreviewAction,
+               true);
+    if (viewWavePreviewAction) {
+        viewWavePreviewAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("view menu reopens wave preview",
+               wavePreviewDock && wavePreviewDock->isVisible(),
+               true);
+    if (wavePreviewDock)
+        wavePreviewDock->hide();
+
     QAction* resetPanelLayoutAction =
         window.findChild<QAction*>(QStringLiteral("resetPanelLayoutAction"));
     expectBool("view menu has reset layout action",
@@ -3010,6 +3041,8 @@ int main(int argc, char** argv)
         activityDock->hide();
     if (signalKernelGraphDock)
         signalKernelGraphDock->hide();
+    if (wavePreviewDock)
+        wavePreviewDock->hide();
     if (resetPanelLayoutAction) {
         resetPanelLayoutAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -3025,6 +3058,9 @@ int main(int argc, char** argv)
     expectBool("reset panel layout reopens signal kernel graph",
                signalKernelGraphDock && signalKernelGraphDock->isVisible(),
                true);
+    expectBool("reset panel layout reopens wave preview",
+               wavePreviewDock && wavePreviewDock->isVisible(),
+               true);
 
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
     const int editorCountBeforeNewAction = window.tabManager->editorCount();
@@ -3036,6 +3072,60 @@ int main(int argc, char** argv)
                newFileAction
                    && window.tabManager->editorCount()
                        == editorCountBeforeNewAction + 1,
+               true);
+    MyCodeEditor* waveEditor = window.tabManager->getCurrentEditor();
+    if (waveEditor) {
+        waveEditor->setPlainText(
+            QStringLiteral("module wave_ui;\n"
+                           "logic clk;\n"
+                           "logic [7:0] data;\n"
+                           "logic [7:0] q;\n"
+                           "logic [7:0] out;\n"
+                           "assign out = q + data;\n"
+                           "always_ff @(posedge clk) begin\n"
+                           "    q <= data;\n"
+                           "end\n"
+                           "endmodule\n"));
+    }
+    if (wavePreviewDock && !wavePreviewDock->isVisible()
+        && viewWavePreviewAction) {
+        viewWavePreviewAction->trigger();
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTreeWidget* waveTree = wavePreviewTree(window);
+    bool sawWaveQ = false;
+    bool sawWaveOut = false;
+    if (waveTree) {
+        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
+            const QString name = waveTree->topLevelItem(i)->text(0);
+            sawWaveQ = sawWaveQ || name == QStringLiteral("q");
+            sawWaveOut = sawWaveOut || name == QStringLiteral("out");
+        }
+    }
+    expectBool("wave preview renders active editor lanes",
+               waveTree && sawWaveQ && sawWaveOut,
+               true);
+    if (waveEditor) {
+        waveEditor->setPlainText(
+            QStringLiteral("module wave_ui;\n"
+                           "logic clk;\n"
+                           "logic [7:0] q;\n"
+                           "logic [7:0] z;\n"
+                           "assign z = q;\n"
+                           "always_ff @(posedge clk) begin\n"
+                           "    q <= z;\n"
+                           "end\n"
+                           "endmodule\n"));
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    bool sawWaveZ = false;
+    if (waveTree) {
+        for (int i = 0; i < waveTree->topLevelItemCount(); ++i)
+            sawWaveZ = sawWaveZ
+                || waveTree->topLevelItem(i)->text(0) == QStringLiteral("z");
+    }
+    expectBool("wave preview refreshes dirty editor text",
+               waveTree && sawWaveZ,
                true);
     QLabel* editorModeChip =
         window.findChild<QLabel*>(QStringLiteral("editorModeChip"));
