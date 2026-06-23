@@ -891,6 +891,33 @@ int main(int argc, char** argv) {
                unchangedFormatterReport.changed,
                false);
 
+    const QString formatterAlignmentInput =
+        QStringLiteral("module align_demo;\n"
+                       "logic [7:0] data;\n"
+                       "logic valid;\n"
+                       "parameter int P = 8;\n"
+                       "parameter int LONG_NAME = P + 1;\n"
+                       "endmodule\n");
+    const FormatterReport formatterAlignmentReport =
+        FormatterService::getInstance()->formatDocument(formatterAlignmentInput);
+    expectBool("Formatter alignment report changed",
+               formatterAlignmentReport.changed,
+               true);
+    expectEq("Formatter aligns declaration blocks",
+             formatterAlignmentReport.formattedText,
+             QStringLiteral("module align_demo;\n"
+                            "    logic [7:0] data;\n"
+                            "    logic       valid;\n"
+                            "    parameter int P         = 8;\n"
+                            "    parameter int LONG_NAME = P + 1;\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedAlignmentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterAlignmentReport.formattedText);
+    expectBool("Formatter alignment idempotent",
+               unchangedAlignmentReport.changed,
+               false);
+
     const QString wavePreviewInput =
         QStringLiteral("module wave_probe(\n"
                        "    input logic clk,\n"

@@ -6,6 +6,18 @@
 std::unique_ptr<FormatterService> FormatterService::instance = nullptr;
 
 namespace {
+struct DeclarationAlignmentLine {
+    bool valid = false;
+    int indentWidth = 0;
+    QString family;
+    QString indent;
+    QString prefix;
+    QString name;
+    QString suffix;
+    QString assignmentRhs;
+    bool hasAssignment = false;
+};
+
 bool isIdentifierStart(QChar ch)
 {
     return ch == QLatin1Char('_')
@@ -29,6 +41,11 @@ QString stripLeadingWhitespace(const QString& line)
 QString indentation(int level, int width)
 {
     return QString(std::max(0, level) * std::max(1, width), QLatin1Char(' '));
+}
+
+QString repeatSpaces(int count)
+{
+    return QString(std::max(0, count), QLatin1Char(' '));
 }
 
 bool startsWithPreprocessor(const QString& line)
@@ -161,6 +178,46 @@ int countClosingTokens(const QStringList& tokens)
     return count;
 }
 
+bool isDeclarationKeyword(const QString& token)
+{
+    return token == QStringLiteral("logic")
+        || token == QStringLiteral("wire")
+        || token == QStringLiteral("reg")
+        || token == QStringLiteral("bit")
+        || token == QStringLiteral("byte")
+        || token == QStringLiteral("shortint")
+        || token == QStringLiteral("int")
+        || token == QStringLiteral("longint")
+        || token == QStringLiteral("integer")
+        || token == QStringLiteral("time")
+        || token == QStringLiteral("parameter")
+        || token == QStringLiteral("localparam");
+}
+
+bool isPortDirectionKeyword(const QString& token)
+{
+    return token == QStringLiteral("input")
+        || token == QStringLiteral("output")
+        || token == QStringLiteral("inout");
+}
+
+bool isForbiddenDeclarationName(const QString& token)
+{
+    return isOpeningToken(token)
+        || isClosingToken(token)
+        || token == QStringLiteral("assign")
+        || token == QStringLiteral("always")
+        || token == QStringLiteral("always_comb")
+        || token == QStringLiteral("always_ff")
+        || token == QStringLiteral("always_latch")
+        || token == QStringLiteral("if")
+        || token == QStringLiteral("else")
+        || token == QStringLiteral("for")
+        || token == QStringLiteral("while")
+        || token == QStringLiteral("return")
+        || token == QStringLiteral("typedef");
+}
+
 int leadingClosingTokens(const QStringList& tokens)
 {
     int count = 0;
@@ -195,6 +252,310 @@ QStringList splitLines(const QString& text)
     }
     lines.append(current);
     return lines;
+}
+
+int leadingWhitespaceWidth(const QString& line)
+{
+    int width = 0;
+    while (width < line.size() && line.at(width).isSpace())
+        ++width;
+    return width;
+}
+
+bool hasCommentTokenOutsideString(const QString& line)
+{
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i < line.size(); ++i) {
+        const QChar ch = line.at(i);
+        const QChar next = (i + 1 < line.size()) ? line.at(i + 1) : QChar();
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+        if (ch == QLatin1Char('/') && next == QLatin1Char('/'))
+            return true;
+        if (ch == QLatin1Char('/') && next == QLatin1Char('*'))
+            return true;
+        if (ch == QLatin1Char('*') && next == QLatin1Char('/'))
+            return true;
+    }
+    return false;
+}
+
+int findTopLevelChar(const QString& text, QChar target)
+{
+    int bracketDepth = 0;
+    int parenDepth = 0;
+    int braceDepth = 0;
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+        if (ch == QLatin1Char('['))
+            ++bracketDepth;
+        else if (ch == QLatin1Char(']'))
+            bracketDepth = std::max(0, bracketDepth - 1);
+        else if (ch == QLatin1Char('('))
+            ++parenDepth;
+        else if (ch == QLatin1Char(')'))
+            parenDepth = std::max(0, parenDepth - 1);
+        else if (ch == QLatin1Char('{'))
+            ++braceDepth;
+        else if (ch == QLatin1Char('}'))
+            braceDepth = std::max(0, braceDepth - 1);
+        else if (ch == target
+                 && bracketDepth == 0
+                 && parenDepth == 0
+                 && braceDepth == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+bool hasTopLevelChar(const QString& text, QChar target)
+{
+    return findTopLevelChar(text, target) >= 0;
+}
+
+int matchingOpeningBracket(const QString& text, int closingBracket)
+{
+    int depth = 0;
+    for (int i = closingBracket; i >= 0; --i) {
+        const QChar ch = text.at(i);
+        if (ch == QLatin1Char(']'))
+            ++depth;
+        else if (ch == QLatin1Char('[')) {
+            --depth;
+            if (depth == 0)
+                return i;
+        }
+    }
+    return -1;
+}
+
+DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
+{
+    DeclarationAlignmentLine parsed;
+    if (!lineHasCode(line) || startsWithPreprocessor(line))
+        return parsed;
+    if (hasCommentTokenOutsideString(line))
+        return parsed;
+
+    const int indentWidth = leadingWhitespaceWidth(line);
+    const QString indent = line.left(indentWidth);
+    const QString code = line.mid(indentWidth).trimmed();
+    if (!code.endsWith(QLatin1Char(';')))
+        return parsed;
+
+    const QString codeWithoutSemicolon =
+        code.left(code.size() - 1).trimmed();
+    if (codeWithoutSemicolon.isEmpty())
+        return parsed;
+
+    const int equalIndex = findTopLevelChar(codeWithoutSemicolon, QLatin1Char('='));
+    const QString left =
+        (equalIndex >= 0
+             ? codeWithoutSemicolon.left(equalIndex)
+             : codeWithoutSemicolon)
+            .trimmed();
+    if (left.isEmpty() || hasTopLevelChar(left, QLatin1Char(',')))
+        return parsed;
+
+    int leftEnd = left.size() - 1;
+    while (leftEnd >= 0 && left.at(leftEnd).isSpace())
+        --leftEnd;
+
+    int suffixStart = leftEnd + 1;
+    while (leftEnd >= 0 && left.at(leftEnd) == QLatin1Char(']')) {
+        const int bracketStart = matchingOpeningBracket(left, leftEnd);
+        if (bracketStart < 0)
+            return parsed;
+        suffixStart = bracketStart;
+        leftEnd = bracketStart - 1;
+        while (leftEnd >= 0 && left.at(leftEnd).isSpace())
+            --leftEnd;
+    }
+
+    if (leftEnd < 0 || !isIdentifierPart(left.at(leftEnd)))
+        return parsed;
+
+    int nameStart = leftEnd;
+    while (nameStart >= 0 && isIdentifierPart(left.at(nameStart)))
+        --nameStart;
+    ++nameStart;
+
+    const QString name = left.mid(nameStart, leftEnd - nameStart + 1);
+    if (name.isEmpty() || isForbiddenDeclarationName(name))
+        return parsed;
+
+    const QString prefix = left.left(nameStart).trimmed();
+    const QString suffix = left.mid(suffixStart).trimmed();
+    if (prefix.isEmpty())
+        return parsed;
+
+    const QStringList prefixTokens = codeTokens(prefix);
+    if (prefixTokens.isEmpty())
+        return parsed;
+
+    const QString firstToken = prefixTokens.first();
+    QString family;
+    if (firstToken == QStringLiteral("typedef"))
+        return parsed;
+    if (firstToken == QStringLiteral("parameter")
+        || firstToken == QStringLiteral("localparam")) {
+        family = QStringLiteral("parameter");
+    } else if (isDeclarationKeyword(firstToken)
+               || isPortDirectionKeyword(firstToken)) {
+        family = QStringLiteral("signal");
+    } else {
+        return parsed;
+    }
+
+    if (isPortDirectionKeyword(firstToken)
+        && prefixTokens.size() > 1
+        && !isDeclarationKeyword(prefixTokens.at(1))) {
+        return parsed;
+    }
+
+    parsed.valid = true;
+    parsed.indentWidth = indentWidth;
+    parsed.family = family;
+    parsed.indent = indent;
+    parsed.prefix = prefix;
+    parsed.name = name;
+    parsed.suffix = suffix;
+    parsed.hasAssignment = equalIndex >= 0;
+    if (parsed.hasAssignment)
+        parsed.assignmentRhs = codeWithoutSemicolon.mid(equalIndex + 1).trimmed();
+    return parsed;
+}
+
+QString buildAlignedDeclarationLine(const DeclarationAlignmentLine& line,
+                                    int maxPrefixWidth,
+                                    int maxBeforeAssignmentWidth,
+                                    bool alignAssignment)
+{
+    QString content = line.prefix
+        + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
+        + line.name;
+    if (!line.suffix.isEmpty()) {
+        content += QLatin1Char(' ');
+        content += line.suffix;
+    }
+
+    if (line.hasAssignment) {
+        const int spacesBeforeAssignment =
+            alignAssignment
+                ? maxBeforeAssignmentWidth - content.size() + 1
+                : 1;
+        content += repeatSpaces(spacesBeforeAssignment)
+            + QStringLiteral("= ")
+            + line.assignmentRhs
+            + QLatin1Char(';');
+    } else {
+        content += QLatin1Char(';');
+    }
+
+    return line.indent + content;
+}
+
+void flushDeclarationAlignmentBlock(QStringList* lines,
+                                    const QList<int>& blockIndexes,
+                                    const QList<DeclarationAlignmentLine>& block)
+{
+    if (!lines || block.size() < 2)
+        return;
+
+    int maxPrefixWidth = 0;
+    int assignmentCount = 0;
+    for (const DeclarationAlignmentLine& line : block) {
+        maxPrefixWidth = std::max(maxPrefixWidth,
+                                  static_cast<int>(line.prefix.size()));
+        if (line.hasAssignment)
+            ++assignmentCount;
+    }
+
+    int maxBeforeAssignmentWidth = 0;
+    for (const DeclarationAlignmentLine& line : block) {
+        QString content = line.prefix
+            + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
+            + line.name;
+        if (!line.suffix.isEmpty()) {
+            content += QLatin1Char(' ');
+            content += line.suffix;
+        }
+        maxBeforeAssignmentWidth =
+            std::max(maxBeforeAssignmentWidth,
+                     static_cast<int>(content.size()));
+    }
+
+    const bool alignAssignment = assignmentCount >= 2;
+    for (int i = 0; i < block.size(); ++i) {
+        (*lines)[blockIndexes.at(i)] =
+            buildAlignedDeclarationLine(block.at(i),
+                                        maxPrefixWidth,
+                                        maxBeforeAssignmentWidth,
+                                        alignAssignment);
+    }
+}
+
+void alignDeclarationBlocks(QStringList* lines)
+{
+    if (!lines)
+        return;
+
+    QList<int> blockIndexes;
+    QList<DeclarationAlignmentLine> block;
+
+    auto flush = [&]() {
+        flushDeclarationAlignmentBlock(lines, blockIndexes, block);
+        blockIndexes.clear();
+        block.clear();
+    };
+
+    for (int i = 0; i < lines->size(); ++i) {
+        const DeclarationAlignmentLine parsed =
+            parseDeclarationAlignmentLine(lines->at(i));
+        if (!parsed.valid) {
+            flush();
+            continue;
+        }
+
+        if (!block.isEmpty()
+            && (block.last().indentWidth != parsed.indentWidth
+                || block.last().family != parsed.family)) {
+            flush();
+        }
+
+        blockIndexes.append(i);
+        block.append(parsed);
+    }
+
+    flush();
 }
 }
 
@@ -250,6 +611,9 @@ FormatterReport FormatterService::formatDocument(
         indentLevel -= countClosingTokens(tokens);
         indentLevel = std::max(0, indentLevel);
     }
+
+    if (options.alignDeclarationBlocks)
+        alignDeclarationBlocks(&formatted);
 
     report.formattedText = formatted.join(QLatin1Char('\n'));
     if (hadFinalNewline)

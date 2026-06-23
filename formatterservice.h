@@ -7,6 +7,7 @@
 struct FormatterOptions {
     int indentWidth = 4;
     bool preservePreprocessorIndent = true;
+    bool alignDeclarationBlocks = true;
 };
 
 struct FormatterReport {

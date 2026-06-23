@@ -352,6 +352,17 @@ feature direction that violates them.
 - Implementation and future formatter extensions must remain no-regex. Prefer Tree-sitter/semantic records for future structural formatting and deterministic token scans for small local policies.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run, direct `gui_smoke_test` run against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
 
+### Post-L: Formatter Declaration Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: second usable formatter milestone. It keeps the formatter conservative but moves beyond indent-only for common declaration blocks.
+- `FormatterService` now has an `alignDeclarationBlocks` option enabled by default. Alignment runs after indentation and stays inside the service/report boundary; editor runtime still applies one undoable formatted-text replacement.
+- The MVP aligns consecutive simple signal declarations by declaration-name column and aligns consecutive `parameter` / `localparam` assignment columns. It supports packed and unpacked dimensions on the declaration side.
+- The alignment pass is intentionally narrow: it skips preprocessor lines, comment-bearing lines, multi-declaration lines, typedefs, and non-declaration statements. It does not yet align module port lists, instance port maps, expression continuations, or comments.
+- Implementation remains no-regex. It uses deterministic token scans, bracket-depth checks, and conservative declaration parsing.
+- Next Formatter milestones: port-list alignment, instance parameter/port map alignment, comment-preserving alignment, format selection, and formatter profile controls.
+- Verification for this block: focused build target `completion_test`, direct `completion_test` run with 404 checks, focused build target `gui_smoke_test`, direct `gui_smoke_test` run with 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.
