@@ -205,6 +205,26 @@ void EditorHoverPopup::showCodePreview(const CodePreviewReport& report,
     show();
 }
 
+void EditorHoverPopup::showNumericLiteral(const QString& displayText,
+                                          const QPoint& globalPosition,
+                                          const QFont& editorFont)
+{
+    resetContent();
+    targetFile.clear();
+    targetLine = -1;
+    targetColumn = -1;
+
+    QFont codeFont = editorFont;
+    codeFont.setStyleHint(QFont::Monospace);
+    codeFont.setFixedPitch(true);
+    addLabel(displayText, QStringLiteral("font-weight:600;"), codeFont);
+
+    adjustSize();
+    resize(qMin(width(), 520), qMin(height(), 120));
+    moveNear(globalPosition);
+    show();
+}
+
 void EditorHoverPopup::closePopup()
 {
     hide();

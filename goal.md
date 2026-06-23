@@ -10,6 +10,7 @@ ZeroSlack should:
 - understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, diagnostics, references, and relationships
 - provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, relationship browsing, RTL insight reports, and signal-centric driver/consumer graphs
 - provide fast declaration templates for common SystemVerilog signals and parameters without taking ownership of user value expressions
+- provide passive ghost inline values for semantic context that users often compute mentally, without changing source text
 - remain responsive on large files and multi-file workspaces
 - keep semantic behavior testable through real fixtures
 
@@ -31,6 +32,7 @@ SemanticIndex / SemanticIndexSnapshot
 Query Services / Feature Services
   Own feature-specific reads, report shaping, and semantic policy.
   Signal Kernel Graphs are built here from Signal Journey and relationship evidence.
+  Ghost Inline Values are built here from current document text and semantic records.
 
 Coordinators
   Own UI command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and workflow glue.
@@ -304,6 +306,7 @@ The foundation is healthy when:
 - Global app control is available through Ctrl+Space from editor and non-editor focus; the current surfaced command set is intentionally limited to `ow`, `fd`, and `fds`, while broader ProjectModel/SemanticIndex/template/action search remains reserved for future expansion
 - Signal Kernel Graph is available from a signal right-click action and is done through `SignalJourneyService` / `SignalKernelGraphService` reports: drivers render left of the kernel, consumers render right, cross-module nodes are module-wrapped, hover previews show precise evidence code, Ctrl+left-click rebases the kernel, and double-click navigation uses evidence or declaration links
 - Inline declaration templates are done through `CodeTemplateService`: `;;l`, `;;w`, and `;;r` share packed/unpacked dimension parsing; `;;p` and `;;lp` support scalar parameters, unpacked parameter arrays with `'{}` value skeletons, and command-local type suggestions after `-`; editor bracket ranges support Tab expansion plus Ctrl+left-click bound editing
+- Ghost Inline Values are available through `GhostAnnotationService`: formal port details, parameter/localparam literal values, parameter overrides, parameter/macro-derived signal widths, nonzero numeric ranges, array extents, enum values, part-select widths, generate loop counts, and concatenation widths render as passive editor overlays, while binary/decimal/hex literal conversion is hover-only as `(D)... (B)... (H)...`; both paths are computed by deterministic token scans plus semantic records without modifying text
 - The post-J editor workflow baseline was verified by `completion_test` with 311 checks and `gui_smoke_test` with 276 checks for the layered inline command and Global Control paths
 - Phase K is done only when K1 Design Hierarchy, K2 Code Folding/Custom Folding, and K3 Fold Block Shelf are implemented through service/model-backed UI boundaries, mode state is visible and cancelable, shelf drag mode guards against accidental text edits, affected flows are verified with focused tests and GUI smoke coverage, and the implementation is proven not to use UI workspace scans, direct UI Slang runs, regex structure/fold parsing, or timer-delay responsiveness masking
 - Phase L is done only when first-party production regex logic is removed from semantic/editor feature paths, docs and guard definitions are the only regex allowlist, completion/module/import/FSM/scheduler behavior is backed by Tree-sitter, Slang/semantic records, `SemanticIndexSnapshot`, or deterministic token helpers, and final guards prove the cleanup

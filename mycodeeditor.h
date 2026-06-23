@@ -3,6 +3,7 @@
 
 #include "semanticindex.h"
 #include "semanticdecorationservice.h"
+#include "ghostannotationservice.h"
 #include "foldblockshelfmodel.h"
 
 #include <QList>
@@ -58,6 +59,8 @@ public:
         const QList<SemanticDiagnostic>& diagnostics);
     void setSemanticDecorations(
         const QList<SemanticDecoration>& decorations);
+    void setGhostAnnotations(
+        const QList<GhostAnnotation>& annotations);
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void applyAppearanceSettings(const EditorAppearanceOptions& options);

@@ -15,6 +15,7 @@
 #include "editorsemanticruntime.h"
 #include "editorsourcenavigation.h"
 #include "editorsyntaxstate.h"
+#include "ghostannotationservice.h"
 #include "sourcenavigationservice.h"
 
 class MyCodeEditor;
@@ -43,6 +44,7 @@ struct MyCodeEditorState
     EditorHighlightRefresh highlightRefresh;
     EditorSourceNavigationUi sourceNavigation;
     EditorSelection selections;
+    QList<GhostAnnotation> ghostAnnotations;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -73,6 +75,7 @@ struct MyCodeEditorState
                                 QPainter& painter,
                                 const QRect& rect) const;
     void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
+    void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseMove(MyCodeEditor* editor, QMouseEvent* event);
@@ -109,9 +112,13 @@ struct MyCodeEditorState
     void setDiagnosticHighlights(
         MyCodeEditor* editor,
         const QList<SemanticDiagnostic>& diagnostics);
+    void refreshGhostAnnotations(MyCodeEditor* editor);
     void setSemanticDecorations(
         MyCodeEditor* editor,
         const QList<SemanticDecoration>& decorations);
+    void setGhostAnnotations(
+        MyCodeEditor* editor,
+        const QList<GhostAnnotation>& annotations);
     void highlightSearchMatches(MyCodeEditor* editor,
                                 const QString& text,
                                 bool caseSensitive);

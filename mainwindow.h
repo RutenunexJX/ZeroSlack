@@ -111,6 +111,8 @@ private:
         const QString& changedFileName = QString());
     void refreshActiveEditorSemanticDecorations(
         const QString& changedFileName = QString());
+    void refreshActiveEditorGhostAnnotations(
+        const QString& changedFileName = QString());
 
 };
 

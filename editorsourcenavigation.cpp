@@ -2,6 +2,7 @@
 
 #include "editorhoverpopup.h"
 #include "editorselection.h"
+#include "ghostannotationservice.h"
 #include "mycodeeditor.h"
 
 #include <QContextMenuEvent>
@@ -247,6 +248,31 @@ void EditorSourceNavigationUi::refreshPopupAt(
     const EditorSourceContextProvider& contextProvider,
     const EditorSourceNavigationTarget& target)
 {
+    const QTextCursor cursor = editor->cursorForPosition(position);
+    const GhostNumericLiteralReport numericReport =
+        GhostAnnotationService::getInstance()->numericLiteralAt(
+            GhostNumericLiteralQuery{
+                editor->toPlainText(),
+                cursor.position()
+            });
+    if (numericReport.available) {
+        if (!numericPopupMatches(numericReport.startPosition,
+                                 numericReport.endPosition)) {
+            EditorHoverPopup* hoverPopup = ensurePopup(editor);
+            const QPoint globalPosition =
+                editor->viewport()->mapToGlobal(position);
+            hoverPopup->showNumericLiteral(
+                numericReport.displayText,
+                globalPosition,
+                editor->font());
+            popupNumericMode = true;
+            popupPreviewMode = false;
+            popupStartPos = numericReport.startPosition;
+            popupEndPos = numericReport.endPosition;
+        }
+        return;
+    }
+
     if (!target.matched || !target.identifierTarget) {
         closePopup();
         return;
@@ -277,6 +303,7 @@ void EditorSourceNavigationUi::refreshPopupAt(
         }
         hoverPopup->showHover(report, globalPosition, editor->font());
     }
+    popupNumericMode = false;
     popupPreviewMode = previewMode;
     popupStartPos = target.startPos;
     popupEndPos = target.endPos;
@@ -322,6 +349,7 @@ void EditorSourceNavigationUi::closePopup()
         popup->closePopup();
     popupStartPos = -1;
     popupEndPos = -1;
+    popupNumericMode = false;
     popupPreviewMode = false;
 }
 
@@ -347,7 +375,19 @@ bool EditorSourceNavigationUi::popupMatches(
 {
     return popup
         && popup->isVisible()
+        && !popupNumericMode
         && popupPreviewMode == previewMode
         && popupStartPos == target.startPos
         && popupEndPos == target.endPos;
+}
+
+bool EditorSourceNavigationUi::numericPopupMatches(
+    int startPosition,
+    int endPosition) const
+{
+    return popup
+        && popup->isVisible()
+        && popupNumericMode
+        && popupStartPos == startPosition
+        && popupEndPos == endPosition;
 }

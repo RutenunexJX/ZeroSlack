@@ -6,14 +6,18 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QFontMetrics>
+#include <QHash>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QRect>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextDocument>
 
 namespace {
 bool hasCommandModifier(QKeyEvent* event)
@@ -310,6 +314,7 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
         [this, editor]() {
             sourceNavigation.handleEditorContentChanged(editor, selections);
             folding.refresh(editor, syntax.tsDocument());
+            refreshGhostAnnotations(editor);
         });
 }
 
@@ -594,6 +599,87 @@ void MyCodeEditorState::paintFoldPlaceholders(
     folding.paintPlaceholders(editor, painter);
 }
 
+void MyCodeEditorState::paintGhostAnnotations(
+    MyCodeEditor* editor,
+    QPaintEvent* event) const
+{
+    Q_UNUSED(event)
+    if (!editor || ghostAnnotations.isEmpty())
+        return;
+
+    QTextDocument* textDocument = editor->document();
+    if (!textDocument)
+        return;
+
+    QPainter painter(editor->viewport());
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    QFont ghostFont = editor->font();
+    ghostFont.setItalic(true);
+    painter.setFont(ghostFont);
+
+    QColor color = editor->palette().color(QPalette::Text);
+    color.setAlpha(72);
+    painter.setPen(color);
+
+    const QFontMetrics metrics(painter.font());
+    const int documentEnd = qMax(0, textDocument->characterCount() - 1);
+    const int viewportWidth = editor->viewport()->width();
+    const int viewportHeight = editor->viewport()->height();
+    QHash<int, int> rightLineEndX;
+
+    auto lineEndX = [editor, textDocument, documentEnd](const QTextBlock& block) {
+        const int blockTextEnd =
+            qBound(0, block.position() + block.text().size(), documentEnd);
+        QTextCursor endCursor(textDocument);
+        endCursor.setPosition(blockTextEnd);
+        return editor->cursorRect(endCursor).right() + 12;
+    };
+
+    for (const GhostAnnotation& annotation : ghostAnnotations) {
+        if (!annotation.isValid())
+            continue;
+
+        const int anchorPosition =
+            qBound(0, annotation.anchorPosition, documentEnd);
+        QTextBlock block = textDocument->findBlock(anchorPosition);
+        if (!block.isValid() || !block.isVisible())
+            continue;
+
+        QTextCursor cursor(textDocument);
+        cursor.setPosition(anchorPosition);
+        const QRect anchorRect = editor->cursorRect(cursor);
+        if (anchorRect.bottom() < 0 || anchorRect.top() > viewportHeight)
+            continue;
+
+        const int textWidth = metrics.horizontalAdvance(annotation.text);
+        int x = -1;
+        const int line =
+            annotation.line > 0 ? annotation.line : block.blockNumber() + 1;
+        if (annotation.placement == GhostAnnotationPlacement::LeftOfAnchor) {
+            x = anchorRect.left() - textWidth - 8;
+            if (x < 2)
+                continue;
+        } else {
+            x = lineEndX(block);
+            const int previousEnd = rightLineEndX.value(line, x);
+            if (x < previousEnd + 12)
+                x = previousEnd + 12;
+        }
+
+        if (x < 2 || x >= viewportWidth - 4)
+            continue;
+        if (x + textWidth > viewportWidth - 4)
+            continue;
+        if (annotation.placement != GhostAnnotationPlacement::LeftOfAnchor)
+            rightLineEndX.insert(line, x + textWidth);
+
+        const int baseline =
+            anchorRect.top()
+            + (anchorRect.height() + metrics.ascent() - metrics.descent()) / 2;
+        painter.drawText(x, baseline, annotation.text);
+    }
+}
+
 void MyCodeEditorState::handleContextMenu(
     MyCodeEditor* editor,
     QContextMenuEvent* event)
@@ -784,6 +870,32 @@ void MyCodeEditorState::setSemanticDecorations(
     const QList<SemanticDecoration>& decorations)
 {
     selections.highlightSemanticDecorations(editor, decorations);
+}
+
+void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
+{
+    if (!editor || identity.current().isEmpty()) {
+        setGhostAnnotations(editor, {});
+        return;
+    }
+
+    GhostAnnotationQuery query;
+    query.fileName = identity.current();
+    query.documentText = editor->toPlainText();
+    setGhostAnnotations(
+        editor,
+        GhostAnnotationService::getInstance()
+            ->annotationsForDocument(query)
+            .annotations);
+}
+
+void MyCodeEditorState::setGhostAnnotations(
+    MyCodeEditor* editor,
+    const QList<GhostAnnotation>& annotations)
+{
+    ghostAnnotations = annotations;
+    if (editor)
+        editor->viewport()->update();
 }
 
 void MyCodeEditorState::highlightSearchMatches(

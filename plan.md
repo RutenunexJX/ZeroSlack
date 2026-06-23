@@ -330,6 +330,17 @@ feature direction that violates them.
 - Implementation and tests must remain no-regex. Parsing is by deterministic token scans in `CodeTemplateService` and editor runtime helpers.
 - Verification for this block: focused build target `completion_test`, CTest `completion_test`, changed-file regex scan, and `git diff --check`. GUI smoke should be rerun when range editing event flow changes.
 
+### Post-L: Ghost Inline Values
+
+- Status: implemented in the current worktree.
+- Scope: passive editor overlays after Phase L, not a new migration phase.
+- `GhostAnnotationService` owns the report model. It reads current document text plus `SemanticIndex` records and emits `GhostAnnotation` rows with kind, placement, text, line, and anchor position.
+- The editor runtime only stores and paints ghost annotations. It must not derive semantic meaning or insert real document text.
+- First supported scenarios: module instance formal port details, parameter/localparam literal values, parameter overrides inside `#(...)`, parameter/macro-derived signal widths, nonzero numeric ranges, unpacked array extents, enum values, indexed part-select widths, generate loop instance counts, and concatenation widths. Obvious literal-only widths such as `[7:0]` are intentionally suppressed.
+- Numeric literal conversion is hover-only and shows all three common bases as `(D)... (B)... (H)...` for exact binary, decimal, or hex literals. Comments and strings are ignored, and the hover result is recomputed from current document text.
+- Implementation and future extensions must remain no-regex. Parsing is by deterministic token scans plus semantic records.
+- Verification for this block: focused build target `completion_test`, direct `completion_test` run, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

@@ -32,6 +32,9 @@ public:
     void showCodePreview(const CodePreviewReport& report,
                          const QPoint& globalPosition,
                          const QFont& editorFont);
+    void showNumericLiteral(const QString& displayText,
+                            const QPoint& globalPosition,
+                            const QFont& editorFont);
     void closePopup();
     bool hasNavigableTarget() const;
 

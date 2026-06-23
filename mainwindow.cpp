@@ -20,6 +20,7 @@
 #include "editorappearancesettings.h"
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
+#include "ghostannotationservice.h"
 #include "semanticdecorationservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolservice.h"
@@ -201,6 +202,7 @@ void MainWindow::setupManagerConnections()
                 semanticDocks->refreshCoordinator()->updateProblemsPanel(fileName);
             refreshActiveEditorDiagnosticHighlights(fileName);
             refreshActiveEditorSemanticDecorations(fileName);
+            refreshActiveEditorGhostAnnotations(fileName);
         });
     analysisCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
@@ -220,18 +222,21 @@ void MainWindow::setupManagerConnections()
             [this](const DocumentSnapshot&) {
                 refreshActiveEditorDiagnosticHighlights();
                 refreshActiveEditorSemanticDecorations();
+                refreshActiveEditorGhostAnnotations();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this,
             [this](const QString& fileName, int) {
                 refreshActiveEditorSemanticDecorations(fileName);
+                refreshActiveEditorGhostAnnotations(fileName);
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int, int) {
                 refreshActiveEditorSemanticDecorations();
+                refreshActiveEditorGhostAnnotations();
             });
 
 }
@@ -304,6 +309,39 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
     const SemanticDecorationReport report =
         SemanticDecorationService::getInstance()->decorationsForDocument(query);
     editor->setSemanticDecorations(report.decorations);
+}
+
+void MainWindow::refreshActiveEditorGhostAnnotations(
+    const QString& changedFileName)
+{
+    if (!tabManager)
+        return;
+
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    if (!editor)
+        return;
+
+    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    if (document.fileName.isEmpty()) {
+        editor->setGhostAnnotations({});
+        return;
+    }
+
+    if (!changedFileName.isEmpty()) {
+        const QString changed =
+            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(changedFileName).absoluteFilePath()));
+        const QString current =
+            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(document.fileName).absoluteFilePath()));
+        if (changed != current)
+            return;
+    }
+
+    GhostAnnotationQuery query;
+    query.fileName = document.fileName;
+    query.documentText = editor->toPlainText();
+    const GhostAnnotationReport report =
+        GhostAnnotationService::getInstance()->annotationsForDocument(query);
+    editor->setGhostAnnotations(report.annotations);
 }
 
 

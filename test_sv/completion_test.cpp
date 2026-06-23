@@ -9,6 +9,7 @@
 #include "completionservice.h"
 #include "codetemplateservice.h"
 #include "editorsemanticcontextservice.h"
+#include "ghostannotationservice.h"
 #include "myhighlighter.h"
 #include "relationshipservice.h"
 #include "semanticdecorationservice.h"
@@ -83,6 +84,90 @@ static void expectExcludes(const char* what, const QStringList& got, const QStri
     if (!ok) ++g_fails;
     printf("[%s] %-34s got=[%s]\n", ok ? "PASS" : "FAIL", what,
            got.join(",").toLocal8Bit().constData());
+}
+
+static void expectGhostContains(const char* what,
+                                const GhostAnnotationReport& report,
+                                GhostAnnotationKind kind,
+                                int line,
+                                const QString& contains)
+{
+    ++g_checks;
+    bool ok = false;
+    for (const GhostAnnotation& annotation : report.annotations) {
+        if (annotation.kind == kind
+            && annotation.line == line
+            && annotation.text.contains(contains)) {
+            ok = true;
+            break;
+        }
+    }
+    if (!ok)
+        ++g_fails;
+    QStringList seen;
+    for (const GhostAnnotation& annotation : report.annotations) {
+        if (annotation.line == line)
+            seen << annotation.text;
+    }
+    printf("[%s] %-34s want=\"%s\" line=%d seen=[%s]\n",
+           ok ? "PASS" : "FAIL",
+           what,
+           contains.toLocal8Bit().constData(),
+           line,
+           seen.join(",").toLocal8Bit().constData());
+}
+
+static void expectGhostNotContains(const char* what,
+                                   const GhostAnnotationReport& report,
+                                   GhostAnnotationKind kind,
+                                   int line,
+                                   const QString& contains)
+{
+    ++g_checks;
+    bool ok = true;
+    QStringList seen;
+    for (const GhostAnnotation& annotation : report.annotations) {
+        if (annotation.line == line)
+            seen << annotation.text;
+        if (annotation.kind == kind
+            && annotation.line == line
+            && annotation.text.contains(contains)) {
+            ok = false;
+        }
+    }
+    if (!ok)
+        ++g_fails;
+    printf("[%s] %-34s reject=\"%s\" line=%d seen=[%s]\n",
+           ok ? "PASS" : "FAIL",
+           what,
+           contains.toLocal8Bit().constData(),
+           line,
+           seen.join(",").toLocal8Bit().constData());
+}
+
+static void expectGhostLineNotContains(const char* what,
+                                       const GhostAnnotationReport& report,
+                                       int line,
+                                       const QString& contains)
+{
+    ++g_checks;
+    bool ok = true;
+    QStringList seen;
+    for (const GhostAnnotation& annotation : report.annotations) {
+        if (annotation.line != line)
+            continue;
+        seen << annotation.text;
+        if (annotation.text.contains(contains))
+            ok = false;
+    }
+    if (!ok)
+        ++g_fails;
+    printf("[%s] %-34s reject=\"%s\" line=%d seen=[%s]\n",
+           ok ? "PASS" : "FAIL",
+           what,
+           contains.toLocal8Bit().constData(),
+           line,
+           seen.join(",").toLocal8Bit().constData());
 }
 
 static QStringList recordNames(const QList<SemanticSymbolRecord>& records) {
@@ -454,6 +539,253 @@ int main(int argc, char** argv) {
                    && !keywordDecorated
                    && !commentDecorated,
                true);
+
+    const QString ghostFile = QStringLiteral("ghost_fixture.sv");
+    const QString ghostText =
+        QStringLiteral("module child(input logic [7:0] data, output logic ready);\n"
+                       "endmodule\n"
+                       "module other_child(output logic [3:0] data);\n"
+                       "endmodule\n"
+                       "module top;\n"
+                       "  localparam DEPTH = 8;\n"
+                       "  localparam PW = 32;\n"
+                       "  logic [PW - 1:0] wide;\n"
+                       "  logic [27:18] window;\n"
+                       "  logic [7:0] data;\n"
+                       "  logic [7:0] mem [16];\n"
+                       "  child #(.WIDTH(16)) u_child (\n"
+                       "    .data(data),\n"
+                       "    .ready()\n"
+                       "  );\n"
+                       "  enum logic [1:0] {IDLE, RUN = 3, DONE};\n"
+                       "  assign slice = data[4 +: 3];\n"
+                       "  assign literal = 16'hFF00;\n"
+                       "  assign cat = {4{8'hAA}};\n"
+                       "  for (genvar i = 0; i < 8; i++) begin : g\n"
+                       "  end\n"
+                       "endmodule\n");
+    const QList<SemanticSymbolRecord> ghostRecords{
+        SemanticFixtureRecordBuilder(QStringLiteral("data"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(ghostFile)
+            .withLine(1, 30)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("child"))
+            .withType(QStringLiteral("logic [7:0]"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("data"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(ghostFile)
+            .withLine(3, 36)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortOutput)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("other_child"))
+            .withType(QStringLiteral("logic [3:0]"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("DEPTH"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(ghostFile)
+            .withLine(6, 14)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("PW"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(ghostFile)
+            .withLine(7, 14)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("wide"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(ghostFile)
+            .withLine(8, 22)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .withType(QStringLiteral("logic [PW - 1:0]"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("window"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(ghostFile)
+            .withLine(9, 17)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .withType(QStringLiteral("logic [27:18]"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("data"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(ghostFile)
+            .withLine(10, 15)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .withType(QStringLiteral("logic [7:0]"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("mem"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(ghostFile)
+            .withLine(11, 15)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .withType(QStringLiteral("logic [7:0]"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("u_child.data"),
+                                     SymbolTaxonomy::DeclarationKind::Instance)
+            .withFile(ghostFile)
+            .withLine(13, 5)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::InstPin)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .withType(QStringLiteral("child"),
+                      QStringLiteral("child"),
+                      SymbolTaxonomy::DeclarationKind::Module)
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("IDLE"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(ghostFile)
+            .withLine(16, 25)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("state_t"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("RUN"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(ghostFile)
+            .withLine(16, 31)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("state_t"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("DONE"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(ghostFile)
+            .withLine(16, 40)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("state_t"))
+            .record(),
+    };
+    SemanticIndex ghostIndex;
+    ghostIndex.setSnapshot(
+        sharedSnapshotFromRecords(
+            ghostRecords,
+            {},
+            {},
+            {{ghostFile, ghostText}}));
+    GhostAnnotationService ghostService(&ghostIndex);
+    const GhostAnnotationReport ghostReport =
+        ghostService.annotationsForDocument(
+            GhostAnnotationQuery{ghostFile, ghostText});
+    expectGhostContains("Ghost port formal",
+                        ghostReport,
+                        GhostAnnotationKind::FormalPort,
+                        13,
+                        QStringLiteral("in logic [7:0]"));
+    expectGhostContains("Ghost parameter value",
+                        ghostReport,
+                        GhostAnnotationKind::ParameterValue,
+                        6,
+                        QStringLiteral("= 8"));
+    expectGhostContains("Ghost parameter override",
+                        ghostReport,
+                        GhostAnnotationKind::ParameterOverride,
+                        12,
+                        QStringLiteral("= 16"));
+    expectGhostContains("Ghost signal width",
+                        ghostReport,
+                        GhostAnnotationKind::SignalWidth,
+                        8,
+                        QStringLiteral("32 bits"));
+    expectGhostContains("Ghost nonzero range width",
+                        ghostReport,
+                        GhostAnnotationKind::SignalWidth,
+                        9,
+                        QStringLiteral("[27:18] 10 bits"));
+    expectGhostNotContains("Ghost obvious width hidden",
+                           ghostReport,
+                           GhostAnnotationKind::SignalWidth,
+                           10,
+                           QStringLiteral("8 bits"));
+    expectGhostContains("Ghost array summary",
+                        ghostReport,
+                        GhostAnnotationKind::ArraySummary,
+                        11,
+                        QStringLiteral("16 entries"));
+    expectGhostContains("Ghost enum idle",
+                        ghostReport,
+                        GhostAnnotationKind::EnumValue,
+                        16,
+                        QStringLiteral("= 0"));
+    expectGhostContains("Ghost enum run",
+                        ghostReport,
+                        GhostAnnotationKind::EnumValue,
+                        16,
+                        QStringLiteral("= 3"));
+    expectGhostContains("Ghost enum done",
+                        ghostReport,
+                        GhostAnnotationKind::EnumValue,
+                        16,
+                        QStringLiteral("= 4"));
+    expectGhostContains("Ghost part select",
+                        ghostReport,
+                        GhostAnnotationKind::PartSelect,
+                        17,
+                        QStringLiteral("[6:4] 3 bits"));
+    expectGhostLineNotContains("Ghost literal overlay removed",
+                               ghostReport,
+                               18,
+                               QStringLiteral("65280"));
+    expectGhostContains("Ghost concat width",
+                        ghostReport,
+                        GhostAnnotationKind::ConcatenationWidth,
+                        19,
+                        QStringLiteral("32 bits"));
+    expectGhostContains("Ghost generate loop",
+                        ghostReport,
+                        GhostAnnotationKind::GenerateLoop,
+                        20,
+                        QStringLiteral("instances=8"));
+
+    const QString numericHoverText =
+        QStringLiteral("assign a = 16'hFF00;\n"
+                       "assign b = \"123\"; // 456\n");
+    const int literalHoverPosition =
+        static_cast<int>(numericHoverText.indexOf(QStringLiteral("16'hFF00")))
+        + 3;
+    const int stringHoverPosition =
+        static_cast<int>(numericHoverText.indexOf(QStringLiteral("123")));
+    const int commentHoverPosition =
+        static_cast<int>(numericHoverText.indexOf(QStringLiteral("456")));
+    const GhostNumericLiteralReport literalHover =
+        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
+            numericHoverText,
+            literalHoverPosition});
+    expectBool("Ghost literal hover available",
+               literalHover.available,
+               true);
+    expectEq("Ghost literal hover text",
+             literalHover.displayText,
+             QStringLiteral("(D)65280 (B)1111_1111_0000_0000 (H)FF00"));
+    const GhostNumericLiteralReport stringHover =
+        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
+            numericHoverText,
+            stringHoverPosition});
+    expectBool("Ghost literal hover skips string",
+               stringHover.available,
+               false);
+    const GhostNumericLiteralReport commentHover =
+        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
+            numericHoverText,
+            commentHoverPosition});
+    expectBool("Ghost literal hover skips comment",
+               commentHover.available,
+               false);
 
     const QString commentHighlightText =
         QStringLiteral("assign a = 1; // 80m\n");

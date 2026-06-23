@@ -95,9 +95,11 @@ private:
     EditorHoverPopup* ensurePopup(MyCodeEditor* editor);
     bool popupMatches(const EditorSourceNavigationTarget& target,
                       bool previewMode) const;
+    bool numericPopupMatches(int startPosition, int endPosition) const;
 
     EditorSourceHover sourceHover;
     std::unique_ptr<EditorHoverPopup> popup;
+    bool popupNumericMode = false;
     bool popupPreviewMode = false;
     int popupStartPos = -1;
     int popupEndPos = -1;

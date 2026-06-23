@@ -145,6 +145,7 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
 {
     QPlainTextEdit::paintEvent(event);
     state->paintFoldPlaceholders(this, event);
+    state->paintGhostAnnotations(this, event);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -187,6 +188,12 @@ void MyCodeEditor::setSemanticDecorations(
     const QList<SemanticDecoration>& decorations)
 {
     state->setSemanticDecorations(this, decorations);
+}
+
+void MyCodeEditor::setGhostAnnotations(
+    const QList<GhostAnnotation>& annotations)
+{
+    state->setGhostAnnotations(this, annotations);
 }
 
 void MyCodeEditor::highlightSearchMatches(
