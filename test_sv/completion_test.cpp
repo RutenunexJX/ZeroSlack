@@ -18,6 +18,7 @@
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
+#include "wavepreviewservice.h"
 #include <QApplication>
 #include <QColor>
 #include <QFile>
@@ -183,6 +184,26 @@ static QStringList scoredNames(const QVector<QPair<QString, int>>& scored) {
     for (const auto& item : scored)
         names << item.first;
     return names;
+}
+
+static const WavePreviewLane* waveLaneNamed(const WavePreviewReport& report,
+                                            const QString& name)
+{
+    for (const WavePreviewLane& lane : report.lanes) {
+        if (lane.signalName == name)
+            return &lane;
+    }
+    return nullptr;
+}
+
+static const WavePreviewAssignment* firstWaveAssignment(
+    const WavePreviewReport& report,
+    const QString& name)
+{
+    const WavePreviewLane* lane = waveLaneNamed(report, name);
+    if (!lane || lane->assignments.isEmpty())
+        return nullptr;
+    return &lane->assignments.first();
 }
 
 static SemanticSymbolRecord makeSemanticFixtureRecord(
@@ -866,6 +887,98 @@ int main(int argc, char** argv) {
     expectBool("Formatter idempotent",
                unchangedFormatterReport.changed,
                false);
+
+    const QString wavePreviewInput =
+        QStringLiteral("module wave_probe(\n"
+                       "    input logic clk,\n"
+                       "    input logic rst_n,\n"
+                       "    input logic en,\n"
+                       "    input logic [7:0] data,\n"
+                       "    output logic [7:0] out\n"
+                       ");\n"
+                       "logic [7:0] q;\n"
+                       "logic [7:0] next;\n"
+                       "assign out = q + data;\n"
+                       "// assign ghost = data;\n"
+                       "initial $display(\"ghost <= value\");\n"
+                       "always_ff @(posedge clk or negedge rst_n) begin\n"
+                       "    if (!rst_n) q <= '0;\n"
+                       "    else if (en) q <= data;\n"
+                       "end\n"
+                       "always_comb begin\n"
+                       "    next = q + data;\n"
+                       "end\n"
+                       "always @(posedge clk) pulse <= en;\n"
+                       "endmodule\n");
+    const WavePreviewReport waveReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {QStringLiteral("wave_probe.sv"), wavePreviewInput});
+    expectBool("WavePreview report available",
+               waveReport.available,
+               true);
+    expectBool("WavePreview block count",
+               waveReport.blocks.size() == 3,
+               true);
+    expectBool("WavePreview assignment count",
+               waveReport.assignmentCount == 5,
+               true);
+    expectBool("WavePreview no comment/string ghost lane",
+               waveLaneNamed(waveReport, QStringLiteral("ghost")) == nullptr,
+               true);
+    expectBool("WavePreview q lane has two events",
+               waveLaneNamed(waveReport, QStringLiteral("q"))
+                   && waveLaneNamed(waveReport, QStringLiteral("q"))->assignments.size() == 2,
+               true);
+    expectBool("WavePreview always_ff block kind",
+               !waveReport.blocks.isEmpty()
+                   && waveReport.blocks.first().kind == WavePreviewBlockKind::AlwaysFf
+                   && waveReport.blocks.first().assignmentCount == 2,
+               true);
+    expectBool("WavePreview always_comb block kind",
+               waveReport.blocks.size() > 1
+                   && waveReport.blocks.at(1).kind == WavePreviewBlockKind::AlwaysComb
+                   && waveReport.blocks.at(1).assignmentCount == 1,
+               true);
+    expectBool("WavePreview clocked always block kind",
+               waveReport.blocks.size() > 2
+                   && waveReport.blocks.at(2).kind == WavePreviewBlockKind::AlwaysClocked
+                   && waveReport.blocks.at(2).assignmentCount == 1,
+               true);
+    const WavePreviewAssignment* outAssign =
+        firstWaveAssignment(waveReport, QStringLiteral("out"));
+    expectBool("WavePreview continuous assignment kind",
+               outAssign
+                   && outAssign->kind == WavePreviewAssignmentKind::Continuous
+                   && outAssign->cycleOffset == 0,
+               true);
+    expectList("WavePreview continuous sources",
+               outAssign ? outAssign->sourceSignals : QStringList(),
+               {QStringLiteral("q"), QStringLiteral("data")});
+    const WavePreviewAssignment* qAssign =
+        firstWaveAssignment(waveReport, QStringLiteral("q"));
+    expectBool("WavePreview sequential cycle offset",
+               qAssign
+                   && qAssign->kind == WavePreviewAssignmentKind::NonBlocking
+                   && qAssign->cycleOffset == 1
+                   && qAssign->trigger.contains(QStringLiteral("posedge clk")),
+               true);
+    const WavePreviewAssignment* nextAssign =
+        firstWaveAssignment(waveReport, QStringLiteral("next"));
+    expectBool("WavePreview combinational cycle offset",
+               nextAssign
+                   && nextAssign->kind == WavePreviewAssignmentKind::Blocking
+                   && nextAssign->cycleOffset == 0,
+               true);
+    expectList("WavePreview combinational sources",
+               nextAssign ? nextAssign->sourceSignals : QStringList(),
+               {QStringLiteral("q"), QStringLiteral("data")});
+    const WavePreviewAssignment* pulseAssign =
+        firstWaveAssignment(waveReport, QStringLiteral("pulse"));
+    expectBool("WavePreview plain clocked always",
+               pulseAssign
+                   && pulseAssign->cycleOffset == 1
+                   && pulseAssign->sourceSignals.contains(QStringLiteral("en")),
+               true);
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(
                  semanticFixtureMetadata(

@@ -352,6 +352,17 @@ feature direction that violates them.
 - Implementation and future formatter extensions must remain no-regex. Prefer Tree-sitter/semantic records for future structural formatting and deterministic token scans for small local policies.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run, direct `gui_smoke_test` run against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
 
+### Post-L: Wave Preview Data MVP
+
+- Status: implemented in the current worktree.
+- Scope: first usable data milestone for the long-term Wave Preview feature. It is a code-understanding sketch model, not a simulator, VCD engine, or project-wide timing proof.
+- `WavePreviewService` owns current-text extraction and emits `WavePreviewReport` rows for procedural blocks, per-signal lanes, and assignment events. UI work should consume this report and render lanes without deriving semantics in paint/event code.
+- The MVP supports continuous `assign`, `always_comb`, `always_ff`, `always_latch`, and plain `always` blocks. Multiple `always` blocks are preserved as separate block records and merged into signal lanes by assignment target.
+- Assignment events include target, expression text, source signal names, assignment kind, trigger text, line/column evidence, and a simple cycle offset: clocked `always_ff` / posedge-negedge `always` events are offset by 1, while combinational, latch, level-sensitive, and continuous assignments stay at 0.
+- Comments and strings are ignored by the tokenizer, so fake assignments in comments or string literals do not create lanes. Implementation and future extensions must remain no-regex; use deterministic token scans first and semantic records where cross-file fidelity is needed.
+- Next Wave Preview milestones: render a dock/panel or editor-adjacent preview, add live refresh from dirty editor text, add clock/reset grouping, carry guard conditions into event labels, and later use semantic relationships for cross-file/module context.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 392 checks, direct `gui_smoke_test` run with 354 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

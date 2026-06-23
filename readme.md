@@ -102,6 +102,8 @@ Thin UI consumers
 - Ghost Inline Values verification passed with focused `completion_test` at 370 checks and `gui_smoke_test` at 351 checks against `test_sv/new` plus `test_sv/test_symbols.sv`.
 - Formatter MVP is implemented in the current worktree: `FormatterService` provides a conservative indent-only SystemVerilog formatter, changes only leading whitespace, leaves line-internal text untouched, ignores strings/comments while counting block structure, preserves preprocessor directive indentation, and exposes `Format Document` from the editor context menu as one undoable edit block.
 - Formatter MVP verification passed with focused `completion_test` at 378 checks and `gui_smoke_test` at 354 checks against `test_sv/new` plus `test_sv/test_symbols.sv`.
+- Wave Preview Data MVP is implemented in the current worktree: `WavePreviewService` derives a lightweight waveform sketch report from current document text, grouping continuous assignments and multiple procedural `always` blocks into per-signal lanes with assignment kind, trigger text, source signals, line/column evidence, and a simple cycle offset for clocked blocks. This is intentionally a code-understanding data layer, not an engineering simulator.
+- Wave Preview Data MVP verification passed with focused `completion_test` at 392 checks and `gui_smoke_test` at 354 checks against `test_sv/new` plus `test_sv/test_symbols.sv`.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - After Phase J, keep new semantic/test work record-native and keep the repo-source zero target passing.
@@ -170,6 +172,7 @@ These constraints are mandatory for every new feature.
 - `SemanticIndexSnapshot` should be the single query truth for UI-facing semantic reads.
 - Query services and feature services own feature-specific semantic reads and report shaping.
 - `SignalKernelGraphService` builds signal-centric driver/kernel/consumer graph models from `SignalJourneyService` reports and relationship evidence; `SignalKernelGraphPanelCoordinator` only renders the model and routes hover/navigation/rebase commands.
+- `WavePreviewService` builds lightweight waveform-preview lane reports from current editor text. It owns assignment/block extraction and timing-sketch metadata; future UI should render these reports without simulating or scanning workspace files itself.
 - `GhostAnnotationService` builds passive editor overlay annotations from current document text and `SemanticIndex` records; `MyCodeEditor` only stores and paints the model.
 - `FormatterService` owns conservative editor formatting reports. The editor invokes it and applies the returned text as a single undoable edit, while formatter policy stays outside UI code.
 - UI code renders service/model output and must not run Slang or scan workspace files directly.
