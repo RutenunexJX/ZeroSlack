@@ -79,6 +79,12 @@ EditorSourceNavigationQuery::sourceSymbolActionRequestState(
 
     state.available = true;
     state.symbolName = actionContext.symbolName;
+    if (action == SourceSymbolAction::ShowSignalKernelGraph
+        && !actionContext.memberAccessPath.isEmpty()
+        && !actionContext.memberAccessRootName.isEmpty()) {
+        state.symbolName = actionContext.memberAccessRootName;
+        state.signalAccessPath = actionContext.memberAccessPath;
+    }
     state.fileName = actionContext.fileName;
     state.moduleName = actionContext.moduleName;
     return state;

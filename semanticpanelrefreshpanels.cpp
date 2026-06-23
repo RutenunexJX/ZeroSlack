@@ -131,12 +131,14 @@ void SemanticPanelRefreshCoordinator::PanelSet::refreshRelationshipsPanel() cons
 void SemanticPanelRefreshCoordinator::PanelSet::showSignalKernelGraphForSymbol(
     const QString& symbolName,
     const QString& fileName,
-    const QString& moduleName) const
+    const QString& moduleName,
+    const QString& signalAccessPath) const
 {
     if (signalKernelGraphPanel)
         signalKernelGraphPanel->showSignalKernelGraphForSymbol(symbolName,
                                                                fileName,
-                                                               moduleName);
+                                                               moduleName,
+                                                               signalAccessPath);
 }
 
 void SemanticPanelRefreshCoordinator::PanelSet::updateRtlInsightsPanel(

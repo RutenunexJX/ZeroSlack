@@ -85,7 +85,8 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     const QList<SemanticSymbolRecord>& fileSymbolRecords,
     const SemanticIndexSnapshot* snapshot,
     const QStringList& includeDirs,
-    const QHash<QString, QString>& defines)
+    const QHash<QString, QString>& defines,
+    const RelationshipExtractionInfo* precomputedRelationshipInfo)
 {
     QVector<RelationshipToAdd> result;
     if (checkCancellation(fileName))
@@ -101,6 +102,10 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
                                         context);
         context.includeDirs = includeDirs;
         context.defines = defines;
+        if (precomputedRelationshipInfo) {
+            context.relationshipInfo = *precomputedRelationshipInfo;
+            context.relationshipInfoLoaded = true;
+        }
 
         collectResults = &result;
 
@@ -129,6 +134,19 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
         collectResults = nullptr;
     }
     return result;
+}
+
+QHash<QString, RelationshipExtractionInfo>
+SmartRelationshipBuilder::extractWorkspaceRelationshipInfo(
+    const QStringList& filePaths,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines) const
+{
+    if (!m_slangManager)
+        return {};
+    return m_slangManager->extractWorkspaceRelationshipInfo(filePaths,
+                                                            includeDirs,
+                                                            defines);
 }
 
 void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, const QString& content,

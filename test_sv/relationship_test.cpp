@@ -5299,6 +5299,134 @@ static void runSignalJourneyServiceFixture()
                sawInputEdge && sawOutputEdge && graphReport.edges.size() == 5,
                true);
 
+    const SemanticSymbolRecord packetType =
+        SemanticFixtureRecordBuilder(QStringLiteral("packet_t"),
+                                     DeclarationKind::Struct)
+            .withFile(fileName)
+            .withLocalHandle(9121)
+            .withLine(64)
+            .withCollectorKind(CollectorKind::PackedStruct)
+            .record();
+    const SemanticSymbolRecord payloadMember =
+        SemanticFixtureRecordBuilder(QStringLiteral("payload"),
+                                     DeclarationKind::StructMember)
+            .withFile(fileName)
+            .withLocalHandle(9122)
+            .withLine(65)
+            .withCollectorKind(CollectorKind::StructMember)
+            .inStruct(QStringLiteral("packet_t"))
+            .withType(QStringLiteral("logic [7:0]"))
+            .record();
+    const SemanticSymbolRecord busStruct =
+        SemanticFixtureRecordBuilder(QStringLiteral("bus"),
+                                     DeclarationKind::StructVariable)
+            .withFile(fileName)
+            .withLocalHandle(9123)
+            .withLine(70)
+            .withCollectorKind(CollectorKind::PackedStructVariable)
+            .inModule(QStringLiteral("journey_top"))
+            .withType(QStringLiteral("packet_t"),
+                      QStringLiteral("packet_t"),
+                      DeclarationKind::Struct)
+            .record();
+    const SemanticSymbolRecord payloadSrc =
+        SemanticFixtureRecordBuilder(QStringLiteral("payload_src"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9124)
+            .withLine(75)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    const SemanticSymbolRecord payloadSink =
+        SemanticFixtureRecordBuilder(QStringLiteral("payload_sink"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9125)
+            .withLine(76)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("journey_top"))
+            .record();
+    QList<SemanticRelationship> memberRelationships;
+    SemanticRelationship payloadInput = semanticFixtureRelationship(
+        payloadSrc,
+        busStruct,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        RelationshipProvenance::Inferred,
+        85,
+        QStringLiteral("Assigned to bus.payload at line 75"),
+        evidenceRange(75, 9, 30));
+    payloadInput.fromAccessPath = QStringLiteral("payload_src");
+    payloadInput.toAccessPath = QStringLiteral("bus.payload");
+    memberRelationships.append(payloadInput);
+    SemanticRelationship payloadOutput = semanticFixtureRelationship(
+        busStruct,
+        payloadSink,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        RelationshipProvenance::Inferred,
+        85,
+        QStringLiteral("Assigned to payload_sink at line 76"),
+        evidenceRange(76, 18, 29));
+    payloadOutput.fromAccessPath = QStringLiteral("bus.payload");
+    payloadOutput.toAccessPath = QStringLiteral("payload_sink");
+    memberRelationships.append(payloadOutput);
+
+    SemanticIndex memberIndex;
+    memberIndex.setSnapshot(sharedSnapshotFromRecords(
+        {module, packetType, payloadMember, busStruct, payloadSrc, payloadSink},
+        memberRelationships,
+        QList<SemanticDiagnostic>()));
+    SignalJourneyService memberJourneyService(&memberIndex);
+    SignalJourneyQuery memberJourneyQuery;
+    memberJourneyQuery.signalName = QStringLiteral("bus");
+    memberJourneyQuery.signalAccessPath = QStringLiteral("bus.payload");
+    memberJourneyQuery.fileName = fileName;
+    memberJourneyQuery.moduleName = QStringLiteral("journey_top");
+    const SignalJourneyReport memberJourney =
+        memberJourneyService.buildSignalJourney(memberJourneyQuery);
+    expectBool("signal journey struct member found",
+               memberJourney.found
+                   && memberJourney.declarationDisplayName
+                       == QStringLiteral("bus.payload")
+                   && memberJourney.declarationCodeLink.line == 65,
+               true);
+    expectBool("signal journey struct member directions",
+               memberJourney.assignments.size() == 1
+                   && memberJourney.drivenAssignments.size() == 1
+                   && memberJourney.assignments.first().peerSymbolDisplayName
+                       == QStringLiteral("payload_src")
+                   && memberJourney.drivenAssignments.first().peerSymbolDisplayName
+                       == QStringLiteral("payload_sink"),
+               true);
+
+    SignalKernelGraphService memberGraphService(&memberIndex);
+    SignalKernelGraphQuery memberGraphQuery;
+    memberGraphQuery.signalName = QStringLiteral("bus");
+    memberGraphQuery.signalAccessPath = QStringLiteral("bus.payload");
+    memberGraphQuery.fileName = fileName;
+    memberGraphQuery.moduleName = QStringLiteral("journey_top");
+    const SignalKernelGraphReport memberGraph =
+        memberGraphService.buildSignalKernelGraph(memberGraphQuery);
+    const bool memberGraphHasInput =
+        !memberGraph.inputs.isEmpty()
+        && memberGraph.inputs.first().displayName
+            == QStringLiteral("payload_src");
+    const bool memberGraphHasOutput =
+        !memberGraph.outputs.isEmpty()
+        && memberGraph.outputs.first().displayName
+            == QStringLiteral("payload_sink");
+    expectBool("signal kernel graph struct member",
+               memberGraph.found
+                   && memberGraph.kernel.displayName
+                       == QStringLiteral("bus.payload")
+                   && memberGraph.kernel.navigateCodeLink.line == 65
+                   && memberGraphHasInput
+                   && memberGraphHasOutput
+                   && memberGraph.inputs.size() == 1
+                   && memberGraph.outputs.size() == 1
+                   && memberGraph.edges.size() == 2,
+               true);
+
     SignalJourneyQuery clockQuery;
     clockQuery.signalName = QStringLiteral("clk");
     clockQuery.fileName = fileName;
@@ -7236,14 +7364,22 @@ static void runRealWorkspaceIncludeFixture()
         return SemanticSymbolRecord{};
     };
     const auto recordByNameKindAndOwner = [&](const QString& name,
-                                              CollectorKind collectorKind,
-                                              const QString& ownerName) {
+                                               CollectorKind collectorKind,
+                                               const QString& ownerName) {
         for (const SemanticSymbolRecord& record : records) {
             if (record.name == name
                 && record.collectorKind == collectorKind
                 && record.owner.name == ownerName) {
                 return record;
             }
+        }
+        return SemanticSymbolRecord{};
+    };
+    const auto recordByNameAndOwner = [&](const QString& name,
+                                          const QString& ownerName) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name && record.owner.name == ownerName)
+                return record;
         }
         return SemanticSymbolRecord{};
     };
@@ -7285,6 +7421,9 @@ static void runRealWorkspaceIncludeFixture()
         recordByNameKindAndOwner(QStringLiteral("srst_main"),
                                  CollectorKind::Logic,
                                  QStringLiteral("rtl_top"));
+    const SemanticSymbolRecord hsDacRecord =
+        recordByNameAndOwner(QStringLiteral("HS_DAC"),
+                             QStringLiteral("rtl_top"));
     const SemanticSymbolRecord chlCtrlRecord =
         recordByNameAndKind(QStringLiteral("chl_ctrl"), CollectorKind::Module);
     const SemanticSymbolRecord phyPassCsRecord =
@@ -7315,6 +7454,8 @@ static void runRealWorkspaceIncludeFixture()
                realClockRecord.isValid(), true);
     expectBool("real workspace has top reset",
                realResetRecord.isValid(), true);
+    expectBool("real workspace has top HS_DAC struct port",
+               hsDacRecord.isValid(), true);
     expectBool("real workspace has chl_ctrl module",
                chlCtrlRecord.isValid(), true);
     expectBool("real workspace has chl_ctrl current fsm state",
@@ -7994,6 +8135,123 @@ static void runRealWorkspaceIncludeFixture()
                true);
     expectBool("real workspace signal journey reset timing code link",
                sawRealResetJourneyLink,
+               true);
+
+    QList<SemanticSymbolRecord> topFileRecords;
+    for (const SemanticSymbolRecord& record : records) {
+        if (normalizedPath(record.location.fileName) == normalizedPath(topPath))
+            topFileRecords.append(record);
+    }
+    auto realBaseSnapshot = sharedSnapshotFromRecords(
+        records,
+        QList<SemanticRelationship>(),
+        QList<SemanticDiagnostic>(),
+        fileContents);
+    SmartRelationshipBuilder realRelationshipBuilder(
+        nullptr,
+        &slang,
+        [&records](const QString& fileName) {
+            if (fileName.isEmpty())
+                return records;
+            QList<SemanticSymbolRecord> fileRecords;
+            for (const SemanticSymbolRecord& record : records) {
+                if (normalizedPath(record.location.fileName)
+                    == normalizedPath(fileName)) {
+                    fileRecords.append(record);
+                }
+            }
+            return fileRecords;
+        });
+    const QHash<QString, RelationshipExtractionInfo> realWorkspaceRelationshipInfo =
+        slang.extractWorkspaceRelationshipInfo(snapshot.systemVerilogFiles,
+                                              snapshot.includeDirs,
+                                              snapshot.defines);
+    const RelationshipExtractionInfo realRawRelationshipInfo =
+        realWorkspaceRelationshipInfo.value(normalizedPath(topPath));
+    const QVector<RelationshipToAdd> realTopRelationships =
+        realRelationshipBuilder.computeRelationships(
+            topPath,
+            fileContents.value(topPath),
+            topFileRecords,
+            realBaseSnapshot.get(),
+            snapshot.includeDirs,
+            snapshot.defines,
+            &realRawRelationshipInfo);
+    QList<SemanticRelationship> realComputedRelationships;
+    bool sawHsDacClockMemberRelationship = false;
+    for (const RelationshipToAdd& relationship : realTopRelationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0)
+            continue;
+        SemanticRelationship item;
+        item.fromId = relationship.fromId;
+        item.toId = relationship.toId;
+        item.type = relationship.type;
+        item.confidence = relationship.confidence;
+        item.evidenceText = relationship.context;
+        item.evidenceRange = relationship.evidenceRange;
+        item.fromAccessPath = relationship.fromAccessPath;
+        item.toAccessPath = relationship.toAccessPath;
+        item.provenance = RelationshipProvenance::Inferred;
+        realComputedRelationships.append(item);
+        sawHsDacClockMemberRelationship =
+            sawHsDacClockMemberRelationship
+            || (relationship.type == SymbolRelationshipEngine::ASSIGNS_TO
+                && relationship.fromAccessPath == QStringLiteral("clk_main")
+                && relationship.toAccessPath
+                    == QStringLiteral("HS_DAC.DA_clk_11"));
+    }
+    SemanticIndex realComputedIndex;
+    realComputedIndex.setSnapshot(sharedSnapshotFromRecords(
+        records,
+        realComputedRelationships,
+        QList<SemanticDiagnostic>(),
+        fileContents));
+    SignalKernelGraphService realComputedGraphService(&realComputedIndex);
+    SignalKernelGraphQuery realClockGraphQuery;
+    realClockGraphQuery.signalName = QStringLiteral("clk_main");
+    realClockGraphQuery.fileName = topPath;
+    realClockGraphQuery.moduleName = QStringLiteral("rtl_top");
+    const SignalKernelGraphReport realClockGraph =
+        realComputedGraphService.buildSignalKernelGraph(realClockGraphQuery);
+    bool sawRealClockGraphHsDacMember = false;
+    for (const SignalKernelGraphNode& node : realClockGraph.outputs) {
+        sawRealClockGraphHsDacMember =
+            sawRealClockGraphHsDacMember
+            || (node.displayName == QStringLiteral("HS_DAC.DA_clk_11")
+                && node.preciseEvidence
+                && node.previewCodeLink.line == 126);
+    }
+
+    SignalKernelGraphQuery realHsDacMemberGraphQuery;
+    realHsDacMemberGraphQuery.signalName = QStringLiteral("HS_DAC");
+    realHsDacMemberGraphQuery.signalAccessPath =
+        QStringLiteral("HS_DAC.DA_clk_11");
+    realHsDacMemberGraphQuery.fileName = topPath;
+    realHsDacMemberGraphQuery.moduleName = QStringLiteral("rtl_top");
+    const SignalKernelGraphReport realHsDacMemberGraph =
+        realComputedGraphService.buildSignalKernelGraph(
+            realHsDacMemberGraphQuery);
+    bool sawRealHsDacMemberInput = false;
+    for (const SignalKernelGraphNode& node : realHsDacMemberGraph.inputs) {
+        sawRealHsDacMemberInput =
+            sawRealHsDacMemberInput
+            || (node.displayName == QStringLiteral("clk_main")
+                && node.preciseEvidence
+                && node.previewCodeLink.line == 126);
+    }
+    expectBool("real workspace relationship extracts struct member access",
+               sawHsDacClockMemberRelationship,
+               true);
+    expectBool("real workspace signal kernel graph assignment outputs",
+               realClockGraph.found
+                   && !realClockGraph.outputs.isEmpty()
+                   && sawRealClockGraphHsDacMember,
+               true);
+    expectBool("real workspace signal kernel graph struct member input",
+               realHsDacMemberGraph.found
+                   && realHsDacMemberGraph.kernel.displayName
+                       == QStringLiteral("HS_DAC.DA_clk_11")
+                   && sawRealHsDacMemberInput,
                true);
 
     FsmGraphService realFsmService(&index);

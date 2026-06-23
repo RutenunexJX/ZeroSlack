@@ -150,9 +150,13 @@ void SemanticPanelRefreshCoordinator::refreshRelationshipsPanel()
 void SemanticPanelRefreshCoordinator::showSignalKernelGraphForSymbol(
     const QString& symbolName,
     const QString& fileName,
-    const QString& moduleName)
+    const QString& moduleName,
+    const QString& signalAccessPath)
 {
-    panels.showSignalKernelGraphForSymbol(symbolName, fileName, moduleName);
+    panels.showSignalKernelGraphForSymbol(symbolName,
+                                          fileName,
+                                          moduleName,
+                                          signalAccessPath);
 }
 
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)

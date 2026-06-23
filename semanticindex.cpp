@@ -80,10 +80,12 @@ QString semanticRelationshipStableKeyText(
     if (fromKey.isEmpty() || toKey.isEmpty())
         return QString();
 
-    return QStringLiteral("%1|%2|%3")
+    return QStringLiteral("%1|%2|%3|%4|%5")
         .arg(QString::number(static_cast<int>(relationship.type)),
-             fromKey,
-             toKey);
+              fromKey,
+              toKey,
+              relationship.fromAccessPath,
+              relationship.toAccessPath);
 }
 
 SemanticIndex* SemanticIndex::getInstance()

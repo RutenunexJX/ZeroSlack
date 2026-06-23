@@ -13,6 +13,7 @@
 struct SignalJourneyQuery {
     SymbolStableKey signalStableKey;
     QString signalName;
+    QString signalAccessPath;
     QString fileName;
     QString moduleName;
 };
@@ -36,6 +37,9 @@ struct SignalJourneyItem {
     RtlInsightCodeLink toCodeLink;
     RtlInsightCodeLink evidenceCodeLink;
     SemanticSourceRange evidenceRange;
+    QString fromAccessPath;
+    QString toAccessPath;
+    QString peerAccessPath;
     SymbolRelationshipEngine::RelationType relationshipType =
         SymbolRelationshipEngine::REFERENCES;
     bool outgoing = false;
@@ -77,6 +81,7 @@ struct SignalJourneyReport {
     QString declarationLineDisplayName;
     QString declarationSourceRoleDisplayName;
     QList<SignalJourneyItem> assignments;
+    QList<SignalJourneyItem> drivenAssignments;
     QList<SignalJourneyItem> reads;
     QList<SignalJourneyItem> portConnections;
     QList<SignalJourneyItem> interfaceConnections;
@@ -106,13 +111,17 @@ private:
     QList<SignalJourneyItem> relationshipItems(
         const SemanticSymbolRecord& signal,
         bool outgoing,
-        const QList<SymbolRelationshipEngine::RelationType>& types) const;
+        const QList<SymbolRelationshipEngine::RelationType>& types,
+        const QString& subjectAccessPath = QString()) const;
     QList<SignalJourneyItem> portConnectionItems(
-        const SemanticSymbolRecord& signal) const;
+        const SemanticSymbolRecord& signal,
+        const QString& subjectAccessPath = QString()) const;
     QList<SignalJourneyItem> interfaceConnectionItems(
-        const SemanticSymbolRecord& signal) const;
+        const SemanticSymbolRecord& signal,
+        const QString& subjectAccessPath = QString()) const;
     QList<SignalJourneyItem> timingConnectionItems(
-        const SemanticSymbolRecord& signal) const;
+        const SemanticSymbolRecord& signal,
+        const QString& subjectAccessPath = QString()) const;
 
     QSet<QString> interfaceNames() const;
     static QString directionDisplayName(bool outgoing);

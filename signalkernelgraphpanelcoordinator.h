@@ -26,7 +26,8 @@ public:
 
     void showSignalKernelGraphForSymbol(const QString& symbolName,
                                         const QString& fileName,
-                                        const QString& moduleName);
+                                        const QString& moduleName,
+                                        const QString& signalAccessPath = {});
     void showSignalKernelGraphForStableKey(const SymbolStableKey& stableKey);
     void refresh();
 

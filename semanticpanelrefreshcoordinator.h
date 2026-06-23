@@ -45,7 +45,8 @@ public:
     void refreshRelationshipsPanel();
     void showSignalKernelGraphForSymbol(const QString& symbolName,
                                         const QString& fileName,
-                                        const QString& moduleName);
+                                        const QString& moduleName,
+                                        const QString& signalAccessPath = {});
     void handleActiveEditorChanged(MyCodeEditor* editor);
 
 private:
@@ -118,7 +119,8 @@ private:
         void refreshRelationshipsPanel() const;
         void showSignalKernelGraphForSymbol(const QString& symbolName,
                                             const QString& fileName,
-                                            const QString& moduleName) const;
+                                            const QString& moduleName,
+                                            const QString& signalAccessPath = {}) const;
         void updateRtlInsightsPanel(const QString& fileName,
                                     const QString& moduleName,
                                     const QString& signalName) const;

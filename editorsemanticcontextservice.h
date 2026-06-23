@@ -146,6 +146,7 @@ struct EditorSourceSymbolActionRequestState {
     bool available = false;
     SourceSymbolAction action = SourceSymbolAction::FindReferences;
     QString symbolName;
+    QString signalAccessPath;
     QString fileName;
     QString moduleName;
 };

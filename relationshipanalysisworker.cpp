@@ -1,6 +1,8 @@
 #include "relationshipanalysisworker.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QTextStream>
 
 namespace {
@@ -19,6 +21,8 @@ QList<SemanticRelationship> toSemanticRelationships(
         item.confidence = relationship.confidence;
         item.evidenceText = relationship.context;
         item.evidenceRange = relationship.evidenceRange;
+        item.fromAccessPath = relationship.fromAccessPath;
+        item.toAccessPath = relationship.toAccessPath;
         item.provenance = RelationshipProvenance::Inferred;
         result.append(item);
     }
@@ -32,6 +36,14 @@ QList<SemanticSymbolRecord> fileSymbolRecords(
     if (!snapshotToken.isValid())
         return {};
     return snapshotToken.snapshot->getSymbolRecords(fileName);
+}
+
+QString normalizedFileKey(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 }
 
@@ -75,6 +87,10 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
 
     relationshipBuilder->resetCancellation();
     const QStringList svFiles = project.systemVerilogFiles;
+    const QHash<QString, RelationshipExtractionInfo> relationshipInfoByFile =
+        relationshipBuilder->extractWorkspaceRelationshipInfo(svFiles,
+                                                              project.includeDirs,
+                                                              project.defines);
     result.fileRelationships.reserve(svFiles.size());
     QList<SemanticRelationship> newRelationships;
     for (const QString& filePath : svFiles) {
@@ -86,6 +102,10 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
         const QString content = QTextStream(&file).readAll();
         const QList<SemanticSymbolRecord> fileSymbols =
             fileSymbolRecords(baseSnapshot, filePath);
+        const auto infoIt =
+            relationshipInfoByFile.constFind(normalizedFileKey(filePath));
+        const RelationshipExtractionInfo* relationshipInfo =
+            infoIt == relationshipInfoByFile.constEnd() ? nullptr : &infoIt.value();
         const QVector<RelationshipToAdd> relationships =
             relationshipBuilder->computeRelationships(
                 filePath,
@@ -93,7 +113,8 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
                 fileSymbols,
                 baseSnapshot.snapshot.get(),
                 project.includeDirs,
-                project.defines);
+                project.defines,
+                relationshipInfo);
         result.fileRelationships.append({filePath, relationships});
         newRelationships.append(toSemanticRelationships(relationships));
     }

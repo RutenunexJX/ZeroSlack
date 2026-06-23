@@ -372,10 +372,12 @@ void SignalKernelGraphPanelCoordinator::setDocumentModel(
 void SignalKernelGraphPanelCoordinator::showSignalKernelGraphForSymbol(
     const QString& symbolName,
     const QString& fileName,
-    const QString& moduleName)
+    const QString& moduleName,
+    const QString& signalAccessPath)
 {
     currentQuery = {};
     currentQuery.signalName = symbolName;
+    currentQuery.signalAccessPath = signalAccessPath;
     currentQuery.fileName = fileName;
     currentQuery.moduleName = moduleName;
     refresh();

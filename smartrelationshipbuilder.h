@@ -22,6 +22,8 @@ struct RelationshipToAdd {
     QString context;
     int confidence;
     SemanticSourceRange evidenceRange;
+    QString fromAccessPath;
+    QString toAccessPath;
 };
 
 class SmartRelationshipBuilder : public QObject
@@ -51,7 +53,12 @@ public:
         const QList<SemanticSymbolRecord>& fileSymbolRecords,
         const SemanticIndexSnapshot* snapshot,
         const QStringList& includeDirs,
-        const QHash<QString, QString>& defines);
+        const QHash<QString, QString>& defines,
+        const RelationshipExtractionInfo* precomputedRelationshipInfo = nullptr);
+    QHash<QString, RelationshipExtractionInfo> extractWorkspaceRelationshipInfo(
+        const QStringList& filePaths,
+        const QStringList& includeDirs,
+        const QHash<QString, QString>& defines) const;
     void analyzeFileIncremental(const QString& fileName, const QString& content,
                                const QList<int>& changedLines);
 
@@ -98,6 +105,7 @@ private:
         QList<SemanticSymbolRecord> fileSymbolRecords;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;
+        bool textualAssignmentFallbackLoaded = false;
         const SemanticIndexSnapshot* snapshot = nullptr;
         QStringList includeDirs;
         QHash<QString, QString> defines;
@@ -119,9 +127,11 @@ private:
 
     SemanticSymbolRecord findSymbolRecordByName(
         const QString& symbolName,
-        const AnalysisContext& context);
+        const AnalysisContext& context,
+        int lineNumber = -1);
     int findSymbolLocalHandleByName(const QString& symbolName,
-                                    const AnalysisContext& context);
+                                    const AnalysisContext& context,
+                                    int lineNumber = -1);
     QString findContainingModule(int lineNumber, const AnalysisContext& context);
     int getContainingModuleLocalHandle(int lineNumber,
                                        const AnalysisContext& context);
@@ -133,7 +143,9 @@ private:
     void addRelationshipWithContext(int fromHandle, int toHandle,
                                   SymbolRelationshipEngine::RelationType type,
                                   const QString& context, int confidence = 100,
-                                  const SemanticSourceRange& evidenceRange = {});
+                                  const SemanticSourceRange& evidenceRange = {},
+                                  const QString& fromAccessPath = {},
+                                  const QString& toAccessPath = {});
 
     void analyzeParameterRelationships(const QString& content, AnalysisContext& context);
     void analyzeConstraintRelationships(const QString& content, AnalysisContext& context);

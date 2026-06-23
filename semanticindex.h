@@ -116,6 +116,8 @@ struct SemanticRelationship {
     SymbolRelationshipEngine::RelationType type = SymbolRelationshipEngine::REFERENCES;
     SymbolStableKey fromStableKey;
     SymbolStableKey toStableKey;
+    QString fromAccessPath;
+    QString toAccessPath;
     RelationshipProvenance provenance = RelationshipProvenance::Unknown;
     int confidence = 0;
     QString evidenceText;
@@ -128,6 +130,8 @@ struct SemanticRelationshipResult {
     SemanticSymbolRecord toSymbolRecord;
     SymbolStableKey fromStableKey;
     SymbolStableKey toStableKey;
+    QString fromAccessPath;
+    QString toAccessPath;
     RelationshipProvenance provenance = RelationshipProvenance::Unknown;
     int confidence = 0;
     QString evidenceText;

@@ -73,7 +73,8 @@ private:
                                         const QString& moduleName) const;
         void showSignalKernelGraphForSymbol(const QString& symbolName,
                                             const QString& fileName,
-                                            const QString& moduleName) const;
+                                            const QString& moduleName,
+                                            const QString& signalAccessPath = {}) const;
         void handleActiveEditorChanged(MyCodeEditor* editor) const;
         bool canNavigate() const;
         bool hasSemanticPanelRefresh() const;

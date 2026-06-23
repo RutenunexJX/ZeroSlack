@@ -26,6 +26,15 @@ struct SourceIdentifierTarget {
     int endColumn = -1;
 };
 
+struct SourceMemberAccessTarget {
+    bool matched = false;
+    QString accessPath;
+    QString rootIdentifier;
+    QString memberPath;
+    int startColumn = -1;
+    int endColumn = -1;
+};
+
 enum class SourceNavigationTargetKind {
     None,
     IncludeDirective,
@@ -44,6 +53,8 @@ struct SourceNavigationTarget {
 struct SourceSymbolActionContext {
     bool available = false;
     QString symbolName;
+    QString memberAccessPath;
+    QString memberAccessRootName;
     QString fileName;
     QString moduleName;
 };
@@ -87,6 +98,8 @@ public:
                                               int column) const;
     SourceIdentifierTarget identifierAtColumn(const QString& lineText,
                                               int column) const;
+    SourceMemberAccessTarget memberAccessAtColumn(const QString& lineText,
+                                                  int column) const;
     SourceNavigationTarget targetAtColumn(const QString& lineText,
                                           int column) const;
     SourceSymbolActionContext symbolActionContextAtColumn(

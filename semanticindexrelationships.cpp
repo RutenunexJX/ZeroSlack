@@ -164,6 +164,8 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
                     : relationshipEndpointStableKey(*this, item.relationship, false);
         item.fromStableKey = item.relationship.fromStableKey;
         item.toStableKey = item.relationship.toStableKey;
+        item.fromAccessPath = item.relationship.fromAccessPath;
+        item.toAccessPath = item.relationship.toAccessPath;
         item.provenance = item.relationship.provenance;
         item.confidence = item.relationship.confidence;
         item.evidenceText = item.relationship.evidenceText;

@@ -146,12 +146,14 @@ void EditorCoordinator::WorkflowDependencies::showRelationshipsForSymbol(
 void EditorCoordinator::WorkflowDependencies::showSignalKernelGraphForSymbol(
     const QString& symbolName,
     const QString& fileName,
-    const QString& moduleName) const
+    const QString& moduleName,
+    const QString& signalAccessPath) const
 {
     if (semanticPanelRefresh) {
         semanticPanelRefresh->showSignalKernelGraphForSymbol(symbolName,
                                                              fileName,
-                                                             moduleName);
+                                                             moduleName,
+                                                             signalAccessPath);
     }
 }
 
@@ -458,7 +460,8 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
         dependencies.showSignalKernelGraphForSymbol(
             requestState.symbolName,
             requestState.fileName,
-            requestState.moduleName);
+            requestState.moduleName,
+            requestState.signalAccessPath);
         break;
     }
 }

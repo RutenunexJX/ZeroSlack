@@ -295,6 +295,7 @@ SignalJourneyQuery journeyQueryForGraphQuery(
     SignalJourneyQuery journeyQuery;
     journeyQuery.signalStableKey = query.signalStableKey;
     journeyQuery.signalName = query.signalName;
+    journeyQuery.signalAccessPath = query.signalAccessPath;
     journeyQuery.fileName = query.fileName;
     journeyQuery.moduleName = query.moduleName;
     return journeyQuery;
@@ -351,6 +352,12 @@ SignalKernelGraphReport SignalKernelGraphService::buildSignalKernelGraph(
                         nextNodeId,
                         item,
                         SignalKernelGraphNodeRole::Input);
+    for (const SignalJourneyItem& item : journey.drivenAssignments)
+        appendGraphNode(report,
+                        existingNodes,
+                        nextNodeId,
+                        item,
+                        SignalKernelGraphNodeRole::Output);
     for (const SignalJourneyItem& item : journey.reads)
         appendGraphNode(report,
                         existingNodes,

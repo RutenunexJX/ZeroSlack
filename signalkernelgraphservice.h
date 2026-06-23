@@ -23,6 +23,7 @@ enum class SignalKernelGraphNotFoundReason {
 struct SignalKernelGraphQuery {
     SymbolStableKey signalStableKey;
     QString signalName;
+    QString signalAccessPath;
     QString fileName;
     QString moduleName;
 };

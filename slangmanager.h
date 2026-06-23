@@ -26,7 +26,9 @@ struct SubroutineCallInfo {
 /// Result of one assignment resolved by Slang.
 struct AssignmentInfo {
     QString leftName;
+    QString leftAccessPath;
     QStringList rightNames;
+    QStringList rightAccessPaths;
     int lineNumber;  // 1-based for Qt/UI
     SemanticSourceRange sourceRange;
 };
@@ -34,6 +36,7 @@ struct AssignmentInfo {
 /// Result of one condition/control expression and the value symbols it reads.
 struct ConditionReferenceInfo {
     QStringList symbolNames;
+    QStringList symbolAccessPaths;
     int lineNumber;  // 1-based for Qt/UI
     SemanticSourceRange sourceRange;
 };
@@ -41,6 +44,7 @@ struct ConditionReferenceInfo {
 /// Result of one timing-control signal reference.
 struct TimingSignalInfo {
     QString signalName;
+    QString signalAccessPath;
     int lineNumber;      // 1-based for Qt/UI
     bool edgeSensitive;  // posedge/negedge/both-edge event
     SemanticSourceRange sourceRange;
@@ -77,6 +81,14 @@ public:
                                                        const QString& content,
                                                        const QStringList& includeDirs = {},
                                                        const QHash<QString, QString>& defines = {});
+
+    /// Parses all workspace files together and returns relationship facts grouped
+    /// by normalized source file path. This preserves cross-compilation-unit
+    /// typedefs/packages for relationship extraction.
+    QHash<QString, RelationshipExtractionInfo> extractWorkspaceRelationshipInfo(
+        const QStringList& filePaths,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {});
 
     /// Parses file content with Slang and returns resolved task/function calls, excluding system calls.
     QVector<SubroutineCallInfo> extractSubroutineCalls(const QString& fileName,

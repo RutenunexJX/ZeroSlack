@@ -182,6 +182,82 @@ SourceIdentifierTarget SourceNavigationService::identifierAtColumn(
     return target;
 }
 
+SourceMemberAccessTarget SourceNavigationService::memberAccessAtColumn(
+    const QString& lineText,
+    int column) const
+{
+    SourceMemberAccessTarget target;
+    const SourceIdentifierTarget identifier = identifierAtColumn(lineText, column);
+    if (!identifier.matched || identifier.identifier.isEmpty())
+        return target;
+
+    int startColumn = identifier.startColumn;
+    int endColumn = identifier.endColumn;
+
+    while (startColumn > 0) {
+        int dotColumn = startColumn - 1;
+        while (dotColumn >= 0 && lineText.at(dotColumn).isSpace())
+            --dotColumn;
+        if (dotColumn < 0 || lineText.at(dotColumn) != QLatin1Char('.'))
+            break;
+
+        int previousEnd = dotColumn;
+        while (previousEnd > 0 && lineText.at(previousEnd - 1).isSpace())
+            --previousEnd;
+        int previousStart = previousEnd;
+        while (previousStart > 0
+               && isIdentifierPart(lineText.at(previousStart - 1))) {
+            --previousStart;
+        }
+        if (previousStart >= previousEnd
+            || !isIdentifierStart(lineText.at(previousStart))) {
+            break;
+        }
+        startColumn = previousStart;
+    }
+
+    while (endColumn < lineText.size()) {
+        int dotColumn = endColumn;
+        while (dotColumn < lineText.size() && lineText.at(dotColumn).isSpace())
+            ++dotColumn;
+        if (dotColumn >= lineText.size()
+            || lineText.at(dotColumn) != QLatin1Char('.')) {
+            break;
+        }
+
+        int nextStart = dotColumn + 1;
+        while (nextStart < lineText.size()
+               && lineText.at(nextStart).isSpace()) {
+            ++nextStart;
+        }
+        if (nextStart >= lineText.size()
+            || !isIdentifierStart(lineText.at(nextStart))) {
+            break;
+        }
+
+        int nextEnd = nextStart + 1;
+        while (nextEnd < lineText.size()
+               && isIdentifierPart(lineText.at(nextEnd))) {
+            ++nextEnd;
+        }
+        endColumn = nextEnd;
+    }
+
+    QString accessPath = lineText.mid(startColumn, endColumn - startColumn);
+    accessPath.remove(QLatin1Char(' '));
+    if (!accessPath.contains(QLatin1Char('.')))
+        return target;
+
+    const int firstDot = accessPath.indexOf(QLatin1Char('.'));
+    target.matched = true;
+    target.accessPath = accessPath;
+    target.rootIdentifier = accessPath.left(firstDot);
+    target.memberPath = accessPath.mid(firstDot + 1);
+    target.startColumn = startColumn;
+    target.endColumn = endColumn;
+    return target;
+}
+
 bool SourceNavigationService::isIdentifierStart(QChar ch)
 {
     return ch.isLetter() || ch == QLatin1Char('_');
@@ -246,8 +322,15 @@ SourceSymbolActionContext SourceNavigationService::symbolActionContextAtColumn(
     if (!identifier.matched || identifier.identifier.isEmpty())
         return context;
 
+    const SourceMemberAccessTarget memberAccess =
+        memberAccessAtColumn(lineText, column);
+
     context.available = true;
     context.symbolName = identifier.identifier;
+    if (memberAccess.matched) {
+        context.memberAccessPath = memberAccess.accessPath;
+        context.memberAccessRootName = memberAccess.rootIdentifier;
+    }
     context.fileName = fileName;
     context.moduleName = moduleName;
     return context;

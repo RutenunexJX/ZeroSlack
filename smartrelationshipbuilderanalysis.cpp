@@ -4,6 +4,22 @@
 
 #include <algorithm>
 
+namespace {
+QString rootNameForAccessPath(const QString& accessPath)
+{
+    const int dotIndex = accessPath.indexOf(QLatin1Char('.'));
+    return dotIndex < 0 ? accessPath : accessPath.left(dotIndex);
+}
+
+QStringList accessPathsOrNames(const QStringList& accessPaths,
+                               const QStringList& names)
+{
+    if (!accessPaths.isEmpty())
+        return accessPaths;
+    return names;
+}
+}
+
 void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
 {
     if (!m_slangManager)
@@ -89,12 +105,20 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
             continue;
 
         int leftVarHandle =
-            findSymbolLocalHandleByName(assignment.leftName, context);
+            findSymbolLocalHandleByName(assignment.leftName,
+                                        context,
+                                        assignment.lineNumber);
         if (leftVarHandle == -1)
             continue;
 
-        for (const QString& rightVar : assignment.rightNames) {
-            int rightVarHandle = findSymbolLocalHandleByName(rightVar, context);
+        const QStringList rightAccessPaths =
+            accessPathsOrNames(assignment.rightAccessPaths,
+                               assignment.rightNames);
+        for (const QString& rightAccessPath : rightAccessPaths) {
+            const QString rightVar = rootNameForAccessPath(rightAccessPath);
+            int rightVarHandle = findSymbolLocalHandleByName(rightVar,
+                                                             context,
+                                                             assignment.lineNumber);
             if (rightVarHandle != -1 && rightVarHandle != leftVarHandle) {
                 addRelationshipWithContext(
                     leftVarHandle,
@@ -102,16 +126,24 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
                     SymbolRelationshipEngine::REFERENCES,
                     QString("Assignment at line %1").arg(assignment.lineNumber),
                     85,
-                    assignment.sourceRange
+                    assignment.sourceRange,
+                    assignment.leftAccessPath,
+                    rightAccessPath
                 );
 
                 addRelationshipWithContext(
                     rightVarHandle,
                     leftVarHandle,
                     SymbolRelationshipEngine::ASSIGNS_TO,
-                    QString("Assigned to %1 at line %2").arg(assignment.leftName).arg(assignment.lineNumber),
+                    QString("Assigned to %1 at line %2")
+                        .arg(assignment.leftAccessPath.isEmpty()
+                                 ? assignment.leftName
+                                 : assignment.leftAccessPath)
+                        .arg(assignment.lineNumber),
                     85,
-                    assignment.sourceRange
+                    assignment.sourceRange,
+                    rightAccessPath,
+                    assignment.leftAccessPath
                 );
             }
         }
@@ -128,8 +160,13 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
         if (lineMin >= 0 && (ref.lineNumber - 1 < lineMin || ref.lineNumber - 1 > lineMax))
             continue;
 
-        for (const QString& varName : ref.symbolNames) {
-            int varHandle = findSymbolLocalHandleByName(varName, context);
+        const QStringList referenceAccessPaths =
+            accessPathsOrNames(ref.symbolAccessPaths, ref.symbolNames);
+        for (const QString& referenceAccessPath : referenceAccessPaths) {
+            const QString varName = rootNameForAccessPath(referenceAccessPath);
+            int varHandle = findSymbolLocalHandleByName(varName,
+                                                        context,
+                                                        ref.lineNumber);
             int ownerModuleHandle =
                 getContainingModuleLocalHandle(ref.lineNumber, context);
             if (ownerModuleHandle == -1)
@@ -141,7 +178,9 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
                     SymbolRelationshipEngine::READS_FROM,
                     QString("Condition check at line %1").arg(ref.lineNumber),
                     70,
-                    ref.sourceRange
+                    ref.sourceRange,
+                    QString(),
+                    referenceAccessPath
                 );
             }
         }
@@ -159,7 +198,9 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
             continue;
 
         const SemanticSymbolRecord taskRecord =
-            findSymbolRecordByName(call.subroutineName, context);
+            findSymbolRecordByName(call.subroutineName,
+                                   context,
+                                   call.lineNumber);
         const int taskHandle = taskRecord.localHandle;
         if (taskHandle == -1)
             continue;
@@ -187,8 +228,53 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
 
 SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
     const QString& symbolName,
-    const AnalysisContext& context)
+    const AnalysisContext& context,
+    int lineNumber)
 {
+    QList<SemanticSymbolRecord> candidates;
+    for (const SemanticSymbolRecord& record
+         : std::as_const(context.fileSymbolRecords)) {
+        if (record.name == symbolName)
+            candidates.append(record);
+    }
+    if (!candidates.isEmpty()) {
+        const QString containingModule =
+            lineNumber > 0 ? findContainingModule(lineNumber, context) : QString();
+        std::stable_sort(candidates.begin(),
+                         candidates.end(),
+                         [&containingModule, &context, lineNumber](
+                             const SemanticSymbolRecord& lhs,
+                             const SemanticSymbolRecord& rhs) {
+            auto score = [&containingModule, &context, lineNumber](
+                             const SemanticSymbolRecord& record) {
+                int value = 0;
+                if (!containingModule.isEmpty()
+                    && record.owner.name == containingModule) {
+                    value += 100;
+                }
+                if (lineNumber > 0
+                    && record.location.startLine <= lineNumber
+                    && (record.location.endLine <= 0
+                        || record.location.endLine >= lineNumber)) {
+                    value += 50;
+                }
+                if (!context.currentModuleName.isEmpty()
+                    && record.owner.name == context.currentModuleName) {
+                    value += 10;
+                }
+                return value;
+            };
+            const int leftScore = score(lhs);
+            const int rightScore = score(rhs);
+            if (leftScore != rightScore)
+                return leftScore > rightScore;
+            if (lhs.location.startLine != rhs.location.startLine)
+                return lhs.location.startLine < rhs.location.startLine;
+            return lhs.localHandle < rhs.localHandle;
+        });
+        return candidates.first();
+    }
+
     if (context.localSymbolHandles.contains(symbolName)) {
         const int localHandle = context.localSymbolHandles.value(symbolName);
         for (const SemanticSymbolRecord& record
@@ -226,22 +312,32 @@ SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
 
 int SmartRelationshipBuilder::findSymbolLocalHandleByName(
     const QString& symbolName,
-    const AnalysisContext& context)
+    const AnalysisContext& context,
+    int lineNumber)
 {
-    return findSymbolRecordByName(symbolName, context).localHandle;
+    return findSymbolRecordByName(symbolName, context, lineNumber).localHandle;
 }
 
 void SmartRelationshipBuilder::addRelationshipWithContext(int fromHandle, int toHandle,
                                                         SymbolRelationshipEngine::RelationType type,
                                                         const QString& context,
                                                         int confidence,
-                                                        const SemanticSourceRange& evidenceRange)
+                                                        const SemanticSourceRange& evidenceRange,
+                                                        const QString& fromAccessPath,
+                                                        const QString& toAccessPath)
 {
     if (confidence < confidenceThreshold)
         return;
     if (collectResults) {
         collectResults->append(
-            {fromHandle, toHandle, type, context, confidence, evidenceRange});
+            {fromHandle,
+             toHandle,
+             type,
+             context,
+             confidence,
+             evidenceRange,
+             fromAccessPath,
+             toAccessPath});
         return;
     }
     if (relationshipEngine)
