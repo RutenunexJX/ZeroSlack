@@ -959,6 +959,17 @@ int main(int argc, char** argv) {
                waveLaneNamed(waveReport, QStringLiteral("q"))
                    && waveLaneNamed(waveReport, QStringLiteral("q"))->assignments.size() == 2,
                true);
+    const WavePreviewLane* qLane = waveLaneNamed(waveReport, QStringLiteral("q"));
+    expectBool("WavePreview reset guard label",
+               qLane
+                   && qLane->assignments.size() > 0
+                   && qLane->assignments.first().guardText == QStringLiteral("if !rst_n"),
+               true);
+    expectBool("WavePreview enable guard label",
+               qLane
+                   && qLane->assignments.size() > 1
+                   && qLane->assignments.at(1).guardText == QStringLiteral("if en"),
+               true);
     expectBool("WavePreview always_ff block kind",
                !waveReport.blocks.isEmpty()
                    && waveReport.blocks.first().kind == WavePreviewBlockKind::AlwaysFf
@@ -1008,6 +1019,37 @@ int main(int argc, char** argv) {
                pulseAssign
                    && pulseAssign->cycleOffset == 1
                    && pulseAssign->sourceSignals.contains(QStringLiteral("en")),
+               true);
+
+    const QString waveCasePreviewInput =
+        QStringLiteral("module wave_case;\n"
+                       "logic [1:0] sel;\n"
+                       "logic a;\n"
+                       "logic b;\n"
+                       "logic y;\n"
+                       "always_comb begin\n"
+                       "    case (sel)\n"
+                       "    2'b00: y = a;\n"
+                       "    default: y = b;\n"
+                       "    endcase\n"
+                       "end\n"
+                       "endmodule\n");
+    const WavePreviewReport waveCaseReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {QStringLiteral("wave_case.sv"), waveCasePreviewInput});
+    const WavePreviewLane* yLane =
+        waveLaneNamed(waveCaseReport, QStringLiteral("y"));
+    expectBool("WavePreview case item guard label",
+               yLane
+                   && yLane->assignments.size() > 0
+                   && yLane->assignments.first().guardText
+                       == QStringLiteral("case sel: 2'b00"),
+               true);
+    expectBool("WavePreview default case guard label",
+               yLane
+                   && yLane->assignments.size() > 1
+                   && yLane->assignments.at(1).guardText
+                       == QStringLiteral("case sel: default"),
                true);
     const QString planRoot =
         QDir::current().absoluteFilePath(QStringLiteral("test_sv/huge_plan"));

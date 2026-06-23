@@ -3114,7 +3114,7 @@ int main(int argc, char** argv)
                            "logic [7:0] out;\n"
                            "assign out = q + data;\n"
                            "always_ff @(posedge clk) begin\n"
-                           "    q <= data;\n"
+                           "    if (data[0]) q <= data;\n"
                            "end\n"
                            "endmodule\n"));
     }
@@ -3126,15 +3126,27 @@ int main(int argc, char** argv)
     QTreeWidget* waveTree = wavePreviewTree(window);
     bool sawWaveQ = false;
     bool sawWaveOut = false;
+    bool sawWaveGuard = false;
     if (waveTree) {
         for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
-            const QString name = waveTree->topLevelItem(i)->text(0);
+            QTreeWidgetItem* laneItem = waveTree->topLevelItem(i);
+            const QString name = laneItem->text(0);
             sawWaveQ = sawWaveQ || name == QStringLiteral("q");
             sawWaveOut = sawWaveOut || name == QStringLiteral("out");
+            if (name == QStringLiteral("q")) {
+                for (int child = 0; child < laneItem->childCount(); ++child) {
+                    sawWaveGuard = sawWaveGuard
+                        || laneItem->child(child)->text(2)
+                            == QStringLiteral("if data[0]");
+                }
+            }
         }
     }
     expectBool("wave preview renders active editor lanes",
                waveTree && sawWaveQ && sawWaveOut,
+               true);
+    expectBool("wave preview renders guard labels",
+               waveTree && sawWaveGuard,
                true);
     QWidget* waveCanvas = wavePreviewCanvas(window);
     expectBool("wave preview canvas exists",

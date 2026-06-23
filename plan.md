@@ -392,8 +392,19 @@ feature direction that violates them.
 - `WavePreviewPanelCoordinator` now renders each lane twice from the same report: a graphical canvas with signal rows, `t+N` timing guides, and colored assignment blocks, plus the existing tree with event/source/location details.
 - The canvas is intentionally lightweight. It visualizes assignment timing hints and lane grouping, not real signal values, clock resolution, guards, or simulation results.
 - GUI ownership remains thin: the canvas paints `WavePreviewReport` data, clears with unavailable reports, and does not scan workspace files or parse RTL itself.
-- Next Wave Preview milestones: guard-condition labels on event blocks, clock/reset grouping, richer source/target hover details, semantic cross-file enrichment, and throttled queued refresh for very large dirty buffers.
+- Next Wave Preview milestones: clock/reset grouping, richer source/target hover details, semantic cross-file enrichment, and throttled queued refresh for very large dirty buffers.
 - Verification for this block: focused build target `gui_smoke_test`, direct `gui_smoke_test` run with 363 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, offscreen canvas render nonblank check, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Wave Preview Guard Labels MVP
+
+- Status: implemented in the current worktree.
+- Scope: first control-context milestone for Wave Preview. It explains why a displayed assignment appears under a common RTL branch without evaluating whether that branch is true.
+- `WavePreviewAssignment` now carries `guardText`. `WavePreviewService` derives it with deterministic token scans from active `if` / `else if` bodies and `case` / `default` item labels near the assignment.
+- The Wave Preview tree adds a Guard column, event tooltips include the guard, and the canvas block label includes guarded assignment context. The UI still consumes `WavePreviewReport`; it does not parse RTL or scan workspace files itself.
+- Supported guard labels are intentionally conservative: simple inline or `begin`/`end` `if` bodies, `else if` conditions, `else`, and basic `case` item/default labels. This is not symbolic execution, guard simplification, or branch coverage.
+- Implementation remains no-regex and does not change the non-simulator positioning of Wave Preview.
+- Next Wave Preview milestones: clock/reset grouping, richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, and throttled queued refresh for very large dirty buffers.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 408 checks, direct `gui_smoke_test` run with 364 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Huge Workspace Analysis Plan MVP
 

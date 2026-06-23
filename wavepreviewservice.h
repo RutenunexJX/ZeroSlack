@@ -27,6 +27,7 @@ struct WavePreviewAssignment {
     QString expression;
     QStringList sourceSignals;
     QString trigger;
+    QString guardText;
     int blockIndex = -1;
     int cycleOffset = 0;
     int line = 0;

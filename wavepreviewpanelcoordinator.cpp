@@ -19,6 +19,8 @@ constexpr int kRoleFileName = Qt::UserRole + 1;
 constexpr int kRoleLine = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
 
+QString canvasEventLabel(const WavePreviewAssignment& assignment);
+
 class WavePreviewCanvas : public QWidget
 {
 public:
@@ -149,7 +151,7 @@ protected:
                 painter.setPen(QColor(QStringLiteral("#111827")));
                 painter.drawText(eventRect.adjusted(5, 0, -5, 0),
                                  Qt::AlignCenter,
-                                 assignment.target);
+                                 canvasEventLabel(assignment));
             }
         }
     }
@@ -206,6 +208,13 @@ QString timingText(const WavePreviewAssignment& assignment)
     return QStringLiteral("t+0");
 }
 
+QString guardText(const WavePreviewAssignment& assignment)
+{
+    return assignment.guardText.isEmpty()
+        ? QStringLiteral("-")
+        : assignment.guardText;
+}
+
 QString sourcesText(const QStringList& sourceSignals)
 {
     return sourceSignals.isEmpty()
@@ -227,6 +236,14 @@ QString eventText(const WavePreviewAssignment& assignment,
              assignment.expression.isEmpty()
                  ? QStringLiteral("<expr>")
                  : assignment.expression);
+}
+
+QString canvasEventLabel(const WavePreviewAssignment& assignment)
+{
+    QString label = assignment.target;
+    if (!assignment.guardText.isEmpty())
+        label += QStringLiteral(" if ") + assignment.guardText;
+    return label;
 }
 
 void setNavigationData(QTreeWidgetItem* item,
@@ -274,10 +291,11 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
 
     previewTree = new QTreeWidget(panel);
     previewTree->setObjectName(QStringLiteral("wavePreviewTree"));
-    previewTree->setColumnCount(4);
+    previewTree->setColumnCount(5);
     previewTree->setHeaderLabels({
         QStringLiteral("Signal / Event"),
         QStringLiteral("Timing"),
+        QStringLiteral("Guard"),
         QStringLiteral("Sources"),
         QStringLiteral("Location")
     });
@@ -289,6 +307,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     previewTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     previewTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     previewTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    previewTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     layout->addWidget(previewTree, 1);
 
     previewDock = new QDockWidget(QStringLiteral("Wave Preview"), parent);
@@ -384,6 +403,7 @@ void WavePreviewPanelCoordinator::renderReport(
         laneItem->setText(1, QStringLiteral("%1 events").arg(lane.assignments.size()));
         laneItem->setText(2, QStringLiteral("-"));
         laneItem->setText(3, QStringLiteral("-"));
+        laneItem->setText(4, QStringLiteral("-"));
         QFont laneFont = laneItem->font(0);
         laneFont.setBold(true);
         laneItem->setFont(0, laneFont);
@@ -392,8 +412,9 @@ void WavePreviewPanelCoordinator::renderReport(
             auto* eventItem = new QTreeWidgetItem(laneItem);
             eventItem->setText(0, eventText(assignment, report));
             eventItem->setText(1, timingText(assignment));
-            eventItem->setText(2, sourcesText(assignment.sourceSignals));
-            eventItem->setText(3,
+            eventItem->setText(2, guardText(assignment));
+            eventItem->setText(3, sourcesText(assignment.sourceSignals));
+            eventItem->setText(4,
                                assignment.line > 0
                                    ? QStringLiteral("%1:%2")
                                          .arg(assignment.line)
@@ -401,11 +422,12 @@ void WavePreviewPanelCoordinator::renderReport(
                                    : QStringLiteral("-"));
             eventItem->setToolTip(
                 0,
-                QStringLiteral("%1\ntrigger: %2")
+                QStringLiteral("%1\ntrigger: %2\nguard: %3")
                     .arg(assignment.expression,
                          assignment.trigger.isEmpty()
                              ? QStringLiteral("-")
-                             : assignment.trigger));
+                             : assignment.trigger,
+                         guardText(assignment)));
             setNavigationData(eventItem,
                               fileName,
                               assignment.line,

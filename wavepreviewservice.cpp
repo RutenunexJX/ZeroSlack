@@ -250,6 +250,15 @@ bool isAlwaysToken(const Token& token)
         || token.text == QStringLiteral("always_latch");
 }
 
+bool isCaseToken(const Token& token)
+{
+    if (token.kind != TokenKind::Identifier)
+        return false;
+    return token.text == QStringLiteral("case")
+        || token.text == QStringLiteral("casex")
+        || token.text == QStringLiteral("casez");
+}
+
 bool isKeyword(const QString& text)
 {
     static const QSet<QString> keywords{
@@ -354,6 +363,27 @@ int matchingBeginEnd(const QList<Token>& tokens, int beginIndex, int limit)
         if (isIdentifierToken(tokens.at(i), QStringLiteral("begin")))
             ++depth;
         else if (isIdentifierToken(tokens.at(i), QStringLiteral("end"))) {
+            --depth;
+            if (depth == 0)
+                return i;
+        }
+    }
+    return -1;
+}
+
+int matchingCaseEnd(const QList<Token>& tokens, int caseIndex, int limit)
+{
+    if (caseIndex < 0 || caseIndex >= tokens.size()
+        || !isCaseToken(tokens.at(caseIndex))) {
+        return -1;
+    }
+
+    int depth = 0;
+    const int end = qMin(limit, tokens.size() - 1);
+    for (int i = caseIndex; i <= end; ++i) {
+        if (isCaseToken(tokens.at(i))) {
+            ++depth;
+        } else if (isIdentifierToken(tokens.at(i), QStringLiteral("endcase"))) {
             --depth;
             if (depth == 0)
                 return i;
@@ -472,6 +502,266 @@ QString expressionBetween(const QString& text,
     if (start < 0 || end < start || end > text.size())
         return QString();
     return text.mid(start, end - start).trimmed();
+}
+
+QString sourceTextBetween(const QString& text,
+                          const QList<Token>& tokens,
+                          int from,
+                          int to)
+{
+    if (from < 0 || to < from || from >= tokens.size() || to >= tokens.size())
+        return QString();
+
+    const int start = tokens.at(from).start;
+    const int end = tokens.at(to).end;
+    if (start < 0 || end < start || end > text.size())
+        return QString();
+    return text.mid(start, end - start).simplified();
+}
+
+bool statementBodyRange(const QList<Token>& tokens,
+                        int start,
+                        int limit,
+                        int* bodyStart,
+                        int* bodyEnd)
+{
+    if (start < 0 || start >= tokens.size() || start > limit)
+        return false;
+
+    if (isIdentifierToken(tokens.at(start), QStringLiteral("begin"))) {
+        const int end = matchingBeginEnd(tokens, start, limit);
+        if (end < 0)
+            return false;
+        if (bodyStart)
+            *bodyStart = start + 1;
+        if (bodyEnd)
+            *bodyEnd = end - 1;
+        return true;
+    }
+
+    const int end = nextSemicolon(tokens, start, limit);
+    if (end < 0)
+        return false;
+    if (bodyStart)
+        *bodyStart = start;
+    if (bodyEnd)
+        *bodyEnd = end;
+    return true;
+}
+
+QString ifConditionTextForToken(const QString& text,
+                                const QList<Token>& tokens,
+                                int ifIndex,
+                                int limit,
+                                int* conditionEnd)
+{
+    if (ifIndex < 0 || ifIndex >= tokens.size()
+        || !isIdentifierToken(tokens.at(ifIndex), QStringLiteral("if"))) {
+        return QString();
+    }
+    int openIndex = -1;
+    for (int i = ifIndex + 1; i <= limit && i < tokens.size(); ++i) {
+        if (tokens.at(i).text == QLatin1String("(")) {
+            openIndex = i;
+            break;
+        }
+        if (tokens.at(i).text == QLatin1String(";"))
+            return QString();
+    }
+    if (openIndex < 0)
+        return QString();
+    const int closeIndex = matchingSymbol(tokens,
+                                          openIndex,
+                                          QStringLiteral("("),
+                                          QStringLiteral(")"),
+                                          limit);
+    if (closeIndex < 0)
+        return QString();
+    if (conditionEnd)
+        *conditionEnd = closeIndex;
+    return sourceTextBetween(text, tokens, openIndex + 1, closeIndex - 1);
+}
+
+QString ifGuardTextForAssignment(const QString& text,
+                                 const QList<Token>& tokens,
+                                 int from,
+                                 int assignmentIndex,
+                                 int limit)
+{
+    QStringList guards;
+    const int start = qMax(0, from);
+    const int end = qMin(assignmentIndex - 1, tokens.size() - 1);
+    for (int i = start; i <= end; ++i) {
+        if (!isIdentifierToken(tokens.at(i), QStringLiteral("if")))
+            continue;
+
+        int conditionEnd = -1;
+        const QString condition =
+            ifConditionTextForToken(text, tokens, i, limit, &conditionEnd);
+        if (condition.isEmpty() || conditionEnd < 0)
+            continue;
+
+        int bodyStart = -1;
+        int bodyEnd = -1;
+        if (!statementBodyRange(tokens,
+                                conditionEnd + 1,
+                                limit,
+                                &bodyStart,
+                                &bodyEnd)) {
+            continue;
+        }
+        if (assignmentIndex >= bodyStart && assignmentIndex <= bodyEnd)
+            guards.append(QStringLiteral("if %1").arg(condition));
+    }
+
+    for (int i = start; i <= end; ++i) {
+        if (!isIdentifierToken(tokens.at(i), QStringLiteral("else")))
+            continue;
+        if (i + 1 < tokens.size()
+            && isIdentifierToken(tokens.at(i + 1), QStringLiteral("if"))) {
+            continue;
+        }
+
+        int bodyStart = -1;
+        int bodyEnd = -1;
+        if (!statementBodyRange(tokens,
+                                i + 1,
+                                limit,
+                                &bodyStart,
+                                &bodyEnd)) {
+            continue;
+        }
+        if (assignmentIndex >= bodyStart && assignmentIndex <= bodyEnd)
+            guards.append(QStringLiteral("else"));
+    }
+
+    guards.removeDuplicates();
+    return guards.join(QStringLiteral(" && "));
+}
+
+QString caseLabelForAssignment(const QString& text,
+                               const QList<Token>& tokens,
+                               int caseIndex,
+                               int assignmentIndex,
+                               int limit)
+{
+    int openIndex = -1;
+    for (int i = caseIndex + 1; i <= limit && i < tokens.size(); ++i) {
+        if (tokens.at(i).text == QLatin1String("(")) {
+            openIndex = i;
+            break;
+        }
+        if (tokens.at(i).text == QLatin1String(";"))
+            return QString();
+    }
+    if (openIndex < 0)
+        return QString();
+
+    const int selectorEnd = matchingSymbol(tokens,
+                                           openIndex,
+                                           QStringLiteral("("),
+                                           QStringLiteral(")"),
+                                           limit);
+    const int caseEnd = matchingCaseEnd(tokens, caseIndex, limit);
+    if (selectorEnd < 0 || caseEnd < 0
+        || assignmentIndex <= selectorEnd
+        || assignmentIndex >= caseEnd) {
+        return QString();
+    }
+
+    const QString selector =
+        sourceTextBetween(text, tokens, openIndex + 1, selectorEnd - 1);
+    int labelStartCandidate = selectorEnd + 1;
+    int currentLabelStart = -1;
+    int currentLabelEnd = -1;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int beginDepth = 0;
+    for (int i = selectorEnd + 1; i < caseEnd && i < assignmentIndex; ++i) {
+        const QString tokenText = tokens.at(i).text;
+        const bool topLevel =
+            parenDepth == 0 && bracketDepth == 0 && braceDepth == 0
+            && beginDepth == 0;
+
+        if (topLevel && tokenText == QLatin1String(":")) {
+            currentLabelStart = labelStartCandidate;
+            currentLabelEnd = i - 1;
+        } else if (topLevel && tokenText == QLatin1String(";")) {
+            labelStartCandidate = i + 1;
+        } else if (topLevel
+                   && isIdentifierToken(tokens.at(i), QStringLiteral("end"))) {
+            labelStartCandidate = i + 1;
+        }
+
+        if (tokenText == QLatin1String("("))
+            ++parenDepth;
+        else if (tokenText == QLatin1String(")"))
+            parenDepth = qMax(0, parenDepth - 1);
+        else if (tokenText == QLatin1String("["))
+            ++bracketDepth;
+        else if (tokenText == QLatin1String("]"))
+            bracketDepth = qMax(0, bracketDepth - 1);
+        else if (tokenText == QLatin1String("{"))
+            ++braceDepth;
+        else if (tokenText == QLatin1String("}"))
+            braceDepth = qMax(0, braceDepth - 1);
+        else if (isIdentifierToken(tokens.at(i), QStringLiteral("begin")))
+            ++beginDepth;
+        else if (isIdentifierToken(tokens.at(i), QStringLiteral("end")))
+            beginDepth = qMax(0, beginDepth - 1);
+    }
+
+    if (currentLabelStart < 0 || currentLabelEnd < currentLabelStart)
+        return QString();
+
+    const QString label =
+        sourceTextBetween(text, tokens, currentLabelStart, currentLabelEnd);
+    if (label.isEmpty())
+        return QString();
+    return selector.isEmpty()
+        ? QStringLiteral("case %1").arg(label)
+        : QStringLiteral("case %1: %2").arg(selector, label);
+}
+
+QString caseGuardTextForAssignment(const QString& text,
+                                   const QList<Token>& tokens,
+                                   int from,
+                                   int assignmentIndex,
+                                   int limit)
+{
+    QStringList guards;
+    const int start = qMax(0, from);
+    const int end = qMin(assignmentIndex - 1, tokens.size() - 1);
+    for (int i = start; i <= end; ++i) {
+        if (!isCaseToken(tokens.at(i)))
+            continue;
+        const QString label =
+            caseLabelForAssignment(text, tokens, i, assignmentIndex, limit);
+        if (!label.isEmpty())
+            guards.append(label);
+    }
+    guards.removeDuplicates();
+    return guards.join(QStringLiteral(" && "));
+}
+
+QString guardTextForAssignment(const QString& text,
+                               const QList<Token>& tokens,
+                               int from,
+                               int assignmentIndex,
+                               int limit)
+{
+    QStringList guards;
+    const QString ifGuard =
+        ifGuardTextForAssignment(text, tokens, from, assignmentIndex, limit);
+    if (!ifGuard.isEmpty())
+        guards.append(ifGuard);
+    const QString caseGuard =
+        caseGuardTextForAssignment(text, tokens, from, assignmentIndex, limit);
+    if (!caseGuard.isEmpty())
+        guards.append(caseGuard);
+    guards.removeDuplicates();
+    return guards.join(QStringLiteral(" && "));
 }
 
 WavePreviewBlockKind kindForAlways(const QList<Token>& tokens,
@@ -600,7 +890,7 @@ QList<WavePreviewAssignment> assignmentsInRange(const QString& text,
             continue;
         }
 
-        const WavePreviewAssignment assignment =
+        WavePreviewAssignment assignment =
             makeAssignment(text,
                            tokens,
                            pos,
@@ -609,6 +899,8 @@ QList<WavePreviewAssignment> assignmentsInRange(const QString& text,
                            target,
                            blockIndex,
                            block);
+        assignment.guardText =
+            guardTextForAssignment(text, tokens, from, pos, end);
         if (assignment.isValid())
             assignments.append(assignment);
         pos = semicolonIndex + 1;
