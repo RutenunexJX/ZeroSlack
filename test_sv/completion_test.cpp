@@ -1292,6 +1292,29 @@ int main(int argc, char** argv) {
     expectEq("CompletionService command desc",
              logicPresentation.typeDescription,
              QStringLiteral("logic variables"));
+    const CommandSymbolPresentation modulePresentation =
+        CompletionService::getInstance()->commandSymbolPresentation(
+            CompletionCommandKind::Module);
+    expectEq("CompletionService module command default",
+             modulePresentation.defaultValue,
+             QStringLiteral("module_name u_module_name (\n);"));
+    expectEq("CompletionService module command desc",
+             modulePresentation.typeDescription,
+             QStringLiteral("module instantiations"));
+
+    const SemanticSymbolRecord modulePresentationRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("uart_core"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .withLocalHandle(9002)
+            .record();
+    const CommandSymbolCompletionItem modulePresentationItem =
+        CompletionService::getInstance()->commandSymbolCompletionItem(
+            modulePresentationRecord,
+            CompletionCommandKind::Module);
+    expectEq("CompletionService module instantiates",
+             modulePresentationItem.defaultValue,
+             QStringLiteral("uart_core u_uart_core (\n);"));
 
     const SemanticSymbolRecord structPresentationRecord =
         SemanticFixtureRecordBuilder(
@@ -1905,6 +1928,20 @@ int main(int argc, char** argv) {
                        ->matchCommandMode(QStringLiteral(";;m uart"))
                        .intent == InlineCommandIntent::CodeTemplate,
                true);
+    const CommandModeCompletionState moduleTemplateState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;m uart")});
+    expectBool("CompletionService module template mode",
+               moduleTemplateState.matched
+                   && moduleTemplateState.intent
+                       == InlineCommandIntent::CodeTemplate
+                   && !moduleTemplateState.templateItems.isEmpty()
+                   && moduleTemplateState.templateItems.first().insertText
+                       == QStringLiteral("`timescale 1ns / 1ps\n"
+                                         "module uart(\n"
+                                         ");\n"
+                                         "endmodule"),
+               true);
     const CommandModeCompletionState actionHelpState =
         CompletionService::getInstance()->commandModeCompletionState(
             CommandModeCompletionQuery{QStringLiteral(";:?")});
@@ -1985,6 +2022,15 @@ int main(int argc, char** argv) {
                  ->templateForCommand(QStringLiteral(";;l"), QStringLiteral("clk"))
                  .insertText,
              QStringLiteral("logic clk;"));
+    expectEq("CodeTemplateService module template",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;m"),
+                                      QStringLiteral("uart"))
+                 .insertText,
+             QStringLiteral("`timescale 1ns / 1ps\n"
+                            "module uart(\n"
+                            ");\n"
+                            "endmodule"));
     const CodeTemplateItem widthLogic =
         CodeTemplateService::getInstance()->templateForCommand(
             QStringLiteral(";;l"), QStringLiteral("8 sig"));

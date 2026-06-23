@@ -76,7 +76,7 @@ QList<InlineCommandDescriptor> semanticDescriptors()
         descriptor(QStringLiteral(";r "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Reg, QStringLiteral(";r"), QStringLiteral("reg variables"), QStringLiteral("reg")),
         descriptor(QStringLiteral(";w "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Wire, QStringLiteral(";w"), QStringLiteral("wire variables"), QStringLiteral("wire")),
         descriptor(QStringLiteral(";l "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Logic, QStringLiteral(";l"), QStringLiteral("logic variables"), QStringLiteral("logic")),
-        descriptor(QStringLiteral(";m "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Module, QStringLiteral(";m"), QStringLiteral("modules"), QStringLiteral("module")),
+        descriptor(QStringLiteral(";m "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Module, QStringLiteral(";m"), QStringLiteral("module instantiations"), QStringLiteral("module_name u_module_name (\n);")),
         descriptor(QStringLiteral(";t "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Task, QStringLiteral(";t"), QStringLiteral("tasks"), QStringLiteral("task")),
         descriptor(QStringLiteral(";f "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Function, QStringLiteral(";f"), QStringLiteral("functions"), QStringLiteral("function")),
         descriptor(QStringLiteral(";i "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Interface, QStringLiteral(";i"), QStringLiteral("interfaces"), QStringLiteral("interface")),
@@ -105,6 +105,13 @@ QList<InlineCommandDescriptor> templateDescriptors()
         next.prefix = QStringLiteral(";%1").arg(item.prefix);
         next.intent = InlineCommandIntent::CodeTemplate;
         next.label = QStringLiteral(";%1").arg(item.label);
+        if (next.label == QStringLiteral(";;m")) {
+            next.description = QStringLiteral("module template");
+            next.defaultValue = QStringLiteral("`timescale 1ns / 1ps\n"
+                                               "module name(\n"
+                                               ");\n"
+                                               "endmodule");
+        }
         result.append(next);
     }
     return result;

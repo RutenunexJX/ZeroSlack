@@ -5,6 +5,38 @@
 
 #include <Qt>
 
+namespace {
+QString moduleInstanceStem(const QString& moduleName)
+{
+    QString stem;
+    for (const QChar ch : moduleName) {
+        if (ch.isLetterOrNumber()
+            || ch == QLatin1Char('_')
+            || ch == QLatin1Char('$')) {
+            stem.append(ch);
+        } else if (!stem.endsWith(QLatin1Char('_'))) {
+            stem.append(QLatin1Char('_'));
+        }
+    }
+
+    while (stem.startsWith(QLatin1Char('_')))
+        stem.remove(0, 1);
+    while (stem.endsWith(QLatin1Char('_')))
+        stem.chop(1);
+    if (stem.isEmpty())
+        stem = QStringLiteral("module");
+    if (stem.at(0).isDigit())
+        stem.prepend(QStringLiteral("module_"));
+    return stem;
+}
+
+QString moduleInstantiationText(const QString& moduleName)
+{
+    return QStringLiteral("%1 u_%2 (\n);")
+        .arg(moduleName, moduleInstanceStem(moduleName));
+}
+}
+
 QList<CommandModeCommand> CompletionCommandMode::commands()
 {
     QList<CommandModeCommand> result;
@@ -91,7 +123,12 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
         .split(' ')
         .value(0);
 
-    if (requestedKind == CompletionCommandKind::PackedStructVariable
+    if (requestedKind == CompletionCommandKind::Module) {
+        item.defaultValue = moduleInstantiationText(symbolName);
+        item.description = QStringLiteral("module instantiation");
+        item.text = symbolName;
+        item.uniqueKey = symbolName;
+    } else if (requestedKind == CompletionCommandKind::PackedStructVariable
         || requestedKind == CompletionCommandKind::UnpackedStructVariable) {
         const QString structTypeName = item.symbolRecord.owner.name;
         item.text = structTypeName.isEmpty()

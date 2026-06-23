@@ -381,7 +381,7 @@ QList<CodeTemplateItem> CodeTemplateService::catalog() const
         makeItem(QStringLiteral(";;lp"), QStringLiteral("localparam"), QStringLiteral("localparam declaration"), QStringLiteral("localparam NAME = ;")),
         makeItem(QStringLiteral(";;c"), QStringLiteral("assign"), QStringLiteral("continuous assignment"), QStringLiteral("assign lhs = rhs;")),
         makeItem(QStringLiteral(";;a"), QStringLiteral("always"), QStringLiteral("always process"), QStringLiteral("always_comb begin\nend")),
-        makeItem(QStringLiteral(";;m"), QStringLiteral("module"), QStringLiteral("module skeleton"), QStringLiteral("module name();\nendmodule")),
+        makeItem(QStringLiteral(";;m"), QStringLiteral("module"), QStringLiteral("module template"), QStringLiteral("`timescale 1ns / 1ps\nmodule name(\n);\nendmodule")),
         makeItem(QStringLiteral(";;i"), QStringLiteral("interface"), QStringLiteral("interface skeleton"), QStringLiteral("interface name();\nendinterface")),
         makeItem(QStringLiteral(";;t"), QStringLiteral("task"), QStringLiteral("task skeleton"), QStringLiteral("task automatic name();\nendtask")),
         makeItem(QStringLiteral(";;f"), QStringLiteral("function"), QStringLiteral("function skeleton"), QStringLiteral("function automatic void name();\nendfunction")),
@@ -475,7 +475,8 @@ QString CodeTemplateService::expandTemplate(
                               "    end\n"
                               "end");
     if (commandToken == QStringLiteral(";;m"))
-        return QStringLiteral("module %1(\n"
+        return QStringLiteral("`timescale 1ns / 1ps\n"
+                              "module %1(\n"
                               ");\n"
                               "endmodule").arg(name);
     if (commandToken == QStringLiteral(";;i"))
