@@ -13,6 +13,258 @@
 #include <QPlainTextEdit>
 #include <QRect>
 #include <QTextBlock>
+#include <QTextCursor>
+
+namespace {
+bool hasCommandModifier(QKeyEvent* event)
+{
+    if (!event)
+        return false;
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    return modifiers.testFlag(Qt::ControlModifier)
+        || modifiers.testFlag(Qt::AltModifier)
+        || modifiers.testFlag(Qt::MetaModifier);
+}
+
+bool isUnsignedIntegerText(const QString& text)
+{
+    if (text.isEmpty())
+        return false;
+    for (const QChar ch : text) {
+        if (!ch.isDigit())
+            return false;
+    }
+    return true;
+}
+
+QString rangeFromBracketInnerText(const QString& innerText)
+{
+    const QString trimmed = innerText.trimmed();
+    if (trimmed.isEmpty())
+        return QString();
+
+    if (trimmed.contains(QLatin1Char(':')))
+        return QStringLiteral("[%1]").arg(trimmed);
+
+    if (isUnsignedIntegerText(trimmed)) {
+        const int width = trimmed.toInt();
+        if (width <= 0)
+            return QString();
+        return QStringLiteral("[%1:0]").arg(width - 1);
+    }
+
+    return QStringLiteral("[%1 - 1:0]").arg(trimmed);
+}
+
+bool bracketRangeAroundCursor(const QTextCursor& cursor,
+                              int* rangeStart,
+                              int* rangeEnd)
+{
+    if (!cursor.block().isValid())
+        return false;
+
+    const QString line = cursor.block().text();
+    const int column = cursor.position() - cursor.block().position();
+
+    int left = -1;
+    for (int i = qMin(column - 1, line.size() - 1); i >= 0; --i) {
+        const QChar ch = line.at(i);
+        if (ch == QLatin1Char(']'))
+            return false;
+        if (ch == QLatin1Char('[')) {
+            left = i;
+            break;
+        }
+    }
+    if (left < 0)
+        return false;
+
+    int right = -1;
+    for (int i = qMax(column, left + 1); i < line.size(); ++i) {
+        const QChar ch = line.at(i);
+        if (ch == QLatin1Char('['))
+            return false;
+        if (ch == QLatin1Char(']')) {
+            right = i;
+            break;
+        }
+    }
+    if (right <= left + 1)
+        return false;
+
+    if (rangeStart)
+        *rangeStart = cursor.block().position() + left;
+    if (rangeEnd)
+        *rangeEnd = cursor.block().position() + right + 1;
+    return true;
+}
+
+bool handleBracketPairInsertion(MyCodeEditor* editor, QKeyEvent* event)
+{
+    if (!editor || !event || hasCommandModifier(event))
+        return false;
+    if (event->key() != Qt::Key_BracketLeft
+        && event->text() != QStringLiteral("["))
+        return false;
+
+    QTextCursor cursor = editor->textCursor();
+    if (cursor.hasSelection()) {
+        cursor.insertText(QStringLiteral("[%1]").arg(cursor.selectedText()));
+    } else {
+        cursor.insertText(QStringLiteral("[]"));
+        cursor.movePosition(QTextCursor::Left);
+    }
+    editor->setTextCursor(cursor);
+    event->accept();
+    return true;
+}
+
+bool handleBracketRangeTab(MyCodeEditor* editor, QKeyEvent* event)
+{
+    if (!editor || !event || hasCommandModifier(event)
+        || event->key() != Qt::Key_Tab)
+        return false;
+
+    QTextCursor cursor = editor->textCursor();
+    if (cursor.hasSelection())
+        return false;
+
+    int rangeStart = -1;
+    int rangeEnd = -1;
+    if (!bracketRangeAroundCursor(cursor, &rangeStart, &rangeEnd))
+        return false;
+
+    const QString rangeText =
+        editor->document()->toPlainText().mid(rangeStart, rangeEnd - rangeStart);
+    const QString expanded =
+        rangeFromBracketInnerText(rangeText.mid(1, rangeText.size() - 2));
+    if (expanded.isEmpty())
+        return false;
+
+    cursor.beginEditBlock();
+    cursor.setPosition(rangeStart);
+    cursor.setPosition(rangeEnd, QTextCursor::KeepAnchor);
+    cursor.insertText(expanded);
+    cursor.endEditBlock();
+    cursor.setPosition(rangeStart + expanded.size());
+    editor->setTextCursor(cursor);
+    event->accept();
+    return true;
+}
+
+bool handleBracketRangeControlClick(MyCodeEditor* editor, QMouseEvent* event)
+{
+    if (!editor || !event
+        || event->button() != Qt::LeftButton
+        || !event->modifiers().testFlag(Qt::ControlModifier))
+        return false;
+
+    QTextCursor cursor = editor->cursorForPosition(
+        event->position().toPoint());
+    int rangeStart = -1;
+    int rangeEnd = -1;
+    if (!bracketRangeAroundCursor(cursor, &rangeStart, &rangeEnd))
+        return false;
+
+    QTextCursor selection = editor->textCursor();
+    selection.setPosition(rangeStart + 1);
+    selection.setPosition(rangeEnd - 1, QTextCursor::KeepAnchor);
+    editor->setTextCursor(selection);
+    event->accept();
+    return true;
+}
+
+bool selectedRangeDigitSpan(const QString& selected,
+                            bool rightBound,
+                            int* digitStart,
+                            int* digitEnd)
+{
+    int colonIndex = -1;
+    for (int i = 0; i < selected.size(); ++i) {
+        if (selected.at(i) == QLatin1Char(':')) {
+            colonIndex = i;
+            break;
+        }
+    }
+    if (colonIndex < 0)
+        return false;
+
+    int start = 0;
+    int stop = selected.size();
+    if (rightBound) {
+        start = colonIndex + 1;
+    } else {
+        stop = colonIndex;
+    }
+
+    while (start < stop && selected.at(start).isSpace())
+        ++start;
+
+    int end = start;
+    while (end < stop && selected.at(end).isDigit())
+        ++end;
+
+    if (end == start)
+        return false;
+
+    if (digitStart)
+        *digitStart = start;
+    if (digitEnd)
+        *digitEnd = end;
+    return true;
+}
+
+bool adjustSelectedRangeBound(MyCodeEditor* editor,
+                              QKeyEvent* event)
+{
+    if (!editor || !event || hasCommandModifier(event))
+        return false;
+    const bool increment = event->key() == Qt::Key_Up;
+    const bool decrement = event->key() == Qt::Key_Down;
+    if (!increment && !decrement)
+        return false;
+
+    QTextCursor cursor = editor->textCursor();
+    if (!cursor.hasSelection())
+        return false;
+
+    const int selectionStart = cursor.selectionStart();
+    const int selectionEnd = cursor.selectionEnd();
+    if (selectionStart <= 0
+        || selectionEnd >= editor->document()->characterCount())
+        return false;
+    if (editor->document()->characterAt(selectionStart - 1)
+            != QLatin1Char('[')
+        || editor->document()->characterAt(selectionEnd)
+            != QLatin1Char(']')) {
+        return false;
+    }
+
+    const QString selected = cursor.selectedText();
+    const bool rightBound =
+        event->modifiers().testFlag(Qt::ShiftModifier);
+    int digitStart = -1;
+    int digitEnd = -1;
+    if (!selectedRangeDigitSpan(selected, rightBound, &digitStart, &digitEnd))
+        return false;
+
+    const int current = selected.mid(digitStart, digitEnd - digitStart).toInt();
+    const int next = qMax(0, current + (increment ? 1 : -1));
+    const QString replacement =
+        selected.left(digitStart)
+        + QString::number(next)
+        + selected.mid(digitEnd);
+
+    cursor.insertText(replacement);
+    QTextCursor reselection = editor->textCursor();
+    reselection.setPosition(selectionStart);
+    reselection.setPosition(selectionStart + replacement.size(),
+                            QTextCursor::KeepAnchor);
+    editor->setTextCursor(reselection);
+    event->accept();
+    return true;
+}
+}
 
 void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 {
@@ -220,6 +472,15 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
+    if (adjustSelectedRangeBound(editor, event))
+        return true;
+
+    if (handleBracketRangeTab(editor, event))
+        return true;
+
+    if (handleBracketPairInsertion(editor, event))
+        return true;
+
     if (modes.alternateModeActive) {
         completionWorkflow.handleAlternateModeKey(event);
         return true;
@@ -348,6 +609,9 @@ bool MyCodeEditorState::handleMousePress(
     QMouseEvent* event)
 {
     if (folding.handleFoldShelfMousePress(editor, event))
+        return true;
+
+    if (handleBracketRangeControlClick(editor, event))
         return true;
 
     return sourceNavigation.handleMousePress(

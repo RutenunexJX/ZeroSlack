@@ -223,6 +223,8 @@ void CompletionModel::updateInlineCommandCompletions(
             item.defaultValue = templateItem.insertText.isEmpty()
                 ? templateItem.defaultValue
                 : templateItem.insertText;
+            item.selectionStart = templateItem.selectionStart;
+            item.selectionLength = templateItem.selectionLength;
             item.score = score--;
             fillDisplayMetadata(item);
             completions.append(item);

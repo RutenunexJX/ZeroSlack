@@ -230,6 +230,8 @@ CompletionActivationState EditorCompletionQueryHelper::completionActivationState
         context.commandModeActive);
     query.itemText = context.itemText;
     query.defaultValue = context.defaultValue;
+    query.selectionStart = context.selectionStart;
+    query.selectionLength = context.selectionLength;
     return completionActivationState(query);
 }
 

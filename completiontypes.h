@@ -112,11 +112,15 @@ struct CompletionActivationQuery {
     CompletionActivationMode mode = CompletionActivationMode::EditorWord;
     QString itemText;
     QString defaultValue;
+    int selectionStart = -1;
+    int selectionLength = 0;
 };
 
 struct CompletionActivationState {
     CompletionActivationAction action = CompletionActivationAction::None;
     QString text;
+    int selectionStart = -1;
+    int selectionLength = 0;
     bool clearCommandMode = false;
     bool hidePopup = false;
 };
@@ -222,6 +226,8 @@ struct CodeTemplateItem {
     QString description;
     QString defaultValue;
     QString insertText;
+    int selectionStart = -1;
+    int selectionLength = 0;
 };
 
 struct CommandModeMatch {

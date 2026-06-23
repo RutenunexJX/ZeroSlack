@@ -113,6 +113,8 @@ EditorCompletionUi::activationContextForIndex(
     context.commandModeActive = modes.commandModeActive;
     context.itemText = item.text;
     context.defaultValue = item.defaultValue;
+    context.selectionStart = item.selectionStart;
+    context.selectionLength = item.selectionLength;
     return context;
 }
 

@@ -48,6 +48,8 @@ public:
         SymbolTaxonomy::SourceRole sourceRole =
             SymbolTaxonomy::SourceRole::Unknown;
         QString defaultValue;
+        int selectionStart = -1;
+        int selectionLength = 0;
         int score = 0;
         int rowHeight = 18;
         bool selectable = true;

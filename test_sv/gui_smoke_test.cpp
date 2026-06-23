@@ -336,6 +336,95 @@ static void runEditorAppearanceCoordinatorRegression()
                true);
 }
 
+static void runEditorBracketRangeRegression()
+{
+    MyCodeEditor editor;
+    editor.resize(320, 120);
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTest::keyClick(&editor, Qt::Key_BracketLeft);
+    expectBool("editor inserts bracket pair",
+               editor.toPlainText() == QStringLiteral("[]")
+                   && editor.textCursor().position() == 1,
+               true);
+    QTest::keyClicks(&editor, "8");
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    expectBool("editor expands numeric bracket range",
+               editor.toPlainText() == QStringLiteral("[7:0]")
+                   && editor.textCursor().position()
+                       == editor.toPlainText().size(),
+               true);
+
+    MyCodeEditor paramEditor;
+    paramEditor.resize(320, 120);
+    paramEditor.setPlainText(QStringLiteral("[P_W]"));
+    QTextCursor paramCursor = paramEditor.textCursor();
+    paramCursor.setPosition(QStringLiteral("[P_W").size());
+    paramEditor.setTextCursor(paramCursor);
+    paramEditor.show();
+    paramEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTest::keyClick(&paramEditor, Qt::Key_Tab);
+    expectBool("editor expands parameter bracket range",
+               paramEditor.toPlainText()
+                   == QStringLiteral("[P_W - 1:0]"),
+               true);
+
+    MyCodeEditor exactEditor;
+    exactEditor.resize(320, 120);
+    exactEditor.show();
+    exactEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTest::keyClick(&exactEditor, Qt::Key_BracketLeft);
+    QTest::keyClicks(&exactEditor, "PW+DW:0");
+    QTest::keyClick(&exactEditor, Qt::Key_Tab);
+    expectBool("editor preserves exact bracket range",
+               exactEditor.toPlainText()
+                       == QStringLiteral("[PW+DW:0]")
+                   && exactEditor.textCursor().position()
+                       == exactEditor.toPlainText().size(),
+               true);
+
+    MyCodeEditor stepEditor;
+    stepEditor.resize(320, 120);
+    stepEditor.setPlainText(QStringLiteral("[7:0]"));
+    stepEditor.show();
+    stepEditor.setFocus();
+    QTextCursor stepCursor = stepEditor.textCursor();
+    stepCursor.setPosition(2);
+    stepEditor.setTextCursor(stepCursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const QRect clickRect = stepEditor.cursorRect(stepCursor);
+    QTest::mouseClick(stepEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::ControlModifier,
+                      clickRect.center());
+    expectBool("editor ctrl-click selects range body",
+               stepEditor.textCursor().selectedText()
+                   == QStringLiteral("7:0"),
+               true);
+    QTest::keyClick(&stepEditor, Qt::Key_Up);
+    expectBool("editor range up increments left bound",
+               stepEditor.toPlainText() == QStringLiteral("[8:0]")
+                   && stepEditor.textCursor().selectedText()
+                       == QStringLiteral("8:0"),
+               true);
+    QTest::keyClick(&stepEditor, Qt::Key_Up, Qt::ShiftModifier);
+    expectBool("editor shift range up increments right bound",
+               stepEditor.toPlainText() == QStringLiteral("[8:1]")
+                   && stepEditor.textCursor().selectedText()
+                       == QStringLiteral("8:1"),
+               true);
+    QTest::keyClick(&stepEditor, Qt::Key_Down, Qt::ShiftModifier);
+    expectBool("editor shift range down decrements right bound",
+               stepEditor.toPlainText() == QStringLiteral("[8:0]")
+                   && stepEditor.textCursor().selectedText()
+                       == QStringLiteral("8:0"),
+               true);
+}
+
 static void runEditorHoverPreviewRegression(const QString& workspacePath)
 {
     const QString rtlTopPath =
@@ -2760,6 +2849,7 @@ int main(int argc, char** argv)
     runActivityLogServiceRegression();
     runRtlInsightsOnDemandRegression();
     runEditorAppearanceSettingsRegression();
+    runEditorBracketRangeRegression();
     runEditorAppearanceCoordinatorRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationHierarchyModelRegression();

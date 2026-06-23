@@ -18,6 +18,164 @@ CodeTemplateItem makeItem(const QString& token,
     item.defaultValue = defaultValue;
     return item;
 }
+
+bool isIdentifierStart(QChar ch)
+{
+    return ch == QLatin1Char('$') || ch == QLatin1Char('_')
+        || ch.isLetter();
+}
+
+bool isIdentifierPart(QChar ch)
+{
+    return isIdentifierStart(ch) || ch.isDigit();
+}
+
+bool isIdentifierLike(const QString& text)
+{
+    if (text.isEmpty())
+        return false;
+    if (text.startsWith(QLatin1Char('\\')))
+        return text.size() > 1;
+    if (!isIdentifierStart(text.at(0)))
+        return false;
+    for (int i = 1; i < text.size(); ++i) {
+        if (!isIdentifierPart(text.at(i)))
+            return false;
+    }
+    return true;
+}
+
+bool isUnsignedInteger(const QString& text)
+{
+    if (text.isEmpty())
+        return false;
+    for (const QChar ch : text) {
+        if (!ch.isDigit())
+            return false;
+    }
+    return true;
+}
+
+QStringList splitTemplateArgs(const QString& seedText)
+{
+    QStringList tokens;
+    QString current;
+    int bracketDepth = 0;
+    for (const QChar ch : seedText) {
+        if (ch.isSpace() && bracketDepth == 0) {
+            if (!current.isEmpty()) {
+                tokens.append(current);
+                current.clear();
+            }
+            continue;
+        }
+
+        if (ch == QLatin1Char('['))
+            ++bracketDepth;
+        else if (ch == QLatin1Char(']'))
+            bracketDepth = qMax(0, bracketDepth - 1);
+        current.append(ch);
+    }
+    if (!current.isEmpty())
+        tokens.append(current);
+    return tokens;
+}
+
+QString dimensionFromToken(const QString& token, bool* matched)
+{
+    if (matched)
+        *matched = false;
+    const QString trimmed = token.trimmed();
+    if (trimmed.isEmpty())
+        return QString();
+
+    if (trimmed.startsWith(QLatin1Char('['))
+        && trimmed.endsWith(QLatin1Char(']'))
+        && trimmed.size() > 2) {
+        if (matched)
+            *matched = true;
+        return trimmed;
+    }
+
+    if (trimmed.startsWith(QLatin1Char(':')) && trimmed.size() > 1) {
+        if (matched)
+            *matched = true;
+        const QString expr = trimmed.mid(1).trimmed();
+        if (expr.contains(QLatin1Char(':')))
+            return QStringLiteral("[%1]").arg(expr);
+        return QStringLiteral("[%1 - 1:0]").arg(expr);
+    }
+
+    if (!isUnsignedInteger(trimmed))
+        return QString();
+
+    if (matched)
+        *matched = true;
+    const int width = trimmed.toInt();
+    if (width <= 0)
+        return QString();
+    return QStringLiteral("[%1:0]").arg(width - 1);
+}
+
+CodeTemplateItem expandLogicTemplate(CodeTemplateItem item,
+                                     const QString& seedText)
+{
+    const QStringList tokens = splitTemplateArgs(seedText);
+    QStringList packedDimensions;
+    QStringList unpackedDimensions;
+    QString name;
+    bool signedLogic = false;
+    bool nameSeen = false;
+
+    for (const QString& token : tokens) {
+        if (token == QStringLiteral("-s")) {
+            signedLogic = true;
+            continue;
+        }
+
+        bool dimensionMatched = false;
+        const QString dimension = dimensionFromToken(token, &dimensionMatched);
+        if (dimensionMatched) {
+            if (!dimension.isEmpty()) {
+                if (nameSeen)
+                    unpackedDimensions.append(dimension);
+                else
+                    packedDimensions.append(dimension);
+            }
+            continue;
+        }
+
+        if (!nameSeen && isIdentifierLike(token)) {
+            name = token;
+            nameSeen = true;
+        }
+    }
+
+    if (name.isEmpty())
+        name = QStringLiteral("sig");
+
+    QString text = QStringLiteral("logic");
+    if (signedLogic)
+        text += QStringLiteral(" signed");
+    if (!packedDimensions.isEmpty()) {
+        text += QLatin1Char(' ');
+        text += packedDimensions.join(QString());
+    }
+    text += QLatin1Char(' ');
+    item.selectionStart = text.size();
+    item.selectionLength = name.size();
+    text += name;
+    if (!unpackedDimensions.isEmpty()) {
+        text += QLatin1Char(' ');
+        text += unpackedDimensions.join(QString());
+    }
+    text += QLatin1Char(';');
+
+    item.insertText = text;
+    item.defaultValue = text;
+    return item;
+}
+
 }
 
 CodeTemplateService* CodeTemplateService::getInstance()
@@ -58,6 +216,11 @@ QList<CodeTemplateItem> CodeTemplateService::matchingTemplates(
             && item.commandToken.compare(commandToken, Qt::CaseInsensitive) != 0) {
             continue;
         }
+        if (item.commandToken == QStringLiteral(";;l")) {
+            result.append(expandLogicTemplate(item, seedText));
+            continue;
+        }
+
         item.insertText = expandTemplate(item.commandToken, seedText);
         item.defaultValue = item.insertText;
         result.append(item);
@@ -91,7 +254,13 @@ QString CodeTemplateService::expandTemplate(
     const QString upper = seededName(seedText, QStringLiteral("NAME")).toUpper();
 
     if (commandToken == QStringLiteral(";;l"))
-        return QStringLiteral("logic %1;").arg(signal);
+        return expandLogicTemplate(
+                   makeItem(QStringLiteral(";;l"),
+                            QStringLiteral("logic"),
+                            QStringLiteral("logic declaration"),
+                            QStringLiteral("logic sig;")),
+                   seedText)
+            .insertText;
     if (commandToken == QStringLiteral(";;w"))
         return QStringLiteral("wire %1;").arg(signal);
     if (commandToken == QStringLiteral(";;r"))

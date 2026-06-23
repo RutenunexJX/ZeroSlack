@@ -1638,6 +1638,59 @@ int main(int argc, char** argv) {
                  ->templateForCommand(QStringLiteral(";;l"), QStringLiteral("clk"))
                  .insertText,
              QStringLiteral("logic clk;"));
+    const CodeTemplateItem widthLogic =
+        CodeTemplateService::getInstance()->templateForCommand(
+            QStringLiteral(";;l"), QStringLiteral("8 sig"));
+    expectEq("CodeTemplateService logic width before name",
+             widthLogic.insertText,
+             QStringLiteral("logic [7:0] sig;"));
+    expectBool("CodeTemplateService logic selects name",
+               widthLogic.selectionStart == widthLogic.insertText.indexOf(QStringLiteral("sig"))
+                   && widthLogic.selectionLength == QStringLiteral("sig").size(),
+               true);
+    expectEq("CodeTemplateService logic unpacked dimension",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;l"),
+                                      QStringLiteral("8 sig 8"))
+                 .insertText,
+             QStringLiteral("logic [7:0] sig [7:0];"));
+    expectEq("CodeTemplateService logic multi packed dimension",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;l"),
+                                      QStringLiteral("8 8 sig"))
+                 .insertText,
+             QStringLiteral("logic [7:0][7:0] sig;"));
+    expectEq("CodeTemplateService logic parameter dimension",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;l"),
+                                      QStringLiteral(":P_W sig 9"))
+                 .insertText,
+             QStringLiteral("logic [P_W - 1:0] sig [8:0];"));
+    expectEq("CodeTemplateService logic exact range dimension",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;l"),
+                                      QStringLiteral(":PW+DW:0 sig"))
+                 .insertText,
+             QStringLiteral("logic [PW+DW:0] sig;"));
+    expectEq("CodeTemplateService logic signed dimension",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;l"),
+                                      QStringLiteral("-s :P_W sig"))
+                 .insertText,
+             QStringLiteral("logic signed [P_W - 1:0] sig;"));
+    const CommandModeCompletionState widthTemplateState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;l 8 data")});
+    expectBool("CompletionService template carries selection",
+               widthTemplateState.matched
+                   && !widthTemplateState.templateItems.isEmpty()
+                   && widthTemplateState.templateItems.first().insertText
+                       == QStringLiteral("logic [7:0] data;")
+                   && widthTemplateState.templateItems.first().selectionStart
+                       == QStringLiteral("logic [7:0] ").size()
+                   && widthTemplateState.templateItems.first().selectionLength
+                       == QStringLiteral("data").size(),
+               true);
 
     expectBool("CompletionService command statement reject",
                !CompletionService::getInstance()

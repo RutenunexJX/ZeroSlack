@@ -31,6 +31,8 @@ struct EditorCompletionActivationContext {
     bool commandModeActive = false;
     QString itemText;
     QString defaultValue;
+    int selectionStart = -1;
+    int selectionLength = 0;
 };
 
 struct EditorCompletionPopupKeyContext {

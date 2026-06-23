@@ -168,7 +168,9 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
         }
     } else if (activationState.action
                == CompletionActivationAction::ReplaceCommandInput) {
-        replaceCommandInputAtCursor(activationState.text);
+        replaceCommandInputAtCursor(activationState.text,
+                                    activationState.selectionStart,
+                                    activationState.selectionLength);
         if (activationState.clearCommandMode) {
             modes->clearCommandMode();
             selections->clearCommand(editor);
@@ -182,7 +184,10 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
         hideAutoComplete();
 }
 
-void EditorCompletionWorkflow::replaceCommandInputAtCursor(const QString& text)
+void EditorCompletionWorkflow::replaceCommandInputAtCursor(
+    const QString& text,
+    int selectionStart,
+    int selectionLength)
 {
     QTextCursor cursor = editor->textCursor();
     const EditorSemanticContext context = semanticContextForCursor(
@@ -198,6 +203,16 @@ void EditorCompletionWorkflow::replaceCommandInputAtCursor(const QString& text)
     cursor.setPosition(commandStartPosition);
     cursor.setPosition(editor->textCursor().position(), QTextCursor::KeepAnchor);
     cursor.insertText(text);
+
+    if (selectionStart >= 0 && selectionLength > 0
+        && selectionStart + selectionLength <= text.size()) {
+        QTextCursor selectionCursor = editor->textCursor();
+        selectionCursor.setPosition(commandStartPosition + selectionStart);
+        selectionCursor.setPosition(commandStartPosition + selectionStart
+                                        + selectionLength,
+                                    QTextCursor::KeepAnchor);
+        editor->setTextCursor(selectionCursor);
+    }
 }
 
 void EditorCompletionWorkflow::clearCommandInputAtCursor()

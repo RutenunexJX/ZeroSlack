@@ -53,7 +53,9 @@ private:
     void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
     void applyCompletionActivationState(
         const CompletionActivationState& activationState);
-    void replaceCommandInputAtCursor(const QString& text);
+    void replaceCommandInputAtCursor(const QString& text,
+                                     int selectionStart = -1,
+                                     int selectionLength = 0);
     void clearCommandInputAtCursor();
     void applyAlternateModeKeyState(
         const EditorAlternateModeKeyState& keyState);
