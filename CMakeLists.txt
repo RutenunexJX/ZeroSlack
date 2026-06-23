@@ -123,6 +123,7 @@ set(ZEROSLACK_CORE_SOURCES
     foldblockshelfmodel.cpp
     foldblockshelfpanel.cpp
     fsmgraphservice.cpp
+    formatterservice.cpp
     ghostannotationservice.cpp
     globalcontrolcoordinator.cpp
     globalcontrolpanel.cpp
@@ -285,6 +286,7 @@ set(ZEROSLACK_CORE_SOURCES
     foldblockshelfmodel.h
     foldblockshelfpanel.h
     fsmgraphservice.h
+    formatterservice.h
     ghostannotationservice.h
     globalcontrolcoordinator.h
     globalcontrolpanel.h

@@ -196,6 +196,11 @@ void MyCodeEditor::setGhostAnnotations(
     state->setGhostAnnotations(this, annotations);
 }
 
+void MyCodeEditor::formatDocument()
+{
+    state->formatDocument(this);
+}
+
 void MyCodeEditor::highlightSearchMatches(
     const QString& text,
     bool caseSensitive)

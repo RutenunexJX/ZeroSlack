@@ -341,6 +341,17 @@ feature direction that violates them.
 - Implementation and future extensions must remain no-regex. Parsing is by deterministic token scans plus semantic records.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run.
 
+### Post-L: Formatter MVP
+
+- Status: implemented in the current worktree.
+- Scope: first usable formatter milestone for the long-term Formatter feature. It is intentionally conservative and does not attempt structural alignment or expression rewriting yet.
+- `FormatterService` owns formatting policy and returns a `FormatterReport`; editor runtime only invokes the service and applies the result as one undoable edit block.
+- The MVP is indent-only: it changes leading whitespace, leaves line-internal text untouched, keeps blank lines empty, ignores strings and comments while counting structure, and preserves preprocessor directive lines so macro-heavy code is not reshaped.
+- Supported structure counters include `module`/`endmodule`, `interface`/`endinterface`, `package`/`endpackage`, `class`/`endclass`, `function`/`endfunction`, `task`/`endtask`, `generate`/`endgenerate`, `begin`/`end`, `case`/`endcase`, and `fork`/`join*`.
+- The first UI entry is editor context menu `Format Document`; it reports status and can be undone in one step. Format Selection, format-on-save, alignment of ports/instances/parameters, and user-configurable formatter profiles remain later formatter milestones.
+- Implementation and future formatter extensions must remain no-regex. Prefer Tree-sitter/semantic records for future structural formatting and deterministic token scans for small local policies.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run, direct `gui_smoke_test` run against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

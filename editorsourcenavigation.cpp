@@ -5,6 +5,7 @@
 #include "ghostannotationservice.h"
 #include "mycodeeditor.h"
 
+#include <QAction>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QKeyEvent>
@@ -186,6 +187,11 @@ void EditorSourceNavigationUi::handleContextMenu(
     emit editor->sourceSymbolContextMenuRequested(
         menu.get(),
         contextProvider(cursorAtPos.position(), false));
+    menu->addSeparator();
+    QAction* formatAction = menu->addAction(QStringLiteral("Format Document"));
+    QObject::connect(formatAction, &QAction::triggered, editor, [editor]() {
+        editor->formatDocument();
+    });
 
     menu->exec(event->globalPos());
 }

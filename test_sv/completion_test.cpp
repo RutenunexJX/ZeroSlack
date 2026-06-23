@@ -9,6 +9,7 @@
 #include "completionservice.h"
 #include "codetemplateservice.h"
 #include "editorsemanticcontextservice.h"
+#include "formatterservice.h"
 #include "ghostannotationservice.h"
 #include "myhighlighter.h"
 #include "relationshipservice.h"
@@ -810,6 +811,61 @@ int main(int argc, char** argv) {
     expectBool("Highlighter line comment wins",
                commentNumberUsesCommentFormat,
                true);
+
+    const QString formatterInput =
+        QStringLiteral("module top;\n"
+                       "logic a;\n"
+                       "  // comment-only lines stay where the user put them\n"
+                       "always_ff @(posedge clk) begin\n"
+                       "if (rst) begin\n"
+                       "a <= 1'b0;\n"
+                       "end else begin\n"
+                       "a <= ~a;\n"
+                       "end\n"
+                       "end\n"
+                       "always_comb begin\n"
+                       "case (sel)\n"
+                       "2'b00: y = \"begin\";\n"
+                       "default: y = a; // endcase\n"
+                       "endcase\n"
+                       "end\n"
+                       "`ifdef KEEP_COLUMN\n"
+                       "  assign macro_guarded = a;\n"
+                       "`endif\n"
+                       "endmodule\n");
+    const FormatterReport formatterReport =
+        FormatterService::getInstance()->formatDocument(formatterInput);
+    expectBool("Formatter report changed",
+               formatterReport.changed,
+               true);
+    expectEq("Formatter conservative indentation",
+             formatterReport.formattedText,
+             QStringLiteral("module top;\n"
+                            "    logic a;\n"
+                            "  // comment-only lines stay where the user put them\n"
+                            "    always_ff @(posedge clk) begin\n"
+                            "        if (rst) begin\n"
+                            "            a <= 1'b0;\n"
+                            "        end else begin\n"
+                            "            a <= ~a;\n"
+                            "        end\n"
+                            "    end\n"
+                            "    always_comb begin\n"
+                            "        case (sel)\n"
+                            "            2'b00: y = \"begin\";\n"
+                            "            default: y = a; // endcase\n"
+                            "        endcase\n"
+                            "    end\n"
+                            "`ifdef KEEP_COLUMN\n"
+                            "    assign macro_guarded = a;\n"
+                            "`endif\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedFormatterReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterReport.formattedText);
+    expectBool("Formatter idempotent",
+               unchangedFormatterReport.changed,
+               false);
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(
                  semanticFixtureMetadata(

@@ -61,6 +61,7 @@ public:
         const QList<SemanticDecoration>& decorations);
     void setGhostAnnotations(
         const QList<GhostAnnotation>& annotations);
+    void formatDocument();
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void applyAppearanceSettings(const EditorAppearanceOptions& options);

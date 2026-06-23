@@ -425,6 +425,48 @@ static void runEditorBracketRangeRegression()
                true);
 }
 
+static void runEditorFormatterRegression()
+{
+    MyCodeEditor editor;
+    editor.resize(360, 160);
+    editor.setPlainText(QStringLiteral("module top;\n"
+                                       "logic a;\n"
+                                       "always_comb begin\n"
+                                       "a = \"end\";\n"
+                                       "end\n"
+                                       "endmodule\n"));
+    QString statusMessage;
+    QObject::connect(&editor,
+                     &MyCodeEditor::editorStatusMessageRequested,
+                     &editor,
+                     [&](const QString& message) {
+                         statusMessage = message;
+                     });
+    editor.formatDocument();
+    expectBool("editor formatter indents document",
+               editor.toPlainText()
+                   == QStringLiteral("module top;\n"
+                                     "    logic a;\n"
+                                     "    always_comb begin\n"
+                                     "        a = \"end\";\n"
+                                     "    end\n"
+                                     "endmodule\n"),
+               true);
+    expectBool("editor formatter emits status",
+               statusMessage.contains(QStringLiteral("Formatted document")),
+               true);
+    editor.undo();
+    expectBool("editor formatter undo restores text",
+               editor.toPlainText()
+                   == QStringLiteral("module top;\n"
+                                     "logic a;\n"
+                                     "always_comb begin\n"
+                                     "a = \"end\";\n"
+                                     "end\n"
+                                     "endmodule\n"),
+               true);
+}
+
 static void runEditorHoverPreviewRegression(const QString& workspacePath)
 {
     const QString rtlTopPath =
@@ -2850,6 +2892,7 @@ int main(int argc, char** argv)
     runRtlInsightsOnDemandRegression();
     runEditorAppearanceSettingsRegression();
     runEditorBracketRangeRegression();
+    runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationHierarchyModelRegression();

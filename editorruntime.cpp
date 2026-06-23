@@ -19,6 +19,8 @@
 #include <QTextCursor>
 #include <QTextDocument>
 
+#include "formatterservice.h"
+
 namespace {
 bool hasCommandModifier(QKeyEvent* event)
 {
@@ -753,8 +755,35 @@ void MyCodeEditorState::executeEditorActionCommand(
     MyCodeEditor* editor,
     const QString& command)
 {
-    Q_UNUSED(editor);
-    Q_UNUSED(command);
+    if (command == QStringLiteral("format_document"))
+        formatDocument(editor);
+}
+
+void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    const FormatterReport report =
+        FormatterService::getInstance()->formatDocument(editor->toPlainText());
+    if (!report.changed) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("Document already formatted"));
+        return;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    const int oldPosition = cursor.position();
+    cursor.beginEditBlock();
+    cursor.select(QTextCursor::Document);
+    cursor.insertText(report.formattedText);
+    cursor.endEditBlock();
+
+    QTextCursor nextCursor = editor->textCursor();
+    nextCursor.setPosition(qMin(oldPosition, editor->document()->characterCount() - 1));
+    editor->setTextCursor(nextCursor);
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Formatted document (%1 lines)").arg(report.formattedLines));
 }
 
 void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)
