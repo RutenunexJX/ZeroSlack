@@ -11,6 +11,7 @@
 class QLabel;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QWidget;
 
 class WavePreviewPanelCoordinator
 {
@@ -26,11 +27,13 @@ public:
 
     QDockWidget* dock() const { return previewDock; }
     QTreeWidget* tree() const { return previewTree; }
+    QWidget* canvas() const { return previewCanvas; }
 
 private:
     QDockWidget* previewDock = nullptr;
     QLabel* titleLabel = nullptr;
     QLabel* summaryLabel = nullptr;
+    QWidget* previewCanvas = nullptr;
     QTreeWidget* previewTree = nullptr;
     QString currentFileName;
 

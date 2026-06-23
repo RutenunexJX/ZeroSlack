@@ -4,17 +4,159 @@
 #include <QFont>
 #include <QHeaderView>
 #include <QLabel>
+#include <QPainter>
+#include <QSizePolicy>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <algorithm>
 #include <utility>
 
 namespace {
 constexpr int kRoleFileName = Qt::UserRole + 1;
 constexpr int kRoleLine = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
+
+class WavePreviewCanvas : public QWidget
+{
+public:
+    explicit WavePreviewCanvas(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("wavePreviewCanvas"));
+        setMinimumHeight(132);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    QSize sizeHint() const override
+    {
+        const int laneCount = report.available ? report.lanes.size() : 2;
+        return QSize(460, qBound(132, 52 + laneCount * 34, 260));
+    }
+
+    void setReport(const WavePreviewReport& nextReport)
+    {
+        report = nextReport;
+        updateGeometry();
+        update();
+    }
+
+    void clearReport()
+    {
+        report = WavePreviewReport();
+        updateGeometry();
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+
+        const QRect canvasRect = rect().adjusted(0, 0, -1, -1);
+        painter.fillRect(canvasRect, QColor(QStringLiteral("#f8fafc")));
+        painter.setPen(QPen(QColor(QStringLiteral("#cbd5e1"))));
+        painter.drawRect(canvasRect);
+
+        if (!report.available || report.lanes.isEmpty()) {
+            painter.setPen(QColor(QStringLiteral("#64748b")));
+            painter.drawText(canvasRect,
+                             Qt::AlignCenter,
+                             QStringLiteral("No waveform sketch"));
+            return;
+        }
+
+        int maxCycle = 0;
+        for (const WavePreviewLane& lane : report.lanes) {
+            for (const WavePreviewAssignment& assignment : lane.assignments)
+                maxCycle = std::max(maxCycle, assignment.cycleOffset);
+        }
+        maxCycle = std::max(maxCycle, 2);
+
+        const int labelWidth = qMin(130, qMax(84, width() / 4));
+        const int left = 10;
+        const int right = 12;
+        const int top = 28;
+        const int rowHeight = 32;
+        const int timelineLeft = left + labelWidth;
+        const int timelineRight = width() - right;
+        const int timelineWidth = std::max(80, timelineRight - timelineLeft);
+        const int laneBottom = top + report.lanes.size() * rowHeight;
+
+        painter.setPen(QColor(QStringLiteral("#64748b")));
+        for (int cycle = 0; cycle <= maxCycle; ++cycle) {
+            const int x = timelineLeft
+                + static_cast<int>((timelineWidth * cycle) / maxCycle);
+            painter.drawLine(x, top - 8, x, laneBottom + 4);
+            painter.drawText(QRect(x - 20, 4, 40, 18),
+                             Qt::AlignCenter,
+                             QStringLiteral("t+%1").arg(cycle));
+        }
+
+        QFont labelFont = painter.font();
+        labelFont.setBold(true);
+        painter.setFont(labelFont);
+        painter.setPen(QColor(QStringLiteral("#0f172a")));
+
+        for (int laneIndex = 0; laneIndex < report.lanes.size(); ++laneIndex) {
+            const WavePreviewLane& lane = report.lanes.at(laneIndex);
+            const int y = top + laneIndex * rowHeight;
+            const int centerY = y + rowHeight / 2;
+
+            painter.setPen(QPen(QColor(QStringLiteral("#e2e8f0"))));
+            painter.drawLine(left, centerY, timelineRight, centerY);
+            painter.setPen(QColor(QStringLiteral("#0f172a")));
+            painter.drawText(QRect(left, y + 4, labelWidth - 8, rowHeight - 8),
+                             Qt::AlignVCenter | Qt::AlignRight,
+                             lane.signalName);
+
+            for (int eventIndex = 0;
+                 eventIndex < lane.assignments.size();
+                 ++eventIndex) {
+                const WavePreviewAssignment& assignment =
+                    lane.assignments.at(eventIndex);
+                const int clampedCycle =
+                    qBound(0, assignment.cycleOffset, maxCycle);
+                const int eventCenterX = timelineLeft
+                    + static_cast<int>((timelineWidth * clampedCycle)
+                                       / maxCycle);
+                const int eventWidth = qBound(52,
+                                              timelineWidth / 3,
+                                              112);
+                const int yOffset =
+                    (eventIndex % 2 == 0) ? -10 : 4;
+                QRect eventRect(eventCenterX - eventWidth / 2,
+                                centerY + yOffset,
+                                eventWidth,
+                                18);
+                eventRect = eventRect.intersected(
+                    QRect(timelineLeft + 2, y + 2,
+                          timelineWidth - 4, rowHeight - 4));
+
+                QColor fill(QStringLiteral("#2f855a"));
+                if (assignment.kind == WavePreviewAssignmentKind::Blocking)
+                    fill = QColor(QStringLiteral("#2563eb"));
+                else if (assignment.kind
+                         == WavePreviewAssignmentKind::NonBlocking)
+                    fill = QColor(QStringLiteral("#9333ea"));
+
+                painter.setPen(QPen(fill.darker(125)));
+                painter.setBrush(fill.lighter(180));
+                painter.drawRoundedRect(eventRect, 4, 4);
+                painter.setPen(QColor(QStringLiteral("#111827")));
+                painter.drawText(eventRect.adjusted(5, 0, -5, 0),
+                                 Qt::AlignCenter,
+                                 assignment.target);
+            }
+        }
+    }
+
+private:
+    WavePreviewReport report;
+};
 
 QString displayFileName(const QString& fileName)
 {
@@ -126,6 +268,10 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
         "}"));
     layout->addWidget(summaryLabel);
 
+    auto* canvas = new WavePreviewCanvas(panel);
+    previewCanvas = canvas;
+    layout->addWidget(previewCanvas, 0);
+
     previewTree = new QTreeWidget(panel);
     previewTree->setObjectName(QStringLiteral("wavePreviewTree"));
     previewTree->setColumnCount(4);
@@ -192,6 +338,8 @@ void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
         titleLabel->setText(QStringLiteral("Wave Preview"));
     if (summaryLabel)
         summaryLabel->setText(message);
+    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
+        canvas->clearReport();
     if (previewTree)
         previewTree->clear();
 }
@@ -205,6 +353,8 @@ void WavePreviewPanelCoordinator::renderReport(
         return;
 
     previewTree->clear();
+    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
+        canvas->setReport(report);
     if (titleLabel) {
         titleLabel->setText(QStringLiteral("Wave Preview - %1")
                                 .arg(displayFileName(fileName)));

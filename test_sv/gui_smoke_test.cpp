@@ -12,6 +12,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QImage>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTabWidget>
@@ -915,6 +916,36 @@ static QTreeWidget* wavePreviewTree(MainWindow& window)
     return window.semanticDocks && window.semanticDocks->wavePreviewPanelCoordinator()
         ? window.semanticDocks->wavePreviewPanelCoordinator()->tree()
         : nullptr;
+}
+
+static QWidget* wavePreviewCanvas(MainWindow& window)
+{
+    return window.semanticDocks && window.semanticDocks->wavePreviewPanelCoordinator()
+        ? window.semanticDocks->wavePreviewPanelCoordinator()->canvas()
+        : nullptr;
+}
+
+static bool renderedWidgetHasColorVariation(QWidget* widget)
+{
+    if (!widget)
+        return false;
+    if (widget->width() < 120 || widget->height() < 80)
+        widget->resize(420, 150);
+
+    QImage image(widget->size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    widget->render(&image);
+    const QRgb firstPixel = image.pixel(0, 0);
+    int differentPixels = 0;
+    for (int y = 0; y < image.height(); y += 5) {
+        for (int x = 0; x < image.width(); x += 5) {
+            if (image.pixel(x, y) != firstPixel)
+                ++differentPixels;
+            if (differentPixels > 20)
+                return true;
+        }
+    }
+    return false;
 }
 
 static QComboBox* relationshipViewCombo(MainWindow& window)
@@ -3104,6 +3135,13 @@ int main(int argc, char** argv)
     }
     expectBool("wave preview renders active editor lanes",
                waveTree && sawWaveQ && sawWaveOut,
+               true);
+    QWidget* waveCanvas = wavePreviewCanvas(window);
+    expectBool("wave preview canvas exists",
+               waveCanvas != nullptr,
+               true);
+    expectBool("wave preview canvas renders sketch",
+               renderedWidgetHasColorVariation(waveCanvas),
                true);
     if (waveEditor) {
         waveEditor->setPlainText(

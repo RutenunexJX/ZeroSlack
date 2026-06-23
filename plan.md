@@ -377,13 +377,23 @@ feature direction that violates them.
 ### Post-L: Wave Preview Preview-Panel MVP
 
 - Status: implemented in the current worktree.
-- Scope: first visible Wave Preview milestone. It renders the existing data-service report so users can inspect a lightweight waveform sketch before the future graphical wave canvas exists.
+- Scope: first visible Wave Preview milestone. It renders the existing data-service report so users can inspect a lightweight waveform sketch before richer timing visualization exists.
 - `WavePreviewPanelCoordinator` owns the dock and tree rendering. MainWindow only routes active editor text, visibility-triggered refresh, and source navigation; it does not derive assignments, scan workspace files, or simulate RTL.
 - The panel is available from View -> Wave Preview, starts hidden on launch, participates in reset panel layout, and refreshes from the current dirty editor buffer while the dock is visible. Opening the dock or resetting the panel layout forces a fresh preview.
 - The rendered model shows per-signal lanes, assignment events, timing hints (`t+0`, `t+1 cycle`, continuous), source signal lists, and line/column evidence. Double-clicking an event navigates to the assignment location when a file-backed location is available.
 - This remains a code-understanding aid. It does not evaluate values, honor all guards, resolve clocks across modules, or replace simulation.
-- Next Wave Preview milestones: graphical lane/canvas rendering, guard-condition labels, clock/reset grouping, semantic cross-file enrichment, and throttled/queued refresh for very large dirty buffers.
+- Next Wave Preview milestones: guard-condition labels, clock/reset grouping, semantic cross-file enrichment, and throttled/queued refresh for very large dirty buffers.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 392 checks, direct `gui_smoke_test` run with 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
+
+### Post-L: Wave Preview Canvas MVP
+
+- Status: implemented in the current worktree.
+- Scope: first graphical rendering milestone for Wave Preview. It adds a compact timing canvas to the existing dock while keeping extraction and timing-sketch policy in `WavePreviewService`.
+- `WavePreviewPanelCoordinator` now renders each lane twice from the same report: a graphical canvas with signal rows, `t+N` timing guides, and colored assignment blocks, plus the existing tree with event/source/location details.
+- The canvas is intentionally lightweight. It visualizes assignment timing hints and lane grouping, not real signal values, clock resolution, guards, or simulation results.
+- GUI ownership remains thin: the canvas paints `WavePreviewReport` data, clears with unavailable reports, and does not scan workspace files or parse RTL itself.
+- Next Wave Preview milestones: guard-condition labels on event blocks, clock/reset grouping, richer source/target hover details, semantic cross-file enrichment, and throttled queued refresh for very large dirty buffers.
+- Verification for this block: focused build target `gui_smoke_test`, direct `gui_smoke_test` run with 363 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, offscreen canvas render nonblank check, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Huge Workspace Analysis Plan MVP
 
