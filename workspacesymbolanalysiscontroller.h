@@ -2,6 +2,7 @@
 #define WORKSPACESYMBOLANALYSISCONTROLLER_H
 
 #include "projectmodel.h"
+#include "workspaceanalysisrequestqueue.h"
 
 #include <QObject>
 #include <QString>
@@ -47,13 +48,15 @@ private:
     SymbolAnalyzer* symbolAnalyzer = nullptr;
     std::function<bool()> cancelProvider;
     std::function<QString()> currentFileProvider;
+    WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot activeProject;
     bool workspaceAnalysisActive = false;
     bool projectSemanticStateCleared = true;
 
     void onProjectChanged(const ProjectSnapshot& project);
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
-    QStringList dirtyOpenDocumentFiles() const;
+    void onWorkspaceSymbolAnalysisExpired();
+    void startWorkspaceAnalysis(const ProjectSnapshot& project);
 };
 
 #endif // WORKSPACESYMBOLANALYSISCONTROLLER_H

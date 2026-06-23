@@ -384,6 +384,17 @@ feature direction that violates them.
 - This is groundwork for the larger Huge Workspace Mode: later milestones should add incremental/early publication, cancellable/expirable queued workspace batches, tiered indexes, and stronger current-file foreground analysis for very large projects.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 397 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, `gui_smoke_test` with 361 checks, full default CMake build, full `ctest --output-on-failure` 7/7, changed-file regex API scan, and `git diff --check`.
 
+### Post-L: Huge Workspace Expirable Request MVP
+
+- Status: implemented in the current worktree.
+- Scope: first usable stale-work handling milestone for Huge Workspace Mode. It does not yet make Slang extraction internally interruptible or publish partial workspace results; it prevents new workspace analysis requests from synchronously waiting on older background work.
+- `WorkspaceAnalysisRequestQueue` owns active request state plus one latest pending request. While a workspace analysis is active, repeated requests replace the pending project instead of building a backlog.
+- `SymbolAnalyzer::expireWorkspaceAnalysis()` bumps the workspace-analysis generation and cancels the active watcher without waiting. Canceled or generation-stale watcher completion emits `workspaceAnalysisExpired()` instead of publishing stale results.
+- `WorkspaceSymbolAnalysisController` queues the newest request, expires the active run, clears request state when projects close, and starts the latest pending project after an expired or completed watcher returns.
+- Dirty open-document protection and the existing `WorkspaceAnalysisPlanService` order remain in force for the restarted request.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, request-age telemetry, and foreground current-file analysis that stays responsive under very large projects.
+- Verification for this block: focused build target `completion_test`, direct `completion_test` run with 401 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, `gui_smoke_test` with 361 checks, full default CMake build, full `ctest --output-on-failure` 7/7, changed-file regex API scan, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

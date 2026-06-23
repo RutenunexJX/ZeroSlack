@@ -72,6 +72,10 @@ void WorkspaceSymbolAnalysisController::setSymbolAnalyzer(SymbolAnalyzer* analyz
                 emit diagnosticsRefreshRequested(QString());
                 onWorkspaceSymbolAnalysisCompleted(filesAnalyzed, totalSymbols);
             });
+    connect(symbolAnalyzer,
+            &SymbolAnalyzer::workspaceAnalysisExpired,
+            this,
+            &WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired);
 }
 
 void WorkspaceSymbolAnalysisController::setCancelProvider(
@@ -84,19 +88,4 @@ void WorkspaceSymbolAnalysisController::setCurrentFileProvider(
     std::function<QString()> provider)
 {
     currentFileProvider = std::move(provider);
-}
-
-QStringList WorkspaceSymbolAnalysisController::dirtyOpenDocumentFiles() const
-{
-    QStringList files;
-    if (!documentModel)
-        return files;
-
-    for (const DocumentSnapshot& snapshot : documentModel->openDocuments()) {
-        if (snapshot.fileName.isEmpty() || !snapshot.dirty)
-            continue;
-        files.append(snapshot.fileName);
-    }
-    files.removeDuplicates();
-    return files;
 }

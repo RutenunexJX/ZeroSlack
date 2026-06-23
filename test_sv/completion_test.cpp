@@ -20,6 +20,7 @@
 #include "tsdocument.h"
 #include "wavepreviewservice.h"
 #include "workspaceanalysisplanservice.h"
+#include "workspaceanalysisrequestqueue.h"
 #include <QApplication>
 #include <QColor>
 #include <QDir>
@@ -1023,6 +1024,38 @@ int main(int argc, char** argv) {
     expectBool("Workspace plan reports external current file",
                !externalCurrentPlan.currentFileInWorkspace
                    && externalCurrentPlan.priorityFileCount == 1,
+               true);
+
+    WorkspaceAnalysisRequestQueue requestQueue;
+    ProjectSnapshot queueFirst = planProject;
+    queueFirst.workspaceRoot = QDir(planRoot).absoluteFilePath(
+        QStringLiteral("first"));
+    ProjectSnapshot queueSecond = planProject;
+    queueSecond.workspaceRoot = QDir(planRoot).absoluteFilePath(
+        QStringLiteral("second"));
+    ProjectSnapshot queueThird = planProject;
+    queueThird.workspaceRoot = QDir(planRoot).absoluteFilePath(
+        QStringLiteral("third"));
+    requestQueue.start(queueFirst);
+    expectBool("Workspace request queue starts active",
+               requestQueue.active() && !requestQueue.hasPending(),
+               true);
+    expectBool("Workspace request queue accepts pending",
+               requestQueue.queueLatest(queueSecond)
+                   && requestQueue.queueLatest(queueThird)
+                   && requestQueue.hasPending(),
+               true);
+    ProjectSnapshot queuedNext;
+    expectBool("Workspace request queue returns latest pending",
+               requestQueue.finishAndTakePending(&queuedNext)
+                   && queuedNext.workspaceRoot == queueThird.workspaceRoot
+                   && !requestQueue.active()
+                   && !requestQueue.hasPending(),
+               true);
+    requestQueue.start(queuedNext);
+    requestQueue.clear();
+    expectBool("Workspace request queue clears state",
+               !requestQueue.active() && !requestQueue.hasPending(),
                true);
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(

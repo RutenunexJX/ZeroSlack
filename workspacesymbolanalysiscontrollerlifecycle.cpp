@@ -17,6 +17,18 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
         return;
     }
 
+    if (requestQueue.active()) {
+        requestQueue.queueLatest(project);
+        symbolAnalyzer->expireWorkspaceAnalysis();
+        return;
+    }
+
+    startWorkspaceAnalysis(project);
+}
+
+void WorkspaceSymbolAnalysisController::startWorkspaceAnalysis(
+    const ProjectSnapshot& project)
+{
     WorkspaceAnalysisPlanQuery query;
     query.project = project;
     query.currentFileName = currentFileProvider ? currentFileProvider() : QString();
@@ -27,6 +39,7 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
         WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(query);
 
     symbolAnalyzer->setWorkspaceProtectedFiles(plan.protectedFiles);
+    requestQueue.start(project);
     activeProject = project;
     workspaceAnalysisActive = true;
     emit diagnosticsRefreshRequested(QString());
@@ -42,6 +55,7 @@ void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
 
     projectSemanticStateCleared = true;
     workspaceAnalysisActive = false;
+    requestQueue.clear();
     activeProject = ProjectSnapshot();
     if (symbolAnalyzer)
         symbolAnalyzer->cancelWorkspaceAnalysisAndInvalidate();
@@ -70,11 +84,33 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisCompleted(
     if (!workspaceAnalysisActive)
         return;
 
-    workspaceAnalysisActive = false;
     const ProjectSnapshot project = activeProject;
+    ProjectSnapshot pendingProject;
+    const bool hasPending =
+        requestQueue.finishAndTakePending(&pendingProject);
+    workspaceAnalysisActive = false;
+    activeProject = ProjectSnapshot();
+    if (hasPending) {
+        requestWorkspaceAnalysis(pendingProject);
+        return;
+    }
     if (cancelProvider && cancelProvider())
         return;
 
     emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
     emit workspaceRelationshipAnalysisRequested(project);
+}
+
+void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired()
+{
+    if (!workspaceAnalysisActive)
+        return;
+
+    ProjectSnapshot pendingProject;
+    const bool hasPending =
+        requestQueue.finishAndTakePending(&pendingProject);
+    workspaceAnalysisActive = false;
+    activeProject = ProjectSnapshot();
+    if (hasPending)
+        requestWorkspaceAnalysis(pendingProject);
 }

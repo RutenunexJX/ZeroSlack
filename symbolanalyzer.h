@@ -61,6 +61,7 @@ public:
     void analyzeFileContent(const QString& fileName, const QString& content);
     void analyzeFileContentAsync(const QString& fileName, const QString& content);
     void setWorkspaceProtectedFiles(const QStringList& fileNames);
+    void expireWorkspaceAnalysis();
     void cancelWorkspaceAnalysisAndInvalidate();
 
     // Utility
@@ -73,6 +74,7 @@ signals:
     void analysisCompleted(const QString& fileName, int symbolsFound);
     void batchAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void batchProgress(int filesDone, int totalFiles, const QString& currentFileName);
+    void workspaceAnalysisExpired();
 
 private slots:
     void onWorkspaceAnalysisFinished();

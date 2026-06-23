@@ -88,6 +88,15 @@ void SymbolAnalyzer::cancelWorkspaceAnalysisAndWait()
     future.waitForFinished();
 }
 
+void SymbolAnalyzer::expireWorkspaceAnalysis()
+{
+    ++workspaceAnalysisGeneration;
+    if (!workspaceAnalysisWatcher || !workspaceAnalysisWatcher->isRunning())
+        return;
+
+    workspaceAnalysisWatcher->future().cancel();
+}
+
 void SymbolAnalyzer::cancelWorkspaceAnalysisAndInvalidate()
 {
     ++workspaceAnalysisGeneration;
@@ -98,16 +107,20 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
 {
     if (!workspaceAnalysisWatcher)
         return;
-    if (workspaceAnalysisWatcher->isCanceled())
+    if (workspaceAnalysisWatcher->isCanceled()) {
+        emit workspaceAnalysisExpired();
         return;
+    }
 
     const WorkspaceAnalysisResult result = workspaceAnalysisWatcher->result();
     const QString workspacePath = workspaceAnalysisWatcher->property("workspacePath").toString();
     const int totalFiles = workspaceAnalysisWatcher->property("totalFiles").toInt();
     const std::uint64_t generation =
         workspaceAnalysisWatcher->property("generation").toULongLong();
-    if (generation != workspaceAnalysisGeneration || result.generation != generation)
+    if (generation != workspaceAnalysisGeneration || result.generation != generation) {
+        emit workspaceAnalysisExpired();
         return;
+    }
 
     const int filesAnalyzed = publishWorkspaceAnalysisResult(result, totalFiles);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
