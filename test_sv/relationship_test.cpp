@@ -19,6 +19,7 @@
 #include "searchservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticdiffservice.h"
+#include "signalkernelgraphservice.h"
 #include "signaljourneyservice.h"
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
@@ -4829,6 +4830,15 @@ static void runSignalJourneyServiceFixture()
         clk,
         rstN,
     };
+    auto evidenceRange = [&fileName](int line, int column, int endColumn) {
+        SemanticSourceRange range;
+        range.fileName = fileName;
+        range.line = line;
+        range.column = column;
+        range.endLine = line;
+        range.endColumn = endColumn;
+        return range;
+    };
 
     QList<SemanticRelationship> relationships;
     relationships.append(semanticFixtureRelationship(
@@ -4837,26 +4847,40 @@ static void runSignalJourneyServiceFixture()
         SymbolRelationshipEngine::ASSIGNS_TO,
         RelationshipProvenance::Inferred,
         85,
-        QStringLiteral("Assigned to data_q at line 20")));
+        QStringLiteral("Assigned to data_q at line 20"),
+        evidenceRange(20, 12, 28)));
     relationships.append(semanticFixtureRelationship(
         consumer,
         dataQ,
         SymbolRelationshipEngine::READS_FROM,
         RelationshipProvenance::Inferred,
         80,
-        QStringLiteral("Read data_q at line 30")));
+        QStringLiteral("Read data_q at line 30"),
+        evidenceRange(30, 18, 24)));
     relationships.append(semanticFixtureRelationship(
         stageDataPin,
         dataQ,
-        SymbolRelationshipEngine::REFERENCES));
+        SymbolRelationshipEngine::REFERENCES,
+        RelationshipProvenance::Inferred,
+        100,
+        QStringLiteral("u_stage.data_i(data_q)"),
+        evidenceRange(40, 22, 28)));
     relationships.append(semanticFixtureRelationship(
         interfaceInstance,
         dataQ,
-        SymbolRelationshipEngine::REFERENCES));
+        SymbolRelationshipEngine::REFERENCES,
+        RelationshipProvenance::Inferred,
+        100,
+        QStringLiteral("if_bus drives data_q"),
+        evidenceRange(50, 9, 15)));
     relationships.append(semanticFixtureRelationship(
         dataQ,
         ready,
-        SymbolRelationshipEngine::REFERENCES));
+        SymbolRelationshipEngine::REFERENCES,
+        RelationshipProvenance::Inferred,
+        100,
+        QStringLiteral("data_q feeds interface ready"),
+        evidenceRange(55, 5, 11)));
     relationships.append(semanticFixtureRelationship(
         clk,
         module,
@@ -5035,6 +5059,13 @@ static void runSignalJourneyServiceFixture()
                    && report.assignments.first().confidence == 85
                    && report.assignments.first().evidenceText.contains(
                        QStringLiteral("Assigned to data_q"))
+                   && report.assignments.first().relationshipType
+                       == SymbolRelationshipEngine::ASSIGNS_TO
+                   && report.assignments.first().evidenceRange.line == 20
+                   && report.assignments.first().evidenceRange.column == 12
+                   && report.assignments.first().evidenceCodeLink.fileName == fileName
+                   && report.assignments.first().evidenceCodeLink.line == 20
+                   && report.assignments.first().evidenceCodeLink.column == 12
                    && report.assignments.first().provenanceDisplayName
                        == QStringLiteral("inferred")
                    && report.assignments.first().confidenceDisplayName
@@ -5160,6 +5191,112 @@ static void runSignalJourneyServiceFixture()
                true);
     expectBool("signal journey interface member metadata",
                sawInterfaceMemberMetadata,
+               true);
+
+    SignalKernelGraphService graphService(&index);
+    SignalKernelGraphQuery graphQuery;
+    graphQuery.signalName = QStringLiteral("data_q");
+    graphQuery.fileName = fileName;
+    graphQuery.moduleName = QStringLiteral("journey_top");
+    const SignalKernelGraphReport graphReport =
+        graphService.buildSignalKernelGraph(graphQuery);
+
+    const SignalKernelGraphNode* nextDataInput = nullptr;
+    const SignalKernelGraphNode* interfaceInput = nullptr;
+    const SignalKernelGraphNode* consumerOutput = nullptr;
+    const SignalKernelGraphNode* stageOutput = nullptr;
+    const SignalKernelGraphNode* readyOutput = nullptr;
+    for (const SignalKernelGraphNode& node : graphReport.inputs) {
+        if (node.displayName == QStringLiteral("next_data"))
+            nextDataInput = &node;
+        if (node.displayName == QStringLiteral("if_bus"))
+            interfaceInput = &node;
+    }
+    for (const SignalKernelGraphNode& node : graphReport.outputs) {
+        if (node.displayName == QStringLiteral("consumer"))
+            consumerOutput = &node;
+        if (node.displayName == QStringLiteral("u_stage.data_i"))
+            stageOutput = &node;
+        if (node.displayName == QStringLiteral("ready"))
+            readyOutput = &node;
+    }
+
+    bool sawInputEdge = false;
+    bool sawOutputEdge = false;
+    for (const SignalKernelGraphEdge& edge : graphReport.edges) {
+        if (nextDataInput
+            && edge.fromNodeId == nextDataInput->id
+            && edge.toNodeId == graphReport.kernel.id
+            && edge.label == QStringLiteral("Assigns To")) {
+            sawInputEdge = true;
+        }
+        if (consumerOutput
+            && edge.fromNodeId == graphReport.kernel.id
+            && edge.toNodeId == consumerOutput->id
+            && edge.label == QStringLiteral("Reads From")) {
+            sawOutputEdge = true;
+        }
+    }
+
+    bool sawJourneyInterfaceOutputGroup = false;
+    for (const SignalKernelGraphModuleGroup& group
+         : graphReport.outputModuleGroups) {
+        sawJourneyInterfaceOutputGroup =
+            sawJourneyInterfaceOutputGroup
+            || (group.moduleName == QStringLiteral("journey_if")
+                && group.crossModule
+                && readyOutput
+                && group.nodeIds.contains(readyOutput->id));
+    }
+
+    expectBool("signal kernel graph found",
+               graphReport.found
+                   && graphReport.kernel.displayName == QStringLiteral("data_q")
+                   && graphReport.kernel.role == SignalKernelGraphNodeRole::Kernel
+                   && graphReport.kernel.navigateCodeLink.fileName == fileName
+                   && graphReport.kernel.navigateCodeLink.line == 10
+                   && graphReport.kernel.preciseEvidence,
+               true);
+    expectBool("signal kernel graph node directions",
+               nextDataInput
+                   && interfaceInput
+                   && consumerOutput
+                   && stageOutput
+                   && readyOutput
+                   && graphReport.inputs.size() == 2
+                   && graphReport.outputs.size() == 3,
+               true);
+    expectBool("signal kernel graph precise input evidence",
+               nextDataInput
+                   && nextDataInput->preciseEvidence
+                   && nextDataInput->previewCodeLink.fileName == fileName
+                   && nextDataInput->previewCodeLink.line == 20
+                   && nextDataInput->previewCodeLink.column == 12
+                   && nextDataInput->navigateCodeLink.line == 20
+                   && nextDataInput->evidenceRange.endColumn == 28,
+               true);
+    expectBool("signal kernel graph precise output evidence",
+               consumerOutput
+                   && consumerOutput->preciseEvidence
+                   && consumerOutput->previewCodeLink.fileName == fileName
+                   && consumerOutput->previewCodeLink.line == 30
+                   && consumerOutput->previewCodeLink.column == 18
+                   && consumerOutput->navigateCodeLink.line == 30,
+               true);
+    expectBool("signal kernel graph port input is output consumer",
+               stageOutput
+                   && stageOutput->role == SignalKernelGraphNodeRole::Output
+                   && stageOutput->previewCodeLink.line == 40,
+               true);
+    expectBool("signal kernel graph cross module output group",
+               readyOutput
+                   && readyOutput->crossModule
+                   && readyOutput->moduleDisplayName
+                       == QStringLiteral("journey_if")
+                   && sawJourneyInterfaceOutputGroup,
+               true);
+    expectBool("signal kernel graph edge directions",
+               sawInputEdge && sawOutputEdge && graphReport.edges.size() == 5,
                true);
 
     SignalJourneyQuery clockQuery;

@@ -2842,6 +2842,30 @@ int main(int argc, char** argv)
                activityDock && activityDock->isVisible(),
                true);
 
+    QDockWidget* signalKernelGraphDock =
+        window.findChild<QDockWidget*>(QStringLiteral("signalKernelGraphDock"));
+    QAction* viewSignalKernelGraphAction =
+        window.findChild<QAction*>(
+            QStringLiteral("viewSignalKernelGraphAction"));
+    expectBool("signal kernel graph dock exists",
+               signalKernelGraphDock != nullptr,
+               true);
+    expectBool("signal kernel graph dock starts hidden",
+               signalKernelGraphDock && !signalKernelGraphDock->isVisible(),
+               true);
+    expectBool("view menu has signal kernel graph action",
+               signalKernelGraphDock && viewSignalKernelGraphAction,
+               true);
+    if (viewSignalKernelGraphAction) {
+        viewSignalKernelGraphAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("view menu reopens signal kernel graph",
+               signalKernelGraphDock && signalKernelGraphDock->isVisible(),
+               true);
+    if (signalKernelGraphDock)
+        signalKernelGraphDock->hide();
+
     QAction* resetPanelLayoutAction =
         window.findChild<QAction*>(QStringLiteral("resetPanelLayoutAction"));
     expectBool("view menu has reset layout action",
@@ -2851,6 +2875,8 @@ int main(int argc, char** argv)
         window.navigationPane->dock()->hide();
     if (activityDock)
         activityDock->hide();
+    if (signalKernelGraphDock)
+        signalKernelGraphDock->hide();
     if (resetPanelLayoutAction) {
         resetPanelLayoutAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -2862,6 +2888,9 @@ int main(int argc, char** argv)
                true);
     expectBool("reset panel layout reopens activity",
                activityDock && activityDock->isVisible(),
+               true);
+    expectBool("reset panel layout reopens signal kernel graph",
+               signalKernelGraphDock && signalKernelGraphDock->isVisible(),
                true);
 
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));

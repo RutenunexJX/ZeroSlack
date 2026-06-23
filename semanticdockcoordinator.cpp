@@ -8,6 +8,7 @@
 #include "relationshipspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
+#include "signalkernelgraphpanelcoordinator.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
@@ -80,16 +81,21 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
         std::make_unique<RelationshipsPanelCoordinator>(dependencies.mainWindow);
     rtlInsightsPanel =
         std::make_unique<RtlInsightsPanelCoordinator>(dependencies.mainWindow);
+    signalKernelGraphPanel =
+        std::make_unique<SignalKernelGraphPanelCoordinator>(dependencies.mainWindow);
 
     dependencies.addBottomDock(problemsPanel->dock());
     dependencies.addBottomDock(activityLogPanel->dock());
     dependencies.addBottomDock(referencesPanel->dock());
     dependencies.addBottomDock(relationshipsPanel->dock());
     dependencies.addBottomDock(rtlInsightsPanel->dock());
+    dependencies.addBottomDock(signalKernelGraphPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), activityLogPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), referencesPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), relationshipsPanel->dock());
     dependencies.tabifyBottomDock(problemsPanel->dock(), rtlInsightsPanel->dock());
+    dependencies.tabifyBottomDock(problemsPanel->dock(),
+                                  signalKernelGraphPanel->dock());
 }
 
 void SemanticDockCoordinator::PanelBundle::createRefreshCoordinator(
@@ -104,7 +110,8 @@ void SemanticDockCoordinator::PanelBundle::createRefreshCoordinator(
         problemsPanel.get(),
         referencesPanel.get(),
         relationshipsPanel.get(),
-        rtlInsightsPanel.get());
+        rtlInsightsPanel.get(),
+        signalKernelGraphPanel.get());
     setStatusMessageHandler(statusMessageHandler);
     semanticPanelRefresh->configurePanels();
 }
@@ -163,4 +170,10 @@ RelationshipsPanelCoordinator* SemanticDockCoordinator::relationshipsPanelCoordi
 RtlInsightsPanelCoordinator* SemanticDockCoordinator::rtlInsightsPanelCoordinator() const
 {
     return panels.rtlInsightsPanel.get();
+}
+
+SignalKernelGraphPanelCoordinator*
+SemanticDockCoordinator::signalKernelGraphPanelCoordinator() const
+{
+    return panels.signalKernelGraphPanel.get();
 }

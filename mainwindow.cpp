@@ -33,6 +33,7 @@
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
+#include "signalkernelgraphpanelcoordinator.h"
 #include "version.h"
 #include <QAction>
 #include <QCloseEvent>
@@ -89,6 +90,9 @@ MainWindow::MainWindow(QWidget *parent)
         if (semanticDocks->rtlInsightsPanelCoordinator()
             && semanticDocks->rtlInsightsPanelCoordinator()->dock())
             semanticDocks->rtlInsightsPanelCoordinator()->dock()->hide();
+        if (semanticDocks->signalKernelGraphPanelCoordinator()
+            && semanticDocks->signalKernelGraphPanelCoordinator()->dock())
+            semanticDocks->signalKernelGraphPanelCoordinator()->dock()->hide();
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack  %1").arg(QLatin1String(APP_VERSION)));
@@ -502,6 +506,11 @@ void MainWindow::setupViewMenu()
                            : nullptr,
                        tr("RTL Insights"),
                        QStringLiteral("viewRtlInsightsAction"));
+    addPanelViewAction(semanticDocks && semanticDocks->signalKernelGraphPanelCoordinator()
+                           ? semanticDocks->signalKernelGraphPanelCoordinator()->dock()
+                           : nullptr,
+                       tr("Signal Kernel Graph"),
+                       QStringLiteral("viewSignalKernelGraphAction"));
     addPanelViewAction(foldShelfDock,
                        tr("Fold Shelf"),
                        QStringLiteral("viewFoldShelfAction"));
@@ -654,6 +663,10 @@ QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
         return semanticDocks && semanticDocks->rtlInsightsPanelCoordinator()
             ? semanticDocks->rtlInsightsPanelCoordinator()->dock()
             : nullptr;
+    if (panelId == QStringLiteral("signalKernelGraph"))
+        return semanticDocks && semanticDocks->signalKernelGraphPanelCoordinator()
+            ? semanticDocks->signalKernelGraphPanelCoordinator()->dock()
+            : nullptr;
     if (panelId == QStringLiteral("foldShelf"))
         return foldShelfDock;
     if (panelId == QStringLiteral("editorAppearance"))
@@ -705,6 +718,8 @@ void MainWindow::resetPanelLayout()
     QDockWidget* referencesDock = dockForPanelId(QStringLiteral("references"));
     QDockWidget* relationshipsDock = dockForPanelId(QStringLiteral("relationships"));
     QDockWidget* rtlInsightsDock = dockForPanelId(QStringLiteral("rtlInsights"));
+    QDockWidget* signalKernelGraphDock =
+        dockForPanelId(QStringLiteral("signalKernelGraph"));
     QDockWidget* editorAppearanceDockWidget =
         dockForPanelId(QStringLiteral("editorAppearance"));
     QDockWidget* foldShelfDockWidget = dockForPanelId(QStringLiteral("foldShelf"));
@@ -720,6 +735,7 @@ void MainWindow::resetPanelLayout()
         referencesDock,
         relationshipsDock,
         rtlInsightsDock,
+        signalKernelGraphDock,
         foldShelfDockWidget,
     };
     for (QDockWidget* dock : bottomDocks) {

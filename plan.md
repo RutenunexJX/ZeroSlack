@@ -10,6 +10,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Keep scheduler and analyzer code focused on timing, lifecycle, extraction, and publication; they must not own feature policy.
 - Move policy into services only when there is a real production boundary.
 - Expand RTL Insights only through stable semantic contracts and service-owned reports.
+- Signal-centric visual features must build graph/report models in feature services before UI render, and must use precise relationship evidence for preview and navigation when available.
 
 ## Feature Expansion Guardrails
 
@@ -306,6 +307,16 @@ feature direction that violates them.
 - Move from one L subphase to the next only after implementation, verification, docs, and any requested coherent local commit for the current cleanup block are complete.
 - Phase L completion is achieved: L0-L6 are complete, docs are current, first-party production regex logic is removed, docs/guard definitions are the only regex allowlist, focused tests and affected GUI smoke tests passed, full Ninja/full CTest passed, normal/final guards passed, and `git diff --check` is clean.
 
+### Post-L: Signal Kernel Graph
+
+- Status: implemented in the current work block.
+- Scope: feature expansion after Phase L, not a new migration phase.
+- `SignalKernelGraphService` builds a driver/kernel/consumer graph from `SignalJourneyService` output and precise relationship evidence ranges.
+- The graph UI is render-only: it receives nodes, edges, module groups, stable keys, source-role/type metadata, evidence code links, and not-found state from services.
+- Right-clicking a signal exposes `Show Signal Kernel Graph`; drivers render on the left, the selected signal renders as the center kernel, consumers render on the right, and cross-module groups render with module wrappers.
+- Hover enlarges a node and shows local code preview with exact file/line/column evidence and caret marking when available. Ctrl+left-click rebases the graph to that node's stable key. Double-click navigates to evidence for input/output nodes or declaration for the kernel.
+- Verification for this block: focused build targets `completion_test`, `relationship_test`, and `gui_smoke_test`; CTest for all three; `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
@@ -326,6 +337,7 @@ feature direction that violates them.
 
 - Query Service or feature service read paths.
 - Report/model shaping for semantic panels.
+- Service-built graph models for visual semantic panels.
 - Focused UI rendering of stable reports.
 - Real fixture coverage tied to production changes.
 - RTL Insights service expansion with clear report contracts.
@@ -349,6 +361,7 @@ Reduce batch size when blocks share core files or API boundaries.
 - Before committing, run `git diff --check`, changed-file ASCII/trailing-whitespace scans, and forbidden-file guards.
 - Prefer real workspace fixtures such as `test_sv/new` for semantic feature expansion.
 - Phase D feature work should prove behavior at the service level before UI smoke coverage.
+- Signal graph features must verify node direction, module grouping, evidence links, hover preview data, and dock/menu registration.
 - Fold Region / Fold Shelf changes must verify visible mode chip updates, gutter or viewport previews, shelf active styling, Esc cancellation, and input blocking where a mode owns editor interaction.
 - Every feature change must explicitly verify the Feature Expansion Guardrails that apply to its scope, including the final repo-source zero target when semantic/test code changes.
 

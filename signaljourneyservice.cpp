@@ -536,6 +536,12 @@ void SignalJourneyService::fillDisplayMetadata(
     item.peerCodeLink = codeLinkForRecord(item.peerSymbolRecord);
     item.fromCodeLink = codeLinkForRecord(item.fromSymbolRecord);
     item.toCodeLink = codeLinkForRecord(item.toSymbolRecord);
+    item.evidenceRange = relationship.evidenceRange;
+    item.evidenceCodeLink = RtlInsightLink::fromFileLine(
+        relationship.evidenceRange.fileName,
+        relationship.evidenceRange.line,
+        relationship.evidenceRange.column);
+    item.relationshipType = relationship.relationship.type;
     item.provenance = relationship.provenance;
     item.confidence = relationship.confidence;
     item.evidenceText = relationship.evidenceText;

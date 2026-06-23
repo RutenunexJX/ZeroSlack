@@ -42,7 +42,8 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
                 signalHandle,
                 SymbolRelationshipEngine::READS_FROM,
                 QString("Timing sensitivity at line %1").arg(signal.lineNumber),
-                80
+                80,
+                signal.sourceRange
             );
         }
     }
@@ -73,7 +74,8 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
                     ownerModuleHandle,
                     SymbolRelationshipEngine::CLOCKS,
                     QString("Clock domain at line %1").arg(signal.lineNumber),
-                    95
+                    95,
+                    signal.sourceRange
                 );
             }
         }
@@ -86,7 +88,8 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
                     ownerModuleHandle,
                     SymbolRelationshipEngine::RESETS,
                     QString("Reset signal at line %1").arg(signal.lineNumber),
-                    90
+                    90,
+                    signal.sourceRange
                 );
             }
         }

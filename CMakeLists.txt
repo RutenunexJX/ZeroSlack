@@ -55,6 +55,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisschedulerrelationships.cpp
     analysisschedulerwiring.cpp
     clockresetdomainservice.cpp
+    codepreviewservice.cpp
     codetemplateservice.cpp
     mainwindow.cpp
     modulebriefservice.cpp
@@ -193,6 +194,8 @@ set(ZEROSLACK_CORE_SOURCES
     semanticruntimecoordinator.cpp
     semanticruntimewiring.cpp
     signaljourneyservice.cpp
+    signalkernelgraphservice.cpp
+    signalkernelgraphpanelcoordinator.cpp
     slangmanagerdiagnostics.cpp
     slangrelationshiphelpers.cpp
     smartrelationshipbuilderanalysis.cpp
@@ -229,6 +232,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisprogresscoordinator.h
     analysisscheduler.h
     clockresetdomainservice.h
+    codepreviewservice.h
     codetemplateservice.h
     mainwindow.h
     modulebriefservice.h
@@ -319,12 +323,15 @@ set(ZEROSLACK_CORE_SOURCES
     semanticpanelrefreshcoordinator.h
     semanticdockcoordinator.h
     semanticindex.h
+    semanticsourcerange.h
     semanticindexcompletionfilters.h
     semanticindexlookuphelpers.h
     semanticindexmodulecontexthelpers.h
     semanticindexsnapshot.h
     semanticruntimecoordinator.h
     signaljourneyservice.h
+    signalkernelgraphservice.h
+    signalkernelgraphpanelcoordinator.h
     slangmanager.h
     slangparseoptions.h
     slangrelationshiphelpers.h

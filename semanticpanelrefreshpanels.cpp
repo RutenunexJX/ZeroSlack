@@ -4,17 +4,20 @@
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
+#include "signalkernelgraphpanelcoordinator.h"
 
 void SemanticPanelRefreshCoordinator::PanelSet::set(
     ProblemsPanelCoordinator* newProblemsPanel,
     ReferencesPanelCoordinator* newReferencesPanel,
     RelationshipsPanelCoordinator* newRelationshipsPanel,
-    RtlInsightsPanelCoordinator* newRtlInsightsPanel)
+    RtlInsightsPanelCoordinator* newRtlInsightsPanel,
+    SignalKernelGraphPanelCoordinator* newSignalKernelGraphPanel)
 {
     problemsPanel = newProblemsPanel;
     referencesPanel = newReferencesPanel;
     relationshipsPanel = newRelationshipsPanel;
     rtlInsightsPanel = newRtlInsightsPanel;
+    signalKernelGraphPanel = newSignalKernelGraphPanel;
 }
 
 bool SemanticPanelRefreshCoordinator::PanelSet::isConfigured() const
@@ -75,6 +78,19 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureRtlInsightsPanel(
     rtlInsightsPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
+void SemanticPanelRefreshCoordinator::PanelSet::configureSignalKernelGraphPanel(
+    DocumentModel* documentModel,
+    const NavigationHandler& navigationHandler,
+    const StatusMessageHandler& statusMessageHandler) const
+{
+    if (!signalKernelGraphPanel)
+        return;
+
+    signalKernelGraphPanel->setDocumentModel(documentModel);
+    signalKernelGraphPanel->setNavigationHandler(navigationHandler);
+    signalKernelGraphPanel->setStatusMessageHandler(statusMessageHandler);
+}
+
 void SemanticPanelRefreshCoordinator::PanelSet::updateProblemsPanel(
     const QString& fileName) const
 {
@@ -110,6 +126,17 @@ void SemanticPanelRefreshCoordinator::PanelSet::refreshRelationshipsPanel() cons
 {
     if (relationshipsPanel)
         relationshipsPanel->refresh();
+}
+
+void SemanticPanelRefreshCoordinator::PanelSet::showSignalKernelGraphForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (signalKernelGraphPanel)
+        signalKernelGraphPanel->showSignalKernelGraphForSymbol(symbolName,
+                                                               fileName,
+                                                               moduleName);
 }
 
 void SemanticPanelRefreshCoordinator::PanelSet::updateRtlInsightsPanel(

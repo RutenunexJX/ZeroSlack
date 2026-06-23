@@ -12,7 +12,15 @@ QList<SemanticRelationship> toSemanticRelationships(
     for (const RelationshipToAdd& relationship : relationships) {
         if (relationship.fromId < 0 || relationship.toId < 0)
             continue;
-        result.append({relationship.fromId, relationship.toId, relationship.type});
+        SemanticRelationship item;
+        item.fromId = relationship.fromId;
+        item.toId = relationship.toId;
+        item.type = relationship.type;
+        item.confidence = relationship.confidence;
+        item.evidenceText = relationship.context;
+        item.evidenceRange = relationship.evidenceRange;
+        item.provenance = RelationshipProvenance::Inferred;
+        result.append(item);
     }
     return result;
 }

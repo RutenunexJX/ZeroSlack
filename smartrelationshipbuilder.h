@@ -21,6 +21,7 @@ struct RelationshipToAdd {
     SymbolRelationshipEngine::RelationType type;
     QString context;
     int confidence;
+    SemanticSourceRange evidenceRange;
 };
 
 class SmartRelationshipBuilder : public QObject
@@ -131,7 +132,8 @@ private:
     QVector<RelationshipToAdd>* collectResults = nullptr;
     void addRelationshipWithContext(int fromHandle, int toHandle,
                                   SymbolRelationshipEngine::RelationType type,
-                                  const QString& context, int confidence = 100);
+                                  const QString& context, int confidence = 100,
+                                  const SemanticSourceRange& evidenceRange = {});
 
     void analyzeParameterRelationships(const QString& content, AnalysisContext& context);
     void analyzeConstraintRelationships(const QString& content, AnalysisContext& context);

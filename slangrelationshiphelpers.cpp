@@ -4,6 +4,7 @@
 #include <slang/ast/expressions/ConversionExpression.h>
 #include <slang/ast/expressions/MiscExpressions.h>
 #include <slang/ast/expressions/SelectExpressions.h>
+#include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 
 #include <QSet>
@@ -18,6 +19,14 @@ namespace {
 QString valueSymbolName(const ValueSymbol& symbol)
 {
     return QString::fromStdString(std::string(symbol.name));
+}
+
+slang::SourceLocation fileOrExpansionLocation(const slang::SourceManager* sm,
+                                              slang::SourceLocation loc)
+{
+    if (!sm || !loc)
+        return {};
+    return sm->isFileLoc(loc) ? loc : sm->getExpansionLoc(loc);
 }
 
 } // namespace
@@ -66,6 +75,35 @@ QStringList collectValueNames(const Expression& expr)
     return names;
 }
 
+SemanticSourceRange relationshipEvidenceRange(
+    const slang::SourceManager* sm,
+    slang::SourceRange range)
+{
+    SemanticSourceRange evidence;
+    if (!sm || !range.start())
+        return evidence;
+
+    const slang::SourceLocation start =
+        fileOrExpansionLocation(sm, range.start());
+    const slang::SourceLocation end =
+        fileOrExpansionLocation(sm, range.end());
+    if (!start)
+        return evidence;
+
+    evidence.fileName =
+        QString::fromStdString(std::string(sm->getFileName(start)));
+    evidence.line = static_cast<int>(sm->getLineNumber(start));
+    evidence.column = static_cast<int>(sm->getColumnNumber(start));
+    if (end && sm->getFileName(end) == sm->getFileName(start)) {
+        evidence.endLine = static_cast<int>(sm->getLineNumber(end));
+        evidence.endColumn = static_cast<int>(sm->getColumnNumber(end));
+    } else {
+        evidence.endLine = evidence.line;
+        evidence.endColumn = evidence.column;
+    }
+    return evidence;
+}
+
 void appendConditionReference(QVector<ConditionReferenceInfo>& result,
                               const slang::SourceManager* sm,
                               const Expression& expr)
@@ -74,6 +112,7 @@ void appendConditionReference(QVector<ConditionReferenceInfo>& result,
     info.symbolNames = collectValueNames(expr);
     size_t line = sm ? sm->getLineNumber(expr.sourceRange.start()) : 0;
     info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
+    info.sourceRange = relationshipEvidenceRange(sm, expr.sourceRange);
     if (!info.symbolNames.isEmpty())
         result.append(info);
 }
@@ -86,12 +125,15 @@ void appendTimingSignal(QVector<TimingSignalInfo>& result,
     size_t line = sm ? sm->getLineNumber(event.sourceRange.start()) : 0;
     const int lineNumber = (line == 0) ? 1 : static_cast<int>(line);
     const bool edgeSensitive = event.edge != EdgeKind::None;
+    const SemanticSourceRange sourceRange =
+        relationshipEvidenceRange(sm, event.sourceRange);
 
     for (const QString& name : names) {
         TimingSignalInfo info;
         info.signalName = name;
         info.lineNumber = lineNumber;
         info.edgeSensitive = edgeSensitive;
+        info.sourceRange = sourceRange;
         result.append(info);
     }
 }

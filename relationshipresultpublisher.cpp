@@ -67,7 +67,8 @@ bool RelationshipResultPublisher::applySingleFileResult(
                                             relationship.toId,
                                             relationship.type,
                                             relationship.context,
-                                            relationship.confidence);
+                                            relationship.confidence,
+                                            relationship.evidenceRange);
     }
     relationshipEngine->endUpdate();
 
@@ -96,7 +97,8 @@ bool RelationshipResultPublisher::applyWorkspaceResult(
                                                 relationship.toId,
                                                 relationship.type,
                                                 relationship.context,
-                                                relationship.confidence);
+                                                relationship.confidence,
+                                                relationship.evidenceRange);
         }
     }
     relationshipEngine->endUpdate();

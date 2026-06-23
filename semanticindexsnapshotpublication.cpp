@@ -66,6 +66,7 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
                             RelationshipProvenance::Inferred;
                         relationship.confidence = metadata.confidence;
                         relationship.evidenceText = metadata.context;
+                        relationship.evidenceRange = metadata.evidenceRange;
                     }
 
                     const QString key = QStringLiteral("%1:%2:%3")

@@ -2234,13 +2234,16 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(sourceSymbolContext);
     expectBool("EditorSemanticContext source menu enabled",
-               sourceMenuState.items.size() == 2
+               sourceMenuState.items.size() == 3
                    && sourceMenuState.items.at(0).enabled
                    && sourceMenuState.items.at(0).action
                        == SourceSymbolAction::FindReferences
                    && sourceMenuState.items.at(1).enabled
                    && sourceMenuState.items.at(1).action
-                       == SourceSymbolAction::ShowRelationships,
+                       == SourceSymbolAction::ShowRelationships
+                   && sourceMenuState.items.at(2).enabled
+                   && sourceMenuState.items.at(2).action
+                       == SourceSymbolAction::ShowSignalKernelGraph,
                true);
     const EditorSourceSymbolActionRequestState sourceRefsRequest =
         EditorSemanticContextService::getInstance()
@@ -2265,6 +2268,21 @@ int main(int argc, char** argv) {
                        == SourceSymbolAction::ShowRelationships
                    && sourceRelsRequest.symbolName == QStringLiteral("menu_sig"),
                true);
+    const EditorSourceSymbolActionRequestState sourceKernelGraphRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowSignalKernelGraph,
+                sourceSymbolContext);
+    expectBool("EditorSemanticContext source kernel graph request",
+               sourceKernelGraphRequest.available
+                   && sourceKernelGraphRequest.action
+                       == SourceSymbolAction::ShowSignalKernelGraph
+                   && sourceKernelGraphRequest.symbolName
+                       == QStringLiteral("menu_sig")
+                   && sourceKernelGraphRequest.fileName == path
+                   && sourceKernelGraphRequest.moduleName
+                       == QStringLiteral("top"),
+               true);
     EditorSemanticContext unavailableSourceSymbolContext;
     unavailableSourceSymbolContext.lineText = sourceSymbolContext.lineText;
     unavailableSourceSymbolContext.column = sourceSymbolContext.column;
@@ -2272,9 +2290,10 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(unavailableSourceSymbolContext);
     expectBool("EditorSemanticContext source menu disabled",
-               disabledSourceMenuState.items.size() == 2
+               disabledSourceMenuState.items.size() == 3
                    && !disabledSourceMenuState.items.at(0).enabled
-                   && !disabledSourceMenuState.items.at(1).enabled,
+                   && !disabledSourceMenuState.items.at(1).enabled
+                   && !disabledSourceMenuState.items.at(2).enabled,
                true);
     const EditorSourceSymbolActionRequestState unavailableSourceRequest =
         EditorSemanticContextService::getInstance()

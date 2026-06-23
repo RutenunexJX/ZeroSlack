@@ -341,7 +341,8 @@ static SemanticRelationship semanticFixtureRelationship(
     SymbolRelationshipEngine::RelationType type,
     RelationshipProvenance provenance = RelationshipProvenance::Inferred,
     int confidence = 100,
-    const QString& evidenceText = QString())
+    const QString& evidenceText = QString(),
+    const SemanticSourceRange& evidenceRange = {})
 {
     SemanticRelationship relationship;
     relationship.fromId = fromRecord.localHandle;
@@ -352,6 +353,7 @@ static SemanticRelationship semanticFixtureRelationship(
     relationship.provenance = provenance;
     relationship.confidence = confidence;
     relationship.evidenceText = evidenceText;
+    relationship.evidenceRange = evidenceRange;
     return relationship;
 }
 

@@ -27,7 +27,8 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
                 moduleTypeHandle,
                 SymbolRelationshipEngine::INSTANTIATES,
                 QString("Instance: %1 at line %2").arg(info.instanceName).arg(info.lineNumber),
-                90
+                90,
+                info.sourceRange
             );
             emitted.insert(QStringLiteral("%1:%2").arg(ownerModuleHandle).arg(moduleTypeHandle));
         }
@@ -65,7 +66,12 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
                 QString("Instance: %1 at line %2")
                     .arg(record.name)
                     .arg(record.location.startLine),
-                90
+                90,
+                SemanticSourceRange{record.location.fileName,
+                                    record.location.startLine,
+                                    record.location.startColumn,
+                                    record.location.endLine,
+                                    record.location.endColumn}
             );
             emitted.insert(key);
         }
@@ -95,7 +101,8 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
                     rightVarHandle,
                     SymbolRelationshipEngine::REFERENCES,
                     QString("Assignment at line %1").arg(assignment.lineNumber),
-                    85
+                    85,
+                    assignment.sourceRange
                 );
 
                 addRelationshipWithContext(
@@ -103,7 +110,8 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
                     leftVarHandle,
                     SymbolRelationshipEngine::ASSIGNS_TO,
                     QString("Assigned to %1 at line %2").arg(assignment.leftName).arg(assignment.lineNumber),
-                    85
+                    85,
+                    assignment.sourceRange
                 );
             }
         }
@@ -132,7 +140,8 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
                     varHandle,
                     SymbolRelationshipEngine::READS_FROM,
                     QString("Condition check at line %1").arg(ref.lineNumber),
-                    70
+                    70,
+                    ref.sourceRange
                 );
             }
         }
@@ -169,7 +178,8 @@ void SmartRelationshipBuilder::analyzeTaskFunctionCalls(const QString& content, 
                 taskHandle,
                 SymbolRelationshipEngine::CALLS,
                 QString("Called at line %1").arg(call.lineNumber),
-                95
+                95,
+                call.sourceRange
             );
         }
     }
@@ -223,16 +233,20 @@ int SmartRelationshipBuilder::findSymbolLocalHandleByName(
 
 void SmartRelationshipBuilder::addRelationshipWithContext(int fromHandle, int toHandle,
                                                         SymbolRelationshipEngine::RelationType type,
-                                                        const QString& context, int confidence)
+                                                        const QString& context,
+                                                        int confidence,
+                                                        const SemanticSourceRange& evidenceRange)
 {
     if (confidence < confidenceThreshold)
         return;
     if (collectResults) {
-        collectResults->append({fromHandle, toHandle, type, context, confidence});
+        collectResults->append(
+            {fromHandle, toHandle, type, context, confidence, evidenceRange});
         return;
     }
     if (relationshipEngine)
-        relationshipEngine->addRelationship(fromHandle, toHandle, type, context, confidence);
+        relationshipEngine->addRelationship(
+            fromHandle, toHandle, type, context, confidence, evidenceRange);
 }
 
 int SmartRelationshipBuilder::getContainingModuleLocalHandle(

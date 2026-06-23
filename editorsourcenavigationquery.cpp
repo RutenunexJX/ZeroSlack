@@ -57,6 +57,10 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
         SourceSymbolAction::ShowRelationships,
         actionContext.available
     });
+    state.items.append({
+        SourceSymbolAction::ShowSignalKernelGraph,
+        actionContext.available
+    });
     return state;
 }
 

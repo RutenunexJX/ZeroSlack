@@ -34,6 +34,10 @@ struct SignalJourneyItem {
     RtlInsightCodeLink peerCodeLink;
     RtlInsightCodeLink fromCodeLink;
     RtlInsightCodeLink toCodeLink;
+    RtlInsightCodeLink evidenceCodeLink;
+    SemanticSourceRange evidenceRange;
+    SymbolRelationshipEngine::RelationType relationshipType =
+        SymbolRelationshipEngine::REFERENCES;
     bool outgoing = false;
     RelationshipProvenance provenance = RelationshipProvenance::Unknown;
     int confidence = 0;

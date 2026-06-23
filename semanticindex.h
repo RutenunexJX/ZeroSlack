@@ -1,6 +1,7 @@
 #ifndef SEMANTICINDEX_H
 #define SEMANTICINDEX_H
 
+#include "semanticsourcerange.h"
 #include "symbolrelationshipengine.h"
 #include "symboltaxonomy.h"
 
@@ -118,6 +119,7 @@ struct SemanticRelationship {
     RelationshipProvenance provenance = RelationshipProvenance::Unknown;
     int confidence = 0;
     QString evidenceText;
+    SemanticSourceRange evidenceRange;
 };
 
 struct SemanticRelationshipResult {
@@ -129,6 +131,7 @@ struct SemanticRelationshipResult {
     RelationshipProvenance provenance = RelationshipProvenance::Unknown;
     int confidence = 0;
     QString evidenceText;
+    SemanticSourceRange evidenceRange;
 };
 
 struct SemanticDiagnostic {

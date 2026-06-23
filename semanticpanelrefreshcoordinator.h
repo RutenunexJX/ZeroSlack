@@ -7,12 +7,14 @@
 #include <functional>
 
 class MyCodeEditor;
+class DocumentModel;
 class NavigationCommandCoordinator;
 class NavigationManager;
 class ProblemsPanelCoordinator;
 class ReferencesPanelCoordinator;
 class RelationshipsPanelCoordinator;
 class RtlInsightsPanelCoordinator;
+class SignalKernelGraphPanelCoordinator;
 class TabManager;
 class WorkspaceManager;
 
@@ -26,7 +28,8 @@ public:
                                     ProblemsPanelCoordinator* problemsPanel,
                                     ReferencesPanelCoordinator* referencesPanel,
                                     RelationshipsPanelCoordinator* relationshipsPanel,
-                                    RtlInsightsPanelCoordinator* rtlInsightsPanel);
+                                    RtlInsightsPanelCoordinator* rtlInsightsPanel,
+                                    SignalKernelGraphPanelCoordinator* signalKernelGraphPanel);
 
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
     void configurePanels();
@@ -40,6 +43,9 @@ public:
                                     const QString& fileName,
                                     const QString& moduleName);
     void refreshRelationshipsPanel();
+    void showSignalKernelGraphForSymbol(const QString& symbolName,
+                                        const QString& fileName,
+                                        const QString& moduleName);
     void handleActiveEditorChanged(MyCodeEditor* editor);
 
 private:
@@ -73,12 +79,14 @@ private:
         ReferencesPanelCoordinator* referencesPanel = nullptr;
         RelationshipsPanelCoordinator* relationshipsPanel = nullptr;
         RtlInsightsPanelCoordinator* rtlInsightsPanel = nullptr;
+        SignalKernelGraphPanelCoordinator* signalKernelGraphPanel = nullptr;
         bool configured = false;
 
         void set(ProblemsPanelCoordinator* problemsPanel,
                  ReferencesPanelCoordinator* referencesPanel,
                  RelationshipsPanelCoordinator* relationshipsPanel,
-                 RtlInsightsPanelCoordinator* rtlInsightsPanel);
+                 RtlInsightsPanelCoordinator* rtlInsightsPanel,
+                 SignalKernelGraphPanelCoordinator* signalKernelGraphPanel);
         bool isConfigured() const;
         void markConfigured();
         void configureProblemsPanel(
@@ -95,6 +103,10 @@ private:
         void configureRtlInsightsPanel(
             const NavigationHandler& navigationHandler,
             const StatusMessageHandler& statusMessageHandler) const;
+        void configureSignalKernelGraphPanel(
+            DocumentModel* documentModel,
+            const NavigationHandler& navigationHandler,
+            const StatusMessageHandler& statusMessageHandler) const;
         void updateProblemsPanel(const QString& fileName) const;
         void showReferencesForSymbol(const QString& symbolName,
                                      const QString& fileName,
@@ -104,6 +116,9 @@ private:
                                         const QString& fileName,
                                         const QString& moduleName) const;
         void refreshRelationshipsPanel() const;
+        void showSignalKernelGraphForSymbol(const QString& symbolName,
+                                            const QString& fileName,
+                                            const QString& moduleName) const;
         void updateRtlInsightsPanel(const QString& fileName,
                                     const QString& moduleName,
                                     const QString& signalName) const;

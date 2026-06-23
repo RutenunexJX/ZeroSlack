@@ -14,6 +14,7 @@ class ReferencesPanelCoordinator;
 class RelationshipsPanelCoordinator;
 class RtlInsightsPanelCoordinator;
 class SemanticPanelRefreshCoordinator;
+class SignalKernelGraphPanelCoordinator;
 class TabManager;
 class WorkspaceManager;
 class QMainWindow;
@@ -38,6 +39,7 @@ public:
     ReferencesPanelCoordinator* referencesPanelCoordinator() const;
     RelationshipsPanelCoordinator* relationshipsPanelCoordinator() const;
     RtlInsightsPanelCoordinator* rtlInsightsPanelCoordinator() const;
+    SignalKernelGraphPanelCoordinator* signalKernelGraphPanelCoordinator() const;
 
 private:
     struct DockDependencies {
@@ -65,6 +67,7 @@ private:
         std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
         std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
         std::unique_ptr<RtlInsightsPanelCoordinator> rtlInsightsPanel;
+        std::unique_ptr<SignalKernelGraphPanelCoordinator> signalKernelGraphPanel;
         std::unique_ptr<SemanticPanelRefreshCoordinator> semanticPanelRefresh;
 
         void createPanels(const DockDependencies& dependencies);

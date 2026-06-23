@@ -31,6 +31,9 @@ RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& 
                 info.moduleName = QString::fromStdString(std::string(inst.getDefinition().name));
                 size_t line = sm->getLineNumber(inst.location);
                 info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
+                info.sourceRange = relationshipEvidenceRange(
+                    sm,
+                    slang::SourceRange(inst.location, inst.location));
                 result.moduleInstantiations.append(info);
                 v.visitDefault(inst);
             },
@@ -40,6 +43,7 @@ RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& 
                     info.subroutineName = QString::fromStdString(std::string(call.getSubroutineName()));
                     size_t line = sm->getLineNumber(call.sourceRange.start());
                     info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
+                    info.sourceRange = relationshipEvidenceRange(sm, call.sourceRange);
                     result.subroutineCalls.append(info);
                 }
                 v.visitDefault(call);
@@ -50,6 +54,8 @@ RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& 
                 info.rightNames = collectValueNames(assignment.right());
                 size_t line = sm->getLineNumber(assignment.sourceRange.start());
                 info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
+                info.sourceRange =
+                    relationshipEvidenceRange(sm, assignment.sourceRange);
                 if (!info.leftName.isEmpty() && !info.rightNames.isEmpty())
                     result.assignments.append(info);
                 v.visitDefault(assignment);
@@ -121,6 +127,9 @@ QVector<ModuleInstantiationInfo> SlangManager::extractModuleInstantiations(const
                 info.moduleName = QString::fromStdString(std::string(inst.getDefinition().name));
                 size_t line = sm->getLineNumber(inst.location);
                 info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
+                info.sourceRange = relationshipEvidenceRange(
+                    sm,
+                    slang::SourceRange(inst.location, inst.location));
                 result.append(info);
                 v.visitDefault(inst);
             });
@@ -145,6 +154,7 @@ QVector<SubroutineCallInfo> SlangManager::extractSubroutineCalls(const QString& 
                     info.subroutineName = QString::fromStdString(std::string(call.getSubroutineName()));
                     size_t line = sm->getLineNumber(call.sourceRange.start());
                     info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
+                    info.sourceRange = relationshipEvidenceRange(sm, call.sourceRange);
                     result.append(info);
                 }
                 v.visitDefault(call);
@@ -170,6 +180,8 @@ QVector<AssignmentInfo> SlangManager::extractAssignments(const QString& fileName
                 info.rightNames = collectValueNames(assignment.right());
                 size_t line = sm->getLineNumber(assignment.sourceRange.start());
                 info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
+                info.sourceRange =
+                    relationshipEvidenceRange(sm, assignment.sourceRange);
                 if (!info.leftName.isEmpty() && !info.rightNames.isEmpty())
                     result.append(info);
                 v.visitDefault(assignment);

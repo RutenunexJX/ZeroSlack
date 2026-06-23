@@ -41,8 +41,12 @@ void SymbolRelationshipEngine::setSymbolRecordProvider(
     m_symbolRecordProvider = std::move(symbolRecordProvider);
 }
 
-void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
-                                              RelationType type, const QString& context, int confidence)
+void SymbolRelationshipEngine::addRelationship(int fromSymbolId,
+                                               int toSymbolId,
+                                               RelationType type,
+                                               const QString& context,
+                                               int confidence,
+                                               const SemanticSourceRange& evidenceRange)
 {
     if (fromSymbolId == toSymbolId) return;
 
@@ -50,8 +54,10 @@ void SymbolRelationshipEngine::addRelationship(int fromSymbolId, int toSymbolId,
         return;
     }
 
-    RelationshipEdge outgoingEdge(toSymbolId, type, context, confidence);
-    RelationshipEdge incomingEdge(fromSymbolId, type, context, confidence);
+    RelationshipEdge outgoingEdge(
+        toSymbolId, type, context, confidence, evidenceRange);
+    RelationshipEdge incomingEdge(
+        fromSymbolId, type, context, confidence, evidenceRange);
 
     relationshipGraph[fromSymbolId].outgoingEdges.append(outgoingEdge);
     relationshipGraph[toSymbolId].incomingEdges.append(incomingEdge);
@@ -173,6 +179,7 @@ SymbolRelationshipEngine::getRelationshipMetadata(
         metadata.found = true;
         metadata.context = edge.context;
         metadata.confidence = edge.confidence;
+        metadata.evidenceRange = edge.evidenceRange;
         return metadata;
     }
     return metadata;

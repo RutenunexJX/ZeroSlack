@@ -118,6 +118,7 @@ QList<SemanticRelationship> SemanticIndex::relationshipsForStableKey(
                 rel.provenance = RelationshipProvenance::Inferred;
                 rel.confidence = metadata.confidence;
                 rel.evidenceText = metadata.context;
+                rel.evidenceRange = metadata.evidenceRange;
             }
 
             const QString dedupeKey = semanticRelationshipStableKeyText(rel).isEmpty()
@@ -166,6 +167,7 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
         item.provenance = item.relationship.provenance;
         item.confidence = item.relationship.confidence;
         item.evidenceText = item.relationship.evidenceText;
+        item.evidenceRange = item.relationship.evidenceRange;
         result.append(item);
     }
     return result;

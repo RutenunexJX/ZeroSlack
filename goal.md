@@ -8,7 +8,7 @@ ZeroSlack should:
 
 - open real SV workspaces reliably
 - understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, diagnostics, references, and relationships
-- provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, relationship browsing, and RTL insight reports
+- provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, relationship browsing, RTL insight reports, and signal-centric driver/consumer graphs
 - remain responsive on large files and multi-file workspaces
 - keep semantic behavior testable through real fixtures
 
@@ -29,6 +29,7 @@ SemanticIndex / SemanticIndexSnapshot
 
 Query Services / Feature Services
   Own feature-specific reads, report shaping, and semantic policy.
+  Signal Kernel Graphs are built here from Signal Journey and relationship evidence.
 
 Coordinators
   Own UI command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and workflow glue.
@@ -300,6 +301,7 @@ The foundation is healthy when:
 - Phase J is done only when tracked tests use semantic-native fixture builders, `test_sv/syminfo*` and reverse fixture adapters are deleted, and final scans prove legacy carrier names are gone from repo source except docs and guard definitions
 - Post-J editor correctness includes usable completion popup sizing, normal completion that triggers from identifier prefixes or strong semantic contexts, semantic command completion that requires `;cmd` plus Space, code template insertion through `;;cmd` plus Space, reserved-but-inactive `;:`, scoped `;?` / `;;?` help, removal of old single-letter plus Space command triggers, cross-file interface/header definition targets, named instance port formal-to-child-port jumps, actual-signal local jumps, and Navigation responsiveness fixes that remove unnecessary synchronous rebuilds instead of masking stalls with delayed timers
 - Global app control is available through Ctrl+Space from editor and non-editor focus; the current surfaced command set is intentionally limited to `ow`, `fd`, and `fds`, while broader ProjectModel/SemanticIndex/template/action search remains reserved for future expansion
+- Signal Kernel Graph is available from a signal right-click action and is done through `SignalJourneyService` / `SignalKernelGraphService` reports: drivers render left of the kernel, consumers render right, cross-module nodes are module-wrapped, hover previews show precise evidence code, Ctrl+left-click rebases the kernel, and double-click navigation uses evidence or declaration links
 - The post-J editor workflow baseline was verified by `completion_test` with 311 checks and `gui_smoke_test` with 276 checks for the layered inline command and Global Control paths
 - Phase K is done only when K1 Design Hierarchy, K2 Code Folding/Custom Folding, and K3 Fold Block Shelf are implemented through service/model-backed UI boundaries, mode state is visible and cancelable, shelf drag mode guards against accidental text edits, affected flows are verified with focused tests and GUI smoke coverage, and the implementation is proven not to use UI workspace scans, direct UI Slang runs, regex structure/fold parsing, or timer-delay responsiveness masking
 - Phase L is done only when first-party production regex logic is removed from semantic/editor feature paths, docs and guard definitions are the only regex allowlist, completion/module/import/FSM/scheduler behavior is backed by Tree-sitter, Slang/semantic records, `SemanticIndexSnapshot`, or deterministic token helpers, and final guards prove the cleanup

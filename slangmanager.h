@@ -13,12 +13,14 @@ struct ModuleInstantiationInfo {
     QString instanceName;
     QString moduleName;
     int lineNumber;  // 1-based for Qt/UI
+    SemanticSourceRange sourceRange;
 };
 
 /// Result of one task/function call resolved by Slang.
 struct SubroutineCallInfo {
     QString subroutineName;
     int lineNumber;  // 1-based for Qt/UI
+    SemanticSourceRange sourceRange;
 };
 
 /// Result of one assignment resolved by Slang.
@@ -26,12 +28,14 @@ struct AssignmentInfo {
     QString leftName;
     QStringList rightNames;
     int lineNumber;  // 1-based for Qt/UI
+    SemanticSourceRange sourceRange;
 };
 
 /// Result of one condition/control expression and the value symbols it reads.
 struct ConditionReferenceInfo {
     QStringList symbolNames;
     int lineNumber;  // 1-based for Qt/UI
+    SemanticSourceRange sourceRange;
 };
 
 /// Result of one timing-control signal reference.
@@ -39,6 +43,7 @@ struct TimingSignalInfo {
     QString signalName;
     int lineNumber;      // 1-based for Qt/UI
     bool edgeSensitive;  // posedge/negedge/both-edge event
+    SemanticSourceRange sourceRange;
 };
 
 /// All relationship facts extracted from one Slang parse.

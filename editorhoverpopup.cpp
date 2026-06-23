@@ -142,6 +142,69 @@ void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
     show();
 }
 
+void EditorHoverPopup::showCodePreview(const CodePreviewReport& report,
+                                       const QPoint& globalPosition,
+                                       const QFont& editorFont)
+{
+    resetContent();
+    targetFile = report.fileName;
+    targetLine = report.targetLine;
+    targetColumn = report.targetColumn;
+
+    QFont titleFont = editorFont;
+    titleFont.setBold(true);
+    addLabel(report.title.isEmpty()
+                 ? QStringLiteral("Code preview")
+                 : report.title,
+             QStringLiteral("font-weight:600;"),
+             titleFont);
+    if (!report.detail.isEmpty())
+        addLabel(report.detail, QStringLiteral("color: palette(mid);"), editorFont);
+    if (!report.locationDisplayName.isEmpty()) {
+        addLabel(report.preciseRange
+                     ? QStringLiteral("evidence at %1").arg(report.locationDisplayName)
+                     : QStringLiteral("near %1").arg(report.locationDisplayName),
+                 QStringLiteral("color: palette(mid);"),
+                 editorFont);
+    }
+
+    QFont codeFont = editorFont;
+    codeFont.setStyleHint(QFont::Monospace);
+    codeFont.setFixedPitch(true);
+    if (report.available) {
+        for (int i = 0; i < report.codeLines.size(); ++i) {
+            const int lineNumber = report.firstLineNumber + i;
+            const QString line =
+                QStringLiteral("%1  %2")
+                    .arg(lineNumber, 4)
+                    .arg(report.codeLines.at(i));
+            const bool highlighted = lineNumber == report.highlightedLine;
+            addLabel(line,
+                     highlighted
+                         ? QStringLiteral("background: rgba(64,156,255,0.18);"
+                                          "padding: 1px 4px;")
+                         : QStringLiteral("padding: 1px 4px;"),
+                     codeFont);
+            if (highlighted && !report.caretLine.isEmpty()) {
+                addLabel(QStringLiteral("      %1").arg(report.caretLine),
+                         QStringLiteral("color: #2563eb; padding: 0 4px;"),
+                         codeFont);
+            }
+        }
+    } else {
+        addLabel(report.unavailableReason.isEmpty()
+                     ? QStringLiteral("Code preview unavailable.")
+                     : report.unavailableReason,
+                 QStringLiteral("color: palette(mid);"),
+                 editorFont);
+    }
+
+    adjustSize();
+    resize(qMin(width(), 780), qMin(height(), 480));
+    moveNear(globalPosition);
+    show();
+}
+
 void EditorHoverPopup::closePopup()
 {
     hide();

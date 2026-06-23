@@ -11,6 +11,8 @@
 #include <functional>
 #include <memory>
 
+#include "semanticsourcerange.h"
+
 struct SemanticSymbolRecord;
 
 class SymbolRelationshipEngine : public QObject
@@ -41,6 +43,7 @@ public:
         bool found = false;
         QString context;
         int confidence = 0;
+        SemanticSourceRange evidenceRange;
     };
 
     explicit SymbolRelationshipEngine(QObject *parent = nullptr);
@@ -52,7 +55,8 @@ public:
     void setSymbolRecordProvider(SymbolRecordProvider symbolRecordProvider);
 
     void addRelationship(int fromSymbolId, int toSymbolId, RelationType type,
-                        const QString& context = "", int confidence = 100);
+                        const QString& context = "", int confidence = 100,
+                        const SemanticSourceRange& evidenceRange = {});
     void removeRelationship(int fromSymbolId, int toSymbolId, RelationType type);
     void removeAllRelationships(int symbolId);
     void clearAllRelationships();
@@ -102,9 +106,18 @@ private:
         RelationType type;
         QString context;
         int confidence;
+        SemanticSourceRange evidenceRange;
 
-        RelationshipEdge(int target, RelationType t, const QString& ctx = "", int conf = 100)
-            : targetId(target), type(t), context(ctx), confidence(conf) {}
+        RelationshipEdge(int target,
+                         RelationType t,
+                         const QString& ctx = "",
+                         int conf = 100,
+                         const SemanticSourceRange& range = {})
+            : targetId(target),
+              type(t),
+              context(ctx),
+              confidence(conf),
+              evidenceRange(range) {}
 
         bool operator==(const RelationshipEdge& other) const {
             return targetId == other.targetId && type == other.type;

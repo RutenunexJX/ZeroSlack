@@ -1,6 +1,7 @@
 #ifndef EDITORHOVERPOPUP_H
 #define EDITORHOVERPOPUP_H
 
+#include "codepreviewservice.h"
 #include "symbolhoverreports.h"
 
 #include <QFrame>
@@ -28,6 +29,9 @@ public:
     void showPreview(const DefinitionPreviewReport& report,
                      const QPoint& globalPosition,
                      const QFont& editorFont);
+    void showCodePreview(const CodePreviewReport& report,
+                         const QPoint& globalPosition,
+                         const QFont& editorFont);
     void closePopup();
     bool hasNavigableTarget() const;
 

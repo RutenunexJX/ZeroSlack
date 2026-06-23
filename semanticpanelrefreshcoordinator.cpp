@@ -19,13 +19,18 @@ SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
     ProblemsPanelCoordinator* problemsPanel,
     ReferencesPanelCoordinator* referencesPanel,
     RelationshipsPanelCoordinator* relationshipsPanel,
-    RtlInsightsPanelCoordinator* rtlInsightsPanel)
+    RtlInsightsPanelCoordinator* rtlInsightsPanel,
+    SignalKernelGraphPanelCoordinator* signalKernelGraphPanel)
 {
     dependencies.set(tabManager,
                      workspaceManager,
                      navigationManager,
                      navigationCommandCoordinator);
-    panels.set(problemsPanel, referencesPanel, relationshipsPanel, rtlInsightsPanel);
+    panels.set(problemsPanel,
+               referencesPanel,
+               relationshipsPanel,
+               rtlInsightsPanel,
+               signalKernelGraphPanel);
 }
 
 void SemanticPanelRefreshCoordinator::ContextDependencies::set(
@@ -104,6 +109,10 @@ void SemanticPanelRefreshCoordinator::configurePanels()
                                        statusMessageHandler);
     panels.configureRtlInsightsPanel(navigationHandler,
                                      statusMessageHandler);
+    panels.configureSignalKernelGraphPanel(
+        dependencies.tabManager ? dependencies.tabManager->getDocumentModel() : nullptr,
+        navigationHandler,
+        statusMessageHandler);
     panels.markConfigured();
 }
 
@@ -136,6 +145,14 @@ void SemanticPanelRefreshCoordinator::showRelationshipsForSymbol(
 void SemanticPanelRefreshCoordinator::refreshRelationshipsPanel()
 {
     panels.refreshRelationshipsPanel();
+}
+
+void SemanticPanelRefreshCoordinator::showSignalKernelGraphForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName)
+{
+    panels.showSignalKernelGraphForSymbol(symbolName, fileName, moduleName);
 }
 
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)

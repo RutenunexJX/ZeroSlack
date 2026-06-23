@@ -50,7 +50,8 @@ struct SourceSymbolActionContext {
 
 enum class SourceSymbolAction {
     FindReferences,
-    ShowRelationships
+    ShowRelationships,
+    ShowSignalKernelGraph
 };
 
 struct SourceEditorNavigationTarget {

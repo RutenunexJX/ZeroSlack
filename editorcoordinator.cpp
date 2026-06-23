@@ -26,6 +26,8 @@ QString sourceSymbolActionText(SourceSymbolAction action)
         return QStringLiteral("Find References");
     case SourceSymbolAction::ShowRelationships:
         return QStringLiteral("Show Relationships");
+    case SourceSymbolAction::ShowSignalKernelGraph:
+        return QStringLiteral("Show Signal Kernel Graph");
     }
     return QString();
 }
@@ -139,6 +141,18 @@ void EditorCoordinator::WorkflowDependencies::showRelationshipsForSymbol(
 {
     if (semanticPanelRefresh)
         semanticPanelRefresh->showRelationshipsForSymbol(symbolName, fileName, moduleName);
+}
+
+void EditorCoordinator::WorkflowDependencies::showSignalKernelGraphForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (semanticPanelRefresh) {
+        semanticPanelRefresh->showSignalKernelGraphForSymbol(symbolName,
+                                                             fileName,
+                                                             moduleName);
+    }
 }
 
 void EditorCoordinator::WorkflowDependencies::handleActiveEditorChanged(
@@ -436,6 +450,12 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
         break;
     case SourceSymbolAction::ShowRelationships:
         dependencies.showRelationshipsForSymbol(
+            requestState.symbolName,
+            requestState.fileName,
+            requestState.moduleName);
+        break;
+    case SourceSymbolAction::ShowSignalKernelGraph:
+        dependencies.showSignalKernelGraphForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName);
