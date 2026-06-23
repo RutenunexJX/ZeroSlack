@@ -317,6 +317,19 @@ feature direction that violates them.
 - Hover enlarges a node and shows local code preview with exact file/line/column evidence and caret marking when available. Ctrl+left-click rebases the graph to that node's stable key. Double-click navigates to evidence for input/output nodes or declaration for the kernel.
 - Verification for this block: focused build targets `completion_test`, `relationship_test`, and `gui_smoke_test`; CTest for all three; `git diff --check`.
 
+### Post-L: Inline Command And Declaration Templates
+
+- Status: implemented in the current worktree.
+- Scope: editor completion/template ergonomics after Phase L, not a new migration phase.
+- Semantic `;cmd` remains symbol completion only. `;l`, `;w`, `;r`, `;p`, and `;lp` complete existing logic, wire, reg, parameter, and localparam symbols through `CompletionService`.
+- Template `;;cmd` owns declaration generation. `;;l`, `;;w`, and `;;r` share the same deterministic dimension parser: dimensions before the name are packed, dimensions after the name are unpacked, `-s` adds `signed`, `:P_W` expands to `[P_W - 1:0]`, and explicit ranges such as `:PW+DW:0` are preserved.
+- `;;p` and `;;lp` generate scalar parameters without forcing a value expression. Default scalar output is `parameter NAME = ;` or `localparam NAME = ;`, with the cursor placed after `=`.
+- Parameter arrays use the same dimension ordering as signal templates. Unpacked dimensions generate an array assignment pattern skeleton, for example `;;p 8 test 8` becomes `parameter [7:0] test [7:0] = '{};`, with the cursor placed inside the braces.
+- Command-local type suggestions are triggered by `-` in parameter templates. `;;p -` and `;;lp -` offer `int`, `integer`, `logic`, `bit`, `byte`, `shortint`, and `longint`; choosing a type keeps the command active as `;;p -logic ` or similar so the user can continue typing dimensions and the name.
+- Editor bracket range helpers pair `[` to `[]`, expand bracket contents with Tab, and let Ctrl+left-click select the range body. Up/Down adjusts the left numeric bound, while Shift+Up/Down adjusts the right numeric bound.
+- Implementation and tests must remain no-regex. Parsing is by deterministic token scans in `CodeTemplateService` and editor runtime helpers.
+- Verification for this block: focused build target `completion_test`, CTest `completion_test`, changed-file regex scan, and `git diff --check`. GUI smoke should be rerun when range editing event flow changes.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

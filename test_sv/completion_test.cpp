@@ -1276,6 +1276,21 @@ int main(int argc, char** argv) {
                        ->matchCommandMode(QStringLiteral(";r reset"))
                        .command.kind == CompletionCommandKind::Reg,
                true);
+    expectBool("CompletionService wire command match",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral(";w net"))
+                       .command.kind == CompletionCommandKind::Wire,
+               true);
+    expectBool("CompletionService parameter command match",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral(";p WIDTH"))
+                       .command.kind == CompletionCommandKind::Parameter,
+               true);
+    expectBool("CompletionService localparam command match",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral(";lp LOCAL"))
+                       .command.kind == CompletionCommandKind::Localparam,
+               true);
 
     const CommandModeInputState commandInputState =
         CompletionService::getInstance()->commandModeInputState(QStringLiteral(";l ena"));
@@ -1678,6 +1693,30 @@ int main(int argc, char** argv) {
                                       QStringLiteral("-s :P_W sig"))
                  .insertText,
              QStringLiteral("logic signed [P_W - 1:0] sig;"));
+    const CodeTemplateItem widthWire =
+        CodeTemplateService::getInstance()->templateForCommand(
+            QStringLiteral(";;w"), QStringLiteral("8 net_sig 4"));
+    expectEq("CodeTemplateService wire dimensions",
+             widthWire.insertText,
+             QStringLiteral("wire [7:0] net_sig [3:0];"));
+    expectBool("CodeTemplateService wire selects name",
+               widthWire.selectionStart
+                       == widthWire.insertText.indexOf(QStringLiteral("net_sig"))
+                   && widthWire.selectionLength
+                       == QStringLiteral("net_sig").size(),
+               true);
+    expectEq("CodeTemplateService reg signed dimensions",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;r"),
+                                      QStringLiteral("-s :P_W state 8"))
+                 .insertText,
+             QStringLiteral("reg signed [P_W - 1:0] state [7:0];"));
+    expectEq("CodeTemplateService reg exact range dimension",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;r"),
+                                      QStringLiteral(":PW+DW:0 state"))
+                 .insertText,
+             QStringLiteral("reg [PW+DW:0] state;"));
     const CommandModeCompletionState widthTemplateState =
         CompletionService::getInstance()->commandModeCompletionState(
             CommandModeCompletionQuery{QStringLiteral(";;l 8 data")});
@@ -1690,6 +1729,97 @@ int main(int argc, char** argv) {
                        == QStringLiteral("logic [7:0] ").size()
                    && widthTemplateState.templateItems.first().selectionLength
                        == QStringLiteral("data").size(),
+               true);
+    const CommandModeCompletionState wireTemplateState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;w 8 net_sig")});
+    expectBool("CompletionService wire template carries selection",
+               wireTemplateState.matched
+                   && !wireTemplateState.templateItems.isEmpty()
+                   && wireTemplateState.templateItems.first().insertText
+                       == QStringLiteral("wire [7:0] net_sig;")
+                   && wireTemplateState.templateItems.first().selectionStart
+                       == QStringLiteral("wire [7:0] ").size()
+                   && wireTemplateState.templateItems.first().selectionLength
+                       == QStringLiteral("net_sig").size(),
+               true);
+    const CodeTemplateItem parameterScalar =
+        CodeTemplateService::getInstance()->templateForCommand(
+            QStringLiteral(";;p"), QStringLiteral("WIDTH"));
+    expectEq("CodeTemplateService parameter scalar",
+             parameterScalar.insertText,
+             QStringLiteral("parameter WIDTH = ;"));
+    expectBool("CodeTemplateService parameter value cursor",
+               parameterScalar.selectionStart
+                       == QStringLiteral("parameter WIDTH = ").size()
+                   && parameterScalar.selectionLength == 0,
+               true);
+    const CodeTemplateItem parameterArray =
+        CodeTemplateService::getInstance()->templateForCommand(
+            QStringLiteral(";;p"), QStringLiteral("8 test 8"));
+    expectEq("CodeTemplateService parameter array",
+             parameterArray.insertText,
+             QStringLiteral("parameter [7:0] test [7:0] = '{};"));
+    expectBool("CodeTemplateService parameter array cursor",
+               parameterArray.selectionStart
+                       == parameterArray.insertText.indexOf(QStringLiteral("{}")) + 1
+                   && parameterArray.selectionLength == 0,
+               true);
+    expectEq("CodeTemplateService typed parameter array",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;p"),
+                                      QStringLiteral("-logic 8 test 8"))
+                 .insertText,
+             QStringLiteral("parameter logic [7:0] test [7:0] = '{};"));
+    expectEq("CodeTemplateService localparam typed scalar",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;lp"),
+                                      QStringLiteral("-integer DEPTH"))
+                 .insertText,
+             QStringLiteral("localparam integer DEPTH = ;"));
+    expectEq("CodeTemplateService localparam typed array",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;lp"),
+                                      QStringLiteral("-bit :P_W LUT 16"))
+                 .insertText,
+             QStringLiteral("localparam bit [P_W - 1:0] LUT [15:0] = '{};"));
+    const CommandModeCompletionState parameterTypeState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;p -")});
+    expectBool("CompletionService parameter type suggestions",
+               parameterTypeState.matched
+                   && parameterTypeState.templateItems.size() >= 4
+                   && parameterTypeState.templateItems.first().label
+                       == QStringLiteral("int")
+                   && parameterTypeState.templateItems.first().insertText
+                       == QStringLiteral(";;p -int "),
+               true);
+    const CommandModeCompletionState fuzzyParameterTypeState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;p -lc")});
+    expectBool("CompletionService parameter type fuzzy suggestions",
+               fuzzyParameterTypeState.matched
+                   && fuzzyParameterTypeState.templateItems.size() == 1
+                   && fuzzyParameterTypeState.templateItems.first().label
+                       == QStringLiteral("logic")
+                   && fuzzyParameterTypeState.templateItems.first().insertText
+                       == QStringLiteral(";;p -logic "),
+               true);
+    CompletionActivationQuery parameterTypeActivation;
+    parameterTypeActivation.selectable = true;
+    parameterTypeActivation.mode = CompletionActivationMode::CommandMode;
+    parameterTypeActivation.itemText = QStringLiteral("logic");
+    parameterTypeActivation.defaultValue = QStringLiteral(";;p -logic ");
+    const CompletionActivationState parameterTypeActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            parameterTypeActivation);
+    expectBool("CompletionService parameter type keeps command mode",
+               parameterTypeActivationState.action
+                       == CompletionActivationAction::ReplaceCommandInput
+                   && parameterTypeActivationState.text
+                       == QStringLiteral(";;p -logic ")
+                   && !parameterTypeActivationState.clearCommandMode
+                   && !parameterTypeActivationState.hidePopup,
                true);
 
     expectBool("CompletionService command statement reject",
@@ -2380,6 +2510,30 @@ int main(int argc, char** argv) {
            commandLogicOk ? "PASS" : "FAIL",
            "CompletionService command symbols",
            commandLogicSymbols.size());
+
+    commandQuery.commandKind = CompletionCommandKind::Wire;
+    commandQuery.prefix = "net";
+    expectList("CompletionService command wire",
+               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               {"net_sig"});
+
+    commandQuery.commandKind = CompletionCommandKind::Reg;
+    commandQuery.prefix = "cou";
+    expectList("CompletionService command reg",
+               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               {"counter"});
+
+    commandQuery.commandKind = CompletionCommandKind::Parameter;
+    commandQuery.prefix = "DAT";
+    expectList("CompletionService command parameter",
+               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               {"DATA_WIDTH"});
+
+    commandQuery.commandKind = CompletionCommandKind::Localparam;
+    commandQuery.prefix = "LOC";
+    expectList("CompletionService command localparam",
+               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               {"LOCAL_MAX"});
 
     commandQuery.commandKind = CompletionCommandKind::PackedStructVariable;
     commandQuery.prefix = "pix";

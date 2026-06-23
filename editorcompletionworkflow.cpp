@@ -204,13 +204,15 @@ void EditorCompletionWorkflow::replaceCommandInputAtCursor(
     cursor.setPosition(editor->textCursor().position(), QTextCursor::KeepAnchor);
     cursor.insertText(text);
 
-    if (selectionStart >= 0 && selectionLength > 0
+    if (selectionStart >= 0 && selectionLength >= 0
         && selectionStart + selectionLength <= text.size()) {
         QTextCursor selectionCursor = editor->textCursor();
         selectionCursor.setPosition(commandStartPosition + selectionStart);
-        selectionCursor.setPosition(commandStartPosition + selectionStart
-                                        + selectionLength,
-                                    QTextCursor::KeepAnchor);
+        if (selectionLength > 0) {
+            selectionCursor.setPosition(commandStartPosition + selectionStart
+                                            + selectionLength,
+                                        QTextCursor::KeepAnchor);
+        }
         editor->setTextCursor(selectionCursor);
     }
 }

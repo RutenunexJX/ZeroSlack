@@ -117,19 +117,35 @@ QString dimensionFromToken(const QString& token, bool* matched)
     return QStringLiteral("[%1:0]").arg(width - 1);
 }
 
-CodeTemplateItem expandLogicTemplate(CodeTemplateItem item,
-                                     const QString& seedText)
+bool isSignalDeclarationTemplate(const QString& commandToken)
+{
+    return commandToken == QStringLiteral(";;l")
+        || commandToken == QStringLiteral(";;w")
+        || commandToken == QStringLiteral(";;r");
+}
+
+QString signalKeywordForTemplate(const QString& commandToken)
+{
+    if (commandToken == QStringLiteral(";;w"))
+        return QStringLiteral("wire");
+    if (commandToken == QStringLiteral(";;r"))
+        return QStringLiteral("reg");
+    return QStringLiteral("logic");
+}
+
+CodeTemplateItem expandSignalDeclarationTemplate(CodeTemplateItem item,
+                                                 const QString& seedText)
 {
     const QStringList tokens = splitTemplateArgs(seedText);
     QStringList packedDimensions;
     QStringList unpackedDimensions;
     QString name;
-    bool signedLogic = false;
+    bool signedDeclaration = false;
     bool nameSeen = false;
 
     for (const QString& token : tokens) {
         if (token == QStringLiteral("-s")) {
-            signedLogic = true;
+            signedDeclaration = true;
             continue;
         }
 
@@ -154,8 +170,8 @@ CodeTemplateItem expandLogicTemplate(CodeTemplateItem item,
     if (name.isEmpty())
         name = QStringLiteral("sig");
 
-    QString text = QStringLiteral("logic");
-    if (signedLogic)
+    QString text = signalKeywordForTemplate(item.commandToken);
+    if (signedDeclaration)
         text += QStringLiteral(" signed");
     if (!packedDimensions.isEmpty()) {
         text += QLatin1Char(' ');
@@ -170,6 +186,176 @@ CodeTemplateItem expandLogicTemplate(CodeTemplateItem item,
         text += unpackedDimensions.join(QString());
     }
     text += QLatin1Char(';');
+
+    item.insertText = text;
+    item.defaultValue = text;
+    return item;
+}
+
+bool isParameterDeclarationTemplate(const QString& commandToken)
+{
+    return commandToken == QStringLiteral(";;p")
+        || commandToken == QStringLiteral(";;lp");
+}
+
+QString parameterKeywordForTemplate(const QString& commandToken)
+{
+    return commandToken == QStringLiteral(";;lp")
+        ? QStringLiteral("localparam")
+        : QStringLiteral("parameter");
+}
+
+QStringList parameterTypeNames()
+{
+    return {
+        QStringLiteral("int"),
+        QStringLiteral("integer"),
+        QStringLiteral("logic"),
+        QStringLiteral("bit"),
+        QStringLiteral("byte"),
+        QStringLiteral("shortint"),
+        QStringLiteral("longint"),
+    };
+}
+
+bool fuzzyMatchInOrder(const QString& candidate, const QString& needle)
+{
+    if (needle.isEmpty())
+        return true;
+
+    int candidateIndex = 0;
+    const QString loweredCandidate = candidate.toLower();
+    const QString loweredNeedle = needle.toLower();
+    for (const QChar needleChar : loweredNeedle) {
+        bool found = false;
+        while (candidateIndex < loweredCandidate.size()) {
+            if (loweredCandidate.at(candidateIndex) == needleChar) {
+                found = true;
+                ++candidateIndex;
+                break;
+            }
+            ++candidateIndex;
+        }
+        if (!found)
+            return false;
+    }
+    return true;
+}
+
+bool parameterTypeCompletionPrefix(const QString& seedText,
+                                   QString* typePrefix)
+{
+    const QStringList tokens = splitTemplateArgs(seedText);
+    if (tokens.size() != 1)
+        return false;
+    if (!seedText.isEmpty() && seedText.at(seedText.size() - 1).isSpace())
+        return false;
+
+    const QString token = tokens.first().trimmed();
+    if (!token.startsWith(QLatin1Char('-')))
+        return false;
+
+    if (typePrefix)
+        *typePrefix = token.mid(1);
+    return true;
+}
+
+QString parameterTypeFromToken(const QString& token)
+{
+    if (!token.startsWith(QLatin1Char('-')) || token.size() <= 1)
+        return QString();
+
+    const QString requested = token.mid(1);
+    for (const QString& typeName : parameterTypeNames()) {
+        if (typeName.compare(requested, Qt::CaseInsensitive) == 0)
+            return typeName;
+    }
+    return QString();
+}
+
+QList<CodeTemplateItem> parameterTypeCompletionItems(
+    const CodeTemplateItem& baseItem,
+    const QString& typePrefix)
+{
+    QList<CodeTemplateItem> result;
+    for (const QString& typeName : parameterTypeNames()) {
+        if (!fuzzyMatchInOrder(typeName, typePrefix))
+            continue;
+
+        CodeTemplateItem item = baseItem;
+        item.label = typeName;
+        item.description = QStringLiteral("parameter type");
+        item.insertText =
+            QStringLiteral("%1 -%2 ").arg(baseItem.commandToken, typeName);
+        item.defaultValue = item.insertText;
+        result.append(item);
+    }
+    return result;
+}
+
+CodeTemplateItem expandParameterDeclarationTemplate(CodeTemplateItem item,
+                                                    const QString& seedText)
+{
+    const QStringList tokens = splitTemplateArgs(seedText);
+    QStringList packedDimensions;
+    QStringList unpackedDimensions;
+    QString typeName;
+    QString name;
+    bool nameSeen = false;
+
+    for (const QString& token : tokens) {
+        if (!nameSeen) {
+            const QString parameterType = parameterTypeFromToken(token);
+            if (!parameterType.isEmpty()) {
+                typeName = parameterType;
+                continue;
+            }
+        }
+
+        bool dimensionMatched = false;
+        const QString dimension = dimensionFromToken(token, &dimensionMatched);
+        if (dimensionMatched) {
+            if (!dimension.isEmpty()) {
+                if (nameSeen)
+                    unpackedDimensions.append(dimension);
+                else
+                    packedDimensions.append(dimension);
+            }
+            continue;
+        }
+
+        if (!nameSeen && isIdentifierLike(token)) {
+            name = token;
+            nameSeen = true;
+        }
+    }
+
+    if (name.isEmpty())
+        name = QStringLiteral("PARAM");
+
+    QString text = parameterKeywordForTemplate(item.commandToken);
+    if (!typeName.isEmpty()) {
+        text += QLatin1Char(' ');
+        text += typeName;
+    }
+    if (!packedDimensions.isEmpty()) {
+        text += QLatin1Char(' ');
+        text += packedDimensions.join(QString());
+    }
+    text += QLatin1Char(' ');
+    text += name;
+    if (!unpackedDimensions.isEmpty()) {
+        text += QLatin1Char(' ');
+        text += unpackedDimensions.join(QString());
+        text += QStringLiteral(" = '{};");
+        const int braceIndex = text.indexOf(QStringLiteral("{}"));
+        item.selectionStart = braceIndex >= 0 ? braceIndex + 1 : text.size() - 2;
+    } else {
+        text += QStringLiteral(" = ");
+        item.selectionStart = text.size();
+        text += QLatin1Char(';');
+    }
+    item.selectionLength = 0;
 
     item.insertText = text;
     item.defaultValue = text;
@@ -191,8 +377,8 @@ QList<CodeTemplateItem> CodeTemplateService::catalog() const
         makeItem(QStringLiteral(";;l"), QStringLiteral("logic"), QStringLiteral("logic declaration"), QStringLiteral("logic signal;")),
         makeItem(QStringLiteral(";;w"), QStringLiteral("wire"), QStringLiteral("wire declaration"), QStringLiteral("wire signal;")),
         makeItem(QStringLiteral(";;r"), QStringLiteral("reg"), QStringLiteral("reg declaration"), QStringLiteral("reg signal;")),
-        makeItem(QStringLiteral(";;p"), QStringLiteral("parameter"), QStringLiteral("parameter declaration"), QStringLiteral("parameter int NAME = 0;")),
-        makeItem(QStringLiteral(";;lp"), QStringLiteral("localparam"), QStringLiteral("localparam declaration"), QStringLiteral("localparam int NAME = 0;")),
+        makeItem(QStringLiteral(";;p"), QStringLiteral("parameter"), QStringLiteral("parameter declaration"), QStringLiteral("parameter NAME = ;")),
+        makeItem(QStringLiteral(";;lp"), QStringLiteral("localparam"), QStringLiteral("localparam declaration"), QStringLiteral("localparam NAME = ;")),
         makeItem(QStringLiteral(";;c"), QStringLiteral("assign"), QStringLiteral("continuous assignment"), QStringLiteral("assign lhs = rhs;")),
         makeItem(QStringLiteral(";;a"), QStringLiteral("always"), QStringLiteral("always process"), QStringLiteral("always_comb begin\nend")),
         makeItem(QStringLiteral(";;m"), QStringLiteral("module"), QStringLiteral("module skeleton"), QStringLiteral("module name();\nendmodule")),
@@ -216,8 +402,18 @@ QList<CodeTemplateItem> CodeTemplateService::matchingTemplates(
             && item.commandToken.compare(commandToken, Qt::CaseInsensitive) != 0) {
             continue;
         }
-        if (item.commandToken == QStringLiteral(";;l")) {
-            result.append(expandLogicTemplate(item, seedText));
+        if (isSignalDeclarationTemplate(item.commandToken)) {
+            result.append(expandSignalDeclarationTemplate(item, seedText));
+            continue;
+        }
+        if (isParameterDeclarationTemplate(item.commandToken)) {
+            QString typePrefix;
+            if (parameterTypeCompletionPrefix(seedText, &typePrefix)) {
+                result.append(parameterTypeCompletionItems(item, typePrefix));
+                continue;
+            }
+
+            result.append(expandParameterDeclarationTemplate(item, seedText));
             continue;
         }
 
@@ -250,25 +446,24 @@ QString CodeTemplateService::expandTemplate(
     const QString& seedText) const
 {
     const QString name = seededName(seedText, QStringLiteral("name"));
-    const QString signal = seededName(seedText, QStringLiteral("signal"));
     const QString upper = seededName(seedText, QStringLiteral("NAME")).toUpper();
 
-    if (commandToken == QStringLiteral(";;l"))
-        return expandLogicTemplate(
-                   makeItem(QStringLiteral(";;l"),
-                            QStringLiteral("logic"),
-                            QStringLiteral("logic declaration"),
-                            QStringLiteral("logic sig;")),
+    if (isSignalDeclarationTemplate(commandToken))
+        return expandSignalDeclarationTemplate(
+                   makeItem(commandToken,
+                            signalKeywordForTemplate(commandToken),
+                            QStringLiteral("signal declaration"),
+                            QStringLiteral("signal sig;")),
                    seedText)
             .insertText;
-    if (commandToken == QStringLiteral(";;w"))
-        return QStringLiteral("wire %1;").arg(signal);
-    if (commandToken == QStringLiteral(";;r"))
-        return QStringLiteral("reg %1;").arg(signal);
-    if (commandToken == QStringLiteral(";;p"))
-        return QStringLiteral("parameter int %1 = 0;").arg(name);
-    if (commandToken == QStringLiteral(";;lp"))
-        return QStringLiteral("localparam int %1 = 0;").arg(name);
+    if (isParameterDeclarationTemplate(commandToken))
+        return expandParameterDeclarationTemplate(
+                   makeItem(commandToken,
+                            parameterKeywordForTemplate(commandToken),
+                            QStringLiteral("parameter declaration"),
+                            QStringLiteral("parameter NAME = ;")),
+                   seedText)
+            .insertText;
     if (commandToken == QStringLiteral(";;c"))
         return seedText.trimmed().isEmpty()
             ? QStringLiteral("assign lhs = rhs;")
