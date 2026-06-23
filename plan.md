@@ -374,6 +374,16 @@ feature direction that violates them.
 - Next Wave Preview milestones: graphical lane/canvas rendering, guard-condition labels, clock/reset grouping, semantic cross-file enrichment, and throttled/queued refresh for very large dirty buffers.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 392 checks, direct `gui_smoke_test` run with 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
 
+### Post-L: Huge Workspace Analysis Plan MVP
+
+- Status: implemented in the current worktree.
+- Scope: first usable scheduling-policy milestone for Huge Workspace Mode. It does not change Slang extraction or introduce incremental publication yet; it makes the workspace symbol-analysis batch order explicit and testable.
+- `WorkspaceAnalysisPlanService` owns workspace-analysis ordering policy. It receives a `ProjectSnapshot`, the active file, and open document snapshots, then returns a planned `ProjectSnapshot` plus dirty protected files.
+- Planned order is active file first, dirty open files next, clean open files next, and the remaining workspace SystemVerilog files in existing project order. Native-path and absolute-path inputs normalize to the same workspace entry, duplicates are removed, and current files outside the workspace are ignored.
+- Dirty open files remain protected so workspace disk analysis cannot overwrite the live editor buffer. `AnalysisCoordinator` injects the active-file provider into `AnalysisScheduler`; `WorkspaceSymbolAnalysisController` consumes the plan and passes only planned execution data to `SymbolAnalyzer`.
+- This is groundwork for the larger Huge Workspace Mode: later milestones should add incremental/early publication, cancellable/expirable queued workspace batches, tiered indexes, and stronger current-file foreground analysis for very large projects.
+- Verification for this block: focused build target `completion_test`, direct `completion_test` run with 397 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, `gui_smoke_test` with 361 checks, full default CMake build, full `ctest --output-on-failure` 7/7, changed-file regex API scan, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

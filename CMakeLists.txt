@@ -226,6 +226,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabsavecontroller.cpp
     tabtitlecontroller.cpp
     workspacemanager.cpp
+    workspaceanalysisplanservice.cpp
     workspacesymbolanalysiscontroller.cpp
     workspacesymbolanalysiscontrollerlifecycle.cpp
 
@@ -362,6 +363,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabsavecontroller.h
     tabtitlecontroller.h
     workspacemanager.h
+    workspaceanalysisplanservice.h
     workspacesymbolanalysiscontroller.h
 
     # --- UI files ---

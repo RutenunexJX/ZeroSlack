@@ -69,6 +69,9 @@ void AnalysisCoordinator::configureScheduler()
     scheduler->setWorkspaceSymbolCancelProvider([this]() {
         return dependencies.isWorkspaceSymbolAnalysisCancelled();
     });
+    scheduler->setCurrentFileProvider([this]() {
+        return dependencies.currentDocument().fileName;
+    });
 }
 
 void AnalysisCoordinator::refreshActiveEditorForFile(const QString& fileName) const

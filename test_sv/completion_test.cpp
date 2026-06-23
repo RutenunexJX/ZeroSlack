@@ -19,8 +19,10 @@
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
 #include "wavepreviewservice.h"
+#include "workspaceanalysisplanservice.h"
 #include <QApplication>
 #include <QColor>
+#include <QDir>
 #include <QFile>
 #include <QTextDocument>
 #include <QTextLayout>
@@ -978,6 +980,49 @@ int main(int argc, char** argv) {
                pulseAssign
                    && pulseAssign->cycleOffset == 1
                    && pulseAssign->sourceSignals.contains(QStringLiteral("en")),
+               true);
+    const QString planRoot =
+        QDir::current().absoluteFilePath(QStringLiteral("test_sv/huge_plan"));
+    const QString planA = QDir(planRoot).absoluteFilePath(QStringLiteral("a.sv"));
+    const QString planB = QDir(planRoot).absoluteFilePath(QStringLiteral("b.sv"));
+    const QString planC = QDir(planRoot).absoluteFilePath(QStringLiteral("c.sv"));
+    const QString planD = QDir(planRoot).absoluteFilePath(QStringLiteral("d.sv"));
+    ProjectSnapshot planProject;
+    planProject.workspaceRoot = planRoot;
+    planProject.systemVerilogFiles = {planA, planB, planC, planD};
+
+    DocumentSnapshot dirtyOpen;
+    dirtyOpen.fileName = planB;
+    dirtyOpen.dirty = true;
+    DocumentSnapshot cleanOpen;
+    cleanOpen.fileName = planD;
+    cleanOpen.dirty = false;
+
+    WorkspaceAnalysisPlan priorityPlan =
+        WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(
+            {planProject, QDir::toNativeSeparators(planC), {dirtyOpen, cleanOpen}});
+    expectEq("Workspace plan prioritizes active/open files",
+             priorityPlan.project.systemVerilogFiles.join(QStringLiteral("|")),
+             QStringList{planC, planB, planD, planA}.join(QStringLiteral("|")));
+    expectEq("Workspace plan protects dirty files",
+             priorityPlan.protectedFiles.join(QStringLiteral("|")),
+             QStringList{planB}.join(QStringLiteral("|")));
+    expectBool("Workspace plan counts priority files",
+               priorityPlan.priorityFileCount == 3
+                   && priorityPlan.currentFileInWorkspace,
+               true);
+
+    WorkspaceAnalysisPlan externalCurrentPlan =
+        WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(
+            {planProject,
+             QDir(planRoot).absoluteFilePath(QStringLiteral("external.sv")),
+             {dirtyOpen}});
+    expectEq("Workspace plan ignores external current file",
+             externalCurrentPlan.project.systemVerilogFiles.join(QStringLiteral("|")),
+             QStringList{planB, planA, planC, planD}.join(QStringLiteral("|")));
+    expectBool("Workspace plan reports external current file",
+               !externalCurrentPlan.currentFileInWorkspace
+                   && externalCurrentPlan.priorityFileCount == 1,
                true);
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(

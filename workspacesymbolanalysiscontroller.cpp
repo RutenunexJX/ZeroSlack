@@ -80,6 +80,12 @@ void WorkspaceSymbolAnalysisController::setCancelProvider(
     cancelProvider = std::move(provider);
 }
 
+void WorkspaceSymbolAnalysisController::setCurrentFileProvider(
+    std::function<QString()> provider)
+{
+    currentFileProvider = std::move(provider);
+}
+
 QStringList WorkspaceSymbolAnalysisController::dirtyOpenDocumentFiles() const
 {
     QStringList files;

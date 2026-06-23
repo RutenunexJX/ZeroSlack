@@ -1,7 +1,9 @@
 #include "workspacesymbolanalysiscontroller.h"
 
+#include "documentmodel.h"
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
+#include "workspaceanalysisplanservice.h"
 
 void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     const ProjectSnapshot& project)
@@ -15,12 +17,22 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
         return;
     }
 
-    symbolAnalyzer->setWorkspaceProtectedFiles(dirtyOpenDocumentFiles());
+    WorkspaceAnalysisPlanQuery query;
+    query.project = project;
+    query.currentFileName = currentFileProvider ? currentFileProvider() : QString();
+    query.openDocuments = documentModel
+        ? documentModel->openDocuments()
+        : QList<DocumentSnapshot>();
+    const WorkspaceAnalysisPlan plan =
+        WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(query);
+
+    symbolAnalyzer->setWorkspaceProtectedFiles(plan.protectedFiles);
     activeProject = project;
     workspaceAnalysisActive = true;
     emit diagnosticsRefreshRequested(QString());
     emit workspaceSymbolAnalysisStarted(project, project.systemVerilogFiles.size());
-    symbolAnalyzer->startAnalyzeProjectAsync(project, cancelProvider);
+    symbolAnalyzer->startAnalyzeProjectAsync(plan.isValid() ? plan.project : project,
+                                             cancelProvider);
 }
 
 void WorkspaceSymbolAnalysisController::clearProjectSemanticState()

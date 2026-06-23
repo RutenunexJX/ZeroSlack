@@ -4,6 +4,7 @@
 #include "projectmodel.h"
 
 #include <QObject>
+#include <QString>
 #include <functional>
 
 class DocumentModel;
@@ -20,6 +21,7 @@ public:
     void setDocumentModel(DocumentModel* model);
     void setSymbolAnalyzer(SymbolAnalyzer* analyzer);
     void setCancelProvider(std::function<bool()> provider);
+    void setCurrentFileProvider(std::function<QString()> provider);
 
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
     void clearProjectSemanticState();
@@ -44,6 +46,7 @@ private:
     DocumentModel* documentModel = nullptr;
     SymbolAnalyzer* symbolAnalyzer = nullptr;
     std::function<bool()> cancelProvider;
+    std::function<QString()> currentFileProvider;
     ProjectSnapshot activeProject;
     bool workspaceAnalysisActive = false;
     bool projectSemanticStateCleared = true;

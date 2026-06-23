@@ -106,6 +106,8 @@ Thin UI consumers
 - Wave Preview Data MVP verification passed with focused `completion_test` at 392 checks and `gui_smoke_test` at 354 checks against `test_sv/new` plus `test_sv/test_symbols.sv`.
 - Wave Preview Preview-Panel MVP is implemented in the current worktree: `WavePreviewPanelCoordinator` renders the service report in a View-menu dock with per-signal lanes, assignment events, timing hints, source signals, and source locations. The panel refreshes from the active dirty editor buffer while visible, refreshes on open/reset, and keeps extraction outside UI paint code.
 - Wave Preview Preview-Panel MVP verification passed with focused `completion_test` at 392 checks and `gui_smoke_test` at 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`.
+- Huge Workspace Analysis Plan MVP is implemented in the current worktree: `WorkspaceAnalysisPlanService` builds a workspace symbol-analysis order that prioritizes the active file, dirty open files, and other open files before the remaining project files, while preserving dirty-file protection so stale workspace results cannot overwrite live editor buffers. `AnalysisCoordinator` injects the current-file provider into `AnalysisScheduler`; `WorkspaceSymbolAnalysisController` consumes the plan and keeps `SymbolAnalyzer` as the executor.
+- Huge Workspace Analysis Plan MVP verification passed with focused `completion_test` at 397 checks, `large_file_perf_test` at 14 checks, `gui_smoke_test` at 361 checks, full default CMake build, and full `ctest --output-on-failure` 7/7.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - After Phase J, keep new semantic/test work record-native and keep the repo-source zero target passing.
@@ -171,6 +173,7 @@ These constraints are mandatory for every new feature.
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, top, and ignored paths.
 - `DocumentModel` owns open document identity, text snapshots, versions, dirty/saved state, cursor, live module names, and registry-backed text queries.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, refresh requests, relationship work, and lifecycle routing; it does not own feature policy.
+- `WorkspaceAnalysisPlanService` owns workspace-analysis ordering policy for huge projects. Scheduler/controller code asks it for a planned `ProjectSnapshot`; `SymbolAnalyzer` remains an executor and does not decide active/open/dirty priority.
 - `SemanticIndexSnapshot` should be the single query truth for UI-facing semantic reads.
 - Query services and feature services own feature-specific semantic reads and report shaping.
 - `SignalKernelGraphService` builds signal-centric driver/kernel/consumer graph models from `SignalJourneyService` reports and relationship evidence; `SignalKernelGraphPanelCoordinator` only renders the model and routes hover/navigation/rebase commands.

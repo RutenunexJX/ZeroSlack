@@ -33,6 +33,7 @@ public:
     void setOpenFileContentProvider(std::function<QString(const QString&)> provider);
     void setWorkspaceOpenProvider(std::function<bool()> provider);
     void setWorkspaceSymbolCancelProvider(std::function<bool()> provider);
+    void setCurrentFileProvider(std::function<QString()> provider);
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
     void setRelationshipBuilder(SmartRelationshipBuilder* builder);
 

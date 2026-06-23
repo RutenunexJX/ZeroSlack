@@ -55,6 +55,12 @@ void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> p
         workspaceSymbolAnalysis->setCancelProvider(std::move(provider));
 }
 
+void AnalysisScheduler::setCurrentFileProvider(std::function<QString()> provider)
+{
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->setCurrentFileProvider(std::move(provider));
+}
+
 void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 {
     if (workspaceSymbolAnalysis)
