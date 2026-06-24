@@ -44,6 +44,8 @@ struct WavePreviewAssignment {
 struct WavePreviewBlock {
     WavePreviewBlockKind kind = WavePreviewBlockKind::Unknown;
     QString trigger;
+    QStringList clockSignals;
+    QStringList resetSignals;
     int startLine = 0;
     int endLine = 0;
     int startPosition = -1;
@@ -54,6 +56,18 @@ struct WavePreviewBlock {
     {
         return kind == WavePreviewBlockKind::AlwaysFf
             || kind == WavePreviewBlockKind::AlwaysClocked;
+    }
+};
+
+struct WavePreviewClockResetGroup {
+    QStringList clockSignals;
+    QStringList resetSignals;
+    QList<int> blockIndexes;
+    int assignmentCount = 0;
+
+    bool isValid() const
+    {
+        return !clockSignals.isEmpty() || !resetSignals.isEmpty();
     }
 };
 
@@ -74,6 +88,7 @@ struct WavePreviewQuery {
 
 struct WavePreviewReport {
     QList<WavePreviewBlock> blocks;
+    QList<WavePreviewClockResetGroup> clockResetGroups;
     QList<WavePreviewLane> lanes;
     QStringList warnings;
     int assignmentCount = 0;

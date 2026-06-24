@@ -975,6 +975,16 @@ int main(int argc, char** argv) {
                    && waveReport.blocks.first().kind == WavePreviewBlockKind::AlwaysFf
                    && waveReport.blocks.first().assignmentCount == 2,
                true);
+    expectList("WavePreview always_ff clock signals",
+               !waveReport.blocks.isEmpty()
+                   ? waveReport.blocks.first().clockSignals
+                   : QStringList(),
+               {QStringLiteral("clk")});
+    expectList("WavePreview always_ff reset signals",
+               !waveReport.blocks.isEmpty()
+                   ? waveReport.blocks.first().resetSignals
+                   : QStringList(),
+               {QStringLiteral("rst_n")});
     expectBool("WavePreview always_comb block kind",
                waveReport.blocks.size() > 1
                    && waveReport.blocks.at(1).kind == WavePreviewBlockKind::AlwaysComb
@@ -1019,6 +1029,14 @@ int main(int argc, char** argv) {
                pulseAssign
                    && pulseAssign->cycleOffset == 1
                    && pulseAssign->sourceSignals.contains(QStringLiteral("en")),
+               true);
+    expectBool("WavePreview clock reset groups",
+               waveReport.clockResetGroups.size() == 2
+                   && waveReport.clockResetGroups.first().clockSignals
+                       == QStringList{QStringLiteral("clk")}
+                   && waveReport.clockResetGroups.first().resetSignals
+                       == QStringList{QStringLiteral("rst_n")}
+                   && waveReport.clockResetGroups.first().assignmentCount == 2,
                true);
 
     const QString waveCasePreviewInput =

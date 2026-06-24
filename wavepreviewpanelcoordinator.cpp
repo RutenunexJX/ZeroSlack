@@ -215,6 +215,34 @@ QString guardText(const WavePreviewAssignment& assignment)
         : assignment.guardText;
 }
 
+QString clockResetText(const QStringList& clockSignals,
+                       const QStringList& resetSignals)
+{
+    QStringList parts;
+    if (!clockSignals.isEmpty())
+        parts.append(QStringLiteral("clk ") + clockSignals.join(QStringLiteral(", ")));
+    if (!resetSignals.isEmpty())
+        parts.append(QStringLiteral("rst ") + resetSignals.join(QStringLiteral(", ")));
+    return parts.isEmpty()
+        ? QStringLiteral("-")
+        : parts.join(QStringLiteral(" / "));
+}
+
+QString clockResetText(const WavePreviewBlock& block)
+{
+    return clockResetText(block.clockSignals, block.resetSignals);
+}
+
+QString clockResetText(const WavePreviewAssignment& assignment,
+                       const WavePreviewReport& report)
+{
+    if (assignment.blockIndex < 0
+        || assignment.blockIndex >= report.blocks.size()) {
+        return QStringLiteral("-");
+    }
+    return clockResetText(report.blocks.at(assignment.blockIndex));
+}
+
 QString sourcesText(const QStringList& sourceSignals)
 {
     return sourceSignals.isEmpty()
@@ -291,10 +319,11 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
 
     previewTree = new QTreeWidget(panel);
     previewTree->setObjectName(QStringLiteral("wavePreviewTree"));
-    previewTree->setColumnCount(5);
+    previewTree->setColumnCount(6);
     previewTree->setHeaderLabels({
         QStringLiteral("Signal / Event"),
         QStringLiteral("Timing"),
+        QStringLiteral("Clock/Reset"),
         QStringLiteral("Guard"),
         QStringLiteral("Sources"),
         QStringLiteral("Location")
@@ -308,6 +337,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     previewTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     previewTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     previewTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    previewTree->header()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     layout->addWidget(previewTree, 1);
 
     previewDock = new QDockWidget(QStringLiteral("Wave Preview"), parent);
@@ -380,10 +410,11 @@ void WavePreviewPanelCoordinator::renderReport(
     }
     if (summaryLabel) {
         summaryLabel->setText(
-            QStringLiteral("%1 lanes, %2 events, %3 blocks%4")
+            QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups%5")
                 .arg(report.lanes.size())
                 .arg(report.assignmentCount)
                 .arg(report.blocks.size())
+                .arg(report.clockResetGroups.size())
                 .arg(dirty ? QStringLiteral(" - live dirty buffer")
                            : QString()));
     }
@@ -394,7 +425,39 @@ void WavePreviewPanelCoordinator::renderReport(
         item->setText(1, QStringLiteral("-"));
         item->setText(2, QStringLiteral("-"));
         item->setText(3, QStringLiteral("-"));
+        item->setText(4, QStringLiteral("-"));
+        item->setText(5, QStringLiteral("-"));
         return;
+    }
+
+    if (!report.clockResetGroups.isEmpty()) {
+        auto* groupRoot = new QTreeWidgetItem(previewTree);
+        groupRoot->setText(0, QStringLiteral("Clock/Reset Groups"));
+        groupRoot->setText(1,
+                           QStringLiteral("%1 groups")
+                               .arg(report.clockResetGroups.size()));
+        groupRoot->setText(2, QStringLiteral("-"));
+        groupRoot->setText(3, QStringLiteral("-"));
+        groupRoot->setText(4, QStringLiteral("-"));
+        groupRoot->setText(5, QStringLiteral("-"));
+        QFont groupFont = groupRoot->font(0);
+        groupFont.setBold(true);
+        groupRoot->setFont(0, groupFont);
+
+        for (const WavePreviewClockResetGroup& group : report.clockResetGroups) {
+            auto* groupItem = new QTreeWidgetItem(groupRoot);
+            groupItem->setText(0, clockResetText(group.clockSignals,
+                                                 group.resetSignals));
+            groupItem->setText(1,
+                               QStringLiteral("%1 blocks, %2 events")
+                                   .arg(group.blockIndexes.size())
+                                   .arg(group.assignmentCount));
+            groupItem->setText(2, QStringLiteral("-"));
+            groupItem->setText(3, QStringLiteral("-"));
+            groupItem->setText(4, QStringLiteral("-"));
+            groupItem->setText(5, QStringLiteral("-"));
+        }
+        groupRoot->setExpanded(true);
     }
 
     for (const WavePreviewLane& lane : report.lanes) {
@@ -404,6 +467,7 @@ void WavePreviewPanelCoordinator::renderReport(
         laneItem->setText(2, QStringLiteral("-"));
         laneItem->setText(3, QStringLiteral("-"));
         laneItem->setText(4, QStringLiteral("-"));
+        laneItem->setText(5, QStringLiteral("-"));
         QFont laneFont = laneItem->font(0);
         laneFont.setBold(true);
         laneItem->setFont(0, laneFont);
@@ -412,9 +476,10 @@ void WavePreviewPanelCoordinator::renderReport(
             auto* eventItem = new QTreeWidgetItem(laneItem);
             eventItem->setText(0, eventText(assignment, report));
             eventItem->setText(1, timingText(assignment));
-            eventItem->setText(2, guardText(assignment));
-            eventItem->setText(3, sourcesText(assignment.sourceSignals));
-            eventItem->setText(4,
+            eventItem->setText(2, clockResetText(assignment, report));
+            eventItem->setText(3, guardText(assignment));
+            eventItem->setText(4, sourcesText(assignment.sourceSignals));
+            eventItem->setText(5,
                                assignment.line > 0
                                    ? QStringLiteral("%1:%2")
                                          .arg(assignment.line)
@@ -422,11 +487,12 @@ void WavePreviewPanelCoordinator::renderReport(
                                    : QStringLiteral("-"));
             eventItem->setToolTip(
                 0,
-                QStringLiteral("%1\ntrigger: %2\nguard: %3")
+                QStringLiteral("%1\ntrigger: %2\nclock/reset: %3\nguard: %4")
                     .arg(assignment.expression,
                          assignment.trigger.isEmpty()
                              ? QStringLiteral("-")
                              : assignment.trigger,
+                         clockResetText(assignment, report),
                          guardText(assignment)));
             setNavigationData(eventItem,
                               fileName,

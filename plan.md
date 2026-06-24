@@ -403,8 +403,18 @@ feature direction that violates them.
 - The Wave Preview tree adds a Guard column, event tooltips include the guard, and the canvas block label includes guarded assignment context. The UI still consumes `WavePreviewReport`; it does not parse RTL or scan workspace files itself.
 - Supported guard labels are intentionally conservative: simple inline or `begin`/`end` `if` bodies, `else if` conditions, `else`, and basic `case` item/default labels. This is not symbolic execution, guard simplification, or branch coverage.
 - Implementation remains no-regex and does not change the non-simulator positioning of Wave Preview.
-- Next Wave Preview milestones: clock/reset grouping, richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, and throttled queued refresh for very large dirty buffers.
+- Next Wave Preview milestones: richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, and throttled queued refresh for very large dirty buffers.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 408 checks, direct `gui_smoke_test` run with 364 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Wave Preview Clock/Reset Groups MVP
+
+- Status: implemented in the current worktree.
+- Scope: first clock/reset context milestone for Wave Preview. It groups procedural blocks by the clock/reset signals visible in common edge-triggered event controls.
+- `WavePreviewBlock` now carries `clockSignals` and `resetSignals`; `WavePreviewReport` adds `clockResetGroups` that aggregate block indexes and assignment counts for matching domains.
+- `WavePreviewService` extracts edge signals from `posedge` / `negedge` event controls with deterministic token scans. Reset classification is name-based (`rst` / `reset`) and intentionally conservative; this is not clock-domain crossing analysis or reset polarity proof.
+- The Wave Preview tree adds a Clock/Reset column and a Clock/Reset Groups section, while event tooltips include the detected domain. The UI still renders report data only and does not parse RTL or scan workspace files itself.
+- Next Wave Preview milestones: richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, clock/reset polarity hints, and throttled queued refresh for very large dirty buffers.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 411 checks, direct `gui_smoke_test` run with 365 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Huge Workspace Analysis Plan MVP
 

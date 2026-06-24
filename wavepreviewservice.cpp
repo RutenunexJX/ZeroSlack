@@ -317,6 +317,13 @@ bool isKeyword(const QString& text)
     return keywords.contains(text);
 }
 
+void appendUnique(QStringList* values, const QString& value)
+{
+    if (!values || value.isEmpty() || values->contains(value))
+        return;
+    values->append(value);
+}
+
 int nextSemicolon(const QList<Token>& tokens, int from, int limit)
 {
     const int end = qMin(limit, tokens.size() - 1);
@@ -406,6 +413,79 @@ int skipBracketSelects(const QList<Token>& tokens, int index, int limit)
         pos = close + 1;
     }
     return pos;
+}
+
+QString dottedSignalNameAt(const QList<Token>& tokens,
+                           int start,
+                           int limit,
+                           int* consumedIndex)
+{
+    if (start < 0 || start >= tokens.size() || start > limit)
+        return QString();
+    if (tokens.at(start).kind != TokenKind::Identifier
+        || tokens.at(start).text.startsWith(QLatin1Char('$'))) {
+        return QString();
+    }
+
+    QString name = tokens.at(start).text;
+    int pos = start + 1;
+    pos = skipBracketSelects(tokens, pos, limit);
+    while (pos + 1 <= limit
+           && tokens.at(pos).text == QLatin1String(".")
+           && tokens.at(pos + 1).kind == TokenKind::Identifier
+           && !tokens.at(pos + 1).text.startsWith(QLatin1Char('$'))) {
+        name += QLatin1Char('.');
+        name += tokens.at(pos + 1).text;
+        pos += 2;
+        pos = skipBracketSelects(tokens, pos, limit);
+    }
+
+    if (consumedIndex)
+        *consumedIndex = pos - 1;
+    return name;
+}
+
+bool looksLikeResetSignal(const QString& name)
+{
+    const QString lowered = name.toLower();
+    return lowered.contains(QStringLiteral("rst"))
+        || lowered.contains(QStringLiteral("reset"));
+}
+
+void extractClockResetSignals(const QList<Token>& tokens,
+                              int start,
+                              int end,
+                              QStringList* clockSignals,
+                              QStringList* resetSignals)
+{
+    QStringList edgeSignals;
+    const int limit = qMin(end, tokens.size() - 1);
+    for (int i = qMax(0, start); i <= limit; ++i) {
+        const QString edge = tokens.at(i).text;
+        if (edge != QStringLiteral("posedge")
+            && edge != QStringLiteral("negedge")) {
+            continue;
+        }
+
+        int consumedIndex = i;
+        const QString signal =
+            dottedSignalNameAt(tokens, i + 1, limit, &consumedIndex);
+        if (signal.isEmpty())
+            continue;
+
+        appendUnique(&edgeSignals, signal);
+        if (looksLikeResetSignal(signal))
+            appendUnique(resetSignals, signal);
+        else
+            appendUnique(clockSignals, signal);
+        i = qMax(i, consumedIndex);
+    }
+
+    if (clockSignals && clockSignals->isEmpty()
+        && resetSignals && resetSignals->isEmpty()
+        && !edgeSignals.isEmpty()) {
+        appendUnique(clockSignals, edgeSignals.first());
+    }
 }
 
 bool parseLvalueAt(const QList<Token>& tokens,
@@ -975,6 +1055,11 @@ bool parseAlwaysBlock(const QString& text,
 
     block->kind = kindForAlways(tokens, alwaysIndex, endIndex);
     block->trigger = triggerTextForAlways(text, tokens, alwaysIndex, endIndex);
+    extractClockResetSignals(tokens,
+                             alwaysIndex,
+                             endIndex,
+                             &block->clockSignals,
+                             &block->resetSignals);
     block->startLine = tokens.at(alwaysIndex).line;
     block->endLine = tokens.at(endIndex).line;
     block->startPosition = tokens.at(alwaysIndex).start;
@@ -1016,6 +1101,48 @@ void fixBlockIndexes(QList<WavePreviewAssignment>* assignments, int blockIndex)
         return;
     for (WavePreviewAssignment& assignment : *assignments)
         assignment.blockIndex = blockIndex;
+}
+
+QString clockResetGroupKey(const WavePreviewBlock& block)
+{
+    return block.clockSignals.join(QChar(0x1f))
+        + QStringLiteral("|")
+        + block.resetSignals.join(QChar(0x1f));
+}
+
+QList<WavePreviewClockResetGroup> clockResetGroupsForBlocks(
+    const QList<WavePreviewBlock>& blocks)
+{
+    QList<WavePreviewClockResetGroup> groups;
+    QHash<QString, int> groupIndexes;
+    for (int i = 0; i < blocks.size(); ++i) {
+        const WavePreviewBlock& block = blocks.at(i);
+        if (block.clockSignals.isEmpty() && block.resetSignals.isEmpty())
+            continue;
+
+        const QString key = clockResetGroupKey(block);
+        int groupIndex = groupIndexes.value(key, -1);
+        if (groupIndex < 0) {
+            WavePreviewClockResetGroup group;
+            group.clockSignals = block.clockSignals;
+            group.resetSignals = block.resetSignals;
+            groupIndex = groups.size();
+            groupIndexes.insert(key, groupIndex);
+            groups.append(group);
+        }
+
+        groups[groupIndex].blockIndexes.append(i);
+        groups[groupIndex].assignmentCount += block.assignmentCount;
+    }
+
+    groups.erase(
+        std::remove_if(groups.begin(),
+                       groups.end(),
+                       [](const WavePreviewClockResetGroup& group) {
+                           return !group.isValid();
+                       }),
+        groups.end());
+    return groups;
 }
 }
 
@@ -1081,6 +1208,7 @@ WavePreviewReport WavePreviewService::previewForDocument(
                            return !lane.isValid();
                        }),
         report.lanes.end());
+    report.clockResetGroups = clockResetGroupsForBlocks(report.blocks);
     report.available = report.assignmentCount > 0;
     return report;
 }

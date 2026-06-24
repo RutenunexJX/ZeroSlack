@@ -3126,6 +3126,7 @@ int main(int argc, char** argv)
     QTreeWidget* waveTree = wavePreviewTree(window);
     bool sawWaveQ = false;
     bool sawWaveOut = false;
+    bool sawWaveClockReset = false;
     bool sawWaveGuard = false;
     if (waveTree) {
         for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
@@ -3133,10 +3134,15 @@ int main(int argc, char** argv)
             const QString name = laneItem->text(0);
             sawWaveQ = sawWaveQ || name == QStringLiteral("q");
             sawWaveOut = sawWaveOut || name == QStringLiteral("out");
+            sawWaveClockReset = sawWaveClockReset
+                || name == QStringLiteral("Clock/Reset Groups");
             if (name == QStringLiteral("q")) {
                 for (int child = 0; child < laneItem->childCount(); ++child) {
-                    sawWaveGuard = sawWaveGuard
+                    sawWaveClockReset = sawWaveClockReset
                         || laneItem->child(child)->text(2)
+                            == QStringLiteral("clk clk");
+                    sawWaveGuard = sawWaveGuard
+                        || laneItem->child(child)->text(3)
                             == QStringLiteral("if data[0]");
                 }
             }
@@ -3144,6 +3150,9 @@ int main(int argc, char** argv)
     }
     expectBool("wave preview renders active editor lanes",
                waveTree && sawWaveQ && sawWaveOut,
+               true);
+    expectBool("wave preview renders clock/reset groups",
+               waveTree && sawWaveClockReset,
                true);
     expectBool("wave preview renders guard labels",
                waveTree && sawWaveGuard,
