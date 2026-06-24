@@ -943,6 +943,12 @@ static void runActivityLogServiceRegression()
     planSummary.backgroundFiles = {
         QStringLiteral("E:/workspace/background.sv")
     };
+    planSummary.bandSummaries = {
+        {QStringLiteral("current"), QStringLiteral("current"), 1, true, 1},
+        {QStringLiteral("dirty-open"), QStringLiteral("dirty"), 1, true, 2},
+        {QStringLiteral("open"), QStringLiteral("open"), 1, true, 3},
+        {QStringLiteral("background"), QStringLiteral("background"), 1, false, 0}
+    };
     planSummary.priorityFileCount = 3;
     planSummary.backgroundFileCount = 1;
     planSummary.currentFileInWorkspace = true;

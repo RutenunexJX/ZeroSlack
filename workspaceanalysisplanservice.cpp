@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QSet>
+#include <QStringList>
 
 #include <algorithm>
 
@@ -124,20 +125,54 @@ PrioritizedWorkspaceFiles prioritizedSystemVerilogFiles(
     return prioritized;
 }
 
-QList<int> priorityPublicationCheckpoints(
+QList<WorkspaceAnalysisBandSummary> bandSummaries(
     const PrioritizedWorkspaceFiles& prioritized)
 {
-    QList<int> checkpoints;
-    int count = 0;
-    auto appendBand = [&checkpoints, &count](const QStringList& band) {
-        if (band.isEmpty())
-            return;
-        count += band.size();
-        checkpoints.append(count);
+    QList<WorkspaceAnalysisBandSummary> summaries;
+    int priorityCheckpoint = 0;
+    auto appendBand =
+        [&summaries, &priorityCheckpoint](const QString& label,
+                                          const QString& displayName,
+                                          const QStringList& files,
+                                          bool priority) {
+            WorkspaceAnalysisBandSummary summary;
+            summary.label = label;
+            summary.displayName = displayName;
+            summary.fileCount = files.size();
+            summary.priority = priority;
+            if (priority && !files.isEmpty()) {
+                priorityCheckpoint += files.size();
+                summary.publicationCheckpoint = priorityCheckpoint;
+            }
+            summaries.append(summary);
     };
-    appendBand(prioritized.currentFilePriorityFiles);
-    appendBand(prioritized.dirtyOpenPriorityFiles);
-    appendBand(prioritized.cleanOpenPriorityFiles);
+    appendBand(QStringLiteral("current"),
+               QStringLiteral("current"),
+               prioritized.currentFilePriorityFiles,
+               true);
+    appendBand(QStringLiteral("dirty-open"),
+               QStringLiteral("dirty"),
+               prioritized.dirtyOpenPriorityFiles,
+               true);
+    appendBand(QStringLiteral("open"),
+               QStringLiteral("open"),
+               prioritized.cleanOpenPriorityFiles,
+               true);
+    appendBand(QStringLiteral("background"),
+               QStringLiteral("background"),
+               prioritized.backgroundFiles,
+               false);
+    return summaries;
+}
+
+QList<int> priorityPublicationCheckpoints(
+    const QList<WorkspaceAnalysisBandSummary>& summaries)
+{
+    QList<int> checkpoints;
+    for (const WorkspaceAnalysisBandSummary& summary : summaries) {
+        if (summary.priority && summary.publicationCheckpoint > 0)
+            checkpoints.append(summary.publicationCheckpoint);
+    }
     return checkpoints;
 }
 
@@ -192,8 +227,9 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
         plan.currentFilePriorityFiles.size()
         + plan.dirtyOpenPriorityFiles.size()
         + plan.cleanOpenPriorityFiles.size();
+    plan.bandSummaries = bandSummaries(prioritized);
     plan.priorityPublicationCheckpoints =
-        priorityPublicationCheckpoints(prioritized);
+        priorityPublicationCheckpoints(plan.bandSummaries);
     plan.backgroundFileCount = plan.backgroundFiles.size();
     rememberBand(&plan.fileBandsByNormalizedPath,
                  plan.currentFilePriorityFiles,
@@ -234,4 +270,44 @@ QString WorkspaceAnalysisPlan::bandForFile(const QString& fileName) const
     if (containsFile(backgroundFiles))
         return QStringLiteral("background");
     return QString();
+}
+
+QString WorkspaceAnalysisPlan::bandSummaryText() const
+{
+    QList<WorkspaceAnalysisBandSummary> summaries = bandSummaries;
+    if (summaries.isEmpty()) {
+        summaries = {
+            {QStringLiteral("current"),
+             QStringLiteral("current"),
+             static_cast<int>(currentFilePriorityFiles.size()),
+             true,
+             currentFilePriorityFiles.isEmpty()
+                 ? 0
+                 : static_cast<int>(currentFilePriorityFiles.size())},
+            {QStringLiteral("dirty-open"),
+             QStringLiteral("dirty"),
+             static_cast<int>(dirtyOpenPriorityFiles.size()),
+             true,
+             0},
+            {QStringLiteral("open"),
+             QStringLiteral("open"),
+             static_cast<int>(cleanOpenPriorityFiles.size()),
+             true,
+             0},
+            {QStringLiteral("background"),
+             QStringLiteral("background"),
+             static_cast<int>(backgroundFiles.size()),
+             false,
+             0}
+        };
+    }
+
+    QStringList parts;
+    parts.reserve(summaries.size());
+    for (const WorkspaceAnalysisBandSummary& summary : summaries) {
+        parts.append(QStringLiteral("%1 %2")
+                         .arg(summary.displayName)
+                         .arg(summary.fileCount));
+    }
+    return QStringLiteral("bands %1").arg(parts.join(QStringLiteral(", ")));
 }

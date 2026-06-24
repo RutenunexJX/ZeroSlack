@@ -16,6 +16,14 @@ struct WorkspaceAnalysisPlanQuery {
     QList<DocumentSnapshot> openDocuments;
 };
 
+struct WorkspaceAnalysisBandSummary {
+    QString label;
+    QString displayName;
+    int fileCount = 0;
+    bool priority = false;
+    int publicationCheckpoint = 0;
+};
+
 struct WorkspaceAnalysisPlan {
     ProjectSnapshot project;
     QString currentFileName;
@@ -26,6 +34,7 @@ struct WorkspaceAnalysisPlan {
     QStringList cleanOpenPriorityFiles;
     QStringList backgroundFiles;
     QHash<QString, QString> fileBandsByNormalizedPath;
+    QList<WorkspaceAnalysisBandSummary> bandSummaries;
     QList<int> priorityPublicationCheckpoints;
     int priorityFileCount = 0;
     int backgroundFileCount = 0;
@@ -37,6 +46,7 @@ struct WorkspaceAnalysisPlan {
     }
 
     QString bandForFile(const QString& fileName) const;
+    QString bandSummaryText() const;
 };
 
 class WorkspaceAnalysisPlanService

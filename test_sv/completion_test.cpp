@@ -1892,6 +1892,27 @@ int main(int argc, char** argv) {
     expectEq("Workspace plan records publication checkpoints",
              priorityCheckpointText.join(QStringLiteral(",")),
              QStringLiteral("1,2,3"));
+    QStringList bandSummaryText;
+    for (const WorkspaceAnalysisBandSummary& summary :
+         priorityPlan.bandSummaries) {
+        bandSummaryText.append(
+            QStringLiteral("%1:%2:%3:%4:%5")
+                .arg(summary.label,
+                     summary.displayName,
+                     QString::number(summary.fileCount),
+                     summary.priority ? QStringLiteral("priority")
+                                      : QStringLiteral("background"),
+                     QString::number(summary.publicationCheckpoint)));
+    }
+    expectEq("Workspace plan records band summaries",
+             bandSummaryText.join(QStringLiteral("|")),
+             QStringLiteral("current:current:1:priority:1|"
+                            "dirty-open:dirty:1:priority:2|"
+                            "open:open:1:priority:3|"
+                            "background:background:1:background:0"));
+    expectEq("Workspace plan formats band summary text",
+             priorityPlan.bandSummaryText(),
+             QStringLiteral("bands current 1, dirty 1, open 1, background 1"));
 
     WorkspaceAnalysisPlan externalCurrentPlan =
         WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(
@@ -1923,6 +1944,9 @@ int main(int argc, char** argv) {
                    && externalCurrentPlan.bandForFile(planA)
                        == QStringLiteral("background"),
                true);
+    expectEq("Workspace plan summarizes external current bands",
+             externalCurrentPlan.bandSummaryText(),
+             QStringLiteral("bands current 0, dirty 1, open 0, background 3"));
 
     QTemporaryDir foregroundWorkspace;
     expectBool("Workspace foreground temp dir valid",

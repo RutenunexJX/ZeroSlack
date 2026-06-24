@@ -917,6 +917,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: tier-aware symbol/query metadata, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 498 checks; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Band Summary Metadata MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-third usable Huge Workspace Mode milestone and the next tier-aware metadata step after file-band indexing. It does not change Slang extraction, symbol publication checkpoints, diagnostics publication, or relationship analysis.
+- `WorkspaceAnalysisPlan` now carries `bandSummaries` rows for the current, dirty-open, open, and background tiers. Each row includes the stable band label, display name, file count, priority flag, and cumulative publication checkpoint when the band is part of the priority segment.
+- `WorkspaceAnalysisPlan::bandSummaryText()` provides a plan-owned Activity/status text fragment, with a fallback for tests or callers that construct plans manually.
+- `WorkspaceAnalysisPlanService` derives `priorityPublicationCheckpoints` from the same band summary metadata, keeping checkpoint ownership next to tier construction instead of scattering count policy.
+- `AnalysisProgressCoordinator` now renders the plan-owned band summary text rather than formatting tier counts from individual band lists.
+- This is groundwork for tier-aware symbol/query metadata and richer tiered index publication while preserving dirty/open-file protection and current diagnostics semantics.
+- Next Huge Workspace milestones: tier-aware symbol/query metadata, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 509 checks; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

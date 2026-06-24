@@ -25,11 +25,7 @@ QString currentFilePlanText(bool currentFileInWorkspace)
 
 QString priorityBandText(const WorkspaceAnalysisPlan& plan)
 {
-    return QStringLiteral("bands current %1, dirty %2, open %3, background %4")
-        .arg(plan.currentFilePriorityFiles.size())
-        .arg(plan.dirtyOpenPriorityFiles.size())
-        .arg(plan.cleanOpenPriorityFiles.size())
-        .arg(plan.backgroundFiles.size());
+    return plan.bandSummaryText();
 }
 
 QString normalizedFilePath(const QString& fileName)
