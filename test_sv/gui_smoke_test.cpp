@@ -3606,6 +3606,7 @@ int main(int argc, char** argv)
     bool sawWaveGuard = false;
     bool sawWaveLoopGuard = false;
     bool sawWaveContext = false;
+    bool sawWaveLaneGuardSummary = false;
     bool sawWaveLaneSummary = false;
     QTreeWidgetItem* waveQEventItem = nullptr;
     QTreeWidgetItem* waveQLaneItem = nullptr;
@@ -3627,6 +3628,10 @@ int main(int argc, char** argv)
                         && laneItem->text(4) == QStringLiteral("seq"));
                 sawWaveContext = sawWaveContext
                     || laneItem->text(5) == QStringLiteral("internal logic [7:0]");
+                sawWaveLaneGuardSummary = sawWaveLaneGuardSummary
+                    || (laneItem->text(3) == QStringLiteral("if data[0]")
+                        && laneItem->toolTip(0).contains(
+                            QStringLiteral("guards: if data[0]")));
                 for (int child = 0; child < laneItem->childCount(); ++child) {
                     sawWaveClockReset = sawWaveClockReset
                         || laneItem->child(child)->text(2)
@@ -3660,6 +3665,9 @@ int main(int argc, char** argv)
                true);
     expectBool("wave preview renders guard labels",
                waveTree && sawWaveGuard,
+               true);
+    expectBool("wave preview renders lane guard summaries",
+               waveTree && sawWaveLaneGuardSummary,
                true);
     expectBool("wave preview renders loop guard labels",
                waveTree && sawWaveLoopGuard,

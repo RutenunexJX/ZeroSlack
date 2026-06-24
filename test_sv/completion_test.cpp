@@ -1595,6 +1595,9 @@ int main(int argc, char** argv) {
                    && qSummaryLane->summary.sourceSignalCount == 1
                    && qSummaryLane->summary.blockCount == 1
                    && qSummaryLane->summary.maxCycleOffset == 1
+                   && qSummaryLane->summary.guardTexts
+                       == QStringList{QStringLiteral("if !rst_n"),
+                                      QStringLiteral("if en")}
                    && qSummaryLane->summary.hasSequentialEvent
                    && !qSummaryLane->summary.hasContinuousEvent,
                true);
@@ -1814,6 +1817,12 @@ int main(int argc, char** argv) {
                    && yLane->assignments.at(1).guardText
                        == QStringLiteral("case sel: default"),
                true);
+    expectBool("WavePreview case lane guard summary",
+               yLane
+                   && yLane->summary.guardTexts
+                       == QStringList{QStringLiteral("case sel: 2'b00"),
+                                      QStringLiteral("case sel: default")},
+               true);
 
     const QString waveLoopPreviewInput =
         QStringLiteral("module wave_loop;\n"
@@ -1849,6 +1858,14 @@ int main(int argc, char** argv) {
                    && loopLane->assignments.at(3).guardText
                        == QStringLiteral("repeat 3"),
                true);
+    expectBool("WavePreview loop lane guard summary",
+               loopLane
+                   && loopLane->summary.guardTexts.size() == 4
+                   && loopLane->summary.guardTexts.first()
+                       == QStringLiteral("for int j = 0; j < 4; j++")
+                   && loopLane->summary.guardTexts.last()
+                       == QStringLiteral("repeat 3"),
+               true);
 
     const QString waveTernaryPreviewInput =
         QStringLiteral("module wave_ternary;\n"
@@ -1878,6 +1895,13 @@ int main(int argc, char** argv) {
                ternaryNextAssign
                    && ternaryNextAssign->guardText
                        == QStringLiteral("if en && ?: sel"),
+               true);
+    const WavePreviewLane* ternaryNextLane =
+        waveLaneNamed(waveTernaryReport, QStringLiteral("next"));
+    expectBool("WavePreview ternary lane guard summary",
+               ternaryNextLane
+                   && ternaryNextLane->summary.guardTexts
+                       == QStringList{QStringLiteral("if en && ?: sel")},
                true);
 
     const QString planRoot =

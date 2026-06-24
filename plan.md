@@ -700,6 +700,18 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer dense-canvas interaction, additional evidence-based guard context, and later semantic relationship overlays if they can stay report-driven.
 - Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Lane Guard Summary MVP
+
+- Status: implemented in the current worktree.
+- Scope: dense-report readability milestone for Wave Preview. It does not add new parsing, value simulation, semantic extraction, or workspace scanning; it aggregates existing assignment guard evidence into lane-level report data.
+- `WavePreviewLaneSummary` now carries unique `guardTexts` collected from assignments in that lane, preserving report order and keeping assignment-level guard labels unchanged.
+- `WavePreviewPanelCoordinator` renders lane-level guard summaries in the Guard column for lane rows, includes guard count in `laneSummaryText()`, and adds the compact guard list to lane hover details.
+- Canvas lane labels continue to consume `laneSummaryText()`, so dense canvas rows gain guard count context without canvas-side RTL parsing.
+- The compact guard display shows the first two guards and a `+N more` suffix for busy lanes, keeping tree and canvas text bounded.
+- Implementation remains no-regex and report-driven.
+- Next Wave Preview milestones: richer dense-canvas interaction, additional evidence-based guard context, and later semantic relationship overlays if they can stay report-driven.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 522 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 418 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

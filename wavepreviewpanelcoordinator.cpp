@@ -441,17 +441,36 @@ QString laneActivityText(const WavePreviewLaneSummary& summary)
         : parts.join(QStringLiteral("/"));
 }
 
+QString laneGuardText(const WavePreviewLaneSummary& summary)
+{
+    if (summary.guardTexts.isEmpty())
+        return QStringLiteral("-");
+
+    QStringList visible;
+    const int visibleCount = qMin(2, static_cast<int>(summary.guardTexts.size()));
+    for (int i = 0; i < visibleCount; ++i)
+        visible.append(summary.guardTexts.at(i));
+    if (summary.guardTexts.size() > visibleCount) {
+        visible.append(QStringLiteral("+%1 more")
+                           .arg(summary.guardTexts.size() - visibleCount));
+    }
+    return visible.join(QStringLiteral("; "));
+}
+
 QString laneSummaryText(const WavePreviewLaneSummary& summary)
 {
     if (!summary.isValid())
         return QStringLiteral("-");
-    return QStringLiteral("%1, %2, max t+%3, %4")
+    return QStringLiteral("%1, %2, %3, max t+%4, %5")
         .arg(countText(summary.eventCount,
                        QStringLiteral("event"),
                        QStringLiteral("events")),
              countText(summary.sourceSignalCount,
                        QStringLiteral("src"),
                        QStringLiteral("src")),
+             countText(summary.guardTexts.size(),
+                       QStringLiteral("guard"),
+                       QStringLiteral("guards")),
              QString::number(summary.maxCycleOffset),
              countText(summary.blockCount,
                        QStringLiteral("block"),
@@ -626,6 +645,7 @@ QString laneDetailTooltip(const WavePreviewLane& lane)
                                      : nullptr)),
         QStringLiteral("summary: %1").arg(laneSummaryText(lane.summary)),
         QStringLiteral("activity: %1").arg(laneActivityText(lane.summary)),
+        QStringLiteral("guards: %1").arg(laneGuardText(lane.summary)),
         QStringLiteral("sources: %1").arg(sourcesText(sources))
     }.join(QStringLiteral("\n"));
 }
@@ -959,7 +979,7 @@ void WavePreviewPanelCoordinator::renderReport(
         laneItem->setText(0, lane.signalName);
         laneItem->setText(1, laneSummaryText(lane.summary));
         laneItem->setText(2, QStringLiteral("-"));
-        laneItem->setText(3, QStringLiteral("-"));
+        laneItem->setText(3, laneGuardText(lane.summary));
         laneItem->setText(4, laneActivityText(lane.summary));
         laneItem->setText(5, signalContextBrief(lane.context.isValid()
                                                 ? &lane.context

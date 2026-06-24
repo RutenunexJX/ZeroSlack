@@ -1784,6 +1784,10 @@ WavePreviewLaneSummary summaryForLane(const WavePreviewLane& lane)
         }
         if (assignment.blockIndex >= 0)
             blockIndexes.insert(assignment.blockIndex);
+        if (!assignment.guardText.isEmpty()
+            && !summary.guardTexts.contains(assignment.guardText)) {
+            summary.guardTexts.append(assignment.guardText);
+        }
 
         if (assignment.kind == WavePreviewAssignmentKind::Continuous) {
             summary.hasContinuousEvent = true;
