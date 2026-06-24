@@ -1030,6 +1030,7 @@ int main(int argc, char** argv) {
                    && !indentOnlyOptions.alignPortLists
                    && !indentOnlyOptions.alignInstanceMaps
                    && !indentOnlyOptions.alignCaseItems
+                   && !indentOnlyOptions.alignEnumItems
                    && !indentOnlyOptions.alignAssignments
                    && !indentOnlyOptions.alignContinuationOperators,
                true);
@@ -1220,6 +1221,49 @@ int main(int argc, char** argv) {
     expectBool("Formatter case item idempotent",
                unchangedCaseItemReport.changed,
                false);
+
+    const QString formatterEnumInput =
+        QStringLiteral("module enum_demo;\n"
+                       "typedef enum logic [1:0] {\n"
+                       "IDLE = 2'd0,\n"
+                       "LONG_STATE = 2'd1, // active\n"
+                       "DONE\n"
+                       "} state_e;\n"
+                       "endmodule\n");
+    const FormatterReport formatterEnumReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterEnumInput);
+    expectBool("Formatter enum item report changed",
+               formatterEnumReport.changed,
+               true);
+    expectEq("Formatter aligns enum items",
+             formatterEnumReport.formattedText,
+             QStringLiteral("module enum_demo;\n"
+                            "    typedef enum logic [1:0] {\n"
+                            "        IDLE       = 2'd0,\n"
+                            "        LONG_STATE = 2'd1,  // active\n"
+                            "        DONE\n"
+                            "    } state_e;\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedEnumReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterEnumReport.formattedText);
+    expectBool("Formatter enum item idempotent",
+               unchangedEnumReport.changed,
+               false);
+    const FormatterReport indentOnlyEnumReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterEnumInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only skips enum item alignment",
+             indentOnlyEnumReport.formattedText,
+             QStringLiteral("module enum_demo;\n"
+                            "    typedef enum logic [1:0] {\n"
+                            "        IDLE = 2'd0,\n"
+                            "        LONG_STATE = 2'd1, // active\n"
+                            "        DONE\n"
+                            "    } state_e;\n"
+                            "endmodule\n"));
 
     const QString formatterAssignmentInput =
         QStringLiteral("module assign_demo;\n"

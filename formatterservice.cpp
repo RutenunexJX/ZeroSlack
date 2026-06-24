@@ -51,6 +51,17 @@ struct CaseItemAlignmentLine {
     QString trailingComment;
 };
 
+struct EnumItemAlignmentLine {
+    bool valid = false;
+    int indentWidth = 0;
+    QString indent;
+    QString name;
+    QString value;
+    bool hasValue = false;
+    bool trailingComma = false;
+    QString trailingComment;
+};
+
 struct AssignmentAlignmentLine {
     bool valid = false;
     int indentWidth = 0;
@@ -1436,6 +1447,199 @@ void alignCaseItemBlocks(QStringList* lines, int indentWidth)
     flush();
 }
 
+bool isEnumOpeningLine(const QStringList& tokens, const QString& codeOnly)
+{
+    bool hasEnum = false;
+    for (const QString& token : tokens) {
+        if (token == QStringLiteral("enum")) {
+            hasEnum = true;
+            break;
+        }
+    }
+    return hasEnum
+        && codeOnly.contains(QLatin1Char('{'))
+        && delimiterContinuationBalance(codeOnly) > 0;
+}
+
+EnumItemAlignmentLine parseEnumItemAlignmentLine(const QString& line)
+{
+    EnumItemAlignmentLine parsed;
+    if (!lineHasCode(line) || startsWithPreprocessor(line))
+        return parsed;
+    const CodeCommentParts parts = splitTrailingLineComment(line);
+    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
+        return parsed;
+
+    const int indentWidth = leadingWhitespaceWidth(parts.code);
+    const QString indent = parts.code.left(indentWidth);
+    QString code = parts.code.mid(indentWidth).trimmed();
+    if (code.isEmpty()
+        || code.contains(QLatin1Char('{'))
+        || code.contains(QLatin1Char('}'))
+        || code.endsWith(QLatin1Char(';'))) {
+        return parsed;
+    }
+
+    bool trailingComma = false;
+    if (code.endsWith(QLatin1Char(','))) {
+        trailingComma = true;
+        code.chop(1);
+        code = code.trimmed();
+    }
+    if (code.isEmpty() || hasTopLevelChar(code, QLatin1Char(',')))
+        return parsed;
+
+    const int equalIndex = findTopLevelChar(code, QLatin1Char('='));
+    const QString left =
+        (equalIndex >= 0 ? code.left(equalIndex) : code).trimmed();
+    const QString value =
+        equalIndex >= 0 ? code.mid(equalIndex + 1).trimmed() : QString();
+    if (left.isEmpty() || (equalIndex >= 0 && value.isEmpty()))
+        return parsed;
+
+    if (!isIdentifierStart(left.at(0)))
+        return parsed;
+    for (int i = 1; i < left.size(); ++i) {
+        if (!isIdentifierPart(left.at(i)))
+            return parsed;
+    }
+    if (isForbiddenDeclarationName(left)
+        || isDeclarationKeyword(left)
+        || isPortDirectionKeyword(left)
+        || left == QStringLiteral("default")) {
+        return parsed;
+    }
+
+    parsed.valid = true;
+    parsed.indentWidth = indentWidth;
+    parsed.indent = indent;
+    parsed.name = left;
+    parsed.value = value;
+    parsed.hasValue = equalIndex >= 0;
+    parsed.trailingComma = trailingComma;
+    parsed.trailingComment = parts.trailingComment;
+    return parsed;
+}
+
+QString buildAlignedEnumItemCodeLine(const EnumItemAlignmentLine& line,
+                                     int maxNameWidth,
+                                     bool alignValue)
+{
+    QString content = line.name;
+    if (line.hasValue) {
+        content += repeatSpaces(
+            alignValue ? maxNameWidth - line.name.size() + 1 : 1);
+        content += QStringLiteral("= ");
+        content += line.value;
+    }
+    if (line.trailingComma)
+        content += QLatin1Char(',');
+    return line.indent + content;
+}
+
+void flushEnumItemAlignmentBlock(QStringList* lines,
+                                 const QList<int>& blockIndexes,
+                                 const QList<EnumItemAlignmentLine>& block)
+{
+    if (!lines || block.size() < 2)
+        return;
+
+    int maxNameWidth = 0;
+    int valueCount = 0;
+    for (const EnumItemAlignmentLine& line : block) {
+        maxNameWidth =
+            std::max(maxNameWidth,
+                     static_cast<int>(line.name.size()));
+        if (line.hasValue)
+            ++valueCount;
+    }
+
+    const bool alignValue = valueCount >= 2;
+    QStringList codeLines;
+    codeLines.reserve(block.size());
+    int maxCodeLineWidth = 0;
+    bool hasTrailingComment = false;
+    for (const EnumItemAlignmentLine& line : block) {
+        const QString codeLine =
+            buildAlignedEnumItemCodeLine(line, maxNameWidth, alignValue);
+        codeLines.append(codeLine);
+        maxCodeLineWidth =
+            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
+        if (!line.trailingComment.isEmpty())
+            hasTrailingComment = true;
+    }
+
+    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
+    for (int i = 0; i < block.size(); ++i) {
+        (*lines)[blockIndexes.at(i)] =
+            appendTrailingComment(codeLines.at(i),
+                                  block.at(i).trailingComment,
+                                  commentColumn);
+    }
+}
+
+void alignEnumItemBlocks(QStringList* lines, int indentWidth)
+{
+    if (!lines)
+        return;
+
+    int enumDepth = 0;
+    int expectedIndent = -1;
+    QList<int> blockIndexes;
+    QList<EnumItemAlignmentLine> block;
+
+    auto flush = [&]() {
+        flushEnumItemAlignmentBlock(lines, blockIndexes, block);
+        blockIndexes.clear();
+        block.clear();
+    };
+
+    bool inBlockComment = false;
+    for (int i = 0; i < lines->size(); ++i) {
+        const QString line = lines->at(i);
+        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
+        const QStringList tokens = codeTokens(codeOnly);
+
+        if (enumDepth == 0) {
+            if (isEnumOpeningLine(tokens, codeOnly)) {
+                flush();
+                enumDepth = std::max(0, delimiterContinuationBalance(codeOnly));
+                expectedIndent =
+                    leadingWhitespaceWidth(line) + std::max(1, indentWidth);
+                if (enumDepth == 0)
+                    expectedIndent = -1;
+            }
+            continue;
+        }
+
+        const bool closingLine = startsWithClosingDelimiter(codeOnly);
+        if (closingLine)
+            flush();
+
+        const EnumItemAlignmentLine parsed =
+            !closingLine
+                && expectedIndent >= 0
+                && leadingWhitespaceWidth(line) == expectedIndent
+                ? parseEnumItemAlignmentLine(line)
+                : EnumItemAlignmentLine();
+        if (parsed.valid) {
+            blockIndexes.append(i);
+            block.append(parsed);
+        } else {
+            flush();
+        }
+
+        enumDepth =
+            std::max(0, enumDepth + delimiterContinuationBalance(codeOnly));
+        if (enumDepth == 0) {
+            flush();
+            expectedIndent = -1;
+        }
+    }
+
+    flush();
+}
+
 bool isForbiddenAssignmentStarter(const QString& token)
 {
     return isOpeningToken(token)
@@ -1653,6 +1857,7 @@ FormatterOptions FormatterService::optionsForProfile(FormatterProfile profile)
         options.alignPortLists = false;
         options.alignInstanceMaps = false;
         options.alignCaseItems = false;
+        options.alignEnumItems = false;
         options.alignAssignments = false;
         options.alignContinuationOperators = false;
     }
@@ -1739,6 +1944,8 @@ FormatterReport FormatterService::formatDocument(
         alignInstanceMapBlocks(&formatted);
     if (options.alignCaseItems)
         alignCaseItemBlocks(&formatted, options.indentWidth);
+    if (options.alignEnumItems)
+        alignEnumItemBlocks(&formatted, options.indentWidth);
     if (options.alignAssignments)
         alignAssignmentBlocks(&formatted);
     if (options.alignContinuationOperators)

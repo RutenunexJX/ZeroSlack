@@ -453,6 +453,16 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, including richer block-aware statement alignment and safer multi-line structural edits.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 446 checks and direct `gui_smoke_test` run with 403 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Enum Item Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: additional formatter usability milestone and a conservative enum readability step. It aligns simple enum member value columns without rewriting enum values, changing member order, or attempting full AST formatting.
+- `FormatterOptions::alignEnumItems` is enabled for the `Structured` profile and disabled for `Indent Only`, matching the existing split between structural alignment and pure indentation.
+- `FormatterService` tracks formatted multi-line `enum ... { ... }` regions, aligns only simple same-indent enum member rows by member name/value columns, preserves trailing commas and trailing `//` comments, and skips preprocessor lines, block-comment lines, complex brace-containing rows, single-line enums, and uncertain lines.
+- Implementation remains no-regex. It uses deterministic token scans, comment/string masking, and delimiter balance tracking inside `FormatterService`.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 506 checks; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Formatter Assignment Alignment MVP
 
 - Status: implemented in the current worktree.

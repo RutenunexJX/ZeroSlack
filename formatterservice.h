@@ -17,6 +17,7 @@ struct FormatterOptions {
     bool alignPortLists = true;
     bool alignInstanceMaps = true;
     bool alignCaseItems = true;
+    bool alignEnumItems = true;
     bool alignAssignments = true;
     bool alignContinuationOperators = true;
 };
