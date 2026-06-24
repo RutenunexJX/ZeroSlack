@@ -7,6 +7,7 @@
 #include <QVector>
 #include <QList>
 #include <QHash>
+#include <functional>
 
 /// Result of one module instantiation: instance name, module (definition) name, and source line (1-based).
 struct ModuleInstantiationInfo {
@@ -132,13 +133,15 @@ public:
     QList<SemanticSymbolRecord> extractWorkspaceSymbolRecords(
         const QStringList& filePaths,
         const QStringList& includeDirs = {},
-        const QHash<QString, QString>& defines = {});
+        const QHash<QString, QString>& defines = {},
+        std::function<bool()> isCancelled = nullptr);
 
     /// Workspace-wide: load all SV files (by path), compile together, and return diagnostics.
     QList<SemanticDiagnostic> extractWorkspaceDiagnostics(
         const QStringList& filePaths,
         const QStringList& includeDirs = {},
-        const QHash<QString, QString>& defines = {});
+        const QHash<QString, QString>& defines = {},
+        std::function<bool()> isCancelled = nullptr);
 };
 
 #endif // SLANGMANAGER_H

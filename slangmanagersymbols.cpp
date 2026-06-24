@@ -65,23 +65,39 @@ QList<SemanticSymbolRecord> SlangManager::extractSymbolRecords(
 QList<SemanticSymbolRecord> SlangManager::extractWorkspaceSymbolRecords(
     const QStringList& filePaths,
     const QStringList& includeDirs,
-    const QHash<QString, QString>& defines)
+    const QHash<QString, QString>& defines,
+    std::function<bool()> isCancelled)
 {
     QList<SemanticSymbolRecord> result;
     if (filePaths.isEmpty())
         return result;
+    auto cancelled = [&]() {
+        return isCancelled && isCancelled();
+    };
+    if (cancelled())
+        return result;
     try {
         std::vector<std::string> pathStrs;
         pathStrs.reserve(filePaths.size());
-        for (const QString& p : filePaths)
+        for (const QString& p : filePaths) {
+            if (cancelled())
+                return result;
             pathStrs.push_back(p.toStdString());
+        }
         const QStringList effectiveIncludeDirs =
             slang_parse_options::effectiveIncludeDirsForFiles(filePaths, includeDirs);
+        if (cancelled())
+            return result;
 
         std::vector<std::string_view> pathViews;
         pathViews.reserve(pathStrs.size());
-        for (const std::string& s : pathStrs)
+        for (const std::string& s : pathStrs) {
+            if (cancelled())
+                return result;
             pathViews.push_back(s);
+        }
+        if (cancelled())
+            return result;
 
         slang::SourceManager sourceManager;
         slang::syntax::SyntaxTree::TreeOrError treeOrErr =
@@ -91,19 +107,25 @@ QList<SemanticSymbolRecord> SlangManager::extractWorkspaceSymbolRecords(
                       pathViews,
                       sourceManager,
                       slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines));
+        if (cancelled())
+            return result;
         if (!treeOrErr)
             return result;
 
         std::shared_ptr<slang::syntax::SyntaxTree> tree = std::move(*treeOrErr);
         if (!tree)
             return result;
+        if (cancelled())
+            return result;
 
         slang::Bag compilationOptions =
             slang_parse_options::makeCompilationOptions();
         Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
+        if (cancelled())
+            return result;
 
-        slang_symbols::collectSymbolRecords(compilation, result);
+        slang_symbols::collectSymbolRecords(compilation, result, isCancelled);
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {

@@ -4,6 +4,7 @@
 #include "semanticindex.h"
 
 #include <QList>
+#include <functional>
 
 namespace slang::ast {
 class Compilation;
@@ -12,7 +13,8 @@ class Compilation;
 namespace slang_symbols {
 
 void collectSymbolRecords(slang::ast::Compilation& compilation,
-                          QList<SemanticSymbolRecord>& outList);
+                          QList<SemanticSymbolRecord>& outList,
+                          std::function<bool()> isCancelled = nullptr);
 
 } // namespace slang_symbols
 

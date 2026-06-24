@@ -80,7 +80,10 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 
         SlangManager symbolAnalyzer;
         const auto records =
-            symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles, includeDirs, defines);
+            symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles,
+                                                         includeDirs,
+                                                         defines,
+                                                         isCancelled);
         if (cancelled()) {
             result.cancelled = true;
             applyResultMetadata(&result);
@@ -100,7 +103,10 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 
         SlangManager diagnosticsAnalyzer;
         result.diagnostics =
-            diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles, includeDirs, defines);
+            diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles,
+                                                           includeDirs,
+                                                           defines,
+                                                           isCancelled);
         if (cancelled()) {
             result.cancelled = true;
             result.diagnostics.clear();

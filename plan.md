@@ -775,6 +775,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: UI command surface for direct cancellation if wanted, deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
 - Verification for this block: focused build target `completion_test` and `gui_smoke_test`; direct `completion_test` run with 474 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Slang Boundary Cancellation MVP
+
+- Status: implemented in the current worktree.
+- Scope: eighteenth usable Huge Workspace Mode milestone. It lowers workspace symbol-analysis cancellation checks into Slang boundary code without claiming to preempt Slang internals while `fromFiles` or AST elaboration is actively running.
+- `SlangManager::extractWorkspaceSymbolRecords()` and `SlangManager::extractWorkspaceDiagnostics()` now accept an optional cancel provider and check it during workspace file-list preparation, after Slang `fromFiles`, before collector/diagnostics work, and while appending diagnostics.
+- `slang_symbols::collectSymbolRecords()` accepts the same optional cancel provider. Its definition pass, port-internal pass, and main AST visitor stop descending when cancellation is observed, and canceled collection clears partial records before returning to the analyzer.
+- `SymbolAnalyzer` passes the active workspace cancel provider into Slang symbol and diagnostics extraction. Synchronous `analyzeProject()` now emits `workspaceAnalysisExpired` when cancellation is observed immediately after symbol extraction, matching the existing no-partial-publication contract.
+- Focused completion coverage verifies canceled Slang workspace symbol extraction returns no partial records, canceled Slang workspace diagnostics returns no diagnostics from a known-bad fixture, and the analyzer's workspace cancellation path still expires before publication.
+- Next Huge Workspace milestones: even narrower interrupt points where Slang exposes them, tiered symbol indexes, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 478 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

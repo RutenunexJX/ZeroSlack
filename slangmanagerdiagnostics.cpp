@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
+#include <functional>
 #include <string>
 
 using namespace slang::ast;
@@ -39,16 +40,19 @@ SemanticDiagnostic::Severity mapDiagnosticSeverity(slang::DiagnosticSeverity sev
     }
 }
 
-void appendDiagnostics(const slang::SourceManager& sourceManager,
+bool appendDiagnostics(const slang::SourceManager& sourceManager,
                        const slang::Diagnostics& diagnostics,
                        QList<SemanticDiagnostic>* result,
-                       QSet<QString>* seen)
+                       QSet<QString>* seen,
+                       const std::function<bool()>& isCancelled = nullptr)
 {
     if (!result || !seen)
-        return;
+        return true;
 
     slang::DiagnosticEngine engine(sourceManager);
     for (const slang::Diagnostic& diagnostic : diagnostics) {
+        if (isCancelled && isCancelled())
+            return false;
         const slang::DiagnosticSeverity severity =
             engine.getSeverity(diagnostic.code, diagnostic.location);
         if (severity == slang::DiagnosticSeverity::Ignored)
@@ -78,6 +82,7 @@ void appendDiagnostics(const slang::SourceManager& sourceManager,
         seen->insert(key);
         result->append(item);
     }
+    return true;
 }
 
 QList<SemanticDiagnostic> collectDiagnostics(slang::ast::Compilation& compilation)
@@ -149,23 +154,39 @@ QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileNa
 QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
     const QStringList& filePaths,
     const QStringList& includeDirs,
-    const QHash<QString, QString>& defines)
+    const QHash<QString, QString>& defines,
+    std::function<bool()> isCancelled)
 {
     QList<SemanticDiagnostic> result;
     if (filePaths.isEmpty())
         return result;
+    auto cancelled = [&]() {
+        return isCancelled && isCancelled();
+    };
+    if (cancelled())
+        return result;
     try {
         std::vector<std::string> pathStrs;
         pathStrs.reserve(filePaths.size());
-        for (const QString& p : filePaths)
+        for (const QString& p : filePaths) {
+            if (cancelled())
+                return result;
             pathStrs.push_back(p.toStdString());
+        }
         const QStringList effectiveIncludeDirs =
             slang_parse_options::effectiveIncludeDirsForFiles(filePaths, includeDirs);
+        if (cancelled())
+            return result;
 
         std::vector<std::string_view> pathViews;
         pathViews.reserve(pathStrs.size());
-        for (const std::string& s : pathStrs)
+        for (const std::string& s : pathStrs) {
+            if (cancelled())
+                return result;
             pathViews.push_back(s);
+        }
+        if (cancelled())
+            return result;
 
         slang::SourceManager sourceManager;
         slang::syntax::SyntaxTree::TreeOrError treeOrErr =
@@ -175,24 +196,52 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
                       pathViews,
                       sourceManager,
                       slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines));
+        if (cancelled())
+            return result;
         if (!treeOrErr)
             return result;
 
         std::shared_ptr<slang::syntax::SyntaxTree> tree = std::move(*treeOrErr);
         if (!tree)
             return result;
+        if (cancelled())
+            return result;
 
         QSet<QString> seen;
-        appendDiagnostics(tree->sourceManager(), tree->diagnostics(), &result, &seen);
+        if (!appendDiagnostics(tree->sourceManager(),
+                               tree->diagnostics(),
+                               &result,
+                               &seen,
+                               isCancelled)) {
+            result.clear();
+            return result;
+        }
+        if (cancelled()) {
+            result.clear();
+            return result;
+        }
 
         slang::Bag compilationOptions =
             slang_parse_options::makeCompilationOptions();
         Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
         (void)compilation.getRoot();
+        if (cancelled()) {
+            result.clear();
+            return result;
+        }
         const slang::SourceManager* sm = compilation.getSourceManager();
-        if (sm)
-            appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen);
+        if (sm
+            && !appendDiagnostics(*sm,
+                                  compilation.getAllDiagnostics(),
+                                  &result,
+                                  &seen,
+                                  isCancelled)) {
+            result.clear();
+            return result;
+        }
+        if (cancelled())
+            result.clear();
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {

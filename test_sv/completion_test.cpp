@@ -5039,8 +5039,55 @@ int main(int argc, char** argv) {
                    && cancelCompletionSymbols == 0
                    && !SemanticIndex::getInstance()->snapshot(),
                true);
-    expectBool("Workspace cancellation provider reached result build",
+    expectBool("Workspace cancellation provider reached Slang boundary",
                cancelChecks >= 3,
+               true);
+    int slangSymbolCancelChecks = 0;
+    SlangManager cancelSlangSymbols;
+    const QList<SemanticSymbolRecord> cancelledWorkspaceRecords =
+        cancelSlangSymbols.extractWorkspaceSymbolRecords(
+            cancelProject.systemVerilogFiles,
+            cancelProject.includeDirs,
+            QHash<QString, QString>{},
+            [&slangSymbolCancelChecks]() {
+                ++slangSymbolCancelChecks;
+                return slangSymbolCancelChecks >= 8;
+            });
+    expectBool("Workspace Slang symbols honor cancel boundary",
+               cancelledWorkspaceRecords.isEmpty()
+                   && slangSymbolCancelChecks >= 8,
+               true);
+
+    const QString cancelDiagnosticFile =
+        QDir(cancelWorkspace.path()).absoluteFilePath(
+            QStringLiteral("cancel_diagnostic.sv"));
+    expectBool("Workspace cancel diagnostic file created",
+               writeTextFile(
+                   cancelDiagnosticFile,
+                   QStringLiteral("module cancel_bad(input logic a\nendmodule\n")),
+               true);
+    SlangManager diagnosticsProbe;
+    const QList<SemanticDiagnostic> uncancelledDiagnostics =
+        diagnosticsProbe.extractWorkspaceDiagnostics(
+            QStringList{cancelDiagnosticFile},
+            cancelProject.includeDirs);
+    expectBool("Workspace diagnostic fixture produces diagnostics",
+               !uncancelledDiagnostics.isEmpty(),
+               true);
+    int slangDiagnosticCancelChecks = 0;
+    SlangManager cancelSlangDiagnostics;
+    const QList<SemanticDiagnostic> cancelledWorkspaceDiagnostics =
+        cancelSlangDiagnostics.extractWorkspaceDiagnostics(
+            QStringList{cancelDiagnosticFile},
+            cancelProject.includeDirs,
+            QHash<QString, QString>{},
+            [&slangDiagnosticCancelChecks]() {
+                ++slangDiagnosticCancelChecks;
+                return slangDiagnosticCancelChecks >= 5;
+            });
+    expectBool("Workspace Slang diagnostics honor cancel boundary",
+               cancelledWorkspaceDiagnostics.isEmpty()
+                   && slangDiagnosticCancelChecks >= 5,
                true);
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);

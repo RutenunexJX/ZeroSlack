@@ -19,6 +19,7 @@
 
 #include <QHash>
 #include <QSet>
+#include <functional>
 #include <string>
 
 using namespace slang::ast;
@@ -111,8 +112,22 @@ void emitInstancePinRecords(const slang::SourceManager* sm,
 }
 
 void collectNativeRecords(slang::ast::Compilation& compilation,
-                          QList<SemanticSymbolRecord>& outList)
+                          QList<SemanticSymbolRecord>& outList,
+                          const std::function<bool()>& isCancelled)
 {
+    bool cancellationReached = false;
+    auto cancelled = [&]() {
+        if (isCancelled && isCancelled()) {
+            cancellationReached = true;
+            return true;
+        }
+        return false;
+    };
+    if (cancelled()) {
+        outList.clear();
+        return;
+    }
+
     const slang::SourceManager* sm = compilation.getSourceManager();
     if (!sm)
         return;
@@ -122,6 +137,10 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
     //     tree, NOT definitions, so definitions must be emitted explicitly here - one entry per
     //     definition, always present even for uninstantiated modules.
     for (const slang::ast::Symbol* defSym : compilation.getDefinitions()) {
+        if (cancelled()) {
+            outList.clear();
+            return;
+        }
         const auto* def = defSym ? defSym->as_if<DefinitionSymbol>() : nullptr;
         if (!def)
             continue;
@@ -143,19 +162,30 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
     // (2) Top-level auto-instances (uninstantiated/top modules) should not appear as instance
     //     symbols; collect them so we can skip emitting spurious sym_inst rows for them.
     QSet<const void*> topInstances;
-    for (const slang::ast::InstanceSymbol* ti : root.topInstances)
+    for (const slang::ast::InstanceSymbol* ti : root.topInstances) {
+        if (cancelled()) {
+            outList.clear();
+            return;
+        }
         topInstances.insert(ti);
+    }
 
     // (3) Pass A: collect the net/variable that backs each port, so the main pass can skip it
     //     (otherwise every ANSI port is emitted twice: once as a port, once as a net/var).
     QSet<const void*> portInternals;
     {
         auto portCollector = makeVisitor([&](auto& v, const PortSymbol& port) {
+            if (cancelled())
+                return;
             if (port.internalSymbol)
                 portInternals.insert(port.internalSymbol);
             v.visitDefault(port);
         });
         root.visit(portCollector);
+    }
+    if (cancellationReached) {
+        outList.clear();
+        return;
     }
 
     // (4) Pass B: emit instances and all body members. Each definition's body is walked only
@@ -163,6 +193,8 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
     QSet<const void*> visitedDefs;
     auto visitor = makeVisitor(
         [&](auto& v, const InstanceSymbol& inst) {
+            if (cancelled())
+                return;
             if (!topInstances.contains(&inst)) {
                 SemanticSymbolRecord record;
                 QString moduleScope;
@@ -182,9 +214,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             if (visitedDefs.contains(defKey))
                 return;  // members of this definition already captured
             visitedDefs.insert(defKey);
+            if (cancelled())
+                return;
             v.visitDefault(inst);
         },
         [&](auto& v, const VariableSymbol& var) {
+            if (cancelled())
+                return;
             if (portInternals.contains(&var))
                 return;  // backing var of a port; emitted as the port itself
             // Struct/union fields are emitted at their typedef site (TypeAliasType visitor),
@@ -223,10 +259,14 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 }
             }
             outList.append(record);
+            if (cancelled())
+                return;
             if (var.kind != SymbolKind::FormalArgument)
                 v.visitDefault(var);
         },
         [&](auto& v, const NetSymbol& net) {
+            if (cancelled())
+                return;
             if (portInternals.contains(&net))
                 return;  // backing net of a port; emitted as the port itself
             SemanticSymbolRecord record;
@@ -236,9 +276,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             applyCollectorKind(&record, CollectorKind::Wire);
             record.owner.name = moduleScope;
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(net);
         },
         [&](auto& v, const SubroutineSymbol& sub) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, sub, record, &moduleScope))
@@ -249,9 +293,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                     : CollectorKind::Function);
             record.owner.name = moduleScope;
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(sub);
         },
         [&](auto& v, const PortSymbol& port) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, port, record, &moduleScope))
@@ -259,9 +307,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             applyCollectorKind(&record, portDirectionCollectorKind(port.direction));
             record.owner.name = moduleScope;
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(port);
         },
         [&](auto& v, const InterfacePortSymbol& port) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, port, record, &moduleScope))
@@ -280,9 +332,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 }
             }
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(port);
         },
         [&](auto& v, const ModportSymbol& modport) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, modport, record, &moduleScope))
@@ -290,9 +346,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             applyCollectorKind(&record, CollectorKind::InterfaceModport);
             record.owner.name = moduleScope;
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(modport);
         },
         [&](auto& v, const ParameterSymbol& param) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, param, record, &moduleScope))
@@ -303,9 +363,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                     : CollectorKind::Parameter);
             record.owner.name = moduleScope;
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(param);
         },
         [&](auto& v, const TypeAliasType& typeAlias) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, typeAlias, record, &moduleScope))
@@ -341,9 +405,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             else {
                 outList.append(record);
             }
+            if (cancelled())
+                return;
             v.visitDefault(typeAlias);
         },
         [&](auto& v, const EnumType& enumType) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, enumType, record, &moduleScope))
@@ -351,9 +419,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             applyCollectorKind(&record, CollectorKind::Enum);
             record.owner.name = moduleScope;
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(enumType);
         },
         [&](auto& v, const PackageSymbol& pkg) {
+            if (cancelled())
+                return;
             SemanticSymbolRecord record;
             QString moduleScope;
             if (!fillSymbolRecord(sm, pkg, record, &moduleScope))
@@ -361,18 +433,25 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             applyCollectorKind(&record, CollectorKind::Package);
             record.owner.name = QString::fromStdString(std::string(pkg.name));
             outList.append(record);
+            if (cancelled())
+                return;
             v.visitDefault(pkg);
         }
     );
 
     root.visit(visitor);
+    if (cancellationReached || cancelled()) {
+        outList.clear();
+        return;
+    }
     finalizeCollectedSymbolRecords(&outList);
 }
 
 }
 
 void slang_symbols::collectSymbolRecords(slang::ast::Compilation& compilation,
-                                         QList<SemanticSymbolRecord>& outList)
+                                         QList<SemanticSymbolRecord>& outList,
+                                         std::function<bool()> isCancelled)
 {
-    collectNativeRecords(compilation, outList);
+    collectNativeRecords(compilation, outList, isCancelled);
 }

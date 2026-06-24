@@ -68,8 +68,10 @@ void SymbolAnalyzer::analyzeProject(
     const auto allRecords =
         symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles,
                                                      project.includeDirs,
-                                                     project.defines);
+                                                     project.defines,
+                                                     isCancelled);
     if (isCancelled && isCancelled()) {
+        emit workspaceAnalysisExpired();
         emit batchAnalysisCompleted(0, 0);
         emit analysisCompleted(project.workspaceRoot, 0);
         return;
@@ -95,7 +97,8 @@ void SymbolAnalyzer::analyzeProject(
     result.diagnostics =
         diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles,
                                                        project.includeDirs,
-                                                       project.defines);
+                                                       project.defines,
+                                                       isCancelled);
     if (isCancelled && isCancelled()) {
         emit workspaceAnalysisExpired();
         emit batchAnalysisCompleted(0, 0);
