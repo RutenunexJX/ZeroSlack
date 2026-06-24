@@ -29,9 +29,12 @@ constexpr qsizetype kLargeDirtyRefreshCharacterThreshold = 64 * 1024;
 constexpr int kLargeDirtyRefreshDelayMs = 180;
 
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
+QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
+                                 const WavePreviewReport& report);
 QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
                                 const WavePreviewReport& report);
 QString laneSummaryText(const WavePreviewLaneSummary& summary);
+QString reportSummaryText(const WavePreviewReport& report, bool dirty);
 
 bool shouldQueueRefresh(const QString& documentText, bool)
 {
@@ -41,6 +44,7 @@ bool shouldQueueRefresh(const QString& documentText, bool)
 struct CanvasEventHit {
     QRect rect;
     QString tooltip;
+    QString selectionText;
     int line = 0;
     int column = 0;
 };
@@ -69,6 +73,8 @@ public:
         report = nextReport;
         currentFileName = fileName;
         eventHits.clear();
+        selectedLine = 0;
+        selectedColumn = 0;
         setToolTip(QString());
         unsetCursor();
         updateGeometry();
@@ -80,6 +86,8 @@ public:
         report = WavePreviewReport();
         currentFileName.clear();
         eventHits.clear();
+        selectedLine = 0;
+        selectedColumn = 0;
         setToolTip(QString());
         unsetCursor();
         updateGeometry();
@@ -90,6 +98,11 @@ public:
         std::function<void(const QString&, int, int)> handler)
     {
         navigationHandler = std::move(handler);
+    }
+
+    void setSelectionHandler(std::function<void(const QString&)> handler)
+    {
+        selectionHandler = std::move(handler);
     }
 
 protected:
@@ -195,7 +208,14 @@ protected:
                          == WavePreviewAssignmentKind::NonBlocking)
                     fill = QColor(QStringLiteral("#9333ea"));
 
-                painter.setPen(QPen(fill.darker(125)));
+                const bool selected =
+                    assignment.line > 0
+                    && assignment.line == selectedLine
+                    && qMax(1, assignment.column) == selectedColumn;
+                painter.setPen(QPen(selected
+                                        ? QColor(QStringLiteral("#0f172a"))
+                                        : fill.darker(125),
+                                    selected ? 2 : 1));
                 painter.setBrush(fill.lighter(180));
                 painter.drawRoundedRect(eventRect, 4, 4);
                 painter.setPen(QColor(QStringLiteral("#111827")));
@@ -204,10 +224,37 @@ protected:
                                  canvasEventLabel(assignment));
                 eventHits.append({eventRect,
                                   assignmentDetailTooltip(assignment, report),
+                                  canvasEventSelectionText(assignment, report),
                                   assignment.line,
                                   assignment.column});
             }
         }
+    }
+
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event->button() != Qt::LeftButton) {
+            QWidget::mousePressEvent(event);
+            return;
+        }
+
+        for (auto it = eventHits.crbegin(); it != eventHits.crend(); ++it) {
+            if (!it->rect.contains(event->pos()))
+                continue;
+            selectedLine = it->line;
+            selectedColumn = qMax(1, it->column);
+            if (selectionHandler)
+                selectionHandler(it->selectionText);
+            update();
+            event->accept();
+            return;
+        }
+        selectedLine = 0;
+        selectedColumn = 0;
+        if (selectionHandler)
+            selectionHandler(QString());
+        update();
+        QWidget::mousePressEvent(event);
     }
 
     void mouseMoveEvent(QMouseEvent* event) override
@@ -260,7 +307,10 @@ private:
     WavePreviewReport report;
     QVector<CanvasEventHit> eventHits;
     QString currentFileName;
+    int selectedLine = 0;
+    int selectedColumn = 0;
     std::function<void(const QString&, int, int)> navigationHandler;
+    std::function<void(const QString&)> selectionHandler;
 };
 
 QString displayFileName(const QString& fileName)
@@ -430,6 +480,17 @@ QString busiestLaneText(const WavePreviewReport& report)
                        QStringLiteral("events")));
 }
 
+QString reportSummaryText(const WavePreviewReport& report, bool dirty)
+{
+    return QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups%5%6")
+        .arg(report.lanes.size())
+        .arg(report.assignmentCount)
+        .arg(report.blocks.size())
+        .arg(report.clockResetGroups.size())
+        .arg(busiestLaneText(report))
+        .arg(dirty ? QStringLiteral(" - live dirty buffer") : QString());
+}
+
 const WavePreviewSignalContext* signalContextFor(
     const WavePreviewReport& report,
     const QString& signalName)
@@ -525,6 +586,26 @@ QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
         QStringLiteral("guard: %1").arg(guardText(assignment)),
         QStringLiteral("location: %1").arg(locationText(assignment))
     }.join(QStringLiteral("\n"));
+}
+
+QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
+                                 const WavePreviewReport& report)
+{
+    QStringList parts;
+    parts.append(QStringLiteral("Selected %1").arg(assignment.target));
+    parts.append(timingText(assignment));
+    if (!assignment.guardText.isEmpty())
+        parts.append(QStringLiteral("guard %1").arg(assignment.guardText));
+    const QString sources = sourcesText(assignment.sourceSignals);
+    if (sources != QStringLiteral("-"))
+        parts.append(QStringLiteral("sources %1").arg(sources));
+    const QString clockReset = clockResetText(assignment, report);
+    if (clockReset != QStringLiteral("-"))
+        parts.append(clockReset);
+    const QString location = locationText(assignment);
+    if (location != QStringLiteral("-"))
+        parts.append(location);
+    return parts.join(QStringLiteral(" - "));
 }
 
 QString laneDetailTooltip(const WavePreviewLane& lane)
@@ -629,6 +710,13 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
                               line,
                               qMax(1, column));
         });
+    canvas->setSelectionHandler([this](const QString& selectionText) {
+        if (!summaryLabel)
+            return;
+        summaryLabel->setText(selectionText.isEmpty()
+                                  ? currentSummaryText
+                                  : selectionText);
+    });
     previewCanvas = canvas;
     layout->addWidget(previewCanvas, 0);
 
@@ -734,7 +822,8 @@ void WavePreviewPanelCoordinator::queueRefresh(
                                 .arg(displayFileName(fileName)));
     }
     if (summaryLabel) {
-        summaryLabel->setText(QStringLiteral("Refresh queued for large buffer"));
+        currentSummaryText = QStringLiteral("Refresh queued for large buffer");
+        summaryLabel->setText(currentSummaryText);
     }
 
     if (refreshTimer)
@@ -789,8 +878,10 @@ void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
     clearQueuedRefresh();
     if (titleLabel)
         titleLabel->setText(QStringLiteral("Wave Preview"));
-    if (summaryLabel)
+    if (summaryLabel) {
+        currentSummaryText = message;
         summaryLabel->setText(message);
+    }
     if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
         canvas->clearReport();
     if (previewTree)
@@ -813,15 +904,8 @@ void WavePreviewPanelCoordinator::renderReport(
                                 .arg(displayFileName(fileName)));
     }
     if (summaryLabel) {
-        summaryLabel->setText(
-            QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups%5%6")
-                .arg(report.lanes.size())
-                .arg(report.assignmentCount)
-                .arg(report.blocks.size())
-                .arg(report.clockResetGroups.size())
-                .arg(busiestLaneText(report))
-                .arg(dirty ? QStringLiteral(" - live dirty buffer")
-                           : QString()));
+        currentSummaryText = reportSummaryText(report, dirty);
+        summaryLabel->setText(currentSummaryText);
     }
 
     if (!report.available) {

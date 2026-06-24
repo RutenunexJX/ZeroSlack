@@ -42,6 +42,7 @@ private:
     QString pendingDocumentText;
     bool pendingDirty = false;
     bool pendingRefresh = false;
+    QString currentSummaryText;
 
     std::function<void(const QString&, int, int)> navigationHandler;
 

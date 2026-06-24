@@ -1370,6 +1370,14 @@ static QWidget* wavePreviewCanvas(MainWindow& window)
         : nullptr;
 }
 
+static QLabel* wavePreviewSummaryLabel(MainWindow& window)
+{
+    QDockWidget* dock =
+        window.findChild<QDockWidget*>(QStringLiteral("wavePreviewDock"));
+    return dock ? dock->findChild<QLabel*>(QStringLiteral("wavePreviewSummary"))
+                : nullptr;
+}
+
 static bool renderedWidgetHasColorVariation(QWidget* widget)
 {
     if (!widget)
@@ -3697,6 +3705,11 @@ int main(int argc, char** argv)
                                  28 + 32 + 16 - 10 + 9);
         QTest::mouseMove(waveCanvas, qEventPoint);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QTest::mouseClick(waveCanvas,
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          qEventPoint);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         if (waveEditor) {
             QTextCursor startCursor(waveEditor->document());
             startCursor.movePosition(QTextCursor::Start);
@@ -3712,6 +3725,15 @@ int main(int argc, char** argv)
                waveCanvas
                    && waveCanvas->toolTip().contains(QStringLiteral("target: q"))
                    && waveCanvas->toolTip().contains(QStringLiteral("sources: data")),
+               true);
+    QLabel* waveSummary = wavePreviewSummaryLabel(window);
+    expectBool("wave preview canvas click selects event summary",
+               waveSummary
+                   && waveSummary->text().contains(QStringLiteral("Selected q"))
+                   && waveSummary->text().contains(QStringLiteral("t+1 cycle"))
+                   && waveSummary->text().contains(QStringLiteral("guard if data[0]"))
+                   && waveSummary->text().contains(QStringLiteral("sources data"))
+                   && waveSummary->text().contains(QStringLiteral("9:")),
                true);
     expectBool("wave preview canvas double click navigates to assignment",
                waveCanvas

@@ -678,6 +678,17 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer dense-canvas interaction, additional evidence-based guard context, and later semantic relationship overlays if they can stay report-driven.
 - Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`; direct `completion_test` run with 495 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Canvas Event Selection MVP
+
+- Status: implemented in the current worktree.
+- Scope: second direct canvas-interaction milestone and a dense-report inspection step. It improves event focus without adding simulation, semantic extraction, or workspace scanning.
+- `WavePreviewCanvas` now keeps a selected assignment key from single-click hit testing, redraws the selected block with a stronger outline, and clears the selection when the user clicks empty canvas space.
+- `WavePreviewPanelCoordinator` receives the canvas selection text and pins a concise selected-event summary in the Wave Preview summary label, including target, timing, guard/source context, clock/reset context, and location. Empty selection restores the report summary text.
+- Double-click navigation and hover tooltips continue to use the same report-owned assignment evidence as before; canvas code still only renders report data and performs hit testing.
+- Implementation remains no-regex and does not parse RTL in UI code.
+- Next Wave Preview milestones: richer dense-canvas interaction, additional evidence-based guard context, and later semantic relationship overlays if they can stay report-driven.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.
