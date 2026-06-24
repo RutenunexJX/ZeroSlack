@@ -947,6 +947,44 @@ int main(int argc, char** argv) {
                unchangedPortListReport.changed,
                false);
 
+    const QString formatterInstanceMapInput =
+        QStringLiteral("module inst_demo;\n"
+                       "child #(\n"
+                       ".PARAM(8),\n"
+                       ".LONG_PARAM(WIDTH)\n"
+                       ") u_child (\n"
+                       ".clk(clk),\n"
+                       ".rst_n(rst_n),\n"
+                       ".data_in(data_bus),\n"
+                       ".ready(ready)\n"
+                       ");\n"
+                       "endmodule\n");
+    const FormatterReport formatterInstanceMapReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterInstanceMapInput);
+    expectBool("Formatter instance map report changed",
+               formatterInstanceMapReport.changed,
+               true);
+    expectEq("Formatter aligns instance maps",
+             formatterInstanceMapReport.formattedText,
+             QStringLiteral("module inst_demo;\n"
+                            "    child #(\n"
+                            "    .PARAM      (8),\n"
+                            "    .LONG_PARAM (WIDTH)\n"
+                            "    ) u_child (\n"
+                            "    .clk     (clk),\n"
+                            "    .rst_n   (rst_n),\n"
+                            "    .data_in (data_bus),\n"
+                            "    .ready   (ready)\n"
+                            "    );\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedInstanceMapReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterInstanceMapReport.formattedText);
+    expectBool("Formatter instance map idempotent",
+               unchangedInstanceMapReport.changed,
+               false);
+
     const QString wavePreviewInput =
         QStringLiteral("module wave_probe(\n"
                        "    input logic clk,\n"

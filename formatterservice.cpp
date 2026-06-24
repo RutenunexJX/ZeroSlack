@@ -29,6 +29,15 @@ struct PortAlignmentLine {
     bool trailingComma = false;
 };
 
+struct InstanceMapAlignmentLine {
+    bool valid = false;
+    int indentWidth = 0;
+    QString indent;
+    QString name;
+    QString expression;
+    bool trailingComma = false;
+};
+
 bool isIdentifierStart(QChar ch)
 {
     return ch == QLatin1Char('_')
@@ -363,6 +372,39 @@ int matchingOpeningBracket(const QString& text, int closingBracket)
             --depth;
             if (depth == 0)
                 return i;
+        }
+    }
+    return -1;
+}
+
+int matchingClosingParen(const QString& text, int openingParen)
+{
+    int depth = 0;
+    bool inString = false;
+    bool escaped = false;
+    for (int i = openingParen; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+        if (ch == QLatin1Char('(')) {
+            ++depth;
+        } else if (ch == QLatin1Char(')')) {
+            --depth;
+            if (depth == 0)
+                return i;
+            if (depth < 0)
+                return -1;
         }
     }
     return -1;
@@ -734,6 +776,122 @@ void alignPortListBlocks(QStringList* lines)
 
     flush();
 }
+
+InstanceMapAlignmentLine parseInstanceMapAlignmentLine(const QString& line)
+{
+    InstanceMapAlignmentLine parsed;
+    if (!lineHasCode(line) || startsWithPreprocessor(line))
+        return parsed;
+    if (hasCommentTokenOutsideString(line))
+        return parsed;
+
+    const int indentWidth = leadingWhitespaceWidth(line);
+    const QString indent = line.left(indentWidth);
+    QString code = line.mid(indentWidth).trimmed();
+    if (code.size() < 4 || !code.startsWith(QLatin1Char('.')))
+        return parsed;
+
+    bool trailingComma = false;
+    if (code.endsWith(QLatin1Char(','))) {
+        trailingComma = true;
+        code.chop(1);
+        code = code.trimmed();
+    }
+
+    if (code.size() < 3 || code.endsWith(QLatin1Char(';')))
+        return parsed;
+
+    int nameStart = 1;
+    if (!isIdentifierStart(code.at(nameStart)))
+        return parsed;
+    int nameEnd = nameStart + 1;
+    while (nameEnd < code.size() && isIdentifierPart(code.at(nameEnd)))
+        ++nameEnd;
+
+    int openParen = nameEnd;
+    while (openParen < code.size() && code.at(openParen).isSpace())
+        ++openParen;
+    if (openParen >= code.size() || code.at(openParen) != QLatin1Char('('))
+        return parsed;
+
+    const int closeParen = matchingClosingParen(code, openParen);
+    if (closeParen < 0 || closeParen != code.size() - 1)
+        return parsed;
+
+    parsed.valid = true;
+    parsed.indentWidth = indentWidth;
+    parsed.indent = indent;
+    parsed.name = code.mid(nameStart, nameEnd - nameStart);
+    parsed.expression = code.mid(openParen + 1, closeParen - openParen - 1);
+    parsed.trailingComma = trailingComma;
+    return parsed;
+}
+
+QString buildAlignedInstanceMapLine(const InstanceMapAlignmentLine& line,
+                                    int maxNameWidth)
+{
+    QString content = QLatin1Char('.')
+        + line.name
+        + repeatSpaces(maxNameWidth - line.name.size() + 1)
+        + QLatin1Char('(')
+        + line.expression
+        + QLatin1Char(')');
+    if (line.trailingComma)
+        content += QLatin1Char(',');
+    return line.indent + content;
+}
+
+void flushInstanceMapAlignmentBlock(QStringList* lines,
+                                    const QList<int>& blockIndexes,
+                                    const QList<InstanceMapAlignmentLine>& block)
+{
+    if (!lines || block.size() < 2)
+        return;
+
+    int maxNameWidth = 0;
+    for (const InstanceMapAlignmentLine& line : block) {
+        maxNameWidth =
+            std::max(maxNameWidth,
+                     static_cast<int>(line.name.size()));
+    }
+
+    for (int i = 0; i < block.size(); ++i) {
+        (*lines)[blockIndexes.at(i)] =
+            buildAlignedInstanceMapLine(block.at(i), maxNameWidth);
+    }
+}
+
+void alignInstanceMapBlocks(QStringList* lines)
+{
+    if (!lines)
+        return;
+
+    QList<int> blockIndexes;
+    QList<InstanceMapAlignmentLine> block;
+
+    auto flush = [&]() {
+        flushInstanceMapAlignmentBlock(lines, blockIndexes, block);
+        blockIndexes.clear();
+        block.clear();
+    };
+
+    for (int i = 0; i < lines->size(); ++i) {
+        const InstanceMapAlignmentLine parsed =
+            parseInstanceMapAlignmentLine(lines->at(i));
+        if (!parsed.valid) {
+            flush();
+            continue;
+        }
+        if (!block.isEmpty()
+            && block.last().indentWidth != parsed.indentWidth) {
+            flush();
+        }
+        blockIndexes.append(i);
+        block.append(parsed);
+    }
+
+    flush();
+}
 }
 
 FormatterService* FormatterService::getInstance()
@@ -793,6 +951,8 @@ FormatterReport FormatterService::formatDocument(
         alignDeclarationBlocks(&formatted);
     if (options.alignPortLists)
         alignPortListBlocks(&formatted);
+    if (options.alignInstanceMaps)
+        alignInstanceMapBlocks(&formatted);
 
     report.formattedText = formatted.join(QLatin1Char('\n'));
     if (hadFinalNewline)

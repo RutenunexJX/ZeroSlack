@@ -9,6 +9,7 @@ struct FormatterOptions {
     bool preservePreprocessorIndent = true;
     bool alignDeclarationBlocks = true;
     bool alignPortLists = true;
+    bool alignInstanceMaps = true;
 };
 
 struct FormatterReport {

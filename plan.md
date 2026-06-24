@@ -371,8 +371,20 @@ feature direction that violates them.
 - The MVP aligns contiguous simple ANSI `input` / `output` / `inout` lines by direction, type/range prefix, and port name. It preserves unpacked dimensions after the port name and keeps trailing commas where they already exist.
 - The alignment pass is intentionally narrow: it skips preprocessor lines, comment-bearing lines, multi-port lines, default-value ports, inline closing forms such as `);`, and complex port declarations. Instance port maps and parameter override maps remain later formatter work.
 - Implementation remains no-regex. It uses deterministic token scans, bracket-depth checks, and conservative port-line parsing.
-- Next Formatter milestones: instance parameter/port map alignment, comment-preserving alignment, format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: comment-preserving alignment, format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 414 checks, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run with 365 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Formatter Instance Map Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: fourth usable formatter milestone. It extends conservative alignment into common named association maps without attempting broad expression formatting.
+- `FormatterService` now has an `alignInstanceMaps` option enabled by default. The pass runs after indentation, declaration alignment, and port-list alignment, stays inside the formatter report boundary, and still reaches the editor only as one undoable formatted-text replacement.
+- The MVP aligns contiguous simple named association lines by the association name before the opening parenthesis. It covers both parameter override maps such as `.PARAM(value)` and instance port maps such as `.clk(clk)`.
+- Expression text inside parentheses is preserved. The pass only normalizes spacing between the association name and `(`, and it keeps trailing commas where they already exist.
+- The alignment pass is intentionally narrow: it skips preprocessor lines, comment-bearing lines, semicolon-terminated inline forms, malformed parentheses, and complex non-single-line associations. Positional maps, mixed inline maps, and comment-preserving alignment remain later formatter work.
+- Implementation remains no-regex. It uses deterministic token scans, quote-aware parenthesis matching, and conservative named-association parsing.
+- Next Formatter milestones: comment-preserving alignment, format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Verification for this block: focused build target `completion_test` and direct `completion_test` run with 417 checks. Final release verification for the commit also includes focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Data MVP
 
