@@ -20,6 +20,7 @@ signals:
 
 private:
     QString pendingFileName;
+    bool pendingFullRefresh = false;
     QTimer* refreshTimer = nullptr;
 };
 

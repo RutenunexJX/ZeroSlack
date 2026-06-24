@@ -9,6 +9,7 @@
 #include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
+#include "diagnosticsrefreshcontroller.h"
 #include "documentmodel.h"
 #include "editorsemanticcontextservice.h"
 #include "formatterservice.h"
@@ -28,7 +29,10 @@
 #include "workspaceanalysisrequestqueue.h"
 #include <QApplication>
 #include <QColor>
+#include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QTextDocument>
 #include <QTextLayout>
@@ -95,6 +99,19 @@ static void expectExcludes(const char* what, const QStringList& got, const QStri
     if (!ok) ++g_fails;
     printf("[%s] %-34s got=[%s]\n", ok ? "PASS" : "FAIL", what,
            got.join(",").toLocal8Bit().constData());
+}
+
+template <typename Predicate>
+static bool waitForEventPredicate(Predicate predicate, int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() <= timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        if (predicate())
+            return true;
+    }
+    return predicate();
 }
 
 static void expectGhostContains(const char* what,
@@ -1439,6 +1456,44 @@ int main(int argc, char** argv) {
                    && clearedTelemetry.lastTakenPendingAgeMs < 0
                    && clearedTelemetry.lastTakenPendingUpdateCount == 0,
                true);
+
+    DiagnosticsRefreshController diagnosticsRefresh;
+    QStringList emittedDiagnosticsRefreshes;
+    QObject::connect(&diagnosticsRefresh,
+                     &DiagnosticsRefreshController::diagnosticsRefreshRequested,
+                     &diagnosticsRefresh,
+                     [&emittedDiagnosticsRefreshes](const QString& fileName) {
+                         emittedDiagnosticsRefreshes.append(
+                             fileName.isEmpty()
+                                 ? QStringLiteral("<all>")
+                                 : fileName);
+                     });
+    diagnosticsRefresh.requestRefresh(QStringLiteral("first.sv"));
+    diagnosticsRefresh.requestRefresh(QString());
+    diagnosticsRefresh.requestRefresh(QStringLiteral("second.sv"));
+    expectBool("Diagnostics refresh debounce emits coalesced request",
+               waitForEventPredicate(
+                   [&emittedDiagnosticsRefreshes]() {
+                       return !emittedDiagnosticsRefreshes.isEmpty();
+                   },
+                   1000),
+               true);
+    expectEq("Diagnostics refresh preserves full scope",
+             emittedDiagnosticsRefreshes.join(QStringLiteral("|")),
+             QStringLiteral("<all>"));
+    emittedDiagnosticsRefreshes.clear();
+    diagnosticsRefresh.requestRefresh(QStringLiteral("second.sv"));
+    expectBool("Diagnostics refresh emits file request",
+               waitForEventPredicate(
+                   [&emittedDiagnosticsRefreshes]() {
+                       return !emittedDiagnosticsRefreshes.isEmpty();
+                   },
+                   1000),
+               true);
+    expectEq("Diagnostics refresh keeps file scope",
+             emittedDiagnosticsRefreshes.join(QStringLiteral("|")),
+             QStringLiteral("second.sv"));
+
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(
                  semanticFixtureMetadata(

@@ -586,8 +586,18 @@ feature direction that violates them.
 - `AnalysisScheduler::refreshOpenDocumentsForForegroundAnalysis()` now owns the shared foreground-refresh call. Workspace symbol start, workspace symbol finish reconciliation, and workspace relationship requests route through that helper instead of duplicating direct controller calls.
 - `requestWorkspaceRelationshipAnalysis()` refreshes open documents before delegating to `RelationshipAnalysisController::requestWorkspaceAnalysis()`. The relationship controller still owns async relationship work, cancellation, and result publication.
 - A focused completion test records `SymbolAnalyzer::analysisStarted("open_tabs")` and `workspaceRelationshipAnalysisStarted` order for a temporary workspace and proves open tabs refresh before workspace relationship analysis starts.
-- Next Huge Workspace milestones: diagnostics scheduling/refresh policy, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, and tiered symbol indexes.
+- Next Huge Workspace milestones: diagnostics refresh coalescing, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, and tiered symbol indexes.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 436 checks against `test_sv/new`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Huge Workspace Diagnostics Refresh Coalescing MVP
+
+- Status: implemented in the current worktree.
+- Scope: seventh usable Huge Workspace Mode milestone. It keeps diagnostics computation and panels unchanged, but makes refresh delivery scope-safe under bursty workspace analysis.
+- `DiagnosticsRefreshController` now tracks whether a full diagnostics refresh is pending. A file-specific refresh can still replace another file-specific refresh during debounce, but once a full refresh is pending, later file-specific requests keep the pending scope full until the timer emits.
+- Empty `fileName` remains the all-files refresh contract. The controller still emits only one debounced `diagnosticsRefreshRequested` signal for a burst and does not trigger semantic analysis itself, avoiding refresh/analyze feedback loops.
+- A focused completion test requests file, full, and file refreshes in one debounce window and proves the emitted scope remains full; it also proves an isolated file refresh still emits the file name.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and broader progress/cancellation visibility for long analysis runs.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 440 checks against `test_sv/new`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ## Batch Policy
 
