@@ -136,13 +136,20 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
 void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued(
     const WorkspaceAnalysisRequestTelemetry& telemetry)
 {
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Analyzer"),
-        ActivityLogLevel::Info,
+    const QString message =
         QStringLiteral("Workspace request queued: active age %1, pending age %2, pending updates %3")
             .arg(ageText(telemetry.activeAgeMs),
                  ageText(telemetry.pendingAgeMs))
-            .arg(telemetry.pendingUpdateCount));
+            .arg(telemetry.pendingUpdateCount);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        message);
+    if (telemetry.active && telemetry.pending) {
+        emit statusMessageRequested(
+            QStringLiteral("Workspace analysis queued: latest request will replace stale work"),
+            3000);
+    }
 }
 
 void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestResolved(
@@ -155,12 +162,18 @@ void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestResolved(
         message += QStringLiteral(", pending wait %1, pending updates %2")
             .arg(ageText(telemetry.lastTakenPendingAgeMs))
             .arg(telemetry.lastTakenPendingUpdateCount);
+        message += QStringLiteral(", restarting latest request");
     }
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Analyzer"),
         ActivityLogLevel::Info,
         message);
+    if (telemetry.lastTakenPendingUpdateCount > 0) {
+        emit statusMessageRequested(
+            QStringLiteral("Workspace analysis restarting latest request"),
+            3000);
+    }
 }
 
 bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const

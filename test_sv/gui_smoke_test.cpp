@@ -861,6 +861,9 @@ static void runActivityLogServiceRegression()
                true);
 
     AnalysisProgressCoordinator coordinator(nullptr);
+    QSignalSpy workspaceStatusSpy(
+        &coordinator,
+        &AnalysisProgressCoordinator::statusMessageRequested);
     WorkspaceAnalysisRequestTelemetry queuedTelemetry;
     queuedTelemetry.active = true;
     queuedTelemetry.pending = true;
@@ -876,6 +879,7 @@ static void runActivityLogServiceRegression()
 
     bool sawQueuedTelemetry = false;
     bool sawResolvedTelemetry = false;
+    bool sawResolvedRestart = false;
     for (const ActivityLogEvent& event : service->events()) {
         sawQueuedTelemetry = sawQueuedTelemetry
             || (event.source == QStringLiteral("Analyzer")
@@ -885,12 +889,25 @@ static void runActivityLogServiceRegression()
             || (event.source == QStringLiteral("Analyzer")
                 && event.message.contains(QStringLiteral("Workspace request resolved"))
                 && event.message.contains(QStringLiteral("pending wait 12 ms")));
+        sawResolvedRestart = sawResolvedRestart
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("restarting latest request")));
     }
     expectBool("activity log records workspace queued telemetry",
                sawQueuedTelemetry,
                true);
     expectBool("activity log records workspace resolved telemetry",
                sawResolvedTelemetry,
+               true);
+    expectBool("activity log records workspace restart visibility",
+               sawResolvedRestart,
+               true);
+    expectBool("workspace request telemetry emits status visibility",
+               workspaceStatusSpy.count() >= 2
+                   && workspaceStatusSpy.at(0).at(0).toString().contains(
+                       QStringLiteral("latest request"))
+                   && workspaceStatusSpy.at(1).at(0).toString().contains(
+                       QStringLiteral("restarting")),
                true);
     service->clear();
 

@@ -607,8 +607,19 @@ feature direction that violates them.
 - Symbol and workspace relationship progress now write Activity/Output checkpoints at 25%, 50%, and 75%. The 100% state remains represented by the existing completion logs to avoid duplicate final messages.
 - Checkpoint logging is bounded and non-spammy: each stage keeps its own last checkpoint, resets when the stage starts, and does not log every file.
 - A focused GUI smoke regression drives symbol and relationship progress and proves Activity/Output records expected checkpoints while avoiding duplicate 100% progress records.
-- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and richer cancellation visibility for long analysis runs.
+- Next Huge Workspace milestones: request restart/status visibility, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, and tiered symbol indexes.
 - Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 398 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Huge Workspace Request Restart Visibility MVP
+
+- Status: implemented in the current worktree.
+- Scope: ninth usable Huge Workspace Mode milestone. It does not change coalescing, expiration, or background execution; it makes the existing latest-request restart behavior visible to the user.
+- `AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued()` now emits a status-bar message when an active workspace analysis has a pending replacement request, making it clear that the newest request will replace stale work.
+- `handleWorkspaceAnalysisRequestResolved()` now marks resolved pending telemetry with `restarting latest request` in Activity/Output and emits a status message when the pending request is taken.
+- The existing `WorkspaceAnalysisRequestQueue` remains the timing/state owner. This milestone only renders the queue state more clearly through coordinator-owned UI/status channels.
+- A focused GUI smoke regression verifies the Activity restart message and the queued/restarting status messages.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and richer direct cancellation controls for long analysis runs.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 400 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ## Batch Policy
 
