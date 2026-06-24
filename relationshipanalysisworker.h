@@ -7,6 +7,7 @@
 
 #include <QPair>
 #include <QString>
+#include <QtGlobal>
 #include <QVector>
 #include <memory>
 
@@ -16,6 +17,9 @@ struct WorkspaceRelationshipAnalysisResult {
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
     bool cancelled = false;
     int totalFiles = 0;
+    int processedFiles = 0;
+    int relationshipCount = 0;
+    qint64 elapsedMs = -1;
 };
 
 struct SingleFileRelationshipAnalysisResult {

@@ -348,13 +348,23 @@ void AnalysisProgressCoordinator::showRelationshipAnalysisFinished(
     const int totalFiles = result.totalFiles > 0
         ? result.totalFiles
         : result.fileRelationships.size();
+    const int processedFiles = result.processedFiles > 0
+        ? result.processedFiles
+        : result.fileRelationships.size();
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Analyzer"),
         ActivityLogLevel::Info,
-        QStringLiteral("Relationship analysis complete: %1 files").arg(totalFiles));
+        QStringLiteral("Relationship analysis complete: %1/%2 files, %3 relationships, elapsed %4")
+            .arg(processedFiles)
+            .arg(totalFiles)
+            .arg(result.relationshipCount)
+            .arg(ageText(result.elapsedMs)));
     emit statusMessageRequested(
-        QString("Relationship analysis complete: %1 files").arg(totalFiles),
+        QStringLiteral("Relationship analysis complete: %1/%2 files, %3 relationships")
+            .arg(processedFiles)
+            .arg(totalFiles)
+            .arg(result.relationshipCount),
         5000);
 }
 

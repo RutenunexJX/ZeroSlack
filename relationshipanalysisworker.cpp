@@ -1,6 +1,7 @@
 #include "relationshipanalysisworker.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QTextStream>
@@ -87,33 +88,39 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
     const ProjectSnapshot& project,
     const SemanticSnapshotToken& baseSnapshot)
 {
+    QElapsedTimer elapsed;
+    elapsed.start();
     WorkspaceRelationshipAnalysisResult result;
     result.baseSnapshot = baseSnapshot;
     result.semanticSnapshot = baseSnapshot.snapshot;
     result.totalFiles = project.systemVerilogFiles.size();
-    if (!relationshipBuilder)
+    auto finish = [&]() {
+        result.elapsedMs = elapsed.elapsed();
         return result;
-    if (relationshipBuilder->isCancelled()) {
+    };
+    auto finishCancelled = [&]() {
         markCancelled(&result);
+        result.elapsedMs = elapsed.elapsed();
         return result;
-    }
+    };
+
+    if (!relationshipBuilder)
+        return finish();
+    if (relationshipBuilder->isCancelled())
+        return finishCancelled();
 
     const QStringList svFiles = project.systemVerilogFiles;
     const QHash<QString, RelationshipExtractionInfo> relationshipInfoByFile =
         relationshipBuilder->extractWorkspaceRelationshipInfo(svFiles,
                                                               project.includeDirs,
                                                               project.defines);
-    if (relationshipBuilder->isCancelled()) {
-        markCancelled(&result);
-        return result;
-    }
+    if (relationshipBuilder->isCancelled())
+        return finishCancelled();
     result.fileRelationships.reserve(svFiles.size());
     QList<SemanticRelationship> newRelationships;
     for (const QString& filePath : svFiles) {
-        if (relationshipBuilder->isCancelled()) {
-            markCancelled(&result);
-            return result;
-        }
+        if (relationshipBuilder->isCancelled())
+            return finishCancelled();
         QFile file(filePath);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
             continue;
@@ -133,16 +140,18 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
                 project.includeDirs,
                 project.defines,
                 relationshipInfo);
-        if (relationshipBuilder->isCancelled()) {
-            markCancelled(&result);
-            return result;
-        }
+        if (relationshipBuilder->isCancelled())
+            return finishCancelled();
+        const QList<SemanticRelationship> semanticRelationships =
+            toSemanticRelationships(relationships);
         result.fileRelationships.append({filePath, relationships});
-        newRelationships.append(toSemanticRelationships(relationships));
+        ++result.processedFiles;
+        result.relationshipCount += semanticRelationships.size();
+        newRelationships.append(semanticRelationships);
     }
     result.semanticSnapshot =
         SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
             baseSnapshot.snapshot,
             newRelationships);
-    return result;
+    return finish();
 }

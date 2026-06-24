@@ -841,6 +841,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: tiered symbol indexes, relationship-result telemetry for canceled/expired runs if needed, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
 - Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 774 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Relationship Result Telemetry MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-first usable Huge Workspace Mode milestone. It makes workspace relationship result cost and yield visible without changing relationship extraction, publication, or cancellation semantics.
+- `WorkspaceRelationshipAnalysisResult` now carries `processedFiles`, `relationshipCount`, and `elapsedMs` alongside `totalFiles` and `cancelled`.
+- `RelationshipAnalysisWorker::analyzeWorkspace()` records elapsed time, increments processed-file count only for files that were read and relationship-processed, and counts publishable semantic relationships before building the merged relationship snapshot.
+- Cancelled worker results keep the same telemetry fields while clearing partial `fileRelationships` and restoring the base snapshot, so later UI/reporting can distinguish zero work from partial work without publishing stale facts.
+- `AnalysisProgressCoordinator::showRelationshipAnalysisFinished()` writes Activity/Output and status summaries with processed/total files, relationship count, and elapsed time.
+- Next Huge Workspace milestones: tiered symbol indexes and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
+- Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 777 checks; direct `gui_smoke_test` run with 414 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

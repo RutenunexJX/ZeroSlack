@@ -1041,6 +1041,37 @@ static void runActivityLogServiceRegression()
                true);
     service->clear();
 
+    QSignalSpy relationshipFinishedStatusSpy(
+        &progressCoordinator,
+        &AnalysisProgressCoordinator::statusMessageRequested);
+    WorkspaceRelationshipAnalysisResult relationshipTelemetry;
+    relationshipTelemetry.totalFiles = 4;
+    relationshipTelemetry.processedFiles = 3;
+    relationshipTelemetry.relationshipCount = 7;
+    relationshipTelemetry.elapsedMs = 22;
+    progressCoordinator.showRelationshipAnalysisFinished(relationshipTelemetry);
+    bool sawRelationshipTelemetry = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawRelationshipTelemetry = sawRelationshipTelemetry
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(
+                    QStringLiteral("Relationship analysis complete"))
+                && event.message.contains(QStringLiteral("3/4 files"))
+                && event.message.contains(QStringLiteral("7 relationships"))
+                && event.message.contains(QStringLiteral("22 ms")));
+    }
+    expectBool("activity log records relationship result telemetry",
+               sawRelationshipTelemetry,
+               true);
+    expectBool("relationship result telemetry emits status",
+               relationshipFinishedStatusSpy.count() == 1
+                   && relationshipFinishedStatusSpy.at(0).at(0).toString().contains(
+                       QStringLiteral("3/4 files"))
+                   && relationshipFinishedStatusSpy.at(0).at(0).toString().contains(
+                       QStringLiteral("7 relationships")),
+               true);
+    service->clear();
+
     QSignalSpy workspaceCancelStatusSpy(
         &progressCoordinator,
         &AnalysisProgressCoordinator::statusMessageRequested);

@@ -2913,6 +2913,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               schedulerProgressTotalFiles, static_cast<int>(paths.size()));
     expectInt("scheduler workspace result total files",
               schedulerResult.totalFiles, static_cast<int>(paths.size()));
+    expectInt("scheduler workspace result processed files",
+              schedulerResult.processedFiles, static_cast<int>(paths.size()));
+    expectBool("scheduler workspace result relationship telemetry",
+               schedulerResult.relationshipCount > 0
+                   && schedulerResult.elapsedMs >= 0,
+               true);
     bool schedulerFoundStageRelationship = false;
     if (schedulerResult.semanticSnapshot) {
         const QList<SemanticRelationship> schedulerTopRelationships =
@@ -8684,6 +8690,12 @@ static void runWorkspaceRelationshipCancellationFixture()
                workerCancelled.cancelled
                    && workerCancelled.fileRelationships.isEmpty()
                    && workerCancelled.semanticSnapshot == baseToken.snapshot,
+               true);
+    expectBool("relationship worker cancelled telemetry",
+               workerCancelled.totalFiles == files.size()
+                   && workerCancelled.processedFiles == 0
+                   && workerCancelled.relationshipCount == 0
+                   && workerCancelled.elapsedMs >= 0,
                true);
 
     SymbolRelationshipEngine cancelledEngine;
