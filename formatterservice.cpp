@@ -343,6 +343,58 @@ bool startsWithLeadingContinuationOperator(const QString& code)
         || firstTwo == QStringLiteral(">=");
 }
 
+int delimiterContinuationBalance(const QString& codeOnly);
+
+bool containsToken(const QStringList& tokens, const QString& needle)
+{
+    for (const QString& token : tokens) {
+        if (token == needle)
+            return true;
+    }
+    return false;
+}
+
+bool isSingleStatementControlHeader(const QString& codeOnly)
+{
+    const QString trimmed = codeOnly.trimmed();
+    if (trimmed.isEmpty()
+        || trimmed.endsWith(QLatin1Char(';'))
+        || startsWithPreprocessor(trimmed)
+        || delimiterContinuationBalance(trimmed) != 0) {
+        return false;
+    }
+
+    const QStringList tokens = codeTokens(trimmed);
+    if (tokens.isEmpty())
+        return false;
+    if (containsToken(tokens, QStringLiteral("begin"))
+        || containsToken(tokens, QStringLiteral("fork"))
+        || containsToken(tokens, QStringLiteral("case"))
+        || containsToken(tokens, QStringLiteral("casex"))
+        || containsToken(tokens, QStringLiteral("casez"))) {
+        return false;
+    }
+
+    const QString first = tokens.first();
+    if (first == QStringLiteral("if")
+        || first == QStringLiteral("for")
+        || first == QStringLiteral("foreach")
+        || first == QStringLiteral("while")
+        || first == QStringLiteral("repeat")) {
+        return true;
+    }
+    return first == QStringLiteral("else");
+}
+
+bool startsWithElseOrClosingToken(const QString& codeOnly)
+{
+    const QStringList tokens = codeTokens(codeOnly);
+    if (tokens.isEmpty())
+        return false;
+    return tokens.first() == QStringLiteral("else")
+        || isClosingToken(tokens.first());
+}
+
 bool endsStatement(const QString& code)
 {
     return code.trimmed().endsWith(QLatin1Char(';'));
@@ -951,6 +1003,48 @@ void alignDeclarationBlocks(QStringList* lines)
     }
 
     flush();
+}
+
+void indentSingleStatementBodyLines(QStringList* lines, int indentWidth)
+{
+    if (!lines)
+        return;
+
+    bool inBlockComment = false;
+    for (int i = 0; i < lines->size(); ++i) {
+        const QString headerLine = lines->at(i);
+        if (!lineHasCode(headerLine) || startsWithPreprocessor(headerLine))
+            continue;
+
+        const QString headerCode = codeOnlyLine(headerLine, &inBlockComment);
+        if (!isSingleStatementControlHeader(headerCode))
+            continue;
+
+        const int headerIndent = leadingWhitespaceWidth(headerLine);
+        for (int bodyIndex = i + 1; bodyIndex < lines->size(); ++bodyIndex) {
+            const QString bodyLine = lines->at(bodyIndex);
+            if (!lineHasCode(bodyLine))
+                continue;
+            if (startsWithPreprocessor(bodyLine))
+                break;
+
+            bool bodyBlockComment = false;
+            const QString bodyCode =
+                codeOnlyLine(bodyLine, &bodyBlockComment);
+            if (bodyCode.trimmed().isEmpty())
+                continue;
+            if (bodyBlockComment
+                || startsWithElseOrClosingToken(bodyCode)) {
+                break;
+            }
+
+            (*lines)[bodyIndex] =
+                indentation(headerIndent / std::max(1, indentWidth) + 1,
+                            indentWidth)
+                + stripLeadingWhitespace(bodyLine);
+            break;
+        }
+    }
 }
 
 bool startsWithWholeWord(const QString& text, const QString& word)
@@ -1935,6 +2029,9 @@ FormatterReport FormatterService::formatDocument(
                              + delimiterContinuationBalance(codeOnly));
         }
     }
+
+    if (options.indentSingleStatementBodies)
+        indentSingleStatementBodyLines(&formatted, options.indentWidth);
 
     if (options.alignDeclarationBlocks)
         alignDeclarationBlocks(&formatted);

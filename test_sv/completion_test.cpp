@@ -932,6 +932,52 @@ int main(int argc, char** argv) {
     expectBool("Formatter idempotent",
                unchangedFormatterReport.changed,
                false);
+    const QString formatterSingleStatementInput =
+        QStringLiteral("module single_stmt_demo;\n"
+                       "always_comb begin\n"
+                       "if (en)\n"
+                       "y = a;\n"
+                       "else if (sel)\n"
+                       "y = b;\n"
+                       "else\n"
+                       "y = c;\n"
+                       "for (int i = 0; i < 2; i++)\n"
+                       "data[i] = value;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterSingleStatementReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSingleStatementInput);
+    expectBool("Formatter single statement body report changed",
+               formatterSingleStatementReport.changed,
+               true);
+    expectEq("Formatter indents single statement bodies",
+             formatterSingleStatementReport.formattedText,
+             QStringLiteral("module single_stmt_demo;\n"
+                            "    always_comb begin\n"
+                            "        if (en)\n"
+                            "            y = a;\n"
+                            "        else if (sel)\n"
+                            "            y = b;\n"
+                            "        else\n"
+                            "            y = c;\n"
+                            "        for (int i = 0; i < 2; i++)\n"
+                            "            data[i] = value;\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedSingleStatementReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSingleStatementReport.formattedText);
+    expectBool("Formatter single statement body idempotent",
+               unchangedSingleStatementReport.changed,
+               false);
+    const FormatterReport indentOnlySingleStatementReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSingleStatementInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only keeps single statement body indentation",
+             indentOnlySingleStatementReport.formattedText,
+             formatterSingleStatementReport.formattedText);
 
     const QString formatterAlignmentInput =
         QStringLiteral("module align_demo;\n"

@@ -529,6 +529,17 @@ feature direction that violates them.
 - Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 502 checks; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Single Statement Body Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: seventeenth usable formatter milestone and a conservative single-statement readability step. It changes leading whitespace only and does not rewrite expressions, add or remove `begin`, or restructure control flow.
+- `FormatterOptions::indentSingleStatementBodies` stays enabled for both `Structured` and `Indent Only`, matching the policy that `Indent Only` may improve leading whitespace while structural alignment passes remain disabled.
+- `FormatterService` now recognizes simple single-line `if` / `else if` / `else` / `for` / `foreach` / `while` / `repeat` headers that do not end a statement and do not already open `begin`, `fork`, or `case`, then indents the next real body line by one level.
+- The pass skips preprocessor lines, block-comment/uncertain body lines, `else`, and closing-token lines, and runs before structural alignment so later alignment sees final indentation.
+- Implementation remains no-regex and uses deterministic token/comment scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 513 checks; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.
