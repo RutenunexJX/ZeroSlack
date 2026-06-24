@@ -79,6 +79,7 @@
 #include "tabmanager.h"
 #include "tsdocument.h"
 #include "wavepreviewpanelcoordinator.h"
+#include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
 #include "workspacemanager.h"
 #undef private
@@ -908,6 +909,48 @@ static void runActivityLogServiceRegression()
                        QStringLiteral("latest request"))
                    && workspaceStatusSpy.at(1).at(0).toString().contains(
                        QStringLiteral("restarting")),
+               true);
+    service->clear();
+
+    AnalysisProgressCoordinator planCoordinator(nullptr);
+    QSignalSpy planStatusSpy(
+        &planCoordinator,
+        &AnalysisProgressCoordinator::statusMessageRequested);
+    WorkspaceAnalysisPlan planSummary;
+    planSummary.project.workspaceRoot = QStringLiteral("E:/workspace");
+    planSummary.project.systemVerilogFiles = {
+        QStringLiteral("E:/workspace/current.sv"),
+        QStringLiteral("E:/workspace/dirty.sv"),
+        QStringLiteral("E:/workspace/open.sv"),
+        QStringLiteral("E:/workspace/background.sv")
+    };
+    planSummary.openFiles = {
+        QStringLiteral("E:/workspace/dirty.sv"),
+        QStringLiteral("E:/workspace/open.sv")
+    };
+    planSummary.protectedFiles = {
+        QStringLiteral("E:/workspace/dirty.sv")
+    };
+    planSummary.priorityFileCount = 3;
+    planSummary.backgroundFileCount = 1;
+    planSummary.currentFileInWorkspace = true;
+    planCoordinator.handleWorkspaceAnalysisPlanPrepared(planSummary);
+    bool sawPlanSummary = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawPlanSummary = sawPlanSummary
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Workspace plan prepared"))
+                && event.message.contains(QStringLiteral("3 priority"))
+                && event.message.contains(QStringLiteral("1 background"))
+                && event.message.contains(QStringLiteral("1 protected")));
+    }
+    expectBool("activity log records workspace plan summary",
+               sawPlanSummary,
+               true);
+    expectBool("workspace plan summary emits status",
+               planStatusSpy.count() == 1
+                   && planStatusSpy.at(0).at(0).toString().contains(
+                       QStringLiteral("3 priority / 4 files")),
                true);
     service->clear();
 

@@ -21,6 +21,7 @@ struct WorkspaceAnalysisPlan {
     QStringList openFiles;
     QStringList protectedFiles;
     int priorityFileCount = 0;
+    int backgroundFileCount = 0;
     bool currentFileInWorkspace = false;
 
     bool isValid() const

@@ -2,6 +2,7 @@
 #define WORKSPACESYMBOLANALYSISCONTROLLER_H
 
 #include "projectmodel.h"
+#include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
 
 #include <QObject>
@@ -31,6 +32,7 @@ signals:
     void fileSymbolAnalysisStarted(const QString& fileName);
     void fileSymbolAnalysisFinished(const QString& fileName, int symbolCount);
     void workspaceSymbolAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
+    void workspaceAnalysisPlanPrepared(const WorkspaceAnalysisPlan& plan);
     void workspaceSymbolAnalysisProgress(const QString& fileName,
                                          int filesDone,
                                          int totalFiles);

@@ -8,6 +8,7 @@
 
 class AnalysisScheduler;
 class QWidget;
+struct WorkspaceAnalysisPlan;
 struct WorkspaceAnalysisRequestTelemetry;
 struct WorkspaceRelationshipAnalysisResult;
 
@@ -23,6 +24,8 @@ public:
     void handleWorkspaceSymbolProgress(int filesDone,
                                        int totalFiles,
                                        const QString& currentFileName);
+    void handleWorkspaceAnalysisPlanPrepared(
+        const WorkspaceAnalysisPlan& plan);
     void handleWorkspaceAnalysisRequestQueued(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void handleWorkspaceAnalysisRequestResolved(

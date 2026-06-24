@@ -5,6 +5,8 @@
 #include <QHash>
 #include <QSet>
 
+#include <algorithm>
+
 std::unique_ptr<WorkspaceAnalysisPlanService>
     WorkspaceAnalysisPlanService::instance = nullptr;
 
@@ -131,5 +133,9 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
                                       plan.openFiles,
                                       &plan.priorityFileCount,
                                       &plan.currentFileInWorkspace);
+    plan.backgroundFileCount =
+        std::max(0,
+                 static_cast<int>(plan.project.systemVerilogFiles.size())
+                     - plan.priorityFileCount);
     return plan;
 }

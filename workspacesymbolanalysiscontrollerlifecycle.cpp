@@ -3,7 +3,6 @@
 #include "documentmodel.h"
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
-#include "workspaceanalysisplanservice.h"
 
 void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     const ProjectSnapshot& project)
@@ -44,6 +43,7 @@ void WorkspaceSymbolAnalysisController::startWorkspaceAnalysis(
     activeProject = project;
     workspaceAnalysisActive = true;
     emit diagnosticsRefreshRequested(QString());
+    emit workspaceAnalysisPlanPrepared(plan);
     emit workspaceSymbolAnalysisStarted(project, project.systemVerilogFiles.size());
     symbolAnalyzer->startAnalyzeProjectAsync(plan.isValid() ? plan.project : project,
                                              cancelProvider);

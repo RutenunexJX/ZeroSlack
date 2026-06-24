@@ -60,6 +60,7 @@ signals:
     void relationshipDataRefreshRequested();
     void fileSymbolAnalysisStarted(const QString& fileName);
     void fileSymbolAnalysisFinished(const QString& fileName, int symbolCount);
+    void workspaceAnalysisPlanPrepared(const WorkspaceAnalysisPlan& plan);
     void workspaceSymbolAnalysisStarted(const ProjectSnapshot& project, int totalFiles);
     void workspaceSymbolAnalysisProgress(const QString& fileName,
                                          int filesDone,

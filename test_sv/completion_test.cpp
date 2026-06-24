@@ -1365,6 +1365,9 @@ int main(int argc, char** argv) {
              QStringList{planB}.join(QStringLiteral("|")));
     expectBool("Workspace plan counts priority files",
                priorityPlan.priorityFileCount == 3
+                   && priorityPlan.backgroundFileCount == 1
+                   && priorityPlan.openFiles.size() == 2
+                   && priorityPlan.protectedFiles.size() == 1
                    && priorityPlan.currentFileInWorkspace,
                true);
 
@@ -1378,7 +1381,8 @@ int main(int argc, char** argv) {
              QStringList{planB, planA, planC, planD}.join(QStringLiteral("|")));
     expectBool("Workspace plan reports external current file",
                !externalCurrentPlan.currentFileInWorkspace
-                   && externalCurrentPlan.priorityFileCount == 1,
+                   && externalCurrentPlan.priorityFileCount == 1
+                   && externalCurrentPlan.backgroundFileCount == 3,
                true);
 
     QTemporaryDir foregroundWorkspace;
@@ -1419,6 +1423,16 @@ int main(int argc, char** argv) {
                      [&foregroundStartedOrder](const QString& fileName) {
                          foregroundStartedOrder.append(fileName);
                      });
+    bool sawForegroundPlan = false;
+    WorkspaceAnalysisPlan foregroundPlan;
+    QObject::connect(&foregroundScheduler,
+                     &AnalysisScheduler::workspaceAnalysisPlanPrepared,
+                     &foregroundScheduler,
+                     [&sawForegroundPlan, &foregroundPlan](
+                         const WorkspaceAnalysisPlan& plan) {
+                         sawForegroundPlan = true;
+                         foregroundPlan = plan;
+                     });
 
     ProjectSnapshot foregroundProject;
     foregroundProject.workspaceRoot = foregroundWorkspace.path();
@@ -1431,6 +1445,12 @@ int main(int argc, char** argv) {
                        == QStringLiteral("open_tabs")
                    && foregroundStartedOrder.at(1)
                        == foregroundProject.workspaceRoot,
+               true);
+    expectBool("Workspace plan signal reports foreground priority",
+               sawForegroundPlan
+                   && foregroundPlan.priorityFileCount == 1
+                   && foregroundPlan.backgroundFileCount == 0
+                   && foregroundPlan.currentFileInWorkspace,
                true);
     foregroundAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
 

@@ -3,6 +3,7 @@
 #include "activitylogservice.h"
 #include "analysisscheduler.h"
 #include "workspaceanalysisrequestqueue.h"
+#include "workspaceanalysisplanservice.h"
 
 #include <QFileInfo>
 
@@ -12,6 +13,13 @@ QString ageText(qint64 ageMs)
     return ageMs >= 0
         ? QStringLiteral("%1 ms").arg(ageMs)
         : QStringLiteral("n/a");
+}
+
+QString currentFilePlanText(bool currentFileInWorkspace)
+{
+    return currentFileInWorkspace
+        ? QStringLiteral(", current file prioritized")
+        : QStringLiteral(", current file outside workspace");
 }
 }
 
@@ -50,6 +58,10 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
                     ActivityLogLevel::Info,
                     QStringLiteral("Scheduled %1 files").arg(totalFiles));
             });
+    connect(scheduler,
+            &AnalysisScheduler::workspaceAnalysisPlanPrepared,
+            this,
+            &AnalysisProgressCoordinator::handleWorkspaceAnalysisPlanPrepared);
     connect(scheduler,
             &AnalysisScheduler::workspaceSymbolAnalysisProgress,
             this,
@@ -134,7 +146,33 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
                           filesDone,
                           totalFiles,
                           currentFileName,
-                          &lastSymbolProgressCheckpoint);
+        &lastSymbolProgressCheckpoint);
+}
+
+void AnalysisProgressCoordinator::handleWorkspaceAnalysisPlanPrepared(
+    const WorkspaceAnalysisPlan& plan)
+{
+    const int totalFiles = plan.project.systemVerilogFiles.size();
+    if (totalFiles <= 0)
+        return;
+
+    const QString message =
+        QStringLiteral("Workspace plan prepared: %1 files, %2 priority, %3 background, %4 open, %5 protected%6")
+            .arg(totalFiles)
+            .arg(plan.priorityFileCount)
+            .arg(plan.backgroundFileCount)
+            .arg(plan.openFiles.size())
+            .arg(plan.protectedFiles.size())
+            .arg(currentFilePlanText(plan.currentFileInWorkspace));
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        message);
+    emit statusMessageRequested(
+        QStringLiteral("Workspace plan: %1 priority / %2 files")
+            .arg(plan.priorityFileCount)
+            .arg(totalFiles),
+        3000);
 }
 
 void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued(
