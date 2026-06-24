@@ -4,12 +4,15 @@
 #include <QFont>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QSizePolicy>
 #include <QTimer>
+#include <QToolTip>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
+#include <QVector>
 #include <QWidget>
 
 #include <algorithm>
@@ -23,11 +26,18 @@ constexpr qsizetype kLargeDirtyRefreshCharacterThreshold = 64 * 1024;
 constexpr int kLargeDirtyRefreshDelayMs = 180;
 
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
+QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
+                                const WavePreviewReport& report);
 
 bool shouldQueueRefresh(const QString& documentText, bool)
 {
     return documentText.size() >= kLargeDirtyRefreshCharacterThreshold;
 }
+
+struct CanvasEventHit {
+    QRect rect;
+    QString tooltip;
+};
 
 class WavePreviewCanvas : public QWidget
 {
@@ -38,6 +48,7 @@ public:
         setObjectName(QStringLiteral("wavePreviewCanvas"));
         setMinimumHeight(132);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        setMouseTracking(true);
     }
 
     QSize sizeHint() const override
@@ -49,6 +60,8 @@ public:
     void setReport(const WavePreviewReport& nextReport)
     {
         report = nextReport;
+        eventHits.clear();
+        setToolTip(QString());
         updateGeometry();
         update();
     }
@@ -56,6 +69,8 @@ public:
     void clearReport()
     {
         report = WavePreviewReport();
+        eventHits.clear();
+        setToolTip(QString());
         updateGeometry();
         update();
     }
@@ -63,6 +78,7 @@ public:
 protected:
     void paintEvent(QPaintEvent*) override
     {
+        eventHits.clear();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
 
@@ -160,12 +176,37 @@ protected:
                 painter.drawText(eventRect.adjusted(5, 0, -5, 0),
                                  Qt::AlignCenter,
                                  canvasEventLabel(assignment));
+                eventHits.append({eventRect,
+                                  assignmentDetailTooltip(assignment, report)});
             }
         }
     }
 
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        for (auto it = eventHits.crbegin(); it != eventHits.crend(); ++it) {
+            if (!it->rect.contains(event->pos()))
+                continue;
+            setToolTip(it->tooltip);
+            QToolTip::showText(event->globalPosition().toPoint(),
+                               it->tooltip,
+                               this,
+                               it->rect);
+            return;
+        }
+        setToolTip(QString());
+        QToolTip::hideText();
+    }
+
+    void leaveEvent(QEvent*) override
+    {
+        setToolTip(QString());
+        QToolTip::hideText();
+    }
+
 private:
     WavePreviewReport report;
+    QVector<CanvasEventHit> eventHits;
 };
 
 QString displayFileName(const QString& fileName)
@@ -258,6 +299,67 @@ QString sourcesText(const QStringList& sourceSignals)
         : sourceSignals.join(QStringLiteral(", "));
 }
 
+QString locationText(const WavePreviewAssignment& assignment)
+{
+    if (assignment.line <= 0)
+        return QStringLiteral("-");
+    return QStringLiteral("%1:%2").arg(assignment.line).arg(assignment.column);
+}
+
+QString triggerText(const WavePreviewAssignment& assignment)
+{
+    return assignment.trigger.isEmpty()
+        ? QStringLiteral("-")
+        : assignment.trigger;
+}
+
+QString expressionText(const WavePreviewAssignment& assignment)
+{
+    return assignment.expression.isEmpty()
+        ? QStringLiteral("<expr>")
+        : assignment.expression;
+}
+
+QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
+                                const WavePreviewReport& report)
+{
+    QString blockText = QStringLiteral("-");
+    if (assignment.blockIndex >= 0
+        && assignment.blockIndex < report.blocks.size()) {
+        blockText = blockKindText(report.blocks.at(assignment.blockIndex).kind);
+    }
+
+    return QStringList{
+        QStringLiteral("target: %1").arg(assignment.target),
+        QStringLiteral("expression: %1").arg(expressionText(assignment)),
+        QStringLiteral("sources: %1").arg(sourcesText(assignment.sourceSignals)),
+        QStringLiteral("kind: %1").arg(assignmentKindText(assignment.kind)),
+        QStringLiteral("block: %1").arg(blockText),
+        QStringLiteral("timing: %1").arg(timingText(assignment)),
+        QStringLiteral("trigger: %1").arg(triggerText(assignment)),
+        QStringLiteral("clock/reset: %1").arg(clockResetText(assignment, report)),
+        QStringLiteral("guard: %1").arg(guardText(assignment)),
+        QStringLiteral("location: %1").arg(locationText(assignment))
+    }.join(QStringLiteral("\n"));
+}
+
+QString laneDetailTooltip(const WavePreviewLane& lane)
+{
+    QStringList sources;
+    for (const WavePreviewAssignment& assignment : lane.assignments) {
+        for (const QString& source : assignment.sourceSignals) {
+            if (!sources.contains(source))
+                sources.append(source);
+        }
+    }
+    sources.sort();
+    return QStringList{
+        QStringLiteral("signal: %1").arg(lane.signalName),
+        QStringLiteral("events: %1").arg(lane.assignments.size()),
+        QStringLiteral("sources: %1").arg(sourcesText(sources))
+    }.join(QStringLiteral("\n"));
+}
+
 QString eventText(const WavePreviewAssignment& assignment,
                   const WavePreviewReport& report)
 {
@@ -292,6 +394,14 @@ void setNavigationData(QTreeWidgetItem* item,
     item->setData(0, kRoleFileName, fileName);
     item->setData(0, kRoleLine, line);
     item->setData(0, kRoleColumn, column);
+}
+
+void setItemTooltip(QTreeWidgetItem* item, const QString& tooltip)
+{
+    if (!item)
+        return;
+    for (int column = 0; column < item->columnCount(); ++column)
+        item->setToolTip(column, tooltip);
 }
 }
 
@@ -564,6 +674,7 @@ void WavePreviewPanelCoordinator::renderReport(
         QFont laneFont = laneItem->font(0);
         laneFont.setBold(true);
         laneItem->setFont(0, laneFont);
+        setItemTooltip(laneItem, laneDetailTooltip(lane));
 
         for (const WavePreviewAssignment& assignment : lane.assignments) {
             auto* eventItem = new QTreeWidgetItem(laneItem);
@@ -573,20 +684,9 @@ void WavePreviewPanelCoordinator::renderReport(
             eventItem->setText(3, guardText(assignment));
             eventItem->setText(4, sourcesText(assignment.sourceSignals));
             eventItem->setText(5,
-                               assignment.line > 0
-                                   ? QStringLiteral("%1:%2")
-                                         .arg(assignment.line)
-                                         .arg(assignment.column)
-                                   : QStringLiteral("-"));
-            eventItem->setToolTip(
-                0,
-                QStringLiteral("%1\ntrigger: %2\nclock/reset: %3\nguard: %4")
-                    .arg(assignment.expression,
-                         assignment.trigger.isEmpty()
-                             ? QStringLiteral("-")
-                             : assignment.trigger,
-                         clockResetText(assignment, report),
-                         guardText(assignment)));
+                               locationText(assignment));
+            setItemTooltip(eventItem,
+                           assignmentDetailTooltip(assignment, report));
             setNavigationData(eventItem,
                               fileName,
                               assignment.line,

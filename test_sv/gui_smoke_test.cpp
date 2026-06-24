@@ -3208,6 +3208,7 @@ int main(int argc, char** argv)
     bool sawWaveOut = false;
     bool sawWaveClockReset = false;
     bool sawWaveGuard = false;
+    QTreeWidgetItem* waveQEventItem = nullptr;
     if (waveTree) {
         for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
             QTreeWidgetItem* laneItem = waveTree->topLevelItem(i);
@@ -3224,6 +3225,10 @@ int main(int argc, char** argv)
                     sawWaveGuard = sawWaveGuard
                         || laneItem->child(child)->text(3)
                             == QStringLiteral("if data[0]");
+                    if (laneItem->child(child)->text(0).contains(
+                            QStringLiteral("q = data"))) {
+                        waveQEventItem = laneItem->child(child);
+                    }
                 }
             }
         }
@@ -3237,12 +3242,37 @@ int main(int argc, char** argv)
     expectBool("wave preview renders guard labels",
                waveTree && sawWaveGuard,
                true);
+    const QString waveQTooltip =
+        waveQEventItem ? waveQEventItem->toolTip(0) : QString();
+    expectBool("wave preview event tooltip has source target details",
+               waveQTooltip.contains(QStringLiteral("target: q"))
+                   && waveQTooltip.contains(QStringLiteral("expression: data"))
+                   && waveQTooltip.contains(QStringLiteral("sources: data"))
+                   && waveQTooltip.contains(QStringLiteral("timing: t+1 cycle"))
+                   && waveQTooltip.contains(QStringLiteral("location:")),
+               true);
     QWidget* waveCanvas = wavePreviewCanvas(window);
     expectBool("wave preview canvas exists",
                waveCanvas != nullptr,
                true);
     expectBool("wave preview canvas renders sketch",
                renderedWidgetHasColorVariation(waveCanvas),
+               true);
+    if (waveCanvas) {
+        const int labelWidth =
+            std::min(130, std::max(84, waveCanvas->width() / 4));
+        const int timelineLeft = 10 + labelWidth;
+        const int timelineRight = waveCanvas->width() - 12;
+        const int timelineWidth = std::max(80, timelineRight - timelineLeft);
+        const QPoint qEventPoint(timelineLeft + timelineWidth / 2,
+                                 28 + 32 + 16 - 10 + 9);
+        QTest::mouseMove(waveCanvas, qEventPoint);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("wave preview canvas hover has source target details",
+               waveCanvas
+                   && waveCanvas->toolTip().contains(QStringLiteral("target: q"))
+                   && waveCanvas->toolTip().contains(QStringLiteral("sources: data")),
                true);
     if (waveEditor) {
         waveEditor->setPlainText(
