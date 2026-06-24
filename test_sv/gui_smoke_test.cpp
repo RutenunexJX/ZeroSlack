@@ -931,6 +931,18 @@ static void runActivityLogServiceRegression()
     planSummary.protectedFiles = {
         QStringLiteral("E:/workspace/dirty.sv")
     };
+    planSummary.currentFilePriorityFiles = {
+        QStringLiteral("E:/workspace/current.sv")
+    };
+    planSummary.dirtyOpenPriorityFiles = {
+        QStringLiteral("E:/workspace/dirty.sv")
+    };
+    planSummary.cleanOpenPriorityFiles = {
+        QStringLiteral("E:/workspace/open.sv")
+    };
+    planSummary.backgroundFiles = {
+        QStringLiteral("E:/workspace/background.sv")
+    };
     planSummary.priorityFileCount = 3;
     planSummary.backgroundFileCount = 1;
     planSummary.currentFileInWorkspace = true;
@@ -942,7 +954,9 @@ static void runActivityLogServiceRegression()
                 && event.message.contains(QStringLiteral("Workspace plan prepared"))
                 && event.message.contains(QStringLiteral("3 priority"))
                 && event.message.contains(QStringLiteral("1 background"))
-                && event.message.contains(QStringLiteral("1 protected")));
+                && event.message.contains(QStringLiteral("1 protected"))
+                && event.message.contains(
+                    QStringLiteral("bands current 1, dirty 1, open 1, background 1")));
     }
     expectBool("activity log records workspace plan summary",
                sawPlanSummary,
@@ -950,7 +964,7 @@ static void runActivityLogServiceRegression()
     expectBool("workspace plan summary emits status",
                planStatusSpy.count() == 1
                    && planStatusSpy.at(0).at(0).toString().contains(
-                       QStringLiteral("3 priority / 4 files")),
+                       QStringLiteral("3 priority (1/1/1) / 4 files")),
                true);
     service->clear();
 

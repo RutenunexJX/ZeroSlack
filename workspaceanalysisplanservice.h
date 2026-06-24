@@ -20,6 +20,10 @@ struct WorkspaceAnalysisPlan {
     QString currentFileName;
     QStringList openFiles;
     QStringList protectedFiles;
+    QStringList currentFilePriorityFiles;
+    QStringList dirtyOpenPriorityFiles;
+    QStringList cleanOpenPriorityFiles;
+    QStringList backgroundFiles;
     int priorityFileCount = 0;
     int backgroundFileCount = 0;
     bool currentFileInWorkspace = false;

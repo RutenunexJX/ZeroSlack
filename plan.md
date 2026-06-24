@@ -686,6 +686,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and richer direct cancellation controls for long analysis runs.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 447 checks; direct `gui_smoke_test` run with 405 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Priority Bands MVP
+
+- Status: implemented in the current worktree.
+- Scope: twelfth usable Huge Workspace Mode milestone. It does not split analysis execution into separate batches yet; it makes the priority tiers explicit and testable so later tiered scheduling/index work has a concrete contract.
+- `WorkspaceAnalysisPlan` now carries four ordered file bands: current-file priority, dirty-open priority, clean-open priority, and background files.
+- `WorkspaceAnalysisPlanService` owns band construction and planned file order. Dirty open files remain protected from stale disk-backed publication, and files only appear in one band.
+- `AnalysisProgressCoordinator` renders the band counts in the workspace plan Activity/Output message and status-bar summary without recomputing tier policy.
+- Focused regressions cover the planned order, each priority band, external-current-file behavior, scheduler signal propagation, and Activity/Output plus status rendering for band counts.
+- Next Huge Workspace milestones: using these explicit bands for staged/incremental publication, deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, and richer direct cancellation controls for long analysis runs.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 455 checks; direct `gui_smoke_test` run with 407 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

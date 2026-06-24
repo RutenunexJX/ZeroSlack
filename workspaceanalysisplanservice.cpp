@@ -71,36 +71,57 @@ QStringList openWorkspaceFiles(const QList<DocumentSnapshot>& documents,
     return files;
 }
 
-QStringList prioritizedSystemVerilogFiles(
+struct PrioritizedWorkspaceFiles {
+    QStringList currentFilePriorityFiles;
+    QStringList dirtyOpenPriorityFiles;
+    QStringList cleanOpenPriorityFiles;
+    QStringList backgroundFiles;
+    QStringList orderedFiles;
+    bool currentFileInWorkspace = false;
+};
+
+PrioritizedWorkspaceFiles prioritizedSystemVerilogFiles(
     const ProjectSnapshot& project,
     const QString& currentFileName,
     const QStringList& dirtyOpenFiles,
-    const QStringList& openFiles,
-    int* priorityFileCount,
-    bool* currentFileInWorkspace)
+    const QStringList& openFiles)
 {
+    PrioritizedWorkspaceFiles prioritized;
     const QHash<QString, QString> workspaceFiles =
         normalizedToOriginal(project.systemVerilogFiles);
-    QStringList ordered;
-    ordered.reserve(project.systemVerilogFiles.size());
+    prioritized.orderedFiles.reserve(project.systemVerilogFiles.size());
     QSet<QString> seen;
 
-    const int beforeCurrent = ordered.size();
-    appendIfWorkspaceFile(&ordered, &seen, workspaceFiles, currentFileName);
-    if (currentFileInWorkspace)
-        *currentFileInWorkspace = ordered.size() != beforeCurrent;
+    appendIfWorkspaceFile(&prioritized.currentFilePriorityFiles,
+                          &seen,
+                          workspaceFiles,
+                          currentFileName);
+    prioritized.currentFileInWorkspace =
+        !prioritized.currentFilePriorityFiles.isEmpty();
 
     for (const QString& fileName : dirtyOpenFiles)
-        appendIfWorkspaceFile(&ordered, &seen, workspaceFiles, fileName);
+        appendIfWorkspaceFile(&prioritized.dirtyOpenPriorityFiles,
+                              &seen,
+                              workspaceFiles,
+                              fileName);
     for (const QString& fileName : openFiles)
-        appendIfWorkspaceFile(&ordered, &seen, workspaceFiles, fileName);
-
-    if (priorityFileCount)
-        *priorityFileCount = ordered.size();
+        appendIfWorkspaceFile(&prioritized.cleanOpenPriorityFiles,
+                              &seen,
+                              workspaceFiles,
+                              fileName);
 
     for (const QString& fileName : project.systemVerilogFiles)
-        appendIfWorkspaceFile(&ordered, &seen, workspaceFiles, fileName);
-    return ordered;
+        appendIfWorkspaceFile(&prioritized.backgroundFiles,
+                              &seen,
+                              workspaceFiles,
+                              fileName);
+
+    prioritized.orderedFiles
+        << prioritized.currentFilePriorityFiles
+        << prioritized.dirtyOpenPriorityFiles
+        << prioritized.cleanOpenPriorityFiles
+        << prioritized.backgroundFiles;
+    return prioritized;
 }
 }
 
@@ -126,16 +147,21 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
                                               workspaceFiles);
     plan.openFiles = openWorkspaceFiles(query.openDocuments,
                                         workspaceFiles);
-    plan.project.systemVerilogFiles =
+    const PrioritizedWorkspaceFiles prioritized =
         prioritizedSystemVerilogFiles(query.project,
                                       query.currentFileName,
                                       plan.protectedFiles,
-                                      plan.openFiles,
-                                      &plan.priorityFileCount,
-                                      &plan.currentFileInWorkspace);
-    plan.backgroundFileCount =
-        std::max(0,
-                 static_cast<int>(plan.project.systemVerilogFiles.size())
-                     - plan.priorityFileCount);
+                                      plan.openFiles);
+    plan.project.systemVerilogFiles = prioritized.orderedFiles;
+    plan.currentFilePriorityFiles = prioritized.currentFilePriorityFiles;
+    plan.dirtyOpenPriorityFiles = prioritized.dirtyOpenPriorityFiles;
+    plan.cleanOpenPriorityFiles = prioritized.cleanOpenPriorityFiles;
+    plan.backgroundFiles = prioritized.backgroundFiles;
+    plan.currentFileInWorkspace = prioritized.currentFileInWorkspace;
+    plan.priorityFileCount =
+        plan.currentFilePriorityFiles.size()
+        + plan.dirtyOpenPriorityFiles.size()
+        + plan.cleanOpenPriorityFiles.size();
+    plan.backgroundFileCount = plan.backgroundFiles.size();
     return plan;
 }

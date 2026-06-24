@@ -21,6 +21,15 @@ QString currentFilePlanText(bool currentFileInWorkspace)
         ? QStringLiteral(", current file prioritized")
         : QStringLiteral(", current file outside workspace");
 }
+
+QString priorityBandText(const WorkspaceAnalysisPlan& plan)
+{
+    return QStringLiteral("bands current %1, dirty %2, open %3, background %4")
+        .arg(plan.currentFilePriorityFiles.size())
+        .arg(plan.dirtyOpenPriorityFiles.size())
+        .arg(plan.cleanOpenPriorityFiles.size())
+        .arg(plan.backgroundFiles.size());
+}
 }
 
 AnalysisProgressCoordinator::AnalysisProgressCoordinator(QWidget* dialogParent, QObject* parent)
@@ -157,20 +166,24 @@ void AnalysisProgressCoordinator::handleWorkspaceAnalysisPlanPrepared(
         return;
 
     const QString message =
-        QStringLiteral("Workspace plan prepared: %1 files, %2 priority, %3 background, %4 open, %5 protected%6")
+        QStringLiteral("Workspace plan prepared: %1 files, %2 priority, %3 background, %4 open, %5 protected, %6%7")
             .arg(totalFiles)
             .arg(plan.priorityFileCount)
             .arg(plan.backgroundFileCount)
             .arg(plan.openFiles.size())
             .arg(plan.protectedFiles.size())
+            .arg(priorityBandText(plan))
             .arg(currentFilePlanText(plan.currentFileInWorkspace));
     ActivityLogService::getInstance()->append(
         QStringLiteral("Analyzer"),
         ActivityLogLevel::Info,
         message);
     emit statusMessageRequested(
-        QStringLiteral("Workspace plan: %1 priority / %2 files")
+        QStringLiteral("Workspace plan: %1 priority (%2/%3/%4) / %5 files")
             .arg(plan.priorityFileCount)
+            .arg(plan.currentFilePriorityFiles.size())
+            .arg(plan.dirtyOpenPriorityFiles.size())
+            .arg(plan.cleanOpenPriorityFiles.size())
             .arg(totalFiles),
         3000);
 }

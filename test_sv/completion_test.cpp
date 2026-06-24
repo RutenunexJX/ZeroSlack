@@ -1453,6 +1453,14 @@ int main(int argc, char** argv) {
                    && priorityPlan.protectedFiles.size() == 1
                    && priorityPlan.currentFileInWorkspace,
                true);
+    expectEq("Workspace plan records priority bands",
+             QStringList{
+                 priorityPlan.currentFilePriorityFiles.join(QStringLiteral(",")),
+                 priorityPlan.dirtyOpenPriorityFiles.join(QStringLiteral(",")),
+                 priorityPlan.cleanOpenPriorityFiles.join(QStringLiteral(",")),
+                 priorityPlan.backgroundFiles.join(QStringLiteral(","))
+             }.join(QStringLiteral("|")),
+             QStringList{planC, planB, planD, planA}.join(QStringLiteral("|")));
 
     WorkspaceAnalysisPlan externalCurrentPlan =
         WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(
@@ -1466,6 +1474,14 @@ int main(int argc, char** argv) {
                !externalCurrentPlan.currentFileInWorkspace
                    && externalCurrentPlan.priorityFileCount == 1
                    && externalCurrentPlan.backgroundFileCount == 3,
+               true);
+    expectBool("Workspace plan bands omit external current file",
+               externalCurrentPlan.currentFilePriorityFiles.isEmpty()
+                   && externalCurrentPlan.dirtyOpenPriorityFiles
+                       == QStringList{planB}
+                   && externalCurrentPlan.cleanOpenPriorityFiles.isEmpty()
+                   && externalCurrentPlan.backgroundFiles
+                       == QStringList{planA, planC, planD},
                true);
 
     QTemporaryDir foregroundWorkspace;
@@ -1533,6 +1549,9 @@ int main(int argc, char** argv) {
                sawForegroundPlan
                    && foregroundPlan.priorityFileCount == 1
                    && foregroundPlan.backgroundFileCount == 0
+                   && foregroundPlan.currentFilePriorityFiles
+                       == QStringList{foregroundFile}
+                   && foregroundPlan.backgroundFiles.isEmpty()
                    && foregroundPlan.currentFileInWorkspace,
                true);
     foregroundAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
