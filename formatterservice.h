@@ -8,6 +8,7 @@ struct FormatterOptions {
     int indentWidth = 4;
     bool preservePreprocessorIndent = true;
     bool alignDeclarationBlocks = true;
+    bool alignPortLists = true;
 };
 
 struct FormatterReport {

@@ -11,7 +11,7 @@ ZeroSlack should:
 - provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, relationship browsing, RTL insight reports, and signal-centric driver/consumer graphs
 - provide fast declaration templates for common SystemVerilog signals and parameters without taking ownership of user value expressions
 - provide passive ghost inline values for semantic context that users often compute mentally, without changing source text
-- provide conservative source formatting that improves indentation without surprising source rewrites
+- provide conservative source formatting that improves indentation and common RTL alignment without surprising source rewrites
 - remain responsive on large files and multi-file workspaces
 - keep semantic behavior testable through real fixtures
 
@@ -318,6 +318,7 @@ The foundation is healthy when:
 - Ghost Inline Values are available through `GhostAnnotationService`: formal port details, parameter/localparam literal values, parameter overrides, parameter/macro-derived signal widths, nonzero numeric ranges, array extents, enum values, part-select widths, generate loop counts, and concatenation widths render as passive editor overlays, while binary/decimal/hex literal conversion is hover-only as `(D)... (B)... (H)...`; both paths are computed by deterministic token scans plus semantic records without modifying text
 - Formatter initial MVP is available through `FormatterService`: `Format Document` in the editor context menu established a conservative indent-first report path as one undoable edit, changing leading whitespace while preserving line-internal text and preprocessor directive lines in that first milestone
 - Formatter Declaration Alignment MVP is available through `FormatterService`: the formatter now aligns consecutive simple signal declarations and parameter/localparam assignment columns after indentation, while skipping comments, preprocessor lines, multi-declaration lines, typedefs, and complex statements
+- Formatter Port List Alignment MVP is available through `FormatterService`: the formatter now aligns contiguous simple ANSI `input` / `output` / `inout` port-list lines by direction, type/range prefix, and port name, while skipping comments, preprocessor lines, multi-port lines, default-value ports, inline closing forms, and complex declarations
 - The post-J editor workflow baseline was verified by `completion_test` with 311 checks and `gui_smoke_test` with 276 checks for the layered inline command and Global Control paths
 - Phase K is done only when K1 Design Hierarchy, K2 Code Folding/Custom Folding, and K3 Fold Block Shelf are implemented through service/model-backed UI boundaries, mode state is visible and cancelable, shelf drag mode guards against accidental text edits, affected flows are verified with focused tests and GUI smoke coverage, and the implementation is proven not to use UI workspace scans, direct UI Slang runs, regex structure/fold parsing, or timer-delay responsiveness masking
 - Phase L is done only when first-party production regex logic is removed from semantic/editor feature paths, docs and guard definitions are the only regex allowlist, completion/module/import/FSM/scheduler behavior is backed by Tree-sitter, Slang/semantic records, `SemanticIndexSnapshot`, or deterministic token helpers, and final guards prove the cleanup

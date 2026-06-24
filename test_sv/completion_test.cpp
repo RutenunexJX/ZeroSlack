@@ -918,6 +918,35 @@ int main(int argc, char** argv) {
                unchangedAlignmentReport.changed,
                false);
 
+    const QString formatterPortListInput =
+        QStringLiteral("module port_demo(\n"
+                       "input logic clk,\n"
+                       "input logic [7:0] data,\n"
+                       "output logic ready,\n"
+                       "inout wire pad\n"
+                       ");\n"
+                       "endmodule\n");
+    const FormatterReport formatterPortListReport =
+        FormatterService::getInstance()->formatDocument(formatterPortListInput);
+    expectBool("Formatter port list report changed",
+               formatterPortListReport.changed,
+               true);
+    expectEq("Formatter aligns port lists",
+             formatterPortListReport.formattedText,
+             QStringLiteral("module port_demo(\n"
+                            "    input  logic       clk,\n"
+                            "    input  logic [7:0] data,\n"
+                            "    output logic       ready,\n"
+                            "    inout  wire        pad\n"
+                            "    );\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedPortListReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterPortListReport.formattedText);
+    expectBool("Formatter port list idempotent",
+               unchangedPortListReport.changed,
+               false);
+
     const QString wavePreviewInput =
         QStringLiteral("module wave_probe(\n"
                        "    input logic clk,\n"
