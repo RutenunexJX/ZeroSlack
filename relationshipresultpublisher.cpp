@@ -79,7 +79,7 @@ bool RelationshipResultPublisher::applySingleFileResult(
 bool RelationshipResultPublisher::applyWorkspaceResult(
     const WorkspaceRelationshipAnalysisResult& result)
 {
-    if (!relationshipEngine)
+    if (!relationshipEngine || result.cancelled)
         return false;
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();

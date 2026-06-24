@@ -99,6 +99,7 @@ void RelationshipAnalysisController::requestWorkspaceAnalysis(
 
     const auto baseSnapshot =
         SemanticIndex::getInstance()->beginRelationshipAnalysisSnapshot();
+    relationshipBuilder->resetCancellation();
 
     QFuture<WorkspaceRelationshipAnalysisResult> future =
         QtConcurrent::run([this, project, baseSnapshot]() {

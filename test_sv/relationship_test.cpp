@@ -14,6 +14,8 @@
 #include "hierarchyservice.h"
 #include "modulebriefservice.h"
 #include "navigationservice.h"
+#include "relationshipanalysisworker.h"
+#include "relationshipresultpublisher.h"
 #include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
@@ -8654,6 +8656,44 @@ static void runWorkspaceRelationshipCancellationFixture()
     expectBool("relationship builder forwards workspace cancel",
                builderCancelledFactsEmpty,
                true);
+
+    const QList<SemanticSymbolRecord> records =
+        slang.extractWorkspaceSymbolRecords(files, includeDirs);
+    QHash<QString, QString> fileContents;
+    fileContents.insert(leafPath, loadTextFile(leafPath));
+    fileContents.insert(topPath, loadTextFile(topPath));
+    const auto baseSnapshot =
+        sharedSnapshotFromRecords(records, {}, {}, fileContents);
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    const auto previousSnapshot = semanticIndex->snapshot();
+    semanticIndex->setSnapshot(baseSnapshot);
+    const SemanticSnapshotToken baseToken =
+        semanticIndex->beginRelationshipAnalysisSnapshot();
+    ProjectSnapshot project;
+    project.workspaceRoot = relationshipDir.path();
+    project.allFiles = files;
+    project.systemVerilogFiles = files;
+    project.includeDirs = includeDirs;
+    SmartRelationshipBuilder workerBuilder(nullptr, &slang);
+    workerBuilder.cancelAnalysis();
+    const WorkspaceRelationshipAnalysisResult workerCancelled =
+        RelationshipAnalysisWorker::analyzeWorkspace(&workerBuilder,
+                                                     project,
+                                                     baseToken);
+    expectBool("relationship worker marks cancelled result",
+               workerCancelled.cancelled
+                   && workerCancelled.fileRelationships.isEmpty()
+                   && workerCancelled.semanticSnapshot == baseToken.snapshot,
+               true);
+
+    SymbolRelationshipEngine cancelledEngine;
+    RelationshipResultPublisher publisher;
+    publisher.setRelationshipEngine(&cancelledEngine);
+    expectBool("relationship publisher rejects cancelled workspace result",
+               !publisher.applyWorkspaceResult(workerCancelled)
+                   && semanticIndex->snapshot() == baseSnapshot,
+               true);
+    semanticIndex->setSnapshot(previousSnapshot);
 }
 
 int main(int argc, char** argv)

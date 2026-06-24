@@ -14,6 +14,7 @@ struct WorkspaceRelationshipAnalysisResult {
     QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
     SemanticSnapshotToken baseSnapshot;
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+    bool cancelled = false;
     int totalFiles = 0;
 };
 

@@ -75,6 +75,10 @@ void RelationshipAnalysisController::handleWorkspaceFinished()
 
     const WorkspaceRelationshipAnalysisResult result =
         workspaceWatcher->result();
+    if (result.cancelled) {
+        emit workspaceRelationshipAnalysisCancelled();
+        return;
+    }
     if (!resultPublisher || !resultPublisher->applyWorkspaceResult(result))
         return;
 

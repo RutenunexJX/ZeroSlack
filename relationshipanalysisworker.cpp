@@ -45,6 +45,15 @@ QString normalizedFileKey(const QString& fileName)
     return QDir::cleanPath(
         QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
+
+void markCancelled(WorkspaceRelationshipAnalysisResult* result)
+{
+    if (!result)
+        return;
+    result->cancelled = true;
+    result->fileRelationships.clear();
+    result->semanticSnapshot = result->baseSnapshot.snapshot;
+}
 }
 
 SingleFileRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeSingleFile(
@@ -84,18 +93,27 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
     result.totalFiles = project.systemVerilogFiles.size();
     if (!relationshipBuilder)
         return result;
+    if (relationshipBuilder->isCancelled()) {
+        markCancelled(&result);
+        return result;
+    }
 
-    relationshipBuilder->resetCancellation();
     const QStringList svFiles = project.systemVerilogFiles;
     const QHash<QString, RelationshipExtractionInfo> relationshipInfoByFile =
         relationshipBuilder->extractWorkspaceRelationshipInfo(svFiles,
                                                               project.includeDirs,
                                                               project.defines);
+    if (relationshipBuilder->isCancelled()) {
+        markCancelled(&result);
+        return result;
+    }
     result.fileRelationships.reserve(svFiles.size());
     QList<SemanticRelationship> newRelationships;
     for (const QString& filePath : svFiles) {
-        if (relationshipBuilder->isCancelled())
-            break;
+        if (relationshipBuilder->isCancelled()) {
+            markCancelled(&result);
+            return result;
+        }
         QFile file(filePath);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
             continue;
@@ -115,6 +133,10 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
                 project.includeDirs,
                 project.defines,
                 relationshipInfo);
+        if (relationshipBuilder->isCancelled()) {
+            markCancelled(&result);
+            return result;
+        }
         result.fileRelationships.append({filePath, relationships});
         newRelationships.append(toSemanticRelationships(relationships));
     }

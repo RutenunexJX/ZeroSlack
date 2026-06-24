@@ -797,6 +797,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: even narrower interrupt points where Slang exposes them, tiered symbol indexes, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
 - Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 772 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Relationship Cancelled Result Contract MVP
+
+- Status: implemented in the current worktree.
+- Scope: twentieth usable Huge Workspace Mode milestone. It closes the relationship-publication side of workspace cancellation. It does not add new UI controls or deeper Slang preemption; it makes cancelled relationship worker results explicit and non-publishable.
+- `WorkspaceRelationshipAnalysisResult` now carries a `cancelled` flag. `RelationshipAnalysisWorker::analyzeWorkspace()` marks the result cancelled when cancellation is observed before extraction, after workspace relationship extraction, before/after per-file compute, or while assembling the workspace relationship snapshot.
+- Cancelled worker results clear partial file relationships and keep `semanticSnapshot` on the base snapshot so no half-built relationship state is carried forward.
+- `RelationshipAnalysisController::handleWorkspaceFinished()` emits `workspaceRelationshipAnalysisCancelled` for cancelled worker results before calling the publisher, and `RelationshipResultPublisher::applyWorkspaceResult()` refuses cancelled workspace results as a second guard.
+- `RelationshipAnalysisController::requestWorkspaceAnalysis()` now resets relationship-builder cancellation before launching the async worker, keeping reset ownership at the controller boundary while the worker respects the active state it receives.
+- Focused relationship coverage verifies a pre-cancelled worker result is marked cancelled, carries no partial relationships, preserves the base snapshot, and is rejected by `RelationshipResultPublisher`.
+- Next Huge Workspace milestones: tiered symbol indexes, relationship-result telemetry for canceled/expired runs if needed, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
+- Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 774 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
