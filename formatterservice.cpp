@@ -16,6 +16,7 @@ struct DeclarationAlignmentLine {
     QString suffix;
     QString assignmentRhs;
     bool hasAssignment = false;
+    QString trailingComment;
 };
 
 struct PortAlignmentLine {
@@ -27,6 +28,7 @@ struct PortAlignmentLine {
     QString name;
     QString suffix;
     bool trailingComma = false;
+    QString trailingComment;
 };
 
 struct InstanceMapAlignmentLine {
@@ -36,6 +38,13 @@ struct InstanceMapAlignmentLine {
     QString name;
     QString expression;
     bool trailingComma = false;
+    QString trailingComment;
+};
+
+struct CodeCommentParts {
+    QString code;
+    QString trailingComment;
+    bool hasBlockCommentToken = false;
 };
 
 bool isIdentifierStart(QChar ch)
@@ -282,8 +291,11 @@ int leadingWhitespaceWidth(const QString& line)
     return width;
 }
 
-bool hasCommentTokenOutsideString(const QString& line)
+CodeCommentParts splitTrailingLineComment(const QString& line)
 {
+    CodeCommentParts parts;
+    parts.code = line;
+
     bool inString = false;
     bool escaped = false;
     for (int i = 0; i < line.size(); ++i) {
@@ -302,14 +314,33 @@ bool hasCommentTokenOutsideString(const QString& line)
             inString = true;
             continue;
         }
-        if (ch == QLatin1Char('/') && next == QLatin1Char('/'))
-            return true;
-        if (ch == QLatin1Char('/') && next == QLatin1Char('*'))
-            return true;
-        if (ch == QLatin1Char('*') && next == QLatin1Char('/'))
-            return true;
+        if (ch == QLatin1Char('/') && next == QLatin1Char('/')) {
+            parts.code = line.left(i);
+            parts.trailingComment = line.mid(i).trimmed();
+            return parts;
+        }
+        if ((ch == QLatin1Char('/') && next == QLatin1Char('*'))
+            || (ch == QLatin1Char('*') && next == QLatin1Char('/'))) {
+            parts.hasBlockCommentToken = true;
+            return parts;
+        }
     }
-    return false;
+
+    return parts;
+}
+
+QString appendTrailingComment(const QString& codeLine,
+                              const QString& trailingComment,
+                              int commentColumn)
+{
+    if (trailingComment.isEmpty())
+        return codeLine;
+
+    const int spaces =
+        commentColumn > 0
+            ? std::max(2, commentColumn - static_cast<int>(codeLine.size()))
+            : 2;
+    return codeLine + repeatSpaces(spaces) + trailingComment;
 }
 
 int findTopLevelChar(const QString& text, QChar target)
@@ -415,12 +446,13 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
     DeclarationAlignmentLine parsed;
     if (!lineHasCode(line) || startsWithPreprocessor(line))
         return parsed;
-    if (hasCommentTokenOutsideString(line))
+    const CodeCommentParts parts = splitTrailingLineComment(line);
+    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
         return parsed;
 
-    const int indentWidth = leadingWhitespaceWidth(line);
-    const QString indent = line.left(indentWidth);
-    const QString code = line.mid(indentWidth).trimmed();
+    const int indentWidth = leadingWhitespaceWidth(parts.code);
+    const QString indent = parts.code.left(indentWidth);
+    const QString code = parts.code.mid(indentWidth).trimmed();
     if (!code.endsWith(QLatin1Char(';')))
         return parsed;
 
@@ -504,13 +536,14 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
     parsed.hasAssignment = equalIndex >= 0;
     if (parsed.hasAssignment)
         parsed.assignmentRhs = codeWithoutSemicolon.mid(equalIndex + 1).trimmed();
+    parsed.trailingComment = parts.trailingComment;
     return parsed;
 }
 
-QString buildAlignedDeclarationLine(const DeclarationAlignmentLine& line,
-                                    int maxPrefixWidth,
-                                    int maxBeforeAssignmentWidth,
-                                    bool alignAssignment)
+QString buildAlignedDeclarationCodeLine(const DeclarationAlignmentLine& line,
+                                        int maxPrefixWidth,
+                                        int maxBeforeAssignmentWidth,
+                                        bool alignAssignment)
 {
     QString content = line.prefix
         + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
@@ -567,12 +600,29 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
     }
 
     const bool alignAssignment = assignmentCount >= 2;
+    QStringList codeLines;
+    codeLines.reserve(block.size());
+    int maxCodeLineWidth = 0;
+    bool hasTrailingComment = false;
+    for (int i = 0; i < block.size(); ++i) {
+        const QString codeLine =
+            buildAlignedDeclarationCodeLine(block.at(i),
+                                            maxPrefixWidth,
+                                            maxBeforeAssignmentWidth,
+                                            alignAssignment);
+        codeLines.append(codeLine);
+        maxCodeLineWidth =
+            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
+        if (!block.at(i).trailingComment.isEmpty())
+            hasTrailingComment = true;
+    }
+
+    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
     for (int i = 0; i < block.size(); ++i) {
         (*lines)[blockIndexes.at(i)] =
-            buildAlignedDeclarationLine(block.at(i),
-                                        maxPrefixWidth,
-                                        maxBeforeAssignmentWidth,
-                                        alignAssignment);
+            appendTrailingComment(codeLines.at(i),
+                                  block.at(i).trailingComment,
+                                  commentColumn);
     }
 }
 
@@ -625,12 +675,13 @@ PortAlignmentLine parsePortAlignmentLine(const QString& line)
     PortAlignmentLine parsed;
     if (!lineHasCode(line) || startsWithPreprocessor(line))
         return parsed;
-    if (hasCommentTokenOutsideString(line))
+    const CodeCommentParts parts = splitTrailingLineComment(line);
+    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
         return parsed;
 
-    const int indentWidth = leadingWhitespaceWidth(line);
-    const QString indent = line.left(indentWidth);
-    QString code = line.mid(indentWidth).trimmed();
+    const int indentWidth = leadingWhitespaceWidth(parts.code);
+    const QString indent = parts.code.left(indentWidth);
+    QString code = parts.code.mid(indentWidth).trimmed();
     if (code.isEmpty()
         || code.endsWith(QLatin1Char(';'))
         || code.contains(QLatin1Char(')'))
@@ -693,12 +744,13 @@ PortAlignmentLine parsePortAlignmentLine(const QString& line)
     parsed.name = name;
     parsed.suffix = left.mid(suffixStart).trimmed();
     parsed.trailingComma = trailingComma;
+    parsed.trailingComment = parts.trailingComment;
     return parsed;
 }
 
-QString buildAlignedPortLine(const PortAlignmentLine& line,
-                             int maxDirectionWidth,
-                             int maxPrefixWidth)
+QString buildAlignedPortCodeLine(const PortAlignmentLine& line,
+                                 int maxDirectionWidth,
+                                 int maxPrefixWidth)
 {
     QString content = line.direction
         + repeatSpaces(maxDirectionWidth - line.direction.size() + 1);
@@ -738,11 +790,28 @@ void flushPortAlignmentBlock(QStringList* lines,
                      static_cast<int>(line.prefix.size()));
     }
 
+    QStringList codeLines;
+    codeLines.reserve(block.size());
+    int maxCodeLineWidth = 0;
+    bool hasTrailingComment = false;
+    for (int i = 0; i < block.size(); ++i) {
+        const QString codeLine =
+            buildAlignedPortCodeLine(block.at(i),
+                                     maxDirectionWidth,
+                                     maxPrefixWidth);
+        codeLines.append(codeLine);
+        maxCodeLineWidth =
+            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
+        if (!block.at(i).trailingComment.isEmpty())
+            hasTrailingComment = true;
+    }
+
+    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
     for (int i = 0; i < block.size(); ++i) {
         (*lines)[blockIndexes.at(i)] =
-            buildAlignedPortLine(block.at(i),
-                                 maxDirectionWidth,
-                                 maxPrefixWidth);
+            appendTrailingComment(codeLines.at(i),
+                                  block.at(i).trailingComment,
+                                  commentColumn);
     }
 }
 
@@ -782,12 +851,13 @@ InstanceMapAlignmentLine parseInstanceMapAlignmentLine(const QString& line)
     InstanceMapAlignmentLine parsed;
     if (!lineHasCode(line) || startsWithPreprocessor(line))
         return parsed;
-    if (hasCommentTokenOutsideString(line))
+    const CodeCommentParts parts = splitTrailingLineComment(line);
+    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
         return parsed;
 
-    const int indentWidth = leadingWhitespaceWidth(line);
-    const QString indent = line.left(indentWidth);
-    QString code = line.mid(indentWidth).trimmed();
+    const int indentWidth = leadingWhitespaceWidth(parts.code);
+    const QString indent = parts.code.left(indentWidth);
+    QString code = parts.code.mid(indentWidth).trimmed();
     if (code.size() < 4 || !code.startsWith(QLatin1Char('.')))
         return parsed;
 
@@ -824,11 +894,12 @@ InstanceMapAlignmentLine parseInstanceMapAlignmentLine(const QString& line)
     parsed.name = code.mid(nameStart, nameEnd - nameStart);
     parsed.expression = code.mid(openParen + 1, closeParen - openParen - 1);
     parsed.trailingComma = trailingComma;
+    parsed.trailingComment = parts.trailingComment;
     return parsed;
 }
 
-QString buildAlignedInstanceMapLine(const InstanceMapAlignmentLine& line,
-                                    int maxNameWidth)
+QString buildAlignedInstanceMapCodeLine(const InstanceMapAlignmentLine& line,
+                                        int maxNameWidth)
 {
     QString content = QLatin1Char('.')
         + line.name
@@ -855,9 +926,26 @@ void flushInstanceMapAlignmentBlock(QStringList* lines,
                      static_cast<int>(line.name.size()));
     }
 
+    QStringList codeLines;
+    codeLines.reserve(block.size());
+    int maxCodeLineWidth = 0;
+    bool hasTrailingComment = false;
+    for (int i = 0; i < block.size(); ++i) {
+        const QString codeLine =
+            buildAlignedInstanceMapCodeLine(block.at(i), maxNameWidth);
+        codeLines.append(codeLine);
+        maxCodeLineWidth =
+            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
+        if (!block.at(i).trailingComment.isEmpty())
+            hasTrailingComment = true;
+    }
+
+    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
     for (int i = 0; i < block.size(); ++i) {
         (*lines)[blockIndexes.at(i)] =
-            buildAlignedInstanceMapLine(block.at(i), maxNameWidth);
+            appendTrailingComment(codeLines.at(i),
+                                  block.at(i).trailingComment,
+                                  commentColumn);
     }
 }
 

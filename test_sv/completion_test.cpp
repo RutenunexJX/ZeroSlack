@@ -985,6 +985,44 @@ int main(int argc, char** argv) {
                unchangedInstanceMapReport.changed,
                false);
 
+    const QString formatterTrailingCommentInput =
+        QStringLiteral("module comment_demo(\n"
+                       "input logic clk, // clock\n"
+                       "output logic ready // done\n"
+                       ");\n"
+                       "logic a; // flag\n"
+                       "logic [7:0] data; // byte\n"
+                       "child u_child (\n"
+                       ".clk(clk), // clock\n"
+                       ".data_in(data) // bus\n"
+                       ");\n"
+                       "endmodule\n");
+    const FormatterReport formatterTrailingCommentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterTrailingCommentInput);
+    expectBool("Formatter trailing comment report changed",
+               formatterTrailingCommentReport.changed,
+               true);
+    expectEq("Formatter preserves aligned trailing comments",
+             formatterTrailingCommentReport.formattedText,
+             QStringLiteral("module comment_demo(\n"
+                            "    input  logic clk,   // clock\n"
+                            "    output logic ready  // done\n"
+                            "    );\n"
+                            "    logic       a;     // flag\n"
+                            "    logic [7:0] data;  // byte\n"
+                            "    child u_child (\n"
+                            "    .clk     (clk),  // clock\n"
+                            "    .data_in (data)  // bus\n"
+                            "    );\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedTrailingCommentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterTrailingCommentReport.formattedText);
+    expectBool("Formatter trailing comment idempotent",
+               unchangedTrailingCommentReport.changed,
+               false);
+
     const QString wavePreviewInput =
         QStringLiteral("module wave_probe(\n"
                        "    input logic clk,\n"

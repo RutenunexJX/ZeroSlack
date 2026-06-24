@@ -358,9 +358,9 @@ feature direction that violates them.
 - Scope: second usable formatter milestone. It keeps the formatter conservative but moves beyond indent-only for common declaration blocks.
 - `FormatterService` now has an `alignDeclarationBlocks` option enabled by default. Alignment runs after indentation and stays inside the service/report boundary; editor runtime still applies one undoable formatted-text replacement.
 - The MVP aligns consecutive simple signal declarations by declaration-name column and aligns consecutive `parameter` / `localparam` assignment columns. It supports packed and unpacked dimensions on the declaration side.
-- The alignment pass is intentionally narrow: it skips preprocessor lines, comment-bearing lines, multi-declaration lines, typedefs, and non-declaration statements. It does not yet align instance port maps, expression continuations, or comments.
+- The alignment pass is intentionally narrow: it skips preprocessor lines, block-comment-bearing lines, multi-declaration lines, typedefs, and non-declaration statements. A later formatter milestone adds trailing `//` comment preservation for simple aligned declarations.
 - Implementation remains no-regex. It uses deterministic token scans, bracket-depth checks, and conservative declaration parsing.
-- Next Formatter milestones: instance parameter/port map alignment, comment-preserving alignment, format selection, and formatter profile controls.
+- Next Formatter milestones: instance parameter/port map alignment, format selection, and formatter profile controls.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 404 checks, focused build target `gui_smoke_test`, direct `gui_smoke_test` run with 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Formatter Port List Alignment MVP
@@ -369,9 +369,9 @@ feature direction that violates them.
 - Scope: third usable formatter milestone. It extends the conservative formatter from declarations into common ANSI module port lists without changing expressions or comments.
 - `FormatterService` now has an `alignPortLists` option enabled by default. The pass runs after indentation and declaration alignment, stays inside the formatter report boundary, and still reaches the editor only as one undoable formatted-text replacement.
 - The MVP aligns contiguous simple ANSI `input` / `output` / `inout` lines by direction, type/range prefix, and port name. It preserves unpacked dimensions after the port name and keeps trailing commas where they already exist.
-- The alignment pass is intentionally narrow: it skips preprocessor lines, comment-bearing lines, multi-port lines, default-value ports, inline closing forms such as `);`, and complex port declarations. Instance port maps and parameter override maps remain later formatter work.
+- The alignment pass is intentionally narrow: it skips preprocessor lines, block-comment-bearing lines, multi-port lines, default-value ports, inline closing forms such as `);`, and complex port declarations. Instance port maps and parameter override maps remain later formatter work.
 - Implementation remains no-regex. It uses deterministic token scans, bracket-depth checks, and conservative port-line parsing.
-- Next Formatter milestones: comment-preserving alignment, format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 414 checks, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run with 365 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Formatter Instance Map Alignment MVP
@@ -381,10 +381,21 @@ feature direction that violates them.
 - `FormatterService` now has an `alignInstanceMaps` option enabled by default. The pass runs after indentation, declaration alignment, and port-list alignment, stays inside the formatter report boundary, and still reaches the editor only as one undoable formatted-text replacement.
 - The MVP aligns contiguous simple named association lines by the association name before the opening parenthesis. It covers both parameter override maps such as `.PARAM(value)` and instance port maps such as `.clk(clk)`.
 - Expression text inside parentheses is preserved. The pass only normalizes spacing between the association name and `(`, and it keeps trailing commas where they already exist.
-- The alignment pass is intentionally narrow: it skips preprocessor lines, comment-bearing lines, semicolon-terminated inline forms, malformed parentheses, and complex non-single-line associations. Positional maps, mixed inline maps, and comment-preserving alignment remain later formatter work.
+- The alignment pass is intentionally narrow: it skips preprocessor lines, block-comment-bearing lines, semicolon-terminated inline forms, malformed parentheses, and complex non-single-line associations. Positional maps and mixed inline maps remain later formatter work.
 - Implementation remains no-regex. It uses deterministic token scans, quote-aware parenthesis matching, and conservative named-association parsing.
-- Next Formatter milestones: comment-preserving alignment, format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test` and direct `completion_test` run with 417 checks. Final release verification for the commit also includes focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Formatter Trailing Comment Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: fifth usable formatter milestone. It makes the existing conservative alignment passes useful on common real RTL lines that carry trailing explanatory comments.
+- `FormatterService` now splits trailing `//` comments with quote-aware token scans before parsing simple aligned lines. Declaration blocks, ANSI port-list blocks, and named instance-map blocks consume only the code portion for alignment, then reattach the comment at an aligned comment column.
+- The MVP preserves the comment text from `//` onward and keeps expression or declaration text under the same conservative parsing rules as the earlier alignment passes.
+- The pass intentionally skips block comments, preprocessor lines, comment-only lines, and any declaration/port/map form that the existing conservative parser would skip. It does not attempt to reflow comment text or support multiline block comments.
+- Implementation remains no-regex. It uses deterministic token scans plus the existing bracket/parenthesis helpers and keeps formatting policy inside `FormatterService`.
+- Next Formatter milestones: format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Verification for this block: focused build target `completion_test` and direct `completion_test` run with 420 checks. Final release verification for the commit also includes focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Data MVP
 
