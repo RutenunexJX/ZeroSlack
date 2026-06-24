@@ -132,6 +132,10 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             &AnalysisScheduler::workspaceAnalysisRequestResolved,
             this,
             &AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestResolved);
+    connect(scheduler,
+            &AnalysisScheduler::workspaceSymbolAnalysisCancelled,
+            this,
+            &AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisCancelled);
 
     connect(scheduler,
             &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
@@ -285,6 +289,28 @@ void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestResolved(
             QStringLiteral("Workspace analysis restarting latest request"),
             3000);
     }
+}
+
+void AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisCancelled(
+    const WorkspaceAnalysisRequestTelemetry& telemetry)
+{
+    symbolAnalysisCancelled.store(true);
+    QString message =
+        QStringLiteral("Workspace symbol analysis cancelled: active wait %1")
+            .arg(ageText(telemetry.lastFinishedActiveAgeMs));
+    if (telemetry.lastTakenPendingUpdateCount > 0) {
+        message += QStringLiteral(", discarded pending wait %1, pending updates %2")
+            .arg(ageText(telemetry.lastTakenPendingAgeMs))
+            .arg(telemetry.lastTakenPendingUpdateCount);
+    }
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Warning,
+        message);
+    emit statusMessageRequested(
+        QStringLiteral("Workspace symbol analysis cancelled"),
+        3000);
 }
 
 bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const

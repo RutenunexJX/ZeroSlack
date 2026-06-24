@@ -31,6 +31,8 @@ public:
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void handleWorkspaceAnalysisRequestResolved(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void handleWorkspaceSymbolAnalysisCancelled(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
     bool isSymbolAnalysisCancelled() const;
 
 signals:

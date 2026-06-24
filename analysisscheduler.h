@@ -48,6 +48,7 @@ public:
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
     void cancelRelationshipAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
+    void cancelWorkspaceAnalysis();
     void requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceRelationshipAnalysis();
     void handleExternalFileChanged(const QString& fileName, int debounceMs);
@@ -69,6 +70,8 @@ signals:
     void workspaceAnalysisRequestQueued(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void workspaceAnalysisRequestResolved(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void workspaceSymbolAnalysisCancelled(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void relationshipAnalysisProgress(const QString& fileName, int relationshipsFound);
     void relationshipAnalysisError(const QString& fileName, const QString& error);

@@ -51,6 +51,22 @@ void WorkspaceSymbolAnalysisController::startWorkspaceAnalysis(
                                              cancelProvider);
 }
 
+void WorkspaceSymbolAnalysisController::cancelWorkspaceAnalysis()
+{
+    if (!workspaceAnalysisActive
+        && !requestQueue.active()
+        && !requestQueue.hasPending()) {
+        return;
+    }
+
+    const WorkspaceAnalysisRequestTelemetry telemetry = requestQueue.cancel();
+    workspaceAnalysisActive = false;
+    activeProject = ProjectSnapshot();
+    emit workspaceSymbolAnalysisCancelled(telemetry);
+    if (symbolAnalyzer)
+        symbolAnalyzer->expireWorkspaceAnalysis();
+}
+
 void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
 {
     if (projectSemanticStateCleared)

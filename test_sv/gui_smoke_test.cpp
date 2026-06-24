@@ -1062,6 +1062,33 @@ static void runActivityLogServiceRegression()
                        QStringLiteral("Workspace relationship analysis cancelled")),
                true);
     service->clear();
+
+    WorkspaceAnalysisRequestTelemetry symbolCancelTelemetry;
+    symbolCancelTelemetry.lastFinishedActiveAgeMs = 44;
+    symbolCancelTelemetry.lastTakenPendingAgeMs = 9;
+    symbolCancelTelemetry.lastTakenPendingUpdateCount = 3;
+    progressCoordinator.handleWorkspaceSymbolAnalysisCancelled(
+        symbolCancelTelemetry);
+    bool sawWorkspaceSymbolCancel = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawWorkspaceSymbolCancel = sawWorkspaceSymbolCancel
+            || (event.source == QStringLiteral("Analyzer")
+                && event.level == ActivityLogLevel::Warning
+                && event.message.contains(
+                    QStringLiteral("Workspace symbol analysis cancelled"))
+                && event.message.contains(
+                    QStringLiteral("pending updates 3")));
+    }
+    expectBool("activity log records workspace symbol cancellation",
+               sawWorkspaceSymbolCancel,
+               true);
+    expectBool("workspace symbol cancellation emits status",
+               workspaceCancelStatusSpy.count() == 2
+                   && workspaceCancelStatusSpy.at(1).at(0).toString().contains(
+                       QStringLiteral("Workspace symbol analysis cancelled"))
+                   && progressCoordinator.isSymbolAnalysisCancelled(),
+               true);
+    service->clear();
 }
 
 static void runRtlInsightsOnDemandRegression()

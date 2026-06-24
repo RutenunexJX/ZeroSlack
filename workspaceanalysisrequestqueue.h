@@ -29,6 +29,7 @@ public:
     void start(const ProjectSnapshot& project);
     bool queueLatest(const ProjectSnapshot& project);
     bool finishAndTakePending(ProjectSnapshot* nextProject);
+    WorkspaceAnalysisRequestTelemetry cancel();
     void clear();
 
 private:

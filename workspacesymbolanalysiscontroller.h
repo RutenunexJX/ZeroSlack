@@ -26,6 +26,7 @@ public:
     void setCurrentFileProvider(std::function<QString()> provider);
 
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
+    void cancelWorkspaceAnalysis();
     void clearProjectSemanticState();
 
 signals:
@@ -46,6 +47,8 @@ signals:
     void workspaceAnalysisRequestQueued(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void workspaceAnalysisRequestResolved(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void workspaceSymbolAnalysisCancelled(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
 
 private:

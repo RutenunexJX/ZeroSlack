@@ -68,6 +68,25 @@ bool WorkspaceAnalysisRequestQueue::finishAndTakePending(
     return nextProject && nextProject->isOpen();
 }
 
+WorkspaceAnalysisRequestTelemetry WorkspaceAnalysisRequestQueue::cancel()
+{
+    lastFinishedActiveAgeMs =
+        activeTimerValid ? activeTimer.elapsed() : -1;
+    lastTakenPendingAgeMs =
+        pendingTimerValid ? pendingTimer.elapsed() : -1;
+    lastTakenPendingUpdateCount =
+        pendingRequest ? pendingUpdateCount : 0;
+
+    currentProject = ProjectSnapshot();
+    pendingProject = ProjectSnapshot();
+    activeRequest = false;
+    pendingRequest = false;
+    activeTimerValid = false;
+    pendingTimerValid = false;
+    pendingUpdateCount = 0;
+    return telemetry();
+}
+
 void WorkspaceAnalysisRequestQueue::clear()
 {
     currentProject = ProjectSnapshot();

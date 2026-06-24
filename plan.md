@@ -764,6 +764,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, richer direct cancellation controls for long analysis runs, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 472 checks; direct `gui_smoke_test` run with 410 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Direct Symbol Cancellation MVP
+
+- Status: implemented in the current worktree.
+- Scope: seventeenth usable Huge Workspace Mode milestone. It adds an explicit non-blocking workspace symbol cancellation route through scheduler/controller and progress visibility. It does not add a toolbar or global-control command yet and does not claim to interrupt Slang internals directly.
+- `WorkspaceAnalysisRequestQueue::cancel()` clears active and pending requests while preserving active wait, pending wait, and discarded pending update count telemetry.
+- `WorkspaceSymbolAnalysisController::cancelWorkspaceAnalysis()` uses queue cancellation, clears active project state, emits `workspaceSymbolAnalysisCancelled`, and expires the current async workspace run through `SymbolAnalyzer::expireWorkspaceAnalysis()` without waiting on the worker.
+- `AnalysisScheduler::cancelWorkspaceAnalysis()` exposes the direct cancellation entrypoint, and `AnalysisProgressCoordinator` renders cancellation as warning-level Activity/Output plus status-bar feedback while setting the symbol-analysis cancellation flag used by the cancel provider.
+- Focused completion coverage verifies queue cancellation clears active/pending state while preserving discarded telemetry. Focused GUI smoke coverage verifies Activity/status visibility and the cancellation flag.
+- Next Huge Workspace milestones: UI command surface for direct cancellation if wanted, deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
+- Verification for this block: focused build target `completion_test` and `gui_smoke_test`; direct `completion_test` run with 474 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

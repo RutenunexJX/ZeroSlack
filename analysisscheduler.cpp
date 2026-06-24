@@ -66,3 +66,9 @@ void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->requestWorkspaceAnalysis(project);
 }
+
+void AnalysisScheduler::cancelWorkspaceAnalysis()
+{
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->cancelWorkspaceAnalysis();
+}

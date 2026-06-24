@@ -1734,6 +1734,22 @@ int main(int argc, char** argv) {
                    && clearedTelemetry.lastTakenPendingAgeMs < 0
                    && clearedTelemetry.lastTakenPendingUpdateCount == 0,
                true);
+    requestQueue.start(queueFirst);
+    requestQueue.queueLatest(queueSecond);
+    requestQueue.queueLatest(queueThird);
+    const WorkspaceAnalysisRequestTelemetry cancelTelemetry =
+        requestQueue.cancel();
+    expectBool("Workspace request queue cancels active and pending",
+               !requestQueue.active()
+                   && !requestQueue.hasPending()
+                   && !cancelTelemetry.active
+                   && !cancelTelemetry.pending,
+               true);
+    expectBool("Workspace request cancel keeps discarded telemetry",
+               cancelTelemetry.lastFinishedActiveAgeMs >= 0
+                   && cancelTelemetry.lastTakenPendingAgeMs >= 0
+                   && cancelTelemetry.lastTakenPendingUpdateCount == 2,
+               true);
 
     DiagnosticsRefreshController diagnosticsRefresh;
     QStringList emittedDiagnosticsRefreshes;
