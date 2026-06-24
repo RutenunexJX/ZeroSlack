@@ -32,6 +32,24 @@ bool fileInSet(const QSet<QString>& files, const QString& fileName)
     return files.contains(normalizedSymbolAnalyzerFileName(fileName));
 }
 
+QList<int> publicationCheckpoints(const QList<int>& checkpoints,
+                                  int resultFileCount)
+{
+    QList<int> result;
+    int lastCheckpoint = 0;
+    for (int checkpoint : checkpoints) {
+        const int clamped = std::clamp(checkpoint, 0, resultFileCount);
+        if (clamped <= 0
+            || clamped >= resultFileCount
+            || clamped <= lastCheckpoint) {
+            continue;
+        }
+        result.append(clamped);
+        lastCheckpoint = clamped;
+    }
+    return result;
+}
+
 } // namespace
 
 void SymbolAnalyzer::publishOpenDocumentResults(
@@ -71,30 +89,33 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     const QSet<QString> protectedFiles = normalizedFileSet(result.protectedFiles);
     const int resultFileCount = static_cast<int>(result.files.size());
-    const int priorityFileCount =
-        std::clamp(result.priorityFileCount, 0, resultFileCount);
-    const bool publishPriorityStage =
-        priorityFileCount > 0 && priorityFileCount < resultFileCount;
+    const QList<int> checkpoints =
+        publicationCheckpoints(result.priorityPublicationCheckpoints,
+                               resultFileCount);
     QStringList analyzedFiles;
     analyzedFiles.reserve(result.files.size());
     QList<SemanticDiagnostic> diagnostics;
     int filesAnalyzed = 0;
     int plannedFilesVisited = 0;
-    bool priorityStageHandled = false;
+    int nextCheckpointIndex = 0;
+    int lastPublishedFilesAnalyzed = 0;
+    auto publishCrossedCheckpoints = [&]() {
+        while (nextCheckpointIndex < checkpoints.size()
+               && plannedFilesVisited >= checkpoints.at(nextCheckpointIndex)) {
+            ++nextCheckpointIndex;
+            if (filesAnalyzed <= lastPublishedFilesAnalyzed)
+                continue;
+            semanticIndex->setSnapshot(
+                semanticIndex->captureSnapshotPreservingDiagnostics());
+            lastPublishedFilesAnalyzed = filesAnalyzed;
+        }
+    };
     for (const WorkspaceFileAnalysis& fileResult : result.files) {
         ++plannedFilesVisited;
         const bool protectedFile =
             fileInSet(protectedFiles, fileResult.fileName);
         if (protectedFile) {
-            if (publishPriorityStage
-                && !priorityStageHandled
-                && plannedFilesVisited >= priorityFileCount) {
-                priorityStageHandled = true;
-                if (!analyzedFiles.isEmpty()) {
-                    semanticIndex->setSnapshot(
-                        semanticIndex->captureSnapshotPreservingDiagnostics());
-                }
-            }
+            publishCrossedCheckpoints();
             continue;
         }
 
@@ -104,13 +125,7 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
             fileResult.symbolRecords);
         analyzedFiles.append(fileResult.fileName);
         filesAnalyzed++;
-        if (publishPriorityStage
-            && !priorityStageHandled
-            && plannedFilesVisited >= priorityFileCount) {
-            priorityStageHandled = true;
-            semanticIndex->setSnapshot(
-                semanticIndex->captureSnapshotPreservingDiagnostics());
-        }
+        publishCrossedCheckpoints();
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 

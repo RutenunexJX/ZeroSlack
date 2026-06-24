@@ -123,6 +123,23 @@ PrioritizedWorkspaceFiles prioritizedSystemVerilogFiles(
         << prioritized.backgroundFiles;
     return prioritized;
 }
+
+QList<int> priorityPublicationCheckpoints(
+    const PrioritizedWorkspaceFiles& prioritized)
+{
+    QList<int> checkpoints;
+    int count = 0;
+    auto appendBand = [&checkpoints, &count](const QStringList& band) {
+        if (band.isEmpty())
+            return;
+        count += band.size();
+        checkpoints.append(count);
+    };
+    appendBand(prioritized.currentFilePriorityFiles);
+    appendBand(prioritized.dirtyOpenPriorityFiles);
+    appendBand(prioritized.cleanOpenPriorityFiles);
+    return checkpoints;
+}
 }
 
 WorkspaceAnalysisPlanService* WorkspaceAnalysisPlanService::getInstance()
@@ -162,6 +179,8 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
         plan.currentFilePriorityFiles.size()
         + plan.dirtyOpenPriorityFiles.size()
         + plan.cleanOpenPriorityFiles.size();
+    plan.priorityPublicationCheckpoints =
+        priorityPublicationCheckpoints(prioritized);
     plan.backgroundFileCount = plan.backgroundFiles.size();
     return plan;
 }

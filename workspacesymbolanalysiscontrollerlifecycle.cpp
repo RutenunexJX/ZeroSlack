@@ -39,7 +39,8 @@ void WorkspaceSymbolAnalysisController::startWorkspaceAnalysis(
         WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(query);
 
     symbolAnalyzer->setWorkspaceProtectedFiles(plan.protectedFiles);
-    symbolAnalyzer->setWorkspacePriorityFileCount(plan.priorityFileCount);
+    symbolAnalyzer->setWorkspacePriorityPublicationCheckpoints(
+        plan.priorityPublicationCheckpoints);
     requestQueue.start(project);
     activeProject = project;
     workspaceAnalysisActive = true;

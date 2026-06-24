@@ -24,7 +24,24 @@ void SymbolAnalyzer::setWorkspaceProtectedFiles(const QStringList& fileNames)
 
 void SymbolAnalyzer::setWorkspacePriorityFileCount(int fileCount)
 {
-    workspacePriorityFileCount = std::max(0, fileCount);
+    setWorkspacePriorityPublicationCheckpoints(
+        fileCount > 0 ? QList<int>{fileCount} : QList<int>{});
+}
+
+void SymbolAnalyzer::setWorkspacePriorityPublicationCheckpoints(
+    const QList<int>& checkpoints)
+{
+    QList<int> sortedCheckpoints = checkpoints;
+    std::sort(sortedCheckpoints.begin(), sortedCheckpoints.end());
+
+    workspacePriorityPublicationCheckpoints.clear();
+    int lastCheckpoint = 0;
+    for (int checkpoint : sortedCheckpoints) {
+        if (checkpoint <= 0 || checkpoint <= lastCheckpoint)
+            continue;
+        workspacePriorityPublicationCheckpoints.append(checkpoint);
+        lastCheckpoint = checkpoint;
+    }
 }
 
 QString SymbolAnalyzer::contentHash(const QString& content) const

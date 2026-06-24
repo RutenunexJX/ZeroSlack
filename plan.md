@@ -741,6 +741,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, richer direct cancellation controls for long analysis runs, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 464 checks; direct `gui_smoke_test` run with 410 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Band-Staged Symbol Publication MVP
+
+- Status: implemented in the current worktree.
+- Scope: fifteenth usable Huge Workspace Mode milestone. It refines staged symbol publication from one combined priority segment into explicit current-file, dirty-open, and clean-open priority-band checkpoints. It still does not split Slang extraction, diagnostics extraction, relationship analysis, or final diagnostics replacement.
+- `WorkspaceAnalysisPlan` now carries `priorityPublicationCheckpoints`, a cumulative list of planned-file positions after each non-empty priority band.
+- `WorkspaceAnalysisPlanService` owns checkpoint construction next to band construction, so publication policy consumes the prepared plan instead of recomputing current/open/dirty status inside `SymbolAnalyzer`.
+- `WorkspaceSymbolAnalysisController` passes the checkpoint list into `SymbolAnalyzer`; `SymbolAnalyzer` clamps and deduplicates the list and publishes diagnostics-preserving snapshots whenever a checkpoint is crossed and at least one new publishable file has been updated.
+- Dirty protected files still skip stale disk publication. Crossing a checkpoint that only contains protected files does not create a duplicate snapshot with no new symbols.
+- Focused completion coverage verifies plan checkpoints (`1,2,3`) and a three-file staged publication flow: the first intermediate snapshot contains only the current-band module, the second contains current plus open-band modules, and the final snapshot contains the background module too.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, richer direct cancellation controls for long analysis runs, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 467 checks; direct `gui_smoke_test` run with 410 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

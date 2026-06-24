@@ -1538,6 +1538,12 @@ int main(int argc, char** argv) {
                  priorityPlan.backgroundFiles.join(QStringLiteral(","))
              }.join(QStringLiteral("|")),
              QStringList{planC, planB, planD, planA}.join(QStringLiteral("|")));
+    QStringList priorityCheckpointText;
+    for (int checkpoint : priorityPlan.priorityPublicationCheckpoints)
+        priorityCheckpointText.append(QString::number(checkpoint));
+    expectEq("Workspace plan records publication checkpoints",
+             priorityCheckpointText.join(QStringLiteral(",")),
+             QStringLiteral("1,2,3"));
 
     WorkspaceAnalysisPlan externalCurrentPlan =
         WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(
@@ -4823,14 +4829,19 @@ int main(int argc, char** argv) {
     expectBool("Workspace staged publication temp dir valid",
                stagedPublicationWorkspace.isValid(),
                true);
-    const QString stagedPriorityFile =
+    const QString stagedCurrentFile =
         QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
-            QStringLiteral("staged_priority.sv"));
+            QStringLiteral("staged_current.sv"));
+    const QString stagedOpenFile =
+        QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("staged_open.sv"));
     const QString stagedBackgroundFile =
         QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
             QStringLiteral("staged_background.sv"));
-    const QString stagedPriorityModule =
-        QStringLiteral("staged_priority_pub_module");
+    const QString stagedCurrentModule =
+        QStringLiteral("staged_current_pub_module");
+    const QString stagedOpenModule =
+        QStringLiteral("staged_open_pub_module");
     const QString stagedBackgroundModule =
         QStringLiteral("staged_background_pub_module");
 
@@ -4842,10 +4853,15 @@ int main(int argc, char** argv) {
         out << text;
         return true;
     };
-    expectBool("Workspace staged priority file created",
+    expectBool("Workspace staged current file created",
                writeTextFile(
-                   stagedPriorityFile,
-                   QStringLiteral("module staged_priority_pub_module; logic a; endmodule\n")),
+                   stagedCurrentFile,
+                   QStringLiteral("module staged_current_pub_module; logic a; endmodule\n")),
+               true);
+    expectBool("Workspace staged open file created",
+               writeTextFile(
+                   stagedOpenFile,
+                   QStringLiteral("module staged_open_pub_module; logic o; endmodule\n")),
                true);
     expectBool("Workspace staged background file created",
                writeTextFile(
@@ -4872,15 +4888,21 @@ int main(int argc, char** argv) {
     ProjectSnapshot stagedProject;
     stagedProject.workspaceRoot = stagedPublicationWorkspace.path();
     stagedProject.systemVerilogFiles = {
-        stagedPriorityFile,
+        stagedCurrentFile,
+        stagedOpenFile,
         stagedBackgroundFile
     };
     stagedProject.includeDirs = {stagedPublicationWorkspace.path()};
     SymbolAnalyzer stagedAnalyzer;
-    stagedAnalyzer.setWorkspacePriorityFileCount(1);
-    bool sawStagedSnapshot = false;
-    bool stagedSnapshotHasPriority = false;
-    bool stagedSnapshotOmitsBackground = false;
+    stagedAnalyzer.setWorkspacePriorityPublicationCheckpoints({1, 2});
+    bool sawCurrentStageSnapshot = false;
+    bool currentStageHasCurrent = false;
+    bool currentStageOmitsOpen = false;
+    bool currentStageOmitsBackground = false;
+    bool sawOpenStageSnapshot = false;
+    bool openStageHasCurrent = false;
+    bool openStageHasOpen = false;
+    bool openStageOmitsBackground = false;
     QObject::connect(&stagedAnalyzer,
                      &SymbolAnalyzer::batchProgress,
                      &stagedAnalyzer,
@@ -4888,30 +4910,59 @@ int main(int argc, char** argv) {
                          int totalFiles,
                          const QString& currentFileName) {
                          if (filesDone != 1
-                             || totalFiles != 2
-                             || currentFileName != stagedPriorityFile) {
+                             && filesDone != 2) {
                              return;
                          }
-                         sawStagedSnapshot = true;
+                         if (totalFiles != 3)
+                             return;
                          const auto snapshot =
                              SemanticIndex::getInstance()->snapshot();
-                         stagedSnapshotHasPriority =
-                             snapshotContainsModule(snapshot,
-                                                    stagedPriorityModule);
-                         stagedSnapshotOmitsBackground =
-                             !snapshotContainsModule(snapshot,
-                                                     stagedBackgroundModule);
+                         if (filesDone == 1
+                             && currentFileName == stagedCurrentFile) {
+                             sawCurrentStageSnapshot = true;
+                             currentStageHasCurrent =
+                                 snapshotContainsModule(snapshot,
+                                                        stagedCurrentModule);
+                             currentStageOmitsOpen =
+                                 !snapshotContainsModule(snapshot,
+                                                         stagedOpenModule);
+                             currentStageOmitsBackground =
+                                 !snapshotContainsModule(snapshot,
+                                                         stagedBackgroundModule);
+                         }
+                         if (filesDone == 2
+                             && currentFileName == stagedOpenFile) {
+                             sawOpenStageSnapshot = true;
+                             openStageHasCurrent =
+                                 snapshotContainsModule(snapshot,
+                                                        stagedCurrentModule);
+                             openStageHasOpen =
+                                 snapshotContainsModule(snapshot,
+                                                        stagedOpenModule);
+                             openStageOmitsBackground =
+                                 !snapshotContainsModule(snapshot,
+                                                         stagedBackgroundModule);
+                         }
                      });
     stagedAnalyzer.analyzeProject(stagedProject);
-    expectBool("Workspace priority stage publishes symbols early",
-               sawStagedSnapshot
-                   && stagedSnapshotHasPriority
-                   && stagedSnapshotOmitsBackground,
+    expectBool("Workspace current band publishes symbols early",
+               sawCurrentStageSnapshot
+                   && currentStageHasCurrent
+                   && currentStageOmitsOpen
+                   && currentStageOmitsBackground,
+               true);
+    expectBool("Workspace open band publishes symbols next",
+               sawOpenStageSnapshot
+                   && openStageHasCurrent
+                   && openStageHasOpen
+                   && openStageOmitsBackground,
                true);
     const auto finalStagedSnapshot = SemanticIndex::getInstance()->snapshot();
     expectBool("Workspace final publication includes background symbols",
                snapshotContainsModule(finalStagedSnapshot,
-                                      stagedPriorityModule)
+                                      stagedCurrentModule)
+                   && snapshotContainsModule(finalStagedSnapshot,
+                                             stagedOpenModule)
                    && snapshotContainsModule(finalStagedSnapshot,
                                              stagedBackgroundModule),
                true);
