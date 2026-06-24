@@ -31,6 +31,7 @@ struct WorkspaceAnalysisResult {
     QList<SemanticDiagnostic> diagnostics;
     QStringList protectedFiles;
     QList<int> priorityPublicationCheckpoints;
+    bool cancelled = false;
     int totalSymbols = 0;
     std::uint64_t generation = 0;
 };

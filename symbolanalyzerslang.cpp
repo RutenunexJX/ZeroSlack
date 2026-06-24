@@ -84,11 +84,24 @@ void SymbolAnalyzer::analyzeProject(
     result.priorityPublicationCheckpoints =
         workspacePriorityPublicationCheckpoints;
     result.generation = ++workspaceAnalysisGeneration;
+    if (result.cancelled || (isCancelled && isCancelled())) {
+        result.cancelled = true;
+        emit workspaceAnalysisExpired();
+        emit batchAnalysisCompleted(0, 0);
+        emit analysisCompleted(project.workspaceRoot, 0);
+        return;
+    }
     SlangManager diagnosticsAnalyzer;
     result.diagnostics =
         diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles,
                                                        project.includeDirs,
                                                        project.defines);
+    if (isCancelled && isCancelled()) {
+        emit workspaceAnalysisExpired();
+        emit batchAnalysisCompleted(0, 0);
+        emit analysisCompleted(project.workspaceRoot, 0);
+        return;
+    }
     const int filesAnalyzed =
         publishWorkspaceAnalysisResult(result, totalFiles);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);

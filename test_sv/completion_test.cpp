@@ -4967,6 +4967,66 @@ int main(int argc, char** argv) {
                                              stagedBackgroundModule),
                true);
 
+    SemanticIndex::getInstance()->clearSnapshot();
+    QTemporaryDir cancelWorkspace;
+    expectBool("Workspace cancel temp dir valid",
+               cancelWorkspace.isValid(),
+               true);
+    const QString cancelFirstFile =
+        QDir(cancelWorkspace.path()).absoluteFilePath(
+            QStringLiteral("cancel_first.sv"));
+    const QString cancelSecondFile =
+        QDir(cancelWorkspace.path()).absoluteFilePath(
+            QStringLiteral("cancel_second.sv"));
+    expectBool("Workspace cancel first file created",
+               writeTextFile(
+                   cancelFirstFile,
+                   QStringLiteral("module cancel_first_pub_module; logic a; endmodule\n")),
+               true);
+    expectBool("Workspace cancel second file created",
+               writeTextFile(
+                   cancelSecondFile,
+                   QStringLiteral("module cancel_second_pub_module; logic b; endmodule\n")),
+               true);
+
+    ProjectSnapshot cancelProject;
+    cancelProject.workspaceRoot = cancelWorkspace.path();
+    cancelProject.systemVerilogFiles = {
+        cancelFirstFile,
+        cancelSecondFile
+    };
+    cancelProject.includeDirs = {cancelWorkspace.path()};
+    SymbolAnalyzer cancelAnalyzer;
+    bool cancelExpired = false;
+    int cancelCompletionSymbols = -1;
+    QObject::connect(&cancelAnalyzer,
+                     &SymbolAnalyzer::workspaceAnalysisExpired,
+                     &cancelAnalyzer,
+                     [&cancelExpired]() {
+                         cancelExpired = true;
+                     });
+    QObject::connect(&cancelAnalyzer,
+                     &SymbolAnalyzer::analysisCompleted,
+                     &cancelAnalyzer,
+                     [&cancelCompletionSymbols](
+                         const QString&,
+                         int symbolsFound) {
+                         cancelCompletionSymbols = symbolsFound;
+                     });
+    int cancelChecks = 0;
+    cancelAnalyzer.analyzeProject(cancelProject, [&cancelChecks]() {
+        ++cancelChecks;
+        return cancelChecks >= 3;
+    });
+    expectBool("Workspace cancellation expires before publication",
+               cancelExpired
+                   && cancelCompletionSymbols == 0
+                   && !SemanticIndex::getInstance()->snapshot(),
+               true);
+    expectBool("Workspace cancellation provider reached result build",
+               cancelChecks >= 3,
+               true);
+
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;
 }

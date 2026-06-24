@@ -51,8 +51,10 @@ WorkspaceAnalysisResult SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
     result.files.reserve(svFiles.size());
 
     for (const QString& filePath : svFiles) {
-        if (isCancelled && isCancelled())
+        if (isCancelled && isCancelled()) {
+            result.cancelled = true;
             break;
+        }
         WorkspaceFileAnalysis fileResult;
         fileResult.fileName = filePath;
         fileResult.content = readTextFile(filePath);

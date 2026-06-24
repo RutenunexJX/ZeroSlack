@@ -58,21 +58,53 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     emit analysisStarted(workspacePath);
 
     QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles, priorityPublicationCheckpoints]() {
+        auto applyResultMetadata =
+            [generation, &protectedFiles, &priorityPublicationCheckpoints](
+                WorkspaceAnalysisResult* result) {
+                if (!result)
+                    return;
+                result->protectedFiles = protectedFiles;
+                result->priorityPublicationCheckpoints =
+                    priorityPublicationCheckpoints;
+                result->generation = generation;
+            };
+        auto cancelled = [&isCancelled]() {
+            return isCancelled && isCancelled();
+        };
+        WorkspaceAnalysisResult result;
+        if (cancelled()) {
+            result.cancelled = true;
+            applyResultMetadata(&result);
+            return result;
+        }
+
         SlangManager symbolAnalyzer;
         const auto records =
             symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles, includeDirs, defines);
-        WorkspaceAnalysisResult result =
+        if (cancelled()) {
+            result.cancelled = true;
+            applyResultMetadata(&result);
+            return result;
+        }
+
+        result =
             SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
                 svFiles,
                 records,
                 isCancelled);
+        applyResultMetadata(&result);
+        if (result.cancelled || cancelled()) {
+            result.cancelled = true;
+            return result;
+        }
+
         SlangManager diagnosticsAnalyzer;
         result.diagnostics =
             diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles, includeDirs, defines);
-        result.protectedFiles = protectedFiles;
-        result.priorityPublicationCheckpoints =
-            priorityPublicationCheckpoints;
-        result.generation = generation;
+        if (cancelled()) {
+            result.cancelled = true;
+            result.diagnostics.clear();
+        }
         return result;
     });
 
@@ -122,6 +154,10 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
     const std::uint64_t generation =
         workspaceAnalysisWatcher->property("generation").toULongLong();
     if (generation != workspaceAnalysisGeneration || result.generation != generation) {
+        emit workspaceAnalysisExpired();
+        return;
+    }
+    if (result.cancelled) {
         emit workspaceAnalysisExpired();
         return;
     }
