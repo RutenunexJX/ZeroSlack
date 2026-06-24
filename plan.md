@@ -479,8 +479,18 @@ feature direction that violates them.
 - `SymbolAnalyzer::expireWorkspaceAnalysis()` bumps the workspace-analysis generation and cancels the active watcher without waiting. Canceled or generation-stale watcher completion emits `workspaceAnalysisExpired()` instead of publishing stale results.
 - `WorkspaceSymbolAnalysisController` queues the newest request, expires the active run, clears request state when projects close, and starts the latest pending project after an expired or completed watcher returns.
 - Dirty open-document protection and the existing `WorkspaceAnalysisPlanService` order remain in force for the restarted request.
-- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, request-age telemetry, and foreground current-file analysis that stays responsive under very large projects.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 401 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, `gui_smoke_test` with 361 checks, full default CMake build, full `ctest --output-on-failure` 7/7, changed-file regex API scan, and `git diff --check`.
+
+### Post-L: Huge Workspace Request Telemetry MVP
+
+- Status: implemented in the current worktree.
+- Scope: third usable Huge Workspace Mode milestone. It does not change extraction, publication, or cancellation semantics; it makes stale-work pressure observable at the queue boundary.
+- `WorkspaceAnalysisRequestQueue` now exposes `WorkspaceAnalysisRequestTelemetry` with active/pending state, active request age, pending request age, pending update count, and the last finished active/pending wait metrics.
+- Pending update count tracks how many workspace-analysis requests were coalesced into the latest pending request while an active run was still in flight. The last-taken metrics remain available after `finishAndTakePending()` so callers can report or later tune stale-work pressure even after the pending request has been consumed.
+- Telemetry remains owned by the queue. `WorkspaceSymbolAnalysisController` still routes lifecycle and expiration; it does not own timing policy or calculate queue ages itself.
+- Next Huge Workspace milestones: surface the telemetry in Activity/Output, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
+- Verification for this block: focused build target `completion_test` and direct `completion_test` run with 427 checks. Final release verification for the commit also includes `large_file_perf_test` against `test_sv/new`, focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ## Batch Policy
 

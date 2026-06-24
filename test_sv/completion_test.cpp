@@ -1252,10 +1252,27 @@ int main(int argc, char** argv) {
     expectBool("Workspace request queue starts active",
                requestQueue.active() && !requestQueue.hasPending(),
                true);
+    const WorkspaceAnalysisRequestTelemetry activeTelemetry =
+        requestQueue.telemetry();
+    expectBool("Workspace request telemetry tracks active age",
+               activeTelemetry.active
+                   && !activeTelemetry.pending
+                   && activeTelemetry.activeAgeMs >= 0
+                   && activeTelemetry.pendingAgeMs < 0,
+               true);
     expectBool("Workspace request queue accepts pending",
                requestQueue.queueLatest(queueSecond)
                    && requestQueue.queueLatest(queueThird)
                    && requestQueue.hasPending(),
+               true);
+    const WorkspaceAnalysisRequestTelemetry pendingTelemetry =
+        requestQueue.telemetry();
+    expectBool("Workspace request telemetry tracks pending pressure",
+               pendingTelemetry.active
+                   && pendingTelemetry.pending
+                   && pendingTelemetry.activeAgeMs >= 0
+                   && pendingTelemetry.pendingAgeMs >= 0
+                   && pendingTelemetry.pendingUpdateCount == 2,
                true);
     ProjectSnapshot queuedNext;
     expectBool("Workspace request queue returns latest pending",
@@ -1264,10 +1281,30 @@ int main(int argc, char** argv) {
                    && !requestQueue.active()
                    && !requestQueue.hasPending(),
                true);
+    const WorkspaceAnalysisRequestTelemetry finishedTelemetry =
+        requestQueue.telemetry();
+    expectBool("Workspace request telemetry records completed pressure",
+               !finishedTelemetry.active
+                   && !finishedTelemetry.pending
+                   && finishedTelemetry.lastFinishedActiveAgeMs >= 0
+                   && finishedTelemetry.lastTakenPendingAgeMs >= 0
+                   && finishedTelemetry.lastTakenPendingUpdateCount == 2,
+               true);
     requestQueue.start(queuedNext);
     requestQueue.clear();
     expectBool("Workspace request queue clears state",
                !requestQueue.active() && !requestQueue.hasPending(),
+               true);
+    const WorkspaceAnalysisRequestTelemetry clearedTelemetry =
+        requestQueue.telemetry();
+    expectBool("Workspace request telemetry clears state",
+               !clearedTelemetry.active
+                   && !clearedTelemetry.pending
+                   && clearedTelemetry.activeAgeMs < 0
+                   && clearedTelemetry.pendingAgeMs < 0
+                   && clearedTelemetry.lastFinishedActiveAgeMs < 0
+                   && clearedTelemetry.lastTakenPendingAgeMs < 0
+                   && clearedTelemetry.lastTakenPendingUpdateCount == 0,
                true);
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(
