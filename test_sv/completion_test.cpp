@@ -966,7 +966,8 @@ int main(int argc, char** argv) {
                    && !indentOnlyOptions.alignPortLists
                    && !indentOnlyOptions.alignInstanceMaps
                    && !indentOnlyOptions.alignCaseItems
-                   && !indentOnlyOptions.alignAssignments,
+                   && !indentOnlyOptions.alignAssignments
+                   && !indentOnlyOptions.alignContinuationOperators,
                true);
     expectEq("Formatter indent-only profile name",
              FormatterService::profileDisplayName(
@@ -1234,6 +1235,62 @@ int main(int argc, char** argv) {
     expectBool("Formatter continuation indent idempotent",
                unchangedContinuationReport.changed,
                false);
+
+    const QString formatterOperatorInput =
+        QStringLiteral("module op_demo;\n"
+                       "always_comb begin\n"
+                       "result = lhs\n"
+                       "+ short\n"
+                       "- very_long_term\n"
+                       "| mask;\n"
+                       "assign out = lhs\n"
+                       "^ rhs;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterOperatorReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterOperatorInput);
+    expectBool("Formatter continuation operator report changed",
+               formatterOperatorReport.changed,
+               true);
+    expectEq("Formatter aligns continuation operators",
+             formatterOperatorReport.formattedText,
+             QStringLiteral("module op_demo;\n"
+                            "    always_comb begin\n"
+                            "        result = lhs\n")
+                 + QString(17, QLatin1Char(' '))
+                 + QStringLiteral("+ short\n")
+                 + QString(17, QLatin1Char(' '))
+                 + QStringLiteral("- very_long_term\n")
+                 + QString(17, QLatin1Char(' '))
+                 + QStringLiteral("| mask;\n"
+                                  "        assign out = lhs\n")
+                 + QString(21, QLatin1Char(' '))
+                 + QStringLiteral("^ rhs;\n"
+                                  "    end\n"
+                                  "endmodule\n"));
+    const FormatterReport unchangedOperatorReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterOperatorReport.formattedText);
+    expectBool("Formatter continuation operator idempotent",
+               unchangedOperatorReport.changed,
+               false);
+    const FormatterReport indentOnlyOperatorReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterOperatorInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only skips continuation operator alignment",
+             indentOnlyOperatorReport.formattedText,
+             QStringLiteral("module op_demo;\n"
+                            "    always_comb begin\n"
+                            "        result = lhs\n"
+                            "        + short\n"
+                            "        - very_long_term\n"
+                            "        | mask;\n"
+                            "        assign out = lhs\n"
+                            "        ^ rhs;\n"
+                            "    end\n"
+                            "endmodule\n"));
 
     const QString formatterSelectionInput =
         QStringLiteral("    logic a; // flag\n"

@@ -476,6 +476,16 @@ feature direction that violates them.
 - Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 459 checks and direct `gui_smoke_test` run with 408 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Continuation Operator Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: thirteenth usable formatter milestone and a conservative multi-line expression readability step. It does not split, merge, reorder, or rewrite expressions; it only adjusts leading whitespace on already-multiline operator continuation lines.
+- `FormatterOptions::alignContinuationOperators` is enabled for the `Structured` profile and disabled for `Indent Only`, matching the existing split between formatting structure and pure indentation.
+- `FormatterService` tracks a preceding multi-line assignment's top-level `=` / `<=` RHS start column and aligns following leading binary-operator lines such as `+`, `-`, `|`, `^`, `&&`, and `||` to that column until the statement ends.
+- The pass skips blank lines, preprocessor lines, block comments, and single-line assignments, preserves trailing comments and expression text, and remains no-regex through deterministic token/comment/operator scans.
+- Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 485 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

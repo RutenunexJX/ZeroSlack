@@ -18,6 +18,7 @@ struct FormatterOptions {
     bool alignInstanceMaps = true;
     bool alignCaseItems = true;
     bool alignAssignments = true;
+    bool alignContinuationOperators = true;
 };
 
 struct FormatterReport {

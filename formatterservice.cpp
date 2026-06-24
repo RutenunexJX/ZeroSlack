@@ -300,6 +300,40 @@ bool startsWithClosingDelimiter(const QString& codeOnly)
         || first == QLatin1Char('}');
 }
 
+bool startsWithLeadingContinuationOperator(const QString& code)
+{
+    const QString trimmed = code.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    const QChar first = trimmed.at(0);
+    if (first == QLatin1Char('+')
+        || first == QLatin1Char('-')
+        || first == QLatin1Char('*')
+        || first == QLatin1Char('/')
+        || first == QLatin1Char('%')
+        || first == QLatin1Char('&')
+        || first == QLatin1Char('|')
+        || first == QLatin1Char('^')) {
+        return true;
+    }
+
+    if (trimmed.size() < 2)
+        return false;
+    const QString firstTwo = trimmed.left(2);
+    return firstTwo == QStringLiteral("&&")
+        || firstTwo == QStringLiteral("||")
+        || firstTwo == QStringLiteral("==")
+        || firstTwo == QStringLiteral("!=")
+        || firstTwo == QStringLiteral("<=")
+        || firstTwo == QStringLiteral(">=");
+}
+
+bool endsStatement(const QString& code)
+{
+    return code.trimmed().endsWith(QLatin1Char(';'));
+}
+
 int delimiterContinuationBalance(const QString& codeOnly)
 {
     int balance = 0;
@@ -602,6 +636,25 @@ int findTopLevelAssignmentOperator(const QString& text, QString* op)
         }
     }
     return -1;
+}
+
+int continuationOperatorAnchorColumn(const QString& line)
+{
+    const CodeCommentParts parts = splitTrailingLineComment(line);
+    if (parts.hasBlockCommentToken)
+        return -1;
+
+    QString op;
+    const int opIndex = findTopLevelAssignmentOperator(parts.code, &op);
+    if (opIndex < 0 || op.isEmpty() || endsStatement(parts.code))
+        return -1;
+
+    int anchor = opIndex + op.size();
+    while (anchor < parts.code.size() && parts.code.at(anchor).isSpace())
+        ++anchor;
+    if (anchor >= parts.code.size())
+        anchor = opIndex + op.size() + 1;
+    return anchor;
 }
 
 int matchingOpeningBracket(const QString& text, int closingBracket)
@@ -1526,6 +1579,47 @@ void alignAssignmentBlocks(QStringList* lines)
 
     flush();
 }
+
+void alignContinuationOperatorLines(QStringList* lines)
+{
+    if (!lines)
+        return;
+
+    int operatorAnchor = -1;
+    bool inBlockComment = false;
+    for (int i = 0; i < lines->size(); ++i) {
+        const QString line = lines->at(i);
+        if (!lineHasCode(line)) {
+            operatorAnchor = -1;
+            continue;
+        }
+        if (startsWithPreprocessor(line)) {
+            operatorAnchor = -1;
+            continue;
+        }
+
+        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
+        if (codeOnly.trimmed().isEmpty()) {
+            operatorAnchor = -1;
+            continue;
+        }
+
+        const bool leadingOperator =
+            startsWithLeadingContinuationOperator(codeOnly);
+        if (leadingOperator) {
+            if (operatorAnchor >= 0) {
+                (*lines)[i] =
+                    repeatSpaces(operatorAnchor)
+                    + stripLeadingWhitespace(line);
+            }
+            if (endsStatement(codeOnly))
+                operatorAnchor = -1;
+            continue;
+        }
+
+        operatorAnchor = continuationOperatorAnchorColumn(line);
+    }
+}
 }
 
 FormatterService* FormatterService::getInstance()
@@ -1544,6 +1638,7 @@ FormatterOptions FormatterService::optionsForProfile(FormatterProfile profile)
         options.alignInstanceMaps = false;
         options.alignCaseItems = false;
         options.alignAssignments = false;
+        options.alignContinuationOperators = false;
     }
     return options;
 }
@@ -1630,6 +1725,8 @@ FormatterReport FormatterService::formatDocument(
         alignCaseItemBlocks(&formatted, options.indentWidth);
     if (options.alignAssignments)
         alignAssignmentBlocks(&formatted);
+    if (options.alignContinuationOperators)
+        alignContinuationOperatorLines(&formatted);
 
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
