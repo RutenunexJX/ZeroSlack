@@ -1414,6 +1414,53 @@ int main(int argc, char** argv) {
                unchangedContinuationReport.changed,
                false);
 
+    const QString formatterRhsContinuationInput =
+        QStringLiteral("module rhs_demo;\n"
+                       "always_comb begin\n"
+                       "result =\n"
+                       "lhs\n"
+                       "+ rhs;\n"
+                       "call_result =\n"
+                       "func(\n"
+                       "a,\n"
+                       "b\n"
+                       ");\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterRhsContinuationReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterRhsContinuationInput);
+    expectBool("Formatter RHS continuation report changed",
+               formatterRhsContinuationReport.changed,
+               true);
+    expectEq("Formatter indents assignment RHS continuations",
+             formatterRhsContinuationReport.formattedText,
+             QStringLiteral("module rhs_demo;\n"
+                            "    always_comb begin\n"
+                            "        result =\n"
+                            "            lhs\n"
+                            "            + rhs;\n"
+                            "        call_result =\n"
+                            "            func(\n"
+                            "                a,\n"
+                            "                b\n"
+                            "            );\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedRhsContinuationReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterRhsContinuationReport.formattedText);
+    expectBool("Formatter RHS continuation idempotent",
+               unchangedRhsContinuationReport.changed,
+               false);
+    const FormatterReport indentOnlyRhsContinuationReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterRhsContinuationInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only keeps RHS continuation indentation",
+             indentOnlyRhsContinuationReport.formattedText,
+             formatterRhsContinuationReport.formattedText);
+
     const QString formatterOperatorInput =
         QStringLiteral("module op_demo;\n"
                        "always_comb begin\n"

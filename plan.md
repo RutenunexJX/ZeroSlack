@@ -540,6 +540,17 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 513 checks; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter RHS Continuation Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: eighteenth usable formatter milestone and a conservative multi-line expression readability step. It changes leading whitespace only and does not rewrite, split, merge, or reorder expressions.
+- `FormatterOptions::indentAssignmentRhsContinuations` stays enabled for both `Structured` and `Indent Only`, matching the policy that `Indent Only` may improve leading whitespace while structural alignment passes remain disabled.
+- `FormatterService` now detects lines that end with a top-level assignment operator and no RHS text, then indents following RHS continuation lines one level until the statement terminates.
+- The behavior composes with delimiter continuation, so an RHS that begins with a call or brace expression still gets nested argument/element indentation relative to the RHS block.
+- Preprocessor lines reset the RHS continuation state, and implementation remains no-regex through deterministic token/comment/operator scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 526 checks; direct `gui_smoke_test` run with 418 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

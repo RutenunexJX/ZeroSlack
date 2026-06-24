@@ -723,6 +723,42 @@ int continuationOperatorAnchorColumn(const QString& line)
     return anchor;
 }
 
+bool endsWithTopLevelAssignmentOperator(const QString& codeOnly)
+{
+    const QString code = codeOnly.trimmed();
+    if (code.isEmpty()
+        || code.endsWith(QLatin1Char(';'))
+        || startsWithPreprocessor(code)) {
+        return false;
+    }
+
+    QString op;
+    const int opIndex = findTopLevelAssignmentOperator(code, &op);
+    if (opIndex <= 0 || op.isEmpty())
+        return false;
+
+    const QString left = code.left(opIndex).trimmed();
+    const QString right = code.mid(opIndex + op.size()).trimmed();
+    if (left.isEmpty() || !right.isEmpty())
+        return false;
+
+    const QStringList leftTokens = codeTokens(left);
+    if (leftTokens.isEmpty())
+        return false;
+    const QString firstToken = leftTokens.first();
+    if (firstToken == QStringLiteral("if")
+        || firstToken == QStringLiteral("else")
+        || firstToken == QStringLiteral("for")
+        || firstToken == QStringLiteral("while")
+        || firstToken == QStringLiteral("return")
+        || firstToken == QStringLiteral("case")
+        || firstToken == QStringLiteral("default")
+        || firstToken == QStringLiteral("typedef")) {
+        return false;
+    }
+    return true;
+}
+
 int matchingOpeningBracket(const QString& text, int closingBracket)
 {
     int depth = 0;
@@ -1986,6 +2022,7 @@ FormatterReport FormatterService::formatDocument(
     formatted.reserve(lines.size());
     int indentLevel = 0;
     int continuationLevel = 0;
+    int assignmentRhsContinuationLevel = 0;
     bool inBlockComment = false;
 
     for (const QString& line : lines) {
@@ -1995,6 +2032,7 @@ FormatterReport FormatterService::formatDocument(
         }
 
         if (startsWithPreprocessor(line) && options.preservePreprocessorIndent) {
+            assignmentRhsContinuationLevel = 0;
             formatted.append(line);
             continue;
         }
@@ -2012,11 +2050,27 @@ FormatterReport FormatterService::formatDocument(
                            continuationLevel
                                - (startsWithClosingDelimiter(codeOnly) ? 1 : 0))
                 : 0;
+        const int displayAssignmentContinuation =
+            options.indentAssignmentRhsContinuations
+                ? assignmentRhsContinuationLevel
+                : 0;
         const int displayIndent =
             std::max(0, indentLevel - leadingClosingTokens(tokens))
-            + displayContinuation;
+            + displayContinuation
+            + displayAssignmentContinuation;
         const QString body = stripLeadingWhitespace(line);
         formatted.append(indentation(displayIndent, options.indentWidth) + body);
+
+        const bool startsAssignmentRhsContinuation =
+            options.indentAssignmentRhsContinuations
+            && endsWithTopLevelAssignmentOperator(codeOnly);
+        if (options.indentAssignmentRhsContinuations
+            && assignmentRhsContinuationLevel > 0
+            && endsStatement(codeOnly)) {
+            assignmentRhsContinuationLevel = 0;
+        }
+        if (startsAssignmentRhsContinuation)
+            assignmentRhsContinuationLevel = 1;
 
         indentLevel += countOpeningTokens(tokens);
         indentLevel -= countClosingTokens(tokens);
