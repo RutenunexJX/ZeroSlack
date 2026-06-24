@@ -486,6 +486,16 @@ feature direction that violates them.
 - Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 485 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Ternary Continuation Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: fourteenth usable formatter milestone and a narrow extension of Structured multi-line expression alignment. It covers common ternary expressions without rewriting expression text, changing operator order, or attempting AST-level formatting.
+- `FormatterService` now treats leading `?` and `:` continuation lines as alignment markers when a preceding multi-line assignment establishes a RHS start column.
+- The behavior is enabled through the existing `FormatterOptions::alignContinuationOperators` Structured-profile pass and remains disabled for `Indent Only`.
+- The pass still skips blank lines, preprocessor lines, block comments, and single-line assignments, and remains no-regex through deterministic token/comment/operator scans.
+- Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 489 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

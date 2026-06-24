@@ -1292,6 +1292,62 @@ int main(int argc, char** argv) {
                             "    end\n"
                             "endmodule\n"));
 
+    const QString formatterTernaryInput =
+        QStringLiteral("module ternary_demo;\n"
+                       "assign mux = sel\n"
+                       "? data_a\n"
+                       ": data_b;\n"
+                       "always_comb begin\n"
+                       "next = enable\n"
+                       "? value_a\n"
+                       ": value_b;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterTernaryReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterTernaryInput);
+    expectBool("Formatter ternary continuation report changed",
+               formatterTernaryReport.changed,
+               true);
+    expectEq("Formatter aligns ternary continuations",
+             formatterTernaryReport.formattedText,
+             QStringLiteral("module ternary_demo;\n"
+                            "    assign mux = sel\n")
+                 + QString(17, QLatin1Char(' '))
+                 + QStringLiteral("? data_a\n")
+                 + QString(17, QLatin1Char(' '))
+                 + QStringLiteral(": data_b;\n"
+                                  "    always_comb begin\n"
+                                  "        next = enable\n")
+                 + QString(15, QLatin1Char(' '))
+                 + QStringLiteral("? value_a\n")
+                 + QString(15, QLatin1Char(' '))
+                 + QStringLiteral(": value_b;\n"
+                                  "    end\n"
+                                  "endmodule\n"));
+    const FormatterReport unchangedTernaryReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterTernaryReport.formattedText);
+    expectBool("Formatter ternary continuation idempotent",
+               unchangedTernaryReport.changed,
+               false);
+    const FormatterReport indentOnlyTernaryReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterTernaryInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only skips ternary continuation alignment",
+             indentOnlyTernaryReport.formattedText,
+             QStringLiteral("module ternary_demo;\n"
+                            "    assign mux = sel\n"
+                            "    ? data_a\n"
+                            "    : data_b;\n"
+                            "    always_comb begin\n"
+                            "        next = enable\n"
+                            "        ? value_a\n"
+                            "        : value_b;\n"
+                            "    end\n"
+                            "endmodule\n"));
+
     const QString formatterSelectionInput =
         QStringLiteral("    logic a; // flag\n"
                        "    logic [7:0] data; // byte\n");

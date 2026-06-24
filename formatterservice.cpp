@@ -307,7 +307,9 @@ bool startsWithLeadingContinuationOperator(const QString& code)
         return false;
 
     const QChar first = trimmed.at(0);
-    if (first == QLatin1Char('+')
+    if (first == QLatin1Char('?')
+        || first == QLatin1Char(':')
+        || first == QLatin1Char('+')
         || first == QLatin1Char('-')
         || first == QLatin1Char('*')
         || first == QLatin1Char('/')
