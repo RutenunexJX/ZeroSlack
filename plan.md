@@ -507,6 +507,18 @@ feature direction that violates them.
 - Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 495 checks; direct `gui_smoke_test` run with 414 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Parameter Port List Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: sixteenth usable formatter milestone and a conservative module-header readability step. It extends existing declaration-column alignment to simple parameter port list rows without rewriting expressions or changing parameter order.
+- `FormatterService` now accepts simple `parameter` / `localparam` declaration lines that end with `,` or with no terminator inside module `#(...)` lists, then preserves that original terminator when rebuilding aligned rows.
+- Existing declaration alignment now aligns prefix, name, unpacked suffix, and assignment columns for those parameter rows, including array suffixes, while scalar rows avoid useless trailing padding.
+- Signal and ANSI port declarations still require `;` for this declaration-alignment path, so comma-terminated port-list rows continue to use the dedicated port-list alignment rules instead of the parameter path.
+- The behavior is part of the existing Structured declaration alignment pass and remains disabled for `Indent Only`.
+- Implementation remains no-regex and uses deterministic token/declaration parsing already scoped to simple single-declaration lines.
+- Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 502 checks; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

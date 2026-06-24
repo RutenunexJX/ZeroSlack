@@ -986,6 +986,43 @@ int main(int argc, char** argv) {
     expectBool("Formatter declaration array dimension idempotent",
                unchangedArrayDeclReport.changed,
                false);
+    const QString formatterParameterPortInput =
+        QStringLiteral("module param_port_demo #(\n"
+                       "parameter int P = 8,\n"
+                       "parameter int LONG_PARAM = P + 1,\n"
+                       "localparam logic [7:0] MASK [2] = '{default: 1'b0}\n"
+                       ")();\n"
+                       "endmodule\n");
+    const FormatterReport formatterParameterPortReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterParameterPortInput);
+    expectBool("Formatter parameter port list report changed",
+               formatterParameterPortReport.changed,
+               true);
+    expectEq("Formatter aligns parameter port lists",
+             formatterParameterPortReport.formattedText,
+             QStringLiteral("module param_port_demo #(\n")
+                 + QStringLiteral("    parameter int")
+                 + QString(10, QLatin1Char(' '))
+                 + QStringLiteral("P")
+                 + QString(14, QLatin1Char(' '))
+                 + QStringLiteral("= 8,\n")
+                 + QStringLiteral("    parameter int")
+                 + QString(10, QLatin1Char(' '))
+                 + QStringLiteral("LONG_PARAM")
+                 + QString(5, QLatin1Char(' '))
+                 + QStringLiteral("= P + 1,\n")
+                 + QStringLiteral("    localparam logic [7:0] MASK")
+                 + QString(7, QLatin1Char(' '))
+                 + QStringLiteral("[2] = '{default: 1'b0}\n"
+                                  "    )();\n"
+                                  "endmodule\n"));
+    const FormatterReport unchangedParameterPortReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterParameterPortReport.formattedText);
+    expectBool("Formatter parameter port list idempotent",
+               unchangedParameterPortReport.changed,
+               false);
     const FormatterOptions indentOnlyOptions =
         FormatterService::optionsForProfile(FormatterProfile::IndentOnly);
     expectBool("Formatter indent-only profile disables alignments",
@@ -1023,6 +1060,18 @@ int main(int argc, char** argv) {
                             "    logic [7:0] data_bus [DEPTH-1:0];\n"
                             "    parameter int LUT [4] = '{0, 1, 2, 3};\n"
                             "    parameter int LONG_LUT [DEPTH] = DEFAULT_LUT;\n"
+                            "endmodule\n"));
+    const FormatterReport indentOnlyParameterPortReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterParameterPortInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only skips parameter port list alignment",
+             indentOnlyParameterPortReport.formattedText,
+             QStringLiteral("module param_port_demo #(\n"
+                            "    parameter int P = 8,\n"
+                            "    parameter int LONG_PARAM = P + 1,\n"
+                            "    localparam logic [7:0] MASK [2] = '{default: 1'b0}\n"
+                            "    )();\n"
                             "endmodule\n"));
 
     const QString formatterPortListInput =

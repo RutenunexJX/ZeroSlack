@@ -15,6 +15,7 @@ struct DeclarationAlignmentLine {
     QString name;
     QString suffix;
     QString assignmentRhs;
+    QString terminator = QStringLiteral(";");
     bool hasAssignment = false;
     QString trailingComment;
 };
@@ -720,19 +721,24 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
     const int indentWidth = leadingWhitespaceWidth(parts.code);
     const QString indent = parts.code.left(indentWidth);
     const QString code = parts.code.mid(indentWidth).trimmed();
-    if (!code.endsWith(QLatin1Char(';')))
+    QString terminator;
+    QString codeBody = code;
+    if (codeBody.endsWith(QLatin1Char(';'))) {
+        terminator = QStringLiteral(";");
+        codeBody.chop(1);
+    } else if (codeBody.endsWith(QLatin1Char(','))) {
+        terminator = QStringLiteral(",");
+        codeBody.chop(1);
+    }
+    codeBody = codeBody.trimmed();
+    if (codeBody.isEmpty())
         return parsed;
 
-    const QString codeWithoutSemicolon =
-        code.left(code.size() - 1).trimmed();
-    if (codeWithoutSemicolon.isEmpty())
-        return parsed;
-
-    const int equalIndex = findTopLevelChar(codeWithoutSemicolon, QLatin1Char('='));
+    const int equalIndex = findTopLevelChar(codeBody, QLatin1Char('='));
     const QString left =
         (equalIndex >= 0
-             ? codeWithoutSemicolon.left(equalIndex)
-             : codeWithoutSemicolon)
+             ? codeBody.left(equalIndex)
+             : codeBody)
             .trimmed();
     if (left.isEmpty() || hasTopLevelChar(left, QLatin1Char(',')))
         return parsed;
@@ -782,6 +788,8 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
         family = QStringLiteral("parameter");
     } else if (isDeclarationKeyword(firstToken)
                || isPortDirectionKeyword(firstToken)) {
+        if (terminator != QStringLiteral(";"))
+            return parsed;
         family = QStringLiteral("signal");
     } else {
         return parsed;
@@ -800,9 +808,10 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
     parsed.prefix = prefix;
     parsed.name = name;
     parsed.suffix = suffix;
+    parsed.terminator = terminator;
     parsed.hasAssignment = equalIndex >= 0;
     if (parsed.hasAssignment)
-        parsed.assignmentRhs = codeWithoutSemicolon.mid(equalIndex + 1).trimmed();
+        parsed.assignmentRhs = codeBody.mid(equalIndex + 1).trimmed();
     parsed.trailingComment = parts.trailingComment;
     return parsed;
 }
@@ -829,9 +838,9 @@ QString buildAlignedDeclarationCodeLine(const DeclarationAlignmentLine& line,
         content += repeatSpaces(spacesBeforeAssignment)
             + QStringLiteral("= ")
             + line.assignmentRhs
-            + QLatin1Char(';');
+            + line.terminator;
     } else {
-        content += QLatin1Char(';');
+        content += line.terminator;
     }
 
     return line.indent + content;
