@@ -56,6 +56,7 @@
 #include "filecommandcoordinator.h"
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
+#include "formattersettings.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
@@ -337,6 +338,97 @@ static void runEditorAppearanceCoordinatorRegression()
     MyCodeEditor* newEditor = tabs.getCurrentEditor();
     expectBool("appearance coordinator applies new editor",
                newEditor && newEditor->font().pointSize() == options.fontSizePt,
+               true);
+}
+
+static void runFormatterSettingsRegression()
+{
+    QTemporaryDir settingsDir;
+    expectBool("formatter settings temp dir valid",
+               settingsDir.isValid(),
+               true);
+    if (!settingsDir.isValid())
+        return;
+
+    const QString settingsFile =
+        settingsDir.filePath(QStringLiteral("formatter.ini"));
+    {
+        FormatterSettings settings(makeTemporarySettings(settingsFile));
+        QSignalSpy spy(&settings, &FormatterSettings::settingsChanged);
+        settings.setProfile(FormatterProfile::IndentOnly);
+        expectBool("formatter settings emits change",
+                   spy.count() == 1,
+                   true);
+    }
+
+    FormatterSettings reloaded(makeTemporarySettings(settingsFile));
+    expectBool("formatter settings persists profile",
+               reloaded.profile() == FormatterProfile::IndentOnly,
+               true);
+
+    {
+        QSettings writer(settingsFile, QSettings::IniFormat);
+        writer.setValue(QStringLiteral("formatter/profile"),
+                        QStringLiteral("unknown"));
+        writer.sync();
+    }
+    FormatterSettings invalidReload(makeTemporarySettings(settingsFile));
+    expectBool("formatter settings invalid profile falls back",
+               invalidReload.profile() == FormatterProfile::Structured,
+               true);
+}
+
+static void runFormatterCoordinatorRegression()
+{
+    QTemporaryDir settingsDir;
+    expectBool("formatter coordinator temp dir valid",
+               settingsDir.isValid(),
+               true);
+    if (!settingsDir.isValid())
+        return;
+
+    QTabWidget tabsWidget;
+    TabManager tabs(&tabsWidget);
+    ModeManager modes(&tabsWidget);
+    EditorCoordinator coordinator(&tabs, &modes);
+    FormatterSettings settings(
+        makeTemporarySettings(
+            settingsDir.filePath(QStringLiteral("formatter.ini"))));
+
+    coordinator.setFormatterSettings(&settings);
+    coordinator.connectSignals();
+
+    tabs.createNewTab();
+    tabs.createNewTab();
+    expectBool("formatter coordinator has editors",
+               tabs.editorCount() == 2,
+               true);
+
+    settings.setProfile(FormatterProfile::IndentOnly);
+    bool allOpenEditorsUpdated = true;
+    for (int i = 0; i < tabs.editorCount(); ++i) {
+        MyCodeEditor* editor = tabs.getEditorAt(i);
+        allOpenEditorsUpdated = allOpenEditorsUpdated
+            && editor
+            && editor->formatterProfile() == FormatterProfile::IndentOnly;
+    }
+    expectBool("formatter coordinator updates open editors",
+               allOpenEditorsUpdated,
+               true);
+
+    MyCodeEditor* currentEditor = tabs.getCurrentEditor();
+    if (currentEditor)
+        currentEditor->setFormatterProfile(FormatterProfile::Structured);
+    expectBool("formatter coordinator stores editor change",
+               settings.profile() == FormatterProfile::Structured,
+               true);
+
+    tabs.createNewTab();
+    MyCodeEditor* newEditor = tabs.getCurrentEditor();
+    expectBool("formatter coordinator applies new editor",
+               newEditor
+                   && newEditor->formatterProfile()
+                       == FormatterProfile::Structured,
                true);
 }
 
@@ -3029,9 +3121,11 @@ int main(int argc, char** argv)
     runActivityLogServiceRegression();
     runRtlInsightsOnDemandRegression();
     runEditorAppearanceSettingsRegression();
+    runFormatterSettingsRegression();
     runEditorBracketRangeRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();
+    runFormatterCoordinatorRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationHierarchyModelRegression();
 

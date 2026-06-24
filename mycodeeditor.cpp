@@ -198,7 +198,10 @@ void MyCodeEditor::setGhostAnnotations(
 
 void MyCodeEditor::setFormatterProfile(FormatterProfile profile)
 {
+    if (state->formatterProfile() == profile)
+        return;
     state->setFormatterProfile(profile);
+    emit formatterProfileChanged(profile);
 }
 
 FormatterProfile MyCodeEditor::formatterProfile() const

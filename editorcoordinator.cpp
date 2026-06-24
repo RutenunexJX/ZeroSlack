@@ -1,6 +1,7 @@
 #include "editorcoordinator.h"
 
 #include "editorappearancesettings.h"
+#include "formattersettings.h"
 #include "editorsemanticcontextservice.h"
 #include "definitionpreviewservice.h"
 #include "filecommandcoordinator.h"
@@ -224,6 +225,30 @@ void EditorCoordinator::setAppearanceSettings(
     applyAppearanceToOpenEditors();
 }
 
+void EditorCoordinator::setFormatterSettings(FormatterSettings* settings)
+{
+    if (formatterSettings == settings)
+        return;
+
+    if (formatterSettingsConnection)
+        disconnect(formatterSettingsConnection);
+
+    formatterSettings = settings;
+    if (formatterSettings) {
+        formatterSettingsConnection = connect(
+            formatterSettings,
+            &FormatterSettings::settingsChanged,
+            this,
+            [this](FormatterProfile) {
+                applyFormatterProfileToOpenEditors();
+            });
+    } else {
+        formatterSettingsConnection = QMetaObject::Connection();
+    }
+
+    applyFormatterProfileToOpenEditors();
+}
+
 void EditorCoordinator::setStatusMessageHandler(
     std::function<void(const QString&, int)> handler)
 {
@@ -267,6 +292,7 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
 
     editor->setSemanticContextService(contextService());
     applyAppearance(editor);
+    applyFormatterProfile(editor);
     applyAlternateMode(editor);
     connect(editor, &MyCodeEditor::alternateCommandRequested,
             this, [this, editor](const QString& command) {
@@ -305,6 +331,12 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 if (statusMessageHandler)
                     statusMessageHandler(message, message.isEmpty() ? 0 : 5000);
             });
+    connect(editor, &MyCodeEditor::formatterProfileChanged,
+            this, [this](FormatterProfile profile) {
+                if (!formatterSettings || applyingFormatterProfile)
+                    return;
+                formatterSettings->setProfile(profile);
+            });
     connect(editor, &MyCodeEditor::foldShelfRequested,
             this, [this]() {
                 if (foldShelfRequestedHandler)
@@ -331,6 +363,16 @@ void EditorCoordinator::applyAppearance(MyCodeEditor* editor) const
     editor->applyAppearanceSettings(appearanceSettings->options());
 }
 
+void EditorCoordinator::applyFormatterProfile(MyCodeEditor* editor) const
+{
+    if (!editor || !formatterSettings)
+        return;
+
+    applyingFormatterProfile = true;
+    editor->setFormatterProfile(formatterSettings->profile());
+    applyingFormatterProfile = false;
+}
+
 EditorSemanticContextService* EditorCoordinator::contextService() const
 {
     return semanticRuntime.contextService();
@@ -343,6 +385,15 @@ void EditorCoordinator::applyAppearanceToOpenEditors() const
 
     for (int i = 0; i < tabManager->editorCount(); ++i)
         applyAppearance(tabManager->getEditorAt(i));
+}
+
+void EditorCoordinator::applyFormatterProfileToOpenEditors() const
+{
+    if (!tabManager)
+        return;
+
+    for (int i = 0; i < tabManager->editorCount(); ++i)
+        applyFormatterProfile(tabManager->getEditorAt(i));
 }
 
 void EditorCoordinator::applyAlternateModeToOpenEditors() const

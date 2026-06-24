@@ -18,6 +18,7 @@
 #include "diagnosticservice.h"
 #include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
+#include "formattersettings.h"
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
 #include "ghostannotationservice.h"
@@ -936,6 +937,8 @@ void MainWindow::setupEditorAppearanceSettings()
 {
     editorAppearanceSettings =
         std::make_unique<EditorAppearanceSettings>();
+    formatterSettings =
+        std::make_unique<FormatterSettings>();
 
     editorAppearanceDock = new QDockWidget(tr("Editor Appearance"), this);
     editorAppearanceDock->setObjectName(QStringLiteral("editorAppearanceDock"));
@@ -957,6 +960,7 @@ void MainWindow::setupEditorCoordinator()
         navigationCommandCoordinator.get(),
         semanticDocks ? semanticDocks->refreshCoordinator() : nullptr);
     editorCoordinator->setAppearanceSettings(editorAppearanceSettings.get());
+    editorCoordinator->setFormatterSettings(formatterSettings.get());
     editorCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
             updateEditorModeChip(message);

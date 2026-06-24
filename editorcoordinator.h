@@ -7,7 +7,9 @@
 
 class FileCommandCoordinator;
 class EditorAppearanceSettings;
+class FormatterSettings;
 class EditorSemanticContextService;
+enum class FormatterProfile;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 enum class SourceSymbolAction;
@@ -34,6 +36,7 @@ public:
         NavigationCommandCoordinator* navigationCommandCoordinator,
         SemanticPanelRefreshCoordinator* semanticPanelRefresh);
     void setAppearanceSettings(EditorAppearanceSettings* settings);
+    void setFormatterSettings(FormatterSettings* settings);
     void setStatusMessageHandler(
         std::function<void(const QString&, int)> handler);
     void setFoldShelfRequestedHandler(std::function<void()> handler);
@@ -90,6 +93,8 @@ private:
     EditorSemanticContextService* contextService() const;
     void applyAppearance(MyCodeEditor* editor) const;
     void applyAppearanceToOpenEditors() const;
+    void applyFormatterProfile(MyCodeEditor* editor) const;
+    void applyFormatterProfileToOpenEditors() const;
     void applyAlternateMode(MyCodeEditor* editor) const;
     void applyAlternateModeToOpenEditors() const;
     void handleIncludeOpenRequested(MyCodeEditor* editor,
@@ -118,13 +123,16 @@ private:
     TabManager* tabManager = nullptr;
     ModeManager* modeManager = nullptr;
     EditorAppearanceSettings* appearanceSettings = nullptr;
+    FormatterSettings* formatterSettings = nullptr;
     QMetaObject::Connection appearanceSettingsConnection;
+    QMetaObject::Connection formatterSettingsConnection;
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
     std::function<void(const QString&, int)> statusMessageHandler;
     std::function<void()> foldShelfRequestedHandler;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
+    mutable bool applyingFormatterProfile = false;
 };
 
 #endif // EDITORCOORDINATOR_H

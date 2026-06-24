@@ -126,6 +126,7 @@ signals:
     void navigationBackRequested();
     void navigationForwardRequested();
     void editorStatusMessageRequested(const QString& message);
+    void formatterProfileChanged(FormatterProfile profile);
     void foldShelfRequested();
     void foldShelfItemConsumed(const QString& id);
 };

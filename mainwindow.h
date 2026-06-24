@@ -7,6 +7,7 @@
 
 class AnalysisProgressCoordinator;
 class EditorAppearanceSettings;
+class FormatterSettings;
 class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
@@ -70,6 +71,7 @@ private:
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
     std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
+    std::unique_ptr<FormatterSettings> formatterSettings;
     QDockWidget* editorAppearanceDock = nullptr;
     QMenu* viewMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;

@@ -1,0 +1,35 @@
+#ifndef FORMATTERSETTINGS_H
+#define FORMATTERSETTINGS_H
+
+#include "formatterservice.h"
+
+#include <QObject>
+#include <QSettings>
+#include <memory>
+
+class FormatterSettings : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit FormatterSettings(QObject* parent = nullptr);
+    explicit FormatterSettings(std::unique_ptr<QSettings> settings,
+                               QObject* parent = nullptr);
+
+    FormatterProfile profile() const;
+    void setProfile(FormatterProfile profile);
+
+signals:
+    void settingsChanged(FormatterProfile profile);
+
+private:
+    void load();
+    void save() const;
+    static QString profileKey(FormatterProfile profile);
+    static FormatterProfile profileFromKey(const QString& key);
+
+    std::unique_ptr<QSettings> settings;
+    FormatterProfile currentProfile = FormatterProfile::Structured;
+};
+
+#endif // FORMATTERSETTINGS_H
