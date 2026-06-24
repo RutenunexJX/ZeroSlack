@@ -3412,7 +3412,7 @@ int main(int argc, char** argv)
         waveEditor->setPlainText(
             QStringLiteral("module wave_ui;\n"
                            "logic clk;\n"
-                           "logic [7:0] data;\n"
+                           "input logic [7:0] data;\n"
                            "logic [7:0] q;\n"
                            "logic [7:0] out;\n"
                            "assign out = q + data;\n"
@@ -3431,6 +3431,7 @@ int main(int argc, char** argv)
     bool sawWaveOut = false;
     bool sawWaveClockReset = false;
     bool sawWaveGuard = false;
+    bool sawWaveContext = false;
     QTreeWidgetItem* waveQEventItem = nullptr;
     if (waveTree) {
         for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
@@ -3441,6 +3442,8 @@ int main(int argc, char** argv)
             sawWaveClockReset = sawWaveClockReset
                 || name == QStringLiteral("Clock/Reset Groups");
             if (name == QStringLiteral("q")) {
+                sawWaveContext = sawWaveContext
+                    || laneItem->text(5) == QStringLiteral("internal logic [7:0]");
                 for (int child = 0; child < laneItem->childCount(); ++child) {
                     sawWaveClockReset = sawWaveClockReset
                         || laneItem->child(child)->text(2)
@@ -3448,6 +3451,9 @@ int main(int argc, char** argv)
                     sawWaveGuard = sawWaveGuard
                         || laneItem->child(child)->text(3)
                             == QStringLiteral("if data[0]");
+                    sawWaveContext = sawWaveContext
+                        || laneItem->child(child)->text(5)
+                            == QStringLiteral("internal logic [7:0]");
                     if (laneItem->child(child)->text(0).contains(
                             QStringLiteral("q = data"))) {
                         waveQEventItem = laneItem->child(child);
@@ -3465,6 +3471,9 @@ int main(int argc, char** argv)
     expectBool("wave preview renders guard labels",
                waveTree && sawWaveGuard,
                true);
+    expectBool("wave preview renders declaration context",
+               waveTree && sawWaveContext,
+               true);
     const QString waveQTooltip =
         waveQEventItem ? waveQEventItem->toolTip(0) : QString();
     expectBool("wave preview event tooltip has source target details",
@@ -3473,6 +3482,8 @@ int main(int argc, char** argv)
                    && waveQTooltip.contains(QStringLiteral("sources: data"))
                    && waveQTooltip.contains(QStringLiteral("timing: t+1 cycle"))
                    && waveQTooltip.contains(QStringLiteral("clock/reset: clk posedge clk"))
+                   && waveQTooltip.contains(QStringLiteral("target context: internal logic [7:0]"))
+                   && waveQTooltip.contains(QStringLiteral("source context: data: input logic [7:0]"))
                    && waveQTooltip.contains(QStringLiteral("location:")),
                true);
     QWidget* waveCanvas = wavePreviewCanvas(window);

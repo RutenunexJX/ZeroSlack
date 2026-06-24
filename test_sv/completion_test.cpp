@@ -222,6 +222,17 @@ static const WavePreviewLane* waveLaneNamed(const WavePreviewReport& report,
     return nullptr;
 }
 
+static const WavePreviewSignalContext* waveContextNamed(
+    const WavePreviewReport& report,
+    const QString& name)
+{
+    for (const WavePreviewSignalContext& context : report.signalContexts) {
+        if (context.signalName == name)
+            return &context;
+    }
+    return nullptr;
+}
+
 static const WavePreviewAssignment* firstWaveAssignment(
     const WavePreviewReport& report,
     const QString& name)
@@ -1138,7 +1149,26 @@ int main(int argc, char** argv) {
                waveLaneNamed(waveReport, QStringLiteral("q"))
                    && waveLaneNamed(waveReport, QStringLiteral("q"))->assignments.size() == 2,
                true);
+    const WavePreviewSignalContext* dataContext =
+        waveContextNamed(waveReport, QStringLiteral("data"));
+    expectBool("WavePreview input declaration context",
+               dataContext
+                   && dataContext->direction == QStringLiteral("input")
+                   && dataContext->typeText == QStringLiteral("logic [7:0]"),
+               true);
+    const WavePreviewSignalContext* outContext =
+        waveContextNamed(waveReport, QStringLiteral("out"));
+    expectBool("WavePreview output declaration context",
+               outContext
+                   && outContext->direction == QStringLiteral("output")
+                   && outContext->typeText == QStringLiteral("logic [7:0]"),
+               true);
     const WavePreviewLane* qLane = waveLaneNamed(waveReport, QStringLiteral("q"));
+    expectBool("WavePreview lane carries internal context",
+               qLane
+                   && qLane->context.direction == QStringLiteral("internal")
+                   && qLane->context.typeText == QStringLiteral("logic [7:0]"),
+               true);
     expectBool("WavePreview reset guard label",
                qLane
                    && qLane->assignments.size() > 0

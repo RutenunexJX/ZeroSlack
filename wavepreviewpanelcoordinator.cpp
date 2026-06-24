@@ -316,6 +316,54 @@ QString sourcesText(const QStringList& sourceSignals)
         : sourceSignals.join(QStringLiteral(", "));
 }
 
+const WavePreviewSignalContext* signalContextFor(
+    const WavePreviewReport& report,
+    const QString& signalName)
+{
+    for (const WavePreviewSignalContext& context : report.signalContexts) {
+        if (context.signalName == signalName)
+            return &context;
+    }
+    return nullptr;
+}
+
+QString signalContextBrief(const WavePreviewSignalContext* context)
+{
+    if (!context || !context->isValid())
+        return QStringLiteral("-");
+    return context->label();
+}
+
+QString signalContextDetail(const WavePreviewSignalContext* context)
+{
+    if (!context || !context->isValid())
+        return QStringLiteral("-");
+    QString detail = context->label();
+    if (!context->declarationText.isEmpty())
+        detail += QStringLiteral(" | declaration: ") + context->declarationText;
+    if (context->line > 0) {
+        detail += QStringLiteral(" | location: %1:%2")
+                      .arg(context->line)
+                      .arg(qMax(1, context->column));
+    }
+    return detail;
+}
+
+QString sourceContextText(const WavePreviewAssignment& assignment,
+                          const WavePreviewReport& report)
+{
+    if (assignment.sourceSignals.isEmpty())
+        return QStringLiteral("-");
+    QStringList parts;
+    for (const QString& source : assignment.sourceSignals) {
+        parts.append(QStringLiteral("%1: %2")
+                         .arg(source,
+                              signalContextBrief(signalContextFor(report,
+                                                                 source))));
+    }
+    return parts.join(QStringLiteral("; "));
+}
+
 QString locationText(const WavePreviewAssignment& assignment)
 {
     if (assignment.line <= 0)
@@ -350,6 +398,11 @@ QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
         QStringLiteral("target: %1").arg(assignment.target),
         QStringLiteral("expression: %1").arg(expressionText(assignment)),
         QStringLiteral("sources: %1").arg(sourcesText(assignment.sourceSignals)),
+        QStringLiteral("target context: %1")
+            .arg(signalContextDetail(signalContextFor(report,
+                                                      assignment.target))),
+        QStringLiteral("source context: %1")
+            .arg(sourceContextText(assignment, report)),
         QStringLiteral("kind: %1").arg(assignmentKindText(assignment.kind)),
         QStringLiteral("block: %1").arg(blockText),
         QStringLiteral("timing: %1").arg(timingText(assignment)),
@@ -372,6 +425,10 @@ QString laneDetailTooltip(const WavePreviewLane& lane)
     sources.sort();
     return QStringList{
         QStringLiteral("signal: %1").arg(lane.signalName),
+        QStringLiteral("context: %1")
+            .arg(signalContextDetail(lane.context.isValid()
+                                     ? &lane.context
+                                     : nullptr)),
         QStringLiteral("events: %1").arg(lane.assignments.size()),
         QStringLiteral("sources: %1").arg(sourcesText(sources))
     }.join(QStringLiteral("\n"));
@@ -454,13 +511,14 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
 
     previewTree = new QTreeWidget(panel);
     previewTree->setObjectName(QStringLiteral("wavePreviewTree"));
-    previewTree->setColumnCount(6);
+    previewTree->setColumnCount(7);
     previewTree->setHeaderLabels({
         QStringLiteral("Signal / Event"),
         QStringLiteral("Timing"),
         QStringLiteral("Clock/Reset"),
         QStringLiteral("Guard"),
         QStringLiteral("Sources"),
+        QStringLiteral("Context"),
         QStringLiteral("Location")
     });
     previewTree->setAlternatingRowColors(true);
@@ -473,6 +531,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     previewTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     previewTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     previewTree->header()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    previewTree->header()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
     layout->addWidget(previewTree, 1);
 
     previewDock = new QDockWidget(QStringLiteral("Wave Preview"), parent);
@@ -647,6 +706,7 @@ void WavePreviewPanelCoordinator::renderReport(
         item->setText(3, QStringLiteral("-"));
         item->setText(4, QStringLiteral("-"));
         item->setText(5, QStringLiteral("-"));
+        item->setText(6, QStringLiteral("-"));
         return;
     }
 
@@ -660,6 +720,7 @@ void WavePreviewPanelCoordinator::renderReport(
         groupRoot->setText(3, QStringLiteral("-"));
         groupRoot->setText(4, QStringLiteral("-"));
         groupRoot->setText(5, QStringLiteral("-"));
+        groupRoot->setText(6, QStringLiteral("-"));
         QFont groupFont = groupRoot->font(0);
         groupFont.setBold(true);
         groupRoot->setFont(0, groupFont);
@@ -678,6 +739,7 @@ void WavePreviewPanelCoordinator::renderReport(
             groupItem->setText(3, QStringLiteral("-"));
             groupItem->setText(4, QStringLiteral("-"));
             groupItem->setText(5, QStringLiteral("-"));
+            groupItem->setText(6, QStringLiteral("-"));
         }
         groupRoot->setExpanded(true);
     }
@@ -689,7 +751,10 @@ void WavePreviewPanelCoordinator::renderReport(
         laneItem->setText(2, QStringLiteral("-"));
         laneItem->setText(3, QStringLiteral("-"));
         laneItem->setText(4, QStringLiteral("-"));
-        laneItem->setText(5, QStringLiteral("-"));
+        laneItem->setText(5, signalContextBrief(lane.context.isValid()
+                                                ? &lane.context
+                                                : nullptr));
+        laneItem->setText(6, QStringLiteral("-"));
         QFont laneFont = laneItem->font(0);
         laneFont.setBold(true);
         laneItem->setFont(0, laneFont);
@@ -703,6 +768,10 @@ void WavePreviewPanelCoordinator::renderReport(
             eventItem->setText(3, guardText(assignment));
             eventItem->setText(4, sourcesText(assignment.sourceSignals));
             eventItem->setText(5,
+                               signalContextBrief(signalContextFor(
+                                   report,
+                                   assignment.target)));
+            eventItem->setText(6,
                                locationText(assignment));
             setItemTooltip(eventItem,
                            assignmentDetailTooltip(assignment, report));

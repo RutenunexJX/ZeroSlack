@@ -58,6 +58,32 @@ struct WavePreviewAssignment {
     }
 };
 
+struct WavePreviewSignalContext {
+    QString signalName;
+    QString direction;
+    QString typeText;
+    QString declarationText;
+    int line = 0;
+    int column = 0;
+
+    bool isValid() const
+    {
+        return !signalName.isEmpty();
+    }
+
+    QString label() const
+    {
+        QStringList parts;
+        if (!direction.isEmpty())
+            parts.append(direction);
+        if (!typeText.isEmpty())
+            parts.append(typeText);
+        return parts.isEmpty()
+            ? QStringLiteral("-")
+            : parts.join(QStringLiteral(" "));
+    }
+};
+
 struct WavePreviewBlock {
     WavePreviewBlockKind kind = WavePreviewBlockKind::Unknown;
     QString trigger;
@@ -94,6 +120,7 @@ struct WavePreviewClockResetGroup {
 
 struct WavePreviewLane {
     QString signalName;
+    WavePreviewSignalContext context;
     QList<WavePreviewAssignment> assignments;
 
     bool isValid() const
@@ -110,6 +137,7 @@ struct WavePreviewQuery {
 struct WavePreviewReport {
     QList<WavePreviewBlock> blocks;
     QList<WavePreviewClockResetGroup> clockResetGroups;
+    QList<WavePreviewSignalContext> signalContexts;
     QList<WavePreviewLane> lanes;
     QStringList warnings;
     int assignmentCount = 0;

@@ -627,6 +627,350 @@ QString sourceTextBetween(const QString& text,
     return text.mid(start, end - start).simplified();
 }
 
+bool isDirectionTokenText(const QString& text)
+{
+    return text == QStringLiteral("input")
+        || text == QStringLiteral("output")
+        || text == QStringLiteral("inout");
+}
+
+bool isSignalDeclarationTypeTokenText(const QString& text)
+{
+    return text == QStringLiteral("logic")
+        || text == QStringLiteral("wire")
+        || text == QStringLiteral("reg")
+        || text == QStringLiteral("bit")
+        || text == QStringLiteral("byte")
+        || text == QStringLiteral("shortint")
+        || text == QStringLiteral("int")
+        || text == QStringLiteral("longint")
+        || text == QStringLiteral("integer");
+}
+
+bool isDeclarationModifierTokenText(const QString& text)
+{
+    return text == QStringLiteral("signed")
+        || text == QStringLiteral("unsigned")
+        || text == QStringLiteral("var");
+}
+
+bool isSkippedDeclarationRegion(const QList<Token>& tokens, int index)
+{
+    for (int i = index - 1; i >= 0; --i) {
+        const QString text = tokens.at(i).text;
+        if (text == QLatin1String(";") || text == QLatin1String(",")
+            || text == QLatin1String("(") || text == QLatin1String(")")) {
+            return false;
+        }
+        if (text == QStringLiteral("typedef")
+            || text == QStringLiteral("parameter")
+            || text == QStringLiteral("localparam")) {
+            return true;
+        }
+        if (text == QStringLiteral("module")
+            || text == QStringLiteral("endmodule")
+            || isAlwaysToken(tokens.at(i))) {
+            return false;
+        }
+    }
+    return false;
+}
+
+int declarationEndBeforeDelimiter(const QList<Token>& tokens,
+                                  int start,
+                                  bool stopOnComma)
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    for (int i = start + 1; i < tokens.size(); ++i) {
+        const QString text = tokens.at(i).text;
+        const bool topLevel =
+            parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
+
+        if (topLevel && text == QLatin1String(";"))
+            return i - 1;
+        if (topLevel && stopOnComma && text == QLatin1String(","))
+            return i - 1;
+        if (topLevel && stopOnComma && text == QLatin1String(")"))
+            return i - 1;
+
+        if (text == QLatin1String("("))
+            ++parenDepth;
+        else if (text == QLatin1String(")"))
+            parenDepth = qMax(0, parenDepth - 1);
+        else if (text == QLatin1String("["))
+            ++bracketDepth;
+        else if (text == QLatin1String("]"))
+            bracketDepth = qMax(0, bracketDepth - 1);
+        else if (text == QLatin1String("{"))
+            ++braceDepth;
+        else if (text == QLatin1String("}"))
+            braceDepth = qMax(0, braceDepth - 1);
+    }
+    return -1;
+}
+
+int topLevelAssignmentIndex(const QList<Token>& tokens, int start, int end)
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    for (int i = start; i <= end && i < tokens.size(); ++i) {
+        const QString text = tokens.at(i).text;
+        const bool topLevel =
+            parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
+        if (topLevel && text == QLatin1String("="))
+            return i;
+
+        if (text == QLatin1String("("))
+            ++parenDepth;
+        else if (text == QLatin1String(")"))
+            parenDepth = qMax(0, parenDepth - 1);
+        else if (text == QLatin1String("["))
+            ++bracketDepth;
+        else if (text == QLatin1String("]"))
+            bracketDepth = qMax(0, bracketDepth - 1);
+        else if (text == QLatin1String("{"))
+            ++braceDepth;
+        else if (text == QLatin1String("}"))
+            braceDepth = qMax(0, braceDepth - 1);
+    }
+    return -1;
+}
+
+int lastTopLevelSignalNameIndex(const QList<Token>& tokens, int start, int end)
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int candidate = -1;
+    const int assignmentIndex = topLevelAssignmentIndex(tokens, start, end);
+    const int limit = assignmentIndex >= 0 ? assignmentIndex - 1 : end;
+    for (int i = start; i <= limit && i < tokens.size(); ++i) {
+        const QString text = tokens.at(i).text;
+        const bool topLevel =
+            parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
+        if (topLevel && tokens.at(i).kind == TokenKind::Identifier
+            && !tokens.at(i).text.startsWith(QLatin1Char('$'))
+            && !isKeyword(tokens.at(i).text)
+            && !isDeclarationModifierTokenText(tokens.at(i).text)) {
+            candidate = i;
+        }
+
+        if (text == QLatin1String("("))
+            ++parenDepth;
+        else if (text == QLatin1String(")"))
+            parenDepth = qMax(0, parenDepth - 1);
+        else if (text == QLatin1String("["))
+            ++bracketDepth;
+        else if (text == QLatin1String("]"))
+            bracketDepth = qMax(0, bracketDepth - 1);
+        else if (text == QLatin1String("{"))
+            ++braceDepth;
+        else if (text == QLatin1String("}"))
+            braceDepth = qMax(0, braceDepth - 1);
+    }
+    return candidate;
+}
+
+struct SignalContextCollection {
+    QList<WavePreviewSignalContext> contexts;
+    QHash<QString, int> indexes;
+};
+
+void upsertSignalContext(SignalContextCollection* collection,
+                         const WavePreviewSignalContext& context)
+{
+    if (!collection || !context.isValid())
+        return;
+
+    const int existingIndex =
+        collection->indexes.value(context.signalName, -1);
+    if (existingIndex < 0) {
+        collection->indexes.insert(context.signalName,
+                                   collection->contexts.size());
+        collection->contexts.append(context);
+        return;
+    }
+
+    WavePreviewSignalContext& existing =
+        collection->contexts[existingIndex];
+    if ((existing.direction.isEmpty()
+         || existing.direction == QStringLiteral("internal"))
+        && !context.direction.isEmpty()) {
+        existing.direction = context.direction;
+    }
+    if (existing.typeText.isEmpty() && !context.typeText.isEmpty())
+        existing.typeText = context.typeText;
+    if (existing.declarationText.isEmpty()
+        || existing.declarationText == existing.signalName) {
+        existing.declarationText = context.declarationText;
+    }
+    if (existing.line <= 0 && context.line > 0) {
+        existing.line = context.line;
+        existing.column = context.column;
+    }
+}
+
+QString declarationTextForContext(const WavePreviewSignalContext& context)
+{
+    QString text = context.typeText;
+    if (text.isEmpty()) {
+        text = context.signalName;
+    } else {
+        text += QLatin1Char(' ');
+        text += context.signalName;
+    }
+    return text.simplified();
+}
+
+void appendDeclarationContext(const QString& text,
+                              const QList<Token>& tokens,
+                              int segmentStart,
+                              int segmentEnd,
+                              const QString& direction,
+                              int typeStart,
+                              const QString& fallbackTypeText,
+                              SignalContextCollection* collection,
+                              QString* commonTypeText)
+{
+    if (!collection || segmentStart < 0 || segmentEnd < segmentStart)
+        return;
+
+    const int nameIndex =
+        lastTopLevelSignalNameIndex(tokens, segmentStart, segmentEnd);
+    if (nameIndex < 0)
+        return;
+
+    QString typeText;
+    if (typeStart >= 0 && typeStart <= nameIndex - 1) {
+        typeText = sourceTextBetween(text,
+                                     tokens,
+                                     typeStart,
+                                     nameIndex - 1);
+    }
+    typeText = typeText.trimmed();
+    if (typeText.isEmpty())
+        typeText = fallbackTypeText;
+    if (commonTypeText && commonTypeText->isEmpty())
+        *commonTypeText = typeText;
+
+    WavePreviewSignalContext context;
+    context.signalName = tokens.at(nameIndex).text;
+    context.direction = direction;
+    context.typeText = typeText;
+    context.line = tokens.at(nameIndex).line;
+    context.column = tokens.at(nameIndex).column;
+    context.declarationText = declarationTextForContext(context);
+    upsertSignalContext(collection, context);
+}
+
+QList<QPair<int, int>> topLevelCommaSegments(const QList<Token>& tokens,
+                                             int start,
+                                             int end)
+{
+    QList<QPair<int, int>> segments;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int segmentStart = start;
+    for (int i = start; i <= end && i < tokens.size(); ++i) {
+        const QString text = tokens.at(i).text;
+        const bool topLevel =
+            parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
+        if (topLevel && text == QLatin1String(",")) {
+            if (i > segmentStart)
+                segments.append({segmentStart, i - 1});
+            segmentStart = i + 1;
+            continue;
+        }
+
+        if (text == QLatin1String("("))
+            ++parenDepth;
+        else if (text == QLatin1String(")"))
+            parenDepth = qMax(0, parenDepth - 1);
+        else if (text == QLatin1String("["))
+            ++bracketDepth;
+        else if (text == QLatin1String("]"))
+            bracketDepth = qMax(0, bracketDepth - 1);
+        else if (text == QLatin1String("{"))
+            ++braceDepth;
+        else if (text == QLatin1String("}"))
+            braceDepth = qMax(0, braceDepth - 1);
+    }
+    if (segmentStart <= end)
+        segments.append({segmentStart, end});
+    return segments;
+}
+
+void appendDeclarationContexts(const QString& text,
+                               const QList<Token>& tokens,
+                               int start,
+                               int end,
+                               const QString& direction,
+                               int typeStart,
+                               SignalContextCollection* collection)
+{
+    QString commonTypeText;
+    const QList<QPair<int, int>> segments =
+        topLevelCommaSegments(tokens, start, end);
+    for (int i = 0; i < segments.size(); ++i) {
+        const QPair<int, int>& segment = segments.at(i);
+        appendDeclarationContext(text,
+                                 tokens,
+                                 segment.first,
+                                 segment.second,
+                                 direction,
+                                 i == 0 ? typeStart : -1,
+                                 commonTypeText,
+                                 collection,
+                                 &commonTypeText);
+    }
+}
+
+SignalContextCollection collectSignalContexts(const QString& text,
+                                              const QList<Token>& tokens)
+{
+    SignalContextCollection collection;
+    for (int i = 0; i < tokens.size(); ++i) {
+        if (tokens.at(i).kind != TokenKind::Identifier)
+            continue;
+        if (isSkippedDeclarationRegion(tokens, i))
+            continue;
+
+        if (isDirectionTokenText(tokens.at(i).text)) {
+            const int end = declarationEndBeforeDelimiter(tokens, i, true);
+            if (end >= i + 1) {
+                appendDeclarationContexts(text,
+                                          tokens,
+                                          i,
+                                          end,
+                                          tokens.at(i).text,
+                                          i + 1,
+                                          &collection);
+                i = qMax(i, end);
+            }
+            continue;
+        }
+
+        if (isSignalDeclarationTypeTokenText(tokens.at(i).text)) {
+            const int end = declarationEndBeforeDelimiter(tokens, i, false);
+            if (end >= i + 1) {
+                appendDeclarationContexts(text,
+                                          tokens,
+                                          i,
+                                          end,
+                                          QStringLiteral("internal"),
+                                          i,
+                                          &collection);
+                i = qMax(i, end);
+            }
+        }
+    }
+    return collection;
+}
+
 bool statementBodyRange(const QList<Token>& tokens,
                         int start,
                         int limit,
@@ -1110,6 +1454,7 @@ bool parseAlwaysBlock(const QString& text,
 
 void appendLaneAssignment(QList<WavePreviewLane>* lanes,
                           QHash<QString, int>* laneIndexes,
+                          const QHash<QString, WavePreviewSignalContext>* contexts,
                           const WavePreviewAssignment& assignment)
 {
     if (!lanes || !laneIndexes || !assignment.isValid())
@@ -1118,6 +1463,8 @@ void appendLaneAssignment(QList<WavePreviewLane>* lanes,
     if (laneIndex < 0) {
         WavePreviewLane lane;
         lane.signalName = assignment.target;
+        if (contexts)
+            lane.context = contexts->value(assignment.target);
         laneIndex = lanes->size();
         laneIndexes->insert(assignment.target, laneIndex);
         lanes->append(lane);
@@ -1204,6 +1551,13 @@ WavePreviewReport WavePreviewService::previewForDocument(
         return report;
 
     const QList<Token> tokens = tokenize(query.documentText);
+    const SignalContextCollection signalContextCollection =
+        collectSignalContexts(query.documentText, tokens);
+    QHash<QString, WavePreviewSignalContext> contextsByName;
+    for (const WavePreviewSignalContext& context : signalContextCollection.contexts)
+        contextsByName.insert(context.signalName, context);
+    report.signalContexts = signalContextCollection.contexts;
+
     QHash<QString, int> laneIndexes;
     int pos = 0;
     while (pos < tokens.size()) {
@@ -1211,7 +1565,10 @@ WavePreviewReport WavePreviewService::previewForDocument(
         if (isIdentifierToken(token, QStringLiteral("assign"))) {
             WavePreviewAssignment assignment;
             if (parseContinuousAssign(query.documentText, tokens, pos, &assignment)) {
-                appendLaneAssignment(&report.lanes, &laneIndexes, assignment);
+                appendLaneAssignment(&report.lanes,
+                                     &laneIndexes,
+                                     &contextsByName,
+                                     assignment);
                 ++report.assignmentCount;
             }
             ++pos;
@@ -1233,7 +1590,10 @@ WavePreviewReport WavePreviewService::previewForDocument(
                 block.assignmentCount = assignments.size();
                 report.blocks.append(block);
                 for (const WavePreviewAssignment& assignment : assignments) {
-                    appendLaneAssignment(&report.lanes, &laneIndexes, assignment);
+                    appendLaneAssignment(&report.lanes,
+                                         &laneIndexes,
+                                         &contextsByName,
+                                         assignment);
                     ++report.assignmentCount;
                 }
                 pos = qMax(pos + 1, consumedIndex + 1);

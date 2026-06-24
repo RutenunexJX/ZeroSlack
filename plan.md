@@ -528,6 +528,16 @@ feature direction that violates them.
 - Next Wave Preview milestones: semantic cross-file enrichment, guard labels for more statement forms, and richer canvas interaction for dense reports.
 - Verification for this block: focused build targets `completion_test`, `large_file_perf_test`, and `gui_smoke_test`; direct `completion_test` run with 432 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, and `gui_smoke_test` with 374 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Declaration Context MVP
+
+- Status: implemented in the current worktree.
+- Scope: first local semantic-context milestone for Wave Preview. It enriches the existing lane/event sketch with current-document declaration context while staying short of cross-file elaboration, value simulation, or workspace scans.
+- `WavePreviewSignalContext` records signal name, port direction or internal role, type/range text, declaration text, and declaration location. `WavePreviewReport` carries these contexts, and each lane stores the context for its target when available.
+- `WavePreviewService` collects simple current-document port and built-in signal declarations with deterministic token scans. It intentionally skips typedef/parameter/localparam regions and avoids regex, keeping complex semantic inference for later Slang-backed enrichment.
+- `WavePreviewPanelCoordinator` adds a Context column and includes target/source declaration context in the shared tree/canvas hover details. The panel still renders report data only; it does not parse RTL, scan the workspace, or simulate values.
+- Next Wave Preview milestones: cross-file/semantic enrichment using existing semantic records, guard labels for more statement forms, and richer canvas interaction for dense reports.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 443 checks and `gui_smoke_test` with 403 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.
