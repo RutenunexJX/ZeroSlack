@@ -21,6 +21,23 @@ enum class WavePreviewAssignmentKind {
     NonBlocking
 };
 
+struct WavePreviewEdgeSignal {
+    QString signalName;
+    QString edge;
+
+    bool isValid() const
+    {
+        return !signalName.isEmpty();
+    }
+
+    QString label() const
+    {
+        return edge.isEmpty()
+            ? signalName
+            : edge + QStringLiteral(" ") + signalName;
+    }
+};
+
 struct WavePreviewAssignment {
     WavePreviewAssignmentKind kind = WavePreviewAssignmentKind::Blocking;
     QString target;
@@ -46,6 +63,8 @@ struct WavePreviewBlock {
     QString trigger;
     QStringList clockSignals;
     QStringList resetSignals;
+    QList<WavePreviewEdgeSignal> clockEdgeSignals;
+    QList<WavePreviewEdgeSignal> resetEdgeSignals;
     int startLine = 0;
     int endLine = 0;
     int startPosition = -1;
@@ -62,6 +81,8 @@ struct WavePreviewBlock {
 struct WavePreviewClockResetGroup {
     QStringList clockSignals;
     QStringList resetSignals;
+    QList<WavePreviewEdgeSignal> clockEdgeSignals;
+    QList<WavePreviewEdgeSignal> resetEdgeSignals;
     QList<int> blockIndexes;
     int assignmentCount = 0;
 

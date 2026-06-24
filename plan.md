@@ -458,7 +458,7 @@ feature direction that violates them.
 - `WavePreviewBlock` now carries `clockSignals` and `resetSignals`; `WavePreviewReport` adds `clockResetGroups` that aggregate block indexes and assignment counts for matching domains.
 - `WavePreviewService` extracts edge signals from `posedge` / `negedge` event controls with deterministic token scans. Reset classification is name-based (`rst` / `reset`) and intentionally conservative; this is not clock-domain crossing analysis or reset polarity proof.
 - The Wave Preview tree adds a Clock/Reset column and a Clock/Reset Groups section, while event tooltips include the detected domain. The UI still renders report data only and does not parse RTL or scan workspace files itself.
-- Next Wave Preview milestones: semantic cross-file enrichment, guard labels for more statement forms, and clock/reset polarity hints.
+- Next Wave Preview milestones: semantic cross-file enrichment, guard labels for more statement forms, and richer canvas interaction for dense reports.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 411 checks, direct `gui_smoke_test` run with 365 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Queued Refresh MVP
@@ -479,8 +479,19 @@ feature direction that violates them.
 - `WavePreviewPanelCoordinator` now builds one shared assignment detail tooltip from `WavePreviewReport` data and applies it to both tree event rows and canvas assignment blocks. Details include target, expression, source signals, assignment kind, block kind, timing hint, trigger, clock/reset summary, guard label, and line/column evidence.
 - Canvas assignment blocks now keep lightweight hit rectangles during paint and show the same detail tooltip on mouse hover. Lane rows summarize the signal, event count, and unique source signals.
 - This remains a UI rendering/report-inspection milestone: the panel still does not parse RTL, scan workspace files, run Slang, or evaluate waveform values.
-- Next Wave Preview milestones: semantic cross-file enrichment, guard labels for more statement forms, clock/reset polarity hints, and richer canvas interaction for dense reports.
+- Next Wave Preview milestones: semantic cross-file enrichment, guard labels for more statement forms, and richer canvas interaction for dense reports.
 - Verification for this block: focused build target `gui_smoke_test` and direct `gui_smoke_test` run with 374 checks against `test_sv/new` plus `test_sv/test_symbols.sv`; final release verification for the commit also includes focused `completion_test`, focused `large_file_perf_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Wave Preview Clock/Reset Polarity Hints MVP
+
+- Status: implemented in the current worktree.
+- Scope: first syntax-visible edge-polarity milestone for Wave Preview. It preserves the `posedge` / `negedge` words already present in event controls so users can see clock/reset edge context in the sketch.
+- `WavePreviewEdgeSignal` carries the signal name plus optional edge text. `WavePreviewService` stores edge-aware clock/reset hints on blocks and clock/reset groups while keeping the existing `clockSignals` / `resetSignals` lists for compatibility.
+- Clock/reset group keys now include edge labels when available, so `posedge clk` and `negedge clk` do not collapse into the same displayed group.
+- `WavePreviewPanelCoordinator` renders edge-aware labels such as `clk posedge clk / rst negedge rst_n` in Clock/Reset columns and shared hover details.
+- This remains a report/display hint, not CDC analysis, reset-polarity proof, or simulation. The parser only reports event-control text visible in the current buffer.
+- Next Wave Preview milestones: semantic cross-file enrichment, guard labels for more statement forms, and richer canvas interaction for dense reports.
+- Verification for this block: focused build targets `completion_test`, `large_file_perf_test`, and `gui_smoke_test`; direct `completion_test` run with 432 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, and `gui_smoke_test` with 374 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Huge Workspace Analysis Plan MVP
 

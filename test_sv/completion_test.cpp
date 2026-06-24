@@ -214,6 +214,14 @@ static const WavePreviewAssignment* firstWaveAssignment(
     return &lane->assignments.first();
 }
 
+static QStringList waveEdgeLabels(const QList<WavePreviewEdgeSignal>& edges)
+{
+    QStringList labels;
+    for (const WavePreviewEdgeSignal& signal : edges)
+        labels.append(signal.label());
+    return labels;
+}
+
 static SemanticSymbolRecord makeSemanticFixtureRecord(
     const QString& name,
     SymbolTaxonomy::DeclarationKind declarationKind,
@@ -1115,6 +1123,16 @@ int main(int argc, char** argv) {
                    ? waveReport.blocks.first().resetSignals
                    : QStringList(),
                {QStringLiteral("rst_n")});
+    expectList("WavePreview always_ff clock edges",
+               !waveReport.blocks.isEmpty()
+                   ? waveEdgeLabels(waveReport.blocks.first().clockEdgeSignals)
+                   : QStringList(),
+               {QStringLiteral("posedge clk")});
+    expectList("WavePreview always_ff reset edges",
+               !waveReport.blocks.isEmpty()
+                   ? waveEdgeLabels(waveReport.blocks.first().resetEdgeSignals)
+                   : QStringList(),
+               {QStringLiteral("negedge rst_n")});
     expectBool("WavePreview always_comb block kind",
                waveReport.blocks.size() > 1
                    && waveReport.blocks.at(1).kind == WavePreviewBlockKind::AlwaysComb
@@ -1166,6 +1184,12 @@ int main(int argc, char** argv) {
                        == QStringList{QStringLiteral("clk")}
                    && waveReport.clockResetGroups.first().resetSignals
                        == QStringList{QStringLiteral("rst_n")}
+                   && waveEdgeLabels(
+                          waveReport.clockResetGroups.first().clockEdgeSignals)
+                       == QStringList{QStringLiteral("posedge clk")}
+                   && waveEdgeLabels(
+                          waveReport.clockResetGroups.first().resetEdgeSignals)
+                       == QStringList{QStringLiteral("negedge rst_n")}
                    && waveReport.clockResetGroups.first().assignmentCount == 2,
                true);
 

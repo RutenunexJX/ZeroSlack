@@ -265,13 +265,27 @@ QString guardText(const WavePreviewAssignment& assignment)
 }
 
 QString clockResetText(const QStringList& clockSignals,
-                       const QStringList& resetSignals)
+                       const QStringList& resetSignals,
+                       const QList<WavePreviewEdgeSignal>& clockEdgeSignals = {},
+                       const QList<WavePreviewEdgeSignal>& resetEdgeSignals = {})
 {
     QStringList parts;
-    if (!clockSignals.isEmpty())
-        parts.append(QStringLiteral("clk ") + clockSignals.join(QStringLiteral(", ")));
-    if (!resetSignals.isEmpty())
-        parts.append(QStringLiteral("rst ") + resetSignals.join(QStringLiteral(", ")));
+    QStringList clockLabels;
+    for (const WavePreviewEdgeSignal& signal : clockEdgeSignals)
+        clockLabels.append(signal.label());
+    if (clockLabels.isEmpty())
+        clockLabels = clockSignals;
+
+    QStringList resetLabels;
+    for (const WavePreviewEdgeSignal& signal : resetEdgeSignals)
+        resetLabels.append(signal.label());
+    if (resetLabels.isEmpty())
+        resetLabels = resetSignals;
+
+    if (!clockLabels.isEmpty())
+        parts.append(QStringLiteral("clk ") + clockLabels.join(QStringLiteral(", ")));
+    if (!resetLabels.isEmpty())
+        parts.append(QStringLiteral("rst ") + resetLabels.join(QStringLiteral(", ")));
     return parts.isEmpty()
         ? QStringLiteral("-")
         : parts.join(QStringLiteral(" / "));
@@ -279,7 +293,10 @@ QString clockResetText(const QStringList& clockSignals,
 
 QString clockResetText(const WavePreviewBlock& block)
 {
-    return clockResetText(block.clockSignals, block.resetSignals);
+    return clockResetText(block.clockSignals,
+                          block.resetSignals,
+                          block.clockEdgeSignals,
+                          block.resetEdgeSignals);
 }
 
 QString clockResetText(const WavePreviewAssignment& assignment,
@@ -650,7 +667,9 @@ void WavePreviewPanelCoordinator::renderReport(
         for (const WavePreviewClockResetGroup& group : report.clockResetGroups) {
             auto* groupItem = new QTreeWidgetItem(groupRoot);
             groupItem->setText(0, clockResetText(group.clockSignals,
-                                                 group.resetSignals));
+                                                 group.resetSignals,
+                                                 group.clockEdgeSignals,
+                                                 group.resetEdgeSignals));
             groupItem->setText(1,
                                QStringLiteral("%1 blocks, %2 events")
                                    .arg(group.blockIndexes.size())

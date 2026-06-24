@@ -3221,7 +3221,7 @@ int main(int argc, char** argv)
                 for (int child = 0; child < laneItem->childCount(); ++child) {
                     sawWaveClockReset = sawWaveClockReset
                         || laneItem->child(child)->text(2)
-                            == QStringLiteral("clk clk");
+                            == QStringLiteral("clk posedge clk");
                     sawWaveGuard = sawWaveGuard
                         || laneItem->child(child)->text(3)
                             == QStringLiteral("if data[0]");
@@ -3249,6 +3249,7 @@ int main(int argc, char** argv)
                    && waveQTooltip.contains(QStringLiteral("expression: data"))
                    && waveQTooltip.contains(QStringLiteral("sources: data"))
                    && waveQTooltip.contains(QStringLiteral("timing: t+1 cycle"))
+                   && waveQTooltip.contains(QStringLiteral("clock/reset: clk posedge clk"))
                    && waveQTooltip.contains(QStringLiteral("location:")),
                true);
     QWidget* waveCanvas = wavePreviewCanvas(window);

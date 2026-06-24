@@ -324,6 +324,22 @@ void appendUnique(QStringList* values, const QString& value)
     values->append(value);
 }
 
+void appendUniqueEdgeSignal(QList<WavePreviewEdgeSignal>* values,
+                            const QString& signalName,
+                            const QString& edge)
+{
+    if (!values || signalName.isEmpty())
+        return;
+    for (const WavePreviewEdgeSignal& value : *values) {
+        if (value.signalName == signalName && value.edge == edge)
+            return;
+    }
+    WavePreviewEdgeSignal next;
+    next.signalName = signalName;
+    next.edge = edge;
+    values->append(next);
+}
+
 int nextSemicolon(const QList<Token>& tokens, int from, int limit)
 {
     const int end = qMin(limit, tokens.size() - 1);
@@ -456,9 +472,12 @@ void extractClockResetSignals(const QList<Token>& tokens,
                               int start,
                               int end,
                               QStringList* clockSignals,
-                              QStringList* resetSignals)
+                              QStringList* resetSignals,
+                              QList<WavePreviewEdgeSignal>* clockEdgeSignals,
+                              QList<WavePreviewEdgeSignal>* resetEdgeSignals)
 {
     QStringList edgeSignals;
+    QList<WavePreviewEdgeSignal> allEdges;
     const int limit = qMin(end, tokens.size() - 1);
     for (int i = qMax(0, start); i <= limit; ++i) {
         const QString edge = tokens.at(i).text;
@@ -474,10 +493,14 @@ void extractClockResetSignals(const QList<Token>& tokens,
             continue;
 
         appendUnique(&edgeSignals, signal);
-        if (looksLikeResetSignal(signal))
+        appendUniqueEdgeSignal(&allEdges, signal, edge);
+        if (looksLikeResetSignal(signal)) {
             appendUnique(resetSignals, signal);
-        else
+            appendUniqueEdgeSignal(resetEdgeSignals, signal, edge);
+        } else {
             appendUnique(clockSignals, signal);
+            appendUniqueEdgeSignal(clockEdgeSignals, signal, edge);
+        }
         i = qMax(i, consumedIndex);
     }
 
@@ -485,6 +508,11 @@ void extractClockResetSignals(const QList<Token>& tokens,
         && resetSignals && resetSignals->isEmpty()
         && !edgeSignals.isEmpty()) {
         appendUnique(clockSignals, edgeSignals.first());
+        if (!allEdges.isEmpty()) {
+            appendUniqueEdgeSignal(clockEdgeSignals,
+                                   allEdges.first().signalName,
+                                   allEdges.first().edge);
+        }
     }
 }
 
@@ -1059,7 +1087,9 @@ bool parseAlwaysBlock(const QString& text,
                              alwaysIndex,
                              endIndex,
                              &block->clockSignals,
-                             &block->resetSignals);
+                             &block->resetSignals,
+                             &block->clockEdgeSignals,
+                             &block->resetEdgeSignals);
     block->startLine = tokens.at(alwaysIndex).line;
     block->endLine = tokens.at(endIndex).line;
     block->startPosition = tokens.at(alwaysIndex).start;
@@ -1103,11 +1133,22 @@ void fixBlockIndexes(QList<WavePreviewAssignment>* assignments, int blockIndex)
         assignment.blockIndex = blockIndex;
 }
 
+QString edgeSignalListKey(const QList<WavePreviewEdgeSignal>& values,
+                          const QStringList& fallbackSignals)
+{
+    if (values.isEmpty())
+        return fallbackSignals.join(QChar(0x1f));
+    QStringList parts;
+    for (const WavePreviewEdgeSignal& value : values)
+        parts.append(value.label());
+    return parts.join(QChar(0x1f));
+}
+
 QString clockResetGroupKey(const WavePreviewBlock& block)
 {
-    return block.clockSignals.join(QChar(0x1f))
+    return edgeSignalListKey(block.clockEdgeSignals, block.clockSignals)
         + QStringLiteral("|")
-        + block.resetSignals.join(QChar(0x1f));
+        + edgeSignalListKey(block.resetEdgeSignals, block.resetSignals);
 }
 
 QList<WavePreviewClockResetGroup> clockResetGroupsForBlocks(
@@ -1126,6 +1167,8 @@ QList<WavePreviewClockResetGroup> clockResetGroupsForBlocks(
             WavePreviewClockResetGroup group;
             group.clockSignals = block.clockSignals;
             group.resetSignals = block.resetSignals;
+            group.clockEdgeSignals = block.clockEdgeSignals;
+            group.resetEdgeSignals = block.resetEdgeSignals;
             groupIndex = groups.size();
             groupIndexes.insert(key, groupIndex);
             groups.append(group);
