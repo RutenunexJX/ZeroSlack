@@ -453,6 +453,17 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, including richer block-aware statement alignment and safer multi-line structural edits.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 446 checks and direct `gui_smoke_test` run with 403 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Assignment Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: eleventh usable formatter milestone and the next block-aware statement alignment step. It aligns simple assignment statements without rewriting expressions, changing statement order, or attempting multi-line formatting.
+- `FormatterOptions::alignAssignments` is enabled for the `Structured` profile and disabled for `Indent Only`, matching the existing alignment-option split.
+- `FormatterService` aligns consecutive same-indent assignment blocks by top-level `=` or `<=`, including continuous `assign` statements and procedural blocking/nonblocking statements.
+- The pass preserves trailing `//` comments at a stable comment column and skips declarations, case-item suffixes, preprocessor lines, block-comment lines, invalid/uncertain statements, and single-line blocks.
+- Implementation remains no-regex. It uses deterministic token scans, string-aware delimiter tracking, and top-level assignment detection inside `FormatterService`.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer multi-line statement handling, and safer alignment choices that can use parser structure instead of line-local heuristics.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 451 checks and direct `gui_smoke_test` run with 405 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

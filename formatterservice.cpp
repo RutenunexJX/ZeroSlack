@@ -50,6 +50,16 @@ struct CaseItemAlignmentLine {
     QString trailingComment;
 };
 
+struct AssignmentAlignmentLine {
+    bool valid = false;
+    int indentWidth = 0;
+    QString indent;
+    QString left;
+    QString op;
+    QString right;
+    QString trailingComment;
+};
+
 struct CodeCommentParts {
     QString code;
     QString trailingComment;
@@ -489,6 +499,66 @@ int findTopLevelCaseItemColon(const QString& text)
                 continue;
             }
             return i;
+        }
+    }
+    return -1;
+}
+
+int findTopLevelAssignmentOperator(const QString& text, QString* op)
+{
+    int bracketDepth = 0;
+    int parenDepth = 0;
+    int braceDepth = 0;
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        const QChar prev = (i > 0) ? text.at(i - 1) : QChar();
+        const QChar next = (i + 1 < text.size()) ? text.at(i + 1) : QChar();
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+        if (ch == QLatin1Char('['))
+            ++bracketDepth;
+        else if (ch == QLatin1Char(']'))
+            bracketDepth = std::max(0, bracketDepth - 1);
+        else if (ch == QLatin1Char('('))
+            ++parenDepth;
+        else if (ch == QLatin1Char(')'))
+            parenDepth = std::max(0, parenDepth - 1);
+        else if (ch == QLatin1Char('{'))
+            ++braceDepth;
+        else if (ch == QLatin1Char('}'))
+            braceDepth = std::max(0, braceDepth - 1);
+        else if (bracketDepth == 0
+                 && parenDepth == 0
+                 && braceDepth == 0) {
+            if (ch == QLatin1Char('<') && next == QLatin1Char('=')) {
+                if (op)
+                    *op = QStringLiteral("<=");
+                return i;
+            }
+            if (ch == QLatin1Char('=')
+                && prev != QLatin1Char('=')
+                && prev != QLatin1Char('!')
+                && prev != QLatin1Char('<')
+                && prev != QLatin1Char('>')
+                && next != QLatin1Char('=')
+                && next != QLatin1Char('>')) {
+                if (op)
+                    *op = QStringLiteral("=");
+                return i;
+            }
         }
     }
     return -1;
@@ -1256,6 +1326,166 @@ void alignCaseItemBlocks(QStringList* lines, int indentWidth)
 
     flush();
 }
+
+bool isForbiddenAssignmentStarter(const QString& token)
+{
+    return isOpeningToken(token)
+        || isClosingToken(token)
+        || isDeclarationKeyword(token)
+        || isPortDirectionKeyword(token)
+        || token == QStringLiteral("if")
+        || token == QStringLiteral("else")
+        || token == QStringLiteral("for")
+        || token == QStringLiteral("while")
+        || token == QStringLiteral("return")
+        || token == QStringLiteral("case")
+        || token == QStringLiteral("default")
+        || token == QStringLiteral("typedef")
+        || token == QStringLiteral("function")
+        || token == QStringLiteral("task");
+}
+
+AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
+{
+    AssignmentAlignmentLine parsed;
+    if (!lineHasCode(line) || startsWithPreprocessor(line))
+        return parsed;
+    const CodeCommentParts parts = splitTrailingLineComment(line);
+    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
+        return parsed;
+
+    const int indentWidth = leadingWhitespaceWidth(parts.code);
+    const QString indent = parts.code.left(indentWidth);
+    const QString code = parts.code.mid(indentWidth).trimmed();
+    if (!code.endsWith(QLatin1Char(';')))
+        return parsed;
+
+    const QString codeWithoutSemicolon =
+        code.left(code.size() - 1).trimmed();
+    if (codeWithoutSemicolon.isEmpty())
+        return parsed;
+
+    QString op;
+    const int opIndex = findTopLevelAssignmentOperator(
+        codeWithoutSemicolon,
+        &op);
+    if (opIndex <= 0 || op.isEmpty())
+        return parsed;
+
+    const QString left =
+        codeWithoutSemicolon.left(opIndex).trimmed();
+    const QString right =
+        codeWithoutSemicolon.mid(opIndex + op.size()).trimmed();
+    if (left.isEmpty()
+        || right.isEmpty()
+        || hasTopLevelChar(left, QLatin1Char(','))
+        || findTopLevelCaseItemColon(left) >= 0) {
+        return parsed;
+    }
+
+    const QStringList leftTokens = codeTokens(left);
+    if (leftTokens.isEmpty())
+        return parsed;
+    const QString firstToken = leftTokens.first();
+    if (firstToken == QStringLiteral("assign")) {
+        if (leftTokens.size() < 2
+            || isForbiddenAssignmentStarter(leftTokens.at(1))) {
+            return parsed;
+        }
+    } else if (isForbiddenAssignmentStarter(firstToken)) {
+        return parsed;
+    }
+
+    parsed.valid = true;
+    parsed.indentWidth = indentWidth;
+    parsed.indent = indent;
+    parsed.left = left;
+    parsed.op = op;
+    parsed.right = right;
+    parsed.trailingComment = parts.trailingComment;
+    return parsed;
+}
+
+QString buildAlignedAssignmentCodeLine(const AssignmentAlignmentLine& line,
+                                       int maxLeftWidth)
+{
+    return line.indent
+        + line.left
+        + repeatSpaces(maxLeftWidth - line.left.size() + 1)
+        + line.op
+        + QLatin1Char(' ')
+        + line.right
+        + QLatin1Char(';');
+}
+
+void flushAssignmentAlignmentBlock(QStringList* lines,
+                                   const QList<int>& blockIndexes,
+                                   const QList<AssignmentAlignmentLine>& block)
+{
+    if (!lines || block.size() < 2)
+        return;
+
+    int maxLeftWidth = 0;
+    for (const AssignmentAlignmentLine& line : block) {
+        maxLeftWidth =
+            std::max(maxLeftWidth,
+                     static_cast<int>(line.left.size()));
+    }
+
+    QStringList codeLines;
+    codeLines.reserve(block.size());
+    int maxCodeLineWidth = 0;
+    bool hasTrailingComment = false;
+    for (const AssignmentAlignmentLine& line : block) {
+        const QString codeLine =
+            buildAlignedAssignmentCodeLine(line, maxLeftWidth);
+        codeLines.append(codeLine);
+        maxCodeLineWidth =
+            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
+        if (!line.trailingComment.isEmpty())
+            hasTrailingComment = true;
+    }
+
+    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
+    for (int i = 0; i < block.size(); ++i) {
+        (*lines)[blockIndexes.at(i)] =
+            appendTrailingComment(codeLines.at(i),
+                                  block.at(i).trailingComment,
+                                  commentColumn);
+    }
+}
+
+void alignAssignmentBlocks(QStringList* lines)
+{
+    if (!lines)
+        return;
+
+    QList<int> blockIndexes;
+    QList<AssignmentAlignmentLine> block;
+
+    auto flush = [&]() {
+        flushAssignmentAlignmentBlock(lines, blockIndexes, block);
+        blockIndexes.clear();
+        block.clear();
+    };
+
+    for (int i = 0; i < lines->size(); ++i) {
+        const AssignmentAlignmentLine parsed =
+            parseAssignmentAlignmentLine(lines->at(i));
+        if (!parsed.valid) {
+            flush();
+            continue;
+        }
+        if (!block.isEmpty()
+            && block.last().indentWidth != parsed.indentWidth) {
+            flush();
+        }
+        blockIndexes.append(i);
+        block.append(parsed);
+    }
+
+    flush();
+}
 }
 
 FormatterService* FormatterService::getInstance()
@@ -1273,6 +1503,7 @@ FormatterOptions FormatterService::optionsForProfile(FormatterProfile profile)
         options.alignPortLists = false;
         options.alignInstanceMaps = false;
         options.alignCaseItems = false;
+        options.alignAssignments = false;
     }
     return options;
 }
@@ -1342,6 +1573,8 @@ FormatterReport FormatterService::formatDocument(
         alignInstanceMapBlocks(&formatted);
     if (options.alignCaseItems)
         alignCaseItemBlocks(&formatted, options.indentWidth);
+    if (options.alignAssignments)
+        alignAssignmentBlocks(&formatted);
 
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);

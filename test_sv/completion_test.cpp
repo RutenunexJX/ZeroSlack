@@ -965,7 +965,8 @@ int main(int argc, char** argv) {
                !indentOnlyOptions.alignDeclarationBlocks
                    && !indentOnlyOptions.alignPortLists
                    && !indentOnlyOptions.alignInstanceMaps
-                   && !indentOnlyOptions.alignCaseItems,
+                   && !indentOnlyOptions.alignCaseItems
+                   && !indentOnlyOptions.alignAssignments,
                true);
     expectEq("Formatter indent-only profile name",
              FormatterService::profileDisplayName(
@@ -1130,6 +1131,67 @@ int main(int argc, char** argv) {
     expectBool("Formatter case item idempotent",
                unchangedCaseItemReport.changed,
                false);
+
+    const QString formatterAssignmentInput =
+        QStringLiteral("module assign_demo;\n"
+                       "assign short = a;\n"
+                       "assign very_long_name = b; // output\n"
+                       "always_ff @(posedge clk) begin\n"
+                       "q <= d;\n"
+                       "wide_data[3:0] <= next_data[3:0]; // sample\n"
+                       "end\n"
+                       "always_comb begin\n"
+                       "temp = a == b;\n"
+                       "long_temp = temp ? c : d; // combo\n"
+                       "if (temp) keep = d;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterAssignmentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterAssignmentInput);
+    expectBool("Formatter assignment report changed",
+               formatterAssignmentReport.changed,
+               true);
+    expectEq("Formatter aligns assignment blocks",
+             formatterAssignmentReport.formattedText,
+             QStringLiteral("module assign_demo;\n"
+                            "    assign short          = a;\n"
+                            "    assign very_long_name = b;  // output\n"
+                            "    always_ff @(posedge clk) begin\n"
+                            "        q              <= d;\n"
+                            "        wide_data[3:0] <= next_data[3:0];  // sample\n"
+                            "    end\n"
+                            "    always_comb begin\n"
+                            "        temp      = a == b;\n"
+                            "        long_temp = temp ? c : d;  // combo\n"
+                            "        if (temp) keep = d;\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedAssignmentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterAssignmentReport.formattedText);
+    expectBool("Formatter assignment idempotent",
+               unchangedAssignmentReport.changed,
+               false);
+    const FormatterReport indentOnlyAssignmentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterAssignmentInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only profile skips assignment alignment",
+             indentOnlyAssignmentReport.formattedText,
+             QStringLiteral("module assign_demo;\n"
+                            "    assign short = a;\n"
+                            "    assign very_long_name = b; // output\n"
+                            "    always_ff @(posedge clk) begin\n"
+                            "        q <= d;\n"
+                            "        wide_data[3:0] <= next_data[3:0]; // sample\n"
+                            "    end\n"
+                            "    always_comb begin\n"
+                            "        temp = a == b;\n"
+                            "        long_temp = temp ? c : d; // combo\n"
+                            "        if (temp) keep = d;\n"
+                            "    end\n"
+                            "endmodule\n"));
 
     const QString formatterSelectionInput =
         QStringLiteral("    logic a; // flag\n"
