@@ -109,6 +109,10 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             &AnalysisScheduler::relationshipAnalysisCancelled,
             this,
             &AnalysisProgressCoordinator::showRelationshipCancelled);
+    connect(scheduler,
+            &AnalysisScheduler::workspaceRelationshipAnalysisCancelled,
+            this,
+            &AnalysisProgressCoordinator::showWorkspaceRelationshipCancelled);
 }
 
 void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
@@ -266,6 +270,15 @@ void AnalysisProgressCoordinator::showRelationshipCancelled()
         ActivityLogLevel::Warning,
         QStringLiteral("Relationship analysis cancelled"));
     emit statusMessageRequested("Relationship analysis cancelled", 3000);
+}
+
+void AnalysisProgressCoordinator::showWorkspaceRelationshipCancelled()
+{
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Warning,
+        QStringLiteral("Workspace relationship analysis cancelled"));
+    emit statusMessageRequested("Workspace relationship analysis cancelled", 3000);
 }
 
 void AnalysisProgressCoordinator::logProgressCheckpoint(

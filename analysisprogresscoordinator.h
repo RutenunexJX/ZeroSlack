@@ -48,6 +48,7 @@ private:
     void showWorkspaceRelationshipProgress(int processedFiles, int totalFiles);
     void showRelationshipError(const QString& fileName, const QString& error);
     void showRelationshipCancelled();
+    void showWorkspaceRelationshipCancelled();
     void logProgressCheckpoint(const QString& label,
                                int processedFiles,
                                int totalFiles,

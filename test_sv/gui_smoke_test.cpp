@@ -960,6 +960,28 @@ static void runActivityLogServiceRegression()
                sawRelationship25 && sawRelationship75 && !sawRelationship100,
                true);
     service->clear();
+
+    QSignalSpy workspaceCancelStatusSpy(
+        &progressCoordinator,
+        &AnalysisProgressCoordinator::statusMessageRequested);
+    progressCoordinator.showWorkspaceRelationshipCancelled();
+    bool sawWorkspaceRelationshipCancel = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawWorkspaceRelationshipCancel = sawWorkspaceRelationshipCancel
+            || (event.source == QStringLiteral("Analyzer")
+                && event.level == ActivityLogLevel::Warning
+                && event.message.contains(
+                    QStringLiteral("Workspace relationship analysis cancelled")));
+    }
+    expectBool("activity log records workspace relationship cancellation",
+               sawWorkspaceRelationshipCancel,
+               true);
+    expectBool("workspace relationship cancellation emits status",
+               workspaceCancelStatusSpy.count() == 1
+                   && workspaceCancelStatusSpy.at(0).at(0).toString().contains(
+                       QStringLiteral("Workspace relationship analysis cancelled")),
+               true);
+    service->clear();
 }
 
 static void runRtlInsightsOnDemandRegression()
