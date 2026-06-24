@@ -20,6 +20,7 @@
 #include <QFileInfo>
 #include <QSet>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -314,6 +315,17 @@ void appendRelationshipInfoForFile(
     mergeRelationshipInfo(grouped[key], source);
 }
 
+void clearRelationshipInfo(RelationshipExtractionInfo* info)
+{
+    if (!info)
+        return;
+    info->moduleInstantiations.clear();
+    info->subroutineCalls.clear();
+    info->assignments.clear();
+    info->conditionReferences.clear();
+    info->timingSignals.clear();
+}
+
 void appendModuleInstantiation(RelationshipExtractionInfo& result,
                                const slang::SourceManager* sm,
                                const InstanceSymbol& inst)
@@ -344,73 +356,140 @@ void appendSubroutineCall(RelationshipExtractionInfo& result,
 }
 
 auto makeRelationshipVisitor(RelationshipExtractionInfo& result,
-                             const slang::SourceManager* sm)
+                             const slang::SourceManager* sm,
+                             std::function<bool()> isCancelled = nullptr,
+                             bool* cancellationReached = nullptr)
 {
+    auto cancelled = [isCancelled = std::move(isCancelled),
+                      cancellationReached]() {
+        if (isCancelled && isCancelled()) {
+            if (cancellationReached)
+                *cancellationReached = true;
+            return true;
+        }
+        return false;
+    };
     return makeVisitor(
-        [&](auto& v, const InstanceSymbol& inst) {
+        [&, cancelled](auto& v, const InstanceSymbol& inst) {
+            if (cancelled())
+                return;
             appendModuleInstantiation(result, sm, inst);
+            if (cancelled())
+                return;
             v.visitDefault(inst);
         },
-        [&](auto& v, const CallExpression& call) {
+        [&, cancelled](auto& v, const CallExpression& call) {
+            if (cancelled())
+                return;
             appendSubroutineCall(result, sm, call);
+            if (cancelled())
+                return;
             v.visitDefault(call);
         },
-        [&](auto& v, const AssignmentExpression& assignment) {
+        [&, cancelled](auto& v, const AssignmentExpression& assignment) {
+            if (cancelled())
+                return;
             appendAssignmentInfo(result.assignments, assignment, sm);
+            if (cancelled())
+                return;
             v.visitDefault(assignment);
         },
-        [&](auto& v, const ContinuousAssignSymbol& continuousAssign) {
+        [&, cancelled](auto& v, const ContinuousAssignSymbol& continuousAssign) {
+            if (cancelled())
+                return;
             if (appendContinuousAssignmentInfo(result.assignments,
                                                continuousAssign,
                                                sm)) {
                 return;
             }
+            if (cancelled())
+                return;
             v.visitDefault(continuousAssign);
         },
-        [&](auto& v, const ConditionalStatement& stmt) {
+        [&, cancelled](auto& v, const ConditionalStatement& stmt) {
+            if (cancelled())
+                return;
             for (const auto& condition : stmt.conditions)
                 appendConditionReference(result.conditionReferences, sm, *condition.expr);
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const CaseStatement& stmt) {
+        [&, cancelled](auto& v, const CaseStatement& stmt) {
+            if (cancelled())
+                return;
             appendConditionReference(result.conditionReferences, sm, stmt.expr);
             for (const auto& item : stmt.items) {
+                if (cancelled())
+                    return;
                 for (const Expression* expr : item.expressions)
                     appendConditionReference(result.conditionReferences, sm, *expr);
             }
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const PatternCaseStatement& stmt) {
+        [&, cancelled](auto& v, const PatternCaseStatement& stmt) {
+            if (cancelled())
+                return;
             appendConditionReference(result.conditionReferences, sm, stmt.expr);
             for (const auto& item : stmt.items) {
+                if (cancelled())
+                    return;
                 if (item.filter)
                     appendConditionReference(result.conditionReferences, sm, *item.filter);
             }
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const ForLoopStatement& stmt) {
+        [&, cancelled](auto& v, const ForLoopStatement& stmt) {
+            if (cancelled())
+                return;
             if (stmt.stopExpr)
                 appendConditionReference(result.conditionReferences, sm, *stmt.stopExpr);
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const RepeatLoopStatement& stmt) {
+        [&, cancelled](auto& v, const RepeatLoopStatement& stmt) {
+            if (cancelled())
+                return;
             appendConditionReference(result.conditionReferences, sm, stmt.count);
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const ForeachLoopStatement& stmt) {
+        [&, cancelled](auto& v, const ForeachLoopStatement& stmt) {
+            if (cancelled())
+                return;
             appendConditionReference(result.conditionReferences, sm, stmt.arrayRef);
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const WhileLoopStatement& stmt) {
+        [&, cancelled](auto& v, const WhileLoopStatement& stmt) {
+            if (cancelled())
+                return;
             appendConditionReference(result.conditionReferences, sm, stmt.cond);
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const DoWhileLoopStatement& stmt) {
+        [&, cancelled](auto& v, const DoWhileLoopStatement& stmt) {
+            if (cancelled())
+                return;
             appendConditionReference(result.conditionReferences, sm, stmt.cond);
+            if (cancelled())
+                return;
             v.visitDefault(stmt);
         },
-        [&](auto& v, const SignalEventControl& event) {
+        [&, cancelled](auto& v, const SignalEventControl& event) {
+            if (cancelled())
+                return;
             appendTimingSignal(result.timingSignals, sm, event);
+            if (cancelled())
+                return;
             v.visitDefault(event);
         });
 }
@@ -435,27 +514,41 @@ RelationshipExtractionInfo SlangManager::extractRelationshipInfo(const QString& 
 QHash<QString, RelationshipExtractionInfo> SlangManager::extractWorkspaceRelationshipInfo(
     const QStringList& filePaths,
     const QStringList& includeDirs,
-    const QHash<QString, QString>& defines)
+    const QHash<QString, QString>& defines,
+    std::function<bool()> isCancelled)
 {
     QHash<QString, RelationshipExtractionInfo> grouped;
     for (const QString& filePath : filePaths)
         grouped.insert(normalizedSourceFileName(filePath), RelationshipExtractionInfo{});
     if (filePaths.isEmpty())
         return grouped;
+    auto cancelled = [&]() {
+        return isCancelled && isCancelled();
+    };
+    if (cancelled())
+        return grouped;
 
     try {
         std::vector<std::string> pathStrs;
         pathStrs.reserve(filePaths.size());
-        for (const QString& path : filePaths)
+        for (const QString& path : filePaths) {
+            if (cancelled())
+                return grouped;
             pathStrs.push_back(path.toStdString());
+        }
 
         std::vector<std::string_view> pathViews;
         pathViews.reserve(pathStrs.size());
-        for (const std::string& path : pathStrs)
+        for (const std::string& path : pathStrs) {
+            if (cancelled())
+                return grouped;
             pathViews.push_back(path);
+        }
 
         const QStringList effectiveIncludeDirs =
             slang_parse_options::effectiveIncludeDirsForFiles(filePaths, includeDirs);
+        if (cancelled())
+            return grouped;
 
         slang::SourceManager sourceManager;
         slang::syntax::SyntaxTree::TreeOrError treeOrErr =
@@ -465,53 +558,80 @@ QHash<QString, RelationshipExtractionInfo> SlangManager::extractWorkspaceRelatio
                     pathViews,
                     sourceManager,
                     slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines));
+        if (cancelled())
+            return grouped;
         if (!treeOrErr)
             return grouped;
 
         std::shared_ptr<slang::syntax::SyntaxTree> tree = std::move(*treeOrErr);
         if (!tree)
             return grouped;
+        if (cancelled())
+            return grouped;
 
         slang::Bag compilationOptions =
             slang_parse_options::makeCompilationOptions();
         Compilation compilation(compilationOptions);
         compilation.addSyntaxTree(tree);
+        if (cancelled())
+            return grouped;
 
         RelationshipExtractionInfo allRelationships;
         const RootSymbol& root = compilation.getRoot();
         const slang::SourceManager* sm = compilation.getSourceManager();
         if (!sm)
             return grouped;
+        if (cancelled())
+            return grouped;
 
-        auto visitor = makeRelationshipVisitor(allRelationships, sm);
+        bool cancellationReached = false;
+        auto visitor = makeRelationshipVisitor(
+            allRelationships,
+            sm,
+            isCancelled,
+            &cancellationReached);
         root.visit(visitor);
+        if (cancellationReached || cancelled()) {
+            clearRelationshipInfo(&allRelationships);
+            return grouped;
+        }
 
         for (const ModuleInstantiationInfo& item
              : std::as_const(allRelationships.moduleInstantiations)) {
+            if (cancelled())
+                return grouped;
             RelationshipExtractionInfo one;
             one.moduleInstantiations.append(item);
             appendRelationshipInfoForFile(grouped, item.sourceRange.fileName, one);
         }
         for (const SubroutineCallInfo& item
              : std::as_const(allRelationships.subroutineCalls)) {
+            if (cancelled())
+                return grouped;
             RelationshipExtractionInfo one;
             one.subroutineCalls.append(item);
             appendRelationshipInfoForFile(grouped, item.sourceRange.fileName, one);
         }
         for (const AssignmentInfo& item
              : std::as_const(allRelationships.assignments)) {
+            if (cancelled())
+                return grouped;
             RelationshipExtractionInfo one;
             one.assignments.append(item);
             appendRelationshipInfoForFile(grouped, item.sourceRange.fileName, one);
         }
         for (const ConditionReferenceInfo& item
              : std::as_const(allRelationships.conditionReferences)) {
+            if (cancelled())
+                return grouped;
             RelationshipExtractionInfo one;
             one.conditionReferences.append(item);
             appendRelationshipInfoForFile(grouped, item.sourceRange.fileName, one);
         }
         for (const TimingSignalInfo& item
              : std::as_const(allRelationships.timingSignals)) {
+            if (cancelled())
+                return grouped;
             RelationshipExtractionInfo one;
             one.timingSignals.append(item);
             appendRelationshipInfoForFile(grouped, item.sourceRange.fileName, one);

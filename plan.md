@@ -786,6 +786,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: even narrower interrupt points where Slang exposes them, tiered symbol indexes, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 478 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Relationship Boundary Cancellation MVP
+
+- Status: implemented in the current worktree.
+- Scope: nineteenth usable Huge Workspace Mode milestone. It lowers workspace relationship-analysis cancellation checks into Slang boundary code and relationship visitor traversal without claiming to preempt Slang internals while `fromFiles` or AST elaboration is actively running.
+- `SlangManager::extractWorkspaceRelationshipInfo()` now accepts an optional cancel provider and checks it during grouped-file setup, workspace path preparation, after Slang `fromFiles`, before/after compilation root access, during relationship visitor traversal, and while grouping extracted facts by source file.
+- `SmartRelationshipBuilder::extractWorkspaceRelationshipInfo()` forwards its `isCancelled()` state to `SlangManager`, so `RelationshipAnalysisWorker` can stop earlier when workspace relationship analysis is cancelled before the per-file compute loop starts.
+- Canceled workspace relationship extraction returns the existing normalized per-file buckets with empty `RelationshipExtractionInfo` payloads rather than leaking partial module, assignment, condition, timing, or call facts.
+- Focused relationship coverage verifies a temporary two-file workspace extracts relationship facts normally, canceled Slang workspace relationship extraction returns empty facts after reaching the cancel boundary, and a cancelled `SmartRelationshipBuilder` forwards cancellation into workspace extraction.
+- Next Huge Workspace milestones: even narrower interrupt points where Slang exposes them, tiered symbol indexes, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
+- Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 772 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

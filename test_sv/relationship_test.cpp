@@ -191,9 +191,26 @@ static QString loadTextFile(const QString& path)
     return QString::fromUtf8(f.readAll());
 }
 
+static bool writeTextFile(const QString& path, const QString& text)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    return f.write(text.toUtf8()) >= 0;
+}
+
 static QString normalizedPath(const QString& path)
 {
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+}
+
+static bool relationshipInfoEmpty(const RelationshipExtractionInfo& info)
+{
+    return info.moduleInstantiations.isEmpty()
+        && info.subroutineCalls.isEmpty()
+        && info.assignments.isEmpty()
+        && info.conditionReferences.isEmpty()
+        && info.timingSignals.isEmpty();
 }
 
 static void runInlineRelationshipRegression(SlangManager& slang,
@@ -8561,6 +8578,84 @@ static void runPostWorkspaceDiagnosticFixture()
                true);
 }
 
+static void runWorkspaceRelationshipCancellationFixture()
+{
+    printf("\n-- workspace relationship cancellation fixture --\n");
+
+    QTemporaryDir relationshipDir;
+    expectBool("workspace relationship cancel temp dir created",
+               relationshipDir.isValid(),
+               true);
+    if (!relationshipDir.isValid())
+        return;
+
+    const QString leafPath =
+        normalizedPath(relationshipDir.filePath(QStringLiteral("rel_leaf.sv")));
+    const QString topPath =
+        normalizedPath(relationshipDir.filePath(QStringLiteral("rel_top.sv")));
+    expectBool("workspace relationship cancel leaf written",
+               writeTextFile(
+                   leafPath,
+                   QStringLiteral(
+                       "module rel_leaf(input logic i, output logic o);\n"
+                       "  assign o = i;\n"
+                       "endmodule\n")),
+               true);
+    expectBool("workspace relationship cancel top written",
+               writeTextFile(
+                   topPath,
+                   QStringLiteral(
+                       "module rel_top(input logic a, output logic b);\n"
+                       "  rel_leaf u_leaf(.i(a), .o(b));\n"
+                       "  assign b = a;\n"
+                       "endmodule\n")),
+               true);
+
+    const QStringList files{leafPath, topPath};
+    const QStringList includeDirs{relationshipDir.path()};
+    SlangManager slang;
+    const QHash<QString, RelationshipExtractionInfo> uncancelled =
+        slang.extractWorkspaceRelationshipInfo(files, includeDirs);
+    expectBool("workspace relationship fixture extracts facts",
+               !relationshipInfoEmpty(uncancelled.value(topPath)),
+               true);
+
+    int cancelChecks = 0;
+    const QHash<QString, RelationshipExtractionInfo> cancelled =
+        slang.extractWorkspaceRelationshipInfo(
+            files,
+            includeDirs,
+            QHash<QString, QString>{},
+            [&cancelChecks]() {
+                ++cancelChecks;
+                return cancelChecks >= 8;
+            });
+    bool cancelledFactsEmpty = true;
+    for (auto it = cancelled.constBegin(); it != cancelled.constEnd(); ++it)
+        cancelledFactsEmpty =
+            cancelledFactsEmpty && relationshipInfoEmpty(it.value());
+    expectBool("workspace relationship Slang honors cancel boundary",
+               cancelledFactsEmpty && cancelChecks >= 8,
+               true);
+
+    SmartRelationshipBuilder builder(nullptr, &slang);
+    builder.cancelAnalysis();
+    const QHash<QString, RelationshipExtractionInfo> builderCancelled =
+        builder.extractWorkspaceRelationshipInfo(files,
+                                                 includeDirs,
+                                                 QHash<QString, QString>{});
+    bool builderCancelledFactsEmpty = true;
+    for (auto it = builderCancelled.constBegin();
+         it != builderCancelled.constEnd();
+         ++it) {
+        builderCancelledFactsEmpty =
+            builderCancelledFactsEmpty && relationshipInfoEmpty(it.value());
+    }
+    expectBool("relationship builder forwards workspace cancel",
+               builderCancelledFactsEmpty,
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -8579,6 +8674,7 @@ int main(int argc, char** argv)
     runSemanticDiffServiceFixture();
     runRealWorkspaceIncludeFixture();
     runPostWorkspaceDiagnosticFixture();
+    runWorkspaceRelationshipCancellationFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

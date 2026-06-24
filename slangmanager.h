@@ -89,7 +89,8 @@ public:
     QHash<QString, RelationshipExtractionInfo> extractWorkspaceRelationshipInfo(
         const QStringList& filePaths,
         const QStringList& includeDirs = {},
-        const QHash<QString, QString>& defines = {});
+        const QHash<QString, QString>& defines = {},
+        std::function<bool()> isCancelled = nullptr);
 
     /// Parses file content with Slang and returns resolved task/function calls, excluding system calls.
     QVector<SubroutineCallInfo> extractSubroutineCalls(const QString& fileName,

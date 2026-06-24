@@ -146,7 +146,10 @@ SmartRelationshipBuilder::extractWorkspaceRelationshipInfo(
         return {};
     return m_slangManager->extractWorkspaceRelationshipInfo(filePaths,
                                                             includeDirs,
-                                                            defines);
+                                                            defines,
+                                                            [this]() {
+                                                                return isCancelled();
+                                                            });
 }
 
 void SmartRelationshipBuilder::analyzeFileIncremental(const QString& fileName, const QString& content,
