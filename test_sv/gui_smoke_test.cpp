@@ -40,6 +40,7 @@
 
 #define private public
 #include "mainwindow.h"
+#include "analysisprogresscoordinator.h"
 #include "analysisscheduler.h"
 #include "activitylogservice.h"
 #include "alternatecommandservice.h"
@@ -77,6 +78,7 @@
 #include "tabmanager.h"
 #include "tsdocument.h"
 #include "wavepreviewpanelcoordinator.h"
+#include "workspaceanalysisrequestqueue.h"
 #include "workspacemanager.h"
 #undef private
 
@@ -725,6 +727,40 @@ static void runActivityLogServiceRegression()
     expectBool("activity log clears events",
                service->events().isEmpty() && clearSpy.count() >= 1,
                true);
+
+    AnalysisProgressCoordinator coordinator(nullptr);
+    WorkspaceAnalysisRequestTelemetry queuedTelemetry;
+    queuedTelemetry.active = true;
+    queuedTelemetry.pending = true;
+    queuedTelemetry.activeAgeMs = 25;
+    queuedTelemetry.pendingAgeMs = 5;
+    queuedTelemetry.pendingUpdateCount = 2;
+    coordinator.handleWorkspaceAnalysisRequestQueued(queuedTelemetry);
+    WorkspaceAnalysisRequestTelemetry resolvedTelemetry;
+    resolvedTelemetry.lastFinishedActiveAgeMs = 40;
+    resolvedTelemetry.lastTakenPendingAgeMs = 12;
+    resolvedTelemetry.lastTakenPendingUpdateCount = 2;
+    coordinator.handleWorkspaceAnalysisRequestResolved(resolvedTelemetry);
+
+    bool sawQueuedTelemetry = false;
+    bool sawResolvedTelemetry = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawQueuedTelemetry = sawQueuedTelemetry
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Workspace request queued"))
+                && event.message.contains(QStringLiteral("pending updates 2")));
+        sawResolvedTelemetry = sawResolvedTelemetry
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Workspace request resolved"))
+                && event.message.contains(QStringLiteral("pending wait 12 ms")));
+    }
+    expectBool("activity log records workspace queued telemetry",
+               sawQueuedTelemetry,
+               true);
+    expectBool("activity log records workspace resolved telemetry",
+               sawResolvedTelemetry,
+               true);
+    service->clear();
 }
 
 static void runRtlInsightsOnDemandRegression()

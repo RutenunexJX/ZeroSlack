@@ -41,6 +41,10 @@ signals:
     void workspaceRelationshipAnalysisRequested(const ProjectSnapshot& project);
     void workspaceRelationshipAnalysisCancelRequested();
     void relationshipDataClearRequested();
+    void workspaceAnalysisRequestQueued(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void workspaceAnalysisRequestResolved(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
 
 private:
     ProjectModel* projectModel = nullptr;

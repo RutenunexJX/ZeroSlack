@@ -65,6 +65,10 @@ signals:
                                          int filesDone,
                                          int totalFiles);
     void workspaceSymbolAnalysisFinished(const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols);
+    void workspaceAnalysisRequestQueued(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void workspaceAnalysisRequestResolved(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
     void relationshipAnalysisProgress(const QString& fileName, int relationshipsFound);
     void relationshipAnalysisError(const QString& fileName, const QString& error);
     void relationshipAnalysisCancelled();

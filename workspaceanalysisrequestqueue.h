@@ -4,6 +4,7 @@
 #include "projectmodel.h"
 
 #include <QElapsedTimer>
+#include <QMetaType>
 
 struct WorkspaceAnalysisRequestTelemetry {
     bool active = false;
@@ -15,6 +16,8 @@ struct WorkspaceAnalysisRequestTelemetry {
     qint64 lastTakenPendingAgeMs = -1;
     int lastTakenPendingUpdateCount = 0;
 };
+
+Q_DECLARE_METATYPE(WorkspaceAnalysisRequestTelemetry)
 
 class WorkspaceAnalysisRequestQueue
 {

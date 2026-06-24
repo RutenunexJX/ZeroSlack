@@ -97,6 +97,14 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
             this,
             &AnalysisScheduler::workspaceSymbolAnalysisProgress);
     connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceAnalysisRequestQueued,
+            this,
+            &AnalysisScheduler::workspaceAnalysisRequestQueued);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceAnalysisRequestResolved,
+            this,
+            &AnalysisScheduler::workspaceAnalysisRequestResolved);
+    connect(workspaceSymbolAnalysis,
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols) {

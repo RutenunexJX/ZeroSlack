@@ -489,8 +489,18 @@ feature direction that violates them.
 - `WorkspaceAnalysisRequestQueue` now exposes `WorkspaceAnalysisRequestTelemetry` with active/pending state, active request age, pending request age, pending update count, and the last finished active/pending wait metrics.
 - Pending update count tracks how many workspace-analysis requests were coalesced into the latest pending request while an active run was still in flight. The last-taken metrics remain available after `finishAndTakePending()` so callers can report or later tune stale-work pressure even after the pending request has been consumed.
 - Telemetry remains owned by the queue. `WorkspaceSymbolAnalysisController` still routes lifecycle and expiration; it does not own timing policy or calculate queue ages itself.
-- Next Huge Workspace milestones: surface the telemetry in Activity/Output, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
 - Verification for this block: focused build target `completion_test` and direct `completion_test` run with 427 checks. Final release verification for the commit also includes `large_file_perf_test` against `test_sv/new`, focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Huge Workspace Telemetry Activity MVP
+
+- Status: implemented in the current worktree.
+- Scope: fourth usable Huge Workspace Mode milestone. It makes the request telemetry visible in the existing Activity/Output channel without changing extraction, cancellation, or publication semantics.
+- `WorkspaceSymbolAnalysisController` emits queued and resolved request telemetry events after queue updates. `AnalysisScheduler` forwards those events, and `AnalysisProgressCoordinator` formats them into Activity/Output log entries.
+- Queued logs include active age, pending age, and pending update count. Resolved logs include active wait time plus pending wait/update data when a coalesced pending request was consumed.
+- Timing data remains owned by `WorkspaceAnalysisRequestQueue`; controller and scheduler only route report data, and Activity/Output only renders it.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
+- Verification for this block: focused build targets `completion_test`, `large_file_perf_test`, and `gui_smoke_test`; direct `completion_test` run with 427 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, and `gui_smoke_test` with 370 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ## Batch Policy
 

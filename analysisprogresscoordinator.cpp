@@ -2,8 +2,18 @@
 
 #include "activitylogservice.h"
 #include "analysisscheduler.h"
+#include "workspaceanalysisrequestqueue.h"
 
 #include <QFileInfo>
+
+namespace {
+QString ageText(qint64 ageMs)
+{
+    return ageMs >= 0
+        ? QStringLiteral("%1 ms").arg(ageMs)
+        : QStringLiteral("n/a");
+}
+}
 
 AnalysisProgressCoordinator::AnalysisProgressCoordinator(QWidget* dialogParent, QObject* parent)
     : QObject(parent)
@@ -56,6 +66,14 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
                         .arg(filesAnalyzed)
                         .arg(totalSymbols));
             });
+    connect(scheduler,
+            &AnalysisScheduler::workspaceAnalysisRequestQueued,
+            this,
+            &AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued);
+    connect(scheduler,
+            &AnalysisScheduler::workspaceAnalysisRequestResolved,
+            this,
+            &AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestResolved);
 
     connect(scheduler,
             &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
@@ -100,6 +118,36 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
             .arg(totalFiles)
             .arg(shortName),
         1000);
+}
+
+void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued(
+    const WorkspaceAnalysisRequestTelemetry& telemetry)
+{
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Workspace request queued: active age %1, pending age %2, pending updates %3")
+            .arg(ageText(telemetry.activeAgeMs),
+                 ageText(telemetry.pendingAgeMs))
+            .arg(telemetry.pendingUpdateCount));
+}
+
+void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestResolved(
+    const WorkspaceAnalysisRequestTelemetry& telemetry)
+{
+    QString message =
+        QStringLiteral("Workspace request resolved: active wait %1")
+            .arg(ageText(telemetry.lastFinishedActiveAgeMs));
+    if (telemetry.lastTakenPendingUpdateCount > 0) {
+        message += QStringLiteral(", pending wait %1, pending updates %2")
+            .arg(ageText(telemetry.lastTakenPendingAgeMs))
+            .arg(telemetry.lastTakenPendingUpdateCount);
+    }
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        message);
 }
 
 bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const

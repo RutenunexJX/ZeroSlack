@@ -8,6 +8,7 @@
 
 class AnalysisScheduler;
 class QWidget;
+struct WorkspaceAnalysisRequestTelemetry;
 struct WorkspaceRelationshipAnalysisResult;
 
 class AnalysisProgressCoordinator : public QObject
@@ -22,6 +23,10 @@ public:
     void handleWorkspaceSymbolProgress(int filesDone,
                                        int totalFiles,
                                        const QString& currentFileName);
+    void handleWorkspaceAnalysisRequestQueued(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void handleWorkspaceAnalysisRequestResolved(
+        const WorkspaceAnalysisRequestTelemetry& telemetry);
     bool isSymbolAnalysisCancelled() const;
 
 signals:

@@ -19,6 +19,7 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
 
     if (requestQueue.active()) {
         requestQueue.queueLatest(project);
+        emit workspaceAnalysisRequestQueued(requestQueue.telemetry());
         symbolAnalyzer->expireWorkspaceAnalysis();
         return;
     }
@@ -88,6 +89,7 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisCompleted(
     ProjectSnapshot pendingProject;
     const bool hasPending =
         requestQueue.finishAndTakePending(&pendingProject);
+    emit workspaceAnalysisRequestResolved(requestQueue.telemetry());
     workspaceAnalysisActive = false;
     activeProject = ProjectSnapshot();
     if (hasPending) {
@@ -109,6 +111,7 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired()
     ProjectSnapshot pendingProject;
     const bool hasPending =
         requestQueue.finishAndTakePending(&pendingProject);
+    emit workspaceAnalysisRequestResolved(requestQueue.telemetry());
     workspaceAnalysisActive = false;
     activeProject = ProjectSnapshot();
     if (hasPending)
