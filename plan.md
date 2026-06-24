@@ -645,6 +645,17 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer canvas interaction for dense reports, additional guard context only where evidence-based, and later semantic relationship overlays if they can stay report-driven.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 481 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Canvas Navigation MVP
+
+- Status: implemented in the current worktree.
+- Scope: first direct canvas-interaction milestone after the graphical Wave Preview sketch. It improves inspection flow without adding simulation, semantic extraction, or workspace scanning.
+- `WavePreviewCanvas` now keeps hit-test records for painted assignment blocks that include tooltip text plus the report-owned assignment line/column evidence.
+- Hovering a canvas event block shows the existing detail tooltip and a pointing cursor; double-clicking the block calls the coordinator navigation handler with the current report file and assignment location.
+- `WavePreviewPanelCoordinator` remains the owner of navigation routing, matching the tree row double-click path. Canvas code only renders report data and performs hit testing.
+- Implementation remains no-regex and does not parse RTL in UI code.
+- Next Wave Preview milestones: richer dense-canvas interaction, additional evidence-based guard context, and later semantic relationship overlays if they can stay report-driven.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`; direct `completion_test` run with 495 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

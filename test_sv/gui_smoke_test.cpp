@@ -3546,6 +3546,21 @@ int main(int argc, char** argv)
                        == editorCountBeforeNewAction + 1,
                true);
     MyCodeEditor* waveEditor = window.tabManager->getCurrentEditor();
+    QTemporaryDir wavePreviewNavDir;
+    expectBool("wave preview nav temp dir valid",
+               wavePreviewNavDir.isValid(),
+               true);
+    const QString wavePreviewNavPath =
+        wavePreviewNavDir.isValid()
+            ? QDir::toNativeSeparators(
+                  wavePreviewNavDir.filePath(QStringLiteral("wave_ui.sv")))
+            : QString();
+    if (waveEditor && window.tabManager->getDocumentModel()
+        && !wavePreviewNavPath.isEmpty()) {
+        window.tabManager->getDocumentModel()->setDocumentFileName(
+            waveEditor,
+            wavePreviewNavPath);
+    }
     if (waveEditor) {
         waveEditor->setPlainText(
             QStringLiteral("module wave_ui;\n"
@@ -3676,11 +3691,26 @@ int main(int argc, char** argv)
                                  28 + 32 + 16 - 10 + 9);
         QTest::mouseMove(waveCanvas, qEventPoint);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (waveEditor) {
+            QTextCursor startCursor(waveEditor->document());
+            startCursor.movePosition(QTextCursor::Start);
+            waveEditor->setTextCursor(startCursor);
+        }
+        QTest::mouseDClick(waveCanvas,
+                           Qt::LeftButton,
+                           Qt::NoModifier,
+                           qEventPoint);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     expectBool("wave preview canvas hover has source target details",
                waveCanvas
                    && waveCanvas->toolTip().contains(QStringLiteral("target: q"))
                    && waveCanvas->toolTip().contains(QStringLiteral("sources: data")),
+               true);
+    expectBool("wave preview canvas double click navigates to assignment",
+               waveCanvas
+                   && waveEditor
+                   && waveEditor->textCursor().blockNumber() + 1 == 9,
                true);
     if (waveEditor) {
         waveEditor->setPlainText(

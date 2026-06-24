@@ -18,6 +18,7 @@
 #include <QWidget>
 
 #include <algorithm>
+#include <functional>
 #include <utility>
 
 namespace {
@@ -40,6 +41,8 @@ bool shouldQueueRefresh(const QString& documentText, bool)
 struct CanvasEventHit {
     QRect rect;
     QString tooltip;
+    int line = 0;
+    int column = 0;
 };
 
 class WavePreviewCanvas : public QWidget
@@ -60,11 +63,14 @@ public:
         return QSize(460, qBound(132, 52 + laneCount * 34, 260));
     }
 
-    void setReport(const WavePreviewReport& nextReport)
+    void setReport(const WavePreviewReport& nextReport,
+                   const QString& fileName)
     {
         report = nextReport;
+        currentFileName = fileName;
         eventHits.clear();
         setToolTip(QString());
+        unsetCursor();
         updateGeometry();
         update();
     }
@@ -72,10 +78,18 @@ public:
     void clearReport()
     {
         report = WavePreviewReport();
+        currentFileName.clear();
         eventHits.clear();
         setToolTip(QString());
+        unsetCursor();
         updateGeometry();
         update();
+    }
+
+    void setNavigationHandler(
+        std::function<void(const QString&, int, int)> handler)
+    {
+        navigationHandler = std::move(handler);
     }
 
 protected:
@@ -189,7 +203,9 @@ protected:
                                  Qt::AlignCenter,
                                  canvasEventLabel(assignment));
                 eventHits.append({eventRect,
-                                  assignmentDetailTooltip(assignment, report)});
+                                  assignmentDetailTooltip(assignment, report),
+                                  assignment.line,
+                                  assignment.column});
             }
         }
     }
@@ -200,6 +216,7 @@ protected:
             if (!it->rect.contains(event->pos()))
                 continue;
             setToolTip(it->tooltip);
+            setCursor(Qt::PointingHandCursor);
             QToolTip::showText(event->globalPosition().toPoint(),
                                it->tooltip,
                                this,
@@ -207,18 +224,43 @@ protected:
             return;
         }
         setToolTip(QString());
+        unsetCursor();
         QToolTip::hideText();
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent* event) override
+    {
+        if (!navigationHandler || event->button() != Qt::LeftButton) {
+            QWidget::mouseDoubleClickEvent(event);
+            return;
+        }
+
+        for (auto it = eventHits.crbegin(); it != eventHits.crend(); ++it) {
+            if (!it->rect.contains(event->pos()))
+                continue;
+            if (it->line > 0) {
+                navigationHandler(currentFileName,
+                                  it->line,
+                                  qMax(1, it->column));
+                event->accept();
+                return;
+            }
+        }
+        QWidget::mouseDoubleClickEvent(event);
     }
 
     void leaveEvent(QEvent*) override
     {
         setToolTip(QString());
+        unsetCursor();
         QToolTip::hideText();
     }
 
 private:
     WavePreviewReport report;
     QVector<CanvasEventHit> eventHits;
+    QString currentFileName;
+    std::function<void(const QString&, int, int)> navigationHandler;
 };
 
 QString displayFileName(const QString& fileName)
@@ -579,6 +621,14 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     layout->addWidget(summaryLabel);
 
     auto* canvas = new WavePreviewCanvas(panel);
+    canvas->setNavigationHandler(
+        [this](const QString& fileName, int line, int column) {
+            if (!navigationHandler || line <= 0)
+                return;
+            navigationHandler(fileName.isEmpty() ? currentFileName : fileName,
+                              line,
+                              qMax(1, column));
+        });
     previewCanvas = canvas;
     layout->addWidget(previewCanvas, 0);
 
@@ -757,7 +807,7 @@ void WavePreviewPanelCoordinator::renderReport(
 
     previewTree->clear();
     if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
-        canvas->setReport(report);
+        canvas->setReport(report, fileName);
     if (titleLabel) {
         titleLabel->setText(QStringLiteral("Wave Preview - %1")
                                 .arg(displayFileName(fileName)));
