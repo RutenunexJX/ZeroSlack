@@ -1,6 +1,7 @@
 #include "symbolanalyzer.h"
 
 #include <QFileInfo>
+#include <algorithm>
 
 bool SymbolAnalyzer::isAnalysisNeeded(const QString& fileName, const QString& content) const
 {
@@ -19,6 +20,11 @@ void SymbolAnalyzer::invalidateCache()
 void SymbolAnalyzer::setWorkspaceProtectedFiles(const QStringList& fileNames)
 {
     workspaceProtectedFiles = fileNames;
+}
+
+void SymbolAnalyzer::setWorkspacePriorityFileCount(int fileCount)
+{
+    workspacePriorityFileCount = std::max(0, fileCount);
 }
 
 QString SymbolAnalyzer::contentHash(const QString& content) const

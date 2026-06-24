@@ -81,6 +81,7 @@ void SymbolAnalyzer::analyzeProject(
             allRecords,
             isCancelled);
     result.protectedFiles = workspaceProtectedFiles;
+    result.priorityFileCount = workspacePriorityFileCount;
     result.generation = ++workspaceAnalysisGeneration;
     SlangManager diagnosticsAnalyzer;
     result.diagnostics =

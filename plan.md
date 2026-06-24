@@ -730,6 +730,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: using explicit bands for staged/incremental publication, deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, and richer direct cancellation controls for long analysis runs.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 459 checks; direct `gui_smoke_test` run with 410 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Staged Symbol Publication MVP
+
+- Status: implemented in the current worktree.
+- Scope: fourteenth usable Huge Workspace Mode milestone. It is the first staged publication step: symbols from the priority segment can become visible before background files finish publishing, while Slang extraction, diagnostics extraction, relationship analysis, and final diagnostics replacement remain whole-workspace operations.
+- `WorkspaceSymbolAnalysisController` passes `WorkspaceAnalysisPlan::priorityFileCount` into `SymbolAnalyzer` as a publication boundary after the plan has already been prepared by `WorkspaceAnalysisPlanService`.
+- `SymbolAnalyzer::publishWorkspaceAnalysisResult` publishes a diagnostics-preserving `SemanticIndexSnapshot` after the priority segment when at least one unprotected priority file was updated. Dirty protected files still skip stale disk publication exactly as before.
+- The final workspace publication still replaces diagnostics after every publishable file result has been processed, so partial priority snapshots do not expose half-built diagnostics.
+- Focused completion coverage creates a two-file temporary workspace, sets the priority boundary to the first file, and proves the intermediate snapshot contains the priority module while omitting the background module; the final snapshot then contains both.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, tiered symbol indexes, richer direct cancellation controls for long analysis runs, and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 464 checks; direct `gui_smoke_test` run with 410 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

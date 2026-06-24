@@ -30,6 +30,7 @@ struct WorkspaceAnalysisResult {
     QVector<WorkspaceFileAnalysis> files;
     QList<SemanticDiagnostic> diagnostics;
     QStringList protectedFiles;
+    int priorityFileCount = 0;
     int totalSymbols = 0;
     std::uint64_t generation = 0;
 };
@@ -61,6 +62,7 @@ public:
     void analyzeFileContent(const QString& fileName, const QString& content);
     void analyzeFileContentAsync(const QString& fileName, const QString& content);
     void setWorkspaceProtectedFiles(const QStringList& fileNames);
+    void setWorkspacePriorityFileCount(int fileCount);
     void expireWorkspaceAnalysis();
     void cancelWorkspaceAnalysisAndInvalidate();
 
@@ -84,6 +86,7 @@ private:
     QHash<QString, QString> lastAnalyzedContent;
     QHash<QString, std::uint64_t> fileAnalysisGenerations;
     QStringList workspaceProtectedFiles;
+    int workspacePriorityFileCount = 0;
     std::uint64_t workspaceAnalysisGeneration = 0;
 
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;

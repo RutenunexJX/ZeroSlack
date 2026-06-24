@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
+#include <algorithm>
 
 namespace {
 
@@ -69,13 +70,33 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
 {
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     const QSet<QString> protectedFiles = normalizedFileSet(result.protectedFiles);
+    const int resultFileCount = static_cast<int>(result.files.size());
+    const int priorityFileCount =
+        std::clamp(result.priorityFileCount, 0, resultFileCount);
+    const bool publishPriorityStage =
+        priorityFileCount > 0 && priorityFileCount < resultFileCount;
     QStringList analyzedFiles;
     analyzedFiles.reserve(result.files.size());
     QList<SemanticDiagnostic> diagnostics;
     int filesAnalyzed = 0;
+    int plannedFilesVisited = 0;
+    bool priorityStageHandled = false;
     for (const WorkspaceFileAnalysis& fileResult : result.files) {
-        if (fileInSet(protectedFiles, fileResult.fileName))
+        ++plannedFilesVisited;
+        const bool protectedFile =
+            fileInSet(protectedFiles, fileResult.fileName);
+        if (protectedFile) {
+            if (publishPriorityStage
+                && !priorityStageHandled
+                && plannedFilesVisited >= priorityFileCount) {
+                priorityStageHandled = true;
+                if (!analyzedFiles.isEmpty()) {
+                    semanticIndex->setSnapshot(
+                        semanticIndex->captureSnapshotPreservingDiagnostics());
+                }
+            }
             continue;
+        }
 
         updateFileSymbols(
             fileResult.fileName,
@@ -83,6 +104,13 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
             fileResult.symbolRecords);
         analyzedFiles.append(fileResult.fileName);
         filesAnalyzed++;
+        if (publishPriorityStage
+            && !priorityStageHandled
+            && plannedFilesVisited >= priorityFileCount) {
+            priorityStageHandled = true;
+            semanticIndex->setSnapshot(
+                semanticIndex->captureSnapshotPreservingDiagnostics());
+        }
         emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
     }
 

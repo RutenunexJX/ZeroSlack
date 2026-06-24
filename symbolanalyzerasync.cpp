@@ -52,10 +52,11 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     const int totalFiles = svFiles.size();
     const std::uint64_t generation = ++workspaceAnalysisGeneration;
     const QStringList protectedFiles = workspaceProtectedFiles;
+    const int priorityFileCount = workspacePriorityFileCount;
 
     emit analysisStarted(workspacePath);
 
-    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles]() {
+    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles, priorityFileCount]() {
         SlangManager symbolAnalyzer;
         const auto records =
             symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles, includeDirs, defines);
@@ -68,6 +69,7 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
         result.diagnostics =
             diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles, includeDirs, defines);
         result.protectedFiles = protectedFiles;
+        result.priorityFileCount = priorityFileCount;
         result.generation = generation;
         return result;
     });

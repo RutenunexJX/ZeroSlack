@@ -4819,6 +4819,103 @@ int main(int argc, char** argv) {
            "snapshot command struct symbols",
            snapshotCommandSymbols.size());
 
+    QTemporaryDir stagedPublicationWorkspace;
+    expectBool("Workspace staged publication temp dir valid",
+               stagedPublicationWorkspace.isValid(),
+               true);
+    const QString stagedPriorityFile =
+        QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("staged_priority.sv"));
+    const QString stagedBackgroundFile =
+        QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("staged_background.sv"));
+    const QString stagedPriorityModule =
+        QStringLiteral("staged_priority_pub_module");
+    const QString stagedBackgroundModule =
+        QStringLiteral("staged_background_pub_module");
+
+    auto writeTextFile = [](const QString& fileName, const QString& text) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+            return false;
+        QTextStream out(&file);
+        out << text;
+        return true;
+    };
+    expectBool("Workspace staged priority file created",
+               writeTextFile(
+                   stagedPriorityFile,
+                   QStringLiteral("module staged_priority_pub_module; logic a; endmodule\n")),
+               true);
+    expectBool("Workspace staged background file created",
+               writeTextFile(
+                   stagedBackgroundFile,
+                   QStringLiteral("module staged_background_pub_module; logic b; endmodule\n")),
+               true);
+
+    auto snapshotContainsModule =
+        [](std::shared_ptr<const SemanticIndexSnapshot> snapshot,
+           const QString& moduleName) {
+            if (!snapshot)
+                return false;
+            for (const SemanticSymbolRecord& record
+                 : snapshot->getSymbolRecords()) {
+                if (record.name == moduleName
+                    && record.declarationKind
+                        == SymbolTaxonomy::DeclarationKind::Module) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+    ProjectSnapshot stagedProject;
+    stagedProject.workspaceRoot = stagedPublicationWorkspace.path();
+    stagedProject.systemVerilogFiles = {
+        stagedPriorityFile,
+        stagedBackgroundFile
+    };
+    stagedProject.includeDirs = {stagedPublicationWorkspace.path()};
+    SymbolAnalyzer stagedAnalyzer;
+    stagedAnalyzer.setWorkspacePriorityFileCount(1);
+    bool sawStagedSnapshot = false;
+    bool stagedSnapshotHasPriority = false;
+    bool stagedSnapshotOmitsBackground = false;
+    QObject::connect(&stagedAnalyzer,
+                     &SymbolAnalyzer::batchProgress,
+                     &stagedAnalyzer,
+                     [&](int filesDone,
+                         int totalFiles,
+                         const QString& currentFileName) {
+                         if (filesDone != 1
+                             || totalFiles != 2
+                             || currentFileName != stagedPriorityFile) {
+                             return;
+                         }
+                         sawStagedSnapshot = true;
+                         const auto snapshot =
+                             SemanticIndex::getInstance()->snapshot();
+                         stagedSnapshotHasPriority =
+                             snapshotContainsModule(snapshot,
+                                                    stagedPriorityModule);
+                         stagedSnapshotOmitsBackground =
+                             !snapshotContainsModule(snapshot,
+                                                     stagedBackgroundModule);
+                     });
+    stagedAnalyzer.analyzeProject(stagedProject);
+    expectBool("Workspace priority stage publishes symbols early",
+               sawStagedSnapshot
+                   && stagedSnapshotHasPriority
+                   && stagedSnapshotOmitsBackground,
+               true);
+    const auto finalStagedSnapshot = SemanticIndex::getInstance()->snapshot();
+    expectBool("Workspace final publication includes background symbols",
+               snapshotContainsModule(finalStagedSnapshot,
+                                      stagedPriorityModule)
+                   && snapshotContainsModule(finalStagedSnapshot,
+                                             stagedBackgroundModule),
+               true);
+
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;
 }
