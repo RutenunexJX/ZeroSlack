@@ -91,7 +91,11 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
     connect(workspaceSymbolAnalysis,
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisStarted,
             this,
-            &AnalysisScheduler::workspaceSymbolAnalysisStarted);
+            [this](const ProjectSnapshot& project, int totalFiles) {
+                if (openDocumentAnalysis)
+                    openDocumentAnalysis->analyzeOpenDocumentsNow();
+                emit workspaceSymbolAnalysisStarted(project, totalFiles);
+            });
     connect(workspaceSymbolAnalysis,
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisProgress,
             this,

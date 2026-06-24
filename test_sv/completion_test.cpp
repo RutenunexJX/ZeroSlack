@@ -2,20 +2,24 @@
 // public query methods and asserts the results. No GUI window is shown.
 #include "slangmanager.h"
 #include "alternatecommandservice.h"
+#include "analysisscheduler.h"
 #include "completioncontexthelper.h"
 #include "completionmanager.h"
 #include "completionmodel.h"
 #include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
+#include "documentmodel.h"
 #include "editorsemanticcontextservice.h"
 #include "formatterservice.h"
 #include "ghostannotationservice.h"
+#include "mycodeeditor.h"
 #include "myhighlighter.h"
 #include "relationshipservice.h"
 #include "semanticdecorationservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
+#include "symbolanalyzer.h"
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
 #include "wavepreviewservice.h"
@@ -33,6 +37,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <QTemporaryDir>
 
 static int g_checks = 0;
 static int g_fails = 0;
@@ -1237,6 +1242,59 @@ int main(int argc, char** argv) {
                !externalCurrentPlan.currentFileInWorkspace
                    && externalCurrentPlan.priorityFileCount == 1,
                true);
+
+    QTemporaryDir foregroundWorkspace;
+    expectBool("Workspace foreground temp dir valid",
+               foregroundWorkspace.isValid(),
+               true);
+    const QString foregroundFile =
+        QDir(foregroundWorkspace.path()).absoluteFilePath(
+            QStringLiteral("foreground.sv"));
+    QFile foregroundDisk(foregroundFile);
+    expectBool("Workspace foreground disk file created",
+               foregroundDisk.open(QIODevice::WriteOnly | QIODevice::Text),
+               true);
+    if (foregroundDisk.isOpen()) {
+        QTextStream out(&foregroundDisk);
+        out << "module disk_version; logic disk_sig; endmodule\n";
+        foregroundDisk.close();
+    }
+
+    MyCodeEditor foregroundEditor;
+    foregroundEditor.setPlainText(
+        QStringLiteral("module open_tabs_first; logic live_sig; endmodule\n"));
+    DocumentModel foregroundDocuments;
+    foregroundDocuments.registerEditor(&foregroundEditor, foregroundFile);
+
+    AnalysisScheduler foregroundScheduler;
+    SymbolAnalyzer foregroundAnalyzer;
+    foregroundScheduler.setDocumentModel(&foregroundDocuments);
+    foregroundScheduler.setSymbolAnalyzer(&foregroundAnalyzer);
+    foregroundScheduler.setWorkspaceOpenProvider([]() { return true; });
+    foregroundScheduler.setCurrentFileProvider(
+        [foregroundFile]() { return foregroundFile; });
+
+    QStringList foregroundStartedOrder;
+    QObject::connect(&foregroundAnalyzer,
+                     &SymbolAnalyzer::analysisStarted,
+                     &foregroundAnalyzer,
+                     [&foregroundStartedOrder](const QString& fileName) {
+                         foregroundStartedOrder.append(fileName);
+                     });
+
+    ProjectSnapshot foregroundProject;
+    foregroundProject.workspaceRoot = foregroundWorkspace.path();
+    foregroundProject.systemVerilogFiles = {foregroundFile};
+    foregroundProject.includeDirs = {foregroundWorkspace.path()};
+    foregroundScheduler.requestWorkspaceAnalysis(foregroundProject);
+    expectBool("Workspace foreground refresh starts open docs first",
+               foregroundStartedOrder.size() >= 2
+                   && foregroundStartedOrder.first()
+                       == QStringLiteral("open_tabs")
+                   && foregroundStartedOrder.at(1)
+                       == foregroundProject.workspaceRoot,
+               true);
+    foregroundAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
 
     WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot queueFirst = planProject;

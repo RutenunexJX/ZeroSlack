@@ -479,7 +479,7 @@ feature direction that violates them.
 - `SymbolAnalyzer::expireWorkspaceAnalysis()` bumps the workspace-analysis generation and cancels the active watcher without waiting. Canceled or generation-stale watcher completion emits `workspaceAnalysisExpired()` instead of publishing stale results.
 - `WorkspaceSymbolAnalysisController` queues the newest request, expires the active run, clears request state when projects close, and starts the latest pending project after an expired or completed watcher returns.
 - Dirty open-document protection and the existing `WorkspaceAnalysisPlanService` order remain in force for the restarted request.
-- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and broader foreground scheduling that stays responsive under very large projects.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 401 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, `gui_smoke_test` with 361 checks, full default CMake build, full `ctest --output-on-failure` 7/7, changed-file regex API scan, and `git diff --check`.
 
 ### Post-L: Huge Workspace Request Telemetry MVP
@@ -489,7 +489,7 @@ feature direction that violates them.
 - `WorkspaceAnalysisRequestQueue` now exposes `WorkspaceAnalysisRequestTelemetry` with active/pending state, active request age, pending request age, pending update count, and the last finished active/pending wait metrics.
 - Pending update count tracks how many workspace-analysis requests were coalesced into the latest pending request while an active run was still in flight. The last-taken metrics remain available after `finishAndTakePending()` so callers can report or later tune stale-work pressure even after the pending request has been consumed.
 - Telemetry remains owned by the queue. `WorkspaceSymbolAnalysisController` still routes lifecycle and expiration; it does not own timing policy or calculate queue ages itself.
-- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and broader foreground scheduling that stays responsive under very large projects.
 - Verification for this block: focused build target `completion_test` and direct `completion_test` run with 427 checks. Final release verification for the commit also includes `large_file_perf_test` against `test_sv/new`, focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Huge Workspace Telemetry Activity MVP
@@ -499,8 +499,18 @@ feature direction that violates them.
 - `WorkspaceSymbolAnalysisController` emits queued and resolved request telemetry events after queue updates. `AnalysisScheduler` forwards those events, and `AnalysisProgressCoordinator` formats them into Activity/Output log entries.
 - Queued logs include active age, pending age, and pending update count. Resolved logs include active wait time plus pending wait/update data when a coalesced pending request was consumed.
 - Timing data remains owned by `WorkspaceAnalysisRequestQueue`; controller and scheduler only route report data, and Activity/Output only renders it.
-- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground current-file analysis that stays responsive under very large projects.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and broader foreground scheduling that stays responsive under very large projects.
 - Verification for this block: focused build targets `completion_test`, `large_file_perf_test`, and `gui_smoke_test`; direct `completion_test` run with 427 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, and `gui_smoke_test` with 370 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Huge Workspace Foreground Open Documents MVP
+
+- Status: implemented in the current worktree.
+- Scope: fifth usable Huge Workspace Mode milestone. It does not make Slang extraction internally interruptible, publish partial workspace batches, or change request coalescing; it makes open editor buffers refresh before a background workspace batch starts.
+- `AnalysisScheduler` handles `workspaceSymbolAnalysisStarted` by calling `OpenDocumentAnalysisController::analyzeOpenDocumentsNow()` before re-emitting the workspace start signal. Because `WorkspaceSymbolAnalysisController` emits the start signal before `SymbolAnalyzer::startAnalyzeProjectAsync()`, open tabs are analyzed from live editor text before the workspace disk batch is launched.
+- The existing finish-time open-document refresh remains in place as a reconciliation pass after workspace analysis completes, so dirty/live buffers are refreshed both before and after the background batch without moving feature policy into `SymbolAnalyzer`.
+- A focused completion test now records `SymbolAnalyzer::analysisStarted` order for a temporary workspace and proves `open_tabs` starts before the workspace root analysis.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground scheduling for relationship/diagnostic work that stays responsive under very large projects.
+- Verification for this block: focused build targets `completion_test`, `large_file_perf_test`, and `gui_smoke_test`; direct `completion_test` run with 430 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, and `gui_smoke_test` with 370 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ## Batch Policy
 
