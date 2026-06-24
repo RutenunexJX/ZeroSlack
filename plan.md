@@ -559,6 +559,17 @@ feature direction that violates them.
 - Next Wave Preview milestones: cross-file/semantic enrichment using existing semantic records, guard labels for more statement forms, and richer canvas interaction for dense reports.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 443 checks and `gui_smoke_test` with 403 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Lane Summary MVP
+
+- Status: implemented in the current worktree.
+- Scope: first dense-report readability milestone for Wave Preview. It does not simulate values, expand workspace semantics, or change event extraction; it adds service-owned lane-level summaries so users can scan busy signals faster.
+- `WavePreviewLaneSummary` records event count, unique source count, procedural block count, max cycle offset, and whether the lane contains continuous, combinational, or sequential activity.
+- `WavePreviewService` computes the summary after assignment extraction and block-index fixing, keeping summary policy in the report layer instead of recomputing it in tree or canvas UI code.
+- `WavePreviewPanelCoordinator` renders the summary in lane rows, lane hover details, the top panel summary through a busiest-lane hint, and compact canvas lane labels.
+- Implementation remains no-regex and keeps Wave Preview positioned as a code-understanding sketch rather than a simulator.
+- Next Wave Preview milestones: cross-file/semantic enrichment using existing semantic records, guard labels for more statement forms, and richer canvas interaction for dense reports.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 453 checks and `gui_smoke_test` with 407 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

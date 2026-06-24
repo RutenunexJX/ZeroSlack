@@ -3475,7 +3475,9 @@ int main(int argc, char** argv)
     bool sawWaveClockReset = false;
     bool sawWaveGuard = false;
     bool sawWaveContext = false;
+    bool sawWaveLaneSummary = false;
     QTreeWidgetItem* waveQEventItem = nullptr;
+    QTreeWidgetItem* waveQLaneItem = nullptr;
     if (waveTree) {
         for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
             QTreeWidgetItem* laneItem = waveTree->topLevelItem(i);
@@ -3485,6 +3487,13 @@ int main(int argc, char** argv)
             sawWaveClockReset = sawWaveClockReset
                 || name == QStringLiteral("Clock/Reset Groups");
             if (name == QStringLiteral("q")) {
+                waveQLaneItem = laneItem;
+                sawWaveLaneSummary = sawWaveLaneSummary
+                    || (laneItem->text(1).contains(QStringLiteral("1 event"))
+                        && laneItem->text(1).contains(QStringLiteral("1 src"))
+                        && laneItem->text(1).contains(QStringLiteral("max t+1"))
+                        && laneItem->text(1).contains(QStringLiteral("1 block"))
+                        && laneItem->text(4) == QStringLiteral("seq"));
                 sawWaveContext = sawWaveContext
                     || laneItem->text(5) == QStringLiteral("internal logic [7:0]");
                 for (int child = 0; child < laneItem->childCount(); ++child) {
@@ -3516,6 +3525,15 @@ int main(int argc, char** argv)
                true);
     expectBool("wave preview renders declaration context",
                waveTree && sawWaveContext,
+               true);
+    expectBool("wave preview renders lane summary",
+               waveTree && sawWaveLaneSummary,
+               true);
+    const QString waveQLaneTooltip =
+        waveQLaneItem ? waveQLaneItem->toolTip(0) : QString();
+    expectBool("wave preview lane tooltip has summary",
+               waveQLaneTooltip.contains(QStringLiteral("summary: 1 event"))
+                   && waveQLaneTooltip.contains(QStringLiteral("activity: seq")),
                true);
     const QString waveQTooltip =
         waveQEventItem ? waveQEventItem->toolTip(0) : QString();

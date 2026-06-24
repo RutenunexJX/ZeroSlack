@@ -1254,6 +1254,27 @@ int main(int argc, char** argv) {
                waveLaneNamed(waveReport, QStringLiteral("q"))
                    && waveLaneNamed(waveReport, QStringLiteral("q"))->assignments.size() == 2,
                true);
+    const WavePreviewLane* qSummaryLane =
+        waveLaneNamed(waveReport, QStringLiteral("q"));
+    expectBool("WavePreview q lane summary",
+               qSummaryLane
+                   && qSummaryLane->summary.eventCount == 2
+                   && qSummaryLane->summary.sourceSignalCount == 1
+                   && qSummaryLane->summary.blockCount == 1
+                   && qSummaryLane->summary.maxCycleOffset == 1
+                   && qSummaryLane->summary.hasSequentialEvent
+                   && !qSummaryLane->summary.hasContinuousEvent,
+               true);
+    const WavePreviewLane* outSummaryLane =
+        waveLaneNamed(waveReport, QStringLiteral("out"));
+    expectBool("WavePreview continuous lane summary",
+               outSummaryLane
+                   && outSummaryLane->summary.eventCount == 1
+                   && outSummaryLane->summary.sourceSignalCount == 2
+                   && outSummaryLane->summary.blockCount == 0
+                   && outSummaryLane->summary.maxCycleOffset == 0
+                   && outSummaryLane->summary.hasContinuousEvent,
+               true);
     const WavePreviewSignalContext* dataContext =
         waveContextNamed(waveReport, QStringLiteral("data"));
     expectBool("WavePreview input declaration context",

@@ -1472,6 +1472,45 @@ void appendLaneAssignment(QList<WavePreviewLane>* lanes,
     (*lanes)[laneIndex].assignments.append(assignment);
 }
 
+WavePreviewLaneSummary summaryForLane(const WavePreviewLane& lane)
+{
+    WavePreviewLaneSummary summary;
+    summary.eventCount = lane.assignments.size();
+
+    QSet<QString> sourceSignals;
+    QSet<int> blockIndexes;
+    for (const WavePreviewAssignment& assignment : lane.assignments) {
+        summary.maxCycleOffset =
+            std::max(summary.maxCycleOffset, assignment.cycleOffset);
+        for (const QString& source : assignment.sourceSignals) {
+            if (!source.isEmpty())
+                sourceSignals.insert(source);
+        }
+        if (assignment.blockIndex >= 0)
+            blockIndexes.insert(assignment.blockIndex);
+
+        if (assignment.kind == WavePreviewAssignmentKind::Continuous) {
+            summary.hasContinuousEvent = true;
+        } else if (assignment.kind == WavePreviewAssignmentKind::NonBlocking) {
+            summary.hasSequentialEvent = true;
+        } else {
+            summary.hasCombinationalEvent = true;
+        }
+    }
+
+    summary.sourceSignalCount = sourceSignals.size();
+    summary.blockCount = blockIndexes.size();
+    return summary;
+}
+
+void refreshLaneSummaries(QList<WavePreviewLane>* lanes)
+{
+    if (!lanes)
+        return;
+    for (WavePreviewLane& lane : *lanes)
+        lane.summary = summaryForLane(lane);
+}
+
 void fixBlockIndexes(QList<WavePreviewAssignment>* assignments, int blockIndex)
 {
     if (!assignments)
@@ -1612,6 +1651,7 @@ WavePreviewReport WavePreviewService::previewForDocument(
                        }),
         report.lanes.end());
     report.clockResetGroups = clockResetGroupsForBlocks(report.blocks);
+    refreshLaneSummaries(&report.lanes);
     report.available = report.assignmentCount > 0;
     return report;
 }

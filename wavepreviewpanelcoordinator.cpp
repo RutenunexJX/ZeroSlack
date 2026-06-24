@@ -28,6 +28,7 @@ constexpr int kLargeDirtyRefreshDelayMs = 180;
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
 QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
                                 const WavePreviewReport& report);
+QString laneSummaryText(const WavePreviewLaneSummary& summary);
 
 bool shouldQueueRefresh(const QString& documentText, bool)
 {
@@ -135,9 +136,18 @@ protected:
             painter.setPen(QPen(QColor(QStringLiteral("#e2e8f0"))));
             painter.drawLine(left, centerY, timelineRight, centerY);
             painter.setPen(QColor(QStringLiteral("#0f172a")));
-            painter.drawText(QRect(left, y + 4, labelWidth - 8, rowHeight - 8),
-                             Qt::AlignVCenter | Qt::AlignRight,
+            painter.drawText(QRect(left, y + 2, labelWidth - 8, 15),
+                             Qt::AlignRight | Qt::AlignVCenter,
                              lane.signalName);
+            QFont summaryFont = painter.font();
+            summaryFont.setBold(false);
+            painter.setFont(summaryFont);
+            painter.setPen(QColor(QStringLiteral("#64748b")));
+            painter.drawText(QRect(left, y + 17, labelWidth - 8, 13),
+                             Qt::AlignRight | Qt::AlignVCenter,
+                             laneSummaryText(lane.summary));
+            painter.setFont(labelFont);
+            painter.setPen(QColor(QStringLiteral("#0f172a")));
 
             for (int eventIndex = 0;
                  eventIndex < lane.assignments.size();
@@ -316,6 +326,66 @@ QString sourcesText(const QStringList& sourceSignals)
         : sourceSignals.join(QStringLiteral(", "));
 }
 
+QString countText(int count,
+                  const QString& singular,
+                  const QString& plural)
+{
+    return QStringLiteral("%1 %2").arg(count).arg(count == 1 ? singular : plural);
+}
+
+QString laneActivityText(const WavePreviewLaneSummary& summary)
+{
+    QStringList parts;
+    if (summary.hasContinuousEvent)
+        parts.append(QStringLiteral("continuous"));
+    if (summary.hasCombinationalEvent)
+        parts.append(QStringLiteral("comb"));
+    if (summary.hasSequentialEvent)
+        parts.append(QStringLiteral("seq"));
+    return parts.isEmpty()
+        ? QStringLiteral("-")
+        : parts.join(QStringLiteral("/"));
+}
+
+QString laneSummaryText(const WavePreviewLaneSummary& summary)
+{
+    if (!summary.isValid())
+        return QStringLiteral("-");
+    return QStringLiteral("%1, %2, max t+%3, %4")
+        .arg(countText(summary.eventCount,
+                       QStringLiteral("event"),
+                       QStringLiteral("events")),
+             countText(summary.sourceSignalCount,
+                       QStringLiteral("src"),
+                       QStringLiteral("src")),
+             QString::number(summary.maxCycleOffset),
+             countText(summary.blockCount,
+                       QStringLiteral("block"),
+                       QStringLiteral("blocks")));
+}
+
+QString busiestLaneText(const WavePreviewReport& report)
+{
+    const WavePreviewLane* busiest = nullptr;
+    for (const WavePreviewLane& lane : report.lanes) {
+        if (!lane.summary.isValid())
+            continue;
+        if (!busiest
+            || lane.summary.eventCount > busiest->summary.eventCount
+            || (lane.summary.eventCount == busiest->summary.eventCount
+                && lane.signalName < busiest->signalName)) {
+            busiest = &lane;
+        }
+    }
+    if (!busiest)
+        return QString();
+    return QStringLiteral(", busiest %1 (%2)")
+        .arg(busiest->signalName,
+             countText(busiest->summary.eventCount,
+                       QStringLiteral("event"),
+                       QStringLiteral("events")));
+}
+
 const WavePreviewSignalContext* signalContextFor(
     const WavePreviewReport& report,
     const QString& signalName)
@@ -429,7 +499,8 @@ QString laneDetailTooltip(const WavePreviewLane& lane)
             .arg(signalContextDetail(lane.context.isValid()
                                      ? &lane.context
                                      : nullptr)),
-        QStringLiteral("events: %1").arg(lane.assignments.size()),
+        QStringLiteral("summary: %1").arg(laneSummaryText(lane.summary)),
+        QStringLiteral("activity: %1").arg(laneActivityText(lane.summary)),
         QStringLiteral("sources: %1").arg(sourcesText(sources))
     }.join(QStringLiteral("\n"));
 }
@@ -689,11 +760,12 @@ void WavePreviewPanelCoordinator::renderReport(
     }
     if (summaryLabel) {
         summaryLabel->setText(
-            QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups%5")
+            QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups%5%6")
                 .arg(report.lanes.size())
                 .arg(report.assignmentCount)
                 .arg(report.blocks.size())
                 .arg(report.clockResetGroups.size())
+                .arg(busiestLaneText(report))
                 .arg(dirty ? QStringLiteral(" - live dirty buffer")
                            : QString()));
     }
@@ -747,10 +819,10 @@ void WavePreviewPanelCoordinator::renderReport(
     for (const WavePreviewLane& lane : report.lanes) {
         auto* laneItem = new QTreeWidgetItem(previewTree);
         laneItem->setText(0, lane.signalName);
-        laneItem->setText(1, QStringLiteral("%1 events").arg(lane.assignments.size()));
+        laneItem->setText(1, laneSummaryText(lane.summary));
         laneItem->setText(2, QStringLiteral("-"));
         laneItem->setText(3, QStringLiteral("-"));
-        laneItem->setText(4, QStringLiteral("-"));
+        laneItem->setText(4, laneActivityText(lane.summary));
         laneItem->setText(5, signalContextBrief(lane.context.isValid()
                                                 ? &lane.context
                                                 : nullptr));

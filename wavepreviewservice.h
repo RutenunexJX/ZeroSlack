@@ -84,6 +84,21 @@ struct WavePreviewSignalContext {
     }
 };
 
+struct WavePreviewLaneSummary {
+    int eventCount = 0;
+    int sourceSignalCount = 0;
+    int blockCount = 0;
+    int maxCycleOffset = 0;
+    bool hasContinuousEvent = false;
+    bool hasCombinationalEvent = false;
+    bool hasSequentialEvent = false;
+
+    bool isValid() const
+    {
+        return eventCount > 0;
+    }
+};
+
 struct WavePreviewBlock {
     WavePreviewBlockKind kind = WavePreviewBlockKind::Unknown;
     QString trigger;
@@ -122,6 +137,7 @@ struct WavePreviewLane {
     QString signalName;
     WavePreviewSignalContext context;
     QList<WavePreviewAssignment> assignments;
+    WavePreviewLaneSummary summary;
 
     bool isValid() const
     {
