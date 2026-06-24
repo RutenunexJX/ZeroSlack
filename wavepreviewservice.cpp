@@ -1410,6 +1410,64 @@ QString loopGuardTextForAssignment(const QString& text,
     return guards.join(QStringLiteral(" && "));
 }
 
+QString ternaryGuardTextForExpression(const QString& text,
+                                      const QList<Token>& tokens,
+                                      int from,
+                                      int to)
+{
+    const int start = qMax(0, from);
+    const int end = qMin(to, tokens.size() - 1);
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int questionIndex = -1;
+    int nestedTernaryDepth = 0;
+    bool matchedColon = false;
+
+    for (int i = start; i <= end; ++i) {
+        const QString tokenText = tokens.at(i).text;
+        const bool topLevel =
+            parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
+
+        if (topLevel && tokenText == QLatin1String("?")) {
+            if (questionIndex < 0) {
+                questionIndex = i;
+            } else {
+                ++nestedTernaryDepth;
+            }
+        } else if (topLevel && tokenText == QLatin1String(":")) {
+            if (questionIndex >= 0 && nestedTernaryDepth == 0) {
+                matchedColon = true;
+                break;
+            }
+            if (nestedTernaryDepth > 0)
+                --nestedTernaryDepth;
+        }
+
+        if (tokenText == QLatin1String("("))
+            ++parenDepth;
+        else if (tokenText == QLatin1String(")"))
+            parenDepth = qMax(0, parenDepth - 1);
+        else if (tokenText == QLatin1String("["))
+            ++bracketDepth;
+        else if (tokenText == QLatin1String("]"))
+            bracketDepth = qMax(0, bracketDepth - 1);
+        else if (tokenText == QLatin1String("{"))
+            ++braceDepth;
+        else if (tokenText == QLatin1String("}"))
+            braceDepth = qMax(0, braceDepth - 1);
+    }
+
+    if (questionIndex <= start || !matchedColon)
+        return QString();
+
+    const QString condition =
+        sourceTextBetween(text, tokens, start, questionIndex - 1);
+    return condition.isEmpty()
+        ? QString()
+        : QStringLiteral("?: %1").arg(condition);
+}
+
 QString guardTextForAssignment(const QString& text,
                                const QList<Token>& tokens,
                                int from,
@@ -1431,6 +1489,16 @@ QString guardTextForAssignment(const QString& text,
         guards.append(loopGuard);
     guards.removeDuplicates();
     return guards.join(QStringLiteral(" && "));
+}
+
+QString combinedGuardText(const QStringList& guards)
+{
+    QStringList values;
+    for (const QString& guard : guards) {
+        if (!guard.isEmpty() && !values.contains(guard))
+            values.append(guard);
+    }
+    return values.join(QStringLiteral(" && "));
 }
 
 WavePreviewBlockKind kindForAlways(const QList<Token>& tokens,
@@ -1569,7 +1637,13 @@ QList<WavePreviewAssignment> assignmentsInRange(const QString& text,
                            blockIndex,
                            block);
         assignment.guardText =
-            guardTextForAssignment(text, tokens, from, pos, end);
+            combinedGuardText({
+                guardTextForAssignment(text, tokens, from, pos, end),
+                ternaryGuardTextForExpression(text,
+                                              tokens,
+                                              operatorIndex + 1,
+                                              semicolonIndex - 1)
+            });
         if (assignment.isValid())
             assignments.append(assignment);
         pos = semicolonIndex + 1;
@@ -1616,6 +1690,11 @@ bool parseContinuousAssign(const QString& text,
     assignment->kind = WavePreviewAssignmentKind::Continuous;
     assignment->cycleOffset = 0;
     assignment->trigger = QStringLiteral("continuous");
+    assignment->guardText =
+        ternaryGuardTextForExpression(text,
+                                      tokens,
+                                      operatorIndex + 1,
+                                      semicolonIndex - 1);
     return assignment->isValid();
 }
 

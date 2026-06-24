@@ -612,6 +612,16 @@ feature direction that violates them.
 - Next Wave Preview milestones: cross-file/semantic enrichment using existing semantic records, richer canvas interaction for dense reports, and additional guard context only where it can stay evidence-based.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 456 checks and `gui_smoke_test` with 408 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Ternary Guard Hints MVP
+
+- Status: implemented in the current worktree.
+- Scope: third guard-context milestone for Wave Preview. It surfaces top-level ternary conditions in assignment right-hand expressions as evidence labels without evaluating branch truth, signal values, or nested waveform behavior.
+- `WavePreviewService` now detects top-level `?:` expressions in continuous and procedural assignment expressions and records a `?: <condition>` guard hint for the affected assignment.
+- Existing guard text combines enclosing branch/case/loop labels with ternary hints, so the Guard column, shared hover details, and canvas labels remain report-driven and UI code does not parse RTL.
+- Implementation remains no-regex and uses deterministic token scans bounded to the assignment expression.
+- Next Wave Preview milestones: richer canvas interaction for dense reports, semantic relationship overlays where report-driven, and additional guard context only where evidence-based.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 491 checks; direct `gui_smoke_test` run with 414 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Semantic Context MVP
 
 - Status: implemented in the current worktree.

@@ -1671,6 +1671,37 @@ int main(int argc, char** argv) {
                    && loopLane->assignments.at(3).guardText
                        == QStringLiteral("repeat 3"),
                true);
+
+    const QString waveTernaryPreviewInput =
+        QStringLiteral("module wave_ternary;\n"
+                       "logic en;\n"
+                       "logic sel;\n"
+                       "logic a;\n"
+                       "logic b;\n"
+                       "logic out;\n"
+                       "logic next;\n"
+                       "assign out = sel ? a : b;\n"
+                       "always_comb begin\n"
+                       "    if (en) next = sel ? a : b;\n"
+                       "end\n"
+                       "endmodule\n");
+    const WavePreviewReport waveTernaryReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {QStringLiteral("wave_ternary.sv"), waveTernaryPreviewInput});
+    const WavePreviewAssignment* ternaryOutAssign =
+        firstWaveAssignment(waveTernaryReport, QStringLiteral("out"));
+    expectBool("WavePreview continuous ternary guard label",
+               ternaryOutAssign
+                   && ternaryOutAssign->guardText == QStringLiteral("?: sel"),
+               true);
+    const WavePreviewAssignment* ternaryNextAssign =
+        firstWaveAssignment(waveTernaryReport, QStringLiteral("next"));
+    expectBool("WavePreview combines if and ternary guards",
+               ternaryNextAssign
+                   && ternaryNextAssign->guardText
+                       == QStringLiteral("if en && ?: sel"),
+               true);
+
     const QString planRoot =
         QDir::current().absoluteFilePath(QStringLiteral("test_sv/huge_plan"));
     const QString planA = QDir(planRoot).absoluteFilePath(QStringLiteral("a.sv"));
