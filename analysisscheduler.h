@@ -102,6 +102,7 @@ private:
     void setupRelationshipAnalysis();
     void setupWorkspaceSymbolAnalysis();
     void setupDiagnosticsRefreshAndWorkspaceRequests();
+    void refreshOpenDocumentsForForegroundAnalysis();
 };
 
 #endif // ANALYSISSCHEDULER_H

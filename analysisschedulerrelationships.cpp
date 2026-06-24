@@ -61,8 +61,15 @@ void AnalysisScheduler::cancelRelationshipAnalysis()
 
 void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project)
 {
-    if (relationshipAnalysis)
-        relationshipAnalysis->requestWorkspaceAnalysis(project);
+    if (!project.isOpen()
+        || project.systemVerilogFiles.isEmpty()
+        || !relationshipAnalysis
+        || !relationshipAnalysis->hasRelationshipBuilder()) {
+        return;
+    }
+
+    refreshOpenDocumentsForForegroundAnalysis();
+    relationshipAnalysis->requestWorkspaceAnalysis(project);
 }
 
 void AnalysisScheduler::cancelWorkspaceRelationshipAnalysis()

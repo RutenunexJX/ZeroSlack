@@ -19,6 +19,7 @@
 #include "semanticdecorationservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
+#include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
@@ -1342,6 +1343,33 @@ int main(int argc, char** argv) {
                        == foregroundProject.workspaceRoot,
                true);
     foregroundAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
+
+    SmartRelationshipBuilder foregroundRelationshipBuilder(nullptr, nullptr);
+    foregroundScheduler.setRelationshipBuilder(&foregroundRelationshipBuilder);
+    QStringList foregroundRelationshipOrder;
+    QObject::connect(&foregroundAnalyzer,
+                     &SymbolAnalyzer::analysisStarted,
+                     &foregroundAnalyzer,
+                     [&foregroundRelationshipOrder](const QString& fileName) {
+                         if (fileName == QStringLiteral("open_tabs"))
+                             foregroundRelationshipOrder.append(fileName);
+                     });
+    QObject::connect(&foregroundScheduler,
+                     &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
+                     &foregroundScheduler,
+                     [&foregroundRelationshipOrder](const ProjectSnapshot&, int) {
+                         foregroundRelationshipOrder.append(
+                             QStringLiteral("workspace_relationship"));
+                     });
+    foregroundScheduler.requestWorkspaceRelationshipAnalysis(foregroundProject);
+    expectBool("Workspace relationship foreground refresh starts open docs first",
+               foregroundRelationshipOrder.size() >= 2
+                   && foregroundRelationshipOrder.first()
+                       == QStringLiteral("open_tabs")
+                   && foregroundRelationshipOrder.at(1)
+                       == QStringLiteral("workspace_relationship"),
+               true);
+    foregroundScheduler.cancelWorkspaceRelationshipAnalysis();
 
     WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot queueFirst = planProject;

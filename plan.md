@@ -576,8 +576,18 @@ feature direction that violates them.
 - `AnalysisScheduler` handles `workspaceSymbolAnalysisStarted` by calling `OpenDocumentAnalysisController::analyzeOpenDocumentsNow()` before re-emitting the workspace start signal. Because `WorkspaceSymbolAnalysisController` emits the start signal before `SymbolAnalyzer::startAnalyzeProjectAsync()`, open tabs are analyzed from live editor text before the workspace disk batch is launched.
 - The existing finish-time open-document refresh remains in place as a reconciliation pass after workspace analysis completes, so dirty/live buffers are refreshed both before and after the background batch without moving feature policy into `SymbolAnalyzer`.
 - A focused completion test now records `SymbolAnalyzer::analysisStarted` order for a temporary workspace and proves `open_tabs` starts before the workspace root analysis.
-- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and foreground scheduling for relationship/diagnostic work that stays responsive under very large projects.
+- Next Huge Workspace milestones: foreground refresh for workspace relationship analysis, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and diagnostics scheduling that stays responsive under very large projects.
 - Verification for this block: focused build targets `completion_test`, `large_file_perf_test`, and `gui_smoke_test`; direct `completion_test` run with 430 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, and `gui_smoke_test` with 370 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Huge Workspace Relationship Foreground Refresh MVP
+
+- Status: implemented in the current worktree.
+- Scope: sixth usable Huge Workspace Mode milestone. It keeps relationship extraction and publication unchanged, but moves the same foreground open-document refresh policy in front of workspace relationship analysis so the relationship snapshot is built after live editor buffers have been refreshed.
+- `AnalysisScheduler::refreshOpenDocumentsForForegroundAnalysis()` now owns the shared foreground-refresh call. Workspace symbol start, workspace symbol finish reconciliation, and workspace relationship requests route through that helper instead of duplicating direct controller calls.
+- `requestWorkspaceRelationshipAnalysis()` refreshes open documents before delegating to `RelationshipAnalysisController::requestWorkspaceAnalysis()`. The relationship controller still owns async relationship work, cancellation, and result publication.
+- A focused completion test records `SymbolAnalyzer::analysisStarted("open_tabs")` and `workspaceRelationshipAnalysisStarted` order for a temporary workspace and proves open tabs refresh before workspace relationship analysis starts.
+- Next Huge Workspace milestones: diagnostics scheduling/refresh policy, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, and tiered symbol indexes.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 436 checks against `test_sv/new`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ## Batch Policy
 

@@ -19,6 +19,12 @@ void AnalysisScheduler::setupOpenDocumentAnalysis()
             &AnalysisScheduler::scheduleRelationshipAnalysis);
 }
 
+void AnalysisScheduler::refreshOpenDocumentsForForegroundAnalysis()
+{
+    if (openDocumentAnalysis)
+        openDocumentAnalysis->analyzeOpenDocumentsNow();
+}
+
 void AnalysisScheduler::setupRelationshipAnalysis()
 {
     relationshipAnalysisQueue = new RelationshipAnalysisQueue(this);
@@ -92,8 +98,7 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisStarted,
             this,
             [this](const ProjectSnapshot& project, int totalFiles) {
-                if (openDocumentAnalysis)
-                    openDocumentAnalysis->analyzeOpenDocumentsNow();
+                refreshOpenDocumentsForForegroundAnalysis();
                 emit workspaceSymbolAnalysisStarted(project, totalFiles);
             });
     connect(workspaceSymbolAnalysis,
@@ -112,8 +117,7 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols) {
-                if (openDocumentAnalysis)
-                    openDocumentAnalysis->analyzeOpenDocumentsNow();
+                refreshOpenDocumentsForForegroundAnalysis();
                 emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
             });
 }
