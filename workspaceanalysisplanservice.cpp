@@ -140,6 +140,19 @@ QList<int> priorityPublicationCheckpoints(
     appendBand(prioritized.cleanOpenPriorityFiles);
     return checkpoints;
 }
+
+void rememberBand(QHash<QString, QString>* bands,
+                  const QStringList& fileNames,
+                  const QString& label)
+{
+    if (!bands)
+        return;
+    for (const QString& fileName : fileNames) {
+        const QString normalized = normalizedPath(fileName);
+        if (!normalized.isEmpty() && !bands->contains(normalized))
+            bands->insert(normalized, label);
+    }
+}
 }
 
 WorkspaceAnalysisPlanService* WorkspaceAnalysisPlanService::getInstance()
@@ -182,5 +195,43 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
     plan.priorityPublicationCheckpoints =
         priorityPublicationCheckpoints(prioritized);
     plan.backgroundFileCount = plan.backgroundFiles.size();
+    rememberBand(&plan.fileBandsByNormalizedPath,
+                 plan.currentFilePriorityFiles,
+                 QStringLiteral("current"));
+    rememberBand(&plan.fileBandsByNormalizedPath,
+                 plan.dirtyOpenPriorityFiles,
+                 QStringLiteral("dirty-open"));
+    rememberBand(&plan.fileBandsByNormalizedPath,
+                 plan.cleanOpenPriorityFiles,
+                 QStringLiteral("open"));
+    rememberBand(&plan.fileBandsByNormalizedPath,
+                 plan.backgroundFiles,
+                 QStringLiteral("background"));
     return plan;
+}
+
+QString WorkspaceAnalysisPlan::bandForFile(const QString& fileName) const
+{
+    const QString normalized = normalizedPath(fileName);
+    const QString indexedBand = fileBandsByNormalizedPath.value(normalized);
+    if (!indexedBand.isEmpty())
+        return indexedBand;
+
+    auto containsFile = [&normalized](const QStringList& fileNames) {
+        for (const QString& candidate : fileNames) {
+            if (normalizedPath(candidate) == normalized)
+                return true;
+        }
+        return false;
+    };
+
+    if (containsFile(currentFilePriorityFiles))
+        return QStringLiteral("current");
+    if (containsFile(dirtyOpenPriorityFiles))
+        return QStringLiteral("dirty-open");
+    if (containsFile(cleanOpenPriorityFiles))
+        return QStringLiteral("open");
+    if (containsFile(backgroundFiles))
+        return QStringLiteral("background");
+    return QString();
 }

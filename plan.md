@@ -884,6 +884,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: tiered symbol indexes and eventually per-band diagnostics or relationship publication if those can be made semantically safe.
 - Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 777 checks; direct `gui_smoke_test` run with 414 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace File-Band Index MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-second usable Huge Workspace Mode milestone and the first small tiered-index groundwork step. It does not change Slang extraction, symbol publication checkpoints, diagnostics publication, or relationship analysis.
+- `WorkspaceAnalysisPlan` now carries `fileBandsByNormalizedPath`, a normalized file-to-band index keyed by planned workspace file path. `WorkspaceAnalysisPlan::bandForFile()` exposes the same lookup for callers that should not know how the index is keyed.
+- `WorkspaceAnalysisPlanService` owns construction of the index next to current/dirty-open/clean-open/background band construction, so priority-tier ownership stays in the plan service.
+- `AnalysisProgressCoordinator` now consumes the plan-owned file-band index for workspace progress labels instead of rebuilding a parallel map from the individual band lists.
+- This is groundwork for tiered symbol indexes and per-band query/report policy; it intentionally leaves semantic snapshot content and diagnostics replacement semantics unchanged.
+- Next Huge Workspace milestones: tier-aware symbol/query metadata, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 498 checks; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

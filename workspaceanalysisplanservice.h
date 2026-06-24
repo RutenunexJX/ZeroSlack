@@ -4,6 +4,7 @@
 #include "documentsnapshot.h"
 #include "projectmodel.h"
 
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -24,6 +25,7 @@ struct WorkspaceAnalysisPlan {
     QStringList dirtyOpenPriorityFiles;
     QStringList cleanOpenPriorityFiles;
     QStringList backgroundFiles;
+    QHash<QString, QString> fileBandsByNormalizedPath;
     QList<int> priorityPublicationCheckpoints;
     int priorityFileCount = 0;
     int backgroundFileCount = 0;
@@ -33,6 +35,8 @@ struct WorkspaceAnalysisPlan {
     {
         return project.isOpen() && !project.systemVerilogFiles.isEmpty();
     }
+
+    QString bandForFile(const QString& fileName) const;
 };
 
 class WorkspaceAnalysisPlanService

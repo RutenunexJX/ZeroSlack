@@ -1782,6 +1782,17 @@ int main(int argc, char** argv) {
                  priorityPlan.backgroundFiles.join(QStringLiteral(","))
              }.join(QStringLiteral("|")),
              QStringList{planC, planB, planD, planA}.join(QStringLiteral("|")));
+    expectEq("Workspace plan indexes file bands",
+             QStringList{
+                 priorityPlan.bandForFile(QDir::toNativeSeparators(planC)),
+                 priorityPlan.bandForFile(planB),
+                 priorityPlan.bandForFile(planD),
+                 priorityPlan.bandForFile(planA)
+             }.join(QStringLiteral("|")),
+             QStringLiteral("current|dirty-open|open|background"));
+    expectBool("Workspace plan band index covers workspace files",
+               priorityPlan.fileBandsByNormalizedPath.size() == 4,
+               true);
     QStringList priorityCheckpointText;
     for (int checkpoint : priorityPlan.priorityPublicationCheckpoints)
         priorityCheckpointText.append(QString::number(checkpoint));
@@ -1809,6 +1820,15 @@ int main(int argc, char** argv) {
                    && externalCurrentPlan.cleanOpenPriorityFiles.isEmpty()
                    && externalCurrentPlan.backgroundFiles
                        == QStringList{planA, planC, planD},
+               true);
+    expectBool("Workspace plan band index omits external current file",
+               externalCurrentPlan.bandForFile(
+                   QDir(planRoot).absoluteFilePath(
+                       QStringLiteral("external.sv"))).isEmpty()
+                   && externalCurrentPlan.bandForFile(planB)
+                       == QStringLiteral("dirty-open")
+                   && externalCurrentPlan.bandForFile(planA)
+                       == QStringLiteral("background"),
                true);
 
     QTemporaryDir foregroundWorkspace;

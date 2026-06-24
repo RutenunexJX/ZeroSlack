@@ -40,19 +40,6 @@ QString normalizedFilePath(const QString& fileName)
         QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-void rememberBand(QHash<QString, QString>* bands,
-                  const QStringList& fileNames,
-                  const QString& label)
-{
-    if (!bands)
-        return;
-    for (const QString& fileName : fileNames) {
-        const QString normalized = normalizedFilePath(fileName);
-        if (!normalized.isEmpty() && !bands->contains(normalized))
-            bands->insert(normalized, label);
-    }
-}
-
 QString bandSuffix(const QString& band)
 {
     return band.isEmpty()
@@ -227,19 +214,17 @@ void AnalysisProgressCoordinator::handleWorkspaceAnalysisPlanPrepared(
 void AnalysisProgressCoordinator::rememberWorkspacePlanBands(
     const WorkspaceAnalysisPlan& plan)
 {
-    workspaceSymbolBandByFile.clear();
-    rememberBand(&workspaceSymbolBandByFile,
-                 plan.currentFilePriorityFiles,
-                 QStringLiteral("current"));
-    rememberBand(&workspaceSymbolBandByFile,
-                 plan.dirtyOpenPriorityFiles,
-                 QStringLiteral("dirty-open"));
-    rememberBand(&workspaceSymbolBandByFile,
-                 plan.cleanOpenPriorityFiles,
-                 QStringLiteral("open"));
-    rememberBand(&workspaceSymbolBandByFile,
-                 plan.backgroundFiles,
-                 QStringLiteral("background"));
+    workspaceSymbolBandByFile = plan.fileBandsByNormalizedPath;
+    for (const QString& fileName : plan.project.systemVerilogFiles) {
+        const QString normalized = normalizedFilePath(fileName);
+        if (normalized.isEmpty()
+            || workspaceSymbolBandByFile.contains(normalized)) {
+            continue;
+        }
+        const QString band = plan.bandForFile(fileName);
+        if (!band.isEmpty())
+            workspaceSymbolBandByFile.insert(normalized, band);
+    }
 }
 
 QString AnalysisProgressCoordinator::workspaceSymbolBandForFile(
