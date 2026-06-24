@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <memory>
 
+class SemanticIndexSnapshot;
+
 enum class WavePreviewBlockKind {
     Unknown,
     AlwaysComb,
@@ -148,6 +150,7 @@ struct WavePreviewLane {
 struct WavePreviewQuery {
     QString fileName;
     QString documentText;
+    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
 };
 
 struct WavePreviewReport {

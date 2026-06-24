@@ -1,5 +1,7 @@
 #include "wavepreviewpanelcoordinator.h"
 
+#include "semanticindex.h"
+
 #include <QFileInfo>
 #include <QFont>
 #include <QHeaderView>
@@ -726,7 +728,9 @@ void WavePreviewPanelCoordinator::renderDocumentNow(
 {
     const WavePreviewReport report =
         WavePreviewService::getInstance()->previewForDocument(
-            {fileName, documentText});
+            {fileName,
+             documentText,
+             SemanticIndex::getInstance()->snapshot()});
     renderReport(report, fileName, dirty);
 }
 

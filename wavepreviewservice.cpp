@@ -1,5 +1,8 @@
 #include "wavepreviewservice.h"
 
+#include "semanticindexsnapshot.h"
+#include "symboltaxonomy.h"
+
 #include <QHash>
 #include <QSet>
 
@@ -780,6 +783,13 @@ struct SignalContextCollection {
     QHash<QString, int> indexes;
 };
 
+bool isPortDirectionText(const QString& text)
+{
+    return text == QStringLiteral("input")
+        || text == QStringLiteral("output")
+        || text == QStringLiteral("inout");
+}
+
 void upsertSignalContext(SignalContextCollection* collection,
                          const WavePreviewSignalContext& context)
 {
@@ -798,7 +808,8 @@ void upsertSignalContext(SignalContextCollection* collection,
     WavePreviewSignalContext& existing =
         collection->contexts[existingIndex];
     if ((existing.direction.isEmpty()
-         || existing.direction == QStringLiteral("internal"))
+         || (existing.direction == QStringLiteral("internal")
+             && isPortDirectionText(context.direction)))
         && !context.direction.isEmpty()) {
         existing.direction = context.direction;
     }
@@ -970,6 +981,118 @@ SignalContextCollection collectSignalContexts(const QString& text,
         }
     }
     return collection;
+}
+
+QString semanticDirectionForRecord(const SemanticSymbolRecord& record)
+{
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    switch (record.collectorKind) {
+    case CollectorKind::PortInput:
+        return QStringLiteral("input");
+    case CollectorKind::PortOutput:
+        return QStringLiteral("output");
+    case CollectorKind::PortInout:
+        return QStringLiteral("inout");
+    default:
+        break;
+    }
+
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(record);
+    if (SymbolTaxonomy::isSignalDeclaration(metadata))
+        return QStringLiteral("internal");
+    return QString();
+}
+
+QString semanticTypeTextForRecord(const SemanticSymbolRecord& record)
+{
+    if (!record.type.rawTypeText.isEmpty())
+        return record.type.rawTypeText;
+    if (!record.type.resolvedTypeName.isEmpty())
+        return record.type.resolvedTypeName;
+    return SymbolTaxonomy::symbolTypeLabel(semanticMetadataForSymbolRecord(record));
+}
+
+bool isWavePreviewSemanticContextCandidate(const SemanticSymbolRecord& record)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(record);
+    return SymbolTaxonomy::isPortDeclaration(metadata)
+        || SymbolTaxonomy::isSignalDeclaration(metadata);
+}
+
+WavePreviewSignalContext semanticContextForRecord(
+    const SemanticSymbolRecord& record)
+{
+    WavePreviewSignalContext context;
+    if (!record.isValid() || !isWavePreviewSemanticContextCandidate(record))
+        return context;
+
+    context.signalName = record.name;
+    context.direction = semanticDirectionForRecord(record);
+    context.typeText = semanticTypeTextForRecord(record);
+    context.line = record.location.startLine;
+    context.column = record.location.startColumn;
+    context.declarationText = declarationTextForContext(context);
+    return context;
+}
+
+QStringList referencedSignalNames(const WavePreviewReport& report)
+{
+    QStringList names;
+    for (const WavePreviewLane& lane : report.lanes) {
+        appendUnique(&names, lane.signalName);
+        for (const WavePreviewAssignment& assignment : lane.assignments) {
+            appendUnique(&names, assignment.target);
+            for (const QString& source : assignment.sourceSignals)
+                appendUnique(&names, source);
+        }
+    }
+    return names;
+}
+
+void enrichSignalContextsFromSnapshot(
+    const WavePreviewQuery& query,
+    const WavePreviewReport& report,
+    SignalContextCollection* collection)
+{
+    if (!collection || !query.semanticSnapshot)
+        return;
+
+    SemanticQueryContext context;
+    context.fileName = query.fileName;
+    for (const QString& name : referencedSignalNames(report)) {
+        if (name.isEmpty())
+            continue;
+        const QList<SemanticSymbolRecord> candidates =
+            query.semanticSnapshot->findDefinitionRecords(name, context);
+        for (const SemanticSymbolRecord& candidate : candidates) {
+            const WavePreviewSignalContext semanticContext =
+                semanticContextForRecord(candidate);
+            if (!semanticContext.isValid())
+                continue;
+            upsertSignalContext(collection, semanticContext);
+            break;
+        }
+    }
+}
+
+void applySignalContextsToReport(const SignalContextCollection& collection,
+                                 WavePreviewReport* report)
+{
+    if (!report)
+        return;
+    QHash<QString, WavePreviewSignalContext> contextsByName;
+    for (const WavePreviewSignalContext& context : collection.contexts)
+        contextsByName.insert(context.signalName, context);
+
+    report->signalContexts = collection.contexts;
+    for (WavePreviewLane& lane : report->lanes) {
+        const WavePreviewSignalContext context =
+            contextsByName.value(lane.signalName);
+        if (context.isValid())
+            lane.context = context;
+    }
 }
 
 bool statementBodyRange(const QList<Token>& tokens,
@@ -1684,12 +1807,11 @@ WavePreviewReport WavePreviewService::previewForDocument(
         return report;
 
     const QList<Token> tokens = tokenize(query.documentText);
-    const SignalContextCollection signalContextCollection =
+    SignalContextCollection signalContextCollection =
         collectSignalContexts(query.documentText, tokens);
     QHash<QString, WavePreviewSignalContext> contextsByName;
     for (const WavePreviewSignalContext& context : signalContextCollection.contexts)
         contextsByName.insert(context.signalName, context);
-    report.signalContexts = signalContextCollection.contexts;
 
     QHash<QString, int> laneIndexes;
     int pos = 0;
@@ -1744,6 +1866,8 @@ WavePreviewReport WavePreviewService::previewForDocument(
                            return !lane.isValid();
                        }),
         report.lanes.end());
+    enrichSignalContextsFromSnapshot(query, report, &signalContextCollection);
+    applySignalContextsToReport(signalContextCollection, &report);
     report.clockResetGroups = clockResetGroupsForBlocks(report.blocks);
     refreshLaneSummaries(&report.lanes);
     report.available = report.assignmentCount > 0;

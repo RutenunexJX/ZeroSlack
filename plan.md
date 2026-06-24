@@ -592,6 +592,18 @@ feature direction that violates them.
 - Next Wave Preview milestones: cross-file/semantic enrichment using existing semantic records, richer canvas interaction for dense reports, and additional guard context only where it can stay evidence-based.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 456 checks and `gui_smoke_test` with 408 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Semantic Context MVP
+
+- Status: implemented in the current worktree.
+- Scope: first semantic-enrichment milestone for Wave Preview. It still does not simulate values, elaborate waveforms, or scan workspace files; it consumes the already-published semantic snapshot as optional context.
+- `WavePreviewQuery` now carries an optional `SemanticIndexSnapshot`. `WavePreviewPanelCoordinator` passes `SemanticIndex::getInstance()->snapshot()` when refreshing the dock.
+- `WavePreviewService` gathers target and source signal names from the generated waveform-sketch report, asks the supplied snapshot for definition records, and upserts port/signal context for names that are missing from the current-document declaration scan.
+- Local declaration context remains dominant: semantic snapshot records can fill missing context and port directions, but ordinary semantic signal records do not overwrite a current-document `internal` declaration.
+- Existing report consumers benefit through the same `signalContexts`, lane context, tree Context column, and shared hover details; UI code does not parse RTL or perform semantic lookups itself.
+- Implementation remains no-regex and uses deterministic token scans plus existing semantic records.
+- Next Wave Preview milestones: richer canvas interaction for dense reports, additional guard context only where evidence-based, and later semantic relationship overlays if they can stay report-driven.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 481 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

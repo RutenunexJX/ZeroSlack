@@ -1337,6 +1337,67 @@ int main(int argc, char** argv) {
                    && qLane->context.direction == QStringLiteral("internal")
                    && qLane->context.typeText == QStringLiteral("logic [7:0]"),
                true);
+    QList<SemanticSymbolRecord> waveSemanticRecords;
+    waveSemanticRecords.append(
+        makeSemanticFixtureRecord(QStringLiteral("remote_cfg"),
+                                  SymbolTaxonomy::DeclarationKind::Port,
+                                  SymbolTaxonomy::CollectorKind::PortInput,
+                                  QStringLiteral("remote_top"),
+                                  QStringLiteral("logic [3:0]"),
+                                  7001,
+                                  QStringLiteral("remote_wave.sv")));
+    waveSemanticRecords.append(
+        makeSemanticFixtureRecord(QStringLiteral("remote_state"),
+                                  SymbolTaxonomy::DeclarationKind::Signal,
+                                  SymbolTaxonomy::CollectorKind::Logic,
+                                  QStringLiteral("remote_top"),
+                                  QStringLiteral("logic [5:0]"),
+                                  7003,
+                                  QStringLiteral("remote_wave.sv")));
+    waveSemanticRecords.append(
+        makeSemanticFixtureRecord(QStringLiteral("local_cfg"),
+                                  SymbolTaxonomy::DeclarationKind::Signal,
+                                  SymbolTaxonomy::CollectorKind::Logic,
+                                  QStringLiteral("semantic_wave"),
+                                  QStringLiteral("logic [9:0]"),
+                                  7002,
+                                  QStringLiteral("semantic_wave.sv")));
+    const auto waveSemanticSnapshot =
+        sharedSnapshotFromRecords(waveSemanticRecords);
+    const QString waveSemanticInput =
+        QStringLiteral("module semantic_wave;\n"
+                       "logic [1:0] local_cfg;\n"
+                       "logic [3:0] out;\n"
+                       "assign out = remote_cfg + remote_state + local_cfg;\n"
+                       "endmodule\n");
+    const WavePreviewReport waveSemanticReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {QStringLiteral("semantic_wave.sv"),
+             waveSemanticInput,
+             waveSemanticSnapshot});
+    const WavePreviewSignalContext* remoteCfgContext =
+        waveContextNamed(waveSemanticReport, QStringLiteral("remote_cfg"));
+    expectBool("WavePreview semantic source context",
+               remoteCfgContext
+                   && remoteCfgContext->direction == QStringLiteral("input")
+                   && remoteCfgContext->typeText == QStringLiteral("logic [3:0]")
+                   && remoteCfgContext->line == 7001,
+               true);
+    const WavePreviewSignalContext* remoteStateContext =
+        waveContextNamed(waveSemanticReport, QStringLiteral("remote_state"));
+    expectBool("WavePreview semantic internal source context",
+               remoteStateContext
+                   && remoteStateContext->direction == QStringLiteral("internal")
+                   && remoteStateContext->typeText == QStringLiteral("logic [5:0]")
+                   && remoteStateContext->line == 7003,
+               true);
+    const WavePreviewSignalContext* localCfgContext =
+        waveContextNamed(waveSemanticReport, QStringLiteral("local_cfg"));
+    expectBool("WavePreview local context beats semantic snapshot",
+               localCfgContext
+                   && localCfgContext->direction == QStringLiteral("internal")
+                   && localCfgContext->typeText == QStringLiteral("logic [1:0]"),
+               true);
     expectBool("WavePreview reset guard label",
                qLane
                    && qLane->assignments.size() > 0
