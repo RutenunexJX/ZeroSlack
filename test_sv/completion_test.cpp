@@ -1036,13 +1036,13 @@ int main(int argc, char** argv) {
              formatterInstanceMapReport.formattedText,
              QStringLiteral("module inst_demo;\n"
                             "    child #(\n"
-                            "    .PARAM      (8),\n"
-                            "    .LONG_PARAM (WIDTH)\n"
+                            "        .PARAM      (8),\n"
+                            "        .LONG_PARAM (WIDTH)\n"
                             "    ) u_child (\n"
-                            "    .clk     (clk),\n"
-                            "    .rst_n   (rst_n),\n"
-                            "    .data_in (data_bus),\n"
-                            "    .ready   (ready)\n"
+                            "        .clk     (clk),\n"
+                            "        .rst_n   (rst_n),\n"
+                            "        .data_in (data_bus),\n"
+                            "        .ready   (ready)\n"
                             "    );\n"
                             "endmodule\n"));
     const FormatterReport unchangedInstanceMapReport =
@@ -1079,8 +1079,8 @@ int main(int argc, char** argv) {
                             "    logic       a;     // flag\n"
                             "    logic [7:0] data;  // byte\n"
                             "    child u_child (\n"
-                            "    .clk     (clk),  // clock\n"
-                            "    .data_in (data)  // bus\n"
+                            "        .clk     (clk),  // clock\n"
+                            "        .data_in (data)  // bus\n"
                             "    );\n"
                             "endmodule\n"));
     const FormatterReport unchangedTrailingCommentReport =
@@ -1192,6 +1192,48 @@ int main(int argc, char** argv) {
                             "        if (temp) keep = d;\n"
                             "    end\n"
                             "endmodule\n"));
+
+    const QString formatterContinuationInput =
+        QStringLiteral("module continuation_demo;\n"
+                       "assign out = {\n"
+                       "a,\n"
+                       "b\n"
+                       "};\n"
+                       "always_comb begin\n"
+                       "result = func(\n"
+                       "a,\n"
+                       "b\n"
+                       ");\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterContinuationReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterContinuationInput,
+            FormatterProfile::IndentOnly);
+    expectBool("Formatter continuation indent report changed",
+               formatterContinuationReport.changed,
+               true);
+    expectEq("Formatter indents continuation lines",
+             formatterContinuationReport.formattedText,
+             QStringLiteral("module continuation_demo;\n"
+                            "    assign out = {\n"
+                            "        a,\n"
+                            "        b\n"
+                            "    };\n"
+                            "    always_comb begin\n"
+                            "        result = func(\n"
+                            "            a,\n"
+                            "            b\n"
+                            "        );\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedContinuationReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterContinuationReport.formattedText,
+            FormatterProfile::IndentOnly);
+    expectBool("Formatter continuation indent idempotent",
+               unchangedContinuationReport.changed,
+               false);
 
     const QString formatterSelectionInput =
         QStringLiteral("    logic a; // flag\n"

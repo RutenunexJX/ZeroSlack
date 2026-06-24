@@ -12,6 +12,7 @@ enum class FormatterProfile {
 struct FormatterOptions {
     int indentWidth = 4;
     bool preservePreprocessorIndent = true;
+    bool indentContinuationLines = true;
     bool alignDeclarationBlocks = true;
     bool alignPortLists = true;
     bool alignInstanceMaps = true;

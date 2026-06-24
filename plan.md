@@ -464,6 +464,18 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer multi-line statement handling, and safer alignment choices that can use parser structure instead of line-local heuristics.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 451 checks and direct `gui_smoke_test` run with 405 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Continuation Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: twelfth usable formatter milestone and first multi-line statement indentation step. It does not rewrite expressions or align multi-line operands; it adjusts leading whitespace for delimiter continuation lines.
+- `FormatterOptions::indentContinuationLines` is enabled by default and remains enabled for `Indent Only`, because it only changes indentation. Structured alignment passes remain independently controlled.
+- `FormatterService` tracks unterminated `(` / `[` / `{` delimiters with deterministic code-only scans and indents continuation lines one extra level until the matching closing delimiter line.
+- Module/interface/class/function/task headers suppress delimiter continuation so ANSI port lists keep the existing one-level header depth instead of being over-indented.
+- Existing instance-map and port-map blocks now receive clearer continuation indentation before their alignment passes run.
+- Implementation remains no-regex and keeps formatter policy inside `FormatterService`.
+- Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 459 checks and direct `gui_smoke_test` run with 408 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

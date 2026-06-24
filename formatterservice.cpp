@@ -277,6 +277,46 @@ int leadingClosingTokens(const QStringList& tokens)
     return count;
 }
 
+bool suppressesDelimiterContinuation(const QStringList& tokens)
+{
+    if (tokens.isEmpty())
+        return false;
+    const QString first = tokens.first();
+    return first == QStringLiteral("module")
+        || first == QStringLiteral("interface")
+        || first == QStringLiteral("class")
+        || first == QStringLiteral("function")
+        || first == QStringLiteral("task");
+}
+
+bool startsWithClosingDelimiter(const QString& codeOnly)
+{
+    const QString trimmed = codeOnly.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+    const QChar first = trimmed.at(0);
+    return first == QLatin1Char(')')
+        || first == QLatin1Char(']')
+        || first == QLatin1Char('}');
+}
+
+int delimiterContinuationBalance(const QString& codeOnly)
+{
+    int balance = 0;
+    for (const QChar ch : codeOnly) {
+        if (ch == QLatin1Char('(')
+            || ch == QLatin1Char('[')
+            || ch == QLatin1Char('{')) {
+            ++balance;
+        } else if (ch == QLatin1Char(')')
+                   || ch == QLatin1Char(']')
+                   || ch == QLatin1Char('}')) {
+            --balance;
+        }
+    }
+    return balance;
+}
+
 bool lineHasCode(const QString& line)
 {
     for (const QChar ch : line) {
@@ -1535,6 +1575,7 @@ FormatterReport FormatterService::formatDocument(
     QStringList formatted;
     formatted.reserve(lines.size());
     int indentLevel = 0;
+    int continuationLevel = 0;
     bool inBlockComment = false;
 
     for (const QString& line : lines) {
@@ -1555,14 +1596,28 @@ FormatterReport FormatterService::formatDocument(
             continue;
         }
 
+        const int displayContinuation =
+            options.indentContinuationLines
+                ? std::max(0,
+                           continuationLevel
+                               - (startsWithClosingDelimiter(codeOnly) ? 1 : 0))
+                : 0;
         const int displayIndent =
-            std::max(0, indentLevel - leadingClosingTokens(tokens));
+            std::max(0, indentLevel - leadingClosingTokens(tokens))
+            + displayContinuation;
         const QString body = stripLeadingWhitespace(line);
         formatted.append(indentation(displayIndent, options.indentWidth) + body);
 
         indentLevel += countOpeningTokens(tokens);
         indentLevel -= countClosingTokens(tokens);
         indentLevel = std::max(0, indentLevel);
+        if (options.indentContinuationLines
+            && !suppressesDelimiterContinuation(tokens)) {
+            continuationLevel =
+                std::max(0,
+                         continuationLevel
+                             + delimiterContinuationBalance(codeOnly));
+        }
     }
 
     if (options.alignDeclarationBlocks)
