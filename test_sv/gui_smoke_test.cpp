@@ -467,6 +467,50 @@ static void runEditorFormatterRegression()
                                      "end\n"
                                      "endmodule\n"),
                true);
+
+    MyCodeEditor selectionEditor;
+    selectionEditor.resize(360, 160);
+    const QString selectionInput =
+        QStringLiteral("module top;\n"
+                       "    logic a; // flag\n"
+                       "    logic [7:0] data; // byte\n"
+                       "    always_comb begin\n"
+                       "        data = '0;\n"
+                       "    end\n"
+                       "endmodule\n");
+    selectionEditor.setPlainText(selectionInput);
+    QString selectionStatusMessage;
+    QObject::connect(&selectionEditor,
+                     &MyCodeEditor::editorStatusMessageRequested,
+                     &selectionEditor,
+                     [&](const QString& message) {
+                         selectionStatusMessage = message;
+                     });
+    QTextCursor selectionCursor = selectionEditor.textCursor();
+    const int selectionStart = selectionInput.indexOf(QStringLiteral("logic a"));
+    const int selectionEnd =
+        selectionInput.indexOf(QStringLiteral("    always_comb"));
+    selectionCursor.setPosition(selectionStart);
+    selectionCursor.setPosition(selectionEnd, QTextCursor::KeepAnchor);
+    selectionEditor.setTextCursor(selectionCursor);
+    selectionEditor.formatSelection();
+    expectBool("editor formatter selection preserves base indent",
+               selectionEditor.toPlainText()
+                   == QStringLiteral("module top;\n"
+                                     "    logic       a;     // flag\n"
+                                     "    logic [7:0] data;  // byte\n"
+                                     "    always_comb begin\n"
+                                     "        data = '0;\n"
+                                     "    end\n"
+                                     "endmodule\n"),
+               true);
+    expectBool("editor formatter selection emits status",
+               selectionStatusMessage.contains(QStringLiteral("Formatted selection")),
+               true);
+    selectionEditor.undo();
+    expectBool("editor formatter selection undo restores text",
+               selectionEditor.toPlainText() == selectionInput,
+               true);
 }
 
 static void runEditorHoverPreviewRegression(const QString& workspacePath)

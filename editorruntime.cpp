@@ -125,6 +125,41 @@ bool handleBracketPairInsertion(MyCodeEditor* editor, QKeyEvent* event)
     return true;
 }
 
+bool selectedFullLineRange(MyCodeEditor* editor, int* rangeStart, int* rangeEnd)
+{
+    if (!editor)
+        return false;
+
+    const QTextCursor cursor = editor->textCursor();
+    if (!cursor.hasSelection() || cursor.selectionEnd() <= cursor.selectionStart())
+        return false;
+
+    QTextDocument* document = editor->document();
+    if (!document)
+        return false;
+
+    const int selectionStart = cursor.selectionStart();
+    const int selectionEnd = cursor.selectionEnd();
+    const QTextBlock startBlock = document->findBlock(selectionStart);
+    const QTextBlock endBlock =
+        document->findBlock(std::max(selectionStart, selectionEnd - 1));
+    if (!startBlock.isValid() || !endBlock.isValid())
+        return false;
+
+    const int start = startBlock.position();
+    const int documentEnd = std::max(0, document->characterCount() - 1);
+    const int end = std::min(endBlock.position() + endBlock.length(),
+                             documentEnd);
+    if (end <= start)
+        return false;
+
+    if (rangeStart)
+        *rangeStart = start;
+    if (rangeEnd)
+        *rangeEnd = end;
+    return true;
+}
+
 bool handleBracketRangeTab(MyCodeEditor* editor, QKeyEvent* event)
 {
     if (!editor || !event || hasCommandModifier(event)
@@ -757,6 +792,8 @@ void MyCodeEditorState::executeEditorActionCommand(
 {
     if (command == QStringLiteral("format_document"))
         formatDocument(editor);
+    else if (command == QStringLiteral("format_selection"))
+        formatSelection(editor);
 }
 
 void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
@@ -784,6 +821,46 @@ void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
     editor->setTextCursor(nextCursor);
     emit editor->editorStatusMessageRequested(
         QStringLiteral("Formatted document (%1 lines)").arg(report.formattedLines));
+}
+
+void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    int rangeStart = -1;
+    int rangeEnd = -1;
+    if (!selectedFullLineRange(editor, &rangeStart, &rangeEnd)) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("No selection to format"));
+        return;
+    }
+
+    const QString selectedText =
+        editor->toPlainText().mid(rangeStart, rangeEnd - rangeStart);
+    const FormatterReport report =
+        FormatterService::getInstance()->formatSelection(selectedText);
+    if (!report.changed) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("Selection already formatted"));
+        return;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(rangeStart);
+    cursor.setPosition(rangeEnd, QTextCursor::KeepAnchor);
+    cursor.insertText(report.formattedText);
+    cursor.endEditBlock();
+
+    QTextCursor nextCursor = editor->textCursor();
+    nextCursor.setPosition(rangeStart);
+    nextCursor.setPosition(rangeStart + report.formattedText.size(),
+                           QTextCursor::KeepAnchor);
+    editor->setTextCursor(nextCursor);
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Formatted selection (%1 lines)")
+            .arg(report.formattedLines));
 }
 
 void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)

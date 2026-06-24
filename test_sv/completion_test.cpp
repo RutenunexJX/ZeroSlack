@@ -1023,6 +1023,26 @@ int main(int argc, char** argv) {
                unchangedTrailingCommentReport.changed,
                false);
 
+    const QString formatterSelectionInput =
+        QStringLiteral("    logic a; // flag\n"
+                       "    logic [7:0] data; // byte\n");
+    const FormatterReport formatterSelectionReport =
+        FormatterService::getInstance()->formatSelection(
+            formatterSelectionInput);
+    expectBool("Formatter selection report changed",
+               formatterSelectionReport.changed,
+               true);
+    expectEq("Formatter selection preserves base indentation",
+             formatterSelectionReport.formattedText,
+             QStringLiteral("    logic       a;     // flag\n"
+                            "    logic [7:0] data;  // byte\n"));
+    const FormatterReport unchangedSelectionReport =
+        FormatterService::getInstance()->formatSelection(
+            formatterSelectionReport.formattedText);
+    expectBool("Formatter selection idempotent",
+               unchangedSelectionReport.changed,
+               false);
+
     const QString wavePreviewInput =
         QStringLiteral("module wave_probe(\n"
                        "    input logic clk,\n"

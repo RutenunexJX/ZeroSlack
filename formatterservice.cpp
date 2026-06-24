@@ -283,12 +283,45 @@ QStringList splitLines(const QString& text)
     return lines;
 }
 
+QString joinLinesPreservingFinalNewline(const QStringList& lines,
+                                        bool hadFinalNewline)
+{
+    QString result = lines.join(QLatin1Char('\n'));
+    if (hadFinalNewline)
+        result.append(QLatin1Char('\n'));
+    return result;
+}
+
 int leadingWhitespaceWidth(const QString& line)
 {
     int width = 0;
     while (width < line.size() && line.at(width).isSpace())
         ++width;
     return width;
+}
+
+int commonLeadingWhitespaceWidth(const QStringList& lines)
+{
+    int minWidth = -1;
+    for (const QString& line : lines) {
+        if (!lineHasCode(line))
+            continue;
+        const int width = leadingWhitespaceWidth(line);
+        minWidth = minWidth < 0 ? width : std::min(minWidth, width);
+    }
+    return std::max(0, minWidth);
+}
+
+QString baseIndentText(const QStringList& lines, int width)
+{
+    if (width <= 0)
+        return QString();
+    for (const QString& line : lines) {
+        if (!lineHasCode(line))
+            continue;
+        return line.left(std::min(width, static_cast<int>(line.size())));
+    }
+    return QString();
 }
 
 CodeCommentParts splitTrailingLineComment(const QString& line)
@@ -1042,9 +1075,53 @@ FormatterReport FormatterService::formatDocument(
     if (options.alignInstanceMaps)
         alignInstanceMapBlocks(&formatted);
 
-    report.formattedText = formatted.join(QLatin1Char('\n'));
-    if (hadFinalNewline)
-        report.formattedText.append(QLatin1Char('\n'));
+    report.formattedText =
+        joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
+    report.changed = report.formattedText != text;
+    report.formattedLines = formatted.size();
+    return report;
+}
+
+FormatterReport FormatterService::formatSelection(
+    const QString& text,
+    const FormatterOptions& options) const
+{
+    FormatterReport report;
+    if (text.isEmpty())
+        return report;
+
+    const bool hadFinalNewline = text.endsWith(QLatin1Char('\n'));
+    QStringList lines = splitLines(text);
+    if (hadFinalNewline && !lines.isEmpty() && lines.last().isEmpty())
+        lines.removeLast();
+
+    const int baseWidth = commonLeadingWhitespaceWidth(lines);
+    const QString baseIndent = baseIndentText(lines, baseWidth);
+    QStringList dedented;
+    dedented.reserve(lines.size());
+    for (const QString& line : lines) {
+        if (!lineHasCode(line)) {
+            dedented.append(QString());
+            continue;
+        }
+        dedented.append(line.mid(std::min(baseWidth,
+                                          static_cast<int>(line.size()))));
+    }
+
+    const QString dedentedText =
+        joinLinesPreservingFinalNewline(dedented, hadFinalNewline);
+    const FormatterReport inner = formatDocument(dedentedText, options);
+    QStringList formatted = splitLines(inner.formattedText);
+    if (hadFinalNewline && !formatted.isEmpty() && formatted.last().isEmpty())
+        formatted.removeLast();
+
+    for (QString& line : formatted) {
+        if (lineHasCode(line))
+            line.prepend(baseIndent);
+    }
+
+    report.formattedText =
+        joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
     return report;

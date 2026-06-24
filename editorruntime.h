@@ -86,6 +86,7 @@ struct MyCodeEditorState
     void executeAlternateModeCommand(const QString& command);
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
     void formatDocument(MyCodeEditor* editor);
+    void formatSelection(MyCodeEditor* editor);
     void startFoldRegionMarkMode(MyCodeEditor* editor);
     void cancelFoldRegionMarkMode(MyCodeEditor* editor);
     bool foldRegionMarkModeActive() const;

@@ -201,6 +201,11 @@ void MyCodeEditor::formatDocument()
     state->formatDocument(this);
 }
 
+void MyCodeEditor::formatSelection()
+{
+    state->formatSelection(this);
+}
+
 void MyCodeEditor::highlightSearchMatches(
     const QString& text,
     bool caseSensitive)

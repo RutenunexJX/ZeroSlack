@@ -348,7 +348,7 @@ feature direction that violates them.
 - `FormatterService` owns formatting policy and returns a `FormatterReport`; editor runtime only invokes the service and applies the result as one undoable edit block.
 - The MVP is indent-only: it changes leading whitespace, leaves line-internal text untouched, keeps blank lines empty, ignores strings and comments while counting structure, and preserves preprocessor directive lines so macro-heavy code is not reshaped.
 - Supported structure counters include `module`/`endmodule`, `interface`/`endinterface`, `package`/`endpackage`, `class`/`endclass`, `function`/`endfunction`, `task`/`endtask`, `generate`/`endgenerate`, `begin`/`end`, `case`/`endcase`, and `fork`/`join*`.
-- The first UI entry is editor context menu `Format Document`; it reports status and can be undone in one step. Format Selection, format-on-save, alignment of ports/instances/parameters, and user-configurable formatter profiles remain later formatter milestones.
+- The first UI entry was editor context menu `Format Document`; it reports status and can be undone in one step. Later formatter milestones have since added format selection, alignment of ports/instances/parameters, and trailing `//` comment preservation; format-on-save and user-configurable formatter profiles remain future work.
 - Implementation and future formatter extensions must remain no-regex. Prefer Tree-sitter/semantic records for future structural formatting and deterministic token scans for small local policies.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run, direct `gui_smoke_test` run against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
 
@@ -360,7 +360,7 @@ feature direction that violates them.
 - The MVP aligns consecutive simple signal declarations by declaration-name column and aligns consecutive `parameter` / `localparam` assignment columns. It supports packed and unpacked dimensions on the declaration side.
 - The alignment pass is intentionally narrow: it skips preprocessor lines, block-comment-bearing lines, multi-declaration lines, typedefs, and non-declaration statements. A later formatter milestone adds trailing `//` comment preservation for simple aligned declarations.
 - Implementation remains no-regex. It uses deterministic token scans, bracket-depth checks, and conservative declaration parsing.
-- Next Formatter milestones: instance parameter/port map alignment, format selection, and formatter profile controls.
+- Next Formatter milestones: formatter profile controls and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 404 checks, focused build target `gui_smoke_test`, direct `gui_smoke_test` run with 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Formatter Port List Alignment MVP
@@ -371,7 +371,7 @@ feature direction that violates them.
 - The MVP aligns contiguous simple ANSI `input` / `output` / `inout` lines by direction, type/range prefix, and port name. It preserves unpacked dimensions after the port name and keeps trailing commas where they already exist.
 - The alignment pass is intentionally narrow: it skips preprocessor lines, block-comment-bearing lines, multi-port lines, default-value ports, inline closing forms such as `);`, and complex port declarations. Instance port maps and parameter override maps remain later formatter work.
 - Implementation remains no-regex. It uses deterministic token scans, bracket-depth checks, and conservative port-line parsing.
-- Next Formatter milestones: format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: formatter profile controls and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 414 checks, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run with 365 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Formatter Instance Map Alignment MVP
@@ -383,7 +383,7 @@ feature direction that violates them.
 - Expression text inside parentheses is preserved. The pass only normalizes spacing between the association name and `(`, and it keeps trailing commas where they already exist.
 - The alignment pass is intentionally narrow: it skips preprocessor lines, block-comment-bearing lines, semicolon-terminated inline forms, malformed parentheses, and complex non-single-line associations. Positional maps and mixed inline maps remain later formatter work.
 - Implementation remains no-regex. It uses deterministic token scans, quote-aware parenthesis matching, and conservative named-association parsing.
-- Next Formatter milestones: format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: formatter profile controls and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test` and direct `completion_test` run with 417 checks. Final release verification for the commit also includes focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Formatter Trailing Comment Alignment MVP
@@ -394,8 +394,19 @@ feature direction that violates them.
 - The MVP preserves the comment text from `//` onward and keeps expression or declaration text under the same conservative parsing rules as the earlier alignment passes.
 - The pass intentionally skips block comments, preprocessor lines, comment-only lines, and any declaration/port/map form that the existing conservative parser would skip. It does not attempt to reflow comment text or support multiline block comments.
 - Implementation remains no-regex. It uses deterministic token scans plus the existing bracket/parenthesis helpers and keeps formatting policy inside `FormatterService`.
-- Next Formatter milestones: format selection, formatter profile controls, and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: formatter profile controls and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test` and direct `completion_test` run with 420 checks. Final release verification for the commit also includes focused `gui_smoke_test`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Formatter Format Selection MVP
+
+- Status: implemented in the current worktree.
+- Scope: sixth usable formatter milestone. It exposes the conservative formatter on selected code ranges without requiring users to format the whole document.
+- `FormatterService::formatSelection` owns selection formatting policy. It formats selected full-line ranges by removing common base indentation before formatting, then restoring that base indentation afterward so nested module or block selections do not get pulled back to column 0.
+- `MyCodeEditor::formatSelection` expands an arbitrary text selection to the affected full lines, applies the formatter result as one undoable edit, reselects the formatted range, and reports status. The editor context menu exposes `Format Selection` when text is selected, beside `Format Document`.
+- The MVP intentionally formats line ranges, not arbitrary character spans. It preserves existing formatter conservatism: complex statements, skipped aligned forms, and block comments remain under the same rules as document formatting.
+- Implementation remains no-regex. UI only routes selection text and applies the returned formatter report; formatting policy stays inside `FormatterService`.
+- Next Formatter milestones: formatter profile controls, format-on-save policy if wanted, and eventually deeper Tree-sitter-backed structural formatting.
+- Verification for this block: focused build target `completion_test`, direct `completion_test` run with 423 checks, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run with 368 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Data MVP
 

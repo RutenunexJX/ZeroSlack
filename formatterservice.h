@@ -26,6 +26,9 @@ public:
     FormatterReport formatDocument(
         const QString& text,
         const FormatterOptions& options = FormatterOptions()) const;
+    FormatterReport formatSelection(
+        const QString& text,
+        const FormatterOptions& options = FormatterOptions()) const;
 
 private:
     static std::unique_ptr<FormatterService> instance;

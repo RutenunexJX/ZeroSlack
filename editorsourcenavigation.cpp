@@ -188,6 +188,15 @@ void EditorSourceNavigationUi::handleContextMenu(
         menu.get(),
         contextProvider(cursorAtPos.position(), false));
     menu->addSeparator();
+    QAction* formatSelectionAction =
+        menu->addAction(QStringLiteral("Format Selection"));
+    formatSelectionAction->setEnabled(editor->textCursor().hasSelection());
+    QObject::connect(formatSelectionAction,
+                     &QAction::triggered,
+                     editor,
+                     [editor]() {
+                         editor->formatSelection();
+                     });
     QAction* formatAction = menu->addAction(QStringLiteral("Format Document"));
     QObject::connect(formatAction, &QAction::triggered, editor, [editor]() {
         editor->formatDocument();

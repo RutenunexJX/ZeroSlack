@@ -62,6 +62,7 @@ public:
     void setGhostAnnotations(
         const QList<GhostAnnotation>& annotations);
     void formatDocument();
+    void formatSelection();
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void applyAppearanceSettings(const EditorAppearanceOptions& options);
