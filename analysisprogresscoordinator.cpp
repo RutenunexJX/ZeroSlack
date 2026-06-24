@@ -5,6 +5,7 @@
 #include "workspaceanalysisrequestqueue.h"
 #include "workspaceanalysisplanservice.h"
 
+#include <QDir>
 #include <QFileInfo>
 
 namespace {
@@ -29,6 +30,34 @@ QString priorityBandText(const WorkspaceAnalysisPlan& plan)
         .arg(plan.dirtyOpenPriorityFiles.size())
         .arg(plan.cleanOpenPriorityFiles.size())
         .arg(plan.backgroundFiles.size());
+}
+
+QString normalizedFilePath(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+void rememberBand(QHash<QString, QString>* bands,
+                  const QStringList& fileNames,
+                  const QString& label)
+{
+    if (!bands)
+        return;
+    for (const QString& fileName : fileNames) {
+        const QString normalized = normalizedFilePath(fileName);
+        if (!normalized.isEmpty() && !bands->contains(normalized))
+            bands->insert(normalized, label);
+    }
+}
+
+QString bandSuffix(const QString& band)
+{
+    return band.isEmpty()
+        ? QString()
+        : QStringLiteral(" [%1]").arg(band);
 }
 }
 
@@ -145,10 +174,12 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
         return;
 
     const QString shortName = QFileInfo(currentFileName).fileName();
+    const QString band = workspaceSymbolBandForFile(currentFileName);
     emit statusMessageRequested(
-        QString("Symbol analysis: %1 / %2 - %3")
+        QString("Symbol analysis: %1 / %2%3 - %4")
             .arg(filesDone)
             .arg(totalFiles)
+            .arg(bandSuffix(band))
             .arg(shortName),
         1000);
     logProgressCheckpoint(QStringLiteral("Symbol analysis"),
@@ -162,6 +193,7 @@ void AnalysisProgressCoordinator::handleWorkspaceAnalysisPlanPrepared(
     const WorkspaceAnalysisPlan& plan)
 {
     const int totalFiles = plan.project.systemVerilogFiles.size();
+    rememberWorkspacePlanBands(plan);
     if (totalFiles <= 0)
         return;
 
@@ -186,6 +218,30 @@ void AnalysisProgressCoordinator::handleWorkspaceAnalysisPlanPrepared(
             .arg(plan.cleanOpenPriorityFiles.size())
             .arg(totalFiles),
         3000);
+}
+
+void AnalysisProgressCoordinator::rememberWorkspacePlanBands(
+    const WorkspaceAnalysisPlan& plan)
+{
+    workspaceSymbolBandByFile.clear();
+    rememberBand(&workspaceSymbolBandByFile,
+                 plan.currentFilePriorityFiles,
+                 QStringLiteral("current"));
+    rememberBand(&workspaceSymbolBandByFile,
+                 plan.dirtyOpenPriorityFiles,
+                 QStringLiteral("dirty-open"));
+    rememberBand(&workspaceSymbolBandByFile,
+                 plan.cleanOpenPriorityFiles,
+                 QStringLiteral("open"));
+    rememberBand(&workspaceSymbolBandByFile,
+                 plan.backgroundFiles,
+                 QStringLiteral("background"));
+}
+
+QString AnalysisProgressCoordinator::workspaceSymbolBandForFile(
+    const QString& fileName) const
+{
+    return workspaceSymbolBandByFile.value(normalizedFilePath(fileName));
 }
 
 void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued(
@@ -359,7 +415,9 @@ void AnalysisProgressCoordinator::logProgressCheckpoint(
             .arg(totalFiles);
     const QString shortName = QFileInfo(currentFileName).fileName();
     if (!shortName.isEmpty())
-        message += QStringLiteral(" - %1").arg(shortName);
+        message += QStringLiteral("%1 - %2")
+                       .arg(bandSuffix(workspaceSymbolBandForFile(currentFileName)),
+                            shortName);
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Analyzer"),

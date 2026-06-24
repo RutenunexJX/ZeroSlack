@@ -2,6 +2,7 @@
 #define ANALYSISPROGRESSCOORDINATOR_H
 
 #include <QObject>
+#include <QHash>
 #include <QString>
 #include <QStringList>
 #include <atomic>
@@ -42,7 +43,10 @@ private:
     std::atomic<bool> symbolAnalysisCancelled{false};
     int lastSymbolProgressCheckpoint = 0;
     int lastRelationshipProgressCheckpoint = 0;
+    QHash<QString, QString> workspaceSymbolBandByFile;
 
+    void rememberWorkspacePlanBands(const WorkspaceAnalysisPlan& plan);
+    QString workspaceSymbolBandForFile(const QString& fileName) const;
     void showAnalysisProgress(const QStringList& files);
     void showSymbolStageStarted(const QStringList& files);
     void showRelationshipStageStarted(const QStringList& files);

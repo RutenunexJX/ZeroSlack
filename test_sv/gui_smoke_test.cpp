@@ -966,6 +966,29 @@ static void runActivityLogServiceRegression()
                    && planStatusSpy.at(0).at(0).toString().contains(
                        QStringLiteral("3 priority (1/1/1) / 4 files")),
                true);
+    planCoordinator.handleWorkspaceSymbolProgress(
+        1,
+        4,
+        QStringLiteral("E:/workspace/current.sv"));
+    bool sawPlanBandProgress = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawPlanBandProgress = sawPlanBandProgress
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(
+                    QStringLiteral("Symbol analysis progress: 25%"))
+                && event.message.contains(QStringLiteral("[current]"))
+                && event.message.contains(QStringLiteral("current.sv")));
+    }
+    expectBool("activity log records workspace plan progress band",
+               sawPlanBandProgress,
+               true);
+    expectBool("workspace plan progress emits band status",
+               planStatusSpy.count() == 2
+                   && planStatusSpy.at(1).at(0).toString().contains(
+                       QStringLiteral("[current]"))
+                   && planStatusSpy.at(1).at(0).toString().contains(
+                       QStringLiteral("current.sv")),
+               true);
     service->clear();
 
     AnalysisProgressCoordinator progressCoordinator(nullptr);
