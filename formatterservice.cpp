@@ -1022,6 +1022,28 @@ FormatterService* FormatterService::getInstance()
     return instance.get();
 }
 
+FormatterOptions FormatterService::optionsForProfile(FormatterProfile profile)
+{
+    FormatterOptions options;
+    if (profile == FormatterProfile::IndentOnly) {
+        options.alignDeclarationBlocks = false;
+        options.alignPortLists = false;
+        options.alignInstanceMaps = false;
+    }
+    return options;
+}
+
+QString FormatterService::profileDisplayName(FormatterProfile profile)
+{
+    switch (profile) {
+    case FormatterProfile::IndentOnly:
+        return QStringLiteral("Indent Only");
+    case FormatterProfile::Structured:
+        return QStringLiteral("Structured");
+    }
+    return QStringLiteral("Structured");
+}
+
 FormatterReport FormatterService::formatDocument(
     const QString& text,
     const FormatterOptions& options) const
@@ -1082,6 +1104,13 @@ FormatterReport FormatterService::formatDocument(
     return report;
 }
 
+FormatterReport FormatterService::formatDocument(
+    const QString& text,
+    FormatterProfile profile) const
+{
+    return formatDocument(text, optionsForProfile(profile));
+}
+
 FormatterReport FormatterService::formatSelection(
     const QString& text,
     const FormatterOptions& options) const
@@ -1125,4 +1154,11 @@ FormatterReport FormatterService::formatSelection(
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
     return report;
+}
+
+FormatterReport FormatterService::formatSelection(
+    const QString& text,
+    FormatterProfile profile) const
+{
+    return formatSelection(text, optionsForProfile(profile));
 }

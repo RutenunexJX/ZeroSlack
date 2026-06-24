@@ -196,6 +196,16 @@ void MyCodeEditor::setGhostAnnotations(
     state->setGhostAnnotations(this, annotations);
 }
 
+void MyCodeEditor::setFormatterProfile(FormatterProfile profile)
+{
+    state->setFormatterProfile(profile);
+}
+
+FormatterProfile MyCodeEditor::formatterProfile() const
+{
+    return state->formatterProfile();
+}
+
 void MyCodeEditor::formatDocument()
 {
     state->formatDocument(this);

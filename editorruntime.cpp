@@ -796,13 +796,25 @@ void MyCodeEditorState::executeEditorActionCommand(
         formatSelection(editor);
 }
 
+void MyCodeEditorState::setFormatterProfile(FormatterProfile profile)
+{
+    currentFormatterProfile = profile;
+}
+
+FormatterProfile MyCodeEditorState::formatterProfile() const
+{
+    return currentFormatterProfile;
+}
+
 void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
 {
     if (!editor)
         return;
 
     const FormatterReport report =
-        FormatterService::getInstance()->formatDocument(editor->toPlainText());
+        FormatterService::getInstance()->formatDocument(
+            editor->toPlainText(),
+            currentFormatterProfile);
     if (!report.changed) {
         emit editor->editorStatusMessageRequested(
             QStringLiteral("Document already formatted"));
@@ -820,7 +832,9 @@ void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
     nextCursor.setPosition(qMin(oldPosition, editor->document()->characterCount() - 1));
     editor->setTextCursor(nextCursor);
     emit editor->editorStatusMessageRequested(
-        QStringLiteral("Formatted document (%1 lines)").arg(report.formattedLines));
+        QStringLiteral("Formatted document (%1 lines, %2)")
+            .arg(report.formattedLines)
+            .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
 }
 
 void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
@@ -839,7 +853,9 @@ void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
     const QString selectedText =
         editor->toPlainText().mid(rangeStart, rangeEnd - rangeStart);
     const FormatterReport report =
-        FormatterService::getInstance()->formatSelection(selectedText);
+        FormatterService::getInstance()->formatSelection(
+            selectedText,
+            currentFormatterProfile);
     if (!report.changed) {
         emit editor->editorStatusMessageRequested(
             QStringLiteral("Selection already formatted"));
@@ -859,8 +875,9 @@ void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
                            QTextCursor::KeepAnchor);
     editor->setTextCursor(nextCursor);
     emit editor->editorStatusMessageRequested(
-        QStringLiteral("Formatted selection (%1 lines)")
-            .arg(report.formattedLines));
+        QStringLiteral("Formatted selection (%1 lines, %2)")
+            .arg(report.formattedLines)
+            .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
 }
 
 void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)

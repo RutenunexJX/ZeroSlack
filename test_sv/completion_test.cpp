@@ -930,6 +930,29 @@ int main(int argc, char** argv) {
     expectBool("Formatter alignment idempotent",
                unchangedAlignmentReport.changed,
                false);
+    const FormatterOptions indentOnlyOptions =
+        FormatterService::optionsForProfile(FormatterProfile::IndentOnly);
+    expectBool("Formatter indent-only profile disables alignments",
+               !indentOnlyOptions.alignDeclarationBlocks
+                   && !indentOnlyOptions.alignPortLists
+                   && !indentOnlyOptions.alignInstanceMaps,
+               true);
+    expectEq("Formatter indent-only profile name",
+             FormatterService::profileDisplayName(
+                 FormatterProfile::IndentOnly),
+             QStringLiteral("Indent Only"));
+    const FormatterReport indentOnlyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterAlignmentInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only profile skips declaration alignment",
+             indentOnlyReport.formattedText,
+             QStringLiteral("module align_demo;\n"
+                            "    logic [7:0] data;\n"
+                            "    logic valid;\n"
+                            "    parameter int P = 8;\n"
+                            "    parameter int LONG_NAME = P + 1;\n"
+                            "endmodule\n"));
 
     const QString formatterPortListInput =
         QStringLiteral("module port_demo(\n"

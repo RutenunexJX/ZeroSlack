@@ -2,10 +2,12 @@
 
 #include "editorhoverpopup.h"
 #include "editorselection.h"
+#include "formatterservice.h"
 #include "ghostannotationservice.h"
 #include "mycodeeditor.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QKeyEvent>
@@ -188,6 +190,38 @@ void EditorSourceNavigationUi::handleContextMenu(
         menu.get(),
         contextProvider(cursorAtPos.position(), false));
     menu->addSeparator();
+    QMenu* profileMenu = menu->addMenu(QStringLiteral("Formatter Profile"));
+    QActionGroup* profileGroup = new QActionGroup(profileMenu);
+    profileGroup->setExclusive(true);
+    QAction* structuredProfileAction =
+        profileMenu->addAction(
+            FormatterService::profileDisplayName(FormatterProfile::Structured));
+    structuredProfileAction->setCheckable(true);
+    structuredProfileAction->setActionGroup(profileGroup);
+    structuredProfileAction->setChecked(
+        editor->formatterProfile() == FormatterProfile::Structured);
+    QObject::connect(structuredProfileAction,
+                     &QAction::triggered,
+                     editor,
+                     [editor]() {
+                         editor->setFormatterProfile(
+                             FormatterProfile::Structured);
+                     });
+    QAction* indentOnlyProfileAction =
+        profileMenu->addAction(
+            FormatterService::profileDisplayName(FormatterProfile::IndentOnly));
+    indentOnlyProfileAction->setCheckable(true);
+    indentOnlyProfileAction->setActionGroup(profileGroup);
+    indentOnlyProfileAction->setChecked(
+        editor->formatterProfile() == FormatterProfile::IndentOnly);
+    QObject::connect(indentOnlyProfileAction,
+                     &QAction::triggered,
+                     editor,
+                     [editor]() {
+                         editor->setFormatterProfile(
+                             FormatterProfile::IndentOnly);
+                     });
+
     QAction* formatSelectionAction =
         menu->addAction(QStringLiteral("Format Selection"));
     formatSelectionAction->setEnabled(editor->textCursor().hasSelection());

@@ -4,6 +4,11 @@
 #include <QString>
 #include <memory>
 
+enum class FormatterProfile {
+    IndentOnly,
+    Structured
+};
+
 struct FormatterOptions {
     int indentWidth = 4;
     bool preservePreprocessorIndent = true;
@@ -22,13 +27,21 @@ class FormatterService
 {
 public:
     static FormatterService* getInstance();
+    static FormatterOptions optionsForProfile(FormatterProfile profile);
+    static QString profileDisplayName(FormatterProfile profile);
 
     FormatterReport formatDocument(
         const QString& text,
         const FormatterOptions& options = FormatterOptions()) const;
+    FormatterReport formatDocument(
+        const QString& text,
+        FormatterProfile profile) const;
     FormatterReport formatSelection(
         const QString& text,
         const FormatterOptions& options = FormatterOptions()) const;
+    FormatterReport formatSelection(
+        const QString& text,
+        FormatterProfile profile) const;
 
 private:
     static std::unique_ptr<FormatterService> instance;

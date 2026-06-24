@@ -30,6 +30,7 @@ struct EditorAppearanceOptions;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
+enum class FormatterProfile;
 enum class SourceSymbolAction;
 struct MyCodeEditorState;
 
@@ -61,6 +62,8 @@ public:
         const QList<SemanticDecoration>& decorations);
     void setGhostAnnotations(
         const QList<GhostAnnotation>& annotations);
+    void setFormatterProfile(FormatterProfile profile);
+    FormatterProfile formatterProfile() const;
     void formatDocument();
     void formatSelection();
     void highlightSearchMatches(const QString& text, bool caseSensitive);

@@ -405,8 +405,19 @@ feature direction that violates them.
 - `MyCodeEditor::formatSelection` expands an arbitrary text selection to the affected full lines, applies the formatter result as one undoable edit, reselects the formatted range, and reports status. The editor context menu exposes `Format Selection` when text is selected, beside `Format Document`.
 - The MVP intentionally formats line ranges, not arbitrary character spans. It preserves existing formatter conservatism: complex statements, skipped aligned forms, and block comments remain under the same rules as document formatting.
 - Implementation remains no-regex. UI only routes selection text and applies the returned formatter report; formatting policy stays inside `FormatterService`.
-- Next Formatter milestones: formatter profile controls, format-on-save policy if wanted, and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: format-on-save policy if wanted, profile persistence beyond the editor lifetime, and eventually deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 423 checks, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run with 368 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Formatter Profile Controls MVP
+
+- Status: implemented in the current worktree.
+- Scope: seventh usable formatter milestone. It lets users pick between the existing conservative structured formatting path and a pure indentation path before the formatter grows deeper structural passes.
+- `FormatterProfile` adds `Structured` and `Indent Only`. `FormatterService::optionsForProfile` maps `Indent Only` to indentation plus preprocessor preservation while disabling declaration, ANSI port-list, and named instance-map alignment; `Structured` keeps the existing default behavior.
+- `MyCodeEditorState` stores the active profile per editor. `EditorSourceNavigationUi` adds a `Formatter Profile` submenu to the editor context menu with checkable profile actions, and document/selection formatting status messages include the active profile name.
+- This milestone intentionally does not add format-on-save or persistent application settings yet. It keeps policy in `FormatterService` and editor state, with UI only selecting a profile and applying the service report as one undoable edit.
+- Implementation remains no-regex.
+- Next Formatter milestones: format-on-save policy if wanted, profile persistence beyond the editor lifetime, and eventually deeper Tree-sitter-backed structural formatting.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 435 checks and direct `gui_smoke_test` run with 377 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Data MVP
 

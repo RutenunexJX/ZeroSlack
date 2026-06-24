@@ -7,6 +7,7 @@
 #include "editorcursornavigation.h"
 #include "editorfileidentity.h"
 #include "editorfolding.h"
+#include "formatterservice.h"
 #include "editorgeometry.h"
 #include "editorgutter.h"
 #include "editormodestate.h"
@@ -45,6 +46,7 @@ struct MyCodeEditorState
     EditorSourceNavigationUi sourceNavigation;
     EditorSelection selections;
     QList<GhostAnnotation> ghostAnnotations;
+    FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -85,6 +87,8 @@ struct MyCodeEditorState
     void setAlternateModeEnabled(bool enabled);
     void executeAlternateModeCommand(const QString& command);
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
+    void setFormatterProfile(FormatterProfile profile);
+    FormatterProfile formatterProfile() const;
     void formatDocument(MyCodeEditor* editor);
     void formatSelection(MyCodeEditor* editor);
     void startFoldRegionMarkMode(MyCodeEditor* editor);

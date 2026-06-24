@@ -469,6 +469,25 @@ static void runEditorFormatterRegression()
                                      "end\n"
                                      "endmodule\n"),
                true);
+    editor.setPlainText(QStringLiteral("module profile_demo;\n"
+                                       "logic [7:0] data;\n"
+                                       "logic valid;\n"
+                                       "endmodule\n"));
+    editor.setFormatterProfile(FormatterProfile::IndentOnly);
+    editor.formatDocument();
+    expectBool("editor formatter indent-only profile skips alignment",
+               editor.toPlainText()
+                   == QStringLiteral("module profile_demo;\n"
+                                     "    logic [7:0] data;\n"
+                                     "    logic valid;\n"
+                                     "endmodule\n"),
+               true);
+    expectBool("editor formatter status names profile",
+               statusMessage.contains(QStringLiteral("Indent Only")),
+               true);
+    expectBool("editor formatter stores selected profile",
+               editor.formatterProfile() == FormatterProfile::IndentOnly,
+               true);
 
     MyCodeEditor selectionEditor;
     selectionEditor.resize(360, 160);
