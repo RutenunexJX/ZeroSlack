@@ -809,6 +809,7 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
 
 QString buildAlignedDeclarationCodeLine(const DeclarationAlignmentLine& line,
                                         int maxPrefixWidth,
+                                        int maxNameWidth,
                                         int maxBeforeAssignmentWidth,
                                         bool alignAssignment)
 {
@@ -816,7 +817,7 @@ QString buildAlignedDeclarationCodeLine(const DeclarationAlignmentLine& line,
         + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
         + line.name;
     if (!line.suffix.isEmpty()) {
-        content += QLatin1Char(' ');
+        content += repeatSpaces(maxNameWidth - line.name.size() + 1);
         content += line.suffix;
     }
 
@@ -844,10 +845,13 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
         return;
 
     int maxPrefixWidth = 0;
+    int maxNameWidth = 0;
     int assignmentCount = 0;
     for (const DeclarationAlignmentLine& line : block) {
         maxPrefixWidth = std::max(maxPrefixWidth,
                                   static_cast<int>(line.prefix.size()));
+        maxNameWidth = std::max(maxNameWidth,
+                                static_cast<int>(line.name.size()));
         if (line.hasAssignment)
             ++assignmentCount;
     }
@@ -858,7 +862,7 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
             + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
             + line.name;
         if (!line.suffix.isEmpty()) {
-            content += QLatin1Char(' ');
+            content += repeatSpaces(maxNameWidth - line.name.size() + 1);
             content += line.suffix;
         }
         maxBeforeAssignmentWidth =
@@ -875,6 +879,7 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
         const QString codeLine =
             buildAlignedDeclarationCodeLine(block.at(i),
                                             maxPrefixWidth,
+                                            maxNameWidth,
                                             maxBeforeAssignmentWidth,
                                             alignAssignment);
         codeLines.append(codeLine);

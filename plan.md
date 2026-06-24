@@ -496,6 +496,17 @@ feature direction that violates them.
 - Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 489 checks; direct `gui_smoke_test` run with 412 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Declaration Array Dimension Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: fifteenth usable formatter milestone and a conservative RTL declaration readability step. It improves existing declaration-block alignment for unpacked arrays without changing expressions, splitting declarations, or reordering code.
+- `FormatterService` now tracks declaration names separately from unpacked array suffixes, so simple signal and parameter/localparam declaration blocks can align suffixes such as `[3:0]` and `[DEPTH-1:0]` into a stable column.
+- Existing assignment and trailing-comment alignment stays intact for parameter/localparam arrays, while scalar declarations avoid useless trailing padding.
+- The behavior is part of the existing Structured declaration alignment pass and remains disabled for `Indent Only`.
+- Implementation remains no-regex and uses deterministic declaration parsing already scoped to simple single-declaration lines.
+- Next Formatter milestones: Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 495 checks; direct `gui_smoke_test` run with 414 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

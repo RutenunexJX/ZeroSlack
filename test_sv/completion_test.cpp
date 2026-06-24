@@ -959,6 +959,33 @@ int main(int argc, char** argv) {
     expectBool("Formatter alignment idempotent",
                unchangedAlignmentReport.changed,
                false);
+    const QString formatterArrayDeclInput =
+        QStringLiteral("module array_decl_demo;\n"
+                       "logic flag [3:0];\n"
+                       "logic [7:0] data_bus [DEPTH-1:0];\n"
+                       "parameter int LUT [4] = '{0, 1, 2, 3};\n"
+                       "parameter int LONG_LUT [DEPTH] = DEFAULT_LUT;\n"
+                       "endmodule\n");
+    const FormatterReport formatterArrayDeclReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterArrayDeclInput);
+    expectBool("Formatter declaration array dimension report changed",
+               formatterArrayDeclReport.changed,
+               true);
+    expectEq("Formatter aligns declaration array dimensions",
+             formatterArrayDeclReport.formattedText,
+             QStringLiteral("module array_decl_demo;\n"
+                            "    logic       flag     [3:0];\n"
+                            "    logic [7:0] data_bus [DEPTH-1:0];\n"
+                            "    parameter int LUT      [4]     = '{0, 1, 2, 3};\n"
+                            "    parameter int LONG_LUT [DEPTH] = DEFAULT_LUT;\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedArrayDeclReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterArrayDeclReport.formattedText);
+    expectBool("Formatter declaration array dimension idempotent",
+               unchangedArrayDeclReport.changed,
+               false);
     const FormatterOptions indentOnlyOptions =
         FormatterService::optionsForProfile(FormatterProfile::IndentOnly);
     expectBool("Formatter indent-only profile disables alignments",
@@ -984,6 +1011,18 @@ int main(int argc, char** argv) {
                             "    logic valid;\n"
                             "    parameter int P = 8;\n"
                             "    parameter int LONG_NAME = P + 1;\n"
+                            "endmodule\n"));
+    const FormatterReport indentOnlyArrayDeclReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterArrayDeclInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only skips declaration array dimension alignment",
+             indentOnlyArrayDeclReport.formattedText,
+             QStringLiteral("module array_decl_demo;\n"
+                            "    logic flag [3:0];\n"
+                            "    logic [7:0] data_bus [DEPTH-1:0];\n"
+                            "    parameter int LUT [4] = '{0, 1, 2, 3};\n"
+                            "    parameter int LONG_LUT [DEPTH] = DEFAULT_LUT;\n"
                             "endmodule\n"));
 
     const QString formatterPortListInput =
