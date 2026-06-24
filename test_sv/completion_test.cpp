@@ -918,8 +918,8 @@ int main(int argc, char** argv) {
                             "    end\n"
                             "    always_comb begin\n"
                             "        case (sel)\n"
-                            "            2'b00: y = \"begin\";\n"
-                            "            default: y = a; // endcase\n"
+                            "            2'b00  : y = \"begin\";\n"
+                            "            default: y = a;        // endcase\n"
                             "        endcase\n"
                             "    end\n"
                             "`ifdef KEEP_COLUMN\n"
@@ -964,7 +964,8 @@ int main(int argc, char** argv) {
     expectBool("Formatter indent-only profile disables alignments",
                !indentOnlyOptions.alignDeclarationBlocks
                    && !indentOnlyOptions.alignPortLists
-                   && !indentOnlyOptions.alignInstanceMaps,
+                   && !indentOnlyOptions.alignInstanceMaps
+                   && !indentOnlyOptions.alignCaseItems,
                true);
     expectEq("Formatter indent-only profile name",
              FormatterService::profileDisplayName(
@@ -1086,6 +1087,48 @@ int main(int argc, char** argv) {
             formatterTrailingCommentReport.formattedText);
     expectBool("Formatter trailing comment idempotent",
                unchangedTrailingCommentReport.changed,
+               false);
+
+    const QString formatterCaseItemInput =
+        QStringLiteral("module case_demo;\n"
+                       "always_comb begin\n"
+                       "case (sel)\n"
+                       "1'b0: y = a; // zero\n"
+                       "STATE_LONG: y = b; // long\n"
+                       "default: y = c;\n"
+                       "endcase\n"
+                       "unique casez (mode)\n"
+                       "2'b0?: y = a;\n"
+                       "default: y = b;\n"
+                       "endcase\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterCaseItemReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCaseItemInput);
+    expectBool("Formatter case item report changed",
+               formatterCaseItemReport.changed,
+               true);
+    expectEq("Formatter aligns case items",
+             formatterCaseItemReport.formattedText,
+             QStringLiteral("module case_demo;\n"
+                            "    always_comb begin\n"
+                            "        case (sel)\n"
+                            "            1'b0      : y = a;  // zero\n"
+                            "            STATE_LONG: y = b;  // long\n"
+                            "            default   : y = c;\n"
+                            "        endcase\n"
+                            "        unique casez (mode)\n"
+                            "            2'b0?  : y = a;\n"
+                            "            default: y = b;\n"
+                            "        endcase\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedCaseItemReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCaseItemReport.formattedText);
+    expectBool("Formatter case item idempotent",
+               unchangedCaseItemReport.changed,
                false);
 
     const QString formatterSelectionInput =

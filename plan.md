@@ -443,6 +443,16 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 435 checks and direct `gui_smoke_test` run with 396 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Case Item Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: tenth usable formatter milestone and first deeper structured block-alignment step after save/profile plumbing. It aligns simple case-item labels without attempting expression rewriting or full AST formatting.
+- `FormatterOptions::alignCaseItems` is enabled for the `Structured` profile and disabled for `Indent Only`, matching existing declaration, port-list, and instance-map alignment behavior.
+- `FormatterService` tracks formatted `case` / `casex` / `casez` indentation levels, aligns only same-level item labels inside the current case body, preserves trailing `//` comments at a stable comment column, and skips preprocessor lines, block-comment lines, nested/uncertain lines, and `pkg::name` style scope separators.
+- Implementation remains no-regex. It uses deterministic line/token scans and top-level delimiter tracking; future milestones can replace or enrich this with Tree-sitter-backed structural formatting.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, including richer block-aware statement alignment and safer multi-line structural edits.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 446 checks and direct `gui_smoke_test` run with 403 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.
