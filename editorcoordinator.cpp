@@ -232,6 +232,8 @@ void EditorCoordinator::setFormatterSettings(FormatterSettings* settings)
 
     if (formatterSettingsConnection)
         disconnect(formatterSettingsConnection);
+    if (formatterFormatOnSaveConnection)
+        disconnect(formatterFormatOnSaveConnection);
 
     formatterSettings = settings;
     if (formatterSettings) {
@@ -240,13 +242,21 @@ void EditorCoordinator::setFormatterSettings(FormatterSettings* settings)
             &FormatterSettings::settingsChanged,
             this,
             [this](FormatterProfile) {
-                applyFormatterProfileToOpenEditors();
+                applyFormatterSettingsToOpenEditors();
+            });
+        formatterFormatOnSaveConnection = connect(
+            formatterSettings,
+            &FormatterSettings::formatOnSaveChanged,
+            this,
+            [this](bool) {
+                applyFormatterSettingsToOpenEditors();
             });
     } else {
         formatterSettingsConnection = QMetaObject::Connection();
+        formatterFormatOnSaveConnection = QMetaObject::Connection();
     }
 
-    applyFormatterProfileToOpenEditors();
+    applyFormatterSettingsToOpenEditors();
 }
 
 void EditorCoordinator::setStatusMessageHandler(
@@ -292,7 +302,7 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
 
     editor->setSemanticContextService(contextService());
     applyAppearance(editor);
-    applyFormatterProfile(editor);
+    applyFormatterSettings(editor);
     applyAlternateMode(editor);
     connect(editor, &MyCodeEditor::alternateCommandRequested,
             this, [this, editor](const QString& command) {
@@ -333,9 +343,15 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
             });
     connect(editor, &MyCodeEditor::formatterProfileChanged,
             this, [this](FormatterProfile profile) {
-                if (!formatterSettings || applyingFormatterProfile)
+                if (!formatterSettings || applyingFormatterSettings)
                     return;
                 formatterSettings->setProfile(profile);
+            });
+    connect(editor, &MyCodeEditor::formatOnSaveChanged,
+            this, [this](bool enabled) {
+                if (!formatterSettings || applyingFormatterSettings)
+                    return;
+                formatterSettings->setFormatOnSaveEnabled(enabled);
             });
     connect(editor, &MyCodeEditor::foldShelfRequested,
             this, [this]() {
@@ -363,14 +379,15 @@ void EditorCoordinator::applyAppearance(MyCodeEditor* editor) const
     editor->applyAppearanceSettings(appearanceSettings->options());
 }
 
-void EditorCoordinator::applyFormatterProfile(MyCodeEditor* editor) const
+void EditorCoordinator::applyFormatterSettings(MyCodeEditor* editor) const
 {
     if (!editor || !formatterSettings)
         return;
 
-    applyingFormatterProfile = true;
+    applyingFormatterSettings = true;
     editor->setFormatterProfile(formatterSettings->profile());
-    applyingFormatterProfile = false;
+    editor->setFormatOnSaveEnabled(formatterSettings->formatOnSaveEnabled());
+    applyingFormatterSettings = false;
 }
 
 EditorSemanticContextService* EditorCoordinator::contextService() const
@@ -387,13 +404,13 @@ void EditorCoordinator::applyAppearanceToOpenEditors() const
         applyAppearance(tabManager->getEditorAt(i));
 }
 
-void EditorCoordinator::applyFormatterProfileToOpenEditors() const
+void EditorCoordinator::applyFormatterSettingsToOpenEditors() const
 {
     if (!tabManager)
         return;
 
     for (int i = 0; i < tabManager->editorCount(); ++i)
-        applyFormatterProfile(tabManager->getEditorAt(i));
+        applyFormatterSettings(tabManager->getEditorAt(i));
 }
 
 void EditorCoordinator::applyAlternateModeToOpenEditors() const

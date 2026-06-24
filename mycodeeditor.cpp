@@ -209,6 +209,24 @@ FormatterProfile MyCodeEditor::formatterProfile() const
     return state->formatterProfile();
 }
 
+void MyCodeEditor::setFormatOnSaveEnabled(bool enabled)
+{
+    if (state->formatOnSaveEnabled() == enabled)
+        return;
+    state->setFormatOnSaveEnabled(enabled);
+    emit formatOnSaveChanged(enabled);
+}
+
+bool MyCodeEditor::formatOnSaveEnabled() const
+{
+    return state->formatOnSaveEnabled();
+}
+
+bool MyCodeEditor::formatDocumentForSave()
+{
+    return state->formatDocumentForSave(this);
+}
+
 void MyCodeEditor::formatDocument()
 {
     state->formatDocument(this);

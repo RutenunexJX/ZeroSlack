@@ -221,6 +221,17 @@ void EditorSourceNavigationUi::handleContextMenu(
                          editor->setFormatterProfile(
                              FormatterProfile::IndentOnly);
                      });
+    profileMenu->addSeparator();
+    QAction* formatOnSaveAction =
+        profileMenu->addAction(QStringLiteral("Format On Save"));
+    formatOnSaveAction->setCheckable(true);
+    formatOnSaveAction->setChecked(editor->formatOnSaveEnabled());
+    QObject::connect(formatOnSaveAction,
+                     &QAction::triggered,
+                     editor,
+                     [editor](bool checked) {
+                         editor->setFormatOnSaveEnabled(checked);
+                     });
 
     QAction* formatSelectionAction =
         menu->addAction(QStringLiteral("Format Selection"));

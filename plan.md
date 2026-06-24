@@ -405,7 +405,7 @@ feature direction that violates them.
 - `MyCodeEditor::formatSelection` expands an arbitrary text selection to the affected full lines, applies the formatter result as one undoable edit, reselects the formatted range, and reports status. The editor context menu exposes `Format Selection` when text is selected, beside `Format Document`.
 - The MVP intentionally formats line ranges, not arbitrary character spans. It preserves existing formatter conservatism: complex statements, skipped aligned forms, and block comments remain under the same rules as document formatting.
 - Implementation remains no-regex. UI only routes selection text and applies the returned formatter report; formatting policy stays inside `FormatterService`.
-- Next Formatter milestones: format-on-save policy if wanted and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build target `completion_test`, direct `completion_test` run with 423 checks, focused build target `gui_smoke_test`, and direct `gui_smoke_test` run with 368 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Formatter Profile Controls MVP
@@ -428,8 +428,20 @@ feature direction that violates them.
 - `MainWindow` creates the shared `FormatterSettings` beside existing editor appearance settings. `MyCodeEditor` emits `formatterProfileChanged` only when the profile actually changes, preventing profile-setting feedback loops.
 - This milestone intentionally does not add format-on-save. It only preserves and distributes the profile used by explicit document/selection formatting.
 - Implementation remains no-regex.
-- Next Formatter milestones: format-on-save policy if wanted and eventually deeper Tree-sitter-backed structural formatting.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 435 checks and direct `gui_smoke_test` run with 386 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Formatter Format-on-Save MVP
+
+- Status: implemented in the current worktree.
+- Scope: ninth usable formatter milestone. It makes formatter profiles useful in a repeated editing workflow while keeping save-time formatting explicitly opt-in.
+- `FormatterSettings` persists `formatter/formatOnSave` beside `formatter/profile`. The default is disabled, and toggling the setting emits `formatOnSaveChanged`.
+- `EditorSourceNavigationUi` exposes `Format On Save` as a checkable action in the `Formatter Profile` context-menu submenu. `EditorCoordinator` applies the setting to open editors, new editors, and writes editor changes back to settings without feedback loops.
+- `TabSaveController` calls `MyCodeEditor::formatDocumentForSave()` before resolving the save text. The editor formats with the active profile, updates its buffer as one undoable edit, and `DocumentModel` is refreshed before the file is written.
+- This milestone intentionally does not make format-on-save the default and does not expand formatter semantics beyond the current conservative service.
+- Implementation remains no-regex.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 435 checks and direct `gui_smoke_test` run with 396 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Data MVP
 

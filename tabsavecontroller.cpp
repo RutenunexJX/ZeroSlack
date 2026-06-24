@@ -27,6 +27,9 @@ bool TabSaveController::saveEditor(
     if (!editor || !documentModel || !fileIo)
         return false;
 
+    if (editor->formatDocumentForSave())
+        documentModel->refreshEditorState(editor);
+
     const DocumentSnapshot snapshot = documentModel->documentForEditor(editor);
     const QString documentText = documentModel->documentTextForEditor(editor);
     const QString fileName = fileIo->resolveSaveFileName(

@@ -17,10 +17,13 @@ public:
                                QObject* parent = nullptr);
 
     FormatterProfile profile() const;
+    bool formatOnSaveEnabled() const;
     void setProfile(FormatterProfile profile);
+    void setFormatOnSaveEnabled(bool enabled);
 
 signals:
     void settingsChanged(FormatterProfile profile);
+    void formatOnSaveChanged(bool enabled);
 
 private:
     void load();
@@ -30,6 +33,7 @@ private:
 
     std::unique_ptr<QSettings> settings;
     FormatterProfile currentProfile = FormatterProfile::Structured;
+    bool currentFormatOnSaveEnabled = false;
 };
 
 #endif // FORMATTERSETTINGS_H

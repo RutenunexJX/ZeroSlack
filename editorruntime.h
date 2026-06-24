@@ -47,6 +47,7 @@ struct MyCodeEditorState
     EditorSelection selections;
     QList<GhostAnnotation> ghostAnnotations;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
+    bool currentFormatOnSaveEnabled = false;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -89,8 +90,11 @@ struct MyCodeEditorState
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
+    void setFormatOnSaveEnabled(bool enabled);
+    bool formatOnSaveEnabled() const;
     void formatDocument(MyCodeEditor* editor);
     void formatSelection(MyCodeEditor* editor);
+    bool formatDocumentForSave(MyCodeEditor* editor);
     void startFoldRegionMarkMode(MyCodeEditor* editor);
     void cancelFoldRegionMarkMode(MyCodeEditor* editor);
     bool foldRegionMarkModeActive() const;

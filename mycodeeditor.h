@@ -64,6 +64,9 @@ public:
         const QList<GhostAnnotation>& annotations);
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
+    void setFormatOnSaveEnabled(bool enabled);
+    bool formatOnSaveEnabled() const;
+    bool formatDocumentForSave();
     void formatDocument();
     void formatSelection();
     void highlightSearchMatches(const QString& text, bool caseSensitive);
@@ -127,6 +130,7 @@ signals:
     void navigationForwardRequested();
     void editorStatusMessageRequested(const QString& message);
     void formatterProfileChanged(FormatterProfile profile);
+    void formatOnSaveChanged(bool enabled);
     void foldShelfRequested();
     void foldShelfItemConsumed(const QString& id);
 };

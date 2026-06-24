@@ -806,6 +806,16 @@ FormatterProfile MyCodeEditorState::formatterProfile() const
     return currentFormatterProfile;
 }
 
+void MyCodeEditorState::setFormatOnSaveEnabled(bool enabled)
+{
+    currentFormatOnSaveEnabled = enabled;
+}
+
+bool MyCodeEditorState::formatOnSaveEnabled() const
+{
+    return currentFormatOnSaveEnabled;
+}
+
 void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
 {
     if (!editor)
@@ -835,6 +845,36 @@ void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
         QStringLiteral("Formatted document (%1 lines, %2)")
             .arg(report.formattedLines)
             .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
+}
+
+bool MyCodeEditorState::formatDocumentForSave(MyCodeEditor* editor)
+{
+    if (!editor || !currentFormatOnSaveEnabled)
+        return false;
+
+    const FormatterReport report =
+        FormatterService::getInstance()->formatDocument(
+            editor->toPlainText(),
+            currentFormatterProfile);
+    if (!report.changed)
+        return false;
+
+    QTextCursor cursor = editor->textCursor();
+    const int oldPosition = cursor.position();
+    cursor.beginEditBlock();
+    cursor.select(QTextCursor::Document);
+    cursor.insertText(report.formattedText);
+    cursor.endEditBlock();
+
+    QTextCursor nextCursor = editor->textCursor();
+    nextCursor.setPosition(
+        qMin(oldPosition, editor->document()->characterCount() - 1));
+    editor->setTextCursor(nextCursor);
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Formatted document on save (%1 lines, %2)")
+            .arg(report.formattedLines)
+            .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
+    return true;
 }
 
 void MyCodeEditorState::formatSelection(MyCodeEditor* editor)

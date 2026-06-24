@@ -355,15 +355,28 @@ static void runFormatterSettingsRegression()
     {
         FormatterSettings settings(makeTemporarySettings(settingsFile));
         QSignalSpy spy(&settings, &FormatterSettings::settingsChanged);
+        QSignalSpy formatOnSaveSpy(
+            &settings,
+            &FormatterSettings::formatOnSaveChanged);
+        expectBool("formatter settings default format-on-save off",
+                   !settings.formatOnSaveEnabled(),
+                   true);
         settings.setProfile(FormatterProfile::IndentOnly);
         expectBool("formatter settings emits change",
                    spy.count() == 1,
+                   true);
+        settings.setFormatOnSaveEnabled(true);
+        expectBool("formatter settings emits format-on-save change",
+                   formatOnSaveSpy.count() == 1,
                    true);
     }
 
     FormatterSettings reloaded(makeTemporarySettings(settingsFile));
     expectBool("formatter settings persists profile",
                reloaded.profile() == FormatterProfile::IndentOnly,
+               true);
+    expectBool("formatter settings persists format-on-save",
+               reloaded.formatOnSaveEnabled(),
                true);
 
     {
@@ -405,22 +418,29 @@ static void runFormatterCoordinatorRegression()
                true);
 
     settings.setProfile(FormatterProfile::IndentOnly);
+    settings.setFormatOnSaveEnabled(true);
     bool allOpenEditorsUpdated = true;
     for (int i = 0; i < tabs.editorCount(); ++i) {
         MyCodeEditor* editor = tabs.getEditorAt(i);
         allOpenEditorsUpdated = allOpenEditorsUpdated
             && editor
-            && editor->formatterProfile() == FormatterProfile::IndentOnly;
+            && editor->formatterProfile() == FormatterProfile::IndentOnly
+            && editor->formatOnSaveEnabled();
     }
     expectBool("formatter coordinator updates open editors",
                allOpenEditorsUpdated,
                true);
 
     MyCodeEditor* currentEditor = tabs.getCurrentEditor();
-    if (currentEditor)
+    if (currentEditor) {
         currentEditor->setFormatterProfile(FormatterProfile::Structured);
+        currentEditor->setFormatOnSaveEnabled(false);
+    }
     expectBool("formatter coordinator stores editor change",
                settings.profile() == FormatterProfile::Structured,
+               true);
+    expectBool("formatter coordinator stores format-on-save change",
+               !settings.formatOnSaveEnabled(),
                true);
 
     tabs.createNewTab();
@@ -428,7 +448,8 @@ static void runFormatterCoordinatorRegression()
     expectBool("formatter coordinator applies new editor",
                newEditor
                    && newEditor->formatterProfile()
-                       == FormatterProfile::Structured,
+                       == FormatterProfile::Structured
+                   && !newEditor->formatOnSaveEnabled(),
                true);
 }
 
@@ -3517,6 +3538,47 @@ int main(int argc, char** argv)
                    true);
         expectBool("document model records saved version",
                    savedDoc.savedTextVersion == savedDoc.textVersion,
+                   true);
+
+        const QString formatOnSaveText =
+            QStringLiteral("module format_save;\n"
+                           "logic [7:0] data;\n"
+                           "logic valid;\n"
+                           "endmodule\n");
+        const QString formattedOnSaveText =
+            QStringLiteral("module format_save;\n"
+                           "    logic [7:0] data;\n"
+                           "    logic       valid;\n"
+                           "endmodule\n");
+        if (window.formatterSettings) {
+            window.formatterSettings->setProfile(
+                FormatterProfile::Structured);
+            window.formatterSettings->setFormatOnSaveEnabled(true);
+        }
+        saveEditor->setPlainText(formatOnSaveText);
+        expectBool("format-on-save enabled on save editor",
+                   saveEditor->formatOnSaveEnabled(),
+                   true);
+        expectBool("tab manager format-on-save saves current tab",
+                   window.tabManager->saveCurrentTab(),
+                   true);
+        QFile formattedFile(savePath);
+        expectBool("format-on-save file reopens",
+                   formattedFile.open(QIODevice::ReadOnly | QFile::Text),
+                   true);
+        const QString formattedFileText =
+            QTextStream(&formattedFile).readAll();
+        formattedFile.close();
+        expectBool("format-on-save writes formatted text",
+                   formattedFileText == formattedOnSaveText,
+                   true);
+        expectBool("format-on-save updates editor text",
+                   saveEditor->toPlainText() == formattedOnSaveText,
+                   true);
+        expectBool("format-on-save updates document model text",
+                   saveDocuments
+                       && saveDocuments->documentTextForEditor(saveEditor)
+                           == formattedOnSaveText,
                    true);
     }
 

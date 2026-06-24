@@ -93,8 +93,8 @@ private:
     EditorSemanticContextService* contextService() const;
     void applyAppearance(MyCodeEditor* editor) const;
     void applyAppearanceToOpenEditors() const;
-    void applyFormatterProfile(MyCodeEditor* editor) const;
-    void applyFormatterProfileToOpenEditors() const;
+    void applyFormatterSettings(MyCodeEditor* editor) const;
+    void applyFormatterSettingsToOpenEditors() const;
     void applyAlternateMode(MyCodeEditor* editor) const;
     void applyAlternateModeToOpenEditors() const;
     void handleIncludeOpenRequested(MyCodeEditor* editor,
@@ -126,13 +126,14 @@ private:
     FormatterSettings* formatterSettings = nullptr;
     QMetaObject::Connection appearanceSettingsConnection;
     QMetaObject::Connection formatterSettingsConnection;
+    QMetaObject::Connection formatterFormatOnSaveConnection;
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
     std::function<void(const QString&, int)> statusMessageHandler;
     std::function<void()> foldShelfRequestedHandler;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
-    mutable bool applyingFormatterProfile = false;
+    mutable bool applyingFormatterSettings = false;
 };
 
 #endif // EDITORCOORDINATOR_H
