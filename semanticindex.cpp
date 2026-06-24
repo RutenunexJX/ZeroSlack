@@ -65,6 +65,30 @@ SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
     return metadata;
 }
 
+int semanticAnalysisBandSortPriority(
+    const SemanticAnalysisBandMetadata& metadata)
+{
+    if (metadata.label == QStringLiteral("current"))
+        return 0;
+    if (metadata.label == QStringLiteral("dirty-open"))
+        return 1;
+    if (metadata.label == QStringLiteral("open"))
+        return 2;
+    if (metadata.label == QStringLiteral("background"))
+        return 3;
+    if (metadata.priority)
+        return 2;
+    if (metadata.isValid())
+        return 3;
+    return 4;
+}
+
+int semanticSymbolAnalysisBandSortPriority(
+    const SemanticSymbolRecord& record)
+{
+    return semanticAnalysisBandSortPriority(record.analysisBand);
+}
+
 QString symbolStableKeyText(const SymbolStableKey& key)
 {
     if (!key.isValid())

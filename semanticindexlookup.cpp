@@ -108,6 +108,12 @@ QList<SemanticSymbolSearchResult> SemanticIndex::searchSymbols(
                         const SemanticSymbolSearchResult& b) {
         if (a.score != b.score)
             return a.score > b.score;
+        const int aBandPriority =
+            semanticSymbolAnalysisBandSortPriority(a.symbolRecord);
+        const int bBandPriority =
+            semanticSymbolAnalysisBandSortPriority(b.symbolRecord);
+        if (aBandPriority != bBandPriority)
+            return aBandPriority < bBandPriority;
         if (a.symbolRecord.location.fileName != b.symbolRecord.location.fileName)
             return a.symbolRecord.location.fileName
                 < b.symbolRecord.location.fileName;
@@ -197,6 +203,12 @@ QList<SemanticSymbolRecord> SemanticIndex::findDefinitionRecords(
         const int bScore = score(b);
         if (aScore != bScore)
             return aScore > bScore;
+        const int aBandPriority =
+            semanticSymbolAnalysisBandSortPriority(a);
+        const int bBandPriority =
+            semanticSymbolAnalysisBandSortPriority(b);
+        if (aBandPriority != bBandPriority)
+            return aBandPriority < bBandPriority;
         if (a.location.fileName != b.location.fileName)
             return a.location.fileName < b.location.fileName;
         if (a.location.startLine != b.location.startLine)

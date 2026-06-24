@@ -5,6 +5,7 @@
 #include "semanticindexcompletionfilters.h"
 
 #include <QSet>
+#include <algorithm>
 
 namespace {
 using namespace semantic_index_completion;
@@ -75,6 +76,19 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::typedSymbolRecords(
         seenStableKeys.insert(dedupeKey);
         result.append(record);
     }
+    std::stable_sort(result.begin(), result.end(),
+                     [](const SemanticSymbolRecord& left,
+                        const SemanticSymbolRecord& right) {
+        const int leftBandPriority =
+            semanticSymbolAnalysisBandSortPriority(left);
+        const int rightBandPriority =
+            semanticSymbolAnalysisBandSortPriority(right);
+        if (leftBandPriority != rightBandPriority)
+            return leftBandPriority < rightBandPriority;
+        return QString::compare(left.name,
+                                right.name,
+                                Qt::CaseInsensitive) < 0;
+    });
     return result;
 }
 

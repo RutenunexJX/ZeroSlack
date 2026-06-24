@@ -216,6 +216,10 @@ struct SemanticDefinitionResult {
 
 SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
     const SemanticSymbolRecord& record);
+int semanticAnalysisBandSortPriority(
+    const SemanticAnalysisBandMetadata& metadata);
+int semanticSymbolAnalysisBandSortPriority(
+    const SemanticSymbolRecord& record);
 QString symbolStableKeyText(const SymbolStableKey& key);
 QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);

@@ -255,6 +255,12 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::sortedDefinitionRecords(
         const int bScore = score(b);
         if (aScore != bScore)
             return aScore > bScore;
+        const int aBandPriority =
+            semanticSymbolAnalysisBandSortPriority(a);
+        const int bBandPriority =
+            semanticSymbolAnalysisBandSortPriority(b);
+        if (aBandPriority != bBandPriority)
+            return aBandPriority < bBandPriority;
         if (a.location.fileName != b.location.fileName)
             return a.location.fileName < b.location.fileName;
         if (a.location.startLine != b.location.startLine)

@@ -963,6 +963,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: using symbol tier metadata for query ordering/report display where helpful, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 516 checks; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Tier-Aware Query Ordering MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-fifth usable Huge Workspace Mode milestone and the first consumer of tier-aware symbol metadata. It does not change extraction, publication, diagnostics, relationship analysis, or UI rendering; it only improves service/query ordering when existing semantic match quality is otherwise equal.
+- `semanticAnalysisBandSortPriority()` defines the shared ordering contract: `current`, `dirty-open`, `open`, `background`, then unknown/unbanded records.
+- `SemanticIndex::searchSymbols()` uses analysis-band priority after match score and before file/line/name tie-breakers, so large-workspace searches keep current/open results prominent without hiding better textual matches.
+- `SemanticIndexSnapshot::sortedDefinitionRecords()` and native fallback definition sorting use the same analysis-band priority after context/module/global definition scoring, preserving exact local context preference while improving equal-priority tie-breaks.
+- `SemanticIndex` completion-record queries, generic completion-name lists, `CompletionSymbolQuery::namesFromRecords()`, and `CompletionSemanticQuery::typedSymbolRecords()` now sort by analysis-band priority and then case-insensitive name. Duplicate-name selection keeps the best available band for that name.
+- Implementation remains no-regex and consumes the metadata produced by `WorkspaceAnalysisPlanService` through `SemanticIndex`; query code does not recompute workspace priority bands.
+- Next Huge Workspace milestones: showing tier/report provenance where helpful, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 519 checks; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

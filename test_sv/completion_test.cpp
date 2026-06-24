@@ -1996,10 +1996,38 @@ int main(int argc, char** argv) {
     tierRecord.location.fileName = planC;
     tierRecord.location.startLine = 1;
     tierRecord.declarationKind = SymbolTaxonomy::DeclarationKind::Signal;
+    SemanticSymbolRecord currentTierQueryRecord;
+    currentTierQueryRecord.name = QStringLiteral("zz_tier_match");
+    currentTierQueryRecord.location.fileName = planC;
+    currentTierQueryRecord.location.startLine = 2;
+    currentTierQueryRecord.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Signal;
+    SemanticSymbolRecord currentTierDuplicateRecord;
+    currentTierDuplicateRecord.name = QStringLiteral("shared_tier_symbol");
+    currentTierDuplicateRecord.location.fileName = planC;
+    currentTierDuplicateRecord.location.startLine = 3;
+    currentTierDuplicateRecord.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Signal;
     tierIndex.updateSymbolRecordsForFile(
         planC,
-        {tierRecord},
-        QStringLiteral("module tier_top; logic tier_sig; endmodule\n"));
+        {tierRecord, currentTierQueryRecord, currentTierDuplicateRecord},
+        QStringLiteral("module tier_top; logic tier_sig; logic zz_tier_match; logic shared_tier_symbol; endmodule\n"));
+    SemanticSymbolRecord backgroundTierQueryRecord;
+    backgroundTierQueryRecord.name = QStringLiteral("aa_tier_match");
+    backgroundTierQueryRecord.location.fileName = planA;
+    backgroundTierQueryRecord.location.startLine = 1;
+    backgroundTierQueryRecord.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Signal;
+    SemanticSymbolRecord backgroundTierDuplicateRecord;
+    backgroundTierDuplicateRecord.name = QStringLiteral("shared_tier_symbol");
+    backgroundTierDuplicateRecord.location.fileName = planA;
+    backgroundTierDuplicateRecord.location.startLine = 2;
+    backgroundTierDuplicateRecord.declarationKind =
+        SymbolTaxonomy::DeclarationKind::Signal;
+    tierIndex.updateSymbolRecordsForFile(
+        planA,
+        {backgroundTierQueryRecord, backgroundTierDuplicateRecord},
+        QStringLiteral("module tier_bg; logic aa_tier_match; logic shared_tier_symbol; endmodule\n"));
     const QList<SemanticSymbolRecord> tierRecords =
         tierIndex.getSymbolRecords(QDir::toNativeSeparators(planC));
     expectBool("SemanticIndex records carry analysis band metadata",
@@ -2019,6 +2047,37 @@ int main(int argc, char** argv) {
                        == QStringLiteral("current")
                    && tierSnapshotRecords.first().analysisBand.displayName
                        == QStringLiteral("current"),
+               true);
+    const QList<SemanticSymbolSearchResult> tierSearchResults =
+        tierIndex.searchSymbols({QStringLiteral("tier_match"),
+                                 QString(),
+                                 {SymbolTaxonomy::DeclarationKind::Signal},
+                                 SymbolTaxonomy::SymbolSearchIntent::Any,
+                                 false,
+                                 false,
+                                 -1});
+    expectBool("Semantic search prefers current analysis band",
+               tierSearchResults.size() >= 2
+                   && tierSearchResults.first().symbolRecord.name
+                       == QStringLiteral("zz_tier_match"),
+               true);
+    const QStringList tierCompletionNames =
+        tierIndex.getCompletionSymbolNames();
+    expectBool("Completion names prefer priority analysis bands",
+               tierCompletionNames.indexOf(QStringLiteral("zz_tier_match"))
+                   >= 0
+                   && tierCompletionNames.indexOf(QStringLiteral("aa_tier_match"))
+                   >= 0
+                   && tierCompletionNames.indexOf(
+                          QStringLiteral("zz_tier_match"))
+                       < tierCompletionNames.indexOf(
+                           QStringLiteral("aa_tier_match")),
+               true);
+    const QList<SemanticSymbolRecord> tierDefinitionRecords =
+        tierIndex.findDefinitionRecords(QStringLiteral("shared_tier_symbol"));
+    expectBool("Definition records prefer priority analysis bands",
+               tierDefinitionRecords.size() >= 2
+                   && tierDefinitionRecords.first().location.fileName == planC,
                true);
 
     WorkspaceAnalysisPlan externalCurrentPlan =

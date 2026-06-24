@@ -2,6 +2,7 @@
 
 #include "completionmatcher.h"
 
+#include <QHash>
 #include <Qt>
 #include <algorithm>
 
@@ -50,16 +51,41 @@ QStringList CompletionSymbolQuery::namesFromScored(
 QStringList CompletionSymbolQuery::namesFromRecords(
     const QList<SemanticSymbolRecord>& records)
 {
-    QStringList result;
-    QSet<QString> seenNames;
+    struct CompletionNameCandidate {
+        QString name;
+        int bandPriority = 4;
+    };
+    QHash<QString, CompletionNameCandidate> candidatesByName;
     for (const SemanticSymbolRecord& record : records) {
         const QString key = record.name.toCaseFolded();
-        if (key.isEmpty() || seenNames.contains(key))
+        if (key.isEmpty())
             continue;
-        seenNames.insert(key);
-        result.append(record.name);
+        CompletionNameCandidate candidate;
+        candidate.name = record.name;
+        candidate.bandPriority =
+            semanticSymbolAnalysisBandSortPriority(record);
+        if (!candidatesByName.contains(key)
+            || candidate.bandPriority
+                < candidatesByName.value(key).bandPriority) {
+            candidatesByName.insert(key, candidate);
+        }
     }
-    result.sort(Qt::CaseInsensitive);
+
+    QList<CompletionNameCandidate> candidates = candidatesByName.values();
+    std::sort(candidates.begin(), candidates.end(),
+              [](const CompletionNameCandidate& left,
+                 const CompletionNameCandidate& right) {
+        if (left.bandPriority != right.bandPriority)
+            return left.bandPriority < right.bandPriority;
+        return QString::compare(left.name,
+                                right.name,
+                                Qt::CaseInsensitive) < 0;
+    });
+
+    QStringList result;
+    result.reserve(candidates.size());
+    for (const CompletionNameCandidate& candidate : candidates)
+        result.append(candidate.name);
     return result;
 }
 
