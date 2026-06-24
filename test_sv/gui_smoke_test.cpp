@@ -3266,6 +3266,33 @@ int main(int argc, char** argv)
     expectBool("wave preview refreshes dirty editor text",
                waveTree && sawWaveZ,
                true);
+    if (waveEditor) {
+        QString largeWaveText;
+        largeWaveText.reserve(150 * 1024);
+        largeWaveText += QStringLiteral("module wave_large;\n"
+                                        "logic clk;\n"
+                                        "logic [7:0] source;\n"
+                                        "logic [7:0] huge_delayed;\n");
+        for (int i = 0; i < 5000; ++i)
+            largeWaveText += QStringLiteral("logic [7:0] filler_%1;\n").arg(i);
+        largeWaveText += QStringLiteral("always_ff @(posedge clk) begin\n"
+                                        "    huge_delayed <= source;\n"
+                                        "end\n"
+                                        "endmodule\n");
+        waveEditor->setPlainText(largeWaveText);
+    }
+    expectBool("wave preview queues large dirty refresh",
+               waveTree && findItemByText(waveTree,
+                                           QStringLiteral("huge_delayed"))
+                               == nullptr,
+               true);
+    QTest::qWait(260);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("wave preview flushes latest large dirty refresh",
+               waveTree && findItemByText(waveTree,
+                                           QStringLiteral("huge_delayed"))
+                               != nullptr,
+               true);
     QLabel* editorModeChip =
         window.findChild<QLabel*>(QStringLiteral("editorModeChip"));
     expectBool("editor mode chip exists",

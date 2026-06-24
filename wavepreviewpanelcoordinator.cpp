@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QPainter>
 #include <QSizePolicy>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -18,8 +19,15 @@ namespace {
 constexpr int kRoleFileName = Qt::UserRole + 1;
 constexpr int kRoleLine = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
+constexpr qsizetype kLargeDirtyRefreshCharacterThreshold = 64 * 1024;
+constexpr int kLargeDirtyRefreshDelayMs = 180;
 
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
+
+bool shouldQueueRefresh(const QString& documentText, bool)
+{
+    return documentText.size() >= kLargeDirtyRefreshCharacterThreshold;
+}
 
 class WavePreviewCanvas : public QWidget
 {
@@ -348,6 +356,23 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
                              QDockWidget::DockWidgetClosable);
     previewDock->hide();
 
+    refreshTimer = new QTimer(previewDock);
+    refreshTimer->setSingleShot(true);
+    refreshTimer->setInterval(kLargeDirtyRefreshDelayMs);
+    QObject::connect(refreshTimer,
+                     &QTimer::timeout,
+                     previewDock,
+                     [this]() {
+                         flushQueuedRefresh();
+                     });
+    QObject::connect(previewDock,
+                     &QDockWidget::visibilityChanged,
+                     previewDock,
+                     [this](bool visible) {
+                         if (!visible)
+                             clearQueuedRefresh();
+                     });
+
     QObject::connect(previewTree,
                      &QTreeWidget::itemDoubleClicked,
                      previewTree,
@@ -375,6 +400,73 @@ void WavePreviewPanelCoordinator::refreshFromDocument(
         return;
     }
 
+    if (shouldQueueRefresh(documentText, dirty)) {
+        queueRefresh(fileName, documentText, dirty);
+        return;
+    }
+
+    clearQueuedRefresh();
+    renderDocumentNow(fileName, documentText, dirty);
+}
+
+void WavePreviewPanelCoordinator::queueRefresh(
+    const QString& fileName,
+    const QString& documentText,
+    bool dirty)
+{
+    pendingFileName = fileName;
+    pendingDocumentText = documentText;
+    pendingDirty = dirty;
+    pendingRefresh = true;
+    currentFileName = fileName;
+
+    if (titleLabel) {
+        titleLabel->setText(QStringLiteral("Wave Preview - %1")
+                                .arg(displayFileName(fileName)));
+    }
+    if (summaryLabel) {
+        summaryLabel->setText(QStringLiteral("Refresh queued for large buffer"));
+    }
+
+    if (refreshTimer)
+        refreshTimer->start();
+}
+
+void WavePreviewPanelCoordinator::flushQueuedRefresh()
+{
+    if (!pendingRefresh)
+        return;
+
+    const QString fileName = pendingFileName;
+    const QString documentText = pendingDocumentText;
+    const bool dirty = pendingDirty;
+    pendingFileName.clear();
+    pendingDocumentText.clear();
+    pendingDirty = false;
+    pendingRefresh = false;
+
+    if (documentText.trimmed().isEmpty()) {
+        renderUnavailable(QStringLiteral("No SystemVerilog text to preview."));
+        return;
+    }
+    renderDocumentNow(fileName, documentText, dirty);
+}
+
+void WavePreviewPanelCoordinator::clearQueuedRefresh()
+{
+    pendingFileName.clear();
+    pendingDocumentText.clear();
+    pendingDirty = false;
+    pendingRefresh = false;
+    if (refreshTimer)
+        refreshTimer->stop();
+}
+
+void WavePreviewPanelCoordinator::renderDocumentNow(
+    const QString& fileName,
+    const QString& documentText,
+    bool dirty)
+{
     const WavePreviewReport report =
         WavePreviewService::getInstance()->previewForDocument(
             {fileName, documentText});
@@ -383,6 +475,7 @@ void WavePreviewPanelCoordinator::refreshFromDocument(
 
 void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
 {
+    clearQueuedRefresh();
     if (titleLabel)
         titleLabel->setText(QStringLiteral("Wave Preview"));
     if (summaryLabel)

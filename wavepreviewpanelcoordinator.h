@@ -9,6 +9,7 @@
 #include <functional>
 
 class QLabel;
+class QTimer;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QWidget;
@@ -35,10 +36,23 @@ private:
     QLabel* summaryLabel = nullptr;
     QWidget* previewCanvas = nullptr;
     QTreeWidget* previewTree = nullptr;
+    QTimer* refreshTimer = nullptr;
     QString currentFileName;
+    QString pendingFileName;
+    QString pendingDocumentText;
+    bool pendingDirty = false;
+    bool pendingRefresh = false;
 
     std::function<void(const QString&, int, int)> navigationHandler;
 
+    void queueRefresh(const QString& fileName,
+                      const QString& documentText,
+                      bool dirty);
+    void flushQueuedRefresh();
+    void clearQueuedRefresh();
+    void renderDocumentNow(const QString& fileName,
+                           const QString& documentText,
+                           bool dirty);
     void renderReport(const WavePreviewReport& report,
                       const QString& fileName,
                       bool dirty);

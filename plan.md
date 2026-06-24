@@ -416,7 +416,7 @@ feature direction that violates them.
 - The MVP supports continuous `assign`, `always_comb`, `always_ff`, `always_latch`, and plain `always` blocks. Multiple `always` blocks are preserved as separate block records and merged into signal lanes by assignment target.
 - Assignment events include target, expression text, source signal names, assignment kind, trigger text, line/column evidence, and a simple cycle offset: clocked `always_ff` / posedge-negedge `always` events are offset by 1, while combinational, latch, level-sensitive, and continuous assignments stay at 0.
 - Comments and strings are ignored by the tokenizer, so fake assignments in comments or string literals do not create lanes. Implementation and future extensions must remain no-regex; use deterministic token scans first and semantic records where cross-file fidelity is needed.
-- Next Wave Preview milestones: graphical lane/canvas rendering, guard-condition labels, clock/reset grouping, throttled refresh for very large dirty buffers, and later semantic relationships for cross-file/module context.
+- Next Wave Preview milestones: graphical lane/canvas rendering, guard-condition labels, clock/reset grouping, and later semantic relationships for cross-file/module context.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 392 checks, direct `gui_smoke_test` run with 354 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
 
 ### Post-L: Wave Preview Preview-Panel MVP
@@ -427,7 +427,7 @@ feature direction that violates them.
 - The panel is available from View -> Wave Preview, starts hidden on launch, participates in reset panel layout, and refreshes from the current dirty editor buffer while the dock is visible. Opening the dock or resetting the panel layout forces a fresh preview.
 - The rendered model shows per-signal lanes, assignment events, timing hints (`t+0`, `t+1 cycle`, continuous), source signal lists, and line/column evidence. Double-clicking an event navigates to the assignment location when a file-backed location is available.
 - This remains a code-understanding aid. It does not evaluate values, honor all guards, resolve clocks across modules, or replace simulation.
-- Next Wave Preview milestones: guard-condition labels, clock/reset grouping, semantic cross-file enrichment, and throttled/queued refresh for very large dirty buffers.
+- Next Wave Preview milestones: guard-condition labels, clock/reset grouping, and semantic cross-file enrichment.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 392 checks, direct `gui_smoke_test` run with 361 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, and `git diff --check`.
 
 ### Post-L: Wave Preview Canvas MVP
@@ -437,7 +437,7 @@ feature direction that violates them.
 - `WavePreviewPanelCoordinator` now renders each lane twice from the same report: a graphical canvas with signal rows, `t+N` timing guides, and colored assignment blocks, plus the existing tree with event/source/location details.
 - The canvas is intentionally lightweight. It visualizes assignment timing hints and lane grouping, not real signal values, clock resolution, guards, or simulation results.
 - GUI ownership remains thin: the canvas paints `WavePreviewReport` data, clears with unavailable reports, and does not scan workspace files or parse RTL itself.
-- Next Wave Preview milestones: clock/reset grouping, richer source/target hover details, semantic cross-file enrichment, and throttled queued refresh for very large dirty buffers.
+- Next Wave Preview milestones: clock/reset grouping, richer source/target hover details, and semantic cross-file enrichment.
 - Verification for this block: focused build target `gui_smoke_test`, direct `gui_smoke_test` run with 363 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, offscreen canvas render nonblank check, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Guard Labels MVP
@@ -448,7 +448,7 @@ feature direction that violates them.
 - The Wave Preview tree adds a Guard column, event tooltips include the guard, and the canvas block label includes guarded assignment context. The UI still consumes `WavePreviewReport`; it does not parse RTL or scan workspace files itself.
 - Supported guard labels are intentionally conservative: simple inline or `begin`/`end` `if` bodies, `else if` conditions, `else`, and basic `case` item/default labels. This is not symbolic execution, guard simplification, or branch coverage.
 - Implementation remains no-regex and does not change the non-simulator positioning of Wave Preview.
-- Next Wave Preview milestones: richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, and throttled queued refresh for very large dirty buffers.
+- Next Wave Preview milestones: richer source/target hover details, semantic cross-file enrichment, and guard labels for more statement forms.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 408 checks, direct `gui_smoke_test` run with 364 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Wave Preview Clock/Reset Groups MVP
@@ -458,8 +458,19 @@ feature direction that violates them.
 - `WavePreviewBlock` now carries `clockSignals` and `resetSignals`; `WavePreviewReport` adds `clockResetGroups` that aggregate block indexes and assignment counts for matching domains.
 - `WavePreviewService` extracts edge signals from `posedge` / `negedge` event controls with deterministic token scans. Reset classification is name-based (`rst` / `reset`) and intentionally conservative; this is not clock-domain crossing analysis or reset polarity proof.
 - The Wave Preview tree adds a Clock/Reset column and a Clock/Reset Groups section, while event tooltips include the detected domain. The UI still renders report data only and does not parse RTL or scan workspace files itself.
-- Next Wave Preview milestones: richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, clock/reset polarity hints, and throttled queued refresh for very large dirty buffers.
+- Next Wave Preview milestones: richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, and clock/reset polarity hints.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`, direct `completion_test` run with 411 checks, direct `gui_smoke_test` run with 365 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Wave Preview Queued Refresh MVP
+
+- Status: implemented in the current worktree.
+- Scope: first responsiveness milestone for Wave Preview on large active buffers. It keeps `WavePreviewService` synchronous and report-focused, and puts refresh coalescing in the panel coordinator where UI visibility and active document routing already live.
+- `WavePreviewPanelCoordinator` now queues refreshes for document text at or above 64 KiB behind a 180 ms single-shot timer. Repeated refresh requests replace the pending file/text/dirty tuple, so only the latest large buffer is rendered when the timer fires.
+- Normal-sized buffers still refresh immediately, preserving the live-feeling editor feedback for everyday modules. Empty text still renders unavailable immediately.
+- Pending large-buffer refresh work is canceled when the Wave Preview dock is hidden; reopening the dock asks MainWindow for a fresh active-editor snapshot instead of rendering stale pending text.
+- This milestone is not threaded extraction, not simulation, and not semantic cross-file enrichment. It only prevents visible Wave Preview from recomputing a large report on every edit burst.
+- Next Wave Preview milestones: richer source/target hover details, semantic cross-file enrichment, guard labels for more statement forms, and clock/reset polarity hints.
+- Verification for this block: focused build targets `completion_test`, `large_file_perf_test`, and `gui_smoke_test`; direct `completion_test` run with 430 checks, `large_file_perf_test` with 14 checks against `test_sv/new`, and `gui_smoke_test` with 372 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ### Post-L: Huge Workspace Analysis Plan MVP
 
