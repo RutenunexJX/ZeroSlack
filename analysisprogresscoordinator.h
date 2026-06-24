@@ -37,6 +37,8 @@ private:
     QWidget* dialogParent = nullptr;
     AnalysisScheduler* scheduler = nullptr;
     std::atomic<bool> symbolAnalysisCancelled{false};
+    int lastSymbolProgressCheckpoint = 0;
+    int lastRelationshipProgressCheckpoint = 0;
 
     void showAnalysisProgress(const QStringList& files);
     void showSymbolStageStarted(const QStringList& files);
@@ -46,6 +48,11 @@ private:
     void showWorkspaceRelationshipProgress(int processedFiles, int totalFiles);
     void showRelationshipError(const QString& fileName, const QString& error);
     void showRelationshipCancelled();
+    void logProgressCheckpoint(const QString& label,
+                               int processedFiles,
+                               int totalFiles,
+                               const QString& currentFileName,
+                               int* lastCheckpoint);
 };
 
 #endif // ANALYSISPROGRESSCOORDINATOR_H

@@ -148,6 +148,8 @@ Thin UI consumers
 - Huge Workspace Relationship Foreground Refresh MVP verification passed with focused `completion_test` at 436 checks against `test_sv/new`, changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 - Huge Workspace Diagnostics Refresh Coalescing MVP is implemented in the current worktree: `DiagnosticsRefreshController` still debounces diagnostics panel refreshes, but now preserves the broadest pending scope so a full-workspace refresh request cannot be downgraded by later file-specific refreshes during large analysis bursts.
 - Huge Workspace Diagnostics Refresh Coalescing MVP verification passed with focused `completion_test` at 440 checks against `test_sv/new`, changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+- Huge Workspace Progress Checkpoint Activity MVP is implemented in the current worktree: `AnalysisProgressCoordinator` now routes workspace symbol progress into status updates and records symbol/relationship Activity checkpoints at 25%, 50%, and 75% for long-running workspace passes, while final 100% visibility stays with the existing completion logs.
+- Huge Workspace Progress Checkpoint Activity MVP verification passed with focused `gui_smoke_test` at 398 checks against `test_sv/new` plus `test_sv/test_symbols.sv`, changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - After Phase J, keep new semantic/test work record-native and keep the repo-source zero target passing.
@@ -213,6 +215,7 @@ These constraints are mandatory for every new feature.
 - `ProjectModel` owns workspace root, SV files, include dirs, defines, top, and ignored paths.
 - `DocumentModel` owns open document identity, text snapshots, versions, dirty/saved state, cursor, live module names, and registry-backed text queries.
 - `AnalysisScheduler` owns analysis timing, debounce/cancel policy, refresh requests, relationship work, and lifecycle routing; it does not own feature policy.
+- `AnalysisProgressCoordinator` owns analysis status text and Activity/Output visibility, including queued/resolved workspace request telemetry and non-spammy symbol/relationship progress checkpoints.
 - `WorkspaceAnalysisPlanService` owns workspace-analysis ordering policy for huge projects. Scheduler/controller code asks it for a planned `ProjectSnapshot`; `SymbolAnalyzer` remains an executor and does not decide active/open/dirty priority.
 - `WorkspaceAnalysisRequestQueue` owns active and latest-pending workspace-analysis request state. `WorkspaceSymbolAnalysisController` uses it to expire stale active work and restart only the newest pending project; `SymbolAnalyzer` remains the asynchronous execution layer.
 - `AnalysisScheduler` refreshes open-document semantic snapshots before heavyweight workspace symbol and workspace relationship analysis starts, and again when workspace symbol analysis finishes, keeping dirty editor buffers ahead of background publication while retaining a finish-time reconciliation pass.

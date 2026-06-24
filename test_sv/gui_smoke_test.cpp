@@ -893,6 +893,56 @@ static void runActivityLogServiceRegression()
                sawResolvedTelemetry,
                true);
     service->clear();
+
+    AnalysisProgressCoordinator progressCoordinator(nullptr);
+    progressCoordinator.handleWorkspaceSymbolProgress(
+        1,
+        4,
+        QStringLiteral("E:/workspace/a.sv"));
+    progressCoordinator.handleWorkspaceSymbolProgress(
+        2,
+        4,
+        QStringLiteral("E:/workspace/b.sv"));
+    progressCoordinator.handleWorkspaceSymbolProgress(
+        4,
+        4,
+        QStringLiteral("E:/workspace/d.sv"));
+    progressCoordinator.showWorkspaceRelationshipProgress(1, 4);
+    progressCoordinator.showWorkspaceRelationshipProgress(3, 4);
+    progressCoordinator.showWorkspaceRelationshipProgress(4, 4);
+    bool sawSymbol25 = false;
+    bool sawSymbol50 = false;
+    bool sawSymbol100 = false;
+    bool sawRelationship25 = false;
+    bool sawRelationship75 = false;
+    bool sawRelationship100 = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawSymbol25 = sawSymbol25
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Symbol analysis progress: 25%"))
+                && event.message.contains(QStringLiteral("a.sv")));
+        sawSymbol50 = sawSymbol50
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Symbol analysis progress: 50%"))
+                && event.message.contains(QStringLiteral("b.sv")));
+        sawSymbol100 = sawSymbol100
+            || event.message.contains(QStringLiteral("Symbol analysis progress: 100%"));
+        sawRelationship25 = sawRelationship25
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Relationship analysis progress: 25%")));
+        sawRelationship75 = sawRelationship75
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Relationship analysis progress: 75%")));
+        sawRelationship100 = sawRelationship100
+            || event.message.contains(QStringLiteral("Relationship analysis progress: 100%"));
+    }
+    expectBool("activity log records symbol progress checkpoints",
+               sawSymbol25 && sawSymbol50 && !sawSymbol100,
+               true);
+    expectBool("activity log records relationship progress checkpoints",
+               sawRelationship25 && sawRelationship75 && !sawRelationship100,
+               true);
+    service->clear();
 }
 
 static void runRtlInsightsOnDemandRegression()

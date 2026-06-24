@@ -41,12 +41,20 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             this,
             [this](const ProjectSnapshot& project, int totalFiles) {
                 symbolAnalysisCancelled.store(false);
+                lastSymbolProgressCheckpoint = 0;
+                lastRelationshipProgressCheckpoint = 0;
                 showAnalysisProgress(project.systemVerilogFiles);
                 showSymbolStageStarted(project.systemVerilogFiles);
                 ActivityLogService::getInstance()->append(
                     QStringLiteral("Analyzer"),
                     ActivityLogLevel::Info,
                     QStringLiteral("Scheduled %1 files").arg(totalFiles));
+            });
+    connect(scheduler,
+            &AnalysisScheduler::workspaceSymbolAnalysisProgress,
+            this,
+            [this](const QString& fileName, int filesDone, int totalFiles) {
+                handleWorkspaceSymbolProgress(filesDone, totalFiles, fileName);
             });
 
     connect(scheduler,
@@ -118,6 +126,11 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolProgress(
             .arg(totalFiles)
             .arg(shortName),
         1000);
+    logProgressCheckpoint(QStringLiteral("Symbol analysis"),
+                          filesDone,
+                          totalFiles,
+                          currentFileName,
+                          &lastSymbolProgressCheckpoint);
 }
 
 void AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued(
@@ -172,6 +185,7 @@ void AnalysisProgressCoordinator::showSymbolStageStarted(const QStringList& file
 
 void AnalysisProgressCoordinator::showRelationshipStageStarted(const QStringList& files)
 {
+    lastRelationshipProgressCheckpoint = 0;
     ActivityLogService::getInstance()->append(
         QStringLiteral("Analyzer"),
         ActivityLogLevel::Info,
@@ -215,6 +229,11 @@ void AnalysisProgressCoordinator::showWorkspaceRelationshipProgress(
             .arg(processedFiles)
             .arg(totalFiles),
         1000);
+    logProgressCheckpoint(QStringLiteral("Relationship analysis"),
+                          processedFiles,
+                          totalFiles,
+                          QString(),
+                          &lastRelationshipProgressCheckpoint);
 }
 
 void AnalysisProgressCoordinator::showRelationshipError(const QString& fileName, const QString& error)
@@ -234,4 +253,39 @@ void AnalysisProgressCoordinator::showRelationshipCancelled()
         ActivityLogLevel::Warning,
         QStringLiteral("Relationship analysis cancelled"));
     emit statusMessageRequested("Relationship analysis cancelled", 3000);
+}
+
+void AnalysisProgressCoordinator::logProgressCheckpoint(
+    const QString& label,
+    int processedFiles,
+    int totalFiles,
+    const QString& currentFileName,
+    int* lastCheckpoint)
+{
+    if (!lastCheckpoint || totalFiles <= 0 || processedFiles <= 0)
+        return;
+
+    const int percent = (processedFiles * 100) / totalFiles;
+    const int checkpoint = (percent / 25) * 25;
+    if (checkpoint <= *lastCheckpoint
+        || checkpoint < 25
+        || checkpoint >= 100) {
+        return;
+    }
+
+    *lastCheckpoint = checkpoint;
+    QString message =
+        QStringLiteral("%1 progress: %2% (%3/%4)")
+            .arg(label)
+            .arg(checkpoint)
+            .arg(processedFiles)
+            .arg(totalFiles);
+    const QString shortName = QFileInfo(currentFileName).fileName();
+    if (!shortName.isEmpty())
+        message += QStringLiteral(" - %1").arg(shortName);
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        message);
 }

@@ -596,8 +596,19 @@ feature direction that violates them.
 - `DiagnosticsRefreshController` now tracks whether a full diagnostics refresh is pending. A file-specific refresh can still replace another file-specific refresh during debounce, but once a full refresh is pending, later file-specific requests keep the pending scope full until the timer emits.
 - Empty `fileName` remains the all-files refresh contract. The controller still emits only one debounced `diagnosticsRefreshRequested` signal for a burst and does not trigger semantic analysis itself, avoiding refresh/analyze feedback loops.
 - A focused completion test requests file, full, and file refreshes in one debounce window and proves the emitted scope remains full; it also proves an isolated file refresh still emits the file name.
-- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and broader progress/cancellation visibility for long analysis runs.
+- Next Huge Workspace milestones: progress checkpoint Activity visibility, deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, and tiered symbol indexes.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 440 checks against `test_sv/new`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
+### Post-L: Huge Workspace Progress Checkpoint Activity MVP
+
+- Status: implemented in the current worktree.
+- Scope: eighth usable Huge Workspace Mode milestone. It improves long-run visibility without changing analysis execution, cancellation, semantic publication, or UI query policy.
+- `AnalysisProgressCoordinator` now connects `AnalysisScheduler::workspaceSymbolAnalysisProgress` to the existing symbol progress handler, so symbol pass progress updates are routed through the coordinator instead of being silently dropped.
+- Symbol and workspace relationship progress now write Activity/Output checkpoints at 25%, 50%, and 75%. The 100% state remains represented by the existing completion logs to avoid duplicate final messages.
+- Checkpoint logging is bounded and non-spammy: each stage keeps its own last checkpoint, resets when the stage starts, and does not log every file.
+- A focused GUI smoke regression drives symbol and relationship progress and proves Activity/Output records expected checkpoints while avoiding duplicate 100% progress records.
+- Next Huge Workspace milestones: deeper interrupt points inside Slang-backed extraction where available, incremental/early publish of safe per-file results, tiered symbol indexes, and richer cancellation visibility for long analysis runs.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 398 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
 ## Batch Policy
 
