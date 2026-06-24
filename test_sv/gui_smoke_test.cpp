@@ -3471,10 +3471,16 @@ int main(int argc, char** argv)
                            "logic clk;\n"
                            "input logic [7:0] data;\n"
                            "logic [7:0] q;\n"
+                           "logic [7:0] loop_q;\n"
                            "logic [7:0] out;\n"
                            "assign out = q + data;\n"
                            "always_ff @(posedge clk) begin\n"
                            "    if (data[0]) q <= data;\n"
+                           "end\n"
+                           "always_comb begin\n"
+                           "    for (int i = 0; i < 2; i++) begin\n"
+                           "        loop_q = data;\n"
+                           "    end\n"
                            "end\n"
                            "endmodule\n"));
     }
@@ -3488,6 +3494,7 @@ int main(int argc, char** argv)
     bool sawWaveOut = false;
     bool sawWaveClockReset = false;
     bool sawWaveGuard = false;
+    bool sawWaveLoopGuard = false;
     bool sawWaveContext = false;
     bool sawWaveLaneSummary = false;
     QTreeWidgetItem* waveQEventItem = nullptr;
@@ -3526,6 +3533,13 @@ int main(int argc, char** argv)
                     }
                 }
             }
+            if (name == QStringLiteral("loop_q")) {
+                for (int child = 0; child < laneItem->childCount(); ++child) {
+                    sawWaveLoopGuard = sawWaveLoopGuard
+                        || laneItem->child(child)->text(3)
+                            == QStringLiteral("for int i = 0; i < 2; i++");
+                }
+            }
         }
     }
     expectBool("wave preview renders active editor lanes",
@@ -3536,6 +3550,9 @@ int main(int argc, char** argv)
                true);
     expectBool("wave preview renders guard labels",
                waveTree && sawWaveGuard,
+               true);
+    expectBool("wave preview renders loop guard labels",
+               waveTree && sawWaveLoopGuard,
                true);
     expectBool("wave preview renders declaration context",
                waveTree && sawWaveContext,

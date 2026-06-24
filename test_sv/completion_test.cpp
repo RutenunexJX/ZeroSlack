@@ -1420,6 +1420,41 @@ int main(int argc, char** argv) {
                    && yLane->assignments.at(1).guardText
                        == QStringLiteral("case sel: default"),
                true);
+
+    const QString waveLoopPreviewInput =
+        QStringLiteral("module wave_loop;\n"
+                       "logic en;\n"
+                       "logic [1:0] i;\n"
+                       "logic [7:0] data [4];\n"
+                       "logic [7:0] next;\n"
+                       "logic [7:0] hold;\n"
+                       "logic [7:0] q;\n"
+                       "always_comb begin\n"
+                       "    for (int j = 0; j < 4; j++) begin\n"
+                       "        q = data[j];\n"
+                       "    end\n"
+                       "    foreach (data[i]) q = data[i];\n"
+                       "    while (en) q = next;\n"
+                       "    repeat (3) q = hold;\n"
+                       "end\n"
+                       "endmodule\n");
+    const WavePreviewReport waveLoopReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {QStringLiteral("wave_loop.sv"), waveLoopPreviewInput});
+    const WavePreviewLane* loopLane =
+        waveLaneNamed(waveLoopReport, QStringLiteral("q"));
+    expectBool("WavePreview loop guard labels",
+               loopLane
+                   && loopLane->assignments.size() == 4
+                   && loopLane->assignments.at(0).guardText
+                       == QStringLiteral("for int j = 0; j < 4; j++")
+                   && loopLane->assignments.at(1).guardText
+                       == QStringLiteral("foreach data[i]")
+                   && loopLane->assignments.at(2).guardText
+                       == QStringLiteral("while en")
+                   && loopLane->assignments.at(3).guardText
+                       == QStringLiteral("repeat 3"),
+               true);
     const QString planRoot =
         QDir::current().absoluteFilePath(QStringLiteral("test_sv/huge_plan"));
     const QString planA = QDir(planRoot).absoluteFilePath(QStringLiteral("a.sv"));

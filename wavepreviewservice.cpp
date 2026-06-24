@@ -312,6 +312,7 @@ bool isKeyword(const QString& text)
         QStringLiteral("typedef"),
         QStringLiteral("unique"),
         QStringLiteral("unsigned"),
+        QStringLiteral("while"),
         QStringLiteral("wire")
     };
     return keywords.contains(text);
@@ -1197,6 +1198,95 @@ QString caseGuardTextForAssignment(const QString& text,
     return guards.join(QStringLiteral(" && "));
 }
 
+bool isLoopGuardToken(const Token& token)
+{
+    if (token.kind != TokenKind::Identifier)
+        return false;
+    return token.text == QStringLiteral("for")
+        || token.text == QStringLiteral("foreach")
+        || token.text == QStringLiteral("while")
+        || token.text == QStringLiteral("repeat");
+}
+
+QString loopHeaderTextForToken(const QString& text,
+                               const QList<Token>& tokens,
+                               int loopIndex,
+                               int limit,
+                               int* headerEnd)
+{
+    if (loopIndex < 0 || loopIndex >= tokens.size()
+        || !isLoopGuardToken(tokens.at(loopIndex))) {
+        return QString();
+    }
+
+    int openIndex = -1;
+    for (int i = loopIndex + 1; i <= limit && i < tokens.size(); ++i) {
+        if (tokens.at(i).text == QLatin1String("(")) {
+            openIndex = i;
+            break;
+        }
+        if (tokens.at(i).text == QLatin1String(";")
+            || isIdentifierToken(tokens.at(i), QStringLiteral("begin"))) {
+            return QString();
+        }
+    }
+    if (openIndex < 0)
+        return QString();
+
+    const int closeIndex = matchingSymbol(tokens,
+                                          openIndex,
+                                          QStringLiteral("("),
+                                          QStringLiteral(")"),
+                                          limit);
+    if (closeIndex < 0)
+        return QString();
+
+    if (headerEnd)
+        *headerEnd = closeIndex;
+
+    const QString header =
+        sourceTextBetween(text, tokens, openIndex + 1, closeIndex - 1);
+    return header.isEmpty()
+        ? tokens.at(loopIndex).text
+        : QStringLiteral("%1 %2").arg(tokens.at(loopIndex).text, header);
+}
+
+QString loopGuardTextForAssignment(const QString& text,
+                                   const QList<Token>& tokens,
+                                   int from,
+                                   int assignmentIndex,
+                                   int limit)
+{
+    QStringList guards;
+    const int start = qMax(0, from);
+    const int end = qMin(assignmentIndex - 1, tokens.size() - 1);
+    for (int i = start; i <= end; ++i) {
+        if (!isLoopGuardToken(tokens.at(i)))
+            continue;
+
+        int headerEnd = -1;
+        const QString header =
+            loopHeaderTextForToken(text, tokens, i, limit, &headerEnd);
+        if (header.isEmpty() || headerEnd < 0)
+            continue;
+
+        int bodyStart = -1;
+        int bodyEnd = -1;
+        if (!statementBodyRange(tokens,
+                                headerEnd + 1,
+                                limit,
+                                &bodyStart,
+                                &bodyEnd)) {
+            continue;
+        }
+        if (assignmentIndex >= bodyStart && assignmentIndex <= bodyEnd)
+            guards.append(header);
+    }
+
+    guards.removeDuplicates();
+    return guards.join(QStringLiteral(" && "));
+}
+
 QString guardTextForAssignment(const QString& text,
                                const QList<Token>& tokens,
                                int from,
@@ -1212,6 +1302,10 @@ QString guardTextForAssignment(const QString& text,
         caseGuardTextForAssignment(text, tokens, from, assignmentIndex, limit);
     if (!caseGuard.isEmpty())
         guards.append(caseGuard);
+    const QString loopGuard =
+        loopGuardTextForAssignment(text, tokens, from, assignmentIndex, limit);
+    if (!loopGuard.isEmpty())
+        guards.append(loopGuard);
     guards.removeDuplicates();
     return guards.join(QStringLiteral(" && "));
 }

@@ -570,6 +570,16 @@ feature direction that violates them.
 - Next Wave Preview milestones: cross-file/semantic enrichment using existing semantic records, guard labels for more statement forms, and richer canvas interaction for dense reports.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 453 checks and `gui_smoke_test` with 407 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Loop Guard Labels MVP
+
+- Status: implemented in the current worktree.
+- Scope: second guard-context milestone for Wave Preview. It extends existing branch/case guard labels to loop/repeat control statements without evaluating iteration counts, branch truth, or signal values.
+- `WavePreviewService` now detects assignment bodies under `for`, `foreach`, `while`, and `repeat` statements and records guard labels from the local control header.
+- The existing Guard column, shared hover details, and canvas event labels consume the same `WavePreviewAssignment::guardText`, so UI rendering remains report-driven and does not parse RTL.
+- Implementation remains no-regex and uses deterministic token scans plus existing statement-body range helpers.
+- Next Wave Preview milestones: cross-file/semantic enrichment using existing semantic records, richer canvas interaction for dense reports, and additional guard context only where it can stay evidence-based.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 456 checks and `gui_smoke_test` with 408 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.
