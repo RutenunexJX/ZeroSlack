@@ -85,6 +85,7 @@ void SymbolAnalyzer::analyzeProject(
     result.protectedFiles = workspaceProtectedFiles;
     result.priorityPublicationCheckpoints =
         workspacePriorityPublicationCheckpoints;
+    result.fileAnalysisBands = workspaceFileAnalysisBands;
     result.generation = ++workspaceAnalysisGeneration;
     if (result.cancelled || (isCancelled && isCancelled())) {
         result.cancelled = true;

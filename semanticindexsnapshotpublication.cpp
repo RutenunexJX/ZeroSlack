@@ -120,6 +120,7 @@ void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> sna
 void SemanticIndex::clearSnapshot()
 {
     m_snapshot.reset();
+    clearWorkspaceFileAnalysisBands();
     ++m_snapshotRevision;
 }
 

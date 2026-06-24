@@ -320,6 +320,46 @@ bool SemanticIndex::nativeContentAffectsSymbols(
     return state.symbolRelevantHash != nativeSymbolRelevantHash(content);
 }
 
+void SemanticIndex::setWorkspaceFileAnalysisBands(
+    const QHash<QString, SemanticAnalysisBandMetadata>& bands)
+{
+    m_workspaceFileAnalysisBands.clear();
+    for (auto it = bands.constBegin(); it != bands.constEnd(); ++it) {
+        const QString normalized = normalizedStoreFileName(it.key());
+        if (!normalized.isEmpty() && it.value().isValid())
+            m_workspaceFileAnalysisBands.insert(normalized, it.value());
+    }
+}
+
+void SemanticIndex::clearWorkspaceFileAnalysisBands()
+{
+    m_workspaceFileAnalysisBands.clear();
+}
+
+SemanticAnalysisBandMetadata SemanticIndex::analysisBandForFile(
+    const QString& fileName) const
+{
+    const QString normalized = normalizedStoreFileName(fileName);
+    if (normalized.isEmpty())
+        return {};
+    return m_workspaceFileAnalysisBands.value(normalized);
+}
+
+SemanticSymbolRecord SemanticIndex::recordWithAnalysisBand(
+    SemanticSymbolRecord record) const
+{
+    record.analysisBand = analysisBandForFile(record.location.fileName);
+    return record;
+}
+
+QList<SemanticSymbolRecord> SemanticIndex::recordsWithAnalysisBands(
+    QList<SemanticSymbolRecord> records) const
+{
+    for (SemanticSymbolRecord& record : records)
+        record = recordWithAnalysisBand(record);
+    return records;
+}
+
 void SemanticIndex::updateSymbolRecordsForFile(
     const QString& fileName,
     const QList<SemanticSymbolRecord>& records,
@@ -336,11 +376,11 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
 {
     const QList<SemanticSymbolRecord> nativeRecords = nativeSymbolRecords(fileName);
     if (!fileName.isEmpty() && hasNativeFileCoverage(fileName))
-        return nativeRecords;
+        return recordsWithAnalysisBands(nativeRecords);
 
     if (m_snapshot) {
         QList<SemanticSymbolRecord> records =
-            m_snapshot->getSymbolRecords(fileName);
+            recordsWithAnalysisBands(m_snapshot->getSymbolRecords(fileName));
         if (!fileName.isEmpty()) {
             if (!records.isEmpty())
                 return records;
@@ -355,7 +395,8 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
                     continue;
                 mergedSnapshotRecords.append(record);
             }
-            mergedSnapshotRecords.append(m_nativeSymbolRecords);
+            mergedSnapshotRecords.append(
+                recordsWithAnalysisBands(m_nativeSymbolRecords));
             return mergedSnapshotRecords;
         }
 
@@ -363,7 +404,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
     }
 
     if (fileName.isEmpty())
-        return m_nativeSymbolRecords;
+        return recordsWithAnalysisBands(m_nativeSymbolRecords);
     return {};
 }
 
@@ -376,7 +417,7 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
     const SemanticSymbolRecord nativeRecord =
         nativeSymbolRecordByStableKey(key);
     if (nativeRecord.isValid())
-        return nativeRecord;
+        return recordWithAnalysisBand(nativeRecord);
     if (hasNativeFileCoverage(key.fileName))
         return {};
 
@@ -384,7 +425,7 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
         const SemanticSymbolRecord record =
             m_snapshot->getSymbolRecordByStableKey(key);
         if (record.isValid())
-            return record;
+            return recordWithAnalysisBand(record);
     }
 
     for (const SemanticSymbolRecord& record : getSymbolRecords()) {

@@ -24,6 +24,15 @@ struct WorkspaceAnalysisBandSummary {
     int publicationCheckpoint = 0;
 };
 
+struct WorkspaceAnalysisFileBandMetadata {
+    QString label;
+    QString displayName;
+    bool priority = false;
+    int publicationCheckpoint = 0;
+
+    bool isValid() const { return !label.isEmpty(); }
+};
+
 struct WorkspaceAnalysisPlan {
     ProjectSnapshot project;
     QString currentFileName;
@@ -34,6 +43,8 @@ struct WorkspaceAnalysisPlan {
     QStringList cleanOpenPriorityFiles;
     QStringList backgroundFiles;
     QHash<QString, QString> fileBandsByNormalizedPath;
+    QHash<QString, WorkspaceAnalysisFileBandMetadata>
+        fileBandMetadataByNormalizedPath;
     QList<WorkspaceAnalysisBandSummary> bandSummaries;
     QList<int> priorityPublicationCheckpoints;
     int priorityFileCount = 0;
@@ -46,6 +57,8 @@ struct WorkspaceAnalysisPlan {
     }
 
     QString bandForFile(const QString& fileName) const;
+    WorkspaceAnalysisFileBandMetadata bandMetadataForFile(
+        const QString& fileName) const;
     QString bandSummaryText() const;
 };
 

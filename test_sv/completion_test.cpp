@@ -1959,6 +1959,67 @@ int main(int argc, char** argv) {
     expectEq("Workspace plan formats band summary text",
              priorityPlan.bandSummaryText(),
              QStringLiteral("bands current 1, dirty 1, open 1, background 1"));
+    QStringList bandMetadataText;
+    for (const QString& fileName : {planC, planB, planD, planA}) {
+        const WorkspaceAnalysisFileBandMetadata metadata =
+            priorityPlan.bandMetadataForFile(fileName);
+        bandMetadataText.append(
+            QStringLiteral("%1:%2:%3:%4")
+                .arg(metadata.label,
+                     metadata.displayName,
+                     metadata.priority ? QStringLiteral("priority")
+                                       : QStringLiteral("background"),
+                     QString::number(metadata.publicationCheckpoint)));
+    }
+    expectEq("Workspace plan exposes file band metadata",
+             bandMetadataText.join(QStringLiteral("|")),
+             QStringLiteral("current:current:priority:1|"
+                            "dirty-open:dirty:priority:2|"
+                            "open:open:priority:3|"
+                            "background:background:background:0"));
+    QHash<QString, SemanticAnalysisBandMetadata> semanticBandMetadata;
+    for (auto it = priorityPlan.fileBandMetadataByNormalizedPath.constBegin();
+         it != priorityPlan.fileBandMetadataByNormalizedPath.constEnd();
+         ++it) {
+        const WorkspaceAnalysisFileBandMetadata planMetadata = it.value();
+        SemanticAnalysisBandMetadata metadata;
+        metadata.label = planMetadata.label;
+        metadata.displayName = planMetadata.displayName;
+        metadata.priority = planMetadata.priority;
+        metadata.publicationCheckpoint = planMetadata.publicationCheckpoint;
+        semanticBandMetadata.insert(it.key(), metadata);
+    }
+    SemanticIndex tierIndex;
+    tierIndex.setWorkspaceFileAnalysisBands(semanticBandMetadata);
+    SemanticSymbolRecord tierRecord;
+    tierRecord.name = QStringLiteral("tier_sig");
+    tierRecord.location.fileName = planC;
+    tierRecord.location.startLine = 1;
+    tierRecord.declarationKind = SymbolTaxonomy::DeclarationKind::Signal;
+    tierIndex.updateSymbolRecordsForFile(
+        planC,
+        {tierRecord},
+        QStringLiteral("module tier_top; logic tier_sig; endmodule\n"));
+    const QList<SemanticSymbolRecord> tierRecords =
+        tierIndex.getSymbolRecords(QDir::toNativeSeparators(planC));
+    expectBool("SemanticIndex records carry analysis band metadata",
+               !tierRecords.isEmpty()
+                   && tierRecords.first().analysisBand.label
+                       == QStringLiteral("current")
+                   && tierRecords.first().analysisBand.priority
+                   && tierRecords.first().analysisBand.publicationCheckpoint == 1,
+               true);
+    const std::shared_ptr<const SemanticIndexSnapshot> tierSnapshot =
+        tierIndex.captureSnapshotPreservingDiagnostics();
+    const QList<SemanticSymbolRecord> tierSnapshotRecords =
+        tierSnapshot->getSymbolRecords(planC);
+    expectBool("Semantic snapshot preserves analysis band metadata",
+               !tierSnapshotRecords.isEmpty()
+                   && tierSnapshotRecords.first().analysisBand.label
+                       == QStringLiteral("current")
+                   && tierSnapshotRecords.first().analysisBand.displayName
+                       == QStringLiteral("current"),
+               true);
 
     WorkspaceAnalysisPlan externalCurrentPlan =
         WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(

@@ -87,6 +87,7 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
     int totalFiles)
 {
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    semanticIndex->setWorkspaceFileAnalysisBands(result.fileAnalysisBands);
     const QSet<QString> protectedFiles = normalizedFileSet(result.protectedFiles);
     const int resultFileCount = static_cast<int>(result.files.size());
     const QList<int> checkpoints =

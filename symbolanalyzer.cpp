@@ -44,6 +44,12 @@ void SymbolAnalyzer::setWorkspacePriorityPublicationCheckpoints(
     }
 }
 
+void SymbolAnalyzer::setWorkspaceFileAnalysisBands(
+    const QHash<QString, SemanticAnalysisBandMetadata>& bands)
+{
+    workspaceFileAnalysisBands = bands;
+}
+
 QString SymbolAnalyzer::contentHash(const QString& content) const
 {
     return QString::number(qHash(content));

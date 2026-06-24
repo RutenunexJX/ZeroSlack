@@ -79,6 +79,15 @@ struct SemanticSymbolTypeReference {
     bool isValid() const;
 };
 
+struct SemanticAnalysisBandMetadata {
+    QString label;
+    QString displayName;
+    bool priority = false;
+    int publicationCheckpoint = 0;
+
+    bool isValid() const;
+};
+
 struct SemanticSymbolRecord {
     SymbolStableKey stableKey;
     int localHandle = -1;
@@ -96,6 +105,7 @@ struct SemanticSymbolRecord {
         SymbolTaxonomy::CollectorKind::User;
     SemanticSymbolOwner owner;
     SemanticSymbolTypeReference type;
+    SemanticAnalysisBandMetadata analysisBand;
 
     bool isValid() const;
 };
@@ -243,6 +253,11 @@ public:
     bool publishSnapshotIfCurrent(
         const SemanticSnapshotToken& expectedCurrentSnapshot,
         std::shared_ptr<const SemanticIndexSnapshot> nextSnapshot);
+    void setWorkspaceFileAnalysisBands(
+        const QHash<QString, SemanticAnalysisBandMetadata>& bands);
+    void clearWorkspaceFileAnalysisBands();
+    SemanticAnalysisBandMetadata analysisBandForFile(
+        const QString& fileName) const;
 
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
@@ -351,6 +366,8 @@ private:
     QHash<QString, int> m_nativeStableKeyIndexes;
     QHash<QString, QSet<int>> m_nativeRecordHandlesByAnalysisFile;
     QSet<QString> m_nativeCoveredFiles;
+    QHash<QString, SemanticAnalysisBandMetadata>
+        m_workspaceFileAnalysisBands;
     int m_nextNativeLocalHandle = 1;
     static std::unique_ptr<SemanticIndex> instance;
 
@@ -369,6 +386,10 @@ private:
     void updateNativeFileState(const QString& fileName, const QString& content);
     bool hasNativeFileState(const QString& fileName) const;
     bool nativeContentAffectsSymbols(const QString& fileName, const QString& content) const;
+    SemanticSymbolRecord recordWithAnalysisBand(
+        SemanticSymbolRecord record) const;
+    QList<SemanticSymbolRecord> recordsWithAnalysisBands(
+        QList<SemanticSymbolRecord> records) const;
 
     SemanticDefinitionResult bestDefinitionFromCandidates(
         const QList<SemanticSymbolRecord>& candidates,

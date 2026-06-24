@@ -54,18 +54,24 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     const QStringList protectedFiles = workspaceProtectedFiles;
     const QList<int> priorityPublicationCheckpoints =
         workspacePriorityPublicationCheckpoints;
+    const QHash<QString, SemanticAnalysisBandMetadata> fileAnalysisBands =
+        workspaceFileAnalysisBands;
 
     emit analysisStarted(workspacePath);
 
-    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles, priorityPublicationCheckpoints]() {
+    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles, priorityPublicationCheckpoints, fileAnalysisBands]() {
         auto applyResultMetadata =
-            [generation, &protectedFiles, &priorityPublicationCheckpoints](
+            [generation,
+             &protectedFiles,
+             &priorityPublicationCheckpoints,
+             &fileAnalysisBands](
                 WorkspaceAnalysisResult* result) {
                 if (!result)
                     return;
                 result->protectedFiles = protectedFiles;
                 result->priorityPublicationCheckpoints =
                     priorityPublicationCheckpoints;
+                result->fileAnalysisBands = fileAnalysisBands;
                 result->generation = generation;
             };
         auto cancelled = [&isCancelled]() {

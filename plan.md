@@ -951,6 +951,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: tier-aware symbol/query metadata, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 509 checks; direct `gui_smoke_test` run with 416 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Tier-Aware Symbol Metadata MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-fourth usable Huge Workspace Mode milestone and the first query-visible tier metadata step. It does not change Slang extraction, publication checkpoints, diagnostics replacement, relationship analysis, or UI ordering.
+- `WorkspaceAnalysisPlan` now carries `fileBandMetadataByNormalizedPath`, mapping each planned workspace file to a stable band label, display name, priority flag, and publication checkpoint. `WorkspaceAnalysisPlan::bandMetadataForFile()` exposes that plan-owned lookup without making callers inspect map keys.
+- `WorkspaceSymbolAnalysisController` converts the plan-owned file-band metadata into generic `SemanticAnalysisBandMetadata` and passes it to `SymbolAnalyzer` with the current workspace analysis request.
+- `WorkspaceAnalysisResult` carries the file-band metadata for the same analysis generation, and `SymbolAnalyzer::publishWorkspaceAnalysisResult()` installs it in `SemanticIndex` before staged or final symbol publication.
+- `SemanticIndex` annotates returned `SemanticSymbolRecord` objects and published `SemanticIndexSnapshot` records with the current/dirty-open/open/background analysis band for their source file. Protected dirty-open records that are preserved from open-document analysis still receive tier metadata at query/publication time.
+- Implementation remains no-regex and keeps priority policy in `WorkspaceAnalysisPlanService`; query code consumes metadata rather than recomputing priority tiers.
+- Next Huge Workspace milestones: using symbol tier metadata for query ordering/report display where helpful, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 516 checks; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

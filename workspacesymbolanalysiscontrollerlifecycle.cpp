@@ -4,6 +4,28 @@
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
 
+namespace {
+QHash<QString, SemanticAnalysisBandMetadata> semanticBandMetadataForPlan(
+    const WorkspaceAnalysisPlan& plan)
+{
+    QHash<QString, SemanticAnalysisBandMetadata> bands;
+    for (auto it = plan.fileBandMetadataByNormalizedPath.constBegin();
+         it != plan.fileBandMetadataByNormalizedPath.constEnd();
+         ++it) {
+        const WorkspaceAnalysisFileBandMetadata planMetadata = it.value();
+        if (!planMetadata.isValid())
+            continue;
+        SemanticAnalysisBandMetadata metadata;
+        metadata.label = planMetadata.label;
+        metadata.displayName = planMetadata.displayName;
+        metadata.priority = planMetadata.priority;
+        metadata.publicationCheckpoint = planMetadata.publicationCheckpoint;
+        bands.insert(it.key(), metadata);
+    }
+    return bands;
+}
+}
+
 void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     const ProjectSnapshot& project)
 {
@@ -12,6 +34,7 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
 
     if (project.systemVerilogFiles.isEmpty()) {
         workspaceAnalysisActive = false;
+        symbolAnalyzer->setWorkspaceFileAnalysisBands({});
         symbolAnalyzer->cancelWorkspaceAnalysisAndInvalidate();
         return;
     }
@@ -41,6 +64,8 @@ void WorkspaceSymbolAnalysisController::startWorkspaceAnalysis(
     symbolAnalyzer->setWorkspaceProtectedFiles(plan.protectedFiles);
     symbolAnalyzer->setWorkspacePriorityPublicationCheckpoints(
         plan.priorityPublicationCheckpoints);
+    symbolAnalyzer->setWorkspaceFileAnalysisBands(
+        semanticBandMetadataForPlan(plan));
     requestQueue.start(project);
     activeProject = project;
     workspaceAnalysisActive = true;
@@ -76,8 +101,10 @@ void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
     workspaceAnalysisActive = false;
     requestQueue.clear();
     activeProject = ProjectSnapshot();
-    if (symbolAnalyzer)
+    if (symbolAnalyzer) {
+        symbolAnalyzer->setWorkspaceFileAnalysisBands({});
         symbolAnalyzer->cancelWorkspaceAnalysisAndInvalidate();
+    }
     emit workspaceRelationshipAnalysisCancelRequested();
     SemanticIndex::getInstance()->clearSnapshot();
     emit relationshipDataClearRequested();

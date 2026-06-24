@@ -188,6 +188,42 @@ void rememberBand(QHash<QString, QString>* bands,
             bands->insert(normalized, label);
     }
 }
+
+QHash<QString, WorkspaceAnalysisBandSummary> summariesByLabel(
+    const QList<WorkspaceAnalysisBandSummary>& summaries)
+{
+    QHash<QString, WorkspaceAnalysisBandSummary> result;
+    for (const WorkspaceAnalysisBandSummary& summary : summaries) {
+        if (!summary.label.isEmpty())
+            result.insert(summary.label, summary);
+    }
+    return result;
+}
+
+void rememberBandMetadata(
+    QHash<QString, WorkspaceAnalysisFileBandMetadata>* bands,
+    const QHash<QString, WorkspaceAnalysisBandSummary>& summaries,
+    const QStringList& fileNames,
+    const QString& label)
+{
+    if (!bands)
+        return;
+
+    const WorkspaceAnalysisBandSummary summary = summaries.value(label);
+    WorkspaceAnalysisFileBandMetadata metadata;
+    metadata.label = label;
+    metadata.displayName = summary.displayName.isEmpty()
+        ? label
+        : summary.displayName;
+    metadata.priority = summary.priority;
+    metadata.publicationCheckpoint = summary.publicationCheckpoint;
+
+    for (const QString& fileName : fileNames) {
+        const QString normalized = normalizedPath(fileName);
+        if (!normalized.isEmpty() && !bands->contains(normalized))
+            bands->insert(normalized, metadata);
+    }
+}
 }
 
 WorkspaceAnalysisPlanService* WorkspaceAnalysisPlanService::getInstance()
@@ -243,6 +279,24 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
     rememberBand(&plan.fileBandsByNormalizedPath,
                  plan.backgroundFiles,
                  QStringLiteral("background"));
+    const QHash<QString, WorkspaceAnalysisBandSummary> summaries =
+        summariesByLabel(plan.bandSummaries);
+    rememberBandMetadata(&plan.fileBandMetadataByNormalizedPath,
+                         summaries,
+                         plan.currentFilePriorityFiles,
+                         QStringLiteral("current"));
+    rememberBandMetadata(&plan.fileBandMetadataByNormalizedPath,
+                         summaries,
+                         plan.dirtyOpenPriorityFiles,
+                         QStringLiteral("dirty-open"));
+    rememberBandMetadata(&plan.fileBandMetadataByNormalizedPath,
+                         summaries,
+                         plan.cleanOpenPriorityFiles,
+                         QStringLiteral("open"));
+    rememberBandMetadata(&plan.fileBandMetadataByNormalizedPath,
+                         summaries,
+                         plan.backgroundFiles,
+                         QStringLiteral("background"));
     return plan;
 }
 
@@ -270,6 +324,37 @@ QString WorkspaceAnalysisPlan::bandForFile(const QString& fileName) const
     if (containsFile(backgroundFiles))
         return QStringLiteral("background");
     return QString();
+}
+
+WorkspaceAnalysisFileBandMetadata WorkspaceAnalysisPlan::bandMetadataForFile(
+    const QString& fileName) const
+{
+    const QString normalized = normalizedPath(fileName);
+    const WorkspaceAnalysisFileBandMetadata indexedMetadata =
+        fileBandMetadataByNormalizedPath.value(normalized);
+    if (indexedMetadata.isValid())
+        return indexedMetadata;
+
+    const QString label = bandForFile(fileName);
+    if (label.isEmpty())
+        return {};
+    for (const WorkspaceAnalysisBandSummary& summary : bandSummaries) {
+        if (summary.label != label)
+            continue;
+        WorkspaceAnalysisFileBandMetadata metadata;
+        metadata.label = summary.label;
+        metadata.displayName = summary.displayName.isEmpty()
+            ? summary.label
+            : summary.displayName;
+        metadata.priority = summary.priority;
+        metadata.publicationCheckpoint = summary.publicationCheckpoint;
+        return metadata;
+    }
+
+    WorkspaceAnalysisFileBandMetadata metadata;
+    metadata.label = label;
+    metadata.displayName = label;
+    return metadata;
 }
 
 QString WorkspaceAnalysisPlan::bandSummaryText() const

@@ -41,6 +41,11 @@ bool SemanticSymbolTypeReference::isValid() const
         || stableKey.isValid();
 }
 
+bool SemanticAnalysisBandMetadata::isValid() const
+{
+    return !label.isEmpty();
+}
+
 bool SemanticSymbolRecord::isValid() const
 {
     return stableKey.isValid() || !name.isEmpty() || localHandle >= 0;
