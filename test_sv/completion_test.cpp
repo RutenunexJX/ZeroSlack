@@ -998,6 +998,81 @@ int main(int argc, char** argv) {
              indentOnlySingleStatementReport.formattedText,
              formatterSingleStatementReport.formattedText);
 
+    const QString formatterSvBlockInput =
+        QStringLiteral("program tb;\n"
+                       "default clocking cb @(posedge clk);\n"
+                       "input req;\n"
+                       "output grant;\n"
+                       "endclocking\n"
+                       "property req_grant;\n"
+                       "req |=> grant;\n"
+                       "endproperty\n"
+                       "sequence two_req;\n"
+                       "req ##1 req;\n"
+                       "endsequence\n"
+                       "covergroup cg @(posedge clk);\n"
+                       "coverpoint req;\n"
+                       "endgroup\n"
+                       "checker chk;\n"
+                       "assert property (req_grant);\n"
+                       "endchecker\n"
+                       "endprogram\n");
+    const FormatterReport formatterSvBlockReport =
+        FormatterService::getInstance()->formatDocument(formatterSvBlockInput);
+    expectBool("Formatter SystemVerilog block boundary report changed",
+               formatterSvBlockReport.changed,
+               true);
+    expectEq("Formatter indents SystemVerilog block boundaries",
+             formatterSvBlockReport.formattedText,
+             QStringLiteral("program tb;\n"
+                            "    default clocking cb @(posedge clk);\n"
+                            "        input  req;\n"
+                            "        output grant;\n"
+                            "    endclocking\n"
+                            "    property req_grant;\n"
+                            "        req |=> grant;\n"
+                            "    endproperty\n"
+                            "    sequence two_req;\n"
+                            "        req ##1 req;\n"
+                            "    endsequence\n"
+                            "    covergroup cg @(posedge clk);\n"
+                            "        coverpoint req;\n"
+                            "    endgroup\n"
+                            "    checker chk;\n"
+                            "        assert property (req_grant);\n"
+                            "    endchecker\n"
+                            "endprogram\n"));
+    const FormatterReport unchangedSvBlockReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSvBlockReport.formattedText);
+    expectBool("Formatter SystemVerilog block boundary idempotent",
+               unchangedSvBlockReport.changed,
+               false);
+    const FormatterReport indentOnlySvBlockReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSvBlockInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only keeps SystemVerilog block boundary indentation",
+             indentOnlySvBlockReport.formattedText,
+             QStringLiteral("program tb;\n"
+                            "    default clocking cb @(posedge clk);\n"
+                            "        input req;\n"
+                            "        output grant;\n"
+                            "    endclocking\n"
+                            "    property req_grant;\n"
+                            "        req |=> grant;\n"
+                            "    endproperty\n"
+                            "    sequence two_req;\n"
+                            "        req ##1 req;\n"
+                            "    endsequence\n"
+                            "    covergroup cg @(posedge clk);\n"
+                            "        coverpoint req;\n"
+                            "    endgroup\n"
+                            "    checker chk;\n"
+                            "        assert property (req_grant);\n"
+                            "    endchecker\n"
+                            "endprogram\n"));
+
     const QString formatterAlignmentInput =
         QStringLiteral("module align_demo;\n"
                        "logic [7:0] data;\n"

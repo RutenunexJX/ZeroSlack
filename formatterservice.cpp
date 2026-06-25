@@ -191,15 +191,47 @@ bool isOpeningToken(const QString& token)
     return token == QStringLiteral("module")
         || token == QStringLiteral("interface")
         || token == QStringLiteral("package")
+        || token == QStringLiteral("program")
+        || token == QStringLiteral("primitive")
+        || token == QStringLiteral("checker")
         || token == QStringLiteral("class")
         || token == QStringLiteral("function")
         || token == QStringLiteral("task")
         || token == QStringLiteral("generate")
+        || token == QStringLiteral("clocking")
+        || token == QStringLiteral("covergroup")
+        || token == QStringLiteral("property")
+        || token == QStringLiteral("sequence")
+        || token == QStringLiteral("specify")
+        || token == QStringLiteral("table")
         || token == QStringLiteral("begin")
         || token == QStringLiteral("case")
         || token == QStringLiteral("casex")
         || token == QStringLiteral("casez")
         || token == QStringLiteral("fork");
+}
+
+bool isContextualOpeningToken(const QStringList& tokens, int index)
+{
+    if (index < 0 || index >= tokens.size())
+        return false;
+
+    const QString token = tokens.at(index);
+    if (token == QStringLiteral("program")
+        || token == QStringLiteral("primitive")
+        || token == QStringLiteral("checker")
+        || token == QStringLiteral("covergroup")
+        || token == QStringLiteral("property")
+        || token == QStringLiteral("sequence")
+        || token == QStringLiteral("specify")
+        || token == QStringLiteral("table")) {
+        return index == 0;
+    }
+    if (token == QStringLiteral("clocking")) {
+        return index == 0
+            || (index == 1 && tokens.first() == QStringLiteral("default"));
+    }
+    return isOpeningToken(token);
 }
 
 bool isClosingToken(const QString& token)
@@ -208,10 +240,19 @@ bool isClosingToken(const QString& token)
         || token == QStringLiteral("endmodule")
         || token == QStringLiteral("endinterface")
         || token == QStringLiteral("endpackage")
+        || token == QStringLiteral("endprogram")
+        || token == QStringLiteral("endprimitive")
+        || token == QStringLiteral("endchecker")
         || token == QStringLiteral("endclass")
         || token == QStringLiteral("endfunction")
         || token == QStringLiteral("endtask")
         || token == QStringLiteral("endgenerate")
+        || token == QStringLiteral("endclocking")
+        || token == QStringLiteral("endgroup")
+        || token == QStringLiteral("endproperty")
+        || token == QStringLiteral("endsequence")
+        || token == QStringLiteral("endspecify")
+        || token == QStringLiteral("endtable")
         || token == QStringLiteral("endcase")
         || token == QStringLiteral("join")
         || token == QStringLiteral("join_any")
@@ -221,8 +262,8 @@ bool isClosingToken(const QString& token)
 int countOpeningTokens(const QStringList& tokens)
 {
     int count = 0;
-    for (const QString& token : tokens) {
-        if (isOpeningToken(token))
+    for (int i = 0; i < tokens.size(); ++i) {
+        if (isContextualOpeningToken(tokens, i))
             ++count;
     }
     return count;

@@ -563,6 +563,19 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond simple call-argument rows.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 538 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter SystemVerilog Block Boundary Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: twentieth usable formatter milestone and a conservative Indent Only-compatible SystemVerilog block-boundary expansion. It does not split, merge, reorder, or rewrite statements; it only adjusts leading whitespace for additional SV block forms.
+- `FormatterService` now treats `program`, `primitive`, `checker`, `clocking`, `covergroup`, `property`, `sequence`, `specify`, and `table` as opening block tokens with matching `end...` closers.
+- New block keywords that also appear in expressions are context-aware: `property` / `sequence` / `covergroup` / related block declarations count only as block headers, while `default clocking` is still accepted as a clocking-block header.
+- This keeps `assert property (...)` from opening a fake formatter block, so assertion statements inside checker/program code do not push following `endchecker` / `endprogram` lines too deep.
+- The behavior is active in both `Structured` and `Indent Only` profiles because it only changes leading whitespace. Existing Structured alignment may still align simple clocking `input` / `output` rows, while `Indent Only` leaves those columns unchanged.
+- `completion_test` verifies Structured output, Indent Only output, idempotence, `default clocking`, property/sequence/covergroup/checker blocks, and the `assert property (...)` non-opening case.
+- Implementation remains no-regex and uses deterministic code-token scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond simple call-argument rows.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 542 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.
