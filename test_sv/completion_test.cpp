@@ -588,6 +588,45 @@ int main(int argc, char** argv) {
                               ":: COMPLETION BANDS - bands current 1 item, background 1 item ::")
                    && bandSummaryModel.firstSelectableIndex().row() == 1,
                true);
+    CompletionResult hiddenBandSummaryCompletion;
+    for (int i = 0; i < 15; ++i) {
+        CompletionResult::SemanticCompletionItem currentItem =
+            metadataCompletionItem;
+        currentItem.label = QStringLiteral("visible_current_%1")
+                                .arg(i, 2, 10, QLatin1Char('0'));
+        currentItem.insertText = currentItem.label;
+        currentItem.symbolRecord = SemanticSymbolRecord();
+        currentItem.symbolStableKey = SymbolStableKey();
+        hiddenBandSummaryCompletion.items.append(currentItem);
+    }
+    CompletionResult::SemanticCompletionItem hiddenBackgroundItem =
+        backgroundCompletionItem;
+    hiddenBackgroundItem.label =
+        QStringLiteral("hidden_background_only");
+    hiddenBackgroundItem.insertText = hiddenBackgroundItem.label;
+    hiddenBackgroundItem.symbolRecord = SemanticSymbolRecord();
+    hiddenBackgroundItem.symbolStableKey = SymbolStableKey();
+    hiddenBandSummaryCompletion.items.append(hiddenBackgroundItem);
+    expectBool("CompletionResult keeps hidden band in full summary",
+               hiddenBandSummaryCompletion.analysisBandGroupCount() == 2,
+               true);
+    CompletionModel visibleBandSummaryModel;
+    visibleBandSummaryModel.updateCompletions(hiddenBandSummaryCompletion,
+                                              QStringLiteral("visible"));
+    bool visibleHeaderPresent = false;
+    for (int row = 0; row < visibleBandSummaryModel.rowCount(); ++row) {
+        visibleHeaderPresent =
+            visibleHeaderPresent
+            || visibleBandSummaryModel.data(
+                   visibleBandSummaryModel.index(row, 0),
+                   Qt::DisplayRole).toString().contains(
+                   QStringLiteral("COMPLETION BANDS"));
+    }
+    expectBool("CompletionModel summarizes only visible completion bands",
+               visibleBandSummaryModel.rowCount() == 15
+                   && !visibleHeaderPresent
+                   && visibleBandSummaryModel.firstSelectableIndex().row() == 0,
+               true);
     CompletionModel commandSymbolBandSummaryModel;
     commandSymbolBandSummaryModel.updateSymbolRecordCompletions(
         {metadataModelRecord, backgroundMetadataRecord},

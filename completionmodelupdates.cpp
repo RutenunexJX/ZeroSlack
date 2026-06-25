@@ -51,7 +51,7 @@ void fillSymbolMetadataFromRecord(
     item.sourceRole = metadata.sourceRole;
 }
 
-bool isVisibleCommandSymbolBandItem(
+bool isVisibleSymbolCompletionBandItem(
     const CompletionModel::CompletionItem& item)
 {
     if (item.type != CompletionModel::SymbolCompletion)
@@ -60,15 +60,15 @@ bool isVisibleCommandSymbolBandItem(
         return false;
     if (item.text.startsWith(QStringLiteral("[DEFAULT]")))
         return false;
-    return item.symbolRecord.isValid() || item.symbolStableKey.isValid();
+    return true;
 }
 
-CompletionResult completionBandSummaryForVisibleCommandSymbols(
+CompletionResult completionBandSummaryForVisibleSymbolCompletions(
     const QList<CompletionModel::CompletionItem>& items)
 {
     CompletionResult result;
     for (const CompletionModel::CompletionItem& item : items) {
-        if (!isVisibleCommandSymbolBandItem(item))
+        if (!isVisibleSymbolCompletionBandItem(item))
             continue;
 
         CompletionResult::SemanticCompletionItem summaryItem;
@@ -119,10 +119,12 @@ void CompletionModel::updateCompletions(const CompletionResult &completion,
     if (completions.size() > 15) {
         completions = completions.mid(0, 15);
     }
-    if (completion.analysisBandGroupCount() > 1) {
+    const CompletionResult visibleBandSummary =
+        completionBandSummaryForVisibleSymbolCompletions(completions);
+    if (visibleBandSummary.analysisBandGroupCount() > 1) {
         CompletionItem bandHeader;
         bandHeader.text = QStringLiteral(":: COMPLETION BANDS - %1 ::")
-                              .arg(completion.analysisBandSummaryText());
+                              .arg(visibleBandSummary.analysisBandSummaryText());
         bandHeader.type = SymbolCompletion;
         bandHeader.description =
             QStringLiteral("Completion analysis bands");
@@ -358,7 +360,7 @@ void CompletionModel::updateSymbolRecordCompletions(
         completions = completions.mid(0, 32);
     }
     const CompletionResult bandSummary =
-        completionBandSummaryForVisibleCommandSymbols(completions);
+        completionBandSummaryForVisibleSymbolCompletions(completions);
     if (bandSummary.analysisBandGroupCount() > 1) {
         CompletionItem bandHeader;
         bandHeader.text = QStringLiteral(":: COMMAND SYMBOL BANDS - %1 ::")

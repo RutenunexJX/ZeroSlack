@@ -260,6 +260,8 @@ Thin UI consumers
 - Huge Workspace Completion Band Summary Header MVP verification passed with focused `completion_test` at 555 checks, changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 - Huge Workspace Command Symbol Band Summary Header MVP is implemented in the current worktree: command-symbol completion lists such as `;l` / `;w` / `;p` now summarize visible symbol rows by analysis band and insert a non-selectable command-symbol band header after the default row when multiple bands are present.
 - Huge Workspace Command Symbol Band Summary Header MVP verification passed with focused `completion_test` at 556 checks, changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+- Huge Workspace Visible Completion Band Summary Header MVP is implemented in the current worktree: ordinary semantic completion popups now derive their `:: COMPLETION BANDS - ... ::` header from the visible sorted/truncated rows, so hidden background matches do not appear in the popup header while `CompletionResult` still exposes the full-result band summary for service/report callers.
+- Huge Workspace Visible Completion Band Summary Header MVP verification passed with focused `completion_test` at 563 checks, changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 - `SemanticIndexSnapshot` is the intended single UI query truth.
 - Do not add feature-specific workarounds in UI, scheduler, or analyzer code.
 - After Phase J, keep new semantic/test work record-native and keep the repo-source zero target passing.

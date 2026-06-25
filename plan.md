@@ -1241,6 +1241,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional completion/report surfaces that consume analysis-band provenance without recomputing priority policy.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 556 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Visible Completion Band Summary Header MVP
+
+- Status: implemented in the current worktree.
+- Scope: thirty-sixth usable Huge Workspace Mode milestone and an ordinary completion provenance accuracy refinement. It does not change semantic extraction, completion scoring, completion truncation limits, command-symbol completion behavior, diagnostic publication, or workspace scheduling.
+- `CompletionModel::updateCompletions()` now builds its completion-band header from visible, real symbol rows after scoring and truncation instead of using the full `CompletionResult` summary directly.
+- `CompletionResult::analysisBandSummaryText()` remains the full-result service/report summary, so non-UI callers can still inspect hidden background provenance when they need it.
+- The ordinary completion popup now omits the `:: COMPLETION BANDS - ... ::` header when lower-priority background rows exist in the full result but are not visible after truncation.
+- `completion_test` verifies that the full result still reports both current and hidden background bands while the rendered popup stays at the 15 visible rows with no misleading band header.
+- Implementation remains no-regex and keeps priority policy in `WorkspaceAnalysisPlanService` / `SemanticIndex`; completion UI consumes metadata already attached to completion items and does not recompute workspace priority tiers.
+- Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional completion/report surfaces that consume analysis-band provenance without recomputing priority policy.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 563 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
