@@ -4,6 +4,8 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 
 ## Current Stable Baseline
 
+- Wave Preview, Formatter, and Huge Workspace Mode are long-term goals tracked in `goal.md`; they should be resumed only when the user asks for them or when a requested feature naturally belongs to one of those areas.
+- Stabilizing or making the branch a non-intermediate version means preserving the current coherent baseline and then making room for unrelated feature work, not continuing to add more three-feature milestones by default.
 - Treat the current branch head after this stabilization pass as the Three-Feature Stable Baseline for Wave Preview, Formatter, and Huge Workspace Mode.
 - This is a non-intermediate delivery point, not the end of the long-term objective. Future work should start from this baseline and produce a new coherent baseline only after another usable milestone is implemented, documented, verified, committed, and pushed.
 - Wave Preview remains a code-understanding sketch rather than a simulator. Formatter remains conservative, profile-driven, and source-preserving. Huge Workspace Mode remains priority/cancellation/provenance driven, with staged symbol visibility and explicit current/open/background band semantics.

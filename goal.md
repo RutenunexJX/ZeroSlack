@@ -15,9 +15,15 @@ ZeroSlack should:
 - remain responsive on large files and multi-file workspaces
 - keep semantic behavior testable through real fixtures
 
+## Long-Term Three-Feature Goals
+
+- Wave Preview, Formatter, and Huge Workspace Mode are long-term goals captured here so they can be resumed whenever the user explicitly asks to continue one of them or a requested feature naturally belongs to that area.
+- These goals should not automatically dominate unrelated feature work. When the user asks to stabilize, converge, or "make this a non-intermediate version", treat that as a request to stop extending the three-feature work, preserve a coherent stable baseline, and make room for other features.
+- When one of these goals is reactivated, advance it through a coherent usable milestone: update `readme.md`, `plan.md`, and `goal.md` as needed, run appropriate verification, and keep the branch in a clean handoff state.
+
 ## Current Three-Feature Baseline
 
-- The current branch head after this stabilization pass is the non-intermediate baseline for the active Wave Preview, Formatter, and Huge Workspace Mode work.
+- The current branch head after the stabilization pass is the non-intermediate baseline for the active Wave Preview, Formatter, and Huge Workspace Mode work.
 - Wave Preview is considered usable as a code-understanding waveform sketch: it renders current-buffer lanes, events, clock/reset context, guard hints, activity summaries, canvas interaction, navigation, and lane warnings without simulating values or claiming engineering-grade waveform proof.
 - Formatter is considered usable as a conservative source-preserving formatter: it supports opt-in `Structured` and `Indent Only` profiles, common declaration/port/instance/case/enum/assignment alignment, continuation shaping, format selection, format-on-save, and safe leading-whitespace indentation for common SystemVerilog blocks and single-statement bodies.
 - Huge Workspace Mode is considered usable as a responsiveness and provenance baseline: it prioritizes current/open files, coalesces and expires stale background requests, supports non-blocking cancellation boundaries where available, publishes safe staged symbol snapshots, and exposes current/open/background analysis-band provenance through Activity, Problems, diagnostics, and completion surfaces.

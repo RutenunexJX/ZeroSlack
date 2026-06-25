@@ -23,6 +23,8 @@ Thin UI consumers
 
 ## Latest Strategy
 
+- Wave Preview, Formatter, and Huge Workspace Mode are long-term goals captured in `goal.md`, not automatic blockers for unrelated feature work. Resume them when the user explicitly asks, or when a requested feature naturally belongs to one of those areas.
+- When the user asks to stabilize, converge, or make the branch a non-intermediate version, stop extending those three long-term goals, preserve a coherent baseline, and make room for new feature work.
 - Current Three-Feature Stable Baseline is the branch head after this stabilization pass. It is the non-intermediate baseline for the current Wave Preview, Formatter, and Huge Workspace work: usable behavior is documented, verified, and pushed before further expansion starts.
 - This baseline does not declare the long-term three-feature objective complete. It freezes the current usable surface as a coherent handoff point: Wave Preview is a code-understanding sketch, Formatter is conservative and opt-in/profile-driven, and Huge Workspace Mode exposes priority/cancellation/band provenance without pretending background analysis is fully incremental everywhere.
 - Baseline gate for this pass: clean worktree before edits, full default CMake build, full `ctest --output-on-failure` 7/7, focused current-feature coverage already passing, `git diff --check`, and a pushed commit on `tree_sitter_and_slang`.
