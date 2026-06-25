@@ -431,11 +431,14 @@ QString laneActivityText(const WavePreviewLaneSummary& summary)
 {
     QStringList parts;
     if (summary.hasContinuousEvent)
-        parts.append(QStringLiteral("continuous"));
+        parts.append(QStringLiteral("assign %1")
+                         .arg(summary.continuousEventCount));
     if (summary.hasCombinationalEvent)
-        parts.append(QStringLiteral("comb"));
+        parts.append(QStringLiteral("comb %1")
+                         .arg(summary.combinationalEventCount));
     if (summary.hasSequentialEvent)
-        parts.append(QStringLiteral("seq"));
+        parts.append(QStringLiteral("seq %1")
+                         .arg(summary.sequentialEventCount));
     return parts.isEmpty()
         ? QStringLiteral("-")
         : parts.join(QStringLiteral("/"));
@@ -461,7 +464,7 @@ QString laneSummaryText(const WavePreviewLaneSummary& summary)
 {
     if (!summary.isValid())
         return QStringLiteral("-");
-    return QStringLiteral("%1, %2, %3, max t+%4, %5")
+    return QStringLiteral("%1, %2, %3, max t+%4, %5, %6")
         .arg(countText(summary.eventCount,
                        QStringLiteral("event"),
                        QStringLiteral("events")),
@@ -474,7 +477,8 @@ QString laneSummaryText(const WavePreviewLaneSummary& summary)
              QString::number(summary.maxCycleOffset),
              countText(summary.blockCount,
                        QStringLiteral("block"),
-                       QStringLiteral("blocks")));
+                       QStringLiteral("blocks")),
+             laneActivityText(summary));
 }
 
 QString busiestLaneText(const WavePreviewReport& report)
@@ -492,11 +496,12 @@ QString busiestLaneText(const WavePreviewReport& report)
     }
     if (!busiest)
         return QString();
-    return QStringLiteral(", busiest %1 (%2)")
+    return QStringLiteral(", busiest %1 (%2, %3)")
         .arg(busiest->signalName,
              countText(busiest->summary.eventCount,
                        QStringLiteral("event"),
-                       QStringLiteral("events")));
+                       QStringLiteral("events")),
+             laneActivityText(busiest->summary));
 }
 
 QString reportSummaryText(const WavePreviewReport& report, bool dirty)

@@ -723,6 +723,18 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer dense-canvas interaction, additional evidence-based guard context, and later semantic relationship overlays if they can stay report-driven.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 522 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 418 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Activity Mix Summary MVP
+
+- Status: implemented in the current worktree.
+- Scope: dense-report readability milestone for Wave Preview. It does not change token scanning, assignment extraction, semantic enrichment, workspace scanning, or value simulation; it summarizes assignment kinds that already exist in the report.
+- `WavePreviewLaneSummary` now carries exact `continuousEventCount`, `combinationalEventCount`, and `sequentialEventCount` values alongside the existing boolean activity flags.
+- `WavePreviewService` computes those counts while refreshing lane summaries, keeping activity-mix policy in the report layer rather than recomputing it in tree, hover, or canvas UI code.
+- `WavePreviewPanelCoordinator` renders activity counts as compact `assign N`, `comb N`, and `seq N` labels in lane activity text, lane summary text, lane hover details, the top busiest-lane hint, and compact canvas lane labels.
+- Existing event rows remain unchanged: assignment kind, timing, guard, source, clock/reset, context, and navigation evidence still come from `WavePreviewAssignment`.
+- Implementation remains no-regex and keeps Wave Preview positioned as a code-understanding sketch rather than a simulator.
+- Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 534 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

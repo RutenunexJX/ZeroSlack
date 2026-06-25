@@ -1661,6 +1661,9 @@ int main(int argc, char** argv) {
                    && qSummaryLane->summary.sourceSignalCount == 1
                    && qSummaryLane->summary.blockCount == 1
                    && qSummaryLane->summary.maxCycleOffset == 1
+                   && qSummaryLane->summary.continuousEventCount == 0
+                   && qSummaryLane->summary.combinationalEventCount == 0
+                   && qSummaryLane->summary.sequentialEventCount == 2
                    && qSummaryLane->summary.guardTexts
                        == QStringList{QStringLiteral("if !rst_n"),
                                       QStringLiteral("if en")}
@@ -1675,6 +1678,9 @@ int main(int argc, char** argv) {
                    && outSummaryLane->summary.sourceSignalCount == 2
                    && outSummaryLane->summary.blockCount == 0
                    && outSummaryLane->summary.maxCycleOffset == 0
+                   && outSummaryLane->summary.continuousEventCount == 1
+                   && outSummaryLane->summary.combinationalEventCount == 0
+                   && outSummaryLane->summary.sequentialEventCount == 0
                    && outSummaryLane->summary.hasContinuousEvent,
                true);
     const WavePreviewSignalContext* dataContext =
@@ -1831,6 +1837,14 @@ int main(int argc, char** argv) {
     expectList("WavePreview combinational sources",
                nextAssign ? nextAssign->sourceSignals : QStringList(),
                {QStringLiteral("q"), QStringLiteral("data")});
+    const WavePreviewLane* nextSummaryLane =
+        waveLaneNamed(waveReport, QStringLiteral("next"));
+    expectBool("WavePreview blocking lane activity count",
+               nextSummaryLane
+                   && nextSummaryLane->summary.combinationalEventCount == 1
+                   && nextSummaryLane->summary.sequentialEventCount == 0
+                   && nextSummaryLane->summary.continuousEventCount == 0,
+               true);
     const WavePreviewAssignment* pulseAssign =
         firstWaveAssignment(waveReport, QStringLiteral("pulse"));
     expectBool("WavePreview plain clocked always",

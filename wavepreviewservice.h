@@ -91,6 +91,9 @@ struct WavePreviewLaneSummary {
     int sourceSignalCount = 0;
     int blockCount = 0;
     int maxCycleOffset = 0;
+    int continuousEventCount = 0;
+    int combinationalEventCount = 0;
+    int sequentialEventCount = 0;
     QStringList guardTexts;
     bool hasContinuousEvent = false;
     bool hasCombinationalEvent = false;

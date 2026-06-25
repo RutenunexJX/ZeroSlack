@@ -1790,10 +1790,13 @@ WavePreviewLaneSummary summaryForLane(const WavePreviewLane& lane)
         }
 
         if (assignment.kind == WavePreviewAssignmentKind::Continuous) {
+            ++summary.continuousEventCount;
             summary.hasContinuousEvent = true;
         } else if (assignment.kind == WavePreviewAssignmentKind::NonBlocking) {
+            ++summary.sequentialEventCount;
             summary.hasSequentialEvent = true;
         } else {
+            ++summary.combinationalEventCount;
             summary.hasCombinationalEvent = true;
         }
     }

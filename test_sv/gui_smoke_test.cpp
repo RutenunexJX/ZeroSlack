@@ -3715,7 +3715,8 @@ int main(int argc, char** argv)
                         && laneItem->text(1).contains(QStringLiteral("1 src"))
                         && laneItem->text(1).contains(QStringLiteral("max t+1"))
                         && laneItem->text(1).contains(QStringLiteral("1 block"))
-                        && laneItem->text(4) == QStringLiteral("seq"));
+                        && laneItem->text(1).contains(QStringLiteral("seq 1"))
+                        && laneItem->text(4) == QStringLiteral("seq 1"));
                 sawWaveContext = sawWaveContext
                     || laneItem->text(5) == QStringLiteral("internal logic [7:0]");
                 sawWaveLaneGuardSummary = sawWaveLaneGuardSummary
@@ -3772,7 +3773,7 @@ int main(int argc, char** argv)
         waveQLaneItem ? waveQLaneItem->toolTip(0) : QString();
     expectBool("wave preview lane tooltip has summary",
                waveQLaneTooltip.contains(QStringLiteral("summary: 1 event"))
-                   && waveQLaneTooltip.contains(QStringLiteral("activity: seq")),
+                   && waveQLaneTooltip.contains(QStringLiteral("activity: seq 1")),
                true);
     const QString waveQTooltip =
         waveQEventItem ? waveQEventItem->toolTip(0) : QString();
