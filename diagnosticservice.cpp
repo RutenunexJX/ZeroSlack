@@ -20,6 +20,40 @@ int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
         return 2;
     }
 }
+
+SemanticAnalysisBandMetadata normalizedDiagnosticAnalysisBand(
+    const SemanticAnalysisBandMetadata& metadata)
+{
+    if (metadata.isValid())
+        return metadata;
+
+    SemanticAnalysisBandMetadata unbanded;
+    unbanded.label = QStringLiteral("unbanded");
+    unbanded.displayName = QStringLiteral("unbanded");
+    return unbanded;
+}
+
+QString diagnosticAnalysisBandLabel(
+    const SemanticAnalysisBandMetadata& metadata)
+{
+    const SemanticAnalysisBandMetadata normalized =
+        normalizedDiagnosticAnalysisBand(metadata);
+    return normalized.label;
+}
+
+QString diagnosticAnalysisBandDisplayName(
+    const SemanticAnalysisBandMetadata& metadata)
+{
+    const SemanticAnalysisBandMetadata normalized =
+        normalizedDiagnosticAnalysisBand(metadata);
+    return semanticAnalysisBandDisplayName(normalized);
+}
+
+int diagnosticAnalysisBandGroupSortPriority(
+    const DiagnosticAnalysisBandGroup& group)
+{
+    return semanticAnalysisBandSortPriority(group.analysisBand);
+}
 }
 
 DiagnosticService* DiagnosticService::getInstance()
@@ -70,6 +104,9 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
         item.columnDisplayName = diagnosticColumnDisplayName(diagnostic.column);
         item.messageDisplayName = diagnosticMessageDisplayName(diagnostic.message);
         item.ownerDisplayName = diagnosticOwnerDisplayName(diagnostic.owner);
+        item.analysisBand = semanticIndex()->analysisBandForFile(diagnostic.fileName);
+        item.analysisBandDisplayName =
+            semanticAnalysisBandDisplayName(item.analysisBand);
         result.append(item);
     }
     std::sort(result.begin(), result.end(),
@@ -103,6 +140,7 @@ DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& 
     report.diagnostics = findDiagnostics(query);
     report.totalCount = report.diagnostics.size();
     QMap<QString, int> fileGroupIndexes;
+    QMap<QString, int> analysisBandGroupIndexes;
     for (const DiagnosticResult& result : report.diagnostics) {
         const SemanticDiagnostic& diagnostic = result.diagnostic;
         const QString normalized = normalizedFileName(diagnostic.fileName);
@@ -110,6 +148,12 @@ DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& 
         report.fileCounts[fileKey]++;
         report.severityCounts[diagnostic.severity]++;
         report.ownerCounts[diagnostic.owner]++;
+
+        const SemanticAnalysisBandMetadata analysisBand =
+            normalizedDiagnosticAnalysisBand(result.analysisBand);
+        const QString analysisBandLabel =
+            diagnosticAnalysisBandLabel(analysisBand);
+        report.analysisBandCounts[analysisBandLabel]++;
 
         if (!fileGroupIndexes.contains(fileKey)) {
             DiagnosticFileGroup group;
@@ -123,7 +167,36 @@ DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& 
         DiagnosticFileGroup& group = report.fileGroups[fileGroupIndexes.value(fileKey)];
         group.diagnostics.append(result);
         group.count++;
+
+        if (!analysisBandGroupIndexes.contains(analysisBandLabel)) {
+            DiagnosticAnalysisBandGroup group;
+            group.analysisBand = analysisBand;
+            group.label = analysisBand.label;
+            group.displayName = diagnosticAnalysisBandDisplayName(analysisBand);
+            analysisBandGroupIndexes.insert(analysisBandLabel,
+                                            report.analysisBandGroups.size());
+            report.analysisBandGroups.append(group);
+        }
+
+        DiagnosticAnalysisBandGroup& analysisBandGroup =
+            report.analysisBandGroups[
+                analysisBandGroupIndexes.value(analysisBandLabel)];
+        analysisBandGroup.diagnostics.append(result);
+        analysisBandGroup.count++;
+        analysisBandGroup.severityCounts[diagnostic.severity]++;
     }
+    std::sort(report.analysisBandGroups.begin(),
+              report.analysisBandGroups.end(),
+              [](const DiagnosticAnalysisBandGroup& lhs,
+                 const DiagnosticAnalysisBandGroup& rhs) {
+        const int leftPriority = diagnosticAnalysisBandGroupSortPriority(lhs);
+        const int rightPriority = diagnosticAnalysisBandGroupSortPriority(rhs);
+        if (leftPriority != rightPriority)
+            return leftPriority < rightPriority;
+        return QString::compare(lhs.label,
+                                rhs.label,
+                                Qt::CaseInsensitive) < 0;
+    });
     return report;
 }
 

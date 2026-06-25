@@ -693,6 +693,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             warningDiagnostic,
             errorDiagnostic,
         })));
+    QHash<QString, SemanticAnalysisBandMetadata> diagnosticAnalysisBands;
+    SemanticAnalysisBandMetadata currentDiagnosticBand;
+    currentDiagnosticBand.label = QStringLiteral("current");
+    currentDiagnosticBand.displayName = QStringLiteral("current");
+    currentDiagnosticBand.priority = true;
+    currentDiagnosticBand.publicationCheckpoint = 1;
+    diagnosticAnalysisBands.insert(topPath, currentDiagnosticBand);
+    SemanticAnalysisBandMetadata backgroundDiagnosticBand;
+    backgroundDiagnosticBand.label = QStringLiteral("background");
+    backgroundDiagnosticBand.displayName = QStringLiteral("background");
+    backgroundDiagnosticBand.priority = false;
+    diagnosticAnalysisBands.insert(stagePath, backgroundDiagnosticBand);
+    diagnosticReportIndex.setWorkspaceFileAnalysisBands(diagnosticAnalysisBands);
     DiagnosticService diagnosticReportService(&diagnosticReportIndex);
     const DiagnosticReport diagnosticReport =
         diagnosticReportService.findDiagnosticReport();
@@ -719,6 +732,25 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               diagnosticReport.severityCounts.value(SemanticDiagnostic::Error), 1);
     expectInt("diagnostic report owner count",
               diagnosticReport.ownerCounts.value(SemanticDiagnostic::SlangCompiler), 2);
+    expectInt("diagnostic report analysis band count",
+              diagnosticReport.analysisBandCounts.value(QStringLiteral("current")), 2);
+    expectInt("diagnostic report background band count",
+              diagnosticReport.analysisBandCounts.value(QStringLiteral("background")), 1);
+    expectInt("diagnostic report analysis band group count",
+              diagnosticReport.analysisBandGroups.size(), 2);
+    expectBool("diagnostic report groups analysis bands",
+               diagnosticReport.analysisBandGroups.size() == 2
+                   && diagnosticReport.analysisBandGroups.first().label
+                       == QStringLiteral("current")
+                   && diagnosticReport.analysisBandGroups.first().count == 2
+                   && diagnosticReport.analysisBandGroups.first()
+                          .severityCounts.value(SemanticDiagnostic::Warning) == 1
+                   && diagnosticReport.analysisBandGroups.last().label
+                       == QStringLiteral("background")
+                   && diagnosticReport.analysisBandGroups.last().count == 1
+                   && diagnosticReport.analysisBandGroups.last()
+                          .severityCounts.value(SemanticDiagnostic::Error) == 1,
+               true);
     expectBool("diagnostic report sorts errors first",
                !diagnosticReport.diagnostics.isEmpty()
                    && diagnosticReport.diagnostics.first().diagnostic.severity
@@ -730,6 +762,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == QStringLiteral("Error")
                    && diagnosticReport.diagnostics.first().fileDisplayName
                        == QStringLiteral("relationship_stage.sv"),
+               true);
+    expectBool("diagnostic report exposes analysis band metadata",
+               !diagnosticReport.diagnostics.isEmpty()
+                   && diagnosticReport.diagnostics.first().analysisBand.label
+                       == QStringLiteral("background")
+                   && diagnosticReport.diagnostics.first()
+                          .analysisBandDisplayName == QStringLiteral("background"),
                true);
     expectBool("diagnostic report exposes location display metadata",
                !diagnosticReport.diagnostics.isEmpty()

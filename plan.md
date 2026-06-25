@@ -1020,6 +1020,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: per-band diagnostics if semantically safe, richer tiered index publication, and additional UI/report surfaces that consume `SemanticAnalysisBandReport` without recomputing priority policy.
 - Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks; focused build target `completion_test`; direct `completion_test` run with 533 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Diagnostic Band Report MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-eighth usable Huge Workspace Mode milestone and a safe diagnostic-report groundwork step. It does not change Slang diagnostic extraction, diagnostics replacement, debounce/coalescing, sorting, filtering, or Problems UI rendering.
+- `DiagnosticResult` now carries `analysisBand` and `analysisBandDisplayName` derived from `SemanticIndex::analysisBandForFile()` for the diagnostic file.
+- `DiagnosticReport` now exposes `analysisBandCounts` and `analysisBandGroups`, grouping diagnostics by current/dirty-open/open/background/unbanded provenance with per-band diagnostic rows and severity counts.
+- Unbanded diagnostics are grouped as `unbanded`, so external or non-workspace diagnostics remain visible without pretending to belong to a priority tier.
+- `relationship_test` verifies current/background diagnostic grouping, band counts, severity counts, and row-level analysis-band metadata; `gui_smoke_test` verifies existing Problems-panel behavior remains stable.
+- Implementation remains no-regex and keeps priority policy in `WorkspaceAnalysisPlanService` / `SemanticIndex`; diagnostics consume band metadata as report data rather than recomputing workspace tiers.
+- Next Huge Workspace milestones: UI/report surfaces that consume diagnostic band groups where useful, per-band diagnostics publication only if semantically safe, and richer tiered index publication that preserves dirty/open-file protection.
+- Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 782 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

@@ -47,6 +47,8 @@ struct DiagnosticResult {
     QString columnDisplayName;
     QString messageDisplayName;
     QString ownerDisplayName;
+    SemanticAnalysisBandMetadata analysisBand;
+    QString analysisBandDisplayName;
 };
 
 struct DiagnosticFileGroup {
@@ -57,11 +59,22 @@ struct DiagnosticFileGroup {
     int count = 0;
 };
 
+struct DiagnosticAnalysisBandGroup {
+    SemanticAnalysisBandMetadata analysisBand;
+    QString label;
+    QString displayName;
+    QList<DiagnosticResult> diagnostics;
+    int count = 0;
+    QMap<SemanticDiagnostic::Severity, int> severityCounts;
+};
+
 struct DiagnosticReport {
     QList<DiagnosticResult> diagnostics;
     QList<DiagnosticFileGroup> fileGroups;
+    QList<DiagnosticAnalysisBandGroup> analysisBandGroups;
     int totalCount = 0;
     QMap<QString, int> fileCounts;
+    QMap<QString, int> analysisBandCounts;
     QMap<SemanticDiagnostic::Severity, int> severityCounts;
     QMap<SemanticDiagnostic::Owner, int> ownerCounts;
 };
