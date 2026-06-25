@@ -421,7 +421,14 @@ bool isSingleStatementControlHeader(const QString& codeOnly)
         || first == QStringLiteral("for")
         || first == QStringLiteral("foreach")
         || first == QStringLiteral("while")
-        || first == QStringLiteral("repeat")) {
+        || first == QStringLiteral("repeat")
+        || first == QStringLiteral("forever")
+        || first == QStringLiteral("always")
+        || first == QStringLiteral("always_comb")
+        || first == QStringLiteral("always_ff")
+        || first == QStringLiteral("always_latch")
+        || first == QStringLiteral("initial")
+        || first == QStringLiteral("final")) {
         return true;
     }
     return first == QStringLiteral("else");

@@ -576,6 +576,18 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond simple call-argument rows.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 542 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Procedural Body Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-first usable formatter milestone and a conservative leading-whitespace expansion for common procedural headers. It does not split, merge, reorder, or rewrite statements, and it does not add `begin` / `end`.
+- `FormatterService` now treats single-line `always`, `always_comb`, `always_ff`, `always_latch`, `initial`, `final`, and `forever` headers without `begin`, `fork`, or `case` as single-statement body headers.
+- The existing single-statement body indentation pass indents the following real body line by one level, composing with normal block indentation for constructs such as `initial begin` followed by `forever`.
+- The behavior is active in both `Structured` and `Indent Only` profiles because it only changes leading whitespace.
+- `completion_test` verifies Structured output, Indent Only output, idempotence, sequential/combinational procedural headers, `initial`, `final`, and nested `forever` body indentation.
+- Implementation remains no-regex and uses deterministic code-token/comment scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond simple single-statement body cases.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 546 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

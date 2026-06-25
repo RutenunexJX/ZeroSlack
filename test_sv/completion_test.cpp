@@ -998,6 +998,57 @@ int main(int argc, char** argv) {
              indentOnlySingleStatementReport.formattedText,
              formatterSingleStatementReport.formattedText);
 
+    const QString formatterProceduralBodyInput =
+        QStringLiteral("module procedural_stmt_demo;\n"
+                       "always_ff @(posedge clk)\n"
+                       "q <= d;\n"
+                       "always_comb\n"
+                       "y = a & b;\n"
+                       "initial\n"
+                       "ready = 1'b0;\n"
+                       "final\n"
+                       "$display(\"done\");\n"
+                       "initial begin\n"
+                       "forever\n"
+                       "tick = ~tick;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterProceduralBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterProceduralBodyInput);
+    expectBool("Formatter procedural body report changed",
+               formatterProceduralBodyReport.changed,
+               true);
+    expectEq("Formatter indents procedural single statement bodies",
+             formatterProceduralBodyReport.formattedText,
+             QStringLiteral("module procedural_stmt_demo;\n"
+                            "    always_ff @(posedge clk)\n"
+                            "        q <= d;\n"
+                            "    always_comb\n"
+                            "        y = a & b;\n"
+                            "    initial\n"
+                            "        ready = 1'b0;\n"
+                            "    final\n"
+                            "        $display(\"done\");\n"
+                            "    initial begin\n"
+                            "        forever\n"
+                            "            tick = ~tick;\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedProceduralBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterProceduralBodyReport.formattedText);
+    expectBool("Formatter procedural body idempotent",
+               unchangedProceduralBodyReport.changed,
+               false);
+    const FormatterReport indentOnlyProceduralBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterProceduralBodyInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only keeps procedural body indentation",
+             indentOnlyProceduralBodyReport.formattedText,
+             formatterProceduralBodyReport.formattedText);
+
     const QString formatterSvBlockInput =
         QStringLiteral("program tb;\n"
                        "default clocking cb @(posedge clk);\n"
