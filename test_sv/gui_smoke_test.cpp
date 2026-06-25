@@ -1142,6 +1142,37 @@ static void runActivityLogServiceRegression()
             diagnosticActivityProblems.scopeCombo()->setCurrentIndex(allFilesIndex);
     }
     diagnosticActivityProblems.update();
+    QTreeWidget* diagnosticActivityTree = diagnosticActivityProblems.tree();
+    expectBool("problems band column visible",
+               diagnosticActivityTree
+                   && diagnosticActivityTree->columnCount() == 6
+                   && diagnosticActivityTree->headerItem()
+                   && diagnosticActivityTree->headerItem()->text(5)
+                       == QStringLiteral("Band"),
+               true);
+    bool sawCurrentBandRow = false;
+    bool sawBackgroundBandRow = false;
+    if (diagnosticActivityTree) {
+        for (int i = 0; i < diagnosticActivityTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* group = diagnosticActivityTree->topLevelItem(i);
+            if (!group)
+                continue;
+            sawCurrentBandRow = sawCurrentBandRow
+                || group->text(5) == QStringLiteral("current");
+            sawBackgroundBandRow = sawBackgroundBandRow
+                || group->text(5) == QStringLiteral("background");
+            for (int child = 0; child < group->childCount(); ++child) {
+                QTreeWidgetItem* row = group->child(child);
+                sawCurrentBandRow = sawCurrentBandRow
+                    || (row && row->text(5) == QStringLiteral("current"));
+                sawBackgroundBandRow = sawBackgroundBandRow
+                    || (row && row->text(5) == QStringLiteral("background"));
+            }
+        }
+    }
+    expectBool("problems rows show diagnostic bands",
+               sawCurrentBandRow && sawBackgroundBandRow,
+               true);
     bool sawDiagnosticBandActivity = false;
     for (const ActivityLogEvent& event : service->events()) {
         sawDiagnosticBandActivity = sawDiagnosticBandActivity

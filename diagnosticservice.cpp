@@ -178,9 +178,10 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
         item.columnDisplayName = diagnosticColumnDisplayName(diagnostic.column);
         item.messageDisplayName = diagnosticMessageDisplayName(diagnostic.message);
         item.ownerDisplayName = diagnosticOwnerDisplayName(diagnostic.owner);
-        item.analysisBand = semanticIndex()->analysisBandForFile(diagnostic.fileName);
+        item.analysisBand = normalizedDiagnosticAnalysisBand(
+            semanticIndex()->analysisBandForFile(diagnostic.fileName));
         item.analysisBandDisplayName =
-            semanticAnalysisBandDisplayName(item.analysisBand);
+            diagnosticAnalysisBandDisplayName(item.analysisBand);
         result.append(item);
     }
     std::sort(result.begin(), result.end(),

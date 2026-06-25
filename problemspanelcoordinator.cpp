@@ -22,8 +22,10 @@ QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
     item->setText(2, result.lineDisplayName);
     item->setText(3, result.columnDisplayName);
     item->setText(4, result.messageDisplayName);
+    item->setText(5, result.analysisBandDisplayName);
     item->setToolTip(1, diagnostic.fileName);
     item->setToolTip(4, result.messageDisplayName);
+    item->setToolTip(5, result.analysisBandDisplayName);
     item->setData(0, Qt::UserRole, diagnostic.fileName);
     item->setData(0, Qt::UserRole + 1, diagnostic.line);
     item->setData(0, Qt::UserRole + 2, diagnostic.column);
@@ -101,8 +103,8 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
 
     problemsTree = new QTreeWidget(panel);
     problemsTree->setObjectName(QStringLiteral("problemsTree"));
-    problemsTree->setColumnCount(5);
-    problemsTree->setHeaderLabels({"Severity", "File", "Line", "Column", "Message"});
+    problemsTree->setColumnCount(6);
+    problemsTree->setHeaderLabels({"Severity", "File", "Line", "Column", "Message", "Band"});
     problemsTree->setRootIsDecorated(true);
     problemsTree->setAlternatingRowColors(true);
     problemsTree->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -111,6 +113,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     problemsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     problemsTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     problemsTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    problemsTree->header()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     layout->addWidget(problemsTree);
 
     problemsDock = new QDockWidget("Problems", parent);
@@ -205,8 +208,11 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
             fileGroup->setText(0, SemanticPanelUtils::countLabel(group.displayName,
                                                                  group.count));
             fileGroup->setText(1, group.fileName);
+            if (!group.diagnostics.isEmpty())
+                fileGroup->setText(5, group.diagnostics.first().analysisBandDisplayName);
             fileGroup->setToolTip(0, group.fileName);
             fileGroup->setToolTip(1, group.fileName);
+            fileGroup->setToolTip(5, fileGroup->text(5));
             for (const DiagnosticResult& result : group.diagnostics)
                 createDiagnosticItem(fileGroup, result);
         }
