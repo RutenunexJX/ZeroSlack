@@ -4143,6 +4143,53 @@ int main(int argc, char** argv)
                true);
     if (waveEditor) {
         waveEditor->setPlainText(
+            QStringLiteral("module wave_warning_ui;\n"
+                           "logic clk;\n"
+                           "logic a;\n"
+                           "logic q;\n"
+                           "assign q = a;\n"
+                           "always_ff @(posedge clk) q <= a;\n"
+                           "always_comb q = a;\n"
+                           "endmodule\n"));
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    bool sawWaveWarnings = false;
+    bool sawWaveMixedWarning = false;
+    bool sawWaveMultiBlockWarning = false;
+    if (waveTree) {
+        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* root = waveTree->topLevelItem(i);
+            if (!root || root->text(0) != QStringLiteral("Warnings"))
+                continue;
+            sawWaveWarnings =
+                root->text(1) == QStringLiteral("2 warnings")
+                && root->toolTip(0).contains(
+                    QStringLiteral("signal q mixes assign/comb/seq activity"));
+            for (int child = 0; child < root->childCount(); ++child) {
+                QTreeWidgetItem* row = root->child(child);
+                sawWaveMixedWarning = sawWaveMixedWarning
+                    || (row && row->text(0).contains(
+                            QStringLiteral(
+                                "Wave Preview does not resolve writer priority")));
+                sawWaveMultiBlockWarning = sawWaveMultiBlockWarning
+                    || (row && row->text(0).contains(
+                            QStringLiteral(
+                                "assigned from 2 procedural blocks")));
+            }
+        }
+    }
+    expectBool("wave preview renders lane warnings",
+               waveTree
+                   && sawWaveWarnings
+                   && sawWaveMixedWarning
+                   && sawWaveMultiBlockWarning,
+               true);
+    expectBool("wave preview summary shows warnings",
+               waveSummary
+                   && waveSummary->text().contains(QStringLiteral("2 warnings")),
+               true);
+    if (waveEditor) {
+        waveEditor->setPlainText(
             QStringLiteral("module wave_ui;\n"
                            "logic clk;\n"
                            "logic [7:0] q;\n"

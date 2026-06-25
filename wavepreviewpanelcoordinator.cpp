@@ -580,13 +580,21 @@ QString busiestLaneText(const WavePreviewReport& report)
 
 QString reportSummaryText(const WavePreviewReport& report, bool dirty)
 {
-    return QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups, activity %5%6%7")
+    const QString warningText =
+        report.warnings.isEmpty()
+            ? QString()
+            : QStringLiteral(", %1")
+                  .arg(countText(report.warnings.size(),
+                                 QStringLiteral("warning"),
+                                 QStringLiteral("warnings")));
+    return QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups, activity %5%6%7%8")
         .arg(report.lanes.size())
         .arg(report.assignmentCount)
         .arg(report.blocks.size())
         .arg(report.clockResetGroups.size())
         .arg(activitySummaryText(report.activitySummary))
         .arg(busiestLaneText(report))
+        .arg(warningText)
         .arg(dirty ? QStringLiteral(" - live dirty buffer") : QString());
 }
 
@@ -1033,6 +1041,38 @@ void WavePreviewPanelCoordinator::renderReport(
         item->setText(5, QStringLiteral("-"));
         item->setText(6, QStringLiteral("-"));
         return;
+    }
+
+    if (!report.warnings.isEmpty()) {
+        auto* warningRoot = new QTreeWidgetItem(previewTree);
+        warningRoot->setText(0, QStringLiteral("Warnings"));
+        warningRoot->setText(1,
+                             countText(report.warnings.size(),
+                                       QStringLiteral("warning"),
+                                       QStringLiteral("warnings")));
+        warningRoot->setText(2, QStringLiteral("-"));
+        warningRoot->setText(3, QStringLiteral("-"));
+        warningRoot->setText(4, QStringLiteral("report"));
+        warningRoot->setText(5, QStringLiteral("-"));
+        warningRoot->setText(6, QStringLiteral("-"));
+        QFont warningFont = warningRoot->font(0);
+        warningFont.setBold(true);
+        warningRoot->setFont(0, warningFont);
+        setItemTooltip(warningRoot,
+                       report.warnings.join(QStringLiteral("\n")));
+
+        for (const QString& warning : report.warnings) {
+            auto* warningItem = new QTreeWidgetItem(warningRoot);
+            warningItem->setText(0, warning);
+            warningItem->setText(1, QStringLiteral("-"));
+            warningItem->setText(2, QStringLiteral("-"));
+            warningItem->setText(3, QStringLiteral("-"));
+            warningItem->setText(4, QStringLiteral("warning"));
+            warningItem->setText(5, QStringLiteral("-"));
+            warningItem->setText(6, QStringLiteral("-"));
+            setItemTooltip(warningItem, warning);
+        }
+        warningRoot->setExpanded(true);
     }
 
     if (!report.clockResetGroups.isEmpty()) {

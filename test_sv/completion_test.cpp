@@ -1938,6 +1938,31 @@ int main(int argc, char** argv) {
                    && qLane->context.direction == QStringLiteral("internal")
                    && qLane->context.typeText == QStringLiteral("logic [7:0]"),
                true);
+    const QString waveWarningInput =
+        QStringLiteral("module wave_warning;\n"
+                       "logic clk;\n"
+                       "logic a;\n"
+                       "logic q;\n"
+                       "assign q = a;\n"
+                       "always_ff @(posedge clk) q <= a;\n"
+                       "always_comb q = a;\n"
+                       "endmodule\n");
+    const WavePreviewReport waveWarningReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {QStringLiteral("wave_warning.sv"), waveWarningInput});
+    expectBool("WavePreview lane warning count",
+               waveWarningReport.warnings.size() == 2,
+               true);
+    expectBool("WavePreview warns mixed lane activity",
+               waveWarningReport.warnings.contains(
+                   QStringLiteral(
+                       "signal q mixes assign/comb/seq activity; Wave Preview does not resolve writer priority")),
+               true);
+    expectBool("WavePreview warns multi-block lane activity",
+               waveWarningReport.warnings.contains(
+                   QStringLiteral(
+                       "signal q is assigned from 2 procedural blocks; inspect block ownership before trusting lane timing")),
+               true);
     QList<SemanticSymbolRecord> waveSemanticRecords;
     waveSemanticRecords.append(
         makeSemanticFixtureRecord(QStringLiteral("remote_cfg"),

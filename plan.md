@@ -811,6 +811,19 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
 - Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 430 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Lane Warning Summary MVP
+
+- Status: implemented in the current worktree.
+- Scope: report-level readability milestone for Wave Preview. It does not change assignment extraction, semantic enrichment, canvas hit testing, or waveform simulation policy.
+- `WavePreviewService` now populates `WavePreviewReport::warnings` from service-owned lane summaries after extraction and lane summary refresh.
+- Warnings are intentionally lightweight evidence hints: lanes that mix continuous assign, combinational blocking, and/or sequential nonblocking activity are flagged, and lanes assigned from multiple procedural blocks are flagged.
+- Warning text explicitly preserves the non-simulator contract by saying Wave Preview does not resolve writer priority; it asks users to inspect block ownership instead of pretending to prove final waveform values.
+- `WavePreviewPanelCoordinator` renders the warning count in the top report summary and adds a `Warnings` tree section with one child row per service-owned warning.
+- `completion_test` verifies service warning generation for mixed assign/comb/seq and multi-procedural-block lanes; `gui_smoke_test` verifies the warnings tree and summary count in the dock.
+- Implementation remains no-regex and report-driven; UI code consumes `WavePreviewReport::warnings` and does not derive lane warning policy.
+- Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 553 checks; direct `gui_smoke_test` run with 434 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.
