@@ -1097,7 +1097,8 @@ int main(int argc, char** argv) {
                    && !indentOnlyOptions.alignCaseItems
                    && !indentOnlyOptions.alignEnumItems
                    && !indentOnlyOptions.alignAssignments
-                   && !indentOnlyOptions.alignContinuationOperators,
+                   && !indentOnlyOptions.alignContinuationOperators
+                   && !indentOnlyOptions.alignCallArgumentContinuations,
                true);
     expectEq("Formatter indent-only profile name",
              FormatterService::profileDisplayName(
@@ -1461,8 +1462,8 @@ int main(int argc, char** argv) {
                             "            + rhs;\n"
                             "        call_result =\n"
                             "            func(\n"
-                            "                a,\n"
-                            "                b\n"
+                            "                 a,\n"
+                            "                 b\n"
                             "            );\n"
                             "    end\n"
                             "endmodule\n"));
@@ -1478,7 +1479,66 @@ int main(int argc, char** argv) {
             FormatterProfile::IndentOnly);
     expectEq("Formatter indent-only keeps RHS continuation indentation",
              indentOnlyRhsContinuationReport.formattedText,
-             formatterRhsContinuationReport.formattedText);
+             QStringLiteral("module rhs_demo;\n"
+                            "    always_comb begin\n"
+                            "        result =\n"
+                            "            lhs\n"
+                            "            + rhs;\n"
+                            "        call_result =\n"
+                            "            func(\n"
+                            "                a,\n"
+                            "                b\n"
+                            "            );\n"
+                            "    end\n"
+                            "endmodule\n"));
+
+    const QString formatterCallArgumentInput =
+        QStringLiteral("module call_arg_demo;\n"
+                       "always_comb begin\n"
+                       "result = func(\n"
+                       "a,\n"
+                       "long_arg\n"
+                       ");\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterCallArgumentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCallArgumentInput);
+    expectBool("Formatter call argument continuation report changed",
+               formatterCallArgumentReport.changed,
+               true);
+    expectEq("Formatter aligns call argument continuations",
+             formatterCallArgumentReport.formattedText,
+             QStringLiteral("module call_arg_demo;\n"
+                            "    always_comb begin\n"
+                            "        result = func(\n")
+                 + QString(22, QLatin1Char(' '))
+                 + QStringLiteral("a,\n")
+                 + QString(22, QLatin1Char(' '))
+                 + QStringLiteral("long_arg\n"
+                                  "        );\n"
+                                  "    end\n"
+                                  "endmodule\n"));
+    const FormatterReport unchangedCallArgumentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCallArgumentReport.formattedText);
+    expectBool("Formatter call argument continuation idempotent",
+               unchangedCallArgumentReport.changed,
+               false);
+    const FormatterReport indentOnlyCallArgumentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCallArgumentInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only skips call argument continuation alignment",
+             indentOnlyCallArgumentReport.formattedText,
+             QStringLiteral("module call_arg_demo;\n"
+                            "    always_comb begin\n"
+                            "        result = func(\n"
+                            "            a,\n"
+                            "            long_arg\n"
+                            "        );\n"
+                            "    end\n"
+                            "endmodule\n"));
 
     const QString formatterOperatorInput =
         QStringLiteral("module op_demo;\n"

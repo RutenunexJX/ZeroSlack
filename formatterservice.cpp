@@ -417,6 +417,43 @@ int delimiterContinuationBalance(const QString& codeOnly)
     return balance;
 }
 
+QList<int> unmatchedOpeningParenColumns(const QString& codeOnly,
+                                        int* externalClosingParens)
+{
+    QList<int> openings;
+    int closes = 0;
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i < codeOnly.size(); ++i) {
+        const QChar ch = codeOnly.at(i);
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+        if (ch == QLatin1Char('(')) {
+            openings.append(i);
+        } else if (ch == QLatin1Char(')')) {
+            if (!openings.isEmpty())
+                openings.removeLast();
+            else
+                ++closes;
+        }
+    }
+
+    if (externalClosingParens)
+        *externalClosingParens = closes;
+    return openings;
+}
+
 bool lineHasCode(const QString& line)
 {
     for (const QChar ch : line) {
@@ -1970,6 +2007,81 @@ void alignContinuationOperatorLines(QStringList* lines)
         operatorAnchor = continuationOperatorAnchorColumn(line);
     }
 }
+
+void alignCallArgumentContinuationLines(QStringList* lines)
+{
+    if (!lines)
+        return;
+
+    QList<int> anchorStack;
+    bool inBlockComment = false;
+    for (int i = 0; i < lines->size(); ++i) {
+        const QString line = lines->at(i);
+        if (!lineHasCode(line)) {
+            anchorStack.clear();
+            continue;
+        }
+        if (startsWithPreprocessor(line)) {
+            anchorStack.clear();
+            continue;
+        }
+
+        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
+        const QString trimmed = codeOnly.trimmed();
+        if (trimmed.isEmpty()) {
+            anchorStack.clear();
+            continue;
+        }
+
+        const QStringList tokens = codeTokens(codeOnly);
+        const QString firstToken =
+            tokens.isEmpty() ? QString() : tokens.first();
+        const bool controlHeader =
+            firstToken == QStringLiteral("if")
+            || firstToken == QStringLiteral("else")
+            || firstToken == QStringLiteral("for")
+            || firstToken == QStringLiteral("foreach")
+            || firstToken == QStringLiteral("while")
+            || firstToken == QStringLiteral("repeat")
+            || firstToken == QStringLiteral("always")
+            || firstToken == QStringLiteral("always_comb")
+            || firstToken == QStringLiteral("always_ff")
+            || firstToken == QStringLiteral("always_latch");
+        const bool structuralHeader =
+            suppressesDelimiterContinuation(tokens) || controlHeader;
+        const bool closingDelimiter = startsWithClosingDelimiter(codeOnly);
+        const bool leadingOperator =
+            startsWithLeadingContinuationOperator(codeOnly);
+        const bool namedAssociation =
+            trimmed.startsWith(QLatin1Char('.'));
+        int alignmentDelta = 0;
+        if (!anchorStack.isEmpty()
+            && !closingDelimiter
+            && !leadingOperator
+            && !namedAssociation) {
+            alignmentDelta =
+                anchorStack.last() - leadingWhitespaceWidth(line);
+            (*lines)[i] =
+                repeatSpaces(anchorStack.last())
+                + stripLeadingWhitespace(line);
+        }
+
+        int externalClosingParens = 0;
+        const QList<int> openings =
+            unmatchedOpeningParenColumns(codeOnly, &externalClosingParens);
+        for (int close = 0;
+             close < externalClosingParens && !anchorStack.isEmpty();
+             ++close) {
+            anchorStack.removeLast();
+        }
+
+        if (structuralHeader)
+            continue;
+
+        for (const int opening : openings)
+            anchorStack.append(opening + alignmentDelta + 1);
+    }
+}
 }
 
 FormatterService* FormatterService::getInstance()
@@ -1990,6 +2102,7 @@ FormatterOptions FormatterService::optionsForProfile(FormatterProfile profile)
         options.alignEnumItems = false;
         options.alignAssignments = false;
         options.alignContinuationOperators = false;
+        options.alignCallArgumentContinuations = false;
     }
     return options;
 }
@@ -2101,6 +2214,8 @@ FormatterReport FormatterService::formatDocument(
         alignAssignmentBlocks(&formatted);
     if (options.alignContinuationOperators)
         alignContinuationOperatorLines(&formatted);
+    if (options.alignCallArgumentContinuations)
+        alignCallArgumentContinuationLines(&formatted);
 
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);

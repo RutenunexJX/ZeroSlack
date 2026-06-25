@@ -22,6 +22,7 @@ struct FormatterOptions {
     bool alignEnumItems = true;
     bool alignAssignments = true;
     bool alignContinuationOperators = true;
+    bool alignCallArgumentContinuations = true;
 };
 
 struct FormatterReport {

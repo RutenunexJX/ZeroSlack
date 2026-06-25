@@ -551,6 +551,18 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer multi-line operand alignment, and safer parser-aware continuation decisions.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 526 checks; direct `gui_smoke_test` run with 418 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Call Argument Continuation Alignment MVP
+
+- Status: implemented in the current worktree.
+- Scope: nineteenth usable formatter milestone and a conservative Structured-profile continuation alignment step. It does not split, merge, reorder, or rewrite call arguments; it only adjusts leading whitespace for already-multiline call argument rows.
+- `FormatterOptions::alignCallArgumentContinuations` is enabled for `Structured` and disabled for `Indent Only`, matching the existing split between structural alignment and pure indentation.
+- `FormatterService` now tracks unmatched call `(` anchors and aligns following non-closing, non-operator continuation rows to the column after the opening parenthesis.
+- The pass deliberately skips module/interface/class/function/task headers, `if`/loop/always control headers, leading-operator continuation rows, and named instance-map associations beginning with `.`, so existing port-list, instance-map, and operator/ternary formatters keep owning those surfaces.
+- The behavior composes with RHS continuation indentation: an RHS beginning with a call can still receive one-level RHS indentation first, then Structured call arguments align to the call parenthesis.
+- Implementation remains no-regex and uses deterministic token/comment/paren scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond simple call-argument rows.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 538 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.
