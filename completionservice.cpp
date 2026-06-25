@@ -4,9 +4,76 @@
 #include "completionsymbolquery.h"
 #include "semanticindex.h"
 
+#include <QStringList>
 #include <QVector>
 
+#include <algorithm>
+
 namespace {
+
+struct CompletionAnalysisBandCount {
+    SemanticAnalysisBandMetadata metadata;
+    int count = 0;
+};
+
+SemanticAnalysisBandMetadata normalizedCompletionAnalysisBand(
+    const SemanticAnalysisBandMetadata& metadata)
+{
+    if (metadata.isValid())
+        return metadata;
+
+    SemanticAnalysisBandMetadata unbanded;
+    unbanded.label = QStringLiteral("unbanded");
+    unbanded.displayName = QStringLiteral("unbanded");
+    return unbanded;
+}
+
+QList<CompletionAnalysisBandCount> completionAnalysisBandCounts(
+    const QList<CompletionResult::SemanticCompletionItem>& items)
+{
+    QList<CompletionAnalysisBandCount> counts;
+    for (const CompletionResult::SemanticCompletionItem& item : items) {
+        const SemanticAnalysisBandMetadata metadata =
+            normalizedCompletionAnalysisBand(item.analysisBand);
+        auto existing =
+            std::find_if(counts.begin(),
+                         counts.end(),
+                         [&](const CompletionAnalysisBandCount& count) {
+                             return count.metadata.label == metadata.label;
+                         });
+        if (existing == counts.end()) {
+            CompletionAnalysisBandCount next;
+            next.metadata = metadata;
+            next.count = 1;
+            counts.append(next);
+        } else {
+            ++existing->count;
+        }
+    }
+
+    std::sort(counts.begin(),
+              counts.end(),
+              [](const CompletionAnalysisBandCount& lhs,
+                 const CompletionAnalysisBandCount& rhs) {
+                  const int leftPriority =
+                      semanticAnalysisBandSortPriority(lhs.metadata);
+                  const int rightPriority =
+                      semanticAnalysisBandSortPriority(rhs.metadata);
+                  if (leftPriority != rightPriority)
+                      return leftPriority < rightPriority;
+                  return QString::compare(lhs.metadata.label,
+                                          rhs.metadata.label,
+                                          Qt::CaseInsensitive) < 0;
+              });
+    return counts;
+}
+
+QString completionItemCountText(int count)
+{
+    return QStringLiteral("%1 %2")
+        .arg(count)
+        .arg(count == 1 ? QStringLiteral("item") : QStringLiteral("items"));
+}
 
 QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
 {
@@ -91,6 +158,29 @@ QList<SemanticSymbolRecord> completionRecords(
 } // namespace
 
 std::unique_ptr<CompletionService> CompletionService::instance = nullptr;
+
+int CompletionResult::analysisBandGroupCount() const
+{
+    return completionAnalysisBandCounts(items).size();
+}
+
+QString CompletionResult::analysisBandSummaryText() const
+{
+    const QList<CompletionAnalysisBandCount> counts =
+        completionAnalysisBandCounts(items);
+    if (counts.isEmpty())
+        return QStringLiteral("bands none");
+
+    QStringList parts;
+    for (const CompletionAnalysisBandCount& count : counts) {
+        parts.append(QStringLiteral("%1 %2")
+                         .arg(semanticAnalysisBandDisplayName(count.metadata),
+                              completionItemCountText(count.count)));
+    }
+
+    return QStringLiteral("bands %1")
+        .arg(parts.join(QStringLiteral(", ")));
+}
 
 CompletionService* CompletionService::getInstance()
 {

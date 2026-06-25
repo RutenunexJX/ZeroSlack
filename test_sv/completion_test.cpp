@@ -530,6 +530,64 @@ int main(int argc, char** argv) {
                    Qt::ToolTipRole).toString().contains(
                        QStringLiteral("band: current")),
                true);
+    SemanticSymbolRecord backgroundMetadataRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("metadata_bg"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(QStringLiteral("background_only.sv"))
+            .withLocalHandle(9006)
+            .withSourceRole(SymbolTaxonomy::SourceRole::DesignSource)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    backgroundMetadataRecord.analysisBand.label =
+        QStringLiteral("background");
+    backgroundMetadataRecord.analysisBand.displayName =
+        QStringLiteral("background");
+    CompletionResult::SemanticCompletionItem backgroundCompletionItem;
+    backgroundCompletionItem.label = backgroundMetadataRecord.name;
+    backgroundCompletionItem.typeDisplayName = QStringLiteral("module");
+    backgroundCompletionItem.ownerScopeName = QStringLiteral("global");
+    backgroundCompletionItem.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(
+            backgroundMetadataRecord.sourceRole);
+    backgroundCompletionItem.analysisBand =
+        backgroundMetadataRecord.analysisBand;
+    backgroundCompletionItem.analysisBandDisplayName =
+        semanticAnalysisBandDisplayName(
+            backgroundMetadataRecord.analysisBand);
+    backgroundCompletionItem.symbolRecord = backgroundMetadataRecord;
+    backgroundCompletionItem.symbolStableKey =
+        backgroundMetadataRecord.stableKey;
+    backgroundCompletionItem.declarationKind =
+        backgroundMetadataRecord.declarationKind;
+    backgroundCompletionItem.usageRole =
+        backgroundMetadataRecord.usageRole;
+    backgroundCompletionItem.ownerScope =
+        backgroundMetadataRecord.owner.kind;
+    backgroundCompletionItem.sourceRole =
+        backgroundMetadataRecord.sourceRole;
+    CompletionResult bandSummaryCompletion;
+    bandSummaryCompletion.items = {
+        metadataCompletionItem,
+        backgroundCompletionItem,
+    };
+    expectEq("CompletionResult analysis band summary",
+             bandSummaryCompletion.analysisBandSummaryText(),
+             QStringLiteral("bands current 1 item, background 1 item"));
+    CompletionModel bandSummaryModel;
+    bandSummaryModel.updateCompletions(bandSummaryCompletion,
+                                       QStringLiteral("metadata"));
+    expectBool("CompletionModel renders band summary header",
+               bandSummaryModel.rowCount() == 3
+                   && !bandSummaryModel.getItem(
+                          bandSummaryModel.index(0, 0)).selectable
+                   && bandSummaryModel.data(
+                          bandSummaryModel.index(0, 0),
+                          Qt::DisplayRole).toString()
+                          == QStringLiteral(
+                              ":: COMPLETION BANDS - bands current 1 item, background 1 item ::")
+                   && bandSummaryModel.firstSelectableIndex().row() == 1,
+               true);
     CompletionModel commandDisplayModel;
     commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
                                                  QStringLiteral("s"));

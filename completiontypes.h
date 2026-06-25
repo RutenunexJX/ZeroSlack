@@ -40,6 +40,9 @@ struct CompletionResult {
             SymbolTaxonomy::SourceRole::Unknown;
     };
     QList<SemanticCompletionItem> items;
+
+    int analysisBandGroupCount() const;
+    QString analysisBandSummaryText() const;
 };
 
 enum class CompletionCommandKind {

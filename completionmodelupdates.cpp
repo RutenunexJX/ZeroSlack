@@ -90,6 +90,17 @@ void CompletionModel::updateCompletions(const CompletionResult &completion,
     if (completions.size() > 15) {
         completions = completions.mid(0, 15);
     }
+    if (completion.analysisBandGroupCount() > 1) {
+        CompletionItem bandHeader;
+        bandHeader.text = QStringLiteral(":: COMPLETION BANDS - %1 ::")
+                              .arg(completion.analysisBandSummaryText());
+        bandHeader.type = SymbolCompletion;
+        bandHeader.description =
+            QStringLiteral("Completion analysis bands");
+        bandHeader.score = 1000;
+        fillDisplayMetadata(bandHeader);
+        completions.prepend(bandHeader);
+    }
 
     endResetModel();
 }
