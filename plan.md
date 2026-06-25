@@ -2,6 +2,13 @@
 
 Use `readme.md` for handoff state and `goal.md` for stable product and architecture goals. This file defines execution policy.
 
+## Current Stable Baseline
+
+- Treat the current branch head after this stabilization pass as the Three-Feature Stable Baseline for Wave Preview, Formatter, and Huge Workspace Mode.
+- This is a non-intermediate delivery point, not the end of the long-term objective. Future work should start from this baseline and produce a new coherent baseline only after another usable milestone is implemented, documented, verified, committed, and pushed.
+- Wave Preview remains a code-understanding sketch rather than a simulator. Formatter remains conservative, profile-driven, and source-preserving. Huge Workspace Mode remains priority/cancellation/provenance driven, with staged symbol visibility and explicit current/open/background band semantics.
+- Baseline stabilization should not add feature behavior unless a broken edge prevents the baseline from being coherent. The expected gate is a clean starting branch, current docs, full default CMake build, full `ctest --output-on-failure`, `git diff --check`, and a pushed commit.
+
 ## Architecture Flow
 
 - Start each turn from the current worktree and current tests.

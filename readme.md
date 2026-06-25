@@ -23,6 +23,9 @@ Thin UI consumers
 
 ## Latest Strategy
 
+- Current Three-Feature Stable Baseline is the branch head after this stabilization pass. It is the non-intermediate baseline for the current Wave Preview, Formatter, and Huge Workspace work: usable behavior is documented, verified, and pushed before further expansion starts.
+- This baseline does not declare the long-term three-feature objective complete. It freezes the current usable surface as a coherent handoff point: Wave Preview is a code-understanding sketch, Formatter is conservative and opt-in/profile-driven, and Huge Workspace Mode exposes priority/cancellation/band provenance without pretending background analysis is fully incremental everywhere.
+- Baseline gate for this pass: clean worktree before edits, full default CMake build, full `ctest --output-on-failure` 7/7, focused current-feature coverage already passing, `git diff --check`, and a pushed commit on `tree_sitter_and_slang`.
 - Phase E semantic data model hardening is complete on this branch.
 - Phase F0 Legacy Field Retirement is complete on this branch.
 - Phase F1-F3 semantic migration is complete on this branch, including record-first relationship/reference/report paths and the post-F3 release gate.
