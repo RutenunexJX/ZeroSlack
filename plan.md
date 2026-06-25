@@ -1092,6 +1092,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional report surfaces that consume diagnostic band groups without recomputing priority policy.
 - Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 787 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 424 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Diagnostic Band Count Labels MVP
+
+- Status: implemented in the current worktree.
+- Scope: thirty-second usable Huge Workspace Mode milestone and a Problems-panel visibility refinement. It does not change Slang diagnostic extraction, diagnostics replacement, debounce/coalescing, diagnostic sorting, band filtering semantics, Activity logging semantics, or per-band diagnostics publication.
+- `ProblemsPanelCoordinator` now refreshes each diagnostic-band combo label with counts from a service-owned `DiagnosticReport` computed for the current scope and severity filters.
+- The count query intentionally clears only `analysisBandLabel`, so selecting `Background` still leaves labels such as `Current (2)` and `Background (1)` based on the unbanded count universe for the current scope/severity view.
+- The combo stores fixed base labels in item data and blocks signals while rendering count text, so count updates do not corrupt filter data or trigger recursive Problems refreshes.
+- `gui_smoke_test` verifies the rendered `All Bands` / `Current` / `Background` count labels and verifies that selecting the background band keeps the unfiltered per-band counts visible.
+- Implementation remains no-regex and keeps priority policy in `WorkspaceAnalysisPlanService` / `SemanticIndex`; Problems UI consumes `DiagnosticReport::analysisBandCounts` and does not derive scheduling policy.
+- Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional report surfaces that consume diagnostic band groups without recomputing priority policy.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 426 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

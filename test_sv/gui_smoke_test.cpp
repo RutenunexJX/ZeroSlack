@@ -1142,6 +1142,30 @@ static void runActivityLogServiceRegression()
             diagnosticActivityProblems.scopeCombo()->setCurrentIndex(allFilesIndex);
     }
     diagnosticActivityProblems.update();
+    bool sawBandCountLabels = false;
+    if (diagnosticActivityProblems.bandCombo()) {
+        const int allBandIndex =
+            diagnosticActivityProblems.bandCombo()->findData(QString());
+        const int currentIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("current"));
+        const int backgroundIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("background"));
+        sawBandCountLabels =
+            allBandIndex >= 0
+            && currentIndex >= 0
+            && backgroundIndex >= 0
+            && diagnosticActivityProblems.bandCombo()->itemText(allBandIndex)
+                == QStringLiteral("All Bands (3)")
+            && diagnosticActivityProblems.bandCombo()->itemText(currentIndex)
+                == QStringLiteral("Current (2)")
+            && diagnosticActivityProblems.bandCombo()->itemText(backgroundIndex)
+                == QStringLiteral("Background (1)");
+    }
+    expectBool("problems band filter shows counts",
+               sawBandCountLabels,
+               true);
     QTreeWidget* diagnosticActivityTree = diagnosticActivityProblems.tree();
     expectBool("problems band column visible",
                diagnosticActivityTree
@@ -1207,6 +1231,25 @@ static void runActivityLogServiceRegression()
     }
     expectBool("problems band filter narrows diagnostics",
                sawOnlyBackgroundRows,
+               true);
+    bool keptUnfilteredBandCounts = false;
+    if (diagnosticActivityProblems.bandCombo()) {
+        const int currentIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("current"));
+        const int backgroundIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("background"));
+        keptUnfilteredBandCounts =
+            currentIndex >= 0
+            && backgroundIndex >= 0
+            && diagnosticActivityProblems.bandCombo()->itemText(currentIndex)
+                == QStringLiteral("Current (2)")
+            && diagnosticActivityProblems.bandCombo()->itemText(backgroundIndex)
+                == QStringLiteral("Background (1)");
+    }
+    expectBool("problems band counts ignore band filter",
+               keptUnfilteredBandCounts,
                true);
     bool sawDiagnosticBandActivity = false;
     for (const ActivityLogEvent& event : service->events()) {

@@ -6,6 +6,7 @@
 
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -69,6 +70,31 @@ QString diagnosticVisibilityCountText(int count)
                  : QStringLiteral("diagnostics"));
 }
 
+QString diagnosticBandComboText(const QString& baseText, int count)
+{
+    return QStringLiteral("%1 (%2)").arg(baseText).arg(count);
+}
+
+void updateDiagnosticBandComboCounts(QComboBox* combo,
+                                     const DiagnosticReport& report)
+{
+    if (!combo)
+        return;
+
+    const QSignalBlocker blocker(combo);
+    for (int i = 0; i < combo->count(); ++i) {
+        const QString bandLabel = combo->itemData(i).toString();
+        const QString baseText =
+            combo->itemData(i, Qt::UserRole + 1).toString();
+        if (baseText.isEmpty())
+            continue;
+        const int count = bandLabel.isEmpty()
+            ? report.totalCount
+            : report.analysisBandCounts.value(bandLabel);
+        combo->setItemText(i, diagnosticBandComboText(baseText, count));
+    }
+}
+
 } // namespace
 
 ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
@@ -107,6 +133,11 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     problemsBandCombo->addItem(QStringLiteral("Open"), QStringLiteral("open"));
     problemsBandCombo->addItem(QStringLiteral("Background"), QStringLiteral("background"));
     problemsBandCombo->addItem(QStringLiteral("Unbanded"), QStringLiteral("unbanded"));
+    for (int i = 0; i < problemsBandCombo->count(); ++i) {
+        problemsBandCombo->setItemData(i,
+                                       problemsBandCombo->itemText(i),
+                                       Qt::UserRole + 1);
+    }
     problemsBandCombo->setToolTip(QStringLiteral("Diagnostic band"));
     filtersLayout->addWidget(problemsBandCombo);
     filtersLayout->addStretch(1);
@@ -190,6 +221,13 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
 
     DiagnosticService* diagnosticService = DiagnosticService::getInstance();
     const DiagnosticQuery query = diagnosticService->queryForPanel(queryOptions);
+    DiagnosticPanelQueryOptions countQueryOptions = queryOptions;
+    countQueryOptions.analysisBandLabel.clear();
+    const DiagnosticQuery countQuery =
+        diagnosticService->queryForPanel(countQueryOptions);
+    const DiagnosticReport countReport =
+        diagnosticService->findDiagnosticReport(countQuery);
+    updateDiagnosticBandComboCounts(problemsBandCombo, countReport);
     const DiagnosticReport report = diagnosticService->findDiagnosticReport(query);
     const QList<DiagnosticResult>& diagnostics = report.diagnostics;
     if (report.totalCount > 0) {
