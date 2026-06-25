@@ -231,6 +231,8 @@ bool isContextualOpeningToken(const QStringList& tokens, int index)
         return index == 0
             || (index == 1 && tokens.first() == QStringLiteral("default"));
     }
+    if (token == QStringLiteral("fork"))
+        return index == 0;
     return isOpeningToken(token);
 }
 

@@ -613,6 +613,18 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond conservative case/header scans.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 561 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Fork Statement Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-fourth usable formatter milestone and a conservative fork/join indentation correctness refinement. It does not split, merge, reorder, or rewrite statements, and it does not add or remove fork/join delimiters.
+- `FormatterService` now treats `fork` as an opening block token only when it is the statement-leading token, preserving normal `fork` / `join` / `join_any` / `join_none` indentation.
+- This prevents `disable fork;` and `wait fork;` from opening fake formatter blocks and pushing following statements too deep.
+- The behavior is active in both `Structured` and `Indent Only` profiles because it only changes leading whitespace. Existing Structured alignment passes remain unchanged.
+- `completion_test` verifies Structured output, Indent Only output, and idempotence for a fork block followed by `disable fork;`, `wait fork;`, and a normal statement that must remain at the surrounding block indentation.
+- Implementation remains no-regex and uses deterministic code-token/comment scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond conservative fork/header scans.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 567 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

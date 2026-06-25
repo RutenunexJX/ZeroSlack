@@ -1287,6 +1287,49 @@ int main(int argc, char** argv) {
                             "        assert property (req_grant);\n"
                             "    endchecker\n"
                             "endprogram\n"));
+    const QString formatterForkInput =
+        QStringLiteral("module fork_demo;\n"
+                       "initial begin\n"
+                       "fork\n"
+                       "a = 1'b1;\n"
+                       "b = 1'b0;\n"
+                       "join_any\n"
+                       "disable fork;\n"
+                       "wait fork;\n"
+                       "done = 1'b1;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterForkReport =
+        FormatterService::getInstance()->formatDocument(formatterForkInput);
+    expectBool("Formatter fork statement report changed",
+               formatterForkReport.changed,
+               true);
+    expectEq("Formatter indents fork statements without disable/wait drift",
+             formatterForkReport.formattedText,
+             QStringLiteral("module fork_demo;\n"
+                            "    initial begin\n"
+                            "        fork\n"
+                            "            a = 1'b1;\n"
+                            "            b = 1'b0;\n"
+                            "        join_any\n"
+                            "        disable fork;\n"
+                            "        wait fork;\n"
+                            "        done = 1'b1;\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedForkReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterForkReport.formattedText);
+    expectBool("Formatter fork statement idempotent",
+               unchangedForkReport.changed,
+               false);
+    const FormatterReport indentOnlyForkReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterForkInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only keeps fork statement indentation",
+             indentOnlyForkReport.formattedText,
+             formatterForkReport.formattedText);
 
     const QString formatterAlignmentInput =
         QStringLiteral("module align_demo;\n"
