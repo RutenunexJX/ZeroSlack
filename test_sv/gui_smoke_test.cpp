@@ -4041,6 +4041,31 @@ int main(int argc, char** argv)
                    && waveEditor
                    && waveEditor->textCursor().blockNumber() + 1 == 9,
                true);
+    if (waveCanvas) {
+        const int labelWidth =
+            std::min(130, std::max(84, waveCanvas->width() / 4));
+        const QPoint qLanePoint(10 + qMin(32, labelWidth - 12),
+                                28 + 32 + 16);
+        QTest::mouseMove(waveCanvas, qLanePoint);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QTest::mouseClick(waveCanvas,
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          qLanePoint);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("wave preview canvas lane hover has summary",
+               waveCanvas
+                   && waveCanvas->toolTip().contains(QStringLiteral("signal: q"))
+                   && waveCanvas->toolTip().contains(QStringLiteral("activity: seq 1")),
+               true);
+    expectBool("wave preview canvas lane click selects lane summary",
+               waveSummary
+                   && waveSummary->text().contains(QStringLiteral("Selected lane q"))
+                   && waveSummary->text().contains(QStringLiteral("activity seq 1"))
+                   && waveSummary->text().contains(
+                       QStringLiteral("context internal logic [7:0]")),
+               true);
     if (waveEditor) {
         waveEditor->setPlainText(
             QStringLiteral("module wave_ui;\n"

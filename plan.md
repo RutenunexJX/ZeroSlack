@@ -760,6 +760,19 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
 - Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 428 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Canvas Lane Interaction MVP
+
+- Status: implemented in the current worktree.
+- Scope: dense-canvas interaction milestone for Wave Preview. It does not change assignment extraction, value/timing simulation policy, semantic enrichment, tree rendering data, or double-click assignment navigation.
+- `WavePreviewCanvas` now builds lane hit targets for each rendered lane row in addition to assignment block hit targets.
+- Event block hit testing remains first, so assignment hover/click/double-click behavior keeps priority when an event block overlaps the lane row.
+- Hovering a canvas lane row shows the same report-owned lane detail tooltip used by the tree, including signal context, lane summary, activity mix, guards, and sources.
+- Clicking a canvas lane row highlights that row and pins a concise `Selected lane ...` summary through the existing selection callback, while clicking empty canvas space restores the report summary.
+- `gui_smoke_test` verifies q-lane hover tooltip content and q-lane click summary content after the existing event-hover, event-selection, and double-click navigation coverage.
+- Implementation remains no-regex and keeps canvas code render/hit-test only; lane text is derived from `WavePreviewLane` / `WavePreviewLaneSummary`.
+- Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 430 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

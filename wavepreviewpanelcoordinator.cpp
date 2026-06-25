@@ -31,8 +31,10 @@ constexpr int kLargeDirtyRefreshDelayMs = 180;
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
 QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
                                  const WavePreviewReport& report);
+QString canvasLaneSelectionText(const WavePreviewLane& lane);
 QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
                                 const WavePreviewReport& report);
+QString laneDetailTooltip(const WavePreviewLane& lane);
 QString laneSummaryText(const WavePreviewLaneSummary& summary);
 QString reportSummaryText(const WavePreviewReport& report, bool dirty);
 
@@ -47,6 +49,13 @@ struct CanvasEventHit {
     QString selectionText;
     int line = 0;
     int column = 0;
+};
+
+struct CanvasLaneHit {
+    QRect rect;
+    QString tooltip;
+    QString selectionText;
+    QString signalName;
 };
 
 class WavePreviewCanvas : public QWidget
@@ -73,8 +82,10 @@ public:
         report = nextReport;
         currentFileName = fileName;
         eventHits.clear();
+        laneHits.clear();
         selectedLine = 0;
         selectedColumn = 0;
+        selectedSignalName.clear();
         setToolTip(QString());
         unsetCursor();
         updateGeometry();
@@ -86,8 +97,10 @@ public:
         report = WavePreviewReport();
         currentFileName.clear();
         eventHits.clear();
+        laneHits.clear();
         selectedLine = 0;
         selectedColumn = 0;
+        selectedSignalName.clear();
         setToolTip(QString());
         unsetCursor();
         updateGeometry();
@@ -109,6 +122,7 @@ protected:
     void paintEvent(QPaintEvent*) override
     {
         eventHits.clear();
+        laneHits.clear();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
 
@@ -161,6 +175,19 @@ protected:
             const WavePreviewLane& lane = report.lanes.at(laneIndex);
             const int y = top + laneIndex * rowHeight;
             const int centerY = y + rowHeight / 2;
+            const QRect laneRect(left,
+                                 y + 2,
+                                 timelineRight - left,
+                                 rowHeight - 4);
+
+            if (lane.signalName == selectedSignalName) {
+                painter.fillRect(laneRect,
+                                 QColor(QStringLiteral("#e0f2fe")));
+            }
+            laneHits.append({laneRect,
+                             laneDetailTooltip(lane),
+                             canvasLaneSelectionText(lane),
+                             lane.signalName});
 
             painter.setPen(QPen(QColor(QStringLiteral("#e2e8f0"))));
             painter.drawLine(left, centerY, timelineRight, centerY);
@@ -243,6 +270,19 @@ protected:
                 continue;
             selectedLine = it->line;
             selectedColumn = qMax(1, it->column);
+            selectedSignalName.clear();
+            if (selectionHandler)
+                selectionHandler(it->selectionText);
+            update();
+            event->accept();
+            return;
+        }
+        for (auto it = laneHits.crbegin(); it != laneHits.crend(); ++it) {
+            if (!it->rect.contains(event->pos()))
+                continue;
+            selectedLine = 0;
+            selectedColumn = 0;
+            selectedSignalName = it->signalName;
             if (selectionHandler)
                 selectionHandler(it->selectionText);
             update();
@@ -251,6 +291,7 @@ protected:
         }
         selectedLine = 0;
         selectedColumn = 0;
+        selectedSignalName.clear();
         if (selectionHandler)
             selectionHandler(QString());
         update();
@@ -260,6 +301,17 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override
     {
         for (auto it = eventHits.crbegin(); it != eventHits.crend(); ++it) {
+            if (!it->rect.contains(event->pos()))
+                continue;
+            setToolTip(it->tooltip);
+            setCursor(Qt::PointingHandCursor);
+            QToolTip::showText(event->globalPosition().toPoint(),
+                               it->tooltip,
+                               this,
+                               it->rect);
+            return;
+        }
+        for (auto it = laneHits.crbegin(); it != laneHits.crend(); ++it) {
             if (!it->rect.contains(event->pos()))
                 continue;
             setToolTip(it->tooltip);
@@ -306,9 +358,11 @@ protected:
 private:
     WavePreviewReport report;
     QVector<CanvasEventHit> eventHits;
+    QVector<CanvasLaneHit> laneHits;
     QString currentFileName;
     int selectedLine = 0;
     int selectedColumn = 0;
+    QString selectedSignalName;
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&)> selectionHandler;
 };
@@ -650,6 +704,21 @@ QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
     const QString location = locationText(assignment);
     if (location != QStringLiteral("-"))
         parts.append(location);
+    return parts.join(QStringLiteral(" - "));
+}
+
+QString canvasLaneSelectionText(const WavePreviewLane& lane)
+{
+    QStringList parts;
+    parts.append(QStringLiteral("Selected lane %1").arg(lane.signalName));
+    parts.append(laneSummaryText(lane.summary));
+    const QString activity = laneActivityText(lane.summary);
+    if (activity != QStringLiteral("-"))
+        parts.append(QStringLiteral("activity %1").arg(activity));
+    const QString context =
+        signalContextBrief(lane.context.isValid() ? &lane.context : nullptr);
+    if (context != QStringLiteral("-"))
+        parts.append(QStringLiteral("context %1").arg(context));
     return parts.join(QStringLiteral(" - "));
 }
 
