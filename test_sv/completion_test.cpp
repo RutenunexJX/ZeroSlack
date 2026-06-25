@@ -588,6 +588,24 @@ int main(int argc, char** argv) {
                               ":: COMPLETION BANDS - bands current 1 item, background 1 item ::")
                    && bandSummaryModel.firstSelectableIndex().row() == 1,
                true);
+    CompletionModel commandSymbolBandSummaryModel;
+    commandSymbolBandSummaryModel.updateSymbolRecordCompletions(
+        {metadataModelRecord, backgroundMetadataRecord},
+        QString(),
+        CompletionCommandKind::Module);
+    expectBool("CompletionModel renders command symbol band summary header",
+               commandSymbolBandSummaryModel.rowCount() == 5
+                   && !commandSymbolBandSummaryModel.getItem(
+                          commandSymbolBandSummaryModel.index(2, 0))
+                          .selectable
+                   && commandSymbolBandSummaryModel.data(
+                          commandSymbolBandSummaryModel.index(2, 0),
+                          Qt::DisplayRole).toString()
+                          == QStringLiteral(
+                              ":: COMMAND SYMBOL BANDS - bands current 1 item, background 1 item ::")
+                   && commandSymbolBandSummaryModel.firstSelectableIndex()
+                          .row() == 1,
+               true);
     CompletionModel commandDisplayModel;
     commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
                                                  QStringLiteral("s"));

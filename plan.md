@@ -1205,6 +1205,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional completion/report surfaces that consume analysis-band provenance without recomputing priority policy.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 555 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Command Symbol Band Summary Header MVP
+
+- Status: implemented in the current worktree.
+- Scope: thirty-fifth usable Huge Workspace Mode milestone and a command-symbol completion provenance visibility refinement. It does not change semantic extraction, command-symbol query ordering, default insertion behavior, diagnostic publication, or workspace scheduling.
+- `CompletionModel::updateSymbolRecordCompletions()` now builds a band summary from visible, real symbol rows after scoring/truncation, excluding the command description row and `[DEFAULT]` insertion row.
+- When visible command-symbol rows span multiple analysis bands, the model inserts a non-selectable `:: COMMAND SYMBOL BANDS - ... ::` header after the default row, preserving the default row as the first selectable command-symbol item.
+- The summary reuses `CompletionResult::analysisBandSummaryText()` so command-symbol completion renders existing current/dirty-open/open/background/unbanded provenance without recomputing workspace priority tiers.
+- `completion_test` verifies current/background command-symbol rows render the summary header at row 2, keep it non-selectable, and leave the default row as the first selectable entry.
+- Implementation remains no-regex and keeps priority policy in `WorkspaceAnalysisPlanService` / `SemanticIndex`; command-symbol UI consumes metadata already present on `SemanticSymbolRecord`.
+- Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional completion/report surfaces that consume analysis-band provenance without recomputing priority policy.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 556 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

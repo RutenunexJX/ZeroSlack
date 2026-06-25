@@ -4,6 +4,8 @@
 
 #include <QSet>
 
+#include <algorithm>
+
 namespace {
 QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
 {
@@ -47,6 +49,33 @@ void fillSymbolMetadataFromRecord(
     item.usageRole = metadata.usageRole;
     item.ownerScope = metadata.ownerScope;
     item.sourceRole = metadata.sourceRole;
+}
+
+bool isVisibleCommandSymbolBandItem(
+    const CompletionModel::CompletionItem& item)
+{
+    if (item.type != CompletionModel::SymbolCompletion)
+        return false;
+    if (!item.selectable)
+        return false;
+    if (item.text.startsWith(QStringLiteral("[DEFAULT]")))
+        return false;
+    return item.symbolRecord.isValid() || item.symbolStableKey.isValid();
+}
+
+CompletionResult completionBandSummaryForVisibleCommandSymbols(
+    const QList<CompletionModel::CompletionItem>& items)
+{
+    CompletionResult result;
+    for (const CompletionModel::CompletionItem& item : items) {
+        if (!isVisibleCommandSymbolBandItem(item))
+            continue;
+
+        CompletionResult::SemanticCompletionItem summaryItem;
+        summaryItem.analysisBand = item.analysisBand;
+        result.items.append(summaryItem);
+    }
+    return result;
 }
 }
 
@@ -327,6 +356,21 @@ void CompletionModel::updateSymbolRecordCompletions(
     }
     if (completions.size() > 32) {
         completions = completions.mid(0, 32);
+    }
+    const CompletionResult bandSummary =
+        completionBandSummaryForVisibleCommandSymbols(completions);
+    if (bandSummary.analysisBandGroupCount() > 1) {
+        CompletionItem bandHeader;
+        bandHeader.text = QStringLiteral(":: COMMAND SYMBOL BANDS - %1 ::")
+                              .arg(bandSummary.analysisBandSummaryText());
+        bandHeader.type = SymbolCompletion;
+        bandHeader.description =
+            QStringLiteral("Command symbol analysis bands");
+        bandHeader.score = 998;
+        fillDisplayMetadata(bandHeader);
+        const qsizetype insertIndex =
+            std::min<qsizetype>(2, completions.size());
+        completions.insert(insertIndex, bandHeader);
     }
 
     endResetModel();
