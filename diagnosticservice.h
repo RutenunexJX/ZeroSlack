@@ -68,6 +68,8 @@ struct DiagnosticAnalysisBandGroup {
     QList<DiagnosticResult> diagnostics;
     int count = 0;
     QMap<SemanticDiagnostic::Severity, int> severityCounts;
+
+    QString summaryText() const;
 };
 
 struct DiagnosticReport {

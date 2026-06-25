@@ -75,8 +75,29 @@ QString diagnosticBandComboText(const QString& baseText, int count)
     return QStringLiteral("%1 (%2)").arg(baseText).arg(count);
 }
 
-void updateDiagnosticBandComboCounts(QComboBox* combo,
-                                     const DiagnosticReport& report)
+QString missingDiagnosticBandTooltipText(const QString& baseText)
+{
+    return QStringLiteral("%1 0 diagnostics").arg(baseText);
+}
+
+QString diagnosticBandComboToolTipText(const QString& baseText,
+                                       const QString& bandLabel,
+                                       const DiagnosticReport& report)
+{
+    if (bandLabel.isEmpty())
+        return report.analysisBandSummaryText();
+
+    for (const DiagnosticAnalysisBandGroup& group :
+         report.analysisBandGroups) {
+        if (group.label == bandLabel)
+            return group.summaryText();
+    }
+
+    return missingDiagnosticBandTooltipText(baseText);
+}
+
+void updateDiagnosticBandComboPresentation(QComboBox* combo,
+                                           const DiagnosticReport& report)
 {
     if (!combo)
         return;
@@ -92,6 +113,11 @@ void updateDiagnosticBandComboCounts(QComboBox* combo,
             ? report.totalCount
             : report.analysisBandCounts.value(bandLabel);
         combo->setItemText(i, diagnosticBandComboText(baseText, count));
+        const QString toolTip =
+            diagnosticBandComboToolTipText(baseText, bandLabel, report);
+        combo->setItemData(i, toolTip, Qt::ToolTipRole);
+        combo->setItemData(i, toolTip, Qt::StatusTipRole);
+        combo->setItemData(i, toolTip, Qt::AccessibleDescriptionRole);
     }
 }
 
@@ -227,7 +253,7 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
         diagnosticService->queryForPanel(countQueryOptions);
     const DiagnosticReport countReport =
         diagnosticService->findDiagnosticReport(countQuery);
-    updateDiagnosticBandComboCounts(problemsBandCombo, countReport);
+    updateDiagnosticBandComboPresentation(problemsBandCombo, countReport);
     const DiagnosticReport report = diagnosticService->findDiagnosticReport(query);
     const QList<DiagnosticResult>& diagnostics = report.diagnostics;
     if (report.totalCount > 0) {

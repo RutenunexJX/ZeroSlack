@@ -112,6 +112,20 @@ QString diagnosticAnalysisBandSeveritySummary(
 }
 }
 
+QString DiagnosticAnalysisBandGroup::summaryText() const
+{
+    const QString effectiveDisplayName =
+        displayName.isEmpty() ? label : displayName;
+    QString summary = QStringLiteral("%1 %2")
+                          .arg(effectiveDisplayName,
+                               diagnosticCountText(count));
+    const QString severitySummary =
+        diagnosticAnalysisBandSeveritySummary(*this);
+    if (!severitySummary.isEmpty())
+        summary += QStringLiteral(" (%1)").arg(severitySummary);
+    return summary;
+}
+
 QString DiagnosticReport::analysisBandSummaryText() const
 {
     if (analysisBandGroups.isEmpty())
@@ -119,16 +133,7 @@ QString DiagnosticReport::analysisBandSummaryText() const
 
     QStringList parts;
     for (const DiagnosticAnalysisBandGroup& group : analysisBandGroups) {
-        const QString displayName =
-            group.displayName.isEmpty() ? group.label : group.displayName;
-        QString part = QStringLiteral("%1 %2")
-                           .arg(displayName,
-                                diagnosticCountText(group.count));
-        const QString severitySummary =
-            diagnosticAnalysisBandSeveritySummary(group);
-        if (!severitySummary.isEmpty())
-            part += QStringLiteral(" (%1)").arg(severitySummary);
-        parts.append(part);
+        parts.append(group.summaryText());
     }
 
     return QStringLiteral("diagnostic bands %1")

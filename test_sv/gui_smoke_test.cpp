@@ -1166,6 +1166,51 @@ static void runActivityLogServiceRegression()
     expectBool("problems band filter shows counts",
                sawBandCountLabels,
                true);
+    bool sawBandSeverityTooltips = false;
+    if (diagnosticActivityProblems.bandCombo()) {
+        const int allBandIndex =
+            diagnosticActivityProblems.bandCombo()->findData(QString());
+        const int currentIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("current"));
+        const int backgroundIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("background"));
+        const QString allToolTip =
+            allBandIndex >= 0
+                ? diagnosticActivityProblems.bandCombo()
+                      ->itemData(allBandIndex, Qt::ToolTipRole)
+                      .toString()
+                : QString();
+        const QString currentToolTip =
+            currentIndex >= 0
+                ? diagnosticActivityProblems.bandCombo()
+                      ->itemData(currentIndex, Qt::ToolTipRole)
+                      .toString()
+                : QString();
+        const QString backgroundToolTip =
+            backgroundIndex >= 0
+                ? diagnosticActivityProblems.bandCombo()
+                      ->itemData(backgroundIndex, Qt::ToolTipRole)
+                      .toString()
+                : QString();
+        sawBandSeverityTooltips =
+            allToolTip.contains(
+                QStringLiteral("current 2 diagnostics"))
+            && allToolTip.contains(QStringLiteral("1 warning"))
+            && allToolTip.contains(QStringLiteral("1 info"))
+            && allToolTip.contains(
+                QStringLiteral("background 1 diagnostic"))
+            && allToolTip.contains(QStringLiteral("1 error"))
+            && currentToolTip
+                == QStringLiteral(
+                    "current 2 diagnostics (1 warning, 1 info)")
+            && backgroundToolTip
+                == QStringLiteral("background 1 diagnostic (1 error)");
+    }
+    expectBool("problems band filter shows severity tooltips",
+               sawBandSeverityTooltips,
+               true);
     QTreeWidget* diagnosticActivityTree = diagnosticActivityProblems.tree();
     expectBool("problems band column visible",
                diagnosticActivityTree
@@ -1250,6 +1295,36 @@ static void runActivityLogServiceRegression()
     }
     expectBool("problems band counts ignore band filter",
                keptUnfilteredBandCounts,
+               true);
+    bool keptUnfilteredBandTooltips = false;
+    if (diagnosticActivityProblems.bandCombo()) {
+        const int currentIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("current"));
+        const int backgroundIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("background"));
+        const QString currentToolTip =
+            currentIndex >= 0
+                ? diagnosticActivityProblems.bandCombo()
+                      ->itemData(currentIndex, Qt::ToolTipRole)
+                      .toString()
+                : QString();
+        const QString backgroundToolTip =
+            backgroundIndex >= 0
+                ? diagnosticActivityProblems.bandCombo()
+                      ->itemData(backgroundIndex, Qt::ToolTipRole)
+                      .toString()
+                : QString();
+        keptUnfilteredBandTooltips =
+            currentToolTip
+                == QStringLiteral(
+                    "current 2 diagnostics (1 warning, 1 info)")
+            && backgroundToolTip
+                == QStringLiteral("background 1 diagnostic (1 error)");
+    }
+    expectBool("problems band tooltips ignore band filter",
+               keptUnfilteredBandTooltips,
                true);
     bool sawDiagnosticBandActivity = false;
     for (const ActivityLogEvent& event : service->events()) {
