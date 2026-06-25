@@ -1173,6 +1173,41 @@ static void runActivityLogServiceRegression()
     expectBool("problems rows show diagnostic bands",
                sawCurrentBandRow && sawBackgroundBandRow,
                true);
+    if (diagnosticActivityProblems.bandCombo()) {
+        const int backgroundIndex =
+            diagnosticActivityProblems.bandCombo()->findData(
+                QStringLiteral("background"));
+        if (backgroundIndex >= 0)
+            diagnosticActivityProblems.bandCombo()->setCurrentIndex(backgroundIndex);
+    }
+    bool sawOnlyBackgroundRows = false;
+    if (diagnosticActivityTree) {
+        int diagnosticRows = 0;
+        bool allBackground = true;
+        for (int i = 0; i < diagnosticActivityTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* group = diagnosticActivityTree->topLevelItem(i);
+            if (!group)
+                continue;
+            if (group->childCount() == 0) {
+                ++diagnosticRows;
+                allBackground = allBackground
+                    && group->text(5) == QStringLiteral("background");
+                continue;
+            }
+            for (int child = 0; child < group->childCount(); ++child) {
+                QTreeWidgetItem* row = group->child(child);
+                if (!row)
+                    continue;
+                ++diagnosticRows;
+                allBackground = allBackground
+                    && row->text(5) == QStringLiteral("background");
+            }
+        }
+        sawOnlyBackgroundRows = diagnosticRows == 1 && allBackground;
+    }
+    expectBool("problems band filter narrows diagnostics",
+               sawOnlyBackgroundRows,
+               true);
     bool sawDiagnosticBandActivity = false;
     for (const ActivityLogEvent& event : service->events()) {
         sawDiagnosticBandActivity = sawDiagnosticBandActivity

@@ -23,6 +23,7 @@ public:
     QTreeWidget* tree() const { return problemsTree; }
     QComboBox* scopeCombo() const { return problemsScopeCombo; }
     QComboBox* severityCombo() const { return problemsSeverityCombo; }
+    QComboBox* bandCombo() const { return problemsBandCombo; }
     bool showsCurrentFileScope() const;
 
 private:
@@ -30,6 +31,7 @@ private:
     QTreeWidget* problemsTree = nullptr;
     QComboBox* problemsScopeCombo = nullptr;
     QComboBox* problemsSeverityCombo = nullptr;
+    QComboBox* problemsBandCombo = nullptr;
     QString lastDiagnosticActivityMessage;
 
     std::function<QString()> currentFileProvider;

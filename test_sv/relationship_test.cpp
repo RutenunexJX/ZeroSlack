@@ -755,6 +755,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                diagnosticReport.analysisBandSummaryText()
                    == QStringLiteral("diagnostic bands current 2 diagnostics (1 warning, 1 info), background 1 diagnostic (1 error)"),
                true);
+    DiagnosticQuery currentBandDiagnosticQuery;
+    currentBandDiagnosticQuery.analysisBandLabel = QStringLiteral("current");
+    expectInt("diagnostic report filters current band",
+              diagnosticReportService
+                  .findDiagnosticReport(currentBandDiagnosticQuery)
+                  .totalCount,
+              2);
+    DiagnosticQuery backgroundBandDiagnosticQuery;
+    backgroundBandDiagnosticQuery.analysisBandLabel =
+        QStringLiteral("background");
+    expectInt("diagnostic report filters background band",
+              diagnosticReportService
+                  .findDiagnosticReport(backgroundBandDiagnosticQuery)
+                  .totalCount,
+              1);
     expectBool("diagnostic report sorts errors first",
                !diagnosticReport.diagnostics.isEmpty()
                    && diagnosticReport.diagnostics.first().diagnostic.severity
@@ -891,6 +906,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("diagnostic panel all info count",
               diagnosticReportService
                   .findDiagnosticReport(allFilesPanelQuery)
+                  .totalCount,
+              1);
+    DiagnosticPanelQueryOptions backgroundBandPanelOptions;
+    backgroundBandPanelOptions.scope = DiagnosticPanelScope::AllFiles;
+    backgroundBandPanelOptions.analysisBandLabel =
+        QStringLiteral("background");
+    const DiagnosticQuery backgroundBandPanelQuery =
+        diagnosticReportService.queryForPanel(backgroundBandPanelOptions);
+    expectBool("diagnostic panel query carries band filter",
+               backgroundBandPanelQuery.analysisBandLabel
+                   == QStringLiteral("background"),
+               true);
+    expectInt("diagnostic panel band filter count",
+              diagnosticReportService
+                  .findDiagnosticReport(backgroundBandPanelQuery)
                   .totalCount,
               1);
 

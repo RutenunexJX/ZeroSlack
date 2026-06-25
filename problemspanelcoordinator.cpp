@@ -98,6 +98,17 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     problemsSeverityCombo->addItem(QStringLiteral("Info"), 3);
     problemsSeverityCombo->setToolTip(QStringLiteral("Severity filter"));
     filtersLayout->addWidget(problemsSeverityCombo);
+
+    problemsBandCombo = new QComboBox(panel);
+    problemsBandCombo->setObjectName(QStringLiteral("problemsBandCombo"));
+    problemsBandCombo->addItem(QStringLiteral("All Bands"), QString());
+    problemsBandCombo->addItem(QStringLiteral("Current"), QStringLiteral("current"));
+    problemsBandCombo->addItem(QStringLiteral("Dirty Open"), QStringLiteral("dirty-open"));
+    problemsBandCombo->addItem(QStringLiteral("Open"), QStringLiteral("open"));
+    problemsBandCombo->addItem(QStringLiteral("Background"), QStringLiteral("background"));
+    problemsBandCombo->addItem(QStringLiteral("Unbanded"), QStringLiteral("unbanded"));
+    problemsBandCombo->setToolTip(QStringLiteral("Diagnostic band"));
+    filtersLayout->addWidget(problemsBandCombo);
     filtersLayout->addStretch(1);
     layout->addLayout(filtersLayout);
 
@@ -126,6 +137,8 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     QObject::connect(problemsScopeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
                      problemsDock, [this](int) { update(); });
     QObject::connect(problemsSeverityCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+                     problemsDock, [this](int) { update(); });
+    QObject::connect(problemsBandCombo, qOverload<int>(&QComboBox::currentIndexChanged),
                      problemsDock, [this](int) { update(); });
 
     QObject::connect(problemsTree, &QTreeWidget::itemDoubleClicked,
@@ -167,6 +180,8 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
         problemsScopeCombo ? problemsScopeCombo->currentData().toInt() : 0);
     queryOptions.severity = diagnosticSeverityFilterFromValue(
         problemsSeverityCombo ? problemsSeverityCombo->currentData().toInt() : 0);
+    if (problemsBandCombo)
+        queryOptions.analysisBandLabel = problemsBandCombo->currentData().toString();
     queryOptions.requestedFileName = fileName;
     if (currentFileProvider)
         queryOptions.currentFileName = currentFileProvider();

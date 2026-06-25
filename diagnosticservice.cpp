@@ -49,6 +49,11 @@ QString diagnosticAnalysisBandDisplayName(
     return semanticAnalysisBandDisplayName(normalized);
 }
 
+QString normalizedDiagnosticAnalysisBandLabel(const QString& label)
+{
+    return label.trimmed();
+}
+
 int diagnosticAnalysisBandGroupSortPriority(
     const DiagnosticAnalysisBandGroup& group)
 {
@@ -182,6 +187,10 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
             semanticIndex()->analysisBandForFile(diagnostic.fileName));
         item.analysisBandDisplayName =
             diagnosticAnalysisBandDisplayName(item.analysisBand);
+        if (!normalized.analysisBandLabel.isEmpty()
+            && item.analysisBand.label != normalized.analysisBandLabel) {
+            continue;
+        }
         result.append(item);
     }
     std::sort(result.begin(), result.end(),
@@ -304,6 +313,7 @@ DiagnosticQuery DiagnosticService::queryForPanel(
         || options.severity == DiagnosticSeverityFilter::Warnings;
     query.includeInfo = options.severity == DiagnosticSeverityFilter::All
         || options.severity == DiagnosticSeverityFilter::Info;
+    query.analysisBandLabel = options.analysisBandLabel;
     return normalizedQuery(query);
 }
 
@@ -331,6 +341,8 @@ DiagnosticQuery DiagnosticService::normalizedQuery(const DiagnosticQuery& query)
     DiagnosticQuery normalized = query;
     normalized.fileName = normalizedFileName(query.fileName);
     normalized.workspaceFiles = normalizedFileNames(query.workspaceFiles);
+    normalized.analysisBandLabel =
+        normalizedDiagnosticAnalysisBandLabel(query.analysisBandLabel);
     return normalized;
 }
 

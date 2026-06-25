@@ -12,6 +12,7 @@
 struct DiagnosticQuery {
     QString fileName;
     QStringList workspaceFiles;
+    QString analysisBandLabel;
     bool workspaceFilesOnly = false;
     bool includeInfo = true;
     bool includeWarnings = true;
@@ -37,6 +38,7 @@ struct DiagnosticPanelQueryOptions {
     QString requestedFileName;
     QString currentFileName;
     QStringList workspaceFiles;
+    QString analysisBandLabel;
 };
 
 struct DiagnosticResult {

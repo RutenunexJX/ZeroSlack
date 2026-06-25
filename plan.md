@@ -1080,6 +1080,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional report surfaces that consume diagnostic band groups without recomputing priority policy.
 - Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 783 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 423 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Diagnostic Band Filter MVP
+
+- Status: implemented in the current worktree.
+- Scope: thirty-first usable Huge Workspace Mode milestone and the first query-level diagnostic-band narrowing path for Problems. It does not change Slang diagnostic extraction, diagnostics replacement, debounce/coalescing, diagnostic sorting, Activity logging semantics, or per-band diagnostics publication.
+- `DiagnosticQuery` and `DiagnosticPanelQueryOptions` now carry `analysisBandLabel`, normalized through `DiagnosticService` alongside file and workspace filters.
+- `DiagnosticService::findDiagnostics()` applies the band filter after row-level analysis-band normalization, so `unbanded` is filterable for external or non-workspace diagnostics and UI callers do not need special cases.
+- `ProblemsPanelCoordinator` adds a `Diagnostic band` combo next to scope and severity with `All Bands`, `Current`, `Dirty Open`, `Open`, `Background`, and `Unbanded` choices; it passes the selected label into the service query instead of filtering rows locally.
+- `relationship_test` verifies direct report filtering and panel-query propagation for current/background bands, and `gui_smoke_test` verifies the combo narrows a temporary Problems panel to the background diagnostic row.
+- Implementation remains no-regex and keeps priority policy in `WorkspaceAnalysisPlanService` / `SemanticIndex`; Problems UI requests a band, while `DiagnosticService` owns the report narrowing.
+- Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional report surfaces that consume diagnostic band groups without recomputing priority policy.
+- Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 787 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 424 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
